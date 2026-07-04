@@ -1,3 +1,4 @@
+# Loregarden
 data/
 data/loregarden.db
 data/loregarden.db-*
@@ -9,7 +10,19 @@ server/.venv/
 server/uv.lock
 client/node_modules/
 client/dist/
+
+# Secrets
+.env
+.envrc
+
+# Python
 __pycache__/
+*.py[cod]
 *.pyc
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# OS / editor
 .DS_Store
