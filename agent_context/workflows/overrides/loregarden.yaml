@@ -1,0 +1,2 @@
+# Skip optional stages for loregarden web SDLC
+skip_stages: []

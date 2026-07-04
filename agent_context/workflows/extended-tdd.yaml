@@ -1,0 +1,77 @@
+slug: extended-tdd
+name: Extended TDD
+description: >-
+  Multi-domain TDD workflow with optional domain consultation and script review
+  stages. Use for workspaces that need extra gates beyond the default web SDLC.
+stages:
+  - key: planning
+    name: Planning
+    agent_id: planner
+    skill_name: plan
+    order: 1
+  - key: domain_consultation
+    name: Domain Consultation
+    agent_id: retriever
+    skill_name: consult
+    optional: true
+    order: 2
+  - key: specification
+    name: Specification
+    agent_id: spec
+    skill_name: spec
+    order: 3
+  - key: test_design
+    name: Test Design
+    agent_id: test_designer
+    skill_name: test_design
+    order: 4
+  - key: test_break
+    name: Test Break
+    agent_id: test_breaker
+    skill_name: test_break
+    order: 5
+  - key: implementation
+    name: Implementation
+    agent_id: backend_implementer
+    skill_name: apply_patch
+    order: 6
+  - key: static_qa
+    name: Static QA
+    agent_id: static_qa
+    skill_name: static_qa
+    order: 7
+  - key: review
+    name: Script Review
+    agent_id: gatekeeper
+    skill_name: review
+    order: 8
+  - key: approval
+    name: Human Verification
+    agent_id: ""
+    skill_name: ""
+    optional: true
+    order: 9
+  - key: done
+    name: Done
+    agent_id: ""
+    skill_name: ""
+    order: 10
+transitions:
+  - from: planning
+    to: domain_consultation
+  - from: domain_consultation
+    to: specification
+  - from: specification
+    to: test_design
+  - from: test_design
+    to: test_break
+  - from: test_break
+    to: implementation
+  - from: implementation
+    to: static_qa
+  - from: static_qa
+    to: review
+  - from: review
+    to: approval
+  - from: approval
+    to: done

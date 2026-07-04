@@ -1,0 +1,428 @@
+import json
+import secrets
+from datetime import datetime, timezone
+
+from sqlmodel import Session, select
+
+from loregarden.core.event_bus import event_bus
+from loregarden.core.state_machine import StateMachine
+from loregarden.core.workflow_loader import stage_display_name
+from loregarden.services.workflow_service import resolve_workspace_stages
+from loregarden.services.workflow_state import (
+    build_stage_views,
+    parse_stage_map,
+    reconcile_workflow_state,
+    serialize_stage_map,
+    set_stage_status,
+)
+from loregarden.models.domain import (
+    AgentRun,
+    Approval,
+    ApprovalStatus,
+    Artifact,
+    EventType,
+    RunStatus,
+    StageStatus,
+    Ticket,
+    TicketState,
+    UpdateTicketRequest,
+    WorkflowInstance,
+    WorkflowStageView,
+    WorkflowTemplate,
+    Workspace,
+)
+
+
+def _run_code() -> str:
+    return f"run_{secrets.token_hex(3)}"
+
+
+class OrchestrationService:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get_workspace(self, slug: str) -> Workspace | None:
+        return self.session.exec(select(Workspace).where(Workspace.slug == slug)).first()
+
+    def get_ticket(self, ticket_id: str) -> Ticket | None:
+        return self.session.get(Ticket, ticket_id)
+
+    def get_template_for_ticket(self, ticket: Ticket) -> WorkflowTemplate | None:
+        ws = self.session.get(Workspace, ticket.workspace_id)
+        if not ws or not ws.workflow_template_id:
+            return None
+        return self.session.get(WorkflowTemplate, ws.workflow_template_id)
+
+    def get_workflow_instance(self, ticket_id: str) -> WorkflowInstance | None:
+        return self.session.exec(
+            select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket_id)
+        ).first()
+
+    def _resolve_stages(self, ticket: Ticket) -> tuple[WorkflowInstance | None, list]:
+        instance = self.get_workflow_instance(ticket.id)
+        ws = self.session.get(Workspace, ticket.workspace_id)
+        if not ws:
+            return instance, []
+        _, stages = resolve_workspace_stages(self.session, ws)
+        return instance, stages
+
+    def reconcile_ticket(self, ticket: Ticket, *, commit: bool = True) -> Ticket:
+        instance, stages = self._resolve_stages(ticket)
+        if not instance or not stages:
+            return ticket
+        before = (
+            ticket.state,
+            ticket.workflow_stage_key,
+            ticket.workflow_stage_status,
+            instance.stages_json,
+        )
+        reconcile_workflow_state(ticket, instance, stages)
+        after = (
+            ticket.state,
+            ticket.workflow_stage_key,
+            ticket.workflow_stage_status,
+            instance.stages_json,
+        )
+        if commit and before != after:
+            self.session.add(ticket)
+            self.session.add(instance)
+            self.session.commit()
+        return ticket
+
+    def build_stage_views(self, ticket: Ticket) -> list[WorkflowStageView]:
+        instance, stages = self._resolve_stages(ticket)
+        if not instance or not stages:
+            return []
+        views = build_stage_views(ticket, instance, stages)
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.commit()
+        return views
+
+    def start_ticket(self, ticket: Ticket) -> Ticket:
+        result = StateMachine.can_transition_ticket(ticket.state, TicketState.IN_PROGRESS)
+        if not result.ok:
+            raise ValueError(result.message)
+        ticket.state = TicketState.IN_PROGRESS
+        ticket.updated_at = datetime.now(timezone.utc)
+        self.session.add(ticket)
+        self.session.commit()
+        event_bus.publish(
+            self.session,
+            EventType.TICKET_STATE_CHANGED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            payload={"state": ticket.state.value},
+        )
+        return ticket
+
+    def update_ticket_manual(self, ticket: Ticket, body: UpdateTicketRequest) -> Ticket:
+        instance, stages = self._resolve_stages(ticket)
+        if body.auto_state is True:
+            ticket.state_locked = False
+        elif body.auto_state is False or body.state is not None:
+            ticket.state_locked = True
+
+        if body.state is not None:
+            ticket.state = body.state
+            ticket.revision += 1
+            ticket.last_updated_by = "human"
+            if body.state == TicketState.WONT_DO:
+                ticket.state_locked = True
+
+        if body.stage_updates and instance and stages:
+            stage_map = parse_stage_map(instance, stages)
+            for key, status in body.stage_updates.items():
+                if key not in stage_map:
+                    raise ValueError(f"Unknown stage key: {key}")
+                stage_map[key] = status
+            instance.stages_json = serialize_stage_map(stage_map, stages)
+            if body.auto_state is True or not ticket.state_locked:
+                reconcile_workflow_state(ticket, instance, stages, persist=False)
+        elif body.stage_key and body.stage_status and instance and stages:
+            set_stage_status(ticket, instance, stages, body.stage_key, body.stage_status)
+        elif instance and stages:
+            stage_map = parse_stage_map(instance, stages)
+            if body.workflow_stage_key:
+                if body.workflow_stage_key not in stage_map:
+                    raise ValueError(f"Unknown stage key: {body.workflow_stage_key}")
+                ticket.workflow_stage_key = body.workflow_stage_key
+            if body.workflow_stage_status:
+                ticket.workflow_stage_status = body.workflow_stage_status
+            if body.workflow_stage_key or body.workflow_stage_status:
+                key = ticket.workflow_stage_key
+                if key in stage_map:
+                    stage_map[key] = ticket.workflow_stage_status
+                    instance.stages_json = serialize_stage_map(stage_map, stages)
+                instance.current_stage_key = ticket.workflow_stage_key
+            if body.auto_state is True or not ticket.state_locked:
+                reconcile_workflow_state(ticket, instance, stages, persist=False)
+        elif body.auto_state is True and instance and stages:
+            reconcile_workflow_state(ticket, instance, stages, persist=False)
+
+        ticket.updated_at = datetime.now(timezone.utc)
+        if instance:
+            self.session.add(instance)
+        self.session.add(ticket)
+        self.session.commit()
+
+        if body.state is not None:
+            event_bus.publish(
+                self.session,
+                EventType.TICKET_STATE_CHANGED,
+                workspace_id=ticket.workspace_id,
+                ticket_id=ticket.id,
+                payload={"state": ticket.state.value, "manual": True},
+            )
+        return ticket
+
+    def advance_stage(self, ticket: Ticket) -> Ticket:
+        if ticket.state == TicketState.WONT_DO:
+            raise ValueError("Cannot advance a won't-do ticket")
+        instance, stages = self._resolve_stages(ticket)
+        if not instance or not stages:
+            raise ValueError("Ticket has no workflow instance")
+
+        current = ticket.workflow_stage_key
+        if ticket.workflow_stage_status in (StageStatus.RUNNING, StageStatus.AWAITING):
+            raise ValueError("Current stage must complete before advancing")
+
+        if current and ticket.workflow_stage_status not in (
+            StageStatus.DONE,
+            StageStatus.WONT_DO,
+        ):
+            set_stage_status(ticket, instance, stages, current, StageStatus.DONE)
+
+        next_key = StateMachine.next_stage_key(stages, current)
+        if not next_key:
+            reconcile_workflow_state(ticket, instance, stages)
+            self.session.add(ticket)
+            self.session.add(instance)
+            self.session.commit()
+            event_bus.publish(
+                self.session,
+                EventType.STAGE_COMPLETED,
+                workspace_id=ticket.workspace_id,
+                ticket_id=ticket.id,
+                payload={"stage_key": current, "final": True},
+            )
+            return ticket
+
+        ticket.workflow_stage_key = next_key
+        stage_def = next(s for s in stages if s.key == next_key)
+        ticket.next_agent = stage_def.agent_id
+        reconcile_workflow_state(ticket, instance, stages)
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.commit()
+        event_bus.publish(
+            self.session,
+            EventType.STAGE_STARTED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            payload={"stage_key": next_key},
+        )
+        return ticket
+
+    def start_run(self, ticket: Ticket, *, stage_key: str | None = None) -> AgentRun:
+        template = self.get_template_for_ticket(ticket)
+        if not template:
+            raise ValueError("No workflow template for ticket workspace")
+
+        instance, stages = self._resolve_stages(ticket)
+        if not instance or not stages:
+            raise ValueError("Ticket has no workflow instance")
+
+        if ticket.workflow_stage_status in (StageStatus.RUNNING, StageStatus.AWAITING):
+            raise ValueError("Current stage must complete before advancing")
+
+        target_key = stage_key or ticket.workflow_stage_key
+        if not target_key:
+            target_key = StateMachine.next_stage_key(stages, "")
+            if not target_key:
+                raise ValueError("Workflow has no stages")
+
+        stage_def = next((s for s in stages if s.key == target_key), None)
+        if not stage_def:
+            raise ValueError(f"Unknown stage key: {target_key}")
+
+        stage_map = parse_stage_map(instance, stages)
+        if stage_map.get(target_key) == StageStatus.WONT_DO:
+            raise ValueError(f"Stage '{target_key}' is marked won't do")
+
+        if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
+            raise ValueError(f"Cannot start run for ticket in state: {ticket.state.value}")
+
+        if ticket.state == TicketState.BACKLOG:
+            self.start_ticket(ticket)
+            self.session.refresh(ticket)
+            instance = self.get_workflow_instance(ticket.id) or instance
+
+        ticket.workflow_stage_key = target_key
+        set_stage_status(ticket, instance, stages, target_key, StageStatus.RUNNING)
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.commit()
+
+        run = AgentRun(
+            run_code=_run_code(),
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id=stage_def.agent_id,
+            skill_name=stage_def.skill_name,
+            stage_key=target_key,
+            status=RunStatus.RUNNING,
+            started_at=datetime.now(timezone.utc),
+        )
+        self.session.add(run)
+        self.session.commit()
+        self.session.refresh(run)
+
+        event_bus.publish(
+            self.session,
+            EventType.AGENT_RUN_STARTED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            run_id=run.id,
+            payload={"agent_id": stage_def.agent_id, "stage_key": target_key},
+        )
+        return run
+
+    def complete_run(
+        self,
+        run: AgentRun,
+        *,
+        status: RunStatus,
+        stdout: str = "",
+        stderr: str = "",
+        artifacts: list[dict] | None = None,
+    ) -> AgentRun:
+        run.status = status
+        run.stdout = stdout
+        run.stderr = stderr
+        run.finished_at = datetime.now(timezone.utc)
+        self.session.add(run)
+        self.session.commit()
+
+        ticket = self.get_ticket(run.ticket_id)
+        if not ticket:
+            return run
+
+        instance, stages = self._resolve_stages(ticket)
+        if instance and stages:
+            if status == RunStatus.SUCCEEDED:
+                stage_status = StageStatus.DONE
+                if run.stage_key.endswith("approval") or "approval" in run.stage_key:
+                    stage_status = StageStatus.AWAITING
+                    template = self.get_template_for_ticket(ticket)
+                    if template:
+                        stage_name = stage_display_name(template, run.stage_key)
+                        self._create_approval(ticket, run, stage_name)
+                set_stage_status(ticket, instance, stages, run.stage_key, stage_status)
+            else:
+                ticket.blocking_issues = stderr[:2000] or "Agent run failed"
+                set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+            self.session.add(ticket)
+            self.session.add(instance)
+            self.session.commit()
+
+        for item in artifacts or []:
+            artifact = Artifact(
+                ticket_id=ticket.id,
+                run_id=run.id,
+                kind=item.get("kind", "log"),
+                title=item.get("title", ""),
+                content_json=json.dumps(item.get("content", {})),
+            )
+            self.session.add(artifact)
+            self.session.commit()
+            event_bus.publish(
+                self.session,
+                EventType.ARTIFACT_CREATED,
+                workspace_id=ticket.workspace_id,
+                ticket_id=ticket.id,
+                run_id=run.id,
+                artifact_id=artifact.id,
+                payload={"kind": artifact.kind},
+            )
+
+        event_bus.publish(
+            self.session,
+            EventType.AGENT_RUN_COMPLETED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            run_id=run.id,
+            payload={"status": status.value},
+        )
+        return run
+
+    def _create_approval(self, ticket: Ticket, run: AgentRun, stage_name: str) -> None:
+        approval = Approval(
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            title=f"Approve {ticket.title}",
+            level="high" if ticket.priority == 1 else "medium",
+            stage_key=run.stage_key,
+            impact=f"Stage '{stage_name}' requires human sign-off before completion.",
+            status=ApprovalStatus.PENDING,
+        )
+        self.session.add(approval)
+        self.session.commit()
+        event_bus.publish(
+            self.session,
+            EventType.APPROVAL_REQUESTED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            payload={"approval_id": approval.id},
+        )
+
+
+class ApprovalService:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+        self.orchestration = OrchestrationService(session)
+
+    def resolve(self, approval_id: str, *, approved: bool) -> Approval:
+        approval = self.session.get(Approval, approval_id)
+        if not approval:
+            raise ValueError("Approval not found")
+        if approval.status != ApprovalStatus.PENDING:
+            raise ValueError("Approval already resolved")
+
+        approval.status = ApprovalStatus.APPROVED if approved else ApprovalStatus.REJECTED
+        approval.resolved_at = datetime.now(timezone.utc)
+        self.session.add(approval)
+        self.session.commit()
+
+        ticket = self.session.get(Ticket, approval.ticket_id)
+        if ticket:
+            instance, stages = self.orchestration._resolve_stages(ticket)
+            if instance and stages and approval.stage_key:
+                if approved:
+                    set_stage_status(
+                        ticket, instance, stages, approval.stage_key, StageStatus.DONE
+                    )
+                else:
+                    ticket.blocking_issues = "Human rejected approval"
+                    set_stage_status(
+                        ticket, instance, stages, approval.stage_key, StageStatus.BLOCKED
+                    )
+                self.session.add(ticket)
+                self.session.add(instance)
+                self.session.commit()
+
+        event_bus.publish(
+            self.session,
+            EventType.APPROVAL_RESOLVED,
+            workspace_id=approval.workspace_id,
+            ticket_id=approval.ticket_id,
+            payload={"approval_id": approval.id, "approved": approved},
+        )
+        return approval
+
+    def list_pending(self) -> list[Approval]:
+        return list(
+            self.session.exec(
+                select(Approval).where(Approval.status == ApprovalStatus.PENDING)
+            ).all()
+        )

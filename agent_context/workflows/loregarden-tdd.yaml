@@ -1,0 +1,77 @@
+slug: loregarden-tdd
+name: Loregarden TDD
+description: >-
+  Web/backend SDLC workflow adapted from loremaker — planner through gatekeeper
+  with static QA and review stages. UI groups stages into planning/context/
+  implementation/testing/review buckets.
+stages:
+  - key: planning
+    name: Planning
+    agent_id: planner
+    skill_name: plan
+    order: 1
+  - key: context
+    name: Context Gathering
+    agent_id: retriever
+    skill_name: index_repo
+    order: 2
+  - key: specification
+    name: Specification
+    agent_id: spec
+    skill_name: spec
+    order: 3
+  - key: test_design
+    name: Test Design
+    agent_id: test_designer
+    skill_name: test_design
+    order: 4
+  - key: test_break
+    name: Test Break
+    agent_id: test_breaker
+    skill_name: test_break
+    order: 5
+  - key: implementation
+    name: Implementation
+    agent_id: backend_implementer
+    skill_name: apply_patch
+    order: 6
+  - key: testing
+    name: Testing
+    agent_id: static_qa
+    skill_name: run_tests
+    order: 7
+  - key: review
+    name: Review Prep
+    agent_id: gatekeeper
+    skill_name: ac_gate
+    order: 8
+  - key: approval
+    name: Awaiting Approval
+    agent_id: ""
+    skill_name: ""
+    optional: true
+    order: 9
+  - key: done
+    name: Done
+    agent_id: ""
+    skill_name: ""
+    order: 10
+transitions:
+  - from: planning
+    to: context
+  - from: context
+    to: specification
+  - from: specification
+    to: test_design
+  - from: test_design
+    to: test_break
+  - from: test_break
+    to: implementation
+  - from: implementation
+    to: testing
+  - from: testing
+    to: review
+  - from: review
+    to: approval
+  - from: approval
+    to: done

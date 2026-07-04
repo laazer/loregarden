@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg0:#08090b; --bg1:#0d0e11; --bg2:#131519; --bg3:#181b20; --bg4:#20242b;
+  --bd:#20242b; --bd2:#2b313a;
+  --tx:#e7e9ec; --txm:#969ca6; --txl:#5c626c;
+  --ac:#7d6cff; --ac2:#9d90ff;
+  --blue:#4493f8; --bll:#82b7fb;
+  --grn:#3fb950; --grl:#7ee787;
+  --red:#f0603f; --rdl:#ff9d88;
+  --amb:#d6a02b; --aml:#e8c05a;
+  --ui:'IBM Plex Sans',system-ui,sans-serif;
+  --dp:'Space Grotesk',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg0);color:var(--tx);font-family:var(--ui);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+::selection{background:rgba(125,108,255,.32)}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-thumb{background:#23272f;border-radius:8px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:#31363f;background-clip:padding-box}
+::-webkit-scrollbar-corner{background:transparent}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes ring{0%{box-shadow:0 0 0 0 rgba(68,147,248,.45)}70%{box-shadow:0 0 0 5px rgba(68,147,248,0)}100%{box-shadow:0 0 0 0 rgba(68,147,248,0)}}
+@keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+@keyframes slidein{from{transform:translateX(100%)}to{transform:translateX(0)}}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+</style>
+</helmet>
+
+<div style="height:100vh;display:flex;flex-direction:column;background:var(--bg0);overflow:hidden">
+
+  <!-- ══════════ TOP BAR ══════════ -->
+  <header style="height:53px;flex:none;display:flex;align-items:center;gap:16px;padding:0 16px;border-bottom:1px solid var(--bd);background:var(--bg1)">
+    <div style="display:flex;align-items:center;gap:10px;width:300px;flex:none">
+      <div style="width:26px;height:26px;flex:none;border-radius:7px;background:linear-gradient(135deg,var(--ac),#5a4bd6);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(125,108,255,.35)">
+        <div style="width:9px;height:9px;background:#fff;transform:rotate(45deg);border-radius:1px"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;line-height:1.05">
+        <span style="font-family:var(--dp);font-weight:600;font-size:14px;letter-spacing:.02em;color:var(--tx)">orchestra</span>
+        <span style="font-size:10px;color:var(--txl);letter-spacing:.06em;text-transform:uppercase">Agent SDLC</span>
+      </div>
+    </div>
+
+    <div style="flex:1;max-width:520px;display:flex;align-items:center;gap:9px;height:34px;padding:0 12px;background:var(--bg2);border:1px solid var(--bd);border-radius:9px;color:var(--txl)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      <span style="flex:1;font-size:13px;color:var(--txm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Search tickets, agents, runs…</span>
+      <span style="font-family:var(--mono);font-size:10.5px;padding:2px 6px;background:var(--bg3);border:1px solid var(--bd2);border-radius:5px;color:var(--txl)">⌘K</span>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <button onClick="{{ onToggleInbox }}" style="display:flex;align-items:center;gap:9px;height:34px;padding:0 13px 0 11px;background:var(--bg2);border:1px solid var(--bd2);border-radius:9px;color:var(--tx);font-family:var(--ui);font-size:13px;font-weight:500;cursor:pointer" style-hover="background:var(--bg3);border-color:var(--bd2)">
+      <span style="position:relative;display:flex">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--rdl)" stroke-width="1.9"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+      </span>
+      <span>Approvals</span>
+      <span style="min-width:19px;height:19px;padding:0 5px;display:flex;align-items:center;justify-content:center;background:var(--red);color:#fff;font-size:11px;font-weight:600;border-radius:10px;font-family:var(--mono)">{{ approvalsCount }}</span>
+    </button>
+
+    <button style="width:34px;height:34px;flex:none;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--bd);border-radius:9px;color:var(--txm);cursor:pointer" style-hover="background:var(--bg2)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+    </button>
+    <div style="width:30px;height:30px;flex:none;border-radius:50%;background:linear-gradient(135deg,#3fb0a8,#2a7d8c);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#04110f;font-family:var(--dp)">RK</div>
+  </header>
+
+  <!-- ══════════ MAIN 3-PANE ══════════ -->
+  <div style="flex:1;display:flex;min-height:0">
+
+    <!-- ───── LEFT SIDEBAR (split: Workspaces / Tickets) ───── -->
+    <aside data-screen-label="Left sidebar" style="width:322px;flex:none;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--bd);background:var(--bg1)">
+
+      <!-- TOP HALF: WORKSPACES -->
+      <div data-screen-label="Workspaces" style="flex:0 0 40%;min-height:0;display:flex;flex-direction:column;border-bottom:1px solid var(--bd)">
+        <div style="padding:14px 16px 8px;display:flex;align-items:center;gap:8px">
+          <span style="font-family:var(--dp);font-weight:600;font-size:14px">Workspaces</span>
+          <span style="font-family:var(--mono);font-size:11px;color:var(--txl);background:var(--bg3);padding:1px 6px;border-radius:6px">{{ workspaceCount }}</span>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:2px 10px 12px;display:flex;flex-direction:column;gap:3px">
+          <sc-for list="{{ workspaces }}" as="w" hint-placeholder-count="5">
+            <button onClick="{{ w.onClick }}" style="text-align:left;font-family:var(--ui);cursor:pointer;display:flex;align-items:center;gap:11px;padding:8px 11px;border-radius:9px;border:1px solid {{ w.bd }};background:{{ w.bg }}">
+              <span style="width:26px;height:26px;flex:none;border-radius:7px;display:flex;align-items:center;justify-content:center;background:{{ w.iconBg }};color:{{ w.iconFg }};font-family:var(--dp);font-weight:600;font-size:12px">
+                <sc-if value="{{ w.isAll }}" hint-placeholder-val="{{ true }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg></sc-if>
+                <sc-if value="{{ w.isRepo }}" hint-placeholder-val="{{ false }}">{{ w.letter }}</sc-if>
+              </span>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                <span style="font-size:13px;font-weight:500;color:var(--tx)">{{ w.name }}</span>
+                <span style="font-size:10.5px;color:var(--txl)">{{ w.meta }}</span>
+              </div>
+              <sc-if value="{{ w.hasBlocked }}" hint-placeholder-val="{{ false }}"><span style="width:6px;height:6px;flex:none;border-radius:50%;background:var(--red)"></span></sc-if>
+              <span style="font-family:var(--mono);font-size:11px;color:var(--txm);background:var(--bg3);padding:1px 6px;border-radius:6px">{{ w.count }}</span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- BOTTOM HALF: TICKETS -->
+      <div style="flex:1;min-height:0;display:flex;flex-direction:column">
+      <div style="padding:14px 16px 10px;display:flex;flex-direction:column;gap:11px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-family:var(--dp);font-weight:600;font-size:14px">Tickets</span>
+            <span style="font-family:var(--mono);font-size:11px;color:var(--txl);background:var(--bg3);padding:1px 6px;border-radius:6px">{{ ticketCount }}</span>
+          </div>
+          <span style="font-size:11px;color:var(--txl)">sorted · priority</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px">
+          <sc-for list="{{ filters }}" as="f" hint-placeholder-count="5">
+            <button onClick="{{ f.onClick }}" style="font-family:var(--ui);font-size:11.5px;font-weight:500;padding:4px 9px;border-radius:7px;cursor:pointer;border:1px solid {{ f.bd }};background:{{ f.bg }};color:{{ f.fg }}">{{ f.label }}<span style="opacity:.6;margin-left:5px;font-family:var(--mono);font-size:10px">{{ f.count }}</span></button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="flex:1;overflow-y:auto;padding:2px 10px 14px;display:flex;flex-direction:column;gap:4px">
+        <sc-for list="{{ tickets }}" as="t" hint-placeholder-count="7">
+          <button onClick="{{ t.onSelect }}" style="text-align:left;font-family:var(--ui);cursor:pointer;display:flex;flex-direction:column;gap:8px;padding:11px 12px 11px 11px;border-radius:10px;border:1px solid {{ t.bd }};border-left:2px solid {{ t.bar }};background:{{ t.bg }}">
+            <div style="display:flex;align-items:flex-start;gap:9px">
+              <div style="display:flex;gap:2px;align-items:flex-end;height:13px;padding-top:2px;flex:none">
+                <span style="width:3px;height:6px;border-radius:1px;background:{{ t.pb1 }}"></span>
+                <span style="width:3px;height:9px;border-radius:1px;background:{{ t.pb2 }}"></span>
+                <span style="width:3px;height:12px;border-radius:1px;background:{{ t.pb3 }}"></span>
+              </div>
+              <span style="flex:1;font-size:13px;font-weight:500;line-height:1.35;color:var(--tx)">{{ t.title }}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding-left:20px">
+              <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:500;color:{{ t.stateColor }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ t.stateColor }}"></span>{{ t.stateLabel }}</span>
+              <span style="color:var(--bd2)">·</span>
+              <span style="font-family:var(--mono);font-size:10.5px;color:var(--txl)">{{ t.repo }}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;padding-left:20px;font-size:10.5px;color:var(--txm)">
+              <span style="width:5px;height:5px;border-radius:50%;background:{{ t.wfColor }}"></span>
+              <span style="color:{{ t.wfColor }};font-weight:500">{{ t.wfStage }}</span>
+              <span style="color:var(--txl)">{{ t.wfStatus }}</span>
+            </div>
+          </button>
+        </sc-for>
+      </div>
+      </div>
+    </aside>
+
+    <!-- ───── CENTER: DUAL-STATE WORKFLOW ───── -->
+    <main data-screen-label="Workflow pane" style="width:428px;flex:none;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--bd);background:var(--bg0)">
+      <div style="flex:1;overflow-y:auto;animation:fade .25s ease">
+        <!-- header -->
+        <div style="padding:20px 22px 18px;border-bottom:1px solid var(--bd)">
+          <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:14px">
+            <div style="display:flex;gap:2.5px;align-items:flex-end;height:17px;margin-top:4px;flex:none">
+              <span style="width:3.5px;height:8px;border-radius:1px;background:{{ sel.pb1 }}"></span>
+              <span style="width:3.5px;height:12px;border-radius:1px;background:{{ sel.pb2 }}"></span>
+              <span style="width:3.5px;height:16px;border-radius:1px;background:{{ sel.pb3 }}"></span>
+            </div>
+            <h1 style="margin:0;font-family:var(--dp);font-weight:600;font-size:19px;line-height:1.3;letter-spacing:-.01em;color:var(--tx)">{{ sel.title }}</h1>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+            <span style="display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--txm);padding:3px 9px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--txl)" stroke-width="2"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"></path></svg>{{ sel.repo }}
+            </span>
+            <span style="display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--txm);padding:3px 9px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--txl)" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M6 9v6"></path><circle cx="18" cy="6" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>{{ sel.branch }}
+            </span>
+            <span style="font-size:11px;color:var(--txl)">{{ sel.prioLabel }}</span>
+          </div>
+
+          <!-- DUAL STATE -->
+          <div style="display:flex;gap:10px">
+            <div style="flex:1;padding:11px 13px;border-radius:11px;background:var(--bg2);border:1px solid var(--bd)">
+              <div style="font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--txl);margin-bottom:7px;font-weight:600">Ticket state · WHAT</div>
+              <div style="display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600;color:{{ sel.stateColor }}"><span style="width:9px;height:9px;border-radius:50%;background:{{ sel.stateColor }};box-shadow:0 0 9px {{ sel.stateColor }}"></span>{{ sel.stateLabel }}</div>
+            </div>
+            <div style="flex:1;padding:11px 13px;border-radius:11px;background:var(--bg2);border:1px solid var(--bd)">
+              <div style="font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--txl);margin-bottom:7px;font-weight:600">Workflow · HOW</div>
+              <div style="display:flex;flex-direction:column;gap:1px">
+                <div style="display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600;color:{{ sel.wfColor }}"><span style="width:9px;height:9px;border-radius:50%;background:{{ sel.wfColor }}"></span>{{ sel.wfStage }}</div>
+                <span style="font-size:11px;color:var(--txm);padding-left:16px">{{ sel.wfStatus }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- current action banner -->
+        <sc-if value="{{ sel.hasAction }}" hint-placeholder-val="{{ true }}">
+          <div style="margin:16px 22px 4px;padding:12px 14px;border-radius:11px;background:{{ sel.actionBg }};border:1px solid {{ sel.actionBd }};display:flex;gap:11px;align-items:flex-start">
+            <span style="width:8px;height:8px;border-radius:50%;flex:none;margin-top:5px;background:{{ sel.actionColor }};animation:{{ sel.actionAnim }}"></span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:600;color:{{ sel.actionColor }};margin-bottom:3px">{{ sel.actionHead }}</div>
+              <div style="font-size:12px;color:var(--txm);line-height:1.5">{{ sel.actionText }}</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- workflow stepper -->
+        <div style="padding:20px 22px 8px">
+          <div style="font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--txl);font-weight:600;margin-bottom:16px">Workflow lifecycle</div>
+          <sc-for list="{{ stages }}" as="s" hint-placeholder-count="7">
+            <div style="display:flex;gap:13px;position:relative">
+              <div style="position:relative;width:14px;flex:none;display:flex;justify-content:center">
+                <div style="position:absolute;top:3px;bottom:-6px;width:2px;background:{{ s.lineColor }}"></div>
+                <div style="position:relative;z-index:1;width:14px;height:14px;border-radius:50%;background:{{ s.dotFill }};border:2px solid {{ s.dot }};box-shadow:0 0 0 3px var(--bg0);animation:{{ s.anim }};display:flex;align-items:center;justify-content:center">
+                  <sc-if value="{{ s.isDone }}" hint-placeholder-val="{{ false }}"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#0a0b0d" stroke-width="4"><path d="M20 6 9 17l-5-5"></path></svg></sc-if>
+                </div>
+              </div>
+              <div style="flex:1;min-width:0;padding-bottom:18px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+                  <span style="font-size:13.5px;font-weight:{{ s.weight }};color:{{ s.nameColor }}">{{ s.name }}</span>
+                  <sc-if value="{{ s.optional }}" hint-placeholder-val="{{ false }}"><span style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--txl);border:1px solid var(--bd2);border-radius:5px;padding:1px 5px">optional branch</span></sc-if>
+                  <span style="margin-left:auto;font-size:10px;font-weight:600;letter-spacing:.02em;padding:2px 8px;border-radius:6px;background:{{ s.pillBg }};color:{{ s.pillFg }};animation:{{ s.pillAnim }}">{{ s.statusLabel }}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+                  <sc-if value="{{ s.hasAgent }}" hint-placeholder-val="{{ true }}">
+                    <span style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;color:var(--txm)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--ac2)" stroke-width="2"><rect x="4" y="8" width="16" height="12" rx="2"></rect><path d="M12 4v4M9 2h6"></path><circle cx="9" cy="14" r="1" fill="var(--ac2)"></circle><circle cx="15" cy="14" r="1" fill="var(--ac2)"></circle></svg>{{ s.agent }}</span>
+                  </sc-if>
+                  <sc-if value="{{ s.hasSkill }}" hint-placeholder-val="{{ false }}">
+                    <span style="font-family:var(--mono);font-size:10px;color:var(--bll);background:rgba(68,147,248,.1);border:1px solid rgba(68,147,248,.2);border-radius:5px;padding:1px 6px">{{ s.skill }}</span>
+                  </sc-if>
+                </div>
+                <sc-if value="{{ s.hasNote }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin-top:7px;font-size:11.5px;line-height:1.5;color:{{ s.noteColor }};background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:8px 10px">{{ s.note }}</div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- run controls -->
+      <div style="flex:none;border-top:1px solid var(--bd);background:var(--bg1);padding:11px 16px;display:flex;gap:8px;align-items:center">
+        <button onClick="{{ sel.onAdvance }}" style="display:flex;align-items:center;gap:7px;font-family:var(--ui);font-size:12.5px;font-weight:600;color:#fff;background:var(--ac);border:none;border-radius:8px;padding:8px 14px;cursor:pointer" style-hover="background:var(--ac2)">Advance stage<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m9 18 6-6-6-6"></path></svg></button>
+        <button style="display:flex;align-items:center;gap:6px;font-family:var(--ui);font-size:12.5px;font-weight:500;color:var(--txm);background:var(--bg2);border:1px solid var(--bd2);border-radius:8px;padding:8px 12px;cursor:pointer" style-hover="background:var(--bg3);color:var(--tx)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>Pause</button>
+        <button style="display:flex;align-items:center;gap:6px;font-family:var(--ui);font-size:12.5px;font-weight:500;color:var(--txm);background:var(--bg2);border:1px solid var(--bd2);border-radius:8px;padding:8px 12px;cursor:pointer" style-hover="background:var(--bg3);color:var(--tx)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path></svg>Re-run</button>
+        <div style="flex:1"></div>
+        <span style="font-family:var(--mono);font-size:10.5px;color:var(--txl)">{{ sel.runId }}</span>
+      </div>
+    </main>
+
+    <!-- ───── RIGHT: ARTIFACT VIEWER ───── -->
+    <section data-screen-label="Artifacts pane" style="flex:1;display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--bg0)">
+      <!-- tabs -->
+      <div style="flex:none;height:47px;display:flex;align-items:center;gap:2px;padding:0 14px;border-bottom:1px solid var(--bd);background:var(--bg1)">
+        <div style="display:flex;align-items:center;gap:7px;margin-right:14px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--grl)" stroke-width="2"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+          <span style="font-family:var(--dp);font-weight:600;font-size:12.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--txm)">Artifacts</span>
+        </div>
+        <sc-for list="{{ tabs }}" as="tb" hint-placeholder-count="4">
+          <button onClick="{{ tb.onClick }}" style="position:relative;font-family:var(--ui);font-size:12.5px;font-weight:{{ tb.weight }};color:{{ tb.fg }};background:{{ tb.bg }};border:1px solid {{ tb.bd }};border-radius:8px;padding:6px 13px;cursor:pointer;display:flex;align-items:center;gap:7px" style-hover="color:var(--tx)">{{ tb.label }}<sc-if value="{{ tb.hasBadge }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--mono);font-size:9.5px;padding:0 5px;border-radius:8px;background:{{ tb.badgeBg }};color:{{ tb.badgeFg }}">{{ tb.badge }}</span></sc-if></button>
+        </sc-for>
+        <div style="flex:1"></div>
+        <span style="font-family:var(--mono);font-size:10.5px;color:var(--txl);letter-spacing:.02em">truth layer · execution output only</span>
+      </div>
+
+      <!-- content -->
+      <div style="flex:1;overflow:auto;min-height:0;animation:fade .2s ease">
+
+        <!-- DIFF -->
+        <sc-if value="{{ showDiff }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;align-items:center;gap:11px;padding:11px 18px;border-bottom:1px solid var(--bd);background:var(--bg1);position:sticky;top:0;z-index:2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--txm)" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>
+            <span style="font-family:var(--mono);font-size:12px;color:var(--tx)">{{ diffFile }}</span>
+            <span style="font-family:var(--mono);font-size:11px;color:var(--grl)">{{ diffAdd }}</span>
+            <span style="font-family:var(--mono);font-size:11px;color:var(--rdl)">{{ diffDel }}</span>
+            <div style="flex:1"></div>
+            <span style="font-family:var(--mono);font-size:10.5px;color:var(--txl)">{{ diffFiles }}</span>
+          </div>
+          <div style="font-family:var(--mono);font-size:12px;padding:6px 0 40px">
+            <sc-for list="{{ diffLines }}" as="d" hint-placeholder-count="12">
+              <div style="display:flex;min-height:20px;background:{{ d.bg }};border-left:2px solid {{ d.edge }}">
+                <span style="width:44px;flex:none;text-align:right;padding-right:12px;color:var(--txl);opacity:.65;user-select:none;line-height:20px">{{ d.ln }}</span>
+                <span style="width:15px;flex:none;text-align:center;color:{{ d.fg }};line-height:20px">{{ d.sign }}</span>
+                <span style="flex:1;white-space:pre;color:{{ d.fg }};line-height:20px;padding-right:16px">{{ d.text }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <!-- LOGS -->
+        <sc-if value="{{ showLogs }}" hint-placeholder-val="{{ false }}">
+          <div style="font-family:var(--mono);font-size:12px;padding:12px 16px 40px;line-height:1.75">
+            <sc-for list="{{ logLines }}" as="l" hint-placeholder-count="8">
+              <div style="display:flex;gap:12px;align-items:baseline">
+                <span style="color:var(--txl);flex:none;opacity:.7">{{ l.time }}</span>
+                <span style="flex:none;width:44px;font-size:10px;font-weight:600;text-align:center;padding:1px 0;border-radius:4px;background:{{ l.tagBg }};color:{{ l.tagFg }}">{{ l.tag }}</span>
+                <span style="flex:1;color:var(--txm);white-space:pre-wrap;word-break:break-word">{{ l.text }}</span>
+              </div>
+            </sc-for>
+            <sc-if value="{{ logLive }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;gap:12px;align-items:baseline;color:var(--bll)"><span style="color:var(--txl);opacity:.7">{{ logLiveTime }}</span><span style="width:44px;text-align:center;font-size:10px;font-weight:600;background:rgba(68,147,248,.14);color:var(--bll);border-radius:4px;padding:1px 0;animation:pulse 1.4s infinite">RUN</span><span style="flex:1">{{ logLiveText }}<span style="animation:pulse 1s steps(2) infinite">▊</span></span></div>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <!-- TESTS -->
+        <sc-if value="{{ showTests }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:14px 16px 40px">
+            <div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px;margin-bottom:14px">
+              <span style="font-family:var(--dp);font-size:13px;font-weight:600;color:{{ testSumColor }}">{{ testSummary }}</span>
+              <div style="flex:1"></div>
+              <span style="font-family:var(--mono);font-size:11px;color:var(--txl)">{{ testCmd }}</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <sc-for list="{{ tests }}" as="tt" hint-placeholder-count="5">
+                <div style="display:flex;flex-direction:column;gap:5px;padding:9px 12px;border-radius:9px;background:{{ tt.bg }};border:1px solid {{ tt.bd }}">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <span style="flex:none;color:{{ tt.color }}">{{ tt.icon }}</span>
+                    <span style="flex:1;font-family:var(--mono);font-size:12px;color:var(--tx)">{{ tt.name }}</span>
+                    <span style="font-family:var(--mono);font-size:11px;color:var(--txl)">{{ tt.dur }}</span>
+                  </div>
+                  <sc-if value="{{ tt.hasMsg }}" hint-placeholder-val="{{ false }}"><div style="font-family:var(--mono);font-size:11px;color:var(--rdl);padding-left:24px;line-height:1.5">{{ tt.msg }}</div></sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- CONTEXT -->
+        <sc-if value="{{ showContext }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:16px 18px 40px;display:flex;flex-direction:column;gap:16px">
+            <sc-for list="{{ contextSections }}" as="cs" hint-placeholder-count="3">
+              <div>
+                <div style="font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--txl);font-weight:600;margin-bottom:9px">{{ cs.title }}</div>
+                <div style="border:1px solid var(--bd);border-radius:10px;overflow:hidden">
+                  <sc-for list="{{ cs.rows }}" as="r" hint-placeholder-count="3">
+                    <div style="display:flex;gap:12px;padding:9px 13px;border-bottom:1px solid var(--bd);background:{{ r.bg }}">
+                      <span style="width:130px;flex:none;font-size:12px;color:var(--txm)">{{ r.k }}</span>
+                      <span style="flex:1;font-family:var(--mono);font-size:12px;color:var(--tx);word-break:break-word">{{ r.v }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <!-- EMPTY -->
+        <sc-if value="{{ showEmpty }}" hint-placeholder-val="{{ false }}">
+          <div style="height:100%;min-height:340px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--txl);padding:40px">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--bd2)" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6M9 15h6M9 11h2"></path></svg>
+            <div style="font-family:var(--dp);font-size:14px;font-weight:500;color:var(--txm)">No artifacts yet</div>
+            <div style="font-size:12.5px;text-align:center;max-width:280px;line-height:1.6">{{ emptyText }}</div>
+          </div>
+        </sc-if>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ══════════ APPROVAL INBOX SLIDE-OVER ══════════ -->
+<sc-if value="{{ inbox }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ onCloseInbox }}" style="position:fixed;inset:0;background:rgba(5,6,8,.6);backdrop-filter:blur(2px);z-index:40;animation:fadein .18s ease"></div>
+  <aside data-screen-label="Approval inbox" style="position:fixed;top:0;right:0;bottom:0;width:452px;max-width:94vw;z-index:41;background:var(--bg1);border-left:1px solid var(--bd2);box-shadow:-24px 0 60px rgba(0,0,0,.5);display:flex;flex-direction:column;animation:slidein .22s cubic-bezier(.4,0,.2,1)">
+    <div style="flex:none;padding:18px 20px 15px;border-bottom:1px solid var(--bd)">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--rdl)" stroke-width="1.9"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+        <span style="font-family:var(--dp);font-weight:600;font-size:15px">Global Approval Inbox</span>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--txl);background:var(--bg3);padding:1px 7px;border-radius:6px">{{ approvalsCount }}</span>
+        <div style="flex:1"></div>
+        <button onClick="{{ onCloseInbox }}" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--txm);cursor:pointer" style-hover="background:var(--bg3);color:var(--tx)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+      </div>
+      <p style="margin:0;font-size:12px;color:var(--txm);line-height:1.5">Every pending human decision across all repositories, ordered by urgency.</p>
+    </div>
+
+    <div style="flex:1;overflow-y:auto;padding:14px 16px 24px;display:flex;flex-direction:column;gap:20px">
+      <sc-for list="{{ approvalGroups }}" as="g" hint-placeholder-count="3">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <span style="width:7px;height:7px;border-radius:50%;background:{{ g.color }}"></span>
+            <span style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;color:{{ g.color }}">{{ g.label }}</span>
+            <span style="font-family:var(--mono);font-size:10.5px;color:var(--txl)">{{ g.count }}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <sc-for list="{{ g.items }}" as="a" hint-placeholder-count="2">
+              <div style="border:1px solid {{ a.cardBd }};border-radius:12px;background:var(--bg2);overflow:hidden">
+                <div style="padding:12px 14px">
+                  <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px">
+                    <span style="flex:1;font-size:13px;font-weight:600;line-height:1.35;color:var(--tx)">{{ a.title }}</span>
+                    <span style="flex:none;font-size:9.5px;font-weight:600;letter-spacing:.03em;padding:2px 7px;border-radius:6px;background:{{ a.badgeBg }};color:{{ a.badgeFg }}">{{ a.level }}</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:7px;margin-bottom:9px;font-size:11px">
+                    <span style="font-family:var(--mono);color:var(--txl)">{{ a.repo }}</span>
+                    <span style="color:var(--bd2)">·</span>
+                    <span style="display:inline-flex;align-items:center;gap:5px;color:{{ a.stageColor }}"><span style="width:5px;height:5px;border-radius:50%;background:{{ a.stageColor }}"></span>{{ a.stage }}</span>
+                    <sc-if value="{{ a.hasDelta }}" hint-placeholder-val="{{ false }}"><span style="color:var(--bd2)">·</span><span style="font-family:var(--mono);color:var(--txm)">{{ a.delta }}</span></sc-if>
+                  </div>
+                  <p style="margin:0;font-size:12px;color:var(--txm);line-height:1.55">{{ a.impact }}</p>
+                </div>
+                <div style="display:flex;gap:1px;border-top:1px solid var(--bd);background:var(--bd)">
+                  <button onClick="{{ a.onApprove }}" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;font-family:var(--ui);font-size:12px;font-weight:600;color:var(--grl);background:var(--bg2);border:none;padding:10px;cursor:pointer" style-hover="background:rgba(63,185,80,.12)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"></path></svg>{{ a.approveLabel }}</button>
+                  <button onClick="{{ a.onReject }}" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;font-family:var(--ui);font-size:12px;font-weight:600;color:var(--rdl);background:var(--bg2);border:none;padding:10px;cursor:pointer" style-hover="background:rgba(240,96,63,.12)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6 6 18M6 6l12 12"></path></svg>Reject</button>
+                  <button onClick="{{ a.onInspect }}" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;font-family:var(--ui);font-size:12px;font-weight:600;color:var(--txm);background:var(--bg2);border:none;padding:10px;cursor:pointer" style-hover="background:var(--bg3);color:var(--tx)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>Inspect diff</button>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      <sc-if value="{{ inboxEmpty }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:60px 20px;text-align:center;color:var(--txl);display:flex;flex-direction:column;align-items:center;gap:12px">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--grn)" stroke-width="1.8"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><path d="m9 11 3 3L22 4"></path></svg>
+          <div style="font-family:var(--dp);font-size:14px;color:var(--txm)">Inbox zero — nothing needs your attention</div>
+        </div>
+      </sc-if>
+    </div>
+  </aside>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  STATE = {
+    backlog:{label:'Backlog',color:'var(--txm)'},
+    in_progress:{label:'In Progress',color:'var(--blue)'},
+    blocked:{label:'Blocked',color:'var(--red)'},
+    done:{label:'Done',color:'var(--grn)'},
+  };
+  STATUS = {
+    pending:{label:'Idle',dot:'#3a3f47',fill:'var(--bg0)',pillBg:'rgba(255,255,255,.04)',pillFg:'var(--txl)',line:'var(--bd)',name:'var(--txm)'},
+    running:{label:'Running',dot:'var(--blue)',fill:'var(--blue)',pillBg:'rgba(68,147,248,.15)',pillFg:'var(--bll)',line:'var(--blue)',name:'var(--tx)'},
+    blocked:{label:'Blocked',dot:'var(--red)',fill:'var(--red)',pillBg:'rgba(240,96,63,.15)',pillFg:'var(--rdl)',line:'var(--red)',name:'var(--tx)'},
+    awaiting:{label:'Awaiting',dot:'var(--amb)',fill:'var(--amb)',pillBg:'rgba(214,160,43,.16)',pillFg:'var(--aml)',line:'var(--amb)',name:'var(--tx)'},
+    done:{label:'Done',dot:'var(--grn)',fill:'var(--grn)',pillBg:'rgba(63,185,80,.14)',pillFg:'var(--grl)',line:'var(--grn)',name:'var(--txm)'},
+  };
+  PRIO = {
+    1:{label:'P1 · Urgent',bars:['var(--red)','var(--red)','var(--red)']},
+    2:{label:'P2 · High',bars:['var(--amb)','var(--amb)','var(--bd2)']},
+    3:{label:'P3 · Normal',bars:['var(--txm)','var(--bd2)','var(--bd2)']},
+  };
+
+  state = {
+    sel:'t1', tab:'diff', filter:'all', repo:'all', inbox:false,
+    resolved:{},
+    tickets: this.seed(),
+  };
+
+  seed(){
+    const S=(name,status,agent,skill,note)=>({name,status,agent:agent||'',skill:skill||'',note:note||''});
+    return [
+      {id:'t1',title:'Fix renderer pipeline stalls under sustained load',state:'in_progress',repo:'game-client',prio:1,branch:'agent/renderer-pipeline-2f9',run:'run_8c41f2',
+        flow:[S('Planning','done','Planner · claude','plan'),S('Context Gathering','done','Retriever · embed','index_repo'),S('Implementation','running','Coder · claude','apply_patch','Patching src/render/RenderGraph.cpp — chunk 3 of 4, 61 hunks staged.'),S('Testing','pending','Tester · sandbox','run_tests'),S('Review Prep','pending','Reviewer · claude',''),S('Awaiting Approval','pending','',''),S('Done','pending','','')],
+        art:{
+          diff:{file:'src/render/RenderGraph.cpp',add:'+412',del:'−180',files:'4 files changed',lines:[
+            ['h','','@@ -142,8 +142,12 @@ void RenderGraph::flush(FrameCtx& ctx)'],
+            ['c','142','   if (passes_.empty()) return;'],
+            ['d','143','  for (auto& p : passes_) {'],
+            ['d','144','    p.execute(ctx);'],
+            ['d','145','  }'],
+            ['a','143','  std::sort(passes_.begin(), passes_.end(), byPriority);'],
+            ['a','144','  for (auto& p : passes_) {'],
+            ['a','145','    if (p.stalled()) { p.reset(ctx); ++stallCount_; continue; }'],
+            ['a','146','    p.execute(ctx);'],
+            ['a','147','  }'],
+            ['c','148','   ctx.barrier();'],
+            ['c','149','   metrics_.record(ctx.frameId, stallCount_);'],
+          ]},
+          logs:[['12:04:01','INFO','loaded workflow "feature.default" · 8 stages'],['12:04:02','OK','planning complete — 3 subtasks identified'],['12:04:05','OK','context gathered — 14 files, 2 symbols indexed'],['12:04:06','RUN','Coder·claude invoked skill apply_patch'],['12:04:11','RUN','editing src/render/RenderGraph.cpp'],['12:04:18','WARN','large hunk (412 lines) — chunking into 4 passes'],['12:04:31','OK','pass 3/4 applied · 61 hunks staged']],
+          live:'applying pass 4/4 · rebuilding RenderPass index',
+          tests:{summary:'Queued — waiting on Implementation',color:'var(--txm)',cmd:'ctest -R render',rows:[['render_graph.test','skip','—'],['pipeline_bench','skip','—']]},
+        }},
+      {id:'t2',title:'CI instability on main — flaky e2e blocks all merges',state:'blocked',repo:'website',prio:1,branch:'agent/ci-flake-hunt-9d1',run:'run_5b90aa',
+        flow:[S('Planning','done','Planner · claude','plan'),S('Context Gathering','done','Retriever · embed','index_repo'),S('Implementation','done','Coder · claude','apply_patch'),S('Testing','blocked','Tester · sandbox','run_tests','checkout.e2e flaky — 3/50 runs fail. Cannot certify green; human must decide flaky vs. real regression.'),S('Debugging','running','Debugger · claude','bisect','Bisecting flaky spec — run 22 of 50.'),S('Review Prep','pending','',''),S('Done','pending','','')],
+        art:{
+          logs:[['09:12:44','INFO','running suite: e2e (50× stress)'],['09:13:02','OK','auth.spec.ts passed'],['09:13:20','OK','cart.spec.ts passed'],['09:13:51','ERR','checkout.e2e.ts FAILED — attempt 1/3'],['09:14:29','ERR','checkout.e2e.ts FAILED — attempt 2/3'],['09:15:06','ERR','checkout.e2e.ts FAILED — attempt 3/3'],['09:15:07','WARN','flake rate 6% over 50 runs — blocking merge queue']],
+          live:'bisecting — commit 22/50 · isolating race in <ConfirmOrder/>',
+          tests:{summary:'47 passed · 1 failed · flaky',color:'var(--rdl)',cmd:'playwright test --repeat 50',rows:[['auth.spec.ts','pass','214ms'],['cart.spec.ts','pass','188ms'],['checkout.e2e.ts','fail','20 003ms','Timed out waiting for selector #confirm-order (attempt 3/3) — race on cart hydration'],['profile.spec.ts','pass','142ms'],['search.spec.ts','pass','176ms']]},
+        }},
+      {id:'t3',title:'Extract shader compilation into a background worker',state:'backlog',repo:'game-client',prio:2,branch:'—',run:'—',
+        flow:[S('Planning','pending','Planner · claude','plan'),S('Context Gathering','pending','Retriever · embed',''),S('Implementation','pending','Coder · claude','apply_patch'),S('Testing','pending','Tester · sandbox','run_tests'),S('Review Prep','pending','',''),S('Awaiting Approval','pending','',''),S('Done','pending','','')],
+        art:null},
+      {id:'t4',title:'Refactor auth token refresh & rotation flow',state:'in_progress',repo:'startup',prio:2,branch:'agent/token-rotation-4a2',run:'run_71dd0e',
+        flow:[S('Planning','done','Planner · claude','plan'),S('Context Gathering','done','Retriever · embed','index_repo'),S('Implementation','done','Coder · claude','apply_patch'),S('Testing','done','Tester · sandbox','run_tests','42 passed'),S('Review Prep','done','Reviewer · claude','summarize'),S('Awaiting Approval','awaiting','—','','Human sign-off required — change touches session security surface.'),S('Done','pending','','')],
+        art:{
+          diff:{file:'src/auth/SessionManager.ts',add:'+214',del:'−96',files:'3 files changed',lines:[
+            ['h','','@@ -58,10 +58,14 @@ export class SessionManager {'],
+            ['c','58','   async refresh(token: string) {'],
+            ['d','59','    const next = await this.api.exchange(token);'],
+            ['d','60','    this.store.set(next);'],
+            ['a','59','    const { token: next, rotateAfter } = await this.api.exchange(token);'],
+            ['a','60','    if (this.isReused(token)) { this.revokeFamily(token); throw new ReuseError(); }'],
+            ['a','61','    this.store.set(next, { rotateAfter });'],
+            ['a','62','    this.scheduleRotation(rotateAfter);'],
+            ['c','63','    return next;'],
+            ['c','64','   }'],
+          ]},
+          logs:[['14:31:10','INFO','loaded workflow "feature.default"'],['14:31:44','OK','implementation complete — 3 files'],['14:32:19','OK','42 tests passed in 4.1s'],['14:32:40','OK','review summary generated · PR draft ready'],['14:32:41','WARN','stage gated: awaiting human approval (security surface)']],
+          tests:{summary:'42 passed · 0 failed',color:'var(--grl)',cmd:'vitest run auth',rows:[['token-refresh.test','pass','88ms'],['reuse-detection.test','pass','61ms'],['rotation-schedule.test','pass','54ms']]},
+        }},
+      {id:'t5',title:'Add dark-mode design tokens to component library',state:'in_progress',repo:'website',prio:3,branch:'agent/dark-tokens-1c8',run:'run_33ab55',
+        flow:[S('Planning','done','Planner · claude','plan'),S('Context Gathering','done','Retriever · embed','index_repo'),S('Implementation','done','Coder · claude','apply_patch'),S('Testing','done','Tester · sandbox','run_tests','18 passed'),S('Review Prep','running','Reviewer · claude','summarize','Generating PR summary and capturing before/after screenshots.'),S('Awaiting Approval','pending','',''),S('Done','pending','','')],
+        art:{
+          diff:{file:'tokens/color.dark.css',add:'+96',del:'−4',files:'2 files changed',lines:[['h','','@@ -1,2 +1,10 @@'],['c','1',':root[data-theme="dark"] {'],['a','2','  --surface-1: #0e0f12;'],['a','3','  --surface-2: #141619;'],['a','4','  --text-hi: #e7e9ec;'],['a','5','  --accent: #7d6cff;'],['c','6','}']]},
+          logs:[['16:02:00','OK','implementation complete'],['16:03:12','OK','18 visual tests passed'],['16:03:40','RUN','Reviewer·claude generating summary + screenshots']],
+          live:'capturing 12 component screenshots · 7/12',
+          tests:{summary:'18 passed · 0 failed',color:'var(--grl)',cmd:'vitest run tokens',rows:[['contrast.test','pass','41ms'],['token-parity.test','pass','33ms']]},
+        }},
+      {id:'t6',title:'Migrate primary database Postgres 14 → 16',state:'blocked',repo:'infra',prio:1,branch:'agent/pg16-migration-0e7',run:'run_a2f118',
+        flow:[S('Planning','done','Planner · claude','plan'),S('Context Gathering','done','Retriever · embed','index_repo'),S('Awaiting Approval','blocked','—','','Architecture change requires human approval before implementation — plan includes a ~90s write-downtime window.'),S('Implementation','pending','Coder · claude','apply_patch'),S('Testing','pending','Tester · sandbox','run_tests'),S('Review Prep','pending','',''),S('Done','pending','','')],
+        art:{
+          logs:[['08:00:12','OK','planning complete — migration plan drafted'],['08:01:40','OK','context gathered — 3 services, 2 replicas'],['08:01:41','WARN','plan gated: architecture approval required'],['08:01:41','INFO','estimated downtime: 90s (write) · 0s (read)']],
+          context:true,
+        }},
+      {id:'t7',title:'Fix memory leak in streaming asset loader',state:'done',repo:'game-client',prio:2,branch:'agent/asset-leak-6b3',run:'run_44cd91',
+        flow:[S('Planning','done','Planner · claude','plan'),S('Context Gathering','done','Retriever · embed','index_repo'),S('Implementation','done','Coder · claude','apply_patch'),S('Testing','done','Tester · sandbox','run_tests','all green'),S('Review Prep','done','Reviewer · claude','summarize'),S('Awaiting Approval','done','human · rk',''),S('Done','done','','')],
+        art:{
+          diff:{file:'src/assets/AssetLoader.cpp',add:'+38',del:'−12',files:'1 file changed',lines:[['h','','@@ -71,5 +71,7 @@ void AssetLoader::unload(Handle h)'],['d','71','  cache_.erase(h);'],['a','71','  cache_.erase(h);'],['a','72','  if (auto* buf = gpuBuffers_.find(h)) buf->release();'],['a','73','  gpuBuffers_.erase(h);'],['c','74','   refCounts_[h] = 0;']]},
+          logs:[['Mon 11:20','OK','implementation complete'],['Mon 11:24','OK','24 tests passed · leak check clean'],['Mon 11:31','OK','approved by human · rk'],['Mon 11:31','OK','merged to main · ticket closed']],
+          tests:{summary:'24 passed · 0 failed · 0 leaks',color:'var(--grl)',cmd:'ctest -R assets --leak-check',rows:[['asset_loader.test','pass','63ms'],['gpu_release.test','pass','44ms'],['leak_sentinel.test','pass','512ms']]},
+        }},
+      {id:'t8',title:'Implement per-tenant rate-limiting middleware',state:'backlog',repo:'startup',prio:2,branch:'—',run:'—',
+        flow:[S('Planning','pending','Planner · claude','plan'),S('Context Gathering','pending','Retriever · embed',''),S('Implementation','pending','Coder · claude','apply_patch'),S('Testing','pending','Tester · sandbox','run_tests'),S('Review Prep','pending','',''),S('Awaiting Approval','pending','',''),S('Done','pending','','')],
+        art:null},
+      {id:'t9',title:'Upgrade web app to React 19',state:'backlog',repo:'website',prio:3,branch:'—',run:'—',
+        flow:[S('Planning','pending','Planner · claude','plan'),S('Context Gathering','pending','Retriever · embed',''),S('Implementation','pending','Coder · claude','apply_patch'),S('Testing','pending','Tester · sandbox','run_tests'),S('Review Prep','pending','',''),S('Awaiting Approval','pending','',''),S('Done','pending','','')],
+        art:null},
+      {id:'t10',title:'Optimize cold-start latency on serverless edge',state:'in_progress',repo:'infra',prio:2,branch:'agent/coldstart-perf-8f0',run:'run_9e77c3',
+        flow:[S('Planning','done','Planner · claude','plan'),S('Context Gathering','done','Retriever · embed','index_repo'),S('Implementation','done','Coder · claude','apply_patch'),S('Testing','done','Tester · sandbox','run_tests','perf regression flagged'),S('Debugging','running','Debugger · claude','profile','Profiling cold path — flamegraph 60% captured.'),S('Review Prep','pending','',''),S('Awaiting Approval','pending','',''),S('Done','pending','','')],
+        art:{
+          logs:[['13:40:00','OK','implementation complete'],['13:41:20','WARN','p95 cold-start 812ms — exceeds 600ms budget'],['13:41:45','RUN','Debugger·claude invoked skill profile']],
+          live:'profiling cold path · flamegraph 60% · hot frame: bundleInit()',
+          tests:{summary:'30 passed · 1 perf regression',color:'var(--aml)',cmd:'bench run coldstart',rows:[['handler.test','pass','22ms'],['coldstart.bench','fail','812ms','p95 812ms exceeds 600ms budget — regression vs baseline 540ms']]},
+        }},
+    ];
+  }
+
+  // ── helpers ──
+  cur(t){
+    const f=t.flow;
+    let s=f.find(x=>x.status==='running')||f.find(x=>x.status==='blocked')||f.find(x=>x.status==='awaiting');
+    if(s) return s;
+    if(f.every(x=>x.status==='done')) return f[f.length-1];
+    return f.find(x=>x.status==='pending')||f[0];
+  }
+  pick(id){ return this.state.tickets.find(t=>t.id===id); }
+
+  selectTicket=(id)=>this.setState({sel:id});
+  setTab=(tab)=>this.setState({tab});
+  setFilter=(filter)=>this.setState({filter});
+  setRepo=(repo)=>this.setState({repo});
+  toggleInbox=()=>this.setState(s=>({inbox:!s.inbox}));
+  closeInbox=()=>this.setState({inbox:false});
+  resolve=(id)=>this.setState(s=>({resolved:{...s.resolved,[id]:true}}));
+  inspect=(tid)=>this.setState({sel:tid,inbox:false});
+  advance=()=>{
+    this.setState(s=>{
+      const tickets=s.tickets.map(t=>{
+        if(t.id!==s.sel) return t;
+        const flow=t.flow.map(x=>({...x}));
+        const i=flow.findIndex(x=>['running','awaiting','blocked'].includes(x.status));
+        if(i>=0){ flow[i].status='done'; if(flow[i+1]) flow[i+1].status='running'; }
+        return {...t,flow};
+      });
+      return {tickets};
+    });
+  };
+
+  approvalsData(){
+    const g=[
+      {key:'blocked',label:'Blocked · needs decision',color:'var(--red)',items:[
+        {id:'a_pg',tid:'t6',title:'Approve architecture change — Postgres 14 → 16 migration',repo:'infra',stage:'Awaiting Approval',stageColor:'var(--red)',level:'HIGH',impact:'Rewrites primary schema across 3 services. Plan includes a ~90s write-downtime window. Implementation is blocked until approved.',approveLabel:'Approve plan'},
+        {id:'a_ci',tid:'t2',title:'Resolve CI instability — flaky vs. real regression',repo:'website',stage:'Testing',stageColor:'var(--red)',level:'HIGH',impact:'checkout.e2e fails 3/50 runs and is blocking the merge queue. Decide whether to quarantine the spec or treat it as a real defect.',approveLabel:'Quarantine'},
+      ]},
+      {key:'awaiting',label:'Awaiting approval',color:'var(--amb)',items:[
+        {id:'a_auth',tid:'t4',title:'Approve auth token refresh & rotation diff',repo:'startup',stage:'Awaiting Approval',stageColor:'var(--amb)',level:'MEDIUM',delta:'+214 −96',impact:'Adds token-reuse detection and family revocation. Touches the session security surface — sign-off required before merge.',approveLabel:'Approve diff'},
+      ]},
+      {key:'review',label:'Reviewable · completed runs',color:'var(--grn)',items:[
+        {id:'a_leak',tid:'t7',title:'Review completed — memory leak fix in asset loader',repo:'game-client',stage:'Done',stageColor:'var(--grn)',level:'LOW',delta:'+38 −12',impact:'Releases GPU buffers on unload. 24 tests green, leak sentinel clean. Ready to close out.',approveLabel:'Close ticket'},
+      ]},
+    ];
+    return g;
+  }
+
+  renderVals(){
+    const st=this.state, T=st.tickets;
+    const sel=this.pick(st.sel)||T[0];
+
+    // filters
+    const counts={all:T.length,in_progress:0,blocked:0,backlog:0,done:0};
+    T.forEach(t=>counts[t.state]++);
+    const fdef=[['all','All'],['in_progress','Active'],['blocked','Blocked'],['backlog','Backlog'],['done','Done']];
+    const filters=fdef.map(([k,label])=>{
+      const on=st.filter===k;
+      return {label,count:counts[k],onClick:()=>this.setFilter(k),
+        bg:on?'var(--bg4)':'transparent',bd:on?'var(--bd2)':'var(--bd)',fg:on?'var(--tx)':'var(--txm)'};
+    });
+
+    // workspaces
+    const repoOrder=['game-client','website','startup','infra'];
+    const repoMeta={'game-client':['G','var(--ac)','rgba(125,108,255,.16)'],website:['W','var(--blue)','rgba(68,147,248,.16)'],startup:['S','#3fb0a8','rgba(63,176,168,.16)'],infra:['I','var(--amb)','rgba(214,160,43,.16)']};
+    const wsBuild=(key)=>{
+      const items=key==='all'?T:T.filter(t=>t.repo===key);
+      const active=items.filter(t=>t.state==='in_progress').length;
+      const blocked=items.filter(t=>t.state==='blocked').length;
+      const on=st.repo===key;
+      let meta;
+      if(key==='all') meta='across '+repoOrder.length+' repositories';
+      else { const p=[]; if(active)p.push(active+' active'); if(blocked)p.push(blocked+' blocked'); if(!p.length)p.push(items.length+' ticket'+(items.length!==1?'s':'')); meta=p.join(' · '); }
+      const rm=repoMeta[key]||['?','var(--txm)','var(--bg3)'];
+      return {onClick:()=>this.setRepo(key),name:key==='all'?'All workspaces':key,meta,count:items.length,
+        isAll:key==='all',isRepo:key!=='all',letter:rm[0],iconFg:key==='all'?'var(--txm)':rm[1],iconBg:key==='all'?'var(--bg3)':rm[2],
+        hasBlocked:blocked>0,bg:on?'var(--bg3)':'transparent',bd:on?'var(--bd2)':'transparent'};
+    };
+    const workspaces=['all',...repoOrder].map(wsBuild);
+    const workspaceCount=repoOrder.length;
+
+    // ticket list
+    let list=T.filter(t=>st.filter==='all'?true:t.state===st.filter).filter(t=>st.repo==='all'?true:t.repo===st.repo);
+    const order={in_progress:0,blocked:1,backlog:2,done:3};
+    list=[...list].sort((a,b)=> a.prio-b.prio || order[a.state]-order[b.state]);
+    const tickets=list.map(t=>{
+      const on=t.id===st.sel, sm=this.STATE[t.state], c=this.cur(t), ss=this.STATUS[c.status], pr=this.PRIO[t.prio];
+      return {onSelect:()=>this.selectTicket(t.id),
+        bg:on?'var(--bg3)':'transparent',bd:on?'var(--bd2)':'transparent',bar:on?sm.color:'transparent',
+        title:t.title,repo:t.repo,stateColor:sm.color,stateLabel:sm.label,
+        wfStage:c.name,wfStatus:ss.label,wfColor:ss.dot,
+        pb1:pr.bars[0],pb2:pr.bars[1],pb3:pr.bars[2]};
+    });
+
+    // selected
+    const sm=this.STATE[sel.state], c=this.cur(sel), cs=this.STATUS[c.status], pr=this.PRIO[sel.prio];
+    const running=['running','awaiting','blocked'].includes(c.status);
+    const selVals={
+      title:sel.title,repo:sel.repo,branch:sel.branch,prioLabel:pr.label,runId:sel.run,
+      pb1:pr.bars[0],pb2:pr.bars[1],pb3:pr.bars[2],
+      stateColor:sm.color,stateLabel:sm.label,
+      wfStage:c.name,wfStatus:cs.label,wfColor:cs.dot,
+      onAdvance:this.advance,
+      hasAction:running,
+      actionHead:(c.status==='running'?'Now running · '+c.name:c.status==='blocked'?'Blocked at · '+c.name:'Awaiting approval · '+c.name),
+      actionText:c.note||(c.agent?('Agent '+c.agent+' assigned to this stage.'):'This stage is active.'),
+      actionColor:cs.dot,
+      actionBg:c.status==='running'?'rgba(68,147,248,.07)':c.status==='blocked'?'rgba(240,96,63,.07)':'rgba(214,160,43,.07)',
+      actionBd:c.status==='running'?'rgba(68,147,248,.22)':c.status==='blocked'?'rgba(240,96,63,.22)':'rgba(214,160,43,.22)',
+      actionAnim:c.status==='running'?'pulse 1.5s ease-in-out infinite':'none',
+    };
+
+    // stages
+    const stages=sel.flow.map((s,i)=>{
+      const m=this.STATUS[s.status], last=i===sel.flow.length-1, isCur=s===c;
+      return {name:s.name,dot:m.dot,dotFill:s.status==='done'?m.dot:(['running','blocked','awaiting'].includes(s.status)?m.fill:'var(--bg0)'),
+        line:last?'transparent':m.line,lineColor:last?'transparent':(s.status==='done'?'var(--grn)':'var(--bd)'),
+        anim:(s.status==='running')?'ring 1.8s ease-out infinite':'none',
+        isDone:s.status==='done',
+        statusLabel:m.label,pillBg:m.pillBg,pillFg:m.pillFg,
+        pillAnim:(s.status==='running'||s.status==='blocked')?'pulse 1.8s ease-in-out infinite':'none',
+        weight:isCur?'600':'500',nameColor:m.name,
+        optional:s.name==='Debugging',
+        hasAgent:!!s.agent,agent:s.agent,
+        hasSkill:!!s.skill,skill:s.skill,
+        hasNote:!!s.note,note:s.note,noteColor:s.status==='blocked'?'var(--rdl)':s.status==='awaiting'?'var(--aml)':'var(--txm)'};
+    });
+
+    // ── artifacts ──
+    const art=sel.art;
+    const has={diff:!!(art&&art.diff),logs:!!(art&&art.logs),tests:!!(art&&art.tests),context:true};
+    const tabDefs=[['diff','Diff'],['logs','Logs'],['tests','Tests'],['context','Context']];
+    let tab=st.tab;
+    const tabs=tabDefs.map(([k,label])=>{
+      const on=tab===k;
+      let badge=null,badgeBg='',badgeFg='';
+      if(k==='tests'&&art&&art.tests){ const fail=art.tests.rows.filter(r=>r[1]==='fail').length;
+        if(fail){badge=fail+' fail';badgeBg='rgba(240,96,63,.16)';badgeFg='var(--rdl)';}
+        else {badge='pass';badgeBg='rgba(63,185,80,.14)';badgeFg='var(--grl)';} }
+      return {label,onClick:()=>this.setTab(k),
+        weight:on?'600':'500',fg:on?'var(--tx)':'var(--txm)',bg:on?'var(--bg3)':'transparent',bd:on?'var(--bd2)':'transparent',
+        hasBadge:!!badge,badge,badgeBg,badgeFg};
+    });
+
+    // diff lines
+    const diffMap={
+      h:{bg:'rgba(125,108,255,.07)',fg:'var(--ac2)',edge:'rgba(125,108,255,.4)',sign:''},
+      a:{bg:'rgba(63,185,80,.09)',fg:'var(--grl)',edge:'rgba(63,185,80,.5)',sign:'+'},
+      d:{bg:'rgba(240,96,63,.09)',fg:'var(--rdl)',edge:'rgba(240,96,63,.5)',sign:'−'},
+      c:{bg:'transparent',fg:'var(--txm)',edge:'transparent',sign:''},
+    };
+    let diffLines=[],diffFile='',diffAdd='',diffDel='',diffFiles='';
+    if(has.diff){ const d=art.diff; diffFile=d.file;diffAdd=d.add;diffDel=d.del;diffFiles=d.files;
+      diffLines=d.lines.map(([tp,ln,text])=>({...diffMap[tp],ln,text})); }
+
+    // logs
+    const tagMap={INFO:['rgba(255,255,255,.06)','var(--txm)'],OK:['rgba(63,185,80,.14)','var(--grl)'],RUN:['rgba(68,147,248,.14)','var(--bll)'],WARN:['rgba(214,160,43,.16)','var(--aml)'],ERR:['rgba(240,96,63,.16)','var(--rdl)']};
+    let logLines=[],logLive=false,logLiveText='',logLiveTime='';
+    if(has.logs){ logLines=art.logs.map(([time,tag,text])=>{const[b,f]=tagMap[tag];return{time,tag,tagBg:b,tagFg:f,text};});
+      if(art.live){logLive=true;logLiveText=art.live;logLiveTime='now';} }
+
+    // tests
+    const tIcon={pass:['✓','var(--grl)','rgba(63,185,80,.06)','rgba(63,185,80,.18)'],fail:['✕','var(--rdl)','rgba(240,96,63,.07)','rgba(240,96,63,.28)'],skip:['○','var(--txl)','var(--bg2)','var(--bd)']};
+    let tests=[],testSummary='',testSumColor='',testCmd='';
+    if(has.tests){ testSummary=art.tests.summary;testSumColor=art.tests.color;testCmd=art.tests.cmd;
+      tests=art.tests.rows.map(r=>{const[ic,col,bg,bd]=tIcon[r[1]];return{icon:ic,color:col,bg,bd,name:r[0],dur:r[2],hasMsg:!!r[3],msg:r[3]||''};}); }
+
+    // context (always available)
+    const cA=(sel.flow.find(s=>s.agent&&s.agent.includes('claude'))||{}).agent||'Coder · claude';
+    const contextSections=[
+      {title:'Workflow definition snapshot',rows:this.rows([['definition','feature.default @ v3'],['stages',sel.flow.length+' · linear + debug branch'],['transitions','explicit · no implicit'],['approval gate','human · required'] ])},
+      {title:'Agent configuration',rows:this.rows([['planner','claude · plan'],['coder',cA.replace('Coder · ','claude · ')==='claude · claude'?'claude':cA],['model','claude-sonnet · temp 0.2'],['tools','apply_patch · run_tests · bisect · profile']])},
+      {title:'Run metadata',rows:this.rows([['run id',sel.run],['branch',sel.branch],['ticket',sel.id+' · '+sel.repo],['current stage',c.name+' · '+cs.label]])},
+    ];
+
+    const showEmpty=(tab==='diff'&&!has.diff)||(tab==='logs'&&!has.logs)||(tab==='tests'&&!has.tests);
+    const emptyText=sel.state==='backlog'?'This ticket is in the backlog — its workflow has not started, so no diffs, logs, or tests exist yet. Advance it to Planning to begin execution.':'This stage has not produced this artifact type yet. Check the other tabs or the current run status.';
+
+    // approvals
+    const groups=this.approvalsData();
+    const badgeMap={HIGH:['rgba(240,96,63,.16)','var(--rdl)'],MEDIUM:['rgba(214,160,43,.16)','var(--aml)'],LOW:['rgba(63,185,80,.14)','var(--grl)']};
+    const approvalGroups=[];
+    let total=0;
+    groups.forEach(g=>{
+      const items=g.items.filter(a=>!st.resolved[a.id]);
+      total+=items.length;
+      if(!items.length) return;
+      approvalGroups.push({label:g.label,color:g.color,count:items.length,
+        items:items.map(a=>{const[bb,bf]=badgeMap[a.level];
+          return{title:a.title,repo:a.repo,stage:a.stage,stageColor:a.stageColor,impact:a.impact,level:a.level,badgeBg:bb,badgeFg:bf,
+            hasDelta:!!a.delta,delta:a.delta||'',approveLabel:a.approveLabel,
+            cardBd:a.level==='HIGH'?'rgba(240,96,63,.3)':'var(--bd)',
+            onApprove:()=>this.resolve(a.id),onReject:()=>this.resolve(a.id),onInspect:()=>this.inspect(a.tid)};})});
+    });
+
+    return {
+      approvalsCount:total,onToggleInbox:this.toggleInbox,inbox:st.inbox,onCloseInbox:this.closeInbox,
+      filters,tickets,ticketCount:list.length,
+      workspaces,workspaceCount,
+      sel:selVals,stages,
+      tabs,
+      showDiff:tab==='diff'&&has.diff,diffFile,diffAdd,diffDel,diffFiles,diffLines,
+      showLogs:tab==='logs'&&has.logs,logLines,logLive,logLiveText,logLiveTime,
+      showTests:tab==='tests'&&has.tests,tests,testSummary,testSumColor,testCmd,
+      showContext:tab==='context',contextSections,
+      showEmpty,emptyText,
+      approvalGroups,inboxEmpty:approvalGroups.length===0,
+    };
+  }
+  rows(arr){ return arr.map((r,i)=>({k:r[0],v:r[1],bg:i%2?'transparent':'var(--bg2)'})); }
+}
+</script>
+</body>
+</html>
