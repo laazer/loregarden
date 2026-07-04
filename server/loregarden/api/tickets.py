@@ -8,6 +8,7 @@ from loregarden.models.domain import (
     AdvanceStageRequest,
     Artifact,
     Cycle,
+    StartOrchestrationRequest,
     StartRunRequest,
     Ticket,
     TicketDetail,
@@ -228,6 +229,24 @@ def update_ticket(
     return get_ticket(ticket_id, session)
 
 
+@router.post("/{ticket_id}/orchestrate", response_model=TicketDetail)
+def orchestrate_ticket(
+    ticket_id: str,
+    body: StartOrchestrationRequest,
+    session: Session = Depends(get_session),
+) -> TicketDetail:
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    run_svc = RunService(session)
+    try:
+        run_svc.orchestrate_ticket(ticket, max_stages=body.max_stages, driver=body.driver)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    session.refresh(ticket)
+    return get_ticket(ticket_id, session)
+
+
 @router.post("/{ticket_id}/start", response_model=TicketDetail)
 def start_run(
     ticket_id: str,
@@ -237,6 +256,11 @@ def start_run(
     ticket = session.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(404, "Ticket not found")
+    if not body.manual:
+        raise HTTPException(
+            400,
+            "Use POST /orchestrate for default orchestration. Pass manual=true for single-stage debug runs.",
+        )
     run_svc = RunService(session)
     try:
         run_svc.start_and_execute(ticket, stage_key=body.stage_key)

@@ -65,6 +65,22 @@ def _apply_sqlite_migrations(eng) -> None:
                     )
                 )
 
+        ws_rows = conn.execute(text("PRAGMA table_info(workspaces)")).fetchall()
+        if ws_rows:
+            ws_cols = {row[1] for row in ws_rows}
+            if "orchestration_profile_slug" not in ws_cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE workspaces ADD COLUMN orchestration_profile_slug TEXT NOT NULL DEFAULT ''"
+                    )
+                )
+
+        agent_rows = conn.execute(text("PRAGMA table_info(agent_runs)")).fetchall()
+        if agent_rows:
+            agent_cols = {row[1] for row in agent_rows}
+            if "orchestration_run_id" not in agent_cols:
+                conn.execute(text("ALTER TABLE agent_runs ADD COLUMN orchestration_run_id TEXT"))
+
 
 def get_session() -> Generator[Session, None, None]:
     with Session(engine) as session:

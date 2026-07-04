@@ -56,9 +56,23 @@ def test_ticket_detail_has_stages(client: TestClient):
     assert len(detail["stages"]) >= 5
 
 
+def test_start_run_specific_stage(client: TestClient):
+    ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
+    started = client.post(
+        f"/api/tickets/{ticket_id}/start",
+        json={"manual": True, "stage_key": "planning"},
+    )
+    assert started.status_code == 200
+    body = started.json()
+    assert body["workflow_stage_key"] == "planning"
+    assert body["workflow_stage_status"] == "done"
+    stages = {s["key"]: s["status"] for s in body["stages"]}
+    assert stages["planning"] == "done"
+
+
 def test_start_run_success_updates_stage(client: TestClient):
     ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
-    started = client.post(f"/api/tickets/{ticket_id}/start", json={})
+    started = client.post(f"/api/tickets/{ticket_id}/start", json={"manual": True})
     assert started.status_code == 200
     body = started.json()
     assert body["workflow_stage_status"] == "done"
@@ -68,7 +82,7 @@ def test_start_run_success_updates_stage(client: TestClient):
 def test_start_run_failure_blocks_ticket(client: TestClient, monkeypatch):
     monkeypatch.setenv("LOREGARDEN_FORCE_AGENT_FAIL", "1")
     ticket_id = _ticket_id_by_external_id(client, "01-bootstrap-fastapi-control-plane")
-    started = client.post(f"/api/tickets/{ticket_id}/start", json={})
+    started = client.post(f"/api/tickets/{ticket_id}/start", json={"manual": True})
     assert started.status_code == 200
     body = started.json()
     assert body["state"] == "blocked"
@@ -78,7 +92,7 @@ def test_start_run_failure_blocks_ticket(client: TestClient, monkeypatch):
 
 def test_runs_api_after_start(client: TestClient):
     ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
-    client.post(f"/api/tickets/{ticket_id}/start", json={})
+    client.post(f"/api/tickets/{ticket_id}/start", json={"manual": True})
     runs = client.get(f"/api/runs?ticket_id={ticket_id}").json()
     assert runs
     assert runs[0]["status"] == "succeeded"

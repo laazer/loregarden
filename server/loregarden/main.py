@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
-from loregarden.api import agents, cycles, events, export, inbox, runs, tickets, workflows, workspaces
+from loregarden.api import agents, cycles, events, export, inbox, mcp, orchestration, runs, tickets, workflows, workspaces
 from loregarden.config import settings
 from loregarden.db.session import engine, init_db
 from loregarden.services.seed import seed_database
@@ -36,9 +36,11 @@ app.include_router(events.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
+app.include_router(orchestration.router, prefix="/api")
 app.include_router(export.router, prefix="/api")
+app.include_router(mcp.router, prefix="/mcp")
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "service": "loregarden"}
+    return {"status": "ok", "service": "loregarden", "mcp": "/mcp"}

@@ -5,6 +5,10 @@ import type { TicketState, WorkItemType } from "../api/client";
 
 type Tab = "diff" | "logs" | "tests" | "context";
 
+export type PaneId = "workspaces" | "tickets" | "workflow" | "artifacts";
+
+export type PaneVisibility = Record<PaneId, boolean>;
+
 interface UiState {
   selectedTicketId: string | null;
   filter: TicketState | "all";
@@ -15,6 +19,7 @@ interface UiState {
   workspace: string;
   tab: Tab;
   inboxOpen: boolean;
+  paneVisibility: PaneVisibility;
   setSelectedTicketId: (id: string | null) => void;
   setFilter: (f: TicketState | "all") => void;
   setTypeFilter: (t: WorkItemType | "all") => void;
@@ -27,6 +32,8 @@ interface UiState {
   setWorkspace: (slug: string) => void;
   setTab: (tab: Tab) => void;
   setInboxOpen: (open: boolean) => void;
+  setPaneVisible: (pane: PaneId, visible: boolean) => void;
+  togglePane: (pane: PaneId) => void;
 }
 
 export const useUiStore = create<UiState>()(
@@ -41,6 +48,12 @@ export const useUiStore = create<UiState>()(
       workspace: "all",
       tab: "diff",
       inboxOpen: false,
+      paneVisibility: {
+        workspaces: true,
+        tickets: true,
+        workflow: true,
+        artifacts: true,
+      },
       setSelectedTicketId: (id) => set({ selectedTicketId: id }),
       setFilter: (filter) => set({ filter }),
       setTypeFilter: (typeFilter) => set({ typeFilter }),
@@ -62,6 +75,22 @@ export const useUiStore = create<UiState>()(
       setWorkspace: (workspace) => set({ workspace }),
       setTab: (tab) => set({ tab }),
       setInboxOpen: (inboxOpen) => set({ inboxOpen }),
+      setPaneVisible: (pane, visible) =>
+        set((state) => {
+          if (!visible) {
+            const visibleCount = Object.values(state.paneVisibility).filter(Boolean).length;
+            if (visibleCount <= 1 && state.paneVisibility[pane]) {
+              return state;
+            }
+          }
+          return {
+            paneVisibility: { ...state.paneVisibility, [pane]: visible },
+          };
+        }),
+      togglePane: (pane) => {
+        const { paneVisibility, setPaneVisible } = get();
+        setPaneVisible(pane, !paneVisibility[pane]);
+      },
     }),
     {
       name: "loregarden-ui",
@@ -70,6 +99,7 @@ export const useUiStore = create<UiState>()(
         workspace: s.workspace,
         typeFilter: s.typeFilter,
         cycleFilter: s.cycleFilter,
+        paneVisibility: s.paneVisibility,
       }),
     },
   ),

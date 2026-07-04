@@ -123,6 +123,27 @@ export interface WorkflowTemplateSummary {
   stage_count: number;
 }
 
+export interface OrchestrationProfileView {
+  slug: string;
+  name: string;
+  driver: string;
+  workflow_template: string;
+  orchestrator_skill: string;
+  gates_enabled: boolean;
+  max_stages_per_run: number;
+}
+
+export interface OrchestrationRunView {
+  id: string;
+  run_code: string;
+  ticket_id: string;
+  driver: string;
+  profile_slug: string;
+  status: string;
+  current_stage_key: string;
+  error_message: string;
+}
+
 export interface WorkspaceWorkflow {
   template_slug: string;
   template_name: string;
@@ -223,7 +244,18 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
-  startRun: (id: string) => request<TicketDetail>(`/api/tickets/${id}/start`, { method: "POST", body: "{}" }),
+  orchestrationProfile: (slug: string) =>
+    request<OrchestrationProfileView>(`/api/orchestration/workspaces/${slug}/profile`),
+  startRun: (id: string, options?: { stage_key?: string }) =>
+    request<TicketDetail>(`/api/tickets/${id}/start`, {
+      method: "POST",
+      body: JSON.stringify({ manual: true, stage_key: options?.stage_key }),
+    }),
+  orchestrate: (id: string, body?: { max_stages?: number }) =>
+    request<TicketDetail>(`/api/tickets/${id}/orchestrate`, {
+      method: "POST",
+      body: JSON.stringify(body ?? {}),
+    }),
   advance: (id: string) => request<TicketDetail>(`/api/tickets/${id}/advance`, { method: "POST", body: "{}" }),
   approvals: () => request<Approval[]>("/api/inbox/approvals"),
   resolveApproval: (id: string, action: "approve" | "reject") =>

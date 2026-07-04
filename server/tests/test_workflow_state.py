@@ -38,7 +38,7 @@ def test_seeded_ticket_states_agree(client: TestClient):
 
 def test_start_run_syncs_all_layers(client: TestClient):
     ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
-    started = client.post(f"/api/tickets/{ticket_id}/start", json={})
+    started = client.post(f"/api/tickets/{ticket_id}/start", json={"manual": True})
     assert started.status_code == 200
     body = started.json()
     stages = _stage_statuses(body)
@@ -53,7 +53,7 @@ def test_start_run_syncs_all_layers(client: TestClient):
 def test_failed_run_blocks_ticket_and_stage(client: TestClient, monkeypatch):
     monkeypatch.setenv("LOREGARDEN_FORCE_AGENT_FAIL", "1")
     ticket_id = _ticket_id_by_external_id(client, "01-bootstrap-fastapi-control-plane")
-    body = client.post(f"/api/tickets/{ticket_id}/start", json={}).json()
+    body = client.post(f"/api/tickets/{ticket_id}/start", json={"manual": True}).json()
     stages = _stage_statuses(body)
 
     assert body["state"] == "blocked"
@@ -63,7 +63,7 @@ def test_failed_run_blocks_ticket_and_stage(client: TestClient, monkeypatch):
 
 def test_advance_stage_moves_cursor_and_keeps_steps_consistent(client: TestClient):
     ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
-    client.post(f"/api/tickets/{ticket_id}/start", json={})
+    client.post(f"/api/tickets/{ticket_id}/start", json={"manual": True})
     advanced = client.post(f"/api/tickets/{ticket_id}/advance", json={})
     assert advanced.status_code == 200
     body = advanced.json()
@@ -94,7 +94,7 @@ def test_manual_ticket_state_update(client: TestClient):
 def test_wont_do_blocks_start_run(client: TestClient):
     ticket_id = _ticket_id_by_external_id(client, "02-bootstrap-react-ide-shell")
     client.patch(f"/api/tickets/{ticket_id}", json={"state": "wont_do"})
-    res = client.post(f"/api/tickets/{ticket_id}/start", json={})
+    res = client.post(f"/api/tickets/{ticket_id}/start", json={"manual": True})
     assert res.status_code == 400
 
 
@@ -149,7 +149,10 @@ def test_stage_wont_do_skips_step_and_blocks_run(client: TestClient):
     assert stages["testing"] == "wont_do"
     assert body["state"] == "in_progress"
 
-    res = client.post(f"/api/tickets/{ticket_id}/start", json={"stage_key": "testing"})
+    res = client.post(
+        f"/api/tickets/{ticket_id}/start",
+        json={"manual": True, "stage_key": "testing"},
+    )
     assert res.status_code == 400
     assert "won't do" in res.json()["detail"].lower()
 

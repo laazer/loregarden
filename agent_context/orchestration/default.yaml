@@ -1,0 +1,14 @@
+slug: default
+name: Default External MCP Orchestration
+driver: external_mcp
+workflow_template: loregarden-tdd
+orchestrator:
+  skill: autopilot
+  pipeline: agents/common_assets/pipeline_stages_v1.md
+gates:
+  enabled: false
+subagents:
+  spawn_via: external
+callbacks:
+  mode: mcp
+max_stages_per_run: 0

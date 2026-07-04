@@ -1,8 +1,11 @@
 from sqlmodel import Session, select
 
 from loregarden.agents.executors.cli import CliAgentExecutor
-from loregarden.models.domain import AgentRun, Ticket
+from loregarden.models.domain import AgentRun, OrchestrationDriver, OrchestrationRun, Ticket, Workspace
+from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.orchestration_profile import resolve_orchestration_profile
 
 
 class RunService:
@@ -10,6 +13,33 @@ class RunService:
         self.session = session
         self.orchestration = OrchestrationService(session)
         self.executor = CliAgentExecutor(session)
+
+    def orchestrate_ticket(
+        self,
+        ticket: Ticket,
+        *,
+        driver=None,
+        max_stages: int | None = None,
+    ) -> OrchestrationRun:
+        ws = self.session.get(Workspace, ticket.workspace_id)
+        if not ws:
+            raise ValueError("Ticket workspace not found")
+        profile = resolve_orchestration_profile(ws)
+        chosen = driver or profile.driver
+
+        if chosen == OrchestrationDriver.BUILTIN_AUTOPILOT:
+            return BuiltinOrchestrator(self.session).execute(
+                ticket,
+                profile,
+                max_stages=max_stages,
+            )
+        if chosen == OrchestrationDriver.EXTERNAL_MCP:
+            return OrchestrationCallbackService(self.session).start_orchestration_run(
+                ticket,
+                driver=chosen,
+                profile_slug=profile.slug,
+            )
+        raise ValueError("manual_stage driver uses POST /start with manual=true")
 
     def start_and_execute(
         self, ticket: Ticket, *, stage_key: str | None = None

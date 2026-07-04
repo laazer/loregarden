@@ -1,0 +1,343 @@
+"""Orchestration callback operations — shared by REST API, MCP, and builtin driver."""
+
+from __future__ import annotations
+
+import json
+import secrets
+from datetime import datetime, timezone
+
+from sqlmodel import Session, select
+
+from loregarden.core.event_bus import event_bus
+from loregarden.core.state_machine import StateMachine
+from loregarden.models.domain import (
+    Approval,
+    ApprovalStatus,
+    Artifact,
+    EventType,
+    OrchestrationRun,
+    OrchestrationRunStatus,
+    StageStatus,
+    Ticket,
+    TicketState,
+    Workspace,
+)
+from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.workflow_state import parse_stage_map, set_stage_status
+
+
+def _orch_code() -> str:
+    return f"orch_{secrets.token_hex(3)}"
+
+
+class OrchestrationCallbackService:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+        self.orch = OrchestrationService(session)
+
+    def resolve_ticket(
+        self,
+        *,
+        ticket_id: str | None = None,
+        external_id: str | None = None,
+        workspace_slug: str | None = None,
+    ) -> Ticket:
+        if ticket_id:
+            ticket = self.session.get(Ticket, ticket_id)
+            if ticket:
+                return ticket
+        if external_id and workspace_slug:
+            ws = self.session.exec(
+                select(Workspace).where(Workspace.slug == workspace_slug)
+            ).first()
+            if ws:
+                ticket = self.session.exec(
+                    select(Ticket).where(
+                        Ticket.workspace_id == ws.id,
+                        Ticket.external_id == external_id,
+                    )
+                ).first()
+                if ticket:
+                    return ticket
+        raise ValueError("Ticket not found")
+
+    def get_active_orchestration_run(self, ticket_id: str) -> OrchestrationRun | None:
+        return self.session.exec(
+            select(OrchestrationRun)
+            .where(OrchestrationRun.ticket_id == ticket_id)
+            .where(OrchestrationRun.status == OrchestrationRunStatus.RUNNING)
+            .order_by(OrchestrationRun.created_at.desc())
+        ).first()
+
+    def start_orchestration_run(
+        self,
+        ticket: Ticket,
+        *,
+        driver,
+        profile_slug: str,
+    ) -> OrchestrationRun:
+        active = self.get_active_orchestration_run(ticket.id)
+        if active:
+            raise ValueError(f"Orchestration already running: {active.run_code}")
+
+        if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
+            raise ValueError(f"Cannot orchestrate ticket in state: {ticket.state.value}")
+
+        if ticket.state == TicketState.BACKLOG:
+            self.orch.start_ticket(ticket)
+            self.session.refresh(ticket)
+
+        run = OrchestrationRun(
+            run_code=_orch_code(),
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            driver=driver,
+            profile_slug=profile_slug,
+            status=OrchestrationRunStatus.RUNNING,
+            current_stage_key=ticket.workflow_stage_key,
+            started_at=datetime.now(timezone.utc),
+        )
+        self.session.add(run)
+        self.session.commit()
+        self.session.refresh(run)
+
+        event_bus.publish(
+            self.session,
+            EventType.ORCHESTRATION_RUN_STARTED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            payload={"run_code": run.run_code, "driver": driver.value, "profile": profile_slug},
+        )
+        return run
+
+    def start_stage(
+        self,
+        orch_run: OrchestrationRun,
+        ticket: Ticket,
+        *,
+        stage_key: str,
+        agent_id: str = "",
+    ) -> Ticket:
+        instance, stages = self.orch._resolve_stages(ticket)
+        if not instance or not stages:
+            raise ValueError("Ticket has no workflow instance")
+
+        if stage_key not in parse_stage_map(instance, stages):
+            raise ValueError(f"Unknown stage key: {stage_key}")
+
+        stage_map = parse_stage_map(instance, stages)
+        if stage_map.get(stage_key) == StageStatus.WONT_DO:
+            raise ValueError(f"Stage '{stage_key}' is marked won't do")
+
+        set_stage_status(ticket, instance, stages, stage_key, StageStatus.RUNNING)
+        if agent_id:
+            ticket.next_agent = agent_id
+        ticket.last_updated_by = agent_id or "orchestrator"
+        ticket.revision += 1
+        orch_run.current_stage_key = stage_key
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.add(orch_run)
+        self.session.commit()
+
+        event_bus.publish(
+            self.session,
+            EventType.STAGE_STARTED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            payload={"stage_key": stage_key, "orchestration_run_id": orch_run.id},
+        )
+        return ticket
+
+    def complete_stage(
+        self,
+        orch_run: OrchestrationRun,
+        ticket: Ticket,
+        *,
+        stage_key: str,
+        next_agent: str = "",
+        advance: bool = True,
+    ) -> Ticket:
+        instance, stages = self.orch._resolve_stages(ticket)
+        if not instance or not stages:
+            raise ValueError("Ticket has no workflow instance")
+
+        set_stage_status(ticket, instance, stages, stage_key, StageStatus.DONE)
+        ticket.revision += 1
+        ticket.last_updated_by = "orchestrator"
+        if next_agent:
+            ticket.next_agent = next_agent
+            ticket.next_status = "Proceed"
+        ticket.blocking_issues = ""
+
+        if advance:
+            next_key = StateMachine.next_stage_key(stages, stage_key)
+            if next_key:
+                ticket.workflow_stage_key = next_key
+                stage_def = next(s for s in stages if s.key == next_key)
+                ticket.next_agent = next_agent or stage_def.agent_id
+                orch_run.current_stage_key = next_key
+            else:
+                orch_run.current_stage_key = stage_key
+
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.add(orch_run)
+        self.session.commit()
+
+        event_bus.publish(
+            self.session,
+            EventType.STAGE_COMPLETED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            payload={"stage_key": stage_key, "orchestration_run_id": orch_run.id},
+        )
+        self.orch.reconcile_ticket(ticket)
+        self.session.refresh(ticket)
+        return ticket
+
+    def skip_stage(
+        self,
+        orch_run: OrchestrationRun,
+        ticket: Ticket,
+        *,
+        stage_key: str,
+        reason: str = "",
+    ) -> Ticket:
+        instance, stages = self.orch._resolve_stages(ticket)
+        if not instance or not stages:
+            raise ValueError("Ticket has no workflow instance")
+        set_stage_status(ticket, instance, stages, stage_key, StageStatus.WONT_DO)
+        if reason:
+            ticket.blocking_issues = reason[:2000]
+        ticket.revision += 1
+        orch_run.current_stage_key = stage_key
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.add(orch_run)
+        self.session.commit()
+        self.orch.reconcile_ticket(ticket)
+        self.session.refresh(ticket)
+        return ticket
+
+    def block_ticket(
+        self,
+        orch_run: OrchestrationRun,
+        ticket: Ticket,
+        *,
+        stage_key: str = "",
+        message: str,
+    ) -> Ticket:
+        instance, stages = self.orch._resolve_stages(ticket)
+        key = stage_key or ticket.workflow_stage_key
+        if instance and stages and key:
+            set_stage_status(ticket, instance, stages, key, StageStatus.BLOCKED)
+            self.session.add(instance)
+        ticket.state = TicketState.BLOCKED
+        ticket.blocking_issues = message[:2000]
+        ticket.next_status = "Blocked"
+        ticket.revision += 1
+        ticket.last_updated_by = "orchestrator"
+        orch_run.status = OrchestrationRunStatus.BLOCKED
+        orch_run.error_message = message[:2000]
+        orch_run.finished_at = datetime.now(timezone.utc)
+        if key:
+            orch_run.current_stage_key = key
+        self.session.add(ticket)
+        self.session.add(orch_run)
+        self.session.commit()
+        return ticket
+
+    def attach_artifact(
+        self,
+        ticket: Ticket,
+        *,
+        kind: str,
+        title: str,
+        content: dict,
+        run_id: str | None = None,
+    ) -> Artifact:
+        artifact = Artifact(
+            ticket_id=ticket.id,
+            run_id=run_id,
+            kind=kind,
+            title=title,
+            content_json=json.dumps(content),
+        )
+        self.session.add(artifact)
+        self.session.commit()
+        event_bus.publish(
+            self.session,
+            EventType.ARTIFACT_CREATED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            run_id=run_id,
+            artifact_id=artifact.id,
+            payload={"kind": kind},
+        )
+        return artifact
+
+    def request_approval(
+        self,
+        ticket: Ticket,
+        *,
+        stage_key: str,
+        title: str = "",
+        impact: str = "",
+        level: str = "medium",
+    ) -> Approval:
+        approval = Approval(
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            title=title or f"Approve {ticket.title}",
+            level=level,
+            stage_key=stage_key,
+            impact=impact or f"Stage '{stage_key}' requires human sign-off.",
+            status=ApprovalStatus.PENDING,
+        )
+        instance, stages = self.orch._resolve_stages(ticket)
+        if instance and stages:
+            set_stage_status(ticket, instance, stages, stage_key, StageStatus.AWAITING)
+            self.session.add(instance)
+            self.session.add(ticket)
+        self.session.add(approval)
+        self.session.commit()
+        event_bus.publish(
+            self.session,
+            EventType.APPROVAL_REQUESTED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            payload={"approval_id": approval.id, "stage_key": stage_key},
+        )
+        return approval
+
+    def complete_orchestration(
+        self,
+        orch_run: OrchestrationRun,
+        ticket: Ticket,
+        *,
+        status: OrchestrationRunStatus,
+        message: str = "",
+    ) -> OrchestrationRun:
+        orch_run.status = status
+        orch_run.error_message = message[:2000]
+        orch_run.finished_at = datetime.now(timezone.utc)
+        if status == OrchestrationRunStatus.SUCCEEDED and ticket.state not in (
+            TicketState.DONE,
+            TicketState.WONT_DO,
+        ):
+            instance, stages = self.orch._resolve_stages(ticket)
+            if instance and stages:
+                self.orch.reconcile_ticket(ticket)
+                self.session.refresh(ticket)
+        self.session.add(orch_run)
+        self.session.add(ticket)
+        self.session.commit()
+        event_bus.publish(
+            self.session,
+            EventType.ORCHESTRATION_RUN_COMPLETED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            payload={"run_code": orch_run.run_code, "status": status.value},
+        )
+        return orch_run

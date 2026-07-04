@@ -1,9 +1,40 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { api, type Approval, type StageStatus, type TicketDetail, type TicketTreeNode, type WorkItemType } from "../api/client";
+import { api, type Approval, type StageStatus, type TicketDetail, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
 import { collectExpandableIds, findAncestorIds, TicketTree } from "../components/TicketTree";
+import { ConfirmRunStageModal, currentStageRunLabel, stageRunButtonLabel } from "../components/ConfirmRunStageModal";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
-import { useUiStore } from "../state/uiStore";
+import { useUiStore, type PaneId } from "../state/uiStore";
+
+const PANE_LABELS: Record<PaneId, string> = {
+  workspaces: "Workspaces",
+  tickets: "Work items",
+  workflow: "Workflow",
+  artifacts: "Artifacts",
+};
+
+function PaneHideButton({
+  pane,
+  onHide,
+  disabled,
+}: {
+  pane: PaneId;
+  onHide: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className="pane-hide-btn"
+      title={disabled ? "At least one pane must stay visible" : `Hide ${PANE_LABELS[pane]}`}
+      aria-label={`Hide ${PANE_LABELS[pane]}`}
+      disabled={disabled}
+      onClick={onHide}
+    >
+      ✕
+    </button>
+  );
+}
 
 function flattenTree(nodes: TicketTreeNode[]): TicketTreeNode[] {
   const out: TicketTreeNode[] = [];
@@ -28,6 +59,28 @@ const PRIO_BARS: Record<number, string[]> = {
   2: ["var(--amb)", "var(--amb)", "var(--bd2)"],
   3: ["var(--txm)", "var(--bd2)", "var(--bd2)"],
 };
+
+function canRunStage(
+  ticket: TicketDetail,
+  stage: WorkflowStageView,
+): { allowed: boolean; reason: string } {
+  if (stage.status === "wont_do") {
+    return { allowed: false, reason: "Stage marked won't do" };
+  }
+  if (ticket.state === "done" || ticket.state === "blocked" || ticket.state === "wont_do") {
+    return { allowed: false, reason: `Ticket is ${STATE_LABELS[ticket.state]}` };
+  }
+  if (ticket.workflow_stage_status === "awaiting") {
+    return { allowed: false, reason: "Resolve approval before running another stage" };
+  }
+  if (
+    ticket.workflow_stage_status === "running" &&
+    stage.key !== ticket.workflow_stage_key
+  ) {
+    return { allowed: false, reason: "Current stage is still running" };
+  }
+  return { allowed: true, reason: stage.status === "done" ? `Re-run ${stage.name}` : `Run ${stage.name}` };
+}
 
 function PrioBars({ priority }: { priority: number }) {
   const bars = PRIO_BARS[priority] ?? PRIO_BARS[3];
@@ -64,7 +117,19 @@ export function Dashboard() {
     setWorkspace,
     setTab,
     setInboxOpen,
+    paneVisibility,
+    setPaneVisible,
   } = useUiStore();
+
+  const { workspaces: showWorkspaces, tickets: showTickets, workflow: showWorkflow, artifacts: showArtifacts } =
+    paneVisibility;
+  const showSidebar = showWorkspaces || showTickets;
+  const visiblePaneCount = Object.values(paneVisibility).filter(Boolean).length;
+
+  const hidePane = (pane: PaneId) => setPaneVisible(pane, false);
+  const hiddenPanes = (Object.entries(paneVisibility) as [PaneId, boolean][])
+    .filter(([, visible]) => !visible)
+    .map(([pane]) => pane);
 
   const wsParam = workspace === "all" ? undefined : workspace;
 
@@ -104,6 +169,10 @@ export function Dashboard() {
     null;
 
   useEffect(() => {
+    setRunConfirmStageKey(null);
+  }, [selectedId]);
+
+  useEffect(() => {
     if (!selectedId || !ticketTree.data?.length) return;
     const ancestors = findAncestorIds(ticketTree.data, selectedId);
     if (ancestors.length) expandPath(ancestors);
@@ -122,9 +191,23 @@ export function Dashboard() {
     refetchInterval: 5000,
   });
 
+  const orchestrate = useMutation({
+    mutationFn: () => api.orchestrate(selectedId!, { max_stages: 1 }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
+      qc.invalidateQueries({ queryKey: ["ticket-tree"] });
+    },
+  });
+
   const startRun = useMutation({
-    mutationFn: () => api.startRun(selectedId!),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["ticket", selectedId] }),
+    mutationFn: (stageKey?: string) => api.startRun(selectedId!, stageKey ? { stage_key: stageKey } : undefined),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
+      qc.invalidateQueries({ queryKey: ["ticket-tree"] });
+      qc.invalidateQueries({ queryKey: ["runs", selectedId] });
+      setTab("logs");
+      setRunConfirmStageKey(null);
+    },
   });
 
   const advance = useMutation({
@@ -146,6 +229,7 @@ export function Dashboard() {
   });
 
   const [stateModalOpen, setStateModalOpen] = useState(false);
+  const [runConfirmStageKey, setRunConfirmStageKey] = useState<string | null>(null);
 
   const saveStateFromModal = useMutation({
     mutationFn: async ({
@@ -204,6 +288,12 @@ export function Dashboard() {
   });
 
   const sel = detail.data;
+  const runConfirmStage = sel?.stages.find((s) => s.key === runConfirmStageKey) ?? null;
+
+  const requestStageRun = (stageKey: string) => setRunConfirmStageKey(stageKey);
+  const confirmStageRun = () => {
+    if (runConfirmStageKey) startRun.mutate(runConfirmStageKey);
+  };
 
   const activeWorkspaceSlug =
     workspace === "all" ? (sel?.workspace_slug ?? "loregarden") : workspace;
@@ -244,6 +334,20 @@ export function Dashboard() {
           </div>
         </div>
         <div style={{ flex: 1 }} />
+        {hiddenPanes.length > 0 && (
+          <div className="pane-restore-group">
+            {hiddenPanes.map((pane) => (
+              <button
+                key={pane}
+                type="button"
+                className="btn-secondary btn-compact pane-restore-btn"
+                onClick={() => setPaneVisible(pane, true)}
+              >
+                Show {PANE_LABELS[pane]}
+              </button>
+            ))}
+          </div>
+        )}
         <button
           className="btn-secondary"
           onClick={() => setInboxOpen(true)}
@@ -272,12 +376,22 @@ export function Dashboard() {
       </header>
 
       <div className="main-panes">
-        <aside className="sidebar">
-          <div className="workspaces-pane">
-            <div className="pane-header">
-              <span className="pane-title">Workspaces</span>
-              <span className="count-pill">{(workspaces.data?.length ?? 0) + 1}</span>
-            </div>
+        {showSidebar && (
+          <aside
+            className={`sidebar ${showWorkspaces && showTickets ? "" : "sidebar-single-pane"}`.trim()}
+          >
+            {showWorkspaces && (
+              <div className={`workspaces-pane ${showTickets ? "" : "pane-fill"}`.trim()}>
+                <div className="pane-header">
+                  <span className="pane-title">Workspaces</span>
+                  <span className="count-pill">{(workspaces.data?.length ?? 0) + 1}</span>
+                  <div style={{ flex: 1 }} />
+                  <PaneHideButton
+                    pane="workspaces"
+                    onHide={() => hidePane("workspaces")}
+                    disabled={visiblePaneCount <= 1}
+                  />
+                </div>
             <div className="scroll-list">
               <button
                 className={`list-btn ${workspace === "all" ? "active" : ""}`}
@@ -333,32 +447,39 @@ export function Dashboard() {
                 </div>
               )}
             </div>
-          </div>
-
-          <div className="tickets-pane">
-            <div className="pane-header tickets-pane-header">
-              <div className="tickets-pane-toolbar">
-                <span className="pane-title">Work items</span>
-                <span className="count-pill">{flatTickets.length}</span>
-                <div className="tree-toolbar-actions">
-                  <button
-                    className="btn-secondary btn-compact"
-                    type="button"
-                    title="Expand all branches"
-                    onClick={() => expandAll(collectExpandableIds(ticketTree.data ?? []))}
-                  >
-                    Expand all
-                  </button>
-                  <button
-                    className="btn-secondary btn-compact"
-                    type="button"
-                    title="Collapse all branches"
-                    onClick={() => collapseAll()}
-                  >
-                    Collapse all
-                  </button>
-                </div>
               </div>
+            )}
+
+            {showTickets && (
+              <div className={`tickets-pane ${showWorkspaces ? "" : "pane-fill"}`.trim()}>
+                <div className="pane-header tickets-pane-header">
+                  <div className="tickets-pane-toolbar">
+                    <span className="pane-title">Work items</span>
+                    <span className="count-pill">{flatTickets.length}</span>
+                    <div className="tree-toolbar-actions">
+                      <button
+                        className="btn-secondary btn-compact"
+                        type="button"
+                        title="Expand all branches"
+                        onClick={() => expandAll(collectExpandableIds(ticketTree.data ?? []))}
+                      >
+                        Expand all
+                      </button>
+                      <button
+                        className="btn-secondary btn-compact"
+                        type="button"
+                        title="Collapse all branches"
+                        onClick={() => collapseAll()}
+                      >
+                        Collapse all
+                      </button>
+                      <PaneHideButton
+                        pane="tickets"
+                        onHide={() => hidePane("tickets")}
+                        disabled={visiblePaneCount <= 1}
+                      />
+                    </div>
+                  </div>
               <input
                 className="ticket-search"
                 placeholder="Search title or id…"
@@ -407,23 +528,40 @@ export function Dashboard() {
                 ))}
               </div>
             </div>
-            <div className="scroll-list">
-              {ticketTree.data?.length ? (
-                <TicketTree
-                  nodes={ticketTree.data}
-                  selectedId={selectedId}
-                  expandedIds={expandedSet}
-                  onSelect={setSelectedTicketId}
-                  onToggle={toggleExpanded}
-                />
-              ) : (
-                <div className="empty-tree">No work items match filters</div>
-              )}
-            </div>
-          </div>
-        </aside>
+                <div className="scroll-list">
+                  {ticketTree.data?.length ? (
+                    <TicketTree
+                      nodes={ticketTree.data}
+                      selectedId={selectedId}
+                      expandedIds={expandedSet}
+                      onSelect={setSelectedTicketId}
+                      onToggle={toggleExpanded}
+                    />
+                  ) : (
+                    <div className="empty-tree">No work items match filters</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </aside>
+        )}
 
-        <main className="workflow-pane">
+        {showWorkflow && (
+        <main className={`workflow-pane ${showArtifacts ? "" : "pane-fill"}`.trim()}>
+          <div className="workflow-pane-header">
+            <span className="pane-title">Workflow</span>
+            {sel && (
+              <span className="count-pill" style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {sel.external_id}
+              </span>
+            )}
+            <div style={{ flex: 1 }} />
+            <PaneHideButton
+              pane="workflow"
+              onHide={() => hidePane("workflow")}
+              disabled={visiblePaneCount <= 1}
+            />
+          </div>
           {sel ? (
             <>
               <div style={{ flex: 1, overflowY: "auto", padding: "20px 22px" }}>
@@ -495,7 +633,11 @@ export function Dashboard() {
                   <div className="state-label" style={{ marginBottom: 16 }}>
                     Workflow lifecycle
                   </div>
-                  {sel.stages.map((s) => (
+                  {sel.stages.map((s) => {
+                    const runCheck = canRunStage(sel, s);
+                    const isRunningThis =
+                      startRun.isPending && startRun.variables === s.key;
+                    return (
                     <div key={s.key} className="stage-row" style={{ paddingBottom: 18 }}>
                       <div
                         className={`stage-dot ${s.status}`}
@@ -509,6 +651,15 @@ export function Dashboard() {
                               optional
                             </span>
                           )}
+                          <button
+                            type="button"
+                            className="btn-secondary btn-compact stage-run-btn"
+                            disabled={!runCheck.allowed || startRun.isPending}
+                            title={runCheck.reason}
+                            onClick={() => requestStageRun(s.key)}
+                          >
+                            {stageRunButtonLabel(s, isRunningThis)}
+                          </button>
                           <span
                             className="count-pill"
                             style={{
@@ -546,17 +697,34 @@ export function Dashboard() {
                         )}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
               <div className="run-controls">
                 <button
                   className="btn-primary"
-                  disabled={!selectedId || startRun.isPending}
-                  onClick={() => startRun.mutate()}
+                  disabled={!selectedId || orchestrate.isPending}
+                  onClick={() => orchestrate.mutate()}
                 >
-                  Start run
+                  Run orchestration
                 </button>
+                {(() => {
+                  const cursorStage = sel.stages.find((s) => s.key === sel.workflow_stage_key);
+                  const cursorRun = cursorStage ? canRunStage(sel, cursorStage) : { allowed: false, reason: "No cursor stage" };
+                  const runningCursor =
+                    startRun.isPending && startRun.variables === sel.workflow_stage_key;
+                  return (
+                <button
+                  className="btn-secondary"
+                  disabled={!selectedId || startRun.isPending || !cursorRun.allowed}
+                  onClick={() => requestStageRun(sel.workflow_stage_key)}
+                  title={cursorRun.reason}
+                >
+                  {currentStageRunLabel(cursorStage, runningCursor)}
+                </button>
+                  );
+                })()}
                 <button
                   className="btn-secondary"
                   disabled={!selectedId || advance.isPending}
@@ -574,8 +742,10 @@ export function Dashboard() {
             <div style={{ padding: 40, color: "var(--txl)" }}>Select a ticket</div>
           )}
         </main>
+        )}
 
-        <section className="artifacts-pane">
+        {showArtifacts && (
+        <section className={`artifacts-pane ${showWorkflow ? "" : "pane-fill"}`.trim()}>
           <div className="tab-bar">
             {(["diff", "logs", "tests", "context"] as const).map((t) => (
               <button
@@ -590,11 +760,17 @@ export function Dashboard() {
             <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}>
               truth layer · execution output only
             </span>
+            <PaneHideButton
+              pane="artifacts"
+              onHide={() => hidePane("artifacts")}
+              disabled={visiblePaneCount <= 1}
+            />
           </div>
           <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
             <ArtifactView tab={tab} ticket={sel} runs={ticketRuns.data ?? []} />
           </div>
         </section>
+        )}
       </div>
 
       <UpdateStateModal
@@ -604,6 +780,15 @@ export function Dashboard() {
         isSaving={saveStateFromModal.isPending}
         onClose={() => setStateModalOpen(false)}
         onSave={(draft, original) => saveStateFromModal.mutateAsync({ draft, original })}
+      />
+
+      <ConfirmRunStageModal
+        open={!!runConfirmStageKey}
+        ticket={sel ?? null}
+        stage={runConfirmStage}
+        isRunning={startRun.isPending}
+        onClose={() => setRunConfirmStageKey(null)}
+        onConfirm={confirmStageRun}
       />
 
       {inboxOpen && (

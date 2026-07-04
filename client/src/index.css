@@ -337,6 +337,79 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: none;
+}
+
+.workflow-pane-header {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  border-bottom: 1px solid var(--bd);
+  background: var(--bg1);
+}
+
+.pane-hide-btn {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--txl);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.pane-hide-btn:hover:not(:disabled) {
+  background: var(--bg3);
+  color: var(--tx);
+  border-color: var(--bd2);
+}
+
+.pane-hide-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.pane-restore-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-right: 8px;
+}
+
+.pane-restore-btn {
+  color: var(--ac2);
+  border-color: rgba(125, 108, 255, 0.35);
+}
+
+.sidebar-single-pane .workspaces-pane,
+.sidebar-single-pane .tickets-pane {
+  flex: 1;
+  border-bottom: none;
+}
+
+.pane-fill.workflow-pane {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+.pane-fill.artifacts-pane {
+  flex: 1;
+}
+
+.workspaces-pane.pane-fill,
+.tickets-pane.pane-fill {
+  flex: 1;
+  border-bottom: none;
 }
 
 .pane-title {
@@ -427,6 +500,12 @@ button {
   display: flex;
   gap: 13px;
   position: relative;
+}
+
+.stage-run-btn {
+  padding: 2px 8px;
+  font-size: 10.5px;
+  line-height: 1.4;
 }
 
 .stage-dot {

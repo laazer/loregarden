@@ -19,6 +19,19 @@ You are allowed to stop only if a ticket reaches a state that is **truly unresol
 
 **Subagent prompts:** Tell each subagent to read `agent_context/agents/common_assets/checkpoint_protocol_v1.md` for **Checkpoint protocol (replaces asking the human)** — do not paste the full protocol into the prompt.
 
+**Loregarden control plane (when SQLite is authoritative):** The top-level orchestrator owns workflow transitions. Sub-agents must **not** edit ticket WORKFLOW STATE in markdown. After each stage (and after any transition gates pass), call Loregarden MCP tools:
+
+- `loregarden_get_ticket` / `loregarden_get_ticket_by_external` — read cursor and stage map
+- `loregarden_start_orchestration` — begin an orchestration run (`external_mcp` driver)
+- `loregarden_start_stage` — mark a stage running before invoking a sub-agent
+- `loregarden_complete_stage` — advance after sub-agent + gates succeed
+- `loregarden_skip_stage` — mark optional stage won't do
+- `loregarden_block_ticket` — gate failure or unrecoverable error
+- `loregarden_request_approval` — human gate → inbox
+- `loregarden_complete_orchestration` — finish the top-level run
+
+MCP server: `POST http://127.0.0.1:8000/mcp` (same process as the API — preferred). Optional stdio proxy: `./scripts/mcp-server.sh`. Profile: `agent_context/orchestration/<workspace>.yaml`.
+
 ---
 
 ## Step 0 — Initialize

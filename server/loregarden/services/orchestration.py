@@ -224,7 +224,13 @@ class OrchestrationService:
         )
         return ticket
 
-    def start_run(self, ticket: Ticket, *, stage_key: str | None = None) -> AgentRun:
+    def start_run(
+        self,
+        ticket: Ticket,
+        *,
+        stage_key: str | None = None,
+        orchestration_run_id: str | None = None,
+    ) -> AgentRun:
         template = self.get_template_for_ticket(ticket)
         if not template:
             raise ValueError("No workflow template for ticket workspace")
@@ -233,14 +239,18 @@ class OrchestrationService:
         if not instance or not stages:
             raise ValueError("Ticket has no workflow instance")
 
-        if ticket.workflow_stage_status in (StageStatus.RUNNING, StageStatus.AWAITING):
-            raise ValueError("Current stage must complete before advancing")
-
         target_key = stage_key or ticket.workflow_stage_key
         if not target_key:
             target_key = StateMachine.next_stage_key(stages, "")
             if not target_key:
                 raise ValueError("Workflow has no stages")
+
+        if ticket.workflow_stage_status in (StageStatus.RUNNING, StageStatus.AWAITING):
+            if not (
+                ticket.workflow_stage_status == StageStatus.RUNNING
+                and target_key == ticket.workflow_stage_key
+            ):
+                raise ValueError("Current stage must complete before advancing")
 
         stage_def = next((s for s in stages if s.key == target_key), None)
         if not stage_def:
@@ -268,6 +278,7 @@ class OrchestrationService:
             run_code=_run_code(),
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
+            orchestration_run_id=orchestration_run_id,
             agent_id=stage_def.agent_id,
             skill_name=stage_def.skill_name,
             stage_key=target_key,

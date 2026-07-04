@@ -69,6 +69,21 @@ class RunStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class OrchestrationDriver(str, Enum):
+    BUILTIN_AUTOPILOT = "builtin_autopilot"
+    EXTERNAL_MCP = "external_mcp"
+    MANUAL_STAGE = "manual_stage"
+
+
+class OrchestrationRunStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    BLOCKED = "blocked"
+    CANCELLED = "cancelled"
+
+
 class ApprovalStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"
@@ -83,6 +98,8 @@ class EventType(str, Enum):
     STAGE_COMPLETED = "StageCompleted"
     AGENT_RUN_STARTED = "AgentRunStarted"
     AGENT_RUN_COMPLETED = "AgentRunCompleted"
+    ORCHESTRATION_RUN_STARTED = "OrchestrationRunStarted"
+    ORCHESTRATION_RUN_COMPLETED = "OrchestrationRunCompleted"
     ARTIFACT_CREATED = "ArtifactCreated"
     APPROVAL_REQUESTED = "ApprovalRequested"
     APPROVAL_RESOLVED = "ApprovalResolved"
@@ -97,6 +114,7 @@ class Workspace(SQLModel, table=True):
     repo_path: str = ""
     workflow_template_id: Optional[str] = Field(default=None, foreign_key="workflow_templates.id")
     workflow_override_json: str = "{}"
+    orchestration_profile_slug: str = ""
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -171,6 +189,31 @@ class WorkflowInstance(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class OrchestrationRun(SQLModel, table=True):
+    __tablename__ = "orchestration_runs"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    run_code: str = Field(index=True)
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    driver: OrchestrationDriver = Field(
+        default=OrchestrationDriver.BUILTIN_AUTOPILOT,
+        sa_column=_str_enum_column(
+            OrchestrationDriver, OrchestrationDriver.BUILTIN_AUTOPILOT, index=True
+        ),
+    )
+    profile_slug: str = ""
+    status: OrchestrationRunStatus = Field(
+        default=OrchestrationRunStatus.QUEUED,
+        sa_column=_str_enum_column(OrchestrationRunStatus, OrchestrationRunStatus.QUEUED),
+    )
+    current_stage_key: str = ""
+    error_message: str = ""
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class AgentRun(SQLModel, table=True):
     __tablename__ = "agent_runs"
 
@@ -178,6 +221,9 @@ class AgentRun(SQLModel, table=True):
     run_code: str = Field(index=True)
     ticket_id: str = Field(foreign_key="tickets.id", index=True)
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    orchestration_run_id: Optional[str] = Field(
+        default=None, foreign_key="orchestration_runs.id", index=True
+    )
     agent_id: str
     skill_name: str = ""
     stage_key: str = ""
@@ -340,6 +386,74 @@ class EventView(SQLModel):
 
 class StartRunRequest(SQLModel):
     stage_key: Optional[str] = None
+    manual: bool = False
+
+
+class StartOrchestrationRequest(SQLModel):
+    driver: Optional[OrchestrationDriver] = None
+    max_stages: Optional[int] = None
+
+
+class CompleteStageRequest(SQLModel):
+    stage_key: str
+    next_agent: str = ""
+    blocking_issues: str = ""
+
+
+class StartStageRequest(SQLModel):
+    stage_key: str
+    agent_id: str = ""
+
+
+class BlockTicketRequest(SQLModel):
+    stage_key: str = ""
+    message: str
+
+
+class SkipStageRequest(SQLModel):
+    stage_key: str
+    reason: str = ""
+
+
+class AttachArtifactRequest(SQLModel):
+    kind: str = "log"
+    title: str = ""
+    content: dict[str, Any] = {}
+
+
+class RequestApprovalRequest(SQLModel):
+    stage_key: str
+    title: str = ""
+    impact: str = ""
+    level: str = "medium"
+
+
+class CompleteOrchestrationRequest(SQLModel):
+    status: OrchestrationRunStatus = OrchestrationRunStatus.SUCCEEDED
+    message: str = ""
+
+
+class OrchestrationRunView(SQLModel):
+    id: str
+    run_code: str
+    ticket_id: str
+    driver: OrchestrationDriver
+    profile_slug: str
+    status: OrchestrationRunStatus
+    current_stage_key: str
+    error_message: str
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+
+
+class OrchestrationProfileView(SQLModel):
+    slug: str
+    name: str
+    driver: OrchestrationDriver
+    workflow_template: str
+    orchestrator_skill: str = ""
+    gates_enabled: bool = False
+    max_stages_per_run: int = 0
 
 
 class AdvanceStageRequest(SQLModel):
