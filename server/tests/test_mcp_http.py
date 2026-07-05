@@ -35,6 +35,7 @@ def test_mcp_tools_list(client: TestClient):
     tools = res.json()["result"]["tools"]
     names = {t["name"] for t in tools}
     assert "loregarden_get_ticket" in names
+    assert "loregarden_list_tickets" in names
     assert "loregarden_complete_stage" in names
 
 
@@ -68,7 +69,9 @@ def test_mcp_tool_schemas_are_strict():
     schema = get_ticket["inputSchema"]
     assert schema["additionalProperties"] is False
     assert schema["properties"]["ticket_id"]["description"]
-    assert "ticket_id" in schema["required"]
+    assert "workspace_slug" in schema["properties"]
+    list_tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "loregarden_list_tickets")
+    assert "workspace_slug" in list_tool["inputSchema"]["required"]
 
 
 def test_mcp_normalize_ticket_id_aliases():

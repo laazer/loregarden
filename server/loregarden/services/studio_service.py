@@ -41,6 +41,7 @@ def _tool_names() -> list[str]:
 
 DEFAULT_STAGE_MCP_TOOLS = [
     "loregarden_get_ticket",
+    "loregarden_list_tickets",
     "loregarden_attach_artifact",
     "loregarden_request_approval",
 ]
@@ -67,9 +68,16 @@ DEFAULT_GATE_CHECKS = [
 MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
     StudioMcpToolGuide(
         name="loregarden_get_ticket",
-        description="Read ticket workflow state, stage map, and active orchestration run.",
+        description="Read ticket workflow state, stage map, hierarchy neighbors, and active orchestration run.",
         when_to_use="At stage start and before any workflow decision — never trust stale project_board WORKFLOW STATE alone.",
-        example='tools/call loregarden_get_ticket {"ticket_id": "<uuid from run prompt>"}',
+        example='tools/call loregarden_get_ticket {"ticket_id": "<uuid or external_id slug>", "workspace_slug": "loregarden"}',
+        stage_agent=True,
+    ),
+    StudioMcpToolGuide(
+        name="loregarden_list_tickets",
+        description="Search and list tickets in a workspace for discovery.",
+        when_to_use="When you need sibling tasks, child work items, or to find a ticket by title/slug.",
+        example='tools/call loregarden_list_tickets {"workspace_slug": "loregarden", "search": "cli runner"}',
         stage_agent=True,
     ),
     StudioMcpToolGuide(

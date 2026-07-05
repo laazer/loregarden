@@ -2,7 +2,7 @@
 Title: IDE experience
 Project: loregarden
 Created By: loregarden-export
-Created On: 2026-07-05T02:17:51.213748
+Created On: 2026-07-05T02:22:41.121067
 
 ---
 
@@ -59,4 +59,4 @@ Human
 Proceed
 
 ## Reason
-Exported from SQLite at 2026-07-05T02:17:51.294372+00:00
+Exported from SQLite at 2026-07-05T02:22:41.200581+00:00

@@ -98,6 +98,7 @@ AUTO_APPROVED_MCP_TOOLS = frozenset(
     {
         "loregarden_get_ticket",
         "loregarden_get_ticket_by_external",
+        "loregarden_list_tickets",
     }
 )
 
@@ -128,6 +129,8 @@ def enrich_mcp_tool_input(
             enriched["workspace_slug"] = workspace_slug
         if not enriched.get("external_id"):
             enriched["external_id"] = ticket.external_id
+    if bare_tool == "loregarden_list_tickets" and not enriched.get("workspace_slug"):
+        enriched["workspace_slug"] = workspace_slug
     return enriched
 
 

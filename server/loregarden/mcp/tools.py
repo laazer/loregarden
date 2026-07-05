@@ -12,6 +12,7 @@ from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.ticket_discovery import list_tickets_mcp, ticket_neighbors_mcp
 
 
 def _tool_schema(
@@ -92,6 +93,14 @@ def _coerce_optional_int(value: Any) -> int | None:
     raise ValueError("max_stages must be an integer")
 
 
+def _coerce_optional_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
     """Coerce Claude MCP bridge quirks (aliases, stringified JSON, camelCase)."""
     args = _coerce_mapping(arguments)
@@ -116,7 +125,29 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
                 break
 
     if name == "loregarden_get_ticket":
-        return {"ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id")}
+        payload: dict[str, Any] = {}
+        if args.get("ticket_id") is not None:
+            payload["ticket_id"] = _coerce_string(args.get("ticket_id"), field="ticket_id")
+        if args.get("external_id") is not None:
+            payload["external_id"] = _coerce_string(args.get("external_id"), field="external_id")
+        if args.get("workspace_slug") is not None:
+            payload["workspace_slug"] = _coerce_string(args.get("workspace_slug"), field="workspace_slug")
+        if not payload.get("ticket_id") and not payload.get("external_id"):
+            raise ValueError("ticket_id or external_id is required")
+        return payload
+
+    if name == "loregarden_list_tickets":
+        payload = {
+            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
+        }
+        for field in ("state", "work_item_type", "search", "parent_ticket_id", "parent_external_id"):
+            if args.get(field) is not None:
+                payload[field] = _coerce_string(args.get(field), field=field)
+        if args.get("roots_only") is not None:
+            payload["roots_only"] = _coerce_optional_bool(args.get("roots_only"))
+        if args.get("limit") is not None:
+            payload["limit"] = _coerce_optional_int(args.get("limit")) or 50
+        return payload
 
     if name == "loregarden_get_ticket_by_external":
         return {
@@ -211,7 +242,24 @@ def _ticket_state_payload(session: Session, ticket_id: str) -> dict[str, Any]:
             else None
         ),
         "stages": [s.model_dump() for s in orch.build_stage_views(ticket)],
+        "hierarchy": ticket_neighbors_mcp(session, ticket),
     }
+
+
+def _resolve_ticket_payload(
+    session: Session,
+    *,
+    ticket_id: str | None = None,
+    external_id: str | None = None,
+    workspace_slug: str | None = None,
+) -> dict[str, Any]:
+    svc = OrchestrationCallbackService(session)
+    ticket = svc.resolve_ticket(
+        ticket_id=ticket_id,
+        external_id=external_id,
+        workspace_slug=workspace_slug,
+    )
+    return _ticket_state_payload(session, ticket.id)
 
 
 def _run_view(run) -> dict[str, Any]:
@@ -230,12 +278,41 @@ def _run_view(run) -> dict[str, Any]:
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "loregarden_get_ticket",
-        "description": "Read ticket workflow state, stage map, and active orchestration run.",
+        "description": "Read ticket workflow state, stage map, hierarchy neighbors, and active orchestration run.",
         "inputSchema": _tool_schema(
             properties={
-                "ticket_id": _string_prop("Loregarden ticket UUID from the run prompt."),
+                "ticket_id": _string_prop(
+                    "Loregarden ticket UUID or external_id slug (e.g. 03-wire-cli-agent-runner)."
+                ),
+                "external_id": _string_prop("Explicit external_id when not using ticket_id."),
+                "workspace_slug": _string_prop(
+                    "Workspace slug — required when resolving by external_id slug via ticket_id."
+                ),
             },
-            required=["ticket_id"],
+            required=[],
+        ),
+    },
+    {
+        "name": "loregarden_list_tickets",
+        "description": "Search and list tickets in a workspace (flat results for discovery).",
+        "inputSchema": _tool_schema(
+            properties={
+                "workspace_slug": _string_prop("Workspace slug, e.g. loregarden."),
+                "search": _string_prop("Optional title or external_id substring search."),
+                "state": _enum_string_prop(
+                    "Optional ticket state filter.",
+                    ["backlog", "in_progress", "blocked", "done"],
+                ),
+                "work_item_type": _enum_string_prop(
+                    "Optional work item type filter.",
+                    ["milestone", "feature", "capability", "task", "bug"],
+                ),
+                "parent_ticket_id": _string_prop("Optional parent ticket UUID."),
+                "parent_external_id": _string_prop("Optional parent external_id slug."),
+                "roots_only": {"type": "boolean", "description": "Only top-level tickets (no parent)."},
+                "limit": _integer_prop("Max results (default 50, max 100)."),
+            },
+            required=["workspace_slug"],
         ),
     },
     {
@@ -370,14 +447,41 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
     arguments = normalize_tool_arguments(name, arguments)
 
     if name == "loregarden_get_ticket":
-        return json.dumps(_ticket_state_payload(session, arguments["ticket_id"]), indent=2)
+        return json.dumps(
+            _resolve_ticket_payload(
+                session,
+                ticket_id=arguments.get("ticket_id"),
+                external_id=arguments.get("external_id"),
+                workspace_slug=arguments.get("workspace_slug"),
+            ),
+            indent=2,
+        )
+
+    if name == "loregarden_list_tickets":
+        return json.dumps(
+            list_tickets_mcp(
+                session,
+                workspace_slug=arguments["workspace_slug"],
+                state=arguments.get("state"),
+                work_item_type=arguments.get("work_item_type"),
+                search=arguments.get("search"),
+                parent_ticket_id=arguments.get("parent_ticket_id"),
+                parent_external_id=arguments.get("parent_external_id"),
+                roots_only=bool(arguments.get("roots_only")),
+                limit=int(arguments.get("limit") or 50),
+            ),
+            indent=2,
+        )
 
     if name == "loregarden_get_ticket_by_external":
-        ticket = svc.resolve_ticket(
-            external_id=arguments["external_id"],
-            workspace_slug=arguments["workspace_slug"],
+        return json.dumps(
+            _resolve_ticket_payload(
+                session,
+                external_id=arguments["external_id"],
+                workspace_slug=arguments["workspace_slug"],
+            ),
+            indent=2,
         )
-        return json.dumps(_ticket_state_payload(session, ticket.id), indent=2)
 
     if name == "loregarden_start_orchestration":
         ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])

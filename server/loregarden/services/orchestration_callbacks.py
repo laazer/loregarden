@@ -24,6 +24,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 
 
@@ -47,19 +48,30 @@ class OrchestrationCallbackService:
             ticket = self.session.get(Ticket, ticket_id)
             if ticket:
                 return ticket
-        if external_id and workspace_slug:
-            ws = self.session.exec(
-                select(Workspace).where(Workspace.slug == workspace_slug)
-            ).first()
-            if ws:
-                ticket = self.session.exec(
-                    select(Ticket).where(
-                        Ticket.workspace_id == ws.id,
-                        Ticket.external_id == external_id,
-                    )
+            if looks_like_ticket_uuid(ticket_id):
+                raise ValueError("Ticket not found")
+            external_id = external_id or ticket_id
+
+        if external_id:
+            if workspace_slug:
+                ws = self.session.exec(
+                    select(Workspace).where(Workspace.slug == workspace_slug)
                 ).first()
-                if ticket:
-                    return ticket
+                if ws:
+                    ticket = self.session.exec(
+                        select(Ticket).where(
+                            Ticket.workspace_id == ws.id,
+                            Ticket.external_id == external_id,
+                        )
+                    ).first()
+                    if ticket:
+                        return ticket
+            ticket = self.session.exec(
+                select(Ticket).where(Ticket.external_id == external_id)
+            ).first()
+            if ticket:
+                return ticket
+
         raise ValueError("Ticket not found")
 
     def get_active_orchestration_run(self, ticket_id: str) -> OrchestrationRun | None:

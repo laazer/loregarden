@@ -23,6 +23,7 @@ Use `"type": "stdio"` or `"type": "http"` in MCP config — never bare `url` alo
 | Situation | Tool |
 |-----------|------|
 | Read current stage map, blocking issues, active orchestration | `loregarden_get_ticket` or `loregarden_get_ticket_by_external` |
+| Find tickets by title/slug, list siblings/children, browse workspace | `loregarden_list_tickets` |
 | Start top-level autopilot / external orchestration | `loregarden_start_orchestration` |
 | Mark a stage running before sub-agent work (orchestrator only) | `loregarden_start_stage` |
 | Stage succeeded — advance workflow cursor (orchestrator only) | `loregarden_complete_stage` |
@@ -37,6 +38,9 @@ Use `"type": "stdio"` or `"type": "http"` in MCP config — never bare `url` alo
 Loregarden **stage runs** (started from the IDE or `POST /api/tickets/{id}/start`) already update workflow state when the CLI run completes. During a stage run:
 
 1. **Read** ticket state with `loregarden_get_ticket` — do not trust stale project_board markdown alone.
+   - UUID: `{"ticket_id": "<uuid>"}`
+   - Slug: `{"ticket_id": "03-wire-cli-agent-runner", "workspace_slug": "loregarden"}`
+   - Or `loregarden_get_ticket_by_external` / `loregarden_list_tickets` for discovery
 2. **Do not** edit project_board `WORKFLOW STATE` / `NEXT ACTION` for stage cursor changes Loregarden owns.
 3. **Do** use MCP to attach extra artifacts (`loregarden_attach_artifact`) or request human approval (`loregarden_request_approval`) when your role requires it.
 4. **Do** still edit the repo and project_board ticket **content** (description, acceptance criteria, checkpoints) when your role requires it.
@@ -53,10 +57,12 @@ The top-level orchestrator (autopilot skill or external MCP driver) **must** dri
 
 Use values from the run prompt:
 
-- `ticket_id` — UUID from Loregarden DB
+- `ticket_id` — UUID from Loregarden DB, **or external_id slug** when `workspace_slug` is also provided
 - `external_id` — ticket slug (e.g. `03-wire-cli-agent-runner`)
 - `workspace_slug` — workspace name in Loregarden
 - `run_id` — orchestration run UUID (orchestrator tools only)
+
+Use `loregarden_list_tickets` when you need to discover tickets without knowing the UUID. Responses from `loregarden_get_ticket` include `hierarchy` (parent, siblings, children).
 
 ## Permission bridge
 
