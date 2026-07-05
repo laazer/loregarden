@@ -212,6 +212,47 @@ export interface BrowseImportEntry extends BrowseDirectoryEntry {
   kind: "directory" | "file";
 }
 
+export interface EditorBrowseEntry extends BrowseImportEntry {}
+
+export interface EditorBrowseResponse {
+  current_path: string;
+  repo_path: string;
+  parent_path: string | null;
+  parent_repo_path: string | null;
+  context_root: string;
+  context_path: string;
+  entries: EditorBrowseEntry[];
+}
+
+export interface EditorBranchRef {
+  name: string;
+  current: boolean;
+}
+
+export interface EditorWorktreeRef {
+  path: string;
+  branch: string;
+  label: string;
+  current: boolean;
+  repo_path: string;
+}
+
+export interface EditorRefsResponse {
+  workspace_root: string;
+  context_root: string;
+  context_path: string;
+  current_branch: string;
+  branches: EditorBranchRef[];
+  worktrees: EditorWorktreeRef[];
+}
+
+export interface EditorFileResponse {
+  path: string;
+  content: string;
+  language: string;
+  size: number;
+}
+
 export interface BrowseDirectoryResponse {
   current_path: string;
   repo_path: string;
@@ -725,4 +766,35 @@ export const api = {
       body: JSON.stringify(body),
     }),
   memoryStatus: () => request<MemoryStatus>("/api/memory/status"),
+  editorRefs: (slug: string, contextRoot?: string) => {
+    const q = new URLSearchParams();
+    if (contextRoot) q.set("context_root", contextRoot);
+    const suffix = q.toString() ? `?${q}` : "";
+    return request<EditorRefsResponse>(`/api/workspaces/${slug}/editor/refs${suffix}`);
+  },
+  editorCheckout: (slug: string, body: { branch?: string; worktree_path?: string }) =>
+    request<EditorRefsResponse>(`/api/workspaces/${slug}/editor/checkout`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  editorBrowse: (slug: string, path?: string, contextRoot?: string) => {
+    const q = new URLSearchParams();
+    if (path) q.set("path", path);
+    if (contextRoot) q.set("context_root", contextRoot);
+    const suffix = q.toString() ? `?${q}` : "";
+    return request<EditorBrowseResponse>(`/api/workspaces/${slug}/editor/browse${suffix}`);
+  },
+  editorReadFile: (slug: string, path: string, contextRoot?: string) => {
+    const q = new URLSearchParams({ path });
+    if (contextRoot) q.set("context_root", contextRoot);
+    return request<EditorFileResponse>(`/api/workspaces/${slug}/editor/file?${q}`);
+  },
+  editorWriteFile: (
+    slug: string,
+    body: { path: string; content: string; context_root?: string },
+  ) =>
+    request<{ path: string; saved: boolean; size: number }>(`/api/workspaces/${slug}/editor/file`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
 };

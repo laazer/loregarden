@@ -1649,3 +1649,216 @@ button {
   color: var(--tx);
   font-weight: 600;
 }
+
+.editor-page .editor-topbar {
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.editor-workspace-picker,
+.git-ref-switcher-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--txl);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.editor-workspace-picker select,
+.git-ref-select {
+  min-width: 160px;
+}
+
+.git-ref-switcher {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.git-ref-current {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txm);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-ref-error,
+.editor-save-status {
+  font-size: 11px;
+  color: var(--rdl);
+}
+
+.editor-save-status {
+  color: var(--grl);
+}
+
+.editor-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.editor-sidebar {
+  width: 280px;
+  flex: none;
+  border-right: 1px solid var(--bd);
+  background: var(--bg0);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.editor-sidebar-title {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--bd);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--txm);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.editor-sidebar-empty {
+  padding: 12px;
+}
+
+.editor-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg1);
+}
+
+.editor-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--txl);
+  padding: 24px;
+  text-align: center;
+}
+
+.editor-empty-title {
+  font-family: var(--dp);
+  font-size: 18px;
+  color: var(--tx);
+  margin-bottom: 8px;
+}
+
+.editor-empty-error {
+  color: var(--rdl);
+}
+
+.editor-file-explorer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-explorer-toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.editor-explorer-path {
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txm);
+  border-bottom: 1px solid var(--bd);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-explorer-error {
+  color: var(--rdl);
+  margin: 6px 10px 0;
+}
+
+.editor-explorer-list {
+  flex: 1;
+  overflow: auto;
+  padding: 6px;
+}
+
+.editor-explorer-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  margin-bottom: 4px;
+}
+
+.editor-explorer-icon {
+  flex: none;
+}
+
+.editor-explorer-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-editor-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.code-editor-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--bd);
+  background: var(--bg0);
+}
+
+.code-editor-tab {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--tx);
+}
+
+.code-editor-tab.active {
+  color: var(--ac2);
+}
+
+.code-editor-dirty {
+  color: var(--amb);
+  margin-left: 6px;
+}
+
+.code-editor-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.diff-file-open-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ac2);
+}
+
+.diff-file-open-btn:hover {
+  text-decoration: underline;
+}

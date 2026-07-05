@@ -4,7 +4,7 @@ import { persist } from "zustand/middleware";
 import type { TicketState, WorkItemType } from "../api/client";
 
 type Tab = "diff" | "logs" | "tests" | "context" | "errors" | "triage" | "pr";
-type AppPage = "dashboard" | "studio";
+type AppPage = "dashboard" | "studio" | "editor";
 
 export type PaneId = "workspaces" | "tickets" | "workflow" | "artifacts";
 
@@ -21,6 +21,9 @@ interface UiState {
   appPage: AppPage;
   inboxOpen: boolean;
   paneVisibility: PaneVisibility;
+  editorWorkspace: string;
+  editorContextRoot: string;
+  editorFilePath: string | null;
   setSelectedTicketId: (id: string | null) => void;
   toggleStateFilter: (state: TicketState) => void;
   clearStateFilters: () => void;
@@ -37,11 +40,15 @@ interface UiState {
   setInboxOpen: (open: boolean) => void;
   setPaneVisible: (pane: PaneId, visible: boolean) => void;
   togglePane: (pane: PaneId) => void;
+  setEditorWorkspace: (slug: string) => void;
+  setEditorContextRoot: (root: string) => void;
+  setEditorFilePath: (path: string | null) => void;
+  openEditorFile: (workspaceSlug: string, filePath: string, contextRoot?: string) => void;
 }
 
 type PersistedUiState = Pick<
   UiState,
-  "expandedTicketIds" | "workspace" | "typeFilters" | "stateFilters" | "paneVisibility"
+  "expandedTicketIds" | "workspace" | "typeFilters" | "stateFilters" | "paneVisibility" | "editorWorkspace" | "editorContextRoot"
 >;
 
 export const useUiStore = create<UiState>()(
@@ -62,6 +69,9 @@ export const useUiStore = create<UiState>()(
         workflow: true,
         artifacts: true,
       },
+      editorWorkspace: "",
+      editorContextRoot: ".",
+      editorFilePath: null,
       setSelectedTicketId: (id) => set({ selectedTicketId: id }),
       toggleStateFilter: (state) => {
         const current = get().stateFilters;
@@ -115,6 +125,16 @@ export const useUiStore = create<UiState>()(
         const { paneVisibility, setPaneVisible } = get();
         setPaneVisible(pane, !paneVisibility[pane]);
       },
+      setEditorWorkspace: (editorWorkspace) => set({ editorWorkspace }),
+      setEditorContextRoot: (editorContextRoot) => set({ editorContextRoot }),
+      setEditorFilePath: (editorFilePath) => set({ editorFilePath }),
+      openEditorFile: (workspaceSlug, filePath, contextRoot = ".") =>
+        set({
+          appPage: "editor",
+          editorWorkspace: workspaceSlug,
+          editorContextRoot: contextRoot,
+          editorFilePath: filePath,
+        }),
     }),
     {
       name: "loregarden-ui",
@@ -146,6 +166,8 @@ export const useUiStore = create<UiState>()(
         typeFilters: s.typeFilters,
         stateFilters: s.stateFilters,
         paneVisibility: s.paneVisibility,
+        editorWorkspace: s.editorWorkspace,
+        editorContextRoot: s.editorContextRoot,
       }),
     },
   ),

@@ -242,6 +242,7 @@ export function Dashboard() {
     setInboxOpen,
     paneVisibility,
     setPaneVisible,
+    openEditorFile,
   } = useUiStore();
 
   const { workspaces: showWorkspaces, tickets: showTickets, workflow: showWorkflow, artifacts: showArtifacts } =
@@ -886,6 +887,9 @@ export function Dashboard() {
             ))}
           </div>
         )}
+        <button type="button" className="btn-secondary" onClick={() => setAppPage("editor")}>
+          Editor
+        </button>
         <button type="button" className="btn-secondary" onClick={() => setAppPage("studio")}>
           Studio
         </button>
@@ -1554,7 +1558,14 @@ export function Dashboard() {
                 }}
               />
             ) : (
-              <ArtifactView tab={tab} ticket={sel} runs={ticketRuns.data ?? []} />
+              <ArtifactView
+                tab={tab}
+                ticket={sel}
+                runs={ticketRuns.data ?? []}
+                onOpenEditorFile={(filePath) =>
+                  openEditorFile(sel?.workspace_slug ?? activeWorkspaceSlug, filePath)
+                }
+              />
             )}
           </div>
         </section>
@@ -1801,6 +1812,7 @@ function ArtifactView({
   tab,
   ticket,
   runs = [],
+  onOpenEditorFile,
 }: {
   tab: string;
   ticket?: TicketDetail;
@@ -1813,6 +1825,7 @@ function ArtifactView({
     stage_key?: string;
     stderr?: string;
   }[];
+  onOpenEditorFile?: (filePath: string) => void;
 }) {
   if (!ticket) {
     return <div style={{ padding: 40, color: "var(--txl)", textAlign: "center" }}>No ticket selected</div>;
@@ -1841,9 +1854,20 @@ function ArtifactView({
         {diffFileSections(diff).map((section) => (
           <section key={section.path} className="diff-file-block">
             <div className="diff-file-header">
-              <span className="diff-file-path" title={section.path}>
-                {section.path}
-              </span>
+              {onOpenEditorFile ? (
+                <button
+                  type="button"
+                  className="diff-file-path diff-file-open-btn"
+                  title={`Open ${section.path} in editor`}
+                  onClick={() => onOpenEditorFile(section.path)}
+                >
+                  {section.path}
+                </button>
+              ) : (
+                <span className="diff-file-path" title={section.path}>
+                  {section.path}
+                </span>
+              )}
               <span className="diff-file-stats">
                 <span style={{ color: "var(--grl)" }}>+{section.add}</span>
                 <span style={{ color: "var(--rdl)" }}>−{section.del}</span>
