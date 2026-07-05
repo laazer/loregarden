@@ -94,6 +94,7 @@ export function TriageComposer({
       }
     }
 
+    setDraft("");
     sendMessage.mutate(content);
   };
 

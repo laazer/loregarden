@@ -25,6 +25,11 @@ DEFAULT_CURSOR_USER_PROMPT = (
     "the stage deliverables.\n\n"
 )
 
+DEFAULT_TRIAGE_USER_PROMPT = (
+    "Reply to the operator based on the ticket context in the system prompt. "
+    "Be concise and actionable."
+)
+
 
 @dataclass(frozen=True)
 class CliInvocation:
@@ -304,3 +309,107 @@ def resolve_cli_invocation(
         )
 
     raise ValueError(f"Unknown CLI adapter: {selected}")
+
+
+def build_triage_invocation(
+    *,
+    agent_id: str,
+    adapter: str,
+    prompt: str,
+    prompt_file: Path,
+    skill_name: str,
+    workspace_root: Path,
+    workspace=None,
+) -> CliInvocation:
+    """One-shot, non-interactive CLI for the triage chat channel.
+
+    Stage runs use stream-json + permission bridge; triage must return plain text
+    from stdout in a single communicate() call.
+    """
+    env_key = f"LOREGARDEN_AGENT_{agent_id.upper()}_CMD"
+    override = os.environ.get(env_key)
+    if override:
+        argv = shlex.split(
+            override.format(
+                prompt_file=str(prompt_file),
+                prompt=prompt,
+                agent_id=agent_id,
+                skill=skill_name,
+                workspace=str(workspace_root),
+            )
+        )
+        return CliInvocation(argv=argv, stdin_prompt=None, cwd=str(workspace_root))
+
+    selected = resolve_effective_adapter(agent_adapter=adapter, workspace=workspace)
+    claude_model = resolve_claude_model(workspace)
+    cursor_model = resolve_cursor_model(workspace)
+    triage_user_prompt = os.environ.get("LOREGARDEN_TRIAGE_USER_PROMPT", DEFAULT_TRIAGE_USER_PROMPT)
+
+    if selected == "local":
+        return _local_invocation(
+            agent_id=agent_id,
+            skill_name=skill_name,
+            prompt_file=prompt_file,
+        )
+
+    if selected == "claude":
+        triage_model = (
+            os.environ.get("LOREGARDEN_TRIAGE_CLAUDE_MODEL", "").strip()
+            or resolve_claude_model(workspace)
+            or "haiku"
+        )
+        argv = [
+            _bin("claude", "LOREGARDEN_CLAUDE_BIN"),
+            "-p",
+            "--output-format",
+            "text",
+            "--permission-mode",
+            os.environ.get("LOREGARDEN_TRIAGE_PERMISSION_MODE", "bypassPermissions"),
+            "--append-system-prompt-file",
+            str(prompt_file),
+            triage_user_prompt,
+        ]
+        _append_model_flag(argv, triage_model)
+        return CliInvocation(
+            argv=argv,
+            use_prompt_file=True,
+            adapter="claude",
+            cwd=str(workspace_root),
+        )
+
+    if selected == "cursor":
+        argv = [
+            _bin("cursor-agent", "LOREGARDEN_CURSOR_BIN"),
+            "agent",
+            "-p",
+            "--output-format",
+            "text",
+            "--trust",
+            "--force",
+            "--workspace",
+            str(workspace_root),
+            f"{triage_user_prompt}\n\n{prompt}",
+        ]
+        _append_model_flag(argv, cursor_model)
+        extra = os.environ.get("LOREGARDEN_CURSOR_AGENT_ARGS")
+        if extra:
+            argv[2:2] = shlex.split(extra)
+        return CliInvocation(argv=argv, adapter="cursor", cwd=str(workspace_root))
+
+    if selected == "codex":
+        return CliInvocation(
+            argv=[_bin("codex", "LOREGARDEN_CODEX_BIN"), "exec", "-"],
+            stdin_prompt=prompt,
+            adapter="codex",
+            cwd=str(workspace_root),
+        )
+
+    if selected == "lmstudio":
+        return _lmstudio_invocation(
+            prompt_file=prompt_file,
+            workspace_root=workspace_root,
+            base_url=resolve_lmstudio_base_url(workspace),
+            model=resolve_lmstudio_model(workspace),
+        )
+
+    raise ValueError(f"Unknown CLI adapter for triage: {selected}")

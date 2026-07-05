@@ -49,8 +49,62 @@ AGENTS: dict[str, dict] = {
         "adapter": "claude",
         "timeout": 600,
     },
+    "ac_gatekeeper": {
+        "name": "AC Gatekeeper",
+        "role_file": "agents/acceptance_criteria_gatekeeper.md",
+        "adapter": "claude",
+        "timeout": 600,
+    },
+    "core_simulation": {
+        "name": "Core Simulation Agent",
+        "role_file": "agents/5_core_simulation/core_simulation_v1.md",
+        "adapter": "cursor",
+        "timeout": 1800,
+    },
+    "gameplay_systems": {
+        "name": "Gameplay Systems Agent",
+        "role_file": "agents/6_gameplay_systems/gameplay_systems_v1.md",
+        "adapter": "cursor",
+        "timeout": 1800,
+    },
+    "presentation": {
+        "name": "Presentation Agent",
+        "role_file": "agents/7_presentation/presentation_v1.md",
+        "adapter": "cursor",
+        "timeout": 1800,
+    },
+    "engine_integration": {
+        "name": "Engine Integration Agent",
+        "role_file": "agents/8_engine_integration/engine_integration_v1.md",
+        "adapter": "cursor",
+        "timeout": 1800,
+    },
+    "implementation_frontend": {
+        "name": "Implementation Frontend Agent",
+        "role_file": "agents/misc_agents/implementation_frontend_v1.md",
+        "adapter": "cursor",
+        "timeout": 1800,
+    },
+    "gdscript_reviewer": {
+        "name": "GDScript Reviewer",
+        "role_file": "agents/common_assets/gdscript_reviewer_v1.md",
+        "adapter": "claude",
+        "timeout": 600,
+    },
+    "architecture_reviewer": {
+        "name": "Architecture Reviewer",
+        "role_file": "agents/misc_agents/architecture_reviewer_v1.md",
+        "adapter": "claude",
+        "timeout": 600,
+    },
+    "learning": {
+        "name": "Learning Agent",
+        "role_file": "agents/9_learning/learning_v1.md",
+        "adapter": "claude",
+        "timeout": 600,
+    },
     "retriever": {
-        "name": "Context Retriever",
+        "name": "Research Librarian",
         "role_file": "agents/misc_agents/research_librarian_v1.md",
         "adapter": "claude",
         "timeout": 600,
@@ -59,7 +113,8 @@ AGENTS: dict[str, dict] = {
         "name": "Triage Assistant",
         "role_file": "agents/misc_agents/research_librarian_v1.md",
         "adapter": "claude",
-        "timeout": 120,
+        "timeout": 300,
+        "claude_model": "haiku",
     },
 }
 

@@ -105,6 +105,7 @@ def create_workspace(
             name=body.name,
             workflow_template_slug=body.workflow_template_slug,
             repo_path=body.repo_path,
+            orchestration_profile_slug=body.orchestration_profile_slug,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

@@ -6,9 +6,12 @@ import json
 from datetime import datetime, timezone
 
 from loregarden.models.domain import (
+    VALID_HIERARCHY,
+    ParallelAgentSpec,
     StageStatus,
     Ticket,
     TicketState,
+    WorkItemType,
     WorkflowInstance,
     WorkflowStageDef,
     WorkflowStageView,
@@ -103,7 +106,10 @@ def _derive_ticket_state(
     if required and all(_stage_resolved(stage_map.get(s.key, StageStatus.PENDING)) for s in required):
         return TicketState.DONE
 
-    if workflow_stage_key or any(s != StageStatus.PENDING for s in statuses):
+    if any(
+        s in (StageStatus.RUNNING, StageStatus.AWAITING, StageStatus.BLOCKED, StageStatus.DONE, StageStatus.WONT_DO)
+        for s in statuses
+    ):
         return TicketState.IN_PROGRESS
 
     return TicketState.BACKLOG
@@ -130,7 +136,10 @@ def reconcile_workflow_state(
     ticket.workflow_stage_key = current_key
     ticket.workflow_stage_status = current_status
     if not ticket.state_locked and ticket.state != TicketState.WONT_DO:
-        ticket.state = ticket_state
+        if ticket.state == TicketState.DONE and ticket_state != TicketState.DONE:
+            pass
+        else:
+            ticket.state = ticket_state
     ticket.updated_at = datetime.now(timezone.utc)
 
     instance.current_stage_key = current_key
@@ -181,10 +190,36 @@ def build_stage_views(
                 key=stage.key,
                 name=stage.name,
                 status=stage_map[stage.key],
+                order=stage.order,
                 agent_id=stage.agent_id,
                 skill_name=stage.skill_name,
                 optional=stage.optional,
                 note=note_by_key.get(stage.key, ""),
+                stage_type=stage.stage_type or "agent",
+                agents=_stage_agent_refs(stage),
             )
         )
     return views
+
+
+def _stage_agent_refs(stage: WorkflowStageDef) -> list[ParallelAgentSpec]:
+    refs: list[ParallelAgentSpec] = []
+    if stage.stage_type == "parallel" and stage.parallel_agents:
+        refs = list(stage.parallel_agents)
+    elif stage.stage_type == "classify" and stage.classify_routes:
+        refs = [
+            ParallelAgentSpec(agent_id=route.agent_id, skill_name=route.skill_name or stage.skill_name)
+            for route in stage.classify_routes
+            if route.agent_id
+        ]
+    elif stage.agent_id:
+        refs = [ParallelAgentSpec(agent_id=stage.agent_id, skill_name=stage.skill_name)]
+
+    seen: set[str] = set()
+    unique: list[ParallelAgentSpec] = []
+    for ref in refs:
+        if ref.agent_id in seen:
+            continue
+        seen.add(ref.agent_id)
+        unique.append(ref)
+    return unique

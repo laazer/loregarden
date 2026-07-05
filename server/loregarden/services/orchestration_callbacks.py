@@ -88,13 +88,31 @@ class OrchestrationCallbackService:
         *,
         driver,
         profile_slug: str,
+        auto_approve: bool = False,
+        stop_at_stage_key: str = "",
     ) -> OrchestrationRun:
         active = self.get_active_orchestration_run(ticket.id)
         if active:
             raise ValueError(f"Orchestration already running: {active.run_code}")
 
         if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
-            raise ValueError(f"Cannot orchestrate ticket in state: {ticket.state.value}")
+            now = datetime.now(timezone.utc)
+            run = OrchestrationRun(
+                run_code=_orch_code(),
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+                driver=driver,
+                profile_slug=profile_slug,
+                status=OrchestrationRunStatus.SUCCEEDED,
+                current_stage_key=ticket.workflow_stage_key,
+                error_message="Nothing to orchestrate",
+                started_at=now,
+                finished_at=now,
+            )
+            self.session.add(run)
+            self.session.commit()
+            self.session.refresh(run)
+            return run
 
         if ticket.state == TicketState.BACKLOG:
             self.orch.start_ticket(ticket)
@@ -108,6 +126,8 @@ class OrchestrationCallbackService:
             profile_slug=profile_slug,
             status=OrchestrationRunStatus.RUNNING,
             current_stage_key=ticket.workflow_stage_key,
+            auto_approve=auto_approve,
+            stop_at_stage_key=stop_at_stage_key or "",
             started_at=datetime.now(timezone.utc),
         )
         self.session.add(run)

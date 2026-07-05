@@ -33,6 +33,36 @@ def test_create_milestone_ticket(client: TestClient):
     assert body["state"] == "backlog"
 
 
+def test_ticket_tree_multi_state_filter(client: TestClient):
+    all_tickets = client.get("/api/tickets?workspace=loregarden").json()
+    states = sorted({t["state"] for t in all_tickets})
+    assert len(states) >= 1
+    selected = states[: min(2, len(states))]
+    params = "&".join(f"state={state}" for state in selected)
+    filtered = client.get(f"/api/tickets?workspace=loregarden&{params}").json()
+    assert filtered
+    assert all(t["state"] in selected for t in filtered)
+
+
+def test_ticket_tree_multi_type_filter(client: TestClient):
+    all_tickets = client.get("/api/tickets?workspace=loregarden").json()
+    types = sorted({t["work_item_type"] for t in all_tickets})
+    assert len(types) >= 2
+    selected = types[:2]
+    params = "&".join(f"work_item_type={work_item_type}" for work_item_type in selected)
+    filtered = client.get(f"/api/tickets/tree?workspace=loregarden&{params}").json()
+    flat_types: set[str] = set()
+
+    def collect_types(nodes: list[dict]) -> None:
+        for node in nodes:
+            flat_types.add(node["work_item_type"])
+            collect_types(node.get("children") or [])
+
+    collect_types(filtered)
+    assert flat_types
+    assert flat_types.issubset(set(selected))
+
+
 def test_health(client: TestClient):
     res = client.get("/health")
     assert res.status_code == 200
@@ -55,12 +85,15 @@ def test_ticket_tree_hierarchy(client: TestClient):
     assert tree
     root = tree[0]
     assert root["work_item_type"] == "milestone"
+    assert root.get("workspace_slug") == "loregarden"
+    assert "workflow_stage_status" in root
     assert root["children"]
     flat_types = {root["work_item_type"]}
     stack = list(root["children"])
     while stack:
         node = stack.pop()
         flat_types.add(node["work_item_type"])
+        assert "workflow_stage_status" in node
         stack.extend(node["children"])
     assert "feature" in flat_types
     assert "capability" in flat_types

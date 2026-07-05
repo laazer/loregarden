@@ -20,6 +20,7 @@ class OrchestratorConfig(BaseModel):
 class GatesConfig(BaseModel):
     enabled: bool = False
     commands: list[str] = Field(default_factory=list)
+    transition_script: str = ""
 
 
 class SubagentsConfig(BaseModel):

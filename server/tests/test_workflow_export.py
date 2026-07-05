@@ -8,6 +8,7 @@ def test_workflow_templates_loaded(client: TestClient):
     slugs = {t["slug"] for t in res.json()}
     assert "loregarden-tdd" in slugs
     assert "extended-tdd" in slugs
+    assert "blobert-tdd" in slugs
 
 
 def test_runtime_options(client: TestClient):

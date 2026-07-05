@@ -13,6 +13,12 @@ export LOREGARDEN_REPO_ROOT="$ROOT"
 #   LOREGARDEN_LMSTUDIO_MODEL=   — optional; uses first loaded model when empty
 #   LOREGARDEN_LMSTUDIO_STREAM=1 — stream tokens to run logs
 #   LOREGARDEN_MCP_URL=http://127.0.0.1:8000/mcp
+#
+# iCloud + Obsidian memory (optional):
+#   LOREGARDEN_DATABASE_URL=sqlite:///$HOME/Library/Mobile Documents/com~apple~CloudDocs/Loregarden/loregarden.db
+#   LOREGARDEN_OBSIDIAN_VAULT_DIR=$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyVault
+#   LOREGARDEN_MEMORY_SQLITE_URL=sqlite:///$HOME/Library/Mobile Documents/com~apple~CloudDocs/Loregarden/memory.db
+#   LOREGARDEN_ICLOUD_ROOT=   — override auto-detected iCloud Drive root
 
 if ! command -v uv >/dev/null 2>&1; then
   echo "uv is required: https://docs.astral.sh/uv/getting-started/installation/" >&2

@@ -1,5 +1,5 @@
 import type { Approval } from "../api/client";
-import { ApprovalCard } from "./ApprovalCard";
+import { ApprovalCard, type ApprovalResolvePayload } from "./ApprovalCard";
 
 function approvalKindLabel(kind: Approval["kind"]) {
   switch (kind) {
@@ -26,7 +26,7 @@ export function PendingApprovalsSection({
   ticketExternalId?: string;
   submittingApprovalId?: string | null;
   submitError?: string | null;
-  onApprove: (approval: Approval, payload?: { answers?: Record<string, string | string[]>; response?: string }) => void;
+  onApprove: (approval: Approval, payload?: ApprovalResolvePayload) => void;
   onReject: (approval: Approval) => void;
 }) {
   if (approvals.length === 0) return null;

@@ -27,6 +27,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.permission_allowlist import is_permission_allowed
 from loregarden.services.run_errors import agent_timeout_message
 from loregarden.services.subprocess_lines import SubprocessLineReader
 from loregarden.services.workflow_state import set_stage_status
@@ -343,6 +344,14 @@ class PermissionBridgeRunner:
         custom_wait_seen: set[str] = set()
         workspace = self.session.get(Workspace, ticket.workspace_id)
         workspace_slug = workspace.slug if workspace else ""
+        run = self.session.get(AgentRun, run_id)
+        auto_approve = False
+        if run and run.orchestration_run_id:
+            from loregarden.models.domain import OrchestrationRun
+
+            orch_run = self.session.get(OrchestrationRun, run.orchestration_run_id)
+            if orch_run and orch_run.auto_approve:
+                auto_approve = True
 
         def resolve_poll(approval_id: str) -> ApprovalResolution | None:
             if custom_wait and approval_id not in custom_wait_seen:
@@ -490,6 +499,7 @@ class PermissionBridgeRunner:
 
                 request_id = permission["request_id"] or f"perm_{len(stdout_lines)}"
                 bare_mcp = bare_mcp_tool_name(permission["tool_name"])
+                question = is_ask_user_question(permission["tool_name"])
                 if bare_mcp and is_auto_approved_mcp_tool(permission["tool_name"]):
                     tool_input = (
                         permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
@@ -516,7 +526,73 @@ class PermissionBridgeRunner:
                         streamer.set_live("Agent running…")
                     continue
 
-                question = is_ask_user_question(permission["tool_name"])
+                if auto_approve and not question:
+                    tool_input = (
+                        permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
+                    )
+                    bare_mcp = bare_mcp_tool_name(permission["tool_name"])
+                    if bare_mcp:
+                        tool_input = enrich_mcp_tool_input(
+                            bare_tool=bare_mcp,
+                            tool_input=tool_input,
+                            ticket=ticket,
+                            workspace_slug=workspace_slug,
+                        )
+                    response = build_control_response(
+                        request_id=request_id,
+                        approved=True,
+                        updated_input=tool_input,
+                    )
+                    proc.stdin.write((json.dumps(response) + "\n").encode("utf-8"))
+                    proc.stdin.flush()
+                    if streamer:
+                        streamer.append(
+                            "TOOL",
+                            f"Auto-approved: {permission['tool_name']}",
+                            force=True,
+                        )
+                        streamer.set_live("Agent running…")
+                    continue
+
+                tool_input = (
+                    permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
+                )
+                allow_scope = None
+                if not question:
+                    allow_scope = is_permission_allowed(
+                        self.session,
+                        workspace_id=ticket.workspace_id,
+                        ticket_id=ticket.id,
+                        stage_key=ticket.workflow_stage_key,
+                        tool_name=permission["tool_name"],
+                        tool_input=tool_input,
+                    )
+                if allow_scope:
+                    bare_mcp = bare_mcp_tool_name(permission["tool_name"])
+                    allow_input = tool_input
+                    if bare_mcp:
+                        allow_input = enrich_mcp_tool_input(
+                            bare_tool=bare_mcp,
+                            tool_input=tool_input,
+                            ticket=ticket,
+                            workspace_slug=workspace_slug,
+                        )
+                    response = build_control_response(
+                        request_id=request_id,
+                        approved=True,
+                        updated_input=allow_input,
+                    )
+                    proc.stdin.write((json.dumps(response) + "\n").encode("utf-8"))
+                    proc.stdin.flush()
+                    if streamer:
+                        streamer.append(
+                            "TOOL",
+                            f"Auto-approved ({allow_scope} allowlist): {permission['tool_name']}",
+                            force=True,
+                        )
+                        streamer.set_live("Agent running…")
+                    continue
+
                 if streamer:
                     if question:
                         streamer.append("TOOL", "Agent asked clarifying questions", force=True)

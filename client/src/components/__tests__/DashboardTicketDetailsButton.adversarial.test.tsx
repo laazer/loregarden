@@ -1,4 +1,3 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DashboardTicketDetailsButton } from '../DashboardTicketDetailsButton';
@@ -33,7 +32,7 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
       error: null,
     };
 
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
@@ -191,7 +190,7 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
   describe('Modal Opening - Adversarial Cases', () => {
     it('should handle button click when modal is already open', () => {
       mockDashboardContext.selectedTicket = createMockTicket();
-      const onModalOpen = vi.fn();
+      const onModalOpen = jest.fn();
 
       renderWithContextAndQueryClient(
         <DashboardTicketDetailsButton onModalOpen={onModalOpen} />
@@ -206,7 +205,7 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
 
     it('should handle rapid modal open attempts', () => {
       mockDashboardContext.selectedTicket = createMockTicket();
-      const onModalOpen = vi.fn();
+      const onModalOpen = jest.fn();
 
       renderWithContextAndQueryClient(
         <DashboardTicketDetailsButton onModalOpen={onModalOpen} />
@@ -235,7 +234,7 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
 
     it('should handle modal open callback throwing error', () => {
       mockDashboardContext.selectedTicket = createMockTicket();
-      const badCallback = vi.fn(() => {
+      const badCallback = jest.fn(() => {
         throw new Error('Callback failed');
       });
 
@@ -253,7 +252,7 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
       const ticket2 = createMockTicket({ id: 'ticket-2' });
 
       mockDashboardContext.selectedTicket = ticket1;
-      const onModalOpen = vi.fn();
+      const onModalOpen = jest.fn();
 
       const { rerender } = renderWithContextAndQueryClient(
         <DashboardTicketDetailsButton onModalOpen={onModalOpen} />
@@ -427,7 +426,7 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
     it('should handle keyboard activation during loading', () => {
       mockDashboardContext.selectedTicket = createMockTicket();
       mockDashboardContext.isLoading = true;
-      const onModalOpen = vi.fn();
+      const onModalOpen = jest.fn();
 
       renderWithContextAndQueryClient(
         <DashboardTicketDetailsButton onModalOpen={onModalOpen} />
@@ -562,7 +561,7 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
 
     it('should not cause unnecessary re-renders', () => {
       mockDashboardContext.selectedTicket = createMockTicket();
-      const renderSpy = vi.fn();
+      const renderSpy = jest.fn();
 
       const { rerender } = renderWithContextAndQueryClient(
         <div>

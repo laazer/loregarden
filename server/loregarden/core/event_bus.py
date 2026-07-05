@@ -1,4 +1,5 @@
 import json
+import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -27,20 +28,22 @@ class EventBus:
         artifact_id: str | None = None,
         payload: dict[str, Any] | None = None,
     ) -> DomainEvent:
-        event = DomainEvent(
-            type=event_type,
-            workspace_id=workspace_id,
-            ticket_id=ticket_id,
-            run_id=run_id,
-            artifact_id=artifact_id,
-            payload_json=json.dumps(payload or {}),
-        )
-        session.add(event)
-        session.commit()
-        session.refresh(event)
-        for handler in self._subscribers:
-            handler(event)
-        return event
+        with _publish_lock:
+            event = DomainEvent(
+                type=event_type,
+                workspace_id=workspace_id,
+                ticket_id=ticket_id,
+                run_id=run_id,
+                artifact_id=artifact_id,
+                payload_json=json.dumps(payload or {}),
+            )
+            session.add(event)
+            session.commit()
+            persisted = session.get(DomainEvent, event.id)
+            event = persisted or event
+            for handler in self._subscribers:
+                handler(event)
+            return event
 
     def list_recent(self, session: Session, *, limit: int = 100) -> list[DomainEvent]:
         return list(
@@ -51,3 +54,4 @@ class EventBus:
 
 
 event_bus = EventBus()
+_publish_lock = threading.Lock()

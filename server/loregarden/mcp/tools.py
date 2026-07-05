@@ -7,8 +7,15 @@ from typing import Any
 
 from sqlmodel import Session
 
-from loregarden.models.domain import OrchestrationDriver, OrchestrationRunStatus, Workspace
+from loregarden.models.domain import (
+    OrchestrationDriver,
+    OrchestrationRunStatus,
+    TicketState,
+    UpdateTicketRequest,
+    Workspace,
+)
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
@@ -213,6 +220,58 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             payload["status"] = _coerce_string(args.get("status"), field="status")
         payload["message"] = _coerce_optional_string(args.get("message"))
         return payload
+
+    if name == "loregarden_update_ticket":
+        payload = {
+            "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
+        }
+        if args.get("state") is not None:
+            payload["state"] = _coerce_string(args.get("state"), field="state")
+        if not payload.get("state"):
+            raise ValueError("state is required")
+        return payload
+
+    if name == "loregarden_append_learning":
+        payload = {
+            "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
+            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
+            "content": _coerce_string(args.get("content"), field="content"),
+        }
+        tags = args.get("tags")
+        if tags is not None:
+            if isinstance(tags, str):
+                payload["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
+            elif isinstance(tags, list):
+                payload["tags"] = [str(t).strip() for t in tags if str(t).strip()]
+        return payload
+
+    if name == "loregarden_upsert_memory":
+        payload = {
+            "title": _coerce_string(args.get("title"), field="title"),
+        }
+        for field in ("node_id", "body", "ticket_id", "workspace_slug"):
+            if args.get(field) is not None:
+                payload[field] = _coerce_optional_string(args.get(field))
+        tags = args.get("tags")
+        if tags is not None:
+            if isinstance(tags, str):
+                payload["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
+            elif isinstance(tags, list):
+                payload["tags"] = [str(t).strip() for t in tags if str(t).strip()]
+        return payload
+
+    if name == "loregarden_search_memory":
+        return {
+            "query": _coerce_string(args.get("query"), field="query"),
+            "limit": _coerce_optional_int(args.get("limit")) or 20,
+        }
+
+    if name == "loregarden_create_memory_relation":
+        return {
+            "source_id": _coerce_string(args.get("source_id"), field="source_id"),
+            "target_id": _coerce_string(args.get("target_id"), field="target_id"),
+            "relation_type": _coerce_optional_string(args.get("relation_type")) or "related",
+        }
 
     return args
 
@@ -430,6 +489,76 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             required=["run_id"],
         ),
     },
+    {
+        "name": "loregarden_update_ticket",
+        "description": "Manually update ticket state (e.g. mark done after implementation).",
+        "inputSchema": _tool_schema(
+            properties={
+                "ticket_id": _string_prop("Loregarden ticket UUID or external_id slug."),
+                "state": _enum_string_prop(
+                    "New ticket state.",
+                    ["backlog", "in_progress", "blocked", "done", "wont_do"],
+                ),
+            },
+            required=["ticket_id", "state"],
+        ),
+    },
+    {
+        "name": "loregarden_memory_status",
+        "description": "Report configured Obsidian/iCloud memory backends and SQLite paths.",
+        "inputSchema": _tool_schema(properties={}, required=[]),
+    },
+    {
+        "name": "loregarden_append_learning",
+        "description": "Persist ticket learnings to Obsidian notes and/or the memory graph SQLite.",
+        "inputSchema": _tool_schema(
+            properties={
+                "ticket_id": _string_prop("Ticket external id or UUID."),
+                "workspace_slug": _string_prop("Workspace slug."),
+                "content": _string_prop("Learning body (markdown)."),
+                "tags": _string_prop("Optional comma-separated tags or JSON array."),
+            },
+            required=["ticket_id", "workspace_slug", "content"],
+        ),
+    },
+    {
+        "name": "loregarden_upsert_memory",
+        "description": "Upsert a durable memory node (Obsidian note + optional graph SQLite).",
+        "inputSchema": _tool_schema(
+            properties={
+                "node_id": _string_prop("Optional stable node id for updates."),
+                "title": _string_prop("Memory title."),
+                "body": _string_prop("Memory body (markdown)."),
+                "tags": _string_prop("Optional comma-separated tags or JSON array."),
+                "ticket_id": _string_prop("Optional related ticket id."),
+                "workspace_slug": _string_prop("Optional workspace slug."),
+            },
+            required=["title"],
+        ),
+    },
+    {
+        "name": "loregarden_search_memory",
+        "description": "Search Obsidian notes and memory graph nodes.",
+        "inputSchema": _tool_schema(
+            properties={
+                "query": _string_prop("Search text."),
+                "limit": _integer_prop("Max results per backend (default 20)."),
+            },
+            required=["query"],
+        ),
+    },
+    {
+        "name": "loregarden_create_memory_relation",
+        "description": "Link two memory graph nodes in the SQLite memory store.",
+        "inputSchema": _tool_schema(
+            properties={
+                "source_id": _string_prop("Source memory node id."),
+                "target_id": _string_prop("Target memory node id."),
+                "relation_type": _string_prop("Relation label (default related)."),
+            },
+            required=["source_id", "target_id"],
+        ),
+    },
 ]
 
 
@@ -508,6 +637,49 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
         else:
             raise ValueError(f"Unsupported driver for MCP start: {driver_name}")
         return json.dumps(_run_view(run), indent=2)
+
+    if name == "loregarden_update_ticket":
+        ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
+        orch = OrchestrationService(session)
+        body = UpdateTicketRequest(state=TicketState(arguments["state"]))
+        orch.update_ticket_manual(ticket, body)
+        return json.dumps(_ticket_state_payload(session, ticket.id), indent=2)
+
+    memory = AgentMemoryService.from_settings()
+    if name == "loregarden_memory_status":
+        return json.dumps(memory.status(), indent=2)
+
+    if name == "loregarden_append_learning":
+        result = memory.append_learning(
+            ticket_id=arguments["ticket_id"],
+            workspace_slug=arguments["workspace_slug"],
+            content=arguments["content"],
+            tags=arguments.get("tags"),
+        )
+        return json.dumps(result, indent=2)
+
+    if name == "loregarden_upsert_memory":
+        result = memory.upsert_memory(
+            node_id=arguments.get("node_id", ""),
+            title=arguments["title"],
+            body=arguments.get("body", ""),
+            tags=arguments.get("tags"),
+            ticket_id=arguments.get("ticket_id", ""),
+            workspace_slug=arguments.get("workspace_slug", ""),
+        )
+        return json.dumps(result, indent=2)
+
+    if name == "loregarden_search_memory":
+        result = memory.search(arguments["query"], limit=int(arguments.get("limit") or 20))
+        return json.dumps(result, indent=2)
+
+    if name == "loregarden_create_memory_relation":
+        result = memory.create_relation(
+            source_id=arguments["source_id"],
+            target_id=arguments["target_id"],
+            relation_type=arguments.get("relation_type", "related"),
+        )
+        return json.dumps(result, indent=2)
 
     run_id = arguments.get("run_id")
     if not run_id:

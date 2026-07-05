@@ -1,6 +1,6 @@
 """REST API for orchestration callbacks — used by MCP server and external drivers."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlmodel import Session, select
 
 from loregarden.db.session import get_session
@@ -83,7 +83,7 @@ def list_workspace_profiles(slug: str, session: Session = Depends(get_session)) 
 @router.post("/tickets/{ticket_id}/start", response_model=OrchestrationRunView)
 def start_orchestration(
     ticket_id: str,
-    body: StartOrchestrationRequest,
+    body: StartOrchestrationRequest = Body(default_factory=StartOrchestrationRequest),
     session: Session = Depends(get_session),
 ) -> OrchestrationRunView:
     svc = OrchestrationCallbackService(session)

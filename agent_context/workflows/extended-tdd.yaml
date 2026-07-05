@@ -42,9 +42,15 @@ stages:
     order: 7
   - key: review
     name: Script Review
-    agent_id: gatekeeper
-    skill_name: review
+    agent_id: ""
+    skill_name: ""
+    stage_type: parallel
     order: 8
+    parallel_agents:
+      - agent_id: static_qa
+        skill_name: static_qa
+      - agent_id: gatekeeper
+        skill_name: ac_gate
   - key: approval
     name: Human Verification
     agent_id: ""

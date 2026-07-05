@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 
 import type { TicketState, WorkItemType } from "../api/client";
 
-type Tab = "diff" | "logs" | "tests" | "context" | "errors" | "triage";
+type Tab = "diff" | "logs" | "tests" | "context" | "errors" | "triage" | "pr";
 type AppPage = "dashboard" | "studio";
 
 export type PaneId = "workspaces" | "tickets" | "workflow" | "artifacts";
@@ -12,8 +12,8 @@ export type PaneVisibility = Record<PaneId, boolean>;
 
 interface UiState {
   selectedTicketId: string | null;
-  filter: TicketState | "all";
-  typeFilter: WorkItemType | "all";
+  stateFilters: TicketState[];
+  typeFilters: WorkItemType[];
   search: string;
   expandedTicketIds: string[];
   workspace: string;
@@ -22,8 +22,10 @@ interface UiState {
   inboxOpen: boolean;
   paneVisibility: PaneVisibility;
   setSelectedTicketId: (id: string | null) => void;
-  setFilter: (f: TicketState | "all") => void;
-  setTypeFilter: (t: WorkItemType | "all") => void;
+  toggleStateFilter: (state: TicketState) => void;
+  clearStateFilters: () => void;
+  toggleTypeFilter: (type: WorkItemType) => void;
+  clearTypeFilters: () => void;
   setSearch: (s: string) => void;
   toggleExpanded: (id: string) => void;
   expandAll: (ids: string[]) => void;
@@ -37,12 +39,17 @@ interface UiState {
   togglePane: (pane: PaneId) => void;
 }
 
+type PersistedUiState = Pick<
+  UiState,
+  "expandedTicketIds" | "workspace" | "typeFilters" | "stateFilters" | "paneVisibility"
+>;
+
 export const useUiStore = create<UiState>()(
   persist(
     (set, get) => ({
       selectedTicketId: null,
-      filter: "all",
-      typeFilter: "all",
+      stateFilters: [],
+      typeFilters: [],
       search: "",
       expandedTicketIds: [],
       workspace: "all",
@@ -56,8 +63,24 @@ export const useUiStore = create<UiState>()(
         artifacts: true,
       },
       setSelectedTicketId: (id) => set({ selectedTicketId: id }),
-      setFilter: (filter) => set({ filter }),
-      setTypeFilter: (typeFilter) => set({ typeFilter }),
+      toggleStateFilter: (state) => {
+        const current = get().stateFilters;
+        set({
+          stateFilters: current.includes(state)
+            ? current.filter((value) => value !== state)
+            : [...current, state],
+        });
+      },
+      clearStateFilters: () => set({ stateFilters: [] }),
+      toggleTypeFilter: (type) => {
+        const current = get().typeFilters;
+        set({
+          typeFilters: current.includes(type)
+            ? current.filter((value) => value !== type)
+            : [...current, type],
+        });
+      },
+      clearTypeFilters: () => set({ typeFilters: [] }),
       setSearch: (search) => set({ search }),
       toggleExpanded: (id) => {
         const cur = new Set(get().expandedTicketIds);
@@ -95,10 +118,33 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "loregarden-ui",
+      version: 1,
+      migrate: (persistedState, version) => {
+        const state = { ...(persistedState as Record<string, unknown>) };
+        if (version < 1) {
+          const legacyTypeFilter = state.typeFilter;
+          if (typeof legacyTypeFilter === "string" && legacyTypeFilter !== "all") {
+            state.typeFilters = [legacyTypeFilter];
+          } else if (!Array.isArray(state.typeFilters)) {
+            state.typeFilters = [];
+          }
+          delete state.typeFilter;
+
+          const legacyFilter = state.filter;
+          if (typeof legacyFilter === "string" && legacyFilter !== "all") {
+            state.stateFilters = [legacyFilter];
+          } else if (!Array.isArray(state.stateFilters)) {
+            state.stateFilters = [];
+          }
+          delete state.filter;
+        }
+        return state as PersistedUiState;
+      },
       partialize: (s) => ({
         expandedTicketIds: s.expandedTicketIds,
         workspace: s.workspace,
-        typeFilter: s.typeFilter,
+        typeFilters: s.typeFilters,
+        stateFilters: s.stateFilters,
         paneVisibility: s.paneVisibility,
       }),
     },

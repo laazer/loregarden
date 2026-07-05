@@ -29,13 +29,14 @@ class CliAgentExecutor:
         self.session = session
         self.orchestration = OrchestrationService(session)
 
-    def execute(self, run: AgentRun, ticket: Ticket) -> AgentRun:
+    def execute(self, run: AgentRun, ticket: Ticket, *, advance_workflow: bool = True, skip_git_branch: bool = False) -> AgentRun:
         agent = get_agent(run.agent_id)
         if not agent:
             return self.orchestration.complete_run(
                 run,
                 status=RunStatus.FAILED,
                 stderr=f"Unknown agent: {run.agent_id}",
+                advance_workflow=advance_workflow,
             )
 
         workspace = self.session.get(Workspace, ticket.workspace_id)
@@ -44,6 +45,7 @@ class CliAgentExecutor:
                 run,
                 status=RunStatus.FAILED,
                 stderr=f"Unknown workspace for ticket: {ticket.id}",
+                advance_workflow=advance_workflow,
             )
 
         repo_root = resolve_workspace_root(workspace)
@@ -53,7 +55,21 @@ class CliAgentExecutor:
                 run,
                 status=RunStatus.FAILED,
                 stderr=f"Workspace repo path does not exist: {repo_root}",
+                advance_workflow=advance_workflow,
             )
+
+        from loregarden.services.git_branch import ensure_ticket_branch
+
+        if not skip_git_branch:
+            try:
+                ensure_ticket_branch(repo_root, ticket)
+            except (ValueError, subprocess.CalledProcessError) as exc:
+                return self.orchestration.complete_run(
+                    run,
+                    status=RunStatus.FAILED,
+                    stderr=f"Failed to checkout branch: {exc}",
+                    advance_workflow=advance_workflow,
+                )
 
         prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace)
         with tempfile.TemporaryDirectory(prefix="loregarden-run-") as tmp:
@@ -75,6 +91,7 @@ class CliAgentExecutor:
                     run,
                     status=RunStatus.FAILED,
                     stderr=str(exc),
+                    advance_workflow=advance_workflow,
                 )
 
             run.command = " ".join(invocation.argv)
@@ -119,6 +136,7 @@ class CliAgentExecutor:
                     stdout=stdout,
                     stderr=stderr,
                     artifacts=artifacts,
+                    advance_workflow=advance_workflow,
                 )
                 self._touch_ticket_agent(ticket, agent.get("name", run.agent_id), status)
                 return completed
@@ -129,6 +147,7 @@ class CliAgentExecutor:
                     run,
                     status=RunStatus.FAILED,
                     stderr=msg,
+                    advance_workflow=advance_workflow,
                 )
             except OSError as exc:
                 streamer.finalize(status=RunStatus.FAILED, stderr=str(exc))
@@ -136,6 +155,7 @@ class CliAgentExecutor:
                     run,
                     status=RunStatus.FAILED,
                     stderr=f"Failed to spawn agent CLI: {exc}",
+                    advance_workflow=advance_workflow,
                 )
 
     def _run_print_mode(

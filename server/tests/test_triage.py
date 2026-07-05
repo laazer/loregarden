@@ -118,7 +118,7 @@ def test_triage_invoke_uses_runtime_override(client: TestClient, monkeypatch):
         def kill(self):
             return None
 
-    monkeypatch.setattr(triage_service, "resolve_cli_invocation", fake_resolve)
+    monkeypatch.setattr(triage_service, "build_triage_invocation", fake_resolve)
     monkeypatch.setattr(triage_service.subprocess, "Popen", lambda *args, **kwargs: FakeProc())
     monkeypatch.delenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", raising=False)
     monkeypatch.setenv("LOREGARDEN_LMSTUDIO_STUB_RESPONSE", "runtime override ok")

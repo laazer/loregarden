@@ -10,6 +10,7 @@ import {
   type StudioWorkflow,
   type StudioWorkflowStage,
 } from "../api/client";
+import { BrandMark } from "../components/BrandMark";
 import { AgentPreviewPanel } from "../components/studio/AgentPreviewPanel";
 import { McpToolGuideSection } from "../components/studio/McpToolGuideSection";
 import { useUiStore } from "../state/uiStore";
@@ -306,7 +307,7 @@ export function StudioPage() {
     <div className="app-shell">
       <header className="top-bar">
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span className="brand-mark">LG</span>
+          <BrandMark />
           <div>
             <div className="brand-title">Agent & Workflow Studio</div>
             <div className="brand-sub">Design agents, gates, handoffs, and agent chains</div>

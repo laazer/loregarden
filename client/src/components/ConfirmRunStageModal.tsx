@@ -2,6 +2,13 @@ import { useEffect, useState } from "react";
 
 import type { RuntimeOptions, TicketDetail, WorkflowStageView, WorkspaceRuntimeSettings } from "../api/client";
 import {
+  isClassifyStage,
+  isDoneStage,
+  isHumanGateStage,
+  isParallelStage,
+  stageAgentSubtitle,
+} from "../lib/stageDisplay";
+import {
   WorkspaceRuntimeFields,
   runtimeSettingsEqual,
 } from "./WorkspaceRuntimeFields";
@@ -15,8 +22,10 @@ interface ConfirmRunStageModalProps {
   runtimeOptions: RuntimeOptions | undefined;
   isRunning: boolean;
   isSavingRuntime: boolean;
+  isOpeningPr?: boolean;
   onClose: () => void;
   onConfirm: (runtime: WorkspaceRuntimeSettings) => void | Promise<void>;
+  onOpenPr?: () => void;
 }
 
 export function ConfirmRunStageModal({
@@ -28,8 +37,10 @@ export function ConfirmRunStageModal({
   runtimeOptions,
   isRunning,
   isSavingRuntime,
+  isOpeningPr = false,
   onClose,
   onConfirm,
+  onOpenPr,
 }: ConfirmRunStageModalProps) {
   const [draftRuntime, setDraftRuntime] = useState(workspaceRuntime);
 
@@ -43,7 +54,9 @@ export function ConfirmRunStageModal({
   const isRerun = stage.status === "done";
   const humanGate = isHumanGateStage(stage);
   const doneStage = isDoneStage(stage);
-  const busy = isRunning || isSavingRuntime;
+  const parallelStage = isParallelStage(stage);
+  const classifyStage = isClassifyStage(stage);
+  const busy = isRunning || isSavingRuntime || isOpeningPr;
   const runtimeDirty = !runtimeSettingsEqual(draftRuntime, workspaceRuntime);
 
   const handleConfirm = () => {
@@ -96,6 +109,25 @@ export function ConfirmRunStageModal({
                   approval — no agent CLI is invoked.
                 </>
               )
+            ) : parallelStage ? (
+              isRerun ? (
+                <>
+                  Re-run parallel review for{" "}
+                  <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>? All configured
+                  reviewers will run concurrently.
+                </>
+              ) : (
+                <>
+                  Run parallel review for{" "}
+                  <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>? All configured
+                  reviewers will run concurrently.
+                </>
+              )
+            ) : classifyStage ? (
+              <>
+                Run <strong style={{ color: "var(--tx)" }}>{stage.name}</strong> using the ticket&apos;s{" "}
+                <code>next_agent</code> when set, otherwise keyword routing applies.
+              </>
             ) : isRerun ? (
               <>
                 Are you sure you want to re-run <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>?
@@ -108,12 +140,11 @@ export function ConfirmRunStageModal({
               </>
             )}
           </p>
-          {(stage.agent_id || stage.skill_name) && (
+          {(stageAgentSubtitle(stage) || stage.agent_id || stage.skill_name) && (
             <div className="state-card" style={{ marginTop: 4 }}>
-              <div className="state-label">Agent</div>
+              <div className="state-label">{parallelStage ? "Reviewers" : classifyStage ? "Routes" : "Agent"}</div>
               <div style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
-                {stage.agent_id}
-                {stage.skill_name ? ` · ${stage.skill_name}` : ""}
+                {stageAgentSubtitle(stage) || `${stage.agent_id}${stage.skill_name ? ` · ${stage.skill_name}` : ""}`}
               </div>
             </div>
           )}
@@ -141,6 +172,11 @@ export function ConfirmRunStageModal({
           <button type="button" className="btn-secondary" disabled={busy} onClick={onClose}>
             Cancel
           </button>
+          {humanGate && onOpenPr && (
+            <button type="button" className="btn-secondary" disabled={busy} onClick={onOpenPr}>
+              {isOpeningPr ? "Opening PR…" : "Open PR"}
+            </button>
+          )}
           <button type="button" className="btn-primary" disabled={busy} onClick={handleConfirm}>
             {isSavingRuntime
               ? "Saving…"
@@ -155,52 +191,17 @@ export function ConfirmRunStageModal({
                   : humanGate
                     ? isRerun
                       ? "Re-request approval"
-                      : "Request approval"
-                    : isRerun
-                      ? "Re-run stage"
-                      : "Run stage"}
+                      : "Approve"
+                    : parallelStage
+                  ? isRerun
+                    ? "Re-run reviews"
+                    : "Run reviews"
+                  : isRerun
+                    ? "Re-run stage"
+                    : "Run stage"}
           </button>
         </div>
       </div>
     </>
   );
-}
-
-export function isHumanGateStage(stage: WorkflowStageView): boolean {
-  return !stage.agent_id?.trim() && stage.key !== "done";
-}
-
-export function isDoneStage(stage: WorkflowStageView): boolean {
-  return stage.key === "done";
-}
-
-export function stageRunButtonLabel(stage: WorkflowStageView, isRunning: boolean): string {
-  if (isRunning) return "Running…";
-  if (isDoneStage(stage)) {
-    if (stage.status === "done") return "Complete";
-    return "Complete ticket";
-  }
-  if (isHumanGateStage(stage)) {
-    if (stage.status === "awaiting") return "Awaiting approval";
-    if (stage.status === "done") return "Re-request";
-    return "Request approval";
-  }
-  if (stage.status === "done") return "Re-Run";
-  return "Run";
-}
-
-export function currentStageRunLabel(stage: WorkflowStageView | undefined, isRunning: boolean): string {
-  if (!stage) return "Run current stage";
-  if (isRunning) return "Running…";
-  if (isDoneStage(stage)) {
-    if (stage.status === "done") return "Ticket complete";
-    return "Complete ticket";
-  }
-  if (isHumanGateStage(stage)) {
-    if (stage.status === "awaiting") return "Awaiting approval";
-    if (stage.status === "done") return "Re-request approval";
-    return "Request approval";
-  }
-  if (stage.status === "done") return "Re-run current stage";
-  return "Run current stage";
 }

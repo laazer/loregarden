@@ -1,4 +1,3 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TicketDetailsModal } from '../TicketDetailsModal';
@@ -135,7 +134,7 @@ describe('TicketDetailsModal', () => {
 
     it('should close modal when close button is clicked', async () => {
       // SPEC: Modal should close when user clicks close button
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
@@ -149,7 +148,7 @@ describe('TicketDetailsModal', () => {
 
     it('should close modal when escape key is pressed', async () => {
       // SPEC: Modal should close when user presses escape key
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
@@ -163,7 +162,7 @@ describe('TicketDetailsModal', () => {
 
     it('should close modal when overlay/backdrop is clicked', async () => {
       // SPEC: Modal should close when user clicks outside the modal
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
@@ -177,7 +176,7 @@ describe('TicketDetailsModal', () => {
 
     it('should not close modal when clicking inside modal content', async () => {
       // SPEC: Modal should remain open when clicking modal content (not overlay)
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
@@ -198,7 +197,7 @@ describe('TicketDetailsModal', () => {
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
       );
 
-      expect(screen.getByText('Important Feature')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Important Feature')).toBeInTheDocument();
     });
 
     it('should display ticket ID', () => {
@@ -218,7 +217,41 @@ describe('TicketDetailsModal', () => {
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
       );
 
-      expect(screen.getByText('This is the full description of the ticket.')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('This is the full description of the ticket.')).toBeInTheDocument();
+    });
+
+    it('should allow editing title and description and save changes', async () => {
+      const onSave = jest.fn().mockResolvedValue(undefined);
+      const ticket = createMockTicket({ title: 'Original title', description: 'Original description' });
+      renderWithQueryClient(
+        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} onSave={onSave} />
+      );
+
+      fireEvent.change(screen.getByDisplayValue('Original title'), { target: { value: 'Updated title' } });
+      fireEvent.change(screen.getByDisplayValue('Original description'), {
+        target: { value: 'Updated description' },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+      await waitFor(() => {
+        expect(onSave).toHaveBeenCalledWith({
+          title: 'Updated title',
+          description: 'Updated description',
+        });
+      });
+    });
+
+    it('should disable save when title is empty', () => {
+      const onSave = jest.fn();
+      const ticket = createMockTicket({ title: 'Original title' });
+      renderWithQueryClient(
+        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} onSave={onSave} />
+      );
+
+      fireEvent.change(screen.getByDisplayValue('Original title'), { target: { value: '   ' } });
+
+      expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled();
     });
 
     it('should display acceptance criteria as a list', () => {
@@ -541,7 +574,7 @@ describe('TicketDetailsModal', () => {
 
     it('should provide keyboard navigation', () => {
       // SPEC: Users should be able to navigate modal with keyboard
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
@@ -567,7 +600,7 @@ describe('TicketDetailsModal', () => {
 
     it('should preserve state when toggling multiple times', () => {
       // SPEC: Modal state should be independent of Dashboard state
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket({ title: 'Persistent Ticket' });
       const { rerender } = renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={false} onClose={onClose} />
@@ -619,7 +652,7 @@ describe('TicketDetailsModal', () => {
     it('should not re-render unnecessarily when props do not change', () => {
       // SPEC: Component should use memoization or efficient comparison
       const ticket = createMockTicket();
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const { rerender } = renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
       );
@@ -654,7 +687,7 @@ describe('TicketDetailsModal', () => {
 
     it('should trap focus within modal when open (optional - depends on implementation)', () => {
       // SPEC: Modal should contain focus to prevent user from tabbing behind it
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
@@ -667,7 +700,7 @@ describe('TicketDetailsModal', () => {
 
     it('should restore focus to button when modal closes', () => {
       // SPEC: Focus should return to the trigger button after modal closes
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
       const { rerender } = renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
@@ -723,7 +756,7 @@ describe('TicketDetailsModal', () => {
   describe('Rapid Open/Close Cycles', () => {
     it('should handle rapid open/close without errors', async () => {
       // SPEC: Modal should be stable under rapid state changes
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
       const { rerender } = renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={false} onClose={onClose} />
@@ -756,7 +789,7 @@ describe('TicketDetailsModal', () => {
         title: 'Immutable Title',
         external_id: '16-modal-with-ticket-details',
       });
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const { rerender } = renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
       );
@@ -792,7 +825,7 @@ describe('TicketDetailsModal', () => {
         <TicketDetailsModal ticket={ticket1} isOpen={true} onClose={() => {}} />
       );
 
-      expect(screen.getByText('First Ticket')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('First Ticket')).toBeInTheDocument();
 
       // Switch to different ticket
       rerender(
@@ -801,8 +834,8 @@ describe('TicketDetailsModal', () => {
         </QueryClientProvider>
       );
 
-      expect(screen.getByText('Second Ticket')).toBeInTheDocument();
-      expect(screen.queryByText('First Ticket')).not.toBeInTheDocument();
+      expect(screen.getByDisplayValue('Second Ticket')).toBeInTheDocument();
+      expect(screen.queryByDisplayValue('First Ticket')).not.toBeInTheDocument();
     });
   });
 

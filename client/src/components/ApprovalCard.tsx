@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { AgentQuestion, Approval } from "../api/client";
-import { formatJsonForDisplay } from "../utils/formatJson";
+import { PermissionDetails } from "./PermissionDetails";
+
+export type ApprovalResolvePayload = {
+  answers?: Record<string, string | string[]>;
+  response?: string;
+  always_allow?: boolean;
+  allow_for_ticket?: boolean;
+  allow_for_stage?: boolean;
+};
 
 function questionList(approval: Approval): AgentQuestion[] {
   if (approval.questions?.length) return approval.questions;
@@ -35,29 +43,38 @@ export function ApprovalCard({
   compact = false,
 }: {
   approval: Approval;
-  onApprove: (payload?: { answers?: Record<string, string | string[]>; response?: string }) => void;
+  onApprove: (payload?: ApprovalResolvePayload) => void;
   onReject: () => void;
   onInspect?: () => void;
   isSubmitting?: boolean;
   compact?: boolean;
 }) {
   const isQuestion = approval.kind === "cli_question";
+  const isPermission = approval.kind === "cli_permission";
   const questions = useMemo(() => (isQuestion ? questionList(approval) : []), [approval, isQuestion]);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [customText, setCustomText] = useState<Record<string, string>>({});
   const [freeformResponse, setFreeformResponse] = useState("");
+  const [alwaysAllowWorkspace, setAlwaysAllowWorkspace] = useState(false);
+  const [allowForTicket, setAllowForTicket] = useState(false);
+  const [allowForStage, setAllowForStage] = useState(false);
 
   useEffect(() => {
     setAnswers({});
     setCustomText({});
     setFreeformResponse("");
+    setAlwaysAllowWorkspace(false);
+    setAllowForTicket(false);
+    setAllowForStage(false);
   }, [approval.id]);
 
   const canSubmit = !isQuestion || answersComplete(questions, answers, freeformResponse);
-  const toolInputDisplay = useMemo(
-    () => formatJsonForDisplay(approval.tool_input_json),
-    [approval.tool_input_json],
-  );
+
+  const resolvePayload = (): ApprovalResolvePayload => ({
+    always_allow: alwaysAllowWorkspace || undefined,
+    allow_for_ticket: allowForTicket || undefined,
+    allow_for_stage: allowForStage || undefined,
+  });
 
   const submitAnswers = () => {
     const merged: Record<string, string | string[]> = { ...answers };
@@ -67,7 +84,12 @@ export function ApprovalCard({
     onApprove({
       answers: Object.keys(merged).length ? merged : undefined,
       response: freeformResponse.trim() || undefined,
+      ...resolvePayload(),
     });
+  };
+
+  const submitApproval = () => {
+    onApprove(resolvePayload());
   };
 
   return (
@@ -203,23 +225,53 @@ export function ApprovalCard({
           </div>
         )}
 
-        {approval.kind === "cli_permission" && approval.tool_name && (
-          <pre
-            style={{
-              marginTop: 10,
-              padding: 10,
-              borderRadius: 8,
-              background: "var(--bg3)",
-              border: "1px solid var(--bd)",
-              fontFamily: "var(--mono)",
-              fontSize: 10.5,
-              overflowX: "auto",
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {approval.tool_name}
-            {toolInputDisplay ? `\n${toolInputDisplay}` : ""}
-          </pre>
+        {isPermission && approval.tool_name && (
+          <>
+            <PermissionDetails toolName={approval.tool_name} toolInputJson={approval.tool_input_json} />
+            <div className="permission-allow-scopes">
+              <div className="permission-allow-scopes-title">Remember this approval</div>
+              {approval.workspace_slug && (
+                <label className="permission-always-allow">
+                  <input
+                    type="checkbox"
+                    checked={alwaysAllowWorkspace}
+                    disabled={isSubmitting}
+                    onChange={(e) => setAlwaysAllowWorkspace(e.target.checked)}
+                  />
+                  <span>
+                    Always allow in workspace <strong>{approval.workspace_slug}</strong>
+                  </span>
+                </label>
+              )}
+              {(approval.ticket_external_id || approval.ticket_id) && (
+                <label className="permission-always-allow">
+                  <input
+                    type="checkbox"
+                    checked={allowForTicket}
+                    disabled={isSubmitting}
+                    onChange={(e) => setAllowForTicket(e.target.checked)}
+                  />
+                  <span>
+                    Always allow for ticket{" "}
+                    <strong>{approval.ticket_external_id || approval.ticket_id}</strong>
+                  </span>
+                </label>
+              )}
+              {approval.stage_name && (
+                <label className="permission-always-allow">
+                  <input
+                    type="checkbox"
+                    checked={allowForStage}
+                    disabled={isSubmitting}
+                    onChange={(e) => setAllowForStage(e.target.checked)}
+                  />
+                  <span>
+                    Always allow for stage <strong>{approval.stage_name}</strong>
+                  </span>
+                </label>
+              )}
+            </div>
+          </>
         )}
       </div>
       <div style={{ display: "flex", borderTop: "1px solid var(--bd)" }}>
@@ -239,9 +291,9 @@ export function ApprovalCard({
             className="btn-secondary"
             style={{ flex: 1, borderRadius: 0, color: "var(--grl)" }}
             disabled={isSubmitting}
-            onClick={() => onApprove()}
+            onClick={submitApproval}
           >
-            {approval.kind === "cli_permission" ? "Allow" : "Approve"}
+            {isPermission ? "Allow" : "Approve"}
           </button>
         )}
         <button
@@ -251,7 +303,7 @@ export function ApprovalCard({
           disabled={isSubmitting}
           onClick={onReject}
         >
-          {isQuestion ? "Decline" : approval.kind === "cli_permission" ? "Deny" : "Reject"}
+          {isQuestion ? "Decline" : isPermission ? "Deny" : "Reject"}
         </button>
         {!compact && onInspect && (
           <button type="button" className="btn-secondary" style={{ flex: 1, borderRadius: 0 }} onClick={onInspect}>

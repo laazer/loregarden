@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlmodel import Session, col, select
 
 from loregarden.db.session import get_session
@@ -15,6 +15,11 @@ from loregarden.models.domain import (
     Ticket,
     TicketCreate,
     TicketDetail,
+    TicketImportPreviewRequest,
+    TicketImportPreviewPathsRequest,
+    TicketImportPreviewResponse,
+    TicketImportRequest,
+    TicketImportResult,
     TicketState,
     TicketSummary,
     TicketTreeNode,
@@ -27,8 +32,11 @@ from loregarden.models.domain import (
 from loregarden.services.hierarchy_service import build_tree, child_count
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_errors import normalize_timeout_stderr
-from loregarden.services.run_service import RunService, schedule_agent_run
+from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.run_service import RunService, schedule_agent_run, schedule_orchestration
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.ticket_import_service import TicketImportService
+from loregarden.services.path_browser import read_import_files
 from loregarden.services.triage_service import (
     send_triage_message,
     set_triage_runtime,
@@ -58,6 +66,8 @@ def _ticket_summary(session: Session, ticket: Ticket) -> TicketSummary:
         from loregarden.core.workflow_loader import stage_display_name
 
         stage_name = stage_display_name(template, ticket.workflow_stage_key)
+    stages = orch.build_stage_views(ticket)
+    session.refresh(ticket)
     return TicketSummary(
         id=ticket.id,
         external_id=ticket.external_id,
@@ -72,7 +82,10 @@ def _ticket_summary(session: Session, ticket: Ticket) -> TicketSummary:
         work_item_type=ticket.work_item_type,
         parent_ticket_id=ticket.parent_ticket_id,
         milestone=ticket.milestone,
+        branch=ticket.branch,
         child_count=child_count(session, ticket.id),
+        next_agent=ticket.next_agent,
+        stages=stages,
     )
 
 
@@ -86,7 +99,7 @@ def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
     )
 
     ticket_id = ticket.id
-    grouped: dict = {"diff": None, "logs": [], "tests": None, "context": [], "live": None, "error": None}
+    grouped: dict = {"diff": None, "logs": [], "tests": None, "context": [], "live": None, "error": None, "pr": None}
     artifacts = session.exec(
         select(Artifact).where(Artifact.ticket_id == ticket_id)
     ).all()
@@ -104,6 +117,8 @@ def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
             grouped["tests"] = content
         elif art.kind == "context":
             grouped["context"].append(content)
+        elif art.kind == "pr":
+            grouped["pr"] = content
     if error_artifacts:
         latest_error = sorted(error_artifacts, key=lambda a: -a.created_at.timestamp())[0]
         error_content = json.loads(latest_error.content_json or "{}")
@@ -178,12 +193,34 @@ def _workspace_filter(session: Session, workspace: str | None):
     return ws
 
 
+def _apply_ticket_query_filters(
+    query,
+    *,
+    states: list[TicketState] | None,
+    work_item_types: list[WorkItemType] | None,
+    milestone: str | None,
+    search: str | None,
+):
+    if states:
+        query = query.where(col(Ticket.state).in_(states))
+    if work_item_types:
+        query = query.where(col(Ticket.work_item_type).in_(work_item_types))
+    if milestone:
+        query = query.where(Ticket.milestone == milestone)
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.where(
+            (col(Ticket.title).like(term)) | (col(Ticket.external_id).like(term))
+        )
+    return query
+
+
 @router.get("/tree", response_model=list[TicketTreeNode])
 def ticket_tree(
     *,
     workspace: str | None = None,
-    state: TicketState | None = None,
-    work_item_type: WorkItemType | None = None,
+    state: list[TicketState] | None = Query(default=None),
+    work_item_type: list[WorkItemType] | None = Query(default=None),
     milestone: str | None = None,
     search: str | None = None,
     session: Session = Depends(get_session),
@@ -195,17 +232,13 @@ def ticket_tree(
     query = select(Ticket)
     if ws:
         query = query.where(Ticket.workspace_id == ws.id)
-    if state:
-        query = query.where(Ticket.state == state)
-    if work_item_type:
-        query = query.where(Ticket.work_item_type == work_item_type)
-    if milestone:
-        query = query.where(Ticket.milestone == milestone)
-    if search:
-        term = f"%{search.strip()}%"
-        query = query.where(
-            (col(Ticket.title).like(term)) | (col(Ticket.external_id).like(term))
-        )
+    query = _apply_ticket_query_filters(
+        query,
+        states=state,
+        work_item_types=work_item_type,
+        milestone=milestone,
+        search=search,
+    )
 
     tickets = session.exec(query).all()
     stage_names: dict[str, str] = {}
@@ -223,8 +256,8 @@ def ticket_tree(
 def list_tickets(
     *,
     workspace: str | None = None,
-    state: TicketState | None = None,
-    work_item_type: WorkItemType | None = None,
+    state: list[TicketState] | None = Query(default=None),
+    work_item_type: list[WorkItemType] | None = Query(default=None),
     parent_ticket_id: str | None = None,
     roots_only: bool = False,
     milestone: str | None = None,
@@ -238,21 +271,17 @@ def list_tickets(
     query = select(Ticket)
     if ws:
         query = query.where(Ticket.workspace_id == ws.id)
-    if state:
-        query = query.where(Ticket.state == state)
-    if work_item_type:
-        query = query.where(Ticket.work_item_type == work_item_type)
+    query = _apply_ticket_query_filters(
+        query,
+        states=state,
+        work_item_types=work_item_type,
+        milestone=milestone,
+        search=search,
+    )
     if parent_ticket_id:
         query = query.where(Ticket.parent_ticket_id == parent_ticket_id)
     if roots_only:
         query = query.where(Ticket.parent_ticket_id.is_(None))  # type: ignore[union-attr]
-    if milestone:
-        query = query.where(Ticket.milestone == milestone)
-    if search:
-        term = f"%{search.strip()}%"
-        query = query.where(
-            (col(Ticket.title).like(term)) | (col(Ticket.external_id).like(term))
-        )
     tickets = session.exec(query.order_by(Ticket.priority, Ticket.created_at)).all()
     return [_ticket_summary(session, t) for t in tickets]
 
@@ -275,6 +304,49 @@ def create_ticket(body: TicketCreate, session: Session = Depends(get_session)) -
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return get_ticket(ticket.id, session)
+
+
+@router.post("/import/preview", response_model=TicketImportPreviewResponse)
+def preview_ticket_import(
+    body: TicketImportPreviewRequest,
+    session: Session = Depends(get_session),
+) -> TicketImportPreviewResponse:
+    if not body.files:
+        raise HTTPException(400, "At least one file is required")
+    svc = TicketImportService(session)
+    return svc.preview(
+        workspace_slug=body.workspace_slug,
+        files=[(file.name, file.content) for file in body.files],
+    )
+
+
+@router.post("/import/preview-paths", response_model=TicketImportPreviewResponse)
+def preview_ticket_import_paths(
+    body: TicketImportPreviewPathsRequest,
+    session: Session = Depends(get_session),
+) -> TicketImportPreviewResponse:
+    if not body.file_paths:
+        raise HTTPException(400, "At least one file path is required")
+    try:
+        files = read_import_files(body.file_paths)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    svc = TicketImportService(session)
+    return svc.preview(workspace_slug=body.workspace_slug, files=files)
+
+
+@router.post("/import", response_model=TicketImportResult, status_code=201)
+def import_tickets(
+    body: TicketImportRequest,
+    session: Session = Depends(get_session),
+) -> TicketImportResult:
+    if not body.tickets:
+        raise HTTPException(400, "At least one ticket is required")
+    svc = TicketImportService(session)
+    result = svc.import_tickets(workspace_slug=body.workspace_slug, tickets=body.tickets)
+    if result.created_count == 0 and result.errors:
+        raise HTTPException(400, "; ".join(result.errors))
+    return result
 
 
 @router.get("/{ticket_id}/triage")
@@ -324,17 +396,18 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
     orch.reconcile_ticket(ticket)
     session.refresh(ticket)
     summary = _ticket_summary(session, ticket)
+    template = orch.get_template_for_ticket(ticket)
     return TicketDetail(
         **summary.model_dump(),
         description=ticket.description,
         acceptance_criteria=json.loads(ticket.acceptance_criteria_json or "[]"),
         revision=ticket.revision,
         last_updated_by=ticket.last_updated_by,
-        next_agent=ticket.next_agent,
         next_status=ticket.next_status,
         blocking_issues=normalize_timeout_stderr(ticket.blocking_issues),
         state_locked=ticket.state_locked,
-        stages=orch.build_stage_views(ticket),
+        workflow_template_slug=template.slug if template else "",
+        workflow_template_name=template.name if template else "",
         artifacts=_artifacts_grouped(session, ticket),
     )
 
@@ -360,18 +433,40 @@ def update_ticket(
 @router.post("/{ticket_id}/orchestrate", response_model=TicketDetail)
 def orchestrate_ticket(
     ticket_id: str,
-    body: StartOrchestrationRequest,
+    body: StartOrchestrationRequest = Body(default_factory=StartOrchestrationRequest),
     session: Session = Depends(get_session),
 ) -> TicketDetail:
     ticket = session.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(404, "Ticket not found")
-    run_svc = RunService(session)
+    active = OrchestrationCallbackService(session).get_active_orchestration_run(ticket.id)
+    if active:
+        raise HTTPException(400, f"Orchestration already running: {active.run_code}")
     try:
-        run_svc.orchestrate_ticket(ticket, max_stages=body.max_stages, driver=body.driver)
+        schedule_orchestration(
+            ticket.id,
+            max_stages=body.max_stages,
+            driver=body.driver,
+            stop_at_stage_key=body.stop_at_stage_key,
+            auto_approve=body.auto_approve,
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     session.refresh(ticket)
+    return get_ticket(ticket_id, session)
+
+
+@router.post("/{ticket_id}/open-pr", response_model=TicketDetail)
+def open_ticket_pr(ticket_id: str, session: Session = Depends(get_session)) -> TicketDetail:
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    from loregarden.services.github_pr_service import create_ticket_pull_request
+
+    try:
+        create_ticket_pull_request(session, ticket)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return get_ticket(ticket_id, session)
 
 

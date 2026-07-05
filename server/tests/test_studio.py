@@ -132,6 +132,39 @@ def test_resolve_classify_route_python_backend():
     )
     agent_id, skill = resolve_classify_route(ticket, stage)
     assert agent_id == "backend_implementer"
+
+
+def test_resolve_classify_route_prefers_ticket_next_agent():
+    ticket = Ticket(
+        id="t1",
+        external_id="01-test",
+        workspace_id="ws",
+        title="Unrelated title",
+        description="No keywords",
+        next_agent="frontend_implementer",
+    )
+    stage = WorkflowStageDef(
+        key="route_impl",
+        name="Route Implementation",
+        stage_type="classify",
+        classify_routes=[
+            ClassifyRoute(
+                languages=["python"],
+                specialties=["backend"],
+                agent_id="backend_implementer",
+                skill_name="apply_patch",
+                default=True,
+            ),
+            ClassifyRoute(
+                languages=["typescript"],
+                specialties=["frontend"],
+                agent_id="frontend_implementer",
+                skill_name="apply_patch",
+            ),
+        ],
+    )
+    agent_id, skill = resolve_classify_route(ticket, stage)
+    assert agent_id == "frontend_implementer"
     assert skill == "apply_patch"
 
 

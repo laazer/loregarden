@@ -71,6 +71,28 @@ def test_create_workspace_exposes_repo_metadata(client):
     assert "repo_exists" in sample
 
 
+def test_create_workspace_with_orchestration_profile(client, db_session):
+    res = client.post(
+        "/api/workspaces",
+        json={
+            "slug": "blobert-ref",
+            "name": "Blobert Ref",
+            "workflow_template_slug": "blobert-tdd",
+            "repo_path": ".",
+            "orchestration_profile_slug": "blobert",
+        },
+    )
+    assert res.status_code == 201
+
+    from sqlmodel import select
+
+    from loregarden.models.domain import Workspace
+
+    row = db_session.exec(select(Workspace).where(Workspace.slug == "blobert-ref")).first()
+    assert row is not None
+    assert row.orchestration_profile_slug == "blobert"
+
+
 def test_cli_executor_fails_when_workspace_repo_missing(tmp_path):
     from sqlmodel import Session, SQLModel, create_engine
 

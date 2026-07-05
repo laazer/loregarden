@@ -66,12 +66,18 @@ export function LogsPanel({
       action,
       answers,
       response,
+      always_allow,
+      allow_for_ticket,
+      allow_for_stage,
     }: {
       id: string;
       action: "approve" | "reject";
       answers?: Record<string, string | string[]>;
       response?: string;
-    }) => api.resolveApproval(id, { action, answers, response }),
+      always_allow?: boolean;
+      allow_for_ticket?: boolean;
+      allow_for_stage?: boolean;
+    }) => api.resolveApproval(id, { action, answers, response, always_allow, allow_for_ticket, allow_for_stage }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["triage", ticket.id] });
       qc.invalidateQueries({ queryKey: ["approvals"] });

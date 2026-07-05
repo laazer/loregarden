@@ -255,6 +255,8 @@ def _template_workflow_view(template: WorkflowTemplate) -> StudioWorkflowView:
         payload = dict(item)
         payload.setdefault("stage_type", "agent")
         payload.setdefault("classify_routes", [])
+        payload.setdefault("parallel_agents", [])
+        payload.setdefault("gate_commands", [])
         payload.setdefault("gate_required", False)
         stages.append(StudioWorkflowStage.model_validate(payload))
     return StudioWorkflowView(
@@ -390,6 +392,10 @@ def resolve_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str
     if stage.stage_type != "classify" or not stage.classify_routes:
         return stage.agent_id, stage.skill_name
 
+    routed = _resolve_next_agent_from_routes(ticket, stage)
+    if routed:
+        return routed
+
     haystack = " ".join(
         [
             ticket.title or "",
@@ -415,9 +421,62 @@ def resolve_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str
     return first.agent_id, first.skill_name or stage.skill_name
 
 
+def _resolve_next_agent_from_routes(
+    ticket: Ticket,
+    stage: WorkflowStageDef,
+) -> tuple[str, str] | None:
+    next_agent = (ticket.next_agent or "").strip()
+    if not next_agent:
+        return None
+
+    from loregarden.agents.registry import get_agent
+
+    if not get_agent(next_agent):
+        return None
+
+    if stage.classify_routes:
+        for route in stage.classify_routes:
+            if route.agent_id == next_agent:
+                return next_agent, route.skill_name or stage.skill_name
+        return None
+
+    return next_agent, stage.skill_name or ""
+
+
+def _resolve_next_agent_override(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str] | None:
+    if not (stage.agent_id or "").strip() and stage.stage_type not in {"classify", "gate", "parallel"}:
+        return None
+
+    next_agent = (ticket.next_agent or "").strip()
+    if not next_agent or stage.stage_type in {"parallel", "gate"}:
+        return None
+
+    from loregarden.agents.registry import get_agent
+
+    if not get_agent(next_agent):
+        return None
+
+    if stage.classify_routes:
+        return _resolve_next_agent_from_routes(ticket, stage)
+
+    if stage.stage_type == "classify":
+        return _resolve_next_agent_from_routes(ticket, stage)
+
+    if stage.key in {"implementation", "route_impl", "implement"}:
+        return next_agent, stage.skill_name or "apply_patch"
+
+    if stage.agent_id and next_agent != stage.agent_id:
+        return next_agent, stage.skill_name or ""
+
+    if not stage.agent_id:
+        return next_agent, stage.skill_name or ""
+
+    return None
+
+
 def is_agentless_stage(stage: WorkflowStageDef) -> bool:
     """Stages with no CLI agent (human gates, terminal markers)."""
-    if stage.stage_type in {"classify", "gate"}:
+    if stage.stage_type in {"classify", "gate", "parallel"}:
         return False
     return not (stage.agent_id or "").strip()
 
@@ -427,6 +486,11 @@ def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[st
         return resolve_classify_route(ticket, stage)
     if stage.stage_type == "gate":
         return stage.agent_id or "gatekeeper", stage.skill_name or "ac_gate"
+    if stage.stage_type == "parallel":
+        return "", ""
+    routed = _resolve_next_agent_override(ticket, stage)
+    if routed:
+        return routed
     return stage.agent_id, stage.skill_name
 
 
@@ -649,6 +713,8 @@ class StudioService:
                     "order": stage.order,
                     "stage_type": stage.stage_type,
                     "classify_routes": [route.model_dump() for route in stage.classify_routes],
+                    "parallel_agents": [item.model_dump() for item in stage.parallel_agents],
+                    "gate_commands": list(stage.gate_commands),
                     "gate_required": stage.gate_required,
                 }
             )

@@ -1,6 +1,13 @@
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from loregarden.services.path_resolve import (
+    expand_path,
+    resolve_icloud_root,
+    resolve_sqlite_path,
+)
 
 
 def _find_repo_root() -> Path:
@@ -32,11 +39,59 @@ class Settings(BaseSettings):
     cursor_output_format: str = "text"
     allow_permission_bypass: bool = False
     permission_approval_timeout_seconds: float = 3600.0
+    triage_timeout_seconds: int = 300
     mcp_url: str = "http://127.0.0.1:8000/mcp"
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    # iCloud + Obsidian memory (optional — empty disables external memory backends)
+    icloud_root: str = ""
+    obsidian_vault_dir: str = ""
+    obsidian_memory_subdir: str = "Loregarden/Memory"
+    obsidian_learnings_subdir: str = "Loregarden/Learnings"
+    # Structured memory graph SQLite (optional; defaults under iCloud when vault is set)
+    memory_sqlite_url: str = ""
+
+    @field_validator("database_url", "memory_sqlite_url", mode="before")
+    @classmethod
+    def _strip_sqlite_url(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
 
 settings = Settings()
 settings.agent_context_dir = settings.repo_root / settings.agent_context_dir
 settings.project_board_dir = settings.repo_root / settings.project_board_dir
 settings.workflow_templates_dir = settings.repo_root / settings.workflow_templates_dir
+
+
+def resolved_icloud_root() -> Path | None:
+    return resolve_icloud_root(settings.icloud_root)
+
+
+def resolved_obsidian_vault() -> Path | None:
+    raw = settings.obsidian_vault_dir.strip()
+    if not raw:
+        return None
+    path = expand_path(raw, repo_root=settings.repo_root)
+    return path if path.is_dir() else None
+
+
+def resolved_database_path() -> Path:
+    return resolve_sqlite_path(settings.database_url, settings.repo_root)
+
+
+def resolved_memory_sqlite_path() -> Path | None:
+    raw = settings.memory_sqlite_url.strip()
+    if raw:
+        return resolve_sqlite_path(raw, settings.repo_root)
+    vault = resolved_obsidian_vault()
+    icloud = resolved_icloud_root()
+    if vault:
+        return vault / "Loregarden" / "memory.db"
+    if icloud:
+        return icloud / "Loregarden" / "memory.db"
+    return None
+
+
+def memory_backends_enabled() -> bool:
+    return resolved_obsidian_vault() is not None or resolved_memory_sqlite_path() is not None

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from datetime import datetime, timezone
 
 from sqlmodel import Session, select
@@ -30,30 +31,24 @@ def _slugify(text: str) -> str:
     return slug[:48] or "work-item"
 
 
+_external_id_lock = threading.Lock()
+_create_ticket_lock = threading.Lock()
+
+
 def _next_external_id(session: Session, workspace_id: str, title: str) -> str:
-    existing = {
-        t.external_id
-        for t in session.exec(select(Ticket).where(Ticket.workspace_id == workspace_id)).all()
-    }
-    count = len(existing) + 1
-    base = f"{count:02d}-{_slugify(title)}"
-    candidate = base
-    suffix = 2
-    while candidate in existing:
-        candidate = f"{base}-{suffix}"
-        suffix += 1
-    return candidate
-
-
-def _required_parent_type(child_type: WorkItemType) -> WorkItemType | None:
-    for parent_type, allowed in {
-        WorkItemType.MILESTONE: [WorkItemType.FEATURE],
-        WorkItemType.FEATURE: [WorkItemType.CAPABILITY],
-        WorkItemType.CAPABILITY: [WorkItemType.TASK, WorkItemType.BUG],
-    }.items():
-        if child_type in allowed:
-            return parent_type
-    return None
+    with _external_id_lock:
+        existing = {
+            t.external_id
+            for t in session.exec(select(Ticket).where(Ticket.workspace_id == workspace_id)).all()
+        }
+        count = len(existing) + 1
+        base = f"{count:02d}-{_slugify(title)}"
+        candidate = base
+        suffix = 2
+        while candidate in existing:
+            candidate = f"{base}-{suffix}"
+            suffix += 1
+        return candidate
 
 
 class TicketService:
@@ -61,6 +56,32 @@ class TicketService:
         self.session = session
 
     def create_ticket(
+        self,
+        *,
+        workspace_slug: str,
+        title: str,
+        work_item_type: WorkItemType,
+        parent_ticket_id: str | None = None,
+        description: str = "",
+        acceptance_criteria: list[str] | None = None,
+        priority: int = 3,
+        milestone: str = "",
+        external_id: str = "",
+    ) -> Ticket:
+        with _create_ticket_lock:
+            return self._create_ticket_impl(
+                workspace_slug=workspace_slug,
+                title=title,
+                work_item_type=work_item_type,
+                parent_ticket_id=parent_ticket_id,
+                description=description,
+                acceptance_criteria=acceptance_criteria,
+                priority=priority,
+                milestone=milestone,
+                external_id=external_id,
+            )
+
+    def _create_ticket_impl(
         self,
         *,
         workspace_slug: str,
@@ -85,7 +106,6 @@ class TicketService:
             raise ValueError("Priority must be between 1 and 3")
 
         parent: Ticket | None = None
-        required_parent = _required_parent_type(work_item_type)
 
         if work_item_type == WorkItemType.MILESTONE:
             if parent_ticket_id:
@@ -97,10 +117,6 @@ class TicketService:
             if not parent or parent.workspace_id != ws.id:
                 raise ValueError("Parent work item not found in workspace")
             validate_parent_child(parent.work_item_type, work_item_type)
-            if required_parent and parent.work_item_type != required_parent:
-                raise ValueError(
-                    f"{work_item_type.value} must be created under a {required_parent.value}"
-                )
 
         ext_id = external_id.strip() or _next_external_id(self.session, ws.id, title)
         dup = self.session.exec(
@@ -140,8 +156,9 @@ class TicketService:
             ticket.next_agent = first_stage.agent_id
 
         self.session.add(ticket)
+        ticket_id = ticket.id
         self.session.commit()
-        self.session.refresh(ticket)
+        ticket = self.session.get(Ticket, ticket_id) or ticket
 
         if work_item_type in WORKFLOW_WORK_ITEM_TYPES and template:
             instance = WorkflowInstance(
@@ -166,6 +183,6 @@ class TicketService:
         )
         ticket.updated_at = datetime.now(timezone.utc)
         self.session.add(ticket)
+        ticket_id = ticket.id
         self.session.commit()
-        self.session.refresh(ticket)
-        return ticket
+        return self.session.get(Ticket, ticket_id) or ticket

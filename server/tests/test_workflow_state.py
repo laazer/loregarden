@@ -135,6 +135,33 @@ def test_manual_ticket_state_update(client: TestClient):
     assert detail["state"] == "wont_do"
 
 
+def test_manual_title_and_description_update(client: TestClient):
+    ticket_id = _ticket_id_by_external_id(client, "02-bootstrap-react-ide-shell")
+    before = client.get(f"/api/tickets/{ticket_id}").json()
+    revision_before = before["revision"]
+
+    updated = client.patch(
+        f"/api/tickets/{ticket_id}",
+        json={"title": "Updated ticket title", "description": "Updated description"},
+    )
+    assert updated.status_code == 200
+    body = updated.json()
+    assert body["title"] == "Updated ticket title"
+    assert body["description"] == "Updated description"
+    assert body["revision"] == revision_before + 1
+    assert body["last_updated_by"] == "human"
+
+    detail = client.get(f"/api/tickets/{ticket_id}").json()
+    assert detail["title"] == "Updated ticket title"
+    assert detail["description"] == "Updated description"
+
+
+def test_empty_title_update_rejected(client: TestClient):
+    ticket_id = _ticket_id_by_external_id(client, "02-bootstrap-react-ide-shell")
+    res = client.patch(f"/api/tickets/{ticket_id}", json={"title": "   "})
+    assert res.status_code == 400
+
+
 def test_wont_do_blocks_start_run(client: TestClient):
     ticket_id = _ticket_id_by_external_id(client, "02-bootstrap-react-ide-shell")
     client.patch(f"/api/tickets/{ticket_id}", json={"state": "wont_do"})

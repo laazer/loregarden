@@ -6,19 +6,14 @@ import argparse
 from pathlib import Path
 
 from loregarden.config import settings
+from loregarden.services.path_resolve import resolve_sqlite_path
 
 
 def sqlite_db_path() -> Path:
     from loregarden.config import Settings
 
     cfg = Settings()
-    url = cfg.database_url
-    if not url.startswith("sqlite:///"):
-        raise ValueError(f"init-db only supports SQLite URLs, got: {url}")
-    db_path = Path(url.removeprefix("sqlite:///"))
-    if not db_path.is_absolute():
-        db_path = cfg.repo_root / db_path
-    return db_path
+    return resolve_sqlite_path(cfg.database_url, cfg.repo_root)
 
 
 def remove_sqlite_files(db_path: Path) -> list[Path]:
@@ -60,7 +55,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if removed:
         print(f"removed {len(removed)} existing file(s)")
-    print(f"initialized {db_path.relative_to(settings.repo_root)}")
+    try:
+        display = db_path.relative_to(settings.repo_root)
+    except ValueError:
+        display = db_path
+    print(f"initialized {display}")
     if args.empty:
         print("schema only (--empty)")
     else:

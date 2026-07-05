@@ -372,8 +372,8 @@ def _upsert_artifact(
         existing.created_at = datetime.now(timezone.utc)
         session.add(existing)
         session.commit()
-        session.refresh(existing)
-        return existing
+        persisted = session.get(Artifact, existing.id)
+        return persisted or existing
 
     artifact = Artifact(
         ticket_id=ticket_id,
@@ -384,8 +384,8 @@ def _upsert_artifact(
     )
     session.add(artifact)
     session.commit()
-    session.refresh(artifact)
-    return artifact
+    persisted = session.get(Artifact, artifact.id)
+    return persisted or artifact
 
 
 def refresh_execution_artifacts(

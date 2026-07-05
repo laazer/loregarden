@@ -1,6 +1,10 @@
-import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useEffect, useState } from 'react';
 import * as apiClient from '../api/client';
+
+export interface TicketDetailsSaveDraft {
+  title: string;
+  description: string;
+}
 
 export interface TicketDetailsModalProps {
   ticket: apiClient.TicketDetail | null;
@@ -8,6 +12,9 @@ export interface TicketDetailsModalProps {
   onClose: () => void;
   isLoading?: boolean;
   error?: string;
+  isSaving?: boolean;
+  saveError?: string;
+  onSave?: (draft: TicketDetailsSaveDraft) => Promise<void>;
 }
 
 export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
@@ -16,223 +23,190 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
   onClose,
   isLoading = false,
   error,
+  isSaving = false,
+  saveError,
+  onSave,
 }) => {
-  const [selectedArtifactTab, setSelectedArtifactTab] = useState<string>('overview');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
 
-  if (!ticket) {
-    return null;
-  }
+  useEffect(() => {
+    if (ticket) {
+      setTitle(ticket.title);
+      setDescription(ticket.description ?? '');
+    }
+  }, [ticket?.id, ticket?.title, ticket?.description]);
 
   if (!isOpen) {
     return null;
   }
 
-  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
+  const isDirty =
+    !!ticket &&
+    (title.trim() !== ticket.title || description !== (ticket.description ?? ''));
+  const canSave = isDirty && title.trim().length > 0 && !!onSave;
 
-  const handleEscapeKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Escape') {
-      onClose();
-    }
+  const handleSave = async () => {
+    if (!canSave) return;
+    await onSave({ title: title.trim(), description });
   };
 
   return (
-    <div
-      role="presentation"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
-      onClick={handleBackdropClick}
-      data-testid="modal-backdrop"
-    >
-      <div
-        role="dialog"
-        className="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-lg shadow-xl flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={handleEscapeKey}
-        tabIndex={-1}
-        data-testid="modal-content"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <div className="flex-1">
-            <h2 className="text-2xl font-bold text-gray-900">{ticket.title}</h2>
-            <p className="text-sm text-gray-500 mt-1">{ticket.external_id}</p>
+    <>
+      <div className="modal-overlay" onClick={onClose} role="presentation" />
+      <div className="modal-panel" role="dialog" aria-labelledby="modal-title">
+        <div className="modal-header">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="state-label">Ticket</div>
+            {!isLoading && !error && ticket ? (
+              <input
+                id="modal-title"
+                className="btn-secondary filter-select modal-title"
+                style={{ width: '100%', fontSize: 16, fontWeight: 600, marginTop: 4 }}
+                value={title}
+                disabled={isSaving}
+                placeholder="Ticket title"
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            ) : (
+              <h2 id="modal-title" className="modal-title">{ticket?.title || 'Loading...'}</h2>
+            )}
+            <p className="modal-subtitle">{ticket?.external_id || ''}</p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-            aria-label="close"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={isSaving}>
+            ✕
           </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="modal-body">
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700">
-              {error}
-            </div>
+            <p className="modal-hint" style={{ color: 'var(--red)' }}>{error}</p>
+          )}
+
+          {saveError && (
+            <p className="modal-hint" style={{ color: 'var(--red)' }}>{saveError}</p>
           )}
 
           {isLoading && (
-            <div className="flex items-center justify-center py-8">
-              <div className="text-gray-600">Loading ticket details...</div>
-            </div>
+            <p className="modal-hint">Loading ticket details…</p>
           )}
 
-          {!isLoading && !error && (
+          {!isLoading && !error && ticket && (
             <>
-              {/* Status Section */}
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Status</h3>
-                <div className="grid grid-cols-2 gap-4">
+              <div className="state-card">
+                <div className="state-label">Status</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div>
-                    <span className="text-sm text-gray-600">State</span>
-                    <div className="mt-1 inline-block px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-sm font-medium">
-                      {ticket.state}
-                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--txm)' }}>State</div>
+                    <div style={{ marginTop: 4, fontSize: 13, color: 'var(--tx)' }}>{ticket.state}</div>
                   </div>
                   <div>
-                    <span className="text-sm text-gray-600">Priority</span>
-                    <div className="mt-1 text-gray-900 font-medium">{ticket.priority}</div>
+                    <div style={{ fontSize: 11, color: 'var(--txm)' }}>Priority</div>
+                    <div style={{ marginTop: 4, fontSize: 13, color: 'var(--tx)' }}>{ticket.priority}</div>
                   </div>
-                  <div>
-                    <span className="text-sm text-gray-600">Type</span>
-                    <div className="mt-1 text-gray-900 font-medium capitalize">{ticket.work_item_type}</div>
-                  </div>
-                  {ticket.workflow_stage_name && (
-                    <div>
-                      <span className="text-sm text-gray-600">Workflow Stage</span>
-                      <div className="mt-1 text-gray-900 font-medium">{ticket.workflow_stage_name}</div>
-                    </div>
-                  )}
                 </div>
               </div>
 
-              {/* Description Section */}
-              {ticket.description && (
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Description</h3>
-                  <p className="text-gray-700 whitespace-pre-wrap">{ticket.description}</p>
-                </div>
-              )}
+              <div className="state-card">
+                <div className="state-label">Description</div>
+                <textarea
+                  className="btn-secondary filter-select"
+                  style={{ width: '100%', fontSize: 13, minHeight: 96, resize: 'vertical', marginTop: 4 }}
+                  value={description}
+                  disabled={isSaving}
+                  placeholder="Add a description…"
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </div>
 
-              {/* Acceptance Criteria Section */}
               {ticket.acceptance_criteria && ticket.acceptance_criteria.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Acceptance Criteria</h3>
-                  <ul className="space-y-2">
+                <div className="state-card">
+                  <div className="state-label">Acceptance Criteria</div>
+                  <ul style={{ fontSize: 13, color: 'var(--tx)', margin: 0, paddingLeft: 20 }}>
                     {ticket.acceptance_criteria.map((criterion, index) => (
-                      <li key={index} className="flex items-start">
-                        <span className="text-green-600 mr-2 mt-1">✓</span>
-                        <span className="text-gray-700">{criterion}</span>
-                      </li>
+                      <li key={index}>{criterion}</li>
                     ))}
                   </ul>
                 </div>
               )}
 
-              {/* Blocking Issues */}
               {ticket.blocking_issues && (
-                <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded">
-                  <h3 className="text-lg font-semibold text-yellow-900 mb-2">Blocking Issues</h3>
-                  <p className="text-yellow-800">{ticket.blocking_issues}</p>
+                <div className="state-card">
+                  <div className="state-label">Blocking Issues</div>
+                  <p style={{ fontSize: 13, color: 'var(--red)', margin: 0 }}>{ticket.blocking_issues}</p>
                 </div>
               )}
 
-              {/* Stages Section */}
               {ticket.stages && ticket.stages.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Workflow Stages</h3>
-                  <div className="space-y-2">
+                <div className="state-card">
+                  <div className="state-label">Workflow Stages</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {ticket.stages.map((stage) => (
-                      <div key={stage.key} className="flex items-center justify-between p-3 bg-gray-50 rounded">
-                        <div>
-                          <div className="font-medium text-gray-900">{stage.name}</div>
-                          <div className="text-xs text-gray-600">Agent: {stage.agent_id || 'N/A'}</div>
-                        </div>
-                        <div className="inline-block px-3 py-1 rounded text-sm font-medium bg-gray-200 text-gray-800">
-                          {stage.status}
-                        </div>
+                      <div key={stage.key} style={{ fontSize: 12, color: 'var(--txm)' }}>
+                        <div style={{ color: 'var(--tx)' }}>{stage.name}</div>
+                        <div>Agent: {stage.agent_id || 'N/A'} · Status: {stage.status}</div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Artifacts Section */}
               {ticket.artifacts && Object.keys(ticket.artifacts).some((k) => ticket.artifacts[k]) && (
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Artifacts</h3>
-                  <div className="space-y-3">
+                <div className="state-card">
+                  <div className="state-label">Artifacts</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--txm)' }}>
                     {ticket.artifacts.diff && (
-                      <div className="p-3 bg-gray-50 rounded">
-                        <div className="font-medium text-gray-900">Code Diff</div>
-                        <div className="text-xs text-gray-600 mt-1">
-                          Files: {ticket.artifacts.diff.files || '?'} | Added: {ticket.artifacts.diff.add || '0'} | Removed:{' '}
-                          {ticket.artifacts.diff.del || '0'}
-                        </div>
-                      </div>
+                      <div><strong>Code Diff:</strong> Files: {ticket.artifacts.diff.files || '?'} | Added: {ticket.artifacts.diff.add || '0'} | Removed: {ticket.artifacts.diff.del || '0'}</div>
                     )}
                     {ticket.artifacts.tests && (
-                      <div className="p-3 bg-gray-50 rounded">
-                        <div className="font-medium text-gray-900">Test Results</div>
-                        <div className="text-xs text-gray-600 mt-1">{ticket.artifacts.tests.summary}</div>
-                      </div>
+                      <div><strong>Test Results:</strong> {ticket.artifacts.tests.summary}</div>
                     )}
                     {ticket.artifacts.logs && ticket.artifacts.logs.length > 0 && (
-                      <div className="p-3 bg-gray-50 rounded">
-                        <div className="font-medium text-gray-900">Logs</div>
-                        <div className="text-xs text-gray-600 mt-1">{ticket.artifacts.logs.length} log entries</div>
-                      </div>
+                      <div><strong>Logs:</strong> {ticket.artifacts.logs.length} entries</div>
                     )}
                     {ticket.artifacts.error && (
-                      <div className="p-3 bg-red-50 border border-red-200 rounded">
-                        <div className="font-medium text-red-900">Error</div>
-                        <div className="text-xs text-red-700 mt-1">{ticket.artifacts.error.message}</div>
-                      </div>
+                      <div style={{ color: 'var(--red)' }}><strong>Error:</strong> {ticket.artifacts.error.message}</div>
                     )}
                     {ticket.artifacts.live && (
-                      <div className="p-3 bg-blue-50 rounded">
-                        <div className="font-medium text-blue-900">Status</div>
-                        <div className="text-xs text-blue-700 mt-1">{ticket.artifacts.live}</div>
-                      </div>
+                      <div><strong>Status:</strong> {ticket.artifacts.live}</div>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* Metadata Section */}
-              <div className="mb-6 pt-4 border-t">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Metadata</h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="state-card">
+                <div className="state-label">Metadata</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
                   <div>
-                    <span className="text-gray-600">ID</span>
-                    <div className="mt-1 font-mono text-xs text-gray-800 break-all">{ticket.id}</div>
+                    <div style={{ color: 'var(--txm)' }}>ID</div>
+                    <div style={{ marginTop: 4, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--tx)', wordBreak: 'break-all' }}>{ticket.id}</div>
                   </div>
                   <div>
-                    <span className="text-gray-600">Last Updated By</span>
-                    <div className="mt-1 text-gray-900">{ticket.last_updated_by || 'N/A'}</div>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Revision</span>
-                    <div className="mt-1 text-gray-900">{ticket.revision}</div>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Milestone</span>
-                    <div className="mt-1 text-gray-900">{ticket.milestone || 'N/A'}</div>
+                    <div style={{ color: 'var(--txm)' }}>Revision</div>
+                    <div style={{ marginTop: 4, color: 'var(--tx)' }}>{ticket.revision}</div>
                   </div>
                 </div>
               </div>
             </>
           )}
         </div>
+
+        <div className="modal-footer">
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={isSaving}>
+            Close
+          </button>
+          {onSave && (
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={!canSave || isSaving}
+              onClick={handleSave}
+            >
+              {isSaving ? 'Saving…' : 'Save changes'}
+            </button>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 };

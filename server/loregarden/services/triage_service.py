@@ -11,8 +11,9 @@ from pathlib import Path
 
 from sqlmodel import Session, col, select
 
-from loregarden.agents.cli_adapters import resolve_cli_invocation
+from loregarden.agents.cli_adapters import build_triage_invocation
 from loregarden.agents.registry import get_agent
+from loregarden.config import settings
 from loregarden.models.domain import (
     AgentRun,
     Approval,
@@ -23,13 +24,24 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
 )
-from loregarden.agents.mcp_context import build_mcp_triage_context, load_loregarden_mcp_doc
+from loregarden.agents.mcp_context import build_mcp_triage_context
 from loregarden.services.approval_views import approval_to_view
 from loregarden.services.hierarchy_service import collect_ticket_scope_ids
+from loregarden.services.cli_output import extract_triage_reply
 from loregarden.services.cli_settings import VALID_CLI_ADAPTERS
 from loregarden.services.workspace_paths import resolve_agent_context_dir, resolve_workspace_root
 
 TRIAGE_AGENT_ID = "triage"
+MAX_TRIAGE_HISTORY_MESSAGES = 12
+MAX_TRIAGE_MESSAGE_CHARS = 2000
+MAX_TRIAGE_DESCRIPTION_CHARS = 4000
+
+
+def resolve_triage_timeout(agent: dict) -> int:
+    env = os.environ.get("LOREGARDEN_TRIAGE_TIMEOUT")
+    if env:
+        return max(30, int(env))
+    return int(agent.get("timeout", settings.triage_timeout_seconds))
 
 
 def get_triage_runtime(ticket: Ticket) -> WorkspaceRuntimeSettings:
@@ -194,7 +206,7 @@ def invoke_triage_model(session: Session, ticket: Ticket, latest_user_message: s
     with tempfile.TemporaryDirectory(prefix="loregarden-triage-") as tmp:
         prompt_file = Path(tmp) / "prompt.md"
         prompt_file.write_text(prompt, encoding="utf-8")
-        invocation = resolve_cli_invocation(
+        invocation = build_triage_invocation(
             agent_id=TRIAGE_AGENT_ID,
             adapter=agent.get("adapter", "claude"),
             prompt=prompt,
@@ -203,7 +215,7 @@ def invoke_triage_model(session: Session, ticket: Ticket, latest_user_message: s
             workspace_root=repo_root,
             workspace=effective_workspace,
         )
-        timeout = int(agent.get("timeout", 120))
+        timeout = resolve_triage_timeout(agent)
         proc = subprocess.Popen(
             invocation.argv,
             cwd=invocation.cwd or str(repo_root),
@@ -225,7 +237,7 @@ def invoke_triage_model(session: Session, ticket: Ticket, latest_user_message: s
             detail = stderr.decode("utf-8", errors="replace").strip() or stdout.decode("utf-8", errors="replace").strip()
             raise RuntimeError(detail or f"Triage CLI exited with code {proc.returncode}")
 
-        reply = stdout.decode("utf-8", errors="replace").strip()
+        reply = extract_triage_reply(stdout.decode("utf-8", errors="replace"))
         if not reply:
             raise RuntimeError("Triage assistant returned an empty response")
         return reply[:8000]
@@ -238,8 +250,6 @@ def build_triage_prompt(
     *,
     session: Session,
 ) -> str:
-    from loregarden.services.workspace_paths import resolve_agent_context_dir
-
     workspace = session.get(Workspace, ticket.workspace_id)
     ac = json.loads(ticket.acceptance_criteria_json or "[]")
 
@@ -259,10 +269,9 @@ def build_triage_prompt(
     ]
     if workspace:
         sections.extend([build_mcp_triage_context(ticket=ticket, workspace=workspace), ""])
-        agent_context_dir = resolve_agent_context_dir(workspace)
-        mcp_doc = load_loregarden_mcp_doc(agent_context_dir)
-        if mcp_doc:
-            sections.extend(["## Loregarden MCP module", mcp_doc[:8000], ""])
+    description = (ticket.description or "—")[:MAX_TRIAGE_DESCRIPTION_CHARS]
+    if ticket.description and len(ticket.description) > MAX_TRIAGE_DESCRIPTION_CHARS:
+        description += "…"
     sections.extend(
         [
             f"Ticket: {ticket.external_id} — {ticket.title}",
@@ -271,7 +280,7 @@ def build_triage_prompt(
             f"Blocking issues: {ticket.blocking_issues or 'None'}",
             "",
             "## Description",
-            ticket.description or "—",
+            description,
             "",
             "## Acceptance criteria",
             *([f"- {item}" for item in ac] if ac else ["- None"]),
@@ -292,9 +301,12 @@ def build_triage_prompt(
 
     if history:
         sections.extend(["", "## Triage conversation so far"])
-        for msg in history:
+        for msg in history[-MAX_TRIAGE_HISTORY_MESSAGES:]:
             speaker = "Operator" if msg.role == "user" else "Triage assistant"
-            sections.append(f"{speaker}: {msg.content}")
+            content = msg.content
+            if len(content) > MAX_TRIAGE_MESSAGE_CHARS:
+                content = content[:MAX_TRIAGE_MESSAGE_CHARS] + "…"
+            sections.append(f"{speaker}: {content}")
 
     sections.extend(["", "## Latest operator message", latest_user_message, "", "Reply concisely."])
     return "\n".join(sections)

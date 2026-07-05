@@ -1,0 +1,16 @@
+slug: blobert
+name: Blobert Godot TDD
+driver: builtin_autopilot
+workflow_template: blobert-tdd
+orchestrator:
+  skill: autopilot
+  pipeline: agents/common_assets/pipeline_stages_v1.md
+gates:
+  enabled: true
+  transition_script: ci/scripts/run_workflow_transition_gates.py
+  commands: []
+subagents:
+  spawn_via: cli
+callbacks:
+  mode: api
+max_stages_per_run: 0

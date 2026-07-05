@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import type { TicketState, TicketTreeNode, WorkItemType } from "../api/client";
 import { isWorkflowWorkItem } from "../api/client";
+import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 
 const STATE_COLORS: Record<TicketState, string> = {
   backlog: "var(--txm)",
@@ -55,6 +56,7 @@ interface TicketTreeProps {
   expandedIds: Set<string>;
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
+  onAddChild?: (node: TicketTreeNode) => void;
   depth?: number;
 }
 
@@ -64,6 +66,7 @@ function TreeRow({
   expandedIds,
   onSelect,
   onToggle,
+  onAddChild,
   depth = 0,
 }: {
   node: TicketTreeNode;
@@ -71,12 +74,15 @@ function TreeRow({
   expandedIds: Set<string>;
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
+  onAddChild?: (node: TicketTreeNode) => void;
   depth?: number;
 }) {
   const hasChildren = node.children.length > 0;
   const expanded = expandedIds.has(node.id);
   const isWorkflowItem = isWorkflowWorkItem(node.work_item_type);
   const isSelected = selectedId === node.id;
+  const workflowRunning = isWorkflowItem && node.workflow_stage_status === "running";
+  const showAddChild = !!onAddChild && canHaveChildren(node.work_item_type);
 
   const handleRowClick = () => {
     onSelect(node.id);
@@ -127,9 +133,32 @@ function TreeRow({
             {TYPE_LABELS[node.work_item_type]}
           </span>
           <span className="tree-title">{node.title}</span>
-          {hasChildren && (
-            <span className="count-pill tree-child-count">{node.child_count}</span>
-          )}
+          <div className="tree-row-trail">
+            {workflowRunning && (
+              <span
+                className="tree-workflow-dot running"
+                title="Workflow running"
+                aria-label="Workflow running"
+              />
+            )}
+            {showAddChild && (
+              <button
+                type="button"
+                className="tree-add-child-btn"
+                title={addChildActionLabel(node.work_item_type)}
+                aria-label={addChildActionLabel(node.work_item_type)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddChild?.(node);
+                }}
+              >
+                +
+              </button>
+            )}
+            {hasChildren && (
+              <span className="count-pill tree-child-count">{node.child_count}</span>
+            )}
+          </div>
         </div>
         {isWorkflowItem && (
           <div className="tree-meta">
@@ -137,7 +166,9 @@ function TreeRow({
             {node.workflow_stage_name && (
               <>
                 <span className="tree-dot">·</span>
-                <span>{node.workflow_stage_name}</span>
+                <span style={{ color: workflowRunning ? "var(--bll)" : undefined }}>
+                  {node.workflow_stage_name}
+                </span>
               </>
             )}
           </div>
@@ -151,6 +182,7 @@ function TreeRow({
             expandedIds={expandedIds}
             onSelect={onSelect}
             onToggle={onToggle}
+            onAddChild={onAddChild}
             depth={depth + 1}
           />
         </div>
@@ -165,6 +197,7 @@ export function TicketTree({
   expandedIds,
   onSelect,
   onToggle,
+  onAddChild,
   depth = 0,
 }: TicketTreeProps) {
   return (
@@ -177,6 +210,7 @@ export function TicketTree({
           expandedIds={expandedIds}
           onSelect={onSelect}
           onToggle={onToggle}
+          onAddChild={onAddChild}
           depth={depth}
         />
       ))}

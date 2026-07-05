@@ -1,26 +1,49 @@
 from collections.abc import Generator
 from pathlib import Path
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlmodel import Session, SQLModel, create_engine
 
 from loregarden.config import settings
+from loregarden.services.path_resolve import (
+    is_under_icloud,
+    resolve_icloud_root,
+    resolve_sqlite_path,
+    sqlite_url_for_path,
+)
 
 
 def _sqlite_url(url: str) -> str:
-    if url.startswith("sqlite:///"):
-        db_path = Path(url.replace("sqlite:///", ""))
-        if not db_path.is_absolute():
-            db_path = settings.repo_root / db_path
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        return f"sqlite:///{db_path}"
-    return url
+    db_path = resolve_sqlite_path(url, settings.repo_root)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    return sqlite_url_for_path(db_path)
+
+
+def _db_path_from_engine_url(url: str) -> Path | None:
+    if not url.startswith("sqlite:///"):
+        return None
+    return Path(url.removeprefix("sqlite:///"))
 
 
 engine = create_engine(
     _sqlite_url(settings.database_url),
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30.0},
 )
+
+
+@event.listens_for(engine, "connect")
+def _configure_sqlite_connection(dbapi_connection, _connection_record) -> None:
+    cursor = dbapi_connection.cursor()
+    db_path = _db_path_from_engine_url(str(engine.url))
+    icloud_root = resolve_icloud_root(settings.icloud_root)
+    if db_path and is_under_icloud(db_path, icloud_root):
+        # iCloud Drive + WAL sidecars cause sync conflicts; prefer DELETE journal there.
+        cursor.execute("PRAGMA journal_mode=DELETE")
+        cursor.execute("PRAGMA synchronous=FULL")
+    else:
+        cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=30000")
+    cursor.close()
 
 
 def init_db() -> None:
@@ -70,6 +93,18 @@ def _apply_sqlite_migrations(eng) -> None:
                         "ALTER TABLE tickets ADD COLUMN triage_runtime_json TEXT NOT NULL DEFAULT '{}'"
                     )
                 )
+            if "workflow_disabled" not in ticket_cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE tickets ADD COLUMN workflow_disabled INTEGER NOT NULL DEFAULT 0"
+                    )
+                )
+            if "permission_allowlist_json" not in ticket_cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE tickets ADD COLUMN permission_allowlist_json TEXT NOT NULL DEFAULT '[]'"
+                    )
+                )
 
         ws_rows = conn.execute(text("PRAGMA table_info(workspaces)")).fetchall()
         if ws_rows:
@@ -91,6 +126,13 @@ def _apply_sqlite_migrations(eng) -> None:
             for col, stmt in runtime_cols.items():
                 if col not in ws_cols:
                     conn.execute(text(stmt))
+            ws_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(workspaces)")).fetchall()}
+            if "permission_allowlist_json" not in ws_cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE workspaces ADD COLUMN permission_allowlist_json TEXT NOT NULL DEFAULT '[]'"
+                    )
+                )
 
         approval_rows = conn.execute(text("PRAGMA table_info(approvals)")).fetchall()
         if approval_rows:
@@ -114,6 +156,22 @@ def _apply_sqlite_migrations(eng) -> None:
             agent_cols = {row[1] for row in agent_rows}
             if "orchestration_run_id" not in agent_cols:
                 conn.execute(text("ALTER TABLE agent_runs ADD COLUMN orchestration_run_id TEXT"))
+
+        orch_rows = conn.execute(text("PRAGMA table_info(orchestration_runs)")).fetchall()
+        if orch_rows:
+            orch_cols = {row[1] for row in orch_rows}
+            if "auto_approve" not in orch_cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE orchestration_runs ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 0"
+                    )
+                )
+            if "stop_at_stage_key" not in orch_cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE orchestration_runs ADD COLUMN stop_at_stage_key TEXT NOT NULL DEFAULT ''"
+                    )
+                )
 
         triage_rows = conn.execute(
             text("SELECT name FROM sqlite_master WHERE type='table' AND name='triage_messages'")

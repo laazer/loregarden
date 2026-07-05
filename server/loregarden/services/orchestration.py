@@ -8,7 +8,7 @@ from loregarden.core.event_bus import event_bus
 from loregarden.core.state_machine import StateMachine
 from loregarden.core.workflow_loader import stage_display_name
 from loregarden.services.run_log_stream import bootstrap_run_log, finalize_run_log_artifact
-from loregarden.services.workflow_service import resolve_workspace_stages
+from loregarden.services.workflow_service import resolve_ticket_stages, resolve_workspace_stages
 from loregarden.services.workflow_state import (
     build_stage_views,
     initial_stages_json,
@@ -52,10 +52,8 @@ class OrchestrationService:
         return self.session.get(Ticket, ticket_id)
 
     def get_template_for_ticket(self, ticket: Ticket) -> WorkflowTemplate | None:
-        ws = self.session.get(Workspace, ticket.workspace_id)
-        if not ws or not ws.workflow_template_id:
-            return None
-        return self.session.get(WorkflowTemplate, ws.workflow_template_id)
+        template, _ = resolve_ticket_stages(self.session, ticket)
+        return template
 
     def get_workflow_instance(self, ticket_id: str) -> WorkflowInstance | None:
         return self.session.exec(
@@ -64,10 +62,7 @@ class OrchestrationService:
 
     def _resolve_stages(self, ticket: Ticket) -> tuple[WorkflowInstance | None, list]:
         instance = self.get_workflow_instance(ticket.id)
-        ws = self.session.get(Workspace, ticket.workspace_id)
-        if not ws:
-            return instance, []
-        _, stages = resolve_workspace_stages(self.session, ws)
+        _, stages = resolve_ticket_stages(self.session, ticket)
         return instance, stages
 
     def ensure_workflow_instance(
@@ -76,11 +71,15 @@ class OrchestrationService:
         """Attach a workflow instance to feature/task/bug tickets when missing."""
         if ticket.work_item_type not in WORKFLOW_WORK_ITEM_TYPES:
             return self.get_workflow_instance(ticket.id), False
+        if ticket.workflow_disabled:
+            return None, False
 
         ws = self.session.get(Workspace, ticket.workspace_id)
         if not ws:
             return None, False
-        template, stages = resolve_workspace_stages(self.session, ws)
+        template, stages = resolve_ticket_stages(self.session, ticket)
+        if not template or not stages:
+            template, stages = resolve_workspace_stages(self.session, ws)
         if not template or not stages:
             return None, False
 
@@ -168,6 +167,34 @@ class OrchestrationService:
         return ticket
 
     def update_ticket_manual(self, ticket: Ticket, body: UpdateTicketRequest) -> Ticket:
+        content_updated = False
+
+        if body.title is not None:
+            title = body.title.strip()
+            if not title:
+                raise ValueError("Title cannot be empty")
+            if ticket.title != title:
+                ticket.title = title
+                content_updated = True
+
+        if body.description is not None and ticket.description != body.description:
+            ticket.description = body.description
+            content_updated = True
+
+        if content_updated:
+            ticket.revision += 1
+            ticket.last_updated_by = "human"
+
+        if body.workflow_template_slug is not None:
+            from loregarden.services.workflow_service import WorkflowService
+
+            wf = WorkflowService(self.session)
+            if not body.workflow_template_slug.strip():
+                wf.clear_ticket_workflow(ticket)
+            else:
+                wf.set_ticket_workflow_template(ticket, body.workflow_template_slug)
+            self.session.refresh(ticket)
+
         instance, stages = self._resolve_stages(ticket)
         if body.auto_state is True:
             ticket.state_locked = False
@@ -180,6 +207,11 @@ class OrchestrationService:
             ticket.last_updated_by = "human"
             if body.state == TicketState.WONT_DO:
                 ticket.state_locked = True
+
+        if body.branch is not None:
+            ticket.branch = body.branch.strip()
+            ticket.revision += 1
+            ticket.last_updated_by = "human"
 
         if body.stage_updates and instance and stages:
             stage_map = parse_stage_map(instance, stages)
@@ -406,6 +438,8 @@ class OrchestrationService:
         *,
         stage_key: str | None = None,
         orchestration_run_id: str | None = None,
+        agent_id: str | None = None,
+        skill_name: str | None = None,
     ) -> AgentRun:
         template = self.get_template_for_ticket(ticket)
         if not template:
@@ -450,14 +484,17 @@ class OrchestrationService:
 
         from loregarden.services.studio_service import is_agentless_stage, resolve_stage_execution
 
-        agent_id, skill_name = resolve_stage_execution(ticket, stage_def)
-        if not agent_id or is_agentless_stage(stage_def):
+        resolved_agent_id, resolved_skill = resolve_stage_execution(ticket, stage_def)
+        chosen_agent = agent_id or resolved_agent_id
+        chosen_skill = skill_name or resolved_skill or stage_def.skill_name
+        if not chosen_agent or is_agentless_stage(stage_def):
             raise ValueError(
                 f"Stage '{target_key}' is a human approval gate — it does not run an agent CLI."
             )
 
         ticket.workflow_stage_key = target_key
-        set_stage_status(ticket, instance, stages, target_key, StageStatus.RUNNING)
+        if stage_map.get(target_key) != StageStatus.RUNNING:
+            set_stage_status(ticket, instance, stages, target_key, StageStatus.RUNNING)
         self.session.add(ticket)
         self.session.add(instance)
         self.session.commit()
@@ -467,8 +504,8 @@ class OrchestrationService:
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             orchestration_run_id=orchestration_run_id,
-            agent_id=agent_id,
-            skill_name=skill_name or stage_def.skill_name,
+            agent_id=chosen_agent,
+            skill_name=chosen_skill,
             stage_key=target_key,
             status=RunStatus.RUNNING,
             started_at=datetime.now(timezone.utc),
@@ -483,7 +520,7 @@ class OrchestrationService:
             workspace_id=ticket.workspace_id,
             ticket_id=ticket.id,
             run_id=run.id,
-            payload={"agent_id": agent_id, "stage_key": target_key},
+            payload={"agent_id": chosen_agent, "stage_key": target_key},
         )
         bootstrap_run_log(run)
         return run
@@ -496,7 +533,12 @@ class OrchestrationService:
         stdout: str = "",
         stderr: str = "",
         artifacts: list[dict] | None = None,
+        advance_workflow: bool = True,
     ) -> AgentRun:
+        stored = self.session.get(AgentRun, run.id)
+        if not stored:
+            return run
+        run = stored
         run.status = status
         run.stdout = stdout
         run.stderr = stderr
@@ -509,7 +551,7 @@ class OrchestrationService:
             return run
 
         instance, stages = self._resolve_stages(ticket)
-        if instance and stages:
+        if instance and stages and advance_workflow:
             if status == RunStatus.SUCCEEDED:
                 stage_status = StageStatus.DONE
                 if run.stage_key.endswith("approval") or "approval" in run.stage_key:
@@ -580,18 +622,39 @@ class OrchestrationService:
             run_id=run.id,
             payload={"status": status.value},
         )
-        workspace = self.session.get(Workspace, ticket.workspace_id)
-        if workspace:
-            from loregarden.services.artifact_service import refresh_execution_artifacts
+        if advance_workflow:
+            workspace = self.session.get(Workspace, ticket.workspace_id)
+            if workspace:
+                from loregarden.services.artifact_service import refresh_execution_artifacts
 
-            refresh_execution_artifacts(
-                self.session,
-                ticket=ticket,
-                run=run,
-                workspace=workspace,
-            )
+                refresh_execution_artifacts(
+                    self.session,
+                    ticket=ticket,
+                    run=run,
+                    workspace=workspace,
+                )
         finalize_run_log_artifact(run, status=status, stderr=stderr)
         return run
+
+    def finalize_stage(
+        self,
+        ticket: Ticket,
+        stage_key: str,
+        *,
+        status: StageStatus,
+        blocking_message: str = "",
+    ) -> None:
+        instance, stages = self._resolve_stages(ticket)
+        if not instance or not stages:
+            return
+        set_stage_status(ticket, instance, stages, stage_key, status)
+        if status == StageStatus.BLOCKED and blocking_message:
+            ticket.blocking_issues = blocking_message[:2000]
+        elif status == StageStatus.DONE:
+            ticket.blocking_issues = ""
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.commit()
 
     def _create_workflow_gate_approval(
         self,
@@ -633,11 +696,18 @@ class ApprovalService:
         approved: bool,
         answers: dict[str, str | list[str]] | None = None,
         response_text: str = "",
+        always_allow: bool = False,
+        allow_for_ticket: bool = False,
+        allow_for_stage: bool = False,
     ) -> Approval:
         from loregarden.agents.executors.permission_bridge import (
             build_ask_user_question_input,
             parse_stored_tool_input,
             validate_question_answers,
+        )
+        from loregarden.services.permission_allowlist import (
+            add_ticket_allow_rule,
+            add_workspace_allow_rule,
         )
 
         approval = self.session.get(Approval, approval_id)
@@ -658,6 +728,28 @@ class ApprovalService:
         elif approval.kind == ApprovalKind.CLI_PERMISSION and approved:
             tool_input = parse_stored_tool_input(approval.tool_input_json)
             approval.response_json = json.dumps({"updated_input": tool_input})
+            if always_allow:
+                add_workspace_allow_rule(
+                    self.session,
+                    approval.workspace_id,
+                    approval.tool_name,
+                    tool_input,
+                )
+            if allow_for_ticket:
+                add_ticket_allow_rule(
+                    self.session,
+                    approval.ticket_id,
+                    approval.tool_name,
+                    tool_input,
+                )
+            if allow_for_stage and approval.stage_key:
+                add_ticket_allow_rule(
+                    self.session,
+                    approval.ticket_id,
+                    approval.tool_name,
+                    tool_input,
+                    stage_key=approval.stage_key,
+                )
 
         approval.status = ApprovalStatus.APPROVED if approved else ApprovalStatus.REJECTED
         approval.resolved_at = datetime.now(timezone.utc)

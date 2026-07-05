@@ -2,6 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { TicketSummary, TicketTreeNode, WorkItemType } from "../api/client";
 import { isWorkflowWorkItem } from "../api/client";
+import {
+  allowedChildTypes,
+  defaultChildType,
+  workItemTypeLabel,
+} from "../lib/workItemHierarchy";
 
 const WORK_ITEM_TYPES: { id: WorkItemType; label: string }[] = [
   { id: "milestone", label: "Milestone" },
@@ -36,6 +41,10 @@ interface CreateWorkItemModalProps {
   tickets: TicketSummary[];
   selectedTicketId: string | null;
   ticketTree: TicketTreeNode[];
+  parentTicketId?: string | null;
+  parentTicketTitle?: string;
+  parentTicketType?: WorkItemType | null;
+  lockParent?: boolean;
   isSaving: boolean;
   errorMessage?: string | null;
   onClose: () => void;
@@ -51,27 +60,23 @@ function findNode(nodes: TicketTreeNode[], id: string): TicketTreeNode | null {
   return null;
 }
 
-function defaultChildType(parentType: WorkItemType): WorkItemType {
-  switch (parentType) {
-    case "milestone":
-      return "feature";
-    case "feature":
-      return "capability";
-    case "capability":
-      return "task";
-    case "task":
-    case "bug":
-      return "task";
-    default:
-      return "task";
-  }
-}
-
 function initialDraft(
   tickets: TicketSummary[],
   selectedTicketId: string | null,
   ticketTree: TicketTreeNode[],
+  lockedParent?: { id: string; type: WorkItemType } | null,
 ): CreateWorkItemDraft {
+  if (lockedParent) {
+    return {
+      title: "",
+      work_item_type: defaultChildType(lockedParent.type),
+      parent_ticket_id: lockedParent.id,
+      description: "",
+      acceptance_criteria: "",
+      priority: 3,
+    };
+  }
+
   const selected = selectedTicketId ? tickets.find((t) => t.id === selectedTicketId) : undefined;
   const selectedNode = selectedTicketId ? findNode(ticketTree, selectedTicketId) : null;
 
@@ -111,19 +116,38 @@ export function CreateWorkItemModal({
   tickets,
   selectedTicketId,
   ticketTree,
+  parentTicketId = null,
+  parentTicketTitle = "",
+  parentTicketType = null,
+  lockParent = false,
   isSaving,
   errorMessage,
   onClose,
   onCreate,
 }: CreateWorkItemModalProps) {
+  const lockedParent =
+    lockParent && parentTicketId && parentTicketType
+      ? { id: parentTicketId, type: parentTicketType }
+      : null;
+
   const [draft, setDraft] = useState<CreateWorkItemDraft>(() =>
-    initialDraft(tickets, selectedTicketId, ticketTree),
+    initialDraft(tickets, selectedTicketId, ticketTree, lockedParent),
   );
 
   useEffect(() => {
     if (!open) return;
-    setDraft(initialDraft(tickets, selectedTicketId, ticketTree));
-  }, [open, selectedTicketId, tickets, ticketTree]);
+    setDraft(initialDraft(tickets, selectedTicketId, ticketTree, lockedParent));
+  }, [open, selectedTicketId, tickets, ticketTree, lockedParent?.id, lockedParent?.type]);
+
+  const typeOptions = useMemo(() => {
+    if (lockedParent) {
+      return allowedChildTypes(lockedParent.type).map((id) => ({
+        id,
+        label: workItemTypeLabel(id),
+      }));
+    }
+    return WORK_ITEM_TYPES;
+  }, [lockedParent]);
 
   const parentOptions = useMemo(() => {
     const required = REQUIRED_PARENT[draft.work_item_type];
@@ -132,6 +156,7 @@ export function CreateWorkItemModal({
   }, [draft.work_item_type, tickets]);
 
   useEffect(() => {
+    if (lockParent) return;
     if (draft.work_item_type === "milestone") {
       if (draft.parent_ticket_id) {
         setDraft((d) => ({ ...d, parent_ticket_id: "" }));
@@ -147,7 +172,15 @@ export function CreateWorkItemModal({
     if (!parentOptions.some((p) => p.id === draft.parent_ticket_id)) {
       setDraft((d) => ({ ...d, parent_ticket_id: parentOptions[0].id }));
     }
-  }, [draft.work_item_type, draft.parent_ticket_id, parentOptions]);
+  }, [draft.work_item_type, draft.parent_ticket_id, parentOptions, lockParent]);
+
+  useEffect(() => {
+    if (!lockedParent) return;
+    const allowed = allowedChildTypes(lockedParent.type);
+    if (!allowed.includes(draft.work_item_type)) {
+      setDraft((d) => ({ ...d, work_item_type: defaultChildType(lockedParent.type) }));
+    }
+  }, [draft.work_item_type, lockedParent]);
 
   if (!open) return null;
 
@@ -162,6 +195,11 @@ export function CreateWorkItemModal({
     void onCreate(draft);
   };
 
+  const modalTitle = lockParent ? "Add sub-item" : "New work item";
+  const modalSubtitle = lockParent
+    ? `Under ${parentTicketTitle || parentTicketId}`
+    : "Add a milestone, container, task, or bug to the tree";
+
   return (
     <>
       <div className="modal-overlay" onClick={isSaving ? undefined : onClose} role="presentation" />
@@ -170,9 +208,9 @@ export function CreateWorkItemModal({
           <div>
             <div className="state-label">{workspaceSlug}</div>
             <h2 id="create-work-item-title" className="modal-title">
-              New work item
+              {modalTitle}
             </h2>
-            <p className="modal-subtitle">Add a milestone, container, task, or bug to the tree</p>
+            <p className="modal-subtitle">{modalSubtitle}</p>
           </div>
           <button type="button" className="btn-secondary" disabled={isSaving} onClick={onClose}>
             ✕
@@ -180,7 +218,7 @@ export function CreateWorkItemModal({
         </div>
 
         <div className="modal-body">
-          {workspacePicker && (
+          {workspacePicker && !lockParent && (
             <div className="modal-field">
               <div className="modal-field-label">Workspace</div>
               <select
@@ -219,12 +257,12 @@ export function CreateWorkItemModal({
               className="btn-secondary filter-select"
               style={{ width: "100%", fontSize: 12 }}
               value={draft.work_item_type}
-              disabled={isSaving}
+              disabled={isSaving || typeOptions.length === 0}
               onChange={(e) =>
                 setDraft((d) => ({ ...d, work_item_type: e.target.value as WorkItemType }))
               }
             >
-              {WORK_ITEM_TYPES.map((t) => (
+              {typeOptions.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.label}
                 </option>
@@ -232,7 +270,7 @@ export function CreateWorkItemModal({
             </select>
           </div>
 
-          {needsParent && (
+          {needsParent && !lockParent && (
             <div className="modal-field">
               <div className="modal-field-label">Parent</div>
               <select
@@ -243,7 +281,9 @@ export function CreateWorkItemModal({
                 onChange={(e) => setDraft((d) => ({ ...d, parent_ticket_id: e.target.value }))}
               >
                 {parentOptions.length === 0 ? (
-                  <option value="">No valid parent — create a {REQUIRED_PARENT[draft.work_item_type]} first</option>
+                  <option value="">
+                    No valid parent — create a {REQUIRED_PARENT[draft.work_item_type]} first
+                  </option>
                 ) : (
                   parentOptions.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -252,6 +292,18 @@ export function CreateWorkItemModal({
                   ))
                 )}
               </select>
+            </div>
+          )}
+
+          {needsParent && lockParent && (
+            <div className="modal-field">
+              <div className="modal-field-label">Parent</div>
+              <div
+                className="btn-secondary filter-select"
+                style={{ width: "100%", fontSize: 12, boxSizing: "border-box", opacity: 0.85 }}
+              >
+                {parentTicketTitle || parentTicketId}
+              </div>
             </div>
           )}
 
@@ -278,7 +330,7 @@ export function CreateWorkItemModal({
             />
           </div>
 
-          {(isWorkflowWorkItem(draft.work_item_type)) && (
+          {isWorkflowWorkItem(draft.work_item_type) && (
             <div className="modal-field">
               <div className="modal-field-label">Acceptance criteria (one per line)</div>
               <textarea
@@ -313,7 +365,7 @@ export function CreateWorkItemModal({
             Cancel
           </button>
           <button type="button" className="btn-primary" disabled={isSaving || !canSubmit} onClick={handleCreate}>
-            {isSaving ? "Creating…" : "Create work item"}
+            {isSaving ? "Creating…" : lockParent ? "Add sub-item" : "Create work item"}
           </button>
         </div>
       </div>

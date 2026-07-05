@@ -32,6 +32,8 @@ Use `"type": "stdio"` or `"type": "http"` in MCP config — never bare `url` alo
 | Human sign-off needed | `loregarden_request_approval` |
 | Attach log/diff/test output | `loregarden_attach_artifact` |
 | Finish orchestration run | `loregarden_complete_orchestration` |
+| Persist learnings / memory (Obsidian + iCloud SQLite) | `loregarden_append_learning`, `loregarden_upsert_memory`, `loregarden_search_memory` |
+| Inspect memory backend config | `loregarden_memory_status` |
 
 ## Stage-run agents (planner, static_qa, implementers, …)
 

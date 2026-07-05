@@ -16,8 +16,8 @@ export type TicketState = "backlog" | "in_progress" | "blocked" | "done" | "wont
 export type StageStatus = "pending" | "running" | "blocked" | "awaiting" | "done" | "wont_do";
 export type WorkItemType = "milestone" | "feature" | "capability" | "task" | "bug";
 
-export function isWorkflowWorkItem(type: WorkItemType): boolean {
-  return type === "feature" || type === "task" || type === "bug";
+export function isWorkflowWorkItem(_type: WorkItemType): boolean {
+  return true;
 }
 
 export interface TicketSummary {
@@ -34,6 +34,7 @@ export interface TicketSummary {
   work_item_type: WorkItemType;
   parent_ticket_id: string | null;
   milestone: string;
+  branch: string;
   child_count: number;
 }
 
@@ -44,7 +45,9 @@ export interface TicketTreeNode {
   state: TicketState;
   priority: number;
   work_item_type: WorkItemType;
+  workspace_slug?: string;
   workflow_stage_name: string;
+  workflow_stage_status: StageStatus;
   child_count: number;
   children: TicketTreeNode[];
 }
@@ -57,6 +60,8 @@ export interface WorkflowStageView {
   skill_name: string;
   optional: boolean;
   note: string;
+  stage_type: string;
+  agents: { agent_id: string; skill_name: string }[];
 }
 
 export interface TicketDetail extends TicketSummary {
@@ -68,6 +73,8 @@ export interface TicketDetail extends TicketSummary {
   next_status: string;
   blocking_issues: string;
   state_locked: boolean;
+  workflow_template_slug: string;
+  workflow_template_name: string;
   stages: WorkflowStageView[];
   artifacts: {
     diff?: DiffArtifact | null;
@@ -76,6 +83,13 @@ export interface TicketDetail extends TicketSummary {
     tests?: TestArtifact | null;
     context?: ContextSection[];
     error?: RunErrorArtifact | null;
+    pr?: {
+      url: string;
+      number: string;
+      title: string;
+      branch: string;
+      body: string;
+    } | null;
   };
 }
 
@@ -171,6 +185,43 @@ export interface WorkflowTemplateSummary {
   name: string;
   description: string;
   stage_count: number;
+}
+
+export interface WorkspaceCreateRequest {
+  slug: string;
+  name: string;
+  workflow_template_slug?: string;
+  repo_path?: string;
+  orchestration_profile_slug?: string;
+}
+
+export interface WorkspaceCreateResponse {
+  id: string;
+  slug: string;
+  name: string;
+  workflow_template_slug: string;
+}
+
+export interface BrowseDirectoryEntry {
+  name: string;
+  path: string;
+  repo_path: string;
+}
+
+export interface BrowseImportEntry extends BrowseDirectoryEntry {
+  kind: "directory" | "file";
+}
+
+export interface BrowseDirectoryResponse {
+  current_path: string;
+  repo_path: string;
+  parent_path: string | null;
+  repo_root: string;
+  entries: BrowseDirectoryEntry[];
+}
+
+export interface BrowseImportDirectoryResponse extends Omit<BrowseDirectoryResponse, "entries"> {
+  entries: BrowseImportEntry[];
 }
 
 export interface OrchestrationProfileView {
@@ -347,10 +398,82 @@ export interface CreateTicketRequest {
   external_id?: string;
 }
 
+export interface TicketImportFile {
+  name: string;
+  content: string;
+}
+
+export interface TicketImportItem {
+  title: string;
+  work_item_type: WorkItemType;
+  description?: string;
+  acceptance_criteria?: string[];
+  priority?: number;
+  milestone?: string;
+  external_id?: string;
+  parent_external_id?: string;
+  parent_ticket_id?: string | null;
+  source_format?: string;
+  source_label?: string;
+  preview_markdown?: string;
+}
+
+export interface TicketImportPreviewResponse {
+  tickets: TicketImportItem[];
+  errors: string[];
+  warnings: string[];
+  total: number;
+  by_type: Record<string, number>;
+  formats: string[];
+  show_preview: boolean;
+}
+
+export interface TicketImportResult {
+  created_count: number;
+  ticket_ids: string[];
+  errors: string[];
+}
+
+export type UsageMeterStatus = "ok" | "warning" | "critical";
+
+export interface UsageMeter {
+  key: string;
+  label: string;
+  used: number;
+  limit: number | null;
+  unit: "percent" | "dollars" | string;
+  percent_used: number | null;
+  resets_at: string | null;
+  status: UsageMeterStatus;
+}
+
+export interface UsageBreakdownItem {
+  name: string;
+  amount: number;
+  unit: string;
+  share_percent: number;
+}
+
+export interface UsageProviderSnapshot {
+  provider: "claude" | "cursor";
+  plan: string | null;
+  logged_in: boolean;
+  error: string | null;
+  meters: UsageMeter[];
+  breakdown: UsageBreakdownItem[];
+}
+
+export interface UsageSnapshot {
+  providers: UsageProviderSnapshot[];
+  near_limit: boolean;
+  warnings: string[];
+  fetched_at: string;
+}
+
 function ticketQuery(params?: {
   workspace?: string;
-  state?: TicketState;
-  work_item_type?: WorkItemType;
+  state?: TicketState | TicketState[];
+  work_item_type?: WorkItemType | WorkItemType[];
   parent_ticket_id?: string;
   roots_only?: boolean;
   milestone?: string;
@@ -358,8 +481,18 @@ function ticketQuery(params?: {
 }) {
   const q = new URLSearchParams();
   if (params?.workspace) q.set("workspace", params.workspace);
-  if (params?.state) q.set("state", params.state);
-  if (params?.work_item_type) q.set("work_item_type", params.work_item_type);
+  const states = params?.state
+    ? Array.isArray(params.state)
+      ? params.state
+      : [params.state]
+    : [];
+  for (const state of states) q.append("state", state);
+  const workItemTypes = params?.work_item_type
+    ? Array.isArray(params.work_item_type)
+      ? params.work_item_type
+      : [params.work_item_type]
+    : [];
+  for (const workItemType of workItemTypes) q.append("work_item_type", workItemType);
   if (params?.parent_ticket_id) q.set("parent_ticket_id", params.parent_ticket_id);
   if (params?.roots_only) q.set("roots_only", "true");
   if (params?.milestone) q.set("milestone", params.milestone);
@@ -370,6 +503,19 @@ function ticketQuery(params?: {
 
 export const api = {
   workspaces: () => request<WorkspaceSummary[]>("/api/workspaces"),
+  createWorkspace: (body: WorkspaceCreateRequest) =>
+    request<WorkspaceCreateResponse>("/api/workspaces", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  browseDirectory: (path?: string) => {
+    const q = path ? `?path=${encodeURIComponent(path)}` : "";
+    return request<BrowseDirectoryResponse>(`/api/system/browse${q}`);
+  },
+  browseImportDirectory: (path?: string) => {
+    const q = path ? `?path=${encodeURIComponent(path)}` : "";
+    return request<BrowseImportDirectoryResponse>(`/api/system/browse-import${q}`);
+  },
   workspaceWorkflow: (slug: string) => request<WorkspaceWorkflow>(`/api/workspaces/${slug}/workflow`),
   workflowTemplates: () => request<WorkflowTemplateSummary[]>("/api/workflows/templates"),
   setWorkspaceTemplate: (slug: string, workflow_template_slug: string) =>
@@ -403,14 +549,14 @@ export const api = {
   },
   tickets: (params?: {
     workspace?: string;
-    state?: TicketState;
-    work_item_type?: WorkItemType;
+    state?: TicketState | TicketState[];
+    work_item_type?: WorkItemType | WorkItemType[];
     search?: string;
   }) => request<TicketSummary[]>(`/api/tickets${ticketQuery(params)}`),
   ticketTree: (params?: {
     workspace?: string;
-    state?: TicketState;
-    work_item_type?: WorkItemType;
+    state?: TicketState | TicketState[];
+    work_item_type?: WorkItemType | WorkItemType[];
     search?: string;
   }) => request<TicketTreeNode[]>(`/api/tickets/tree${ticketQuery(params)}`),
   ticket: (id: string) => request<TicketDetail>(`/api/tickets/${id}`),
@@ -419,12 +565,31 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  previewTicketImport: (body: { workspace_slug: string; files: TicketImportFile[] }) =>
+    request<TicketImportPreviewResponse>("/api/tickets/import/preview", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  previewTicketImportPaths: (body: { workspace_slug: string; file_paths: string[] }) =>
+    request<TicketImportPreviewResponse>("/api/tickets/import/preview-paths", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  importTickets: (body: { workspace_slug: string; tickets: TicketImportItem[] }) =>
+    request<TicketImportResult>("/api/tickets/import", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   updateTicket: (
     id: string,
     body: {
+      title?: string;
+      description?: string;
       state?: TicketState;
       workflow_stage_key?: string;
       workflow_stage_status?: StageStatus;
+      workflow_template_slug?: string;
+      branch?: string;
       stage_key?: string;
       stage_status?: StageStatus;
       stage_updates?: Record<string, StageStatus>;
@@ -442,10 +607,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ manual: true, stage_key: options?.stage_key }),
     }),
-  orchestrate: (id: string, body?: { max_stages?: number }) =>
+  orchestrate: (
+    id: string,
+    body?: { max_stages?: number; stop_at_stage_key?: string; auto_approve?: boolean },
+  ) =>
     request<TicketDetail>(`/api/tickets/${id}/orchestrate`, {
       method: "POST",
       body: JSON.stringify(body ?? {}),
+    }),
+  openPr: (id: string) =>
+    request<TicketDetail>(`/api/tickets/${id}/open-pr`, {
+      method: "POST",
+      body: "{}",
     }),
   advance: (id: string) => request<TicketDetail>(`/api/tickets/${id}/advance`, { method: "POST", body: "{}" }),
   approvals: (ticketId?: string) =>
@@ -458,6 +631,9 @@ export const api = {
       action: "approve" | "reject";
       answers?: Record<string, string | string[]>;
       response?: string;
+      always_allow?: boolean;
+      allow_for_ticket?: boolean;
+      allow_for_stage?: boolean;
     },
   ) =>
     request(`/api/inbox/approvals/${id}`, {
@@ -516,4 +692,5 @@ export const api = {
     request<{ ok: boolean }>(`/api/studio/workflows/${slug}`, { method: "DELETE" }),
   publishStudioWorkflow: (slug: string) =>
     request<StudioWorkflow>(`/api/studio/workflows/${slug}/publish`, { method: "POST" }),
+  usage: () => request<UsageSnapshot>("/api/usage"),
 };

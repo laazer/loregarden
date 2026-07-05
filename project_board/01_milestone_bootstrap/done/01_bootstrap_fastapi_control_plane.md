@@ -2,7 +2,7 @@
 Title: Bootstrap FastAPI control plane with SQLite state engine
 Project: loregarden
 Created By: loregarden-export
-Created On: 2026-07-04T19:47:00.370936
+Created On: 2026-07-05T20:15:54.552726
 
 ---
 
@@ -27,7 +27,7 @@ Implement the loregarden backend: models, event bus, workflow engine, and API ro
 # WORKFLOW STATE (DO NOT FREEFORM EDIT)
 
 ## Stage
-DONE
+IMPLEMENTATION
 
 ## Revision
 0
@@ -51,7 +51,7 @@ None
 # NEXT ACTION
 
 ## Next Responsible Agent
-Human
+backend_implementer
 
 ## Required Input Schema
 ```json
@@ -62,4 +62,4 @@ Human
 Proceed
 
 ## Reason
-Exported from SQLite at 2026-07-04T19:47:00.427046+00:00
+Exported from SQLite at 2026-07-05T20:15:54.627134+00:00

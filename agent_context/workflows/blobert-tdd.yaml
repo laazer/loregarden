@@ -1,0 +1,116 @@
+slug: blobert-tdd
+name: Blobert TDD
+description: >-
+  Godot / Python / asset-pipeline TDD workflow for blobert — planner through AC
+  gatekeeper with optional research, classify-based implementation routing, and
+  parallel script review.
+stages:
+  - key: planning
+    name: Planning
+    agent_id: planner
+    skill_name: plan
+    order: 1
+  - key: domain_consultation
+    name: Research
+    agent_id: retriever
+    skill_name: consult
+    optional: true
+    order: 2
+  - key: specification
+    name: Specification
+    agent_id: spec
+    skill_name: spec
+    order: 3
+  - key: test_design
+    name: Test Design
+    agent_id: test_designer
+    skill_name: test_design
+    order: 4
+  - key: test_break
+    name: Test Break
+    agent_id: test_breaker
+    skill_name: test_break
+    order: 5
+  - key: implementation
+    name: Implementation
+    agent_id: core_simulation
+    skill_name: apply_patch
+    stage_type: classify
+    order: 6
+    classify_routes:
+      - specialties: ["simulation", "core", "deterministic"]
+        agent_id: core_simulation
+        skill_name: apply_patch
+      - specialties: ["gameplay", "mechanic", "combat", "fusion"]
+        agent_id: gameplay_systems
+        skill_name: apply_patch
+      - specialties: ["presentation", "ui", "hud", "audio", "vfx"]
+        agent_id: presentation
+        skill_name: apply_patch
+      - specialties: ["engine", "godot", "scene", "integration", "sandbox"]
+        agent_id: engine_integration
+        skill_name: apply_patch
+      - languages: ["typescript", "javascript"]
+        specialties: ["frontend", "web", "editor", "asset"]
+        agent_id: implementation_frontend
+        skill_name: apply_patch
+      - agent_id: core_simulation
+        skill_name: apply_patch
+        default: true
+  - key: script_review
+    name: Script Review
+    agent_id: ""
+    skill_name: ""
+    stage_type: parallel
+    order: 7
+    parallel_agents:
+      - agent_id: gdscript_reviewer
+        skill_name: review
+      - agent_id: static_qa
+        skill_name: static_qa
+      - agent_id: architecture_reviewer
+        skill_name: review
+  - key: ac_gate
+    name: AC Gate
+    agent_id: ac_gatekeeper
+    skill_name: ac_gate
+    stage_type: gate
+    order: 8
+  - key: playtest
+    name: Playtest
+    agent_id: ""
+    skill_name: ""
+    optional: true
+    order: 9
+  - key: learning
+    name: Learning
+    agent_id: learning
+    skill_name: learning
+    optional: true
+    order: 10
+  - key: done
+    name: Done
+    agent_id: ""
+    skill_name: ""
+    order: 11
+transitions:
+  - from: planning
+    to: domain_consultation
+  - from: domain_consultation
+    to: specification
+  - from: specification
+    to: test_design
+  - from: test_design
+    to: test_break
+  - from: test_break
+    to: implementation
+  - from: implementation
+    to: script_review
+  - from: script_review
+    to: ac_gate
+  - from: ac_gate
+    to: playtest
+  - from: playtest
+    to: learning
+  - from: learning
+    to: done

@@ -2,7 +2,7 @@
 Title: Self-tracking & export
 Project: loregarden
 Created By: loregarden-export
-Created On: 2026-07-05T02:22:41.128083
+Created On: 2026-07-05T22:37:58.448117
 
 ---
 
@@ -59,4 +59,4 @@ Human
 Proceed
 
 ## Reason
-Exported from SQLite at 2026-07-05T02:22:41.201006+00:00
+Exported from SQLite at 2026-07-05T22:37:58.553380+00:00

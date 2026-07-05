@@ -9,6 +9,7 @@ from loregarden.models.domain import (
     Ticket,
     TicketTreeNode,
     WorkItemType,
+    Workspace,
 )
 
 
@@ -54,6 +55,11 @@ def build_tree(
     """Assemble a forest from a flat ticket list (roots = no parent)."""
     stage_names = stage_names or {}
     by_id = {t.id: t for t in tickets}
+    workspace_slugs: dict[str, str] = {}
+    for ticket in tickets:
+        if ticket.workspace_id not in workspace_slugs:
+            ws = session.get(Workspace, ticket.workspace_id)
+            workspace_slugs[ticket.workspace_id] = ws.slug if ws else ""
     children_map: dict[str | None, list[Ticket]] = {}
     for t in tickets:
         pid = t.parent_ticket_id
@@ -80,7 +86,9 @@ def build_tree(
             state=ticket.state,
             priority=ticket.priority,
             work_item_type=ticket.work_item_type,
+            workspace_slug=workspace_slugs.get(ticket.workspace_id, ""),
             workflow_stage_name=stage_names.get(ticket.id, ""),
+            workflow_stage_status=ticket.workflow_stage_status,
             child_count=len(kids),
             children=[node_for(k) for k in kids],
         )

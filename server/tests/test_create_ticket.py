@@ -65,7 +65,7 @@ def test_create_task_work_item(client: TestClient):
     body = res.json()
     assert body["title"] == "Add export filters"
     assert body["work_item_type"] == "task"
-    assert body["state"] in {"backlog", "in_progress"}
+    assert body["state"] == "backlog"
     assert body["workflow_stage_key"] == "planning"
     assert len(body["stages"]) >= 5
     assert body["acceptance_criteria"] == [
@@ -106,3 +106,26 @@ def test_create_invalid_hierarchy(client: TestClient):
         },
     )
     assert res.status_code == 400
+
+
+def test_create_bug_under_milestone(client: TestClient):
+    milestone_id = next(
+        t["id"]
+        for t in client.get("/api/tickets?workspace=loregarden").json()
+        if t["work_item_type"] == "milestone"
+    )
+    res = client.post(
+        "/api/tickets",
+        json={
+            "workspace_slug": "loregarden",
+            "title": "Milestone-level bug",
+            "work_item_type": "bug",
+            "parent_ticket_id": milestone_id,
+            "description": "Regression found during milestone review.",
+        },
+    )
+    assert res.status_code == 201
+    body = res.json()
+    assert body["work_item_type"] == "bug"
+    assert body["parent_ticket_id"] == milestone_id
+    assert body["workflow_stage_key"] == "planning"

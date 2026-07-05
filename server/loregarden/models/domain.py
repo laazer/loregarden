@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -38,16 +38,14 @@ class WorkItemType(str, Enum):
 
 
 VALID_HIERARCHY: dict[WorkItemType, list[WorkItemType]] = {
-    WorkItemType.MILESTONE: [WorkItemType.FEATURE],
-    WorkItemType.FEATURE: [WorkItemType.CAPABILITY],
+    WorkItemType.MILESTONE: [WorkItemType.FEATURE, WorkItemType.BUG],
+    WorkItemType.FEATURE: [WorkItemType.CAPABILITY, WorkItemType.BUG],
     WorkItemType.CAPABILITY: [WorkItemType.TASK, WorkItemType.BUG],
     WorkItemType.TASK: [],
     WorkItemType.BUG: [],
 }
 
-WORKFLOW_WORK_ITEM_TYPES = frozenset(
-    {WorkItemType.FEATURE, WorkItemType.TASK, WorkItemType.BUG}
-)
+WORKFLOW_WORK_ITEM_TYPES = frozenset(WorkItemType)
 
 
 class CycleStatus(str, Enum):
@@ -56,7 +54,7 @@ class CycleStatus(str, Enum):
     COMPLETED = "completed"
 
 
-class StageStatus(str, Enum):
+class StageStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     BLOCKED = "blocked"
@@ -131,6 +129,7 @@ class Workspace(SQLModel, table=True):
     cursor_model: str = ""
     lmstudio_base_url: str = ""
     lmstudio_model: str = ""
+    permission_allowlist_json: str = "[]"
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -189,7 +188,9 @@ class Ticket(SQLModel, table=True):
     next_status: str = "Proceed"
     blocking_issues: str = ""
     state_locked: bool = Field(default=False)
+    workflow_disabled: bool = Field(default=False)
     triage_runtime_json: str = "{}"
+    permission_allowlist_json: str = "[]"
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -226,6 +227,8 @@ class OrchestrationRun(SQLModel, table=True):
     )
     current_stage_key: str = ""
     error_message: str = ""
+    auto_approve: bool = Field(default=False)
+    stop_at_stage_key: str = ""
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=utcnow)
@@ -325,6 +328,11 @@ class ClassifyRoute(SQLModel):
     default: bool = False
 
 
+class ParallelAgentSpec(SQLModel):
+    agent_id: str
+    skill_name: str = ""
+
+
 class WorkflowStageDef(SQLModel):
     key: str
     name: str
@@ -332,8 +340,10 @@ class WorkflowStageDef(SQLModel):
     skill_name: str = ""
     optional: bool = False
     order: int = 0
-    stage_type: str = "agent"  # agent | classify | gate
+    stage_type: str = "agent"  # agent | classify | gate | parallel
     classify_routes: list[ClassifyRoute] = Field(default_factory=list)
+    parallel_agents: list[ParallelAgentSpec] = Field(default_factory=list)
+    gate_commands: list[str] = Field(default_factory=list)
     gate_required: bool = False
 
 
@@ -341,10 +351,13 @@ class WorkflowStageView(SQLModel):
     key: str
     name: str
     status: StageStatus
+    order: int = 0
     agent_id: str = ""
     skill_name: str = ""
     optional: bool = False
     note: str = ""
+    stage_type: str = "agent"
+    agents: list[ParallelAgentSpec] = Field(default_factory=list)
 
 
 class TicketSummary(SQLModel):
@@ -361,7 +374,10 @@ class TicketSummary(SQLModel):
     work_item_type: WorkItemType = WorkItemType.TASK
     parent_ticket_id: Optional[str] = None
     milestone: str = ""
+    branch: str = ""
     child_count: int = 0
+    next_agent: str = ""
+    stages: list[WorkflowStageView] = []
 
 
 class TicketTreeNode(SQLModel):
@@ -371,7 +387,9 @@ class TicketTreeNode(SQLModel):
     state: TicketState
     priority: int
     work_item_type: WorkItemType
+    workspace_slug: str = ""
     workflow_stage_name: str = ""
+    workflow_stage_status: StageStatus = StageStatus.PENDING
     child_count: int = 0
     children: list["TicketTreeNode"] = []
 
@@ -381,11 +399,11 @@ class TicketDetail(TicketSummary):
     acceptance_criteria: list[str]
     revision: int
     last_updated_by: str
-    next_agent: str
     next_status: str
     blocking_issues: str
     state_locked: bool = False
-    stages: list[WorkflowStageView]
+    workflow_template_slug: str = ""
+    workflow_template_name: str = ""
     artifacts: dict[str, Any]
 
 
@@ -403,6 +421,7 @@ class WorkspaceCreate(SQLModel):
     name: str
     workflow_template_slug: str = "loregarden-tdd"
     repo_path: str = "."
+    orchestration_profile_slug: str = ""
 
 
 class WorkspaceTemplateUpdate(SQLModel):
@@ -459,6 +478,8 @@ class StartRunRequest(SQLModel):
 class StartOrchestrationRequest(SQLModel):
     driver: Optional[OrchestrationDriver] = None
     max_stages: Optional[int] = None
+    stop_at_stage_key: Optional[str] = None
+    auto_approve: bool = False
 
 
 class CompleteStageRequest(SQLModel):
@@ -529,9 +550,13 @@ class AdvanceStageRequest(SQLModel):
 
 
 class UpdateTicketRequest(SQLModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
     state: Optional[TicketState] = None
+    branch: Optional[str] = None
     workflow_stage_key: Optional[str] = None
     workflow_stage_status: Optional[StageStatus] = None
+    workflow_template_slug: Optional[str] = None
     stage_key: Optional[str] = None
     stage_status: Optional[StageStatus] = None
     stage_updates: Optional[dict[str, StageStatus]] = None
@@ -550,10 +575,64 @@ class TicketCreate(SQLModel):
     external_id: str = ""
 
 
+class TicketImportFile(SQLModel):
+    name: str
+    content: str
+
+
+class TicketImportItem(SQLModel):
+    title: str
+    work_item_type: WorkItemType = WorkItemType.TASK
+    description: str = ""
+    acceptance_criteria: list[str] = []
+    priority: int = 3
+    milestone: str = ""
+    external_id: str = ""
+    parent_external_id: str = ""
+    parent_ticket_id: Optional[str] = None
+    source_format: str = ""
+    source_label: str = ""
+    preview_markdown: str = ""
+
+
+class TicketImportPreviewRequest(SQLModel):
+    workspace_slug: str
+    files: list[TicketImportFile]
+
+
+class TicketImportPreviewPathsRequest(SQLModel):
+    workspace_slug: str
+    file_paths: list[str]
+
+
+class TicketImportPreviewResponse(SQLModel):
+    tickets: list[TicketImportItem]
+    errors: list[str]
+    warnings: list[str]
+    total: int
+    by_type: dict[str, int]
+    formats: list[str]
+    show_preview: bool
+
+
+class TicketImportRequest(SQLModel):
+    workspace_slug: str
+    tickets: list[TicketImportItem]
+
+
+class TicketImportResult(SQLModel):
+    created_count: int
+    ticket_ids: list[str]
+    errors: list[str]
+
+
 class ApprovalAction(SQLModel):
     action: str  # approve | reject
     answers: dict[str, str | list[str]] | None = None
     response: str = ""
+    always_allow: bool = False
+    allow_for_ticket: bool = False
+    allow_for_stage: bool = False
 
 
 class TriageMessageCreate(SQLModel):
@@ -689,6 +768,8 @@ class StudioWorkflowStage(SQLModel):
     order: int = 0
     gate_required: bool = False
     classify_routes: list[ClassifyRoute] = Field(default_factory=list)
+    parallel_agents: list[ParallelAgentSpec] = Field(default_factory=list)
+    gate_commands: list[str] = Field(default_factory=list)
 
 
 class StudioWorkflowCreate(SQLModel):

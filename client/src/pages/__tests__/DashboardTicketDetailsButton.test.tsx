@@ -1,7 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import Dashboard from '../Dashboard';
+import { Dashboard } from '../Dashboard';
 import * as apiClient from '../../api/client';
 
 /**
@@ -19,15 +18,18 @@ import * as apiClient from '../../api/client';
  */
 
 // Mock the API
-vi.mock('../../api/client', async () => {
-  const actual = await vi.importActual('../../api/client');
+jest.mock('../../api/client', () => {
+  const actual = jest.requireActual('../../api/client') as typeof import('../../api/client');
   return {
     ...actual,
     api: {
-      getTicketTree: vi.fn(),
-      getTicket: vi.fn(),
-      getWorkspaces: vi.fn(),
-      getWorkspaceWorkflow: vi.fn(),
+      ...actual.api,
+      ticketTree: jest.fn(),
+      ticket: jest.fn(),
+      workspaces: jest.fn(),
+      workspaceWorkflow: jest.fn(),
+      workflowTemplates: jest.fn(),
+      approvals: jest.fn(),
     },
   };
 });
@@ -41,7 +43,7 @@ describe('Dashboard - Ticket Details Button Integration', () => {
         queries: { retry: false },
       },
     });
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   const renderDashboard = (initialProps = {}) => {
@@ -71,9 +73,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
         external_id: '16-modal-with-ticket-details',
       });
 
-      vi.mocked(apiClient.api.getWorkspaces).mockResolvedValue(mockWorkspaces);
-      vi.mocked(apiClient.api.getTicketTree).mockResolvedValue(mockTree);
-      vi.mocked(apiClient.api.getTicket).mockResolvedValue(mockTicket);
+      jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
+      jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
+      jest.mocked(apiClient.api.ticket).mockResolvedValue(mockTicket);
 
       renderDashboard();
 
@@ -97,8 +99,8 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       // SPEC: Button should not appear in empty workflow pane
       const mockWorkspaces = [{ slug: 'loregarden', name: 'Loregarden' }];
 
-      vi.mocked(apiClient.api.getWorkspaces).mockResolvedValue(mockWorkspaces);
-      vi.mocked(apiClient.api.getTicketTree).mockResolvedValue([]);
+      jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
+      jest.mocked(apiClient.api.ticketTree).mockResolvedValue([]);
 
       renderDashboard();
 
@@ -117,9 +119,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       const mockTicket1 = createMockTicket({ id: 'ticket-1', title: 'First Ticket' });
       const mockTicket2 = createMockTicket({ id: 'ticket-2', title: 'Second Ticket' });
 
-      vi.mocked(apiClient.api.getWorkspaces).mockResolvedValue(mockWorkspaces);
-      vi.mocked(apiClient.api.getTicketTree).mockResolvedValue(mockTree);
-      vi.mocked(apiClient.api.getTicket)
+      jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
+      jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
+      jest.mocked(apiClient.api.ticket)
         .mockResolvedValueOnce(mockTicket1)
         .mockResolvedValueOnce(mockTicket2);
 
@@ -156,9 +158,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
         description: 'This is a test feature',
       });
 
-      vi.mocked(apiClient.api.getWorkspaces).mockResolvedValue(mockWorkspaces);
-      vi.mocked(apiClient.api.getTicketTree).mockResolvedValue(mockTree);
-      vi.mocked(apiClient.api.getTicket).mockResolvedValue(mockTicket);
+      jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
+      jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
+      jest.mocked(apiClient.api.ticket).mockResolvedValue(mockTicket);
 
       renderDashboard();
 
@@ -198,9 +200,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
         blocking_issues: 'Awaiting API review',
       });
 
-      vi.mocked(apiClient.api.getWorkspaces).mockResolvedValue(mockWorkspaces);
-      vi.mocked(apiClient.api.getTicketTree).mockResolvedValue(mockTree);
-      vi.mocked(apiClient.api.getTicket).mockResolvedValue(mockTicket);
+      jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
+      jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
+      jest.mocked(apiClient.api.ticket).mockResolvedValue(mockTicket);
 
       renderDashboard();
 
@@ -228,9 +230,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
       const mockTicket = createMockTicket({ id: 'ticket-1' });
 
-      vi.mocked(apiClient.api.getWorkspaces).mockResolvedValue(mockWorkspaces);
-      vi.mocked(apiClient.api.getTicketTree).mockResolvedValue(mockTree);
-      vi.mocked(apiClient.api.getTicket).mockResolvedValue(mockTicket);
+      jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
+      jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
+      jest.mocked(apiClient.api.ticket).mockResolvedValue(mockTicket);
 
       renderDashboard();
 
@@ -260,9 +262,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
       const mockTicket = createMockTicket({ id: 'ticket-1' });
 
-      vi.mocked(apiClient.api.getWorkspaces).mockResolvedValue(mockWorkspaces);
-      vi.mocked(apiClient.api.getTicketTree).mockResolvedValue(mockTree);
-      vi.mocked(apiClient.api.getTicket).mockResolvedValue(mockTicket);
+      jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
+      jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
+      jest.mocked(apiClient.api.ticket).mockResolvedValue(mockTicket);
 
       renderDashboard();
 
@@ -302,9 +304,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       ];
       const mockTicket = createMockTicket({ id: 'ticket-1' });
 
-      vi.mocked(apiClient.api.getWorkspaces).mockResolvedValue(mockWorkspaces);
-      vi.mocked(apiClient.api.getTicketTree).mockResolvedValue(mockTree);
-      vi.mocked(apiClient.api.getTicket).mockResolvedValue(mockTicket);
+      jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
+      jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
+      jest.mocked(apiClient.api.ticket).mockResolvedValue(mockTicket);
 
       renderDashboard();
 
@@ -329,9 +331,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
       const mockTicket = createMockTicket({ id: 'ticket-1' });
 
-      vi.mocked(apiClient.api.getWorkspaces).mockResolvedValue(mockWorkspaces);
-      vi.mocked(apiClient.api.getTicketTree).mockResolvedValue(mockTree);
-      vi.mocked(apiClient.api.getTicket).mockResolvedValue(mockTicket);
+      jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
+      jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
+      jest.mocked(apiClient.api.ticket).mockResolvedValue(mockTicket);
 
       renderDashboard();
 
@@ -360,9 +362,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       const mockTicket1 = createMockTicket({ id: 'ticket-1', title: 'First' });
       const mockTicket2 = createMockTicket({ id: 'ticket-2', title: 'Second' });
 
-      vi.mocked(apiClient.api.getWorkspaces).mockResolvedValue(mockWorkspaces);
-      vi.mocked(apiClient.api.getTicketTree).mockResolvedValue(mockTree);
-      vi.mocked(apiClient.api.getTicket)
+      jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
+      jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
+      jest.mocked(apiClient.api.ticket)
         .mockResolvedValueOnce(mockTicket1)
         .mockResolvedValueOnce(mockTicket2);
 
@@ -400,9 +402,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
       const mockTicket = createMockTicket({ id: 'ticket-1', title: 'Test' });
 
-      vi.mocked(apiClient.api.getWorkspaces).mockResolvedValue(mockWorkspaces);
-      vi.mocked(apiClient.api.getTicketTree).mockResolvedValue(mockTree);
-      vi.mocked(apiClient.api.getTicket).mockResolvedValue(mockTicket);
+      jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
+      jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
+      jest.mocked(apiClient.api.ticket).mockResolvedValue(mockTicket);
 
       renderDashboard();
 
@@ -420,9 +422,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
       const mockTicket = createMockTicket({ id: 'ticket-1' });
 
-      vi.mocked(apiClient.api.getWorkspaces).mockResolvedValue(mockWorkspaces);
-      vi.mocked(apiClient.api.getTicketTree).mockResolvedValue(mockTree);
-      vi.mocked(apiClient.api.getTicket).mockResolvedValue(mockTicket);
+      jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
+      jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
+      jest.mocked(apiClient.api.ticket).mockResolvedValue(mockTicket);
 
       renderDashboard();
 
@@ -444,9 +446,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       const mockWorkspaces = [{ slug: 'loregarden' }];
       const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
 
-      vi.mocked(apiClient.api.getWorkspaces).mockResolvedValue(mockWorkspaces);
-      vi.mocked(apiClient.api.getTicketTree).mockResolvedValue(mockTree);
-      vi.mocked(apiClient.api.getTicket).mockRejectedValue(new Error('Failed to load'));
+      jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
+      jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
+      jest.mocked(apiClient.api.ticket).mockRejectedValue(new Error('Failed to load'));
 
       renderDashboard();
 
@@ -471,10 +473,10 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       const mockTree = [createMockTreeNode({ id: 'ticket-1' })];
       const mockTicket = createMockTicket({ id: 'ticket-1' });
 
-      vi.mocked(apiClient.api.getWorkspaces).mockResolvedValue(mockWorkspaces);
-      vi.mocked(apiClient.api.getTicketTree).mockResolvedValue(mockTree);
+      jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
+      jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
       // First call fails, second succeeds
-      vi.mocked(apiClient.api.getTicket)
+      jest.mocked(apiClient.api.ticket)
         .mockRejectedValueOnce(new Error('Network error'))
         .mockResolvedValueOnce(mockTicket);
 
@@ -508,6 +510,7 @@ function createMockTreeNode(overrides?: Partial<apiClient.TicketTreeNode>): apiC
     priority: 1,
     work_item_type: 'feature',
     workflow_stage_name: 'Test Design',
+    workflow_stage_status: 'pending',
     child_count: 0,
     children: [],
     ...overrides,

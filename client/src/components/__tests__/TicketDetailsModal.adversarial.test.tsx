@@ -1,4 +1,3 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TicketDetailsModal } from '../TicketDetailsModal';
@@ -32,7 +31,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
         queries: { retry: false },
       },
     });
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
@@ -471,7 +470,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
   // ============================================================================
   describe('Concurrency & Race Conditions', () => {
     it('should handle simultaneous isOpen state changes', async () => {
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
       const { rerender } = renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={false} onClose={onClose} />
@@ -552,7 +551,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
     });
 
     it('should handle close callback called multiple times', async () => {
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
@@ -608,7 +607,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
     });
 
     it('should produce consistent results when callback order changes', () => {
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
 
       const { rerender } = renderWithQueryClient(
@@ -616,7 +615,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
       );
 
       // Change callback reference
-      const newOnClose = vi.fn();
+      const newOnClose = jest.fn();
       rerender(
         <QueryClientProvider client={queryClient}>
           <TicketDetailsModal ticket={ticket} isOpen={true} onClose={newOnClose} />
@@ -767,7 +766,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
   // ============================================================================
   describe('Stress & Load Testing', () => {
     it('should handle repeated open/close cycles (100 iterations)', async () => {
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
 
       const { rerender } = renderWithQueryClient(
@@ -996,7 +995,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
   // ============================================================================
   describe('Memory & Resource Management', () => {
     it('should properly cleanup event listeners on unmount', () => {
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
 
       const { unmount } = renderWithQueryClient(
@@ -1040,7 +1039,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
   // ============================================================================
   describe('Modal Interaction Edge Cases', () => {
     it('should handle backdrop click with event.stopPropagation', () => {
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
@@ -1048,7 +1047,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
 
       const backdrop = screen.getByTestId('modal-backdrop');
       const clickEvent = new MouseEvent('click', { bubbles: true });
-      vi.spyOn(clickEvent, 'stopPropagation');
+      jest.spyOn(clickEvent, 'stopPropagation');
 
       fireEvent(backdrop, clickEvent);
 
@@ -1056,7 +1055,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
     });
 
     it('should handle keyboard events on nested elements', () => {
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
@@ -1072,7 +1071,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
     });
 
     it('should handle rapid escape key presses', () => {
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />
@@ -1089,7 +1088,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
     });
 
     it('should ignore non-Escape keys in modal', () => {
-      const onClose = vi.fn();
+      const onClose = jest.fn();
       const ticket = createMockTicket();
       renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={onClose} />

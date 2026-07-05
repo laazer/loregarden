@@ -27,7 +27,7 @@ BOOTSTRAP_TASKS = [
             "Implement the loregarden backend: models, event bus, workflow engine, "
             "and API routes for tickets, runs, inbox, and events."
         ),
-        "state": TicketState.DONE,
+        "state": TicketState.IN_PROGRESS,
         "priority": 1,
         "stage_key": "implementation",
         "stage_status": StageStatus.DONE,
@@ -46,7 +46,7 @@ BOOTSTRAP_TASKS = [
             "Three-pane UI: workspaces/tickets sidebar, dual-state workflow center, "
             "artifact viewer. TanStack Query fetches backend truth only."
         ),
-        "state": TicketState.DONE,
+        "state": TicketState.IN_PROGRESS,
         "priority": 1,
         "stage_key": "implementation",
         "stage_status": StageStatus.DONE,
@@ -65,7 +65,7 @@ BOOTSTRAP_TASKS = [
             "Spawn local CLI agents via subprocess for each workflow stage. "
             "Runs emit artifacts and domain events."
         ),
-        "state": TicketState.DONE,
+        "state": TicketState.IN_PROGRESS,
         "priority": 2,
         "stage_key": "implementation",
         "stage_status": StageStatus.DONE,
@@ -83,7 +83,7 @@ BOOTSTRAP_TASKS = [
             "Layer DB templates seeded from agent_context/workflows YAML with "
             "per-workspace overrides for stage gating."
         ),
-        "state": TicketState.DONE,
+        "state": TicketState.IN_PROGRESS,
         "priority": 2,
         "stage_key": "implementation",
         "stage_status": StageStatus.DONE,

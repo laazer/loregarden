@@ -92,6 +92,64 @@ def schedule_agent_run(run_id: str) -> None:
     thread.start()
 
 
+def execute_orchestration_background(
+    ticket_id: str,
+    *,
+    max_stages: int | None = None,
+    driver=None,
+    stop_at_stage_key: str | None = None,
+    auto_approve: bool = False,
+) -> None:
+    try:
+        with Session(engine) as session:
+            ticket = session.get(Ticket, ticket_id)
+            if not ticket:
+                logger.error("Background orchestration ticket not found: %s", ticket_id)
+                return
+            RunService(session).orchestrate_ticket(
+                ticket,
+                max_stages=max_stages,
+                driver=driver,
+                stop_at_stage_key=stop_at_stage_key,
+                auto_approve=auto_approve,
+            )
+    except Exception as exc:
+        logger.exception("Background orchestration failed for ticket %s: %s", ticket_id, exc)
+
+
+def schedule_orchestration(
+    ticket_id: str,
+    *,
+    max_stages: int | None = None,
+    driver=None,
+    stop_at_stage_key: str | None = None,
+    auto_approve: bool = False,
+) -> None:
+    """Queue orchestration without blocking the API event loop."""
+    if os.environ.get("LOREGARDEN_SYNC_ORCHESTRATION") == "1":
+        execute_orchestration_background(
+            ticket_id,
+            max_stages=max_stages,
+            driver=driver,
+            stop_at_stage_key=stop_at_stage_key,
+            auto_approve=auto_approve,
+        )
+        return
+    thread = threading.Thread(
+        target=execute_orchestration_background,
+        args=(ticket_id,),
+        kwargs={
+            "max_stages": max_stages,
+            "driver": driver,
+            "stop_at_stage_key": stop_at_stage_key,
+            "auto_approve": auto_approve,
+        },
+        name=f"loregarden-orch-{ticket_id[:8]}",
+        daemon=True,
+    )
+    thread.start()
+
+
 class RunService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -104,6 +162,8 @@ class RunService:
         *,
         driver=None,
         max_stages: int | None = None,
+        stop_at_stage_key: str | None = None,
+        auto_approve: bool = False,
     ) -> OrchestrationRun:
         ws = self.session.get(Workspace, ticket.workspace_id)
         if not ws:
@@ -116,6 +176,8 @@ class RunService:
                 ticket,
                 profile,
                 max_stages=max_stages,
+                stop_at_stage_key=stop_at_stage_key,
+                auto_approve=auto_approve,
             )
         if chosen == OrchestrationDriver.EXTERNAL_MCP:
             return OrchestrationCallbackService(self.session).start_orchestration_run(
