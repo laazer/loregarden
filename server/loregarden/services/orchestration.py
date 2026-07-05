@@ -404,6 +404,16 @@ class OrchestrationService:
             run_id=run.id,
             payload={"status": status.value},
         )
+        workspace = self.session.get(Workspace, ticket.workspace_id)
+        if workspace:
+            from loregarden.services.artifact_service import refresh_execution_artifacts
+
+            refresh_execution_artifacts(
+                self.session,
+                ticket=ticket,
+                run=run,
+                workspace=workspace,
+            )
         finalize_run_log_artifact(run, status=status, stderr=stderr)
         return run
 

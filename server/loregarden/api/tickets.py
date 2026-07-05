@@ -85,13 +85,20 @@ def _ticket_summary(session: Session, ticket: Ticket) -> TicketSummary:
     )
 
 
-def _artifacts_grouped(session: Session, ticket_id: str) -> dict:
-    from loregarden.models.domain import AgentRun, RunStatus
+def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
+    from loregarden.models.domain import AgentRun, RunStatus, Workspace
+    from loregarden.services.artifact_service import (
+        _diff_artifact_is_valid,
+        _test_artifact_is_valid,
+        ensure_diff_artifact,
+        ensure_test_artifact,
+    )
 
+    ticket_id = ticket.id
+    grouped: dict = {"diff": None, "logs": [], "tests": None, "context": [], "live": None, "error": None}
     artifacts = session.exec(
         select(Artifact).where(Artifact.ticket_id == ticket_id)
     ).all()
-    grouped: dict = {"diff": None, "logs": [], "tests": None, "context": [], "live": None, "error": None}
     log_artifacts: list[Artifact] = []
     error_artifacts: list[Artifact] = []
     for art in artifacts:
@@ -159,6 +166,13 @@ def _artifacts_grouped(session: Session, ticket_id: str) -> dict:
         if live and run and run.status not in {RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION}:
             live = None
         grouped["live"] = live
+
+    workspace = session.get(Workspace, ticket.workspace_id)
+    if workspace:
+        if not grouped["diff"] or not _diff_artifact_is_valid(grouped["diff"] or {}):
+            grouped["diff"] = ensure_diff_artifact(session, ticket=ticket, workspace=workspace)
+        if not grouped["tests"] or not _test_artifact_is_valid(grouped["tests"] or {}):
+            grouped["tests"] = ensure_test_artifact(session, ticket=ticket)
     return grouped
 
 
@@ -336,7 +350,7 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         blocking_issues=normalize_timeout_stderr(ticket.blocking_issues),
         state_locked=ticket.state_locked,
         stages=orch.build_stage_views(ticket),
-        artifacts=_artifacts_grouped(session, ticket.id),
+        artifacts=_artifacts_grouped(session, ticket),
     )
 
 

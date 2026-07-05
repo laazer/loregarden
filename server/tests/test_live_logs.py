@@ -91,6 +91,6 @@ def test_artifacts_grouped_prefers_active_run_without_stale_fallback():
         )
         session.commit()
 
-        grouped = _artifacts_grouped(session, ticket.id)
+        grouped = _artifacts_grouped(session, ticket)
         assert grouped["logs"] == []
         assert "Awaiting your approval" in grouped["live"]

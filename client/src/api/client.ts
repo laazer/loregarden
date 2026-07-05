@@ -86,12 +86,28 @@ export interface RunErrorArtifact {
   command: string;
 }
 
+export interface DiffLine {
+  type: string;
+  ln: string;
+  text: string;
+}
+
+export interface DiffFileSection {
+  path: string;
+  add: number;
+  del: number;
+  lines: DiffLine[];
+}
+
 export interface DiffArtifact {
   file: string;
   add: string;
   del: string;
   files: string;
-  lines: { type: string; ln: string; text: string }[];
+  range?: string;
+  sections?: DiffFileSection[];
+  /** @deprecated legacy flat diff — use sections */
+  lines?: DiffLine[];
 }
 
 export interface LogLine {

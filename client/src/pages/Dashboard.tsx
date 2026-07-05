@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type StageStatus, type TicketDetail, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { api, type DiffArtifact, type DiffFileSection, type StageStatus, type TicketDetail, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { LogsPanel } from "../components/LogsPanel";
 import { TriagePanel } from "../components/TriagePanel";
@@ -110,6 +110,51 @@ function canRunStage(
   }
   const verb = stage.status === "done" || stage.status === "blocked" ? "Re-run" : "Run";
   return { allowed: true, reason: `${verb} ${stage.name}` };
+}
+
+function diffFileSections(diff: DiffArtifact): DiffFileSection[] {
+  if (diff.sections?.length) {
+    return diff.sections;
+  }
+  if (!diff.lines?.length) {
+    return [];
+  }
+
+  const sections: DiffFileSection[] = [];
+  let current: DiffFileSection | null = null;
+
+  for (const line of diff.lines) {
+    const header = line.text.match(/^\+\+\+ b\/(.+)$/);
+    if (header) {
+      if (current?.lines.length) {
+        sections.push(current);
+      }
+      current = { path: header[1], add: 0, del: 0, lines: [] };
+      continue;
+    }
+    if (!current) {
+      current = { path: diff.file || "changes", add: 0, del: 0, lines: [] };
+    }
+    current.lines.push(line);
+    if (line.type === "a") current.add += 1;
+    if (line.type === "d") current.del += 1;
+  }
+  if (current?.lines.length) {
+    sections.push(current);
+  }
+  return sections;
+}
+
+function DiffLineView({ line }: { line: DiffFileSection["lines"][number] }) {
+  return (
+    <div className={`diff-line ${line.type === "a" ? "add" : line.type === "d" ? "del" : ""}`}>
+      <span style={{ width: 44, textAlign: "right", paddingRight: 12, color: "var(--txl)" }}>{line.ln}</span>
+      <span style={{ width: 15, textAlign: "center" }}>
+        {line.type === "a" ? "+" : line.type === "d" ? "−" : line.type === "h" ? "@" : " "}
+      </span>
+      <span style={{ flex: 1, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{line.text}</span>
+    </div>
+  );
 }
 
 function PrioBars({ priority }: { priority: number }) {
@@ -1141,31 +1186,40 @@ function ArtifactView({
   if (tab === "diff") {
     const diff = art.diff;
     if (!diff) {
-      return <EmptyArtifacts />;
+      return (
+        <EmptyArtifacts label="No diff captured yet">
+          Shows git changes in the workspace repo (vs main) after agent runs, or when you open this tab.
+        </EmptyArtifacts>
+      );
     }
     return (
       <div>
-        <div style={{ padding: "11px 18px", borderBottom: "1px solid var(--bd)", background: "var(--bg1)" }}>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 12 }}>{diff.file}</span>
-          <span style={{ marginLeft: 12, color: "var(--grl)", fontFamily: "var(--mono)" }}>{diff.add}</span>
-          <span style={{ marginLeft: 8, color: "var(--rdl)", fontFamily: "var(--mono)" }}>{diff.del}</span>
+        <div className="diff-summary-bar">
+          <span>{diff.files}</span>
+          {diff.range && (
+            <span style={{ marginLeft: 12, opacity: 0.85 }}>vs {diff.range}</span>
+          )}
+          <span style={{ marginLeft: 12, color: "var(--grl)" }}>{diff.add}</span>
+          <span style={{ marginLeft: 8, color: "var(--rdl)" }}>{diff.del}</span>
         </div>
-        <div style={{ padding: "6px 0" }}>
-          {diff.lines?.map((line, i) => (
-            <div
-              key={i}
-              className={`diff-line ${line.type === "a" ? "add" : line.type === "d" ? "del" : ""}`}
-            >
-              <span style={{ width: 44, textAlign: "right", paddingRight: 12, color: "var(--txl)" }}>
-                {line.ln}
+        {diffFileSections(diff).map((section) => (
+          <section key={section.path} className="diff-file-block">
+            <div className="diff-file-header">
+              <span className="diff-file-path" title={section.path}>
+                {section.path}
               </span>
-              <span style={{ width: 15, textAlign: "center" }}>
-                {line.type === "a" ? "+" : line.type === "d" ? "−" : " "}
+              <span className="diff-file-stats">
+                <span style={{ color: "var(--grl)" }}>+{section.add}</span>
+                <span style={{ color: "var(--rdl)" }}>−{section.del}</span>
               </span>
-              <span style={{ flex: 1, whiteSpace: "pre" }}>{line.text}</span>
             </div>
-          ))}
-        </div>
+            <div style={{ padding: "4px 0 8px" }}>
+              {section.lines.map((line, i) => (
+                <DiffLineView key={`${section.path}-${i}`} line={line} />
+              ))}
+            </div>
+          </section>
+        ))}
       </div>
     );
   }
@@ -1244,14 +1298,31 @@ function ArtifactView({
 
   if (tab === "tests") {
     const tests = art.tests;
-    if (!tests) return <EmptyArtifacts />;
+    if (!tests) {
+      return (
+        <EmptyArtifacts label="No test results yet">
+          Populated when a testing stage run completes (static_qa, test_breaker, test_designer) with pytest-style output.
+        </EmptyArtifacts>
+      );
+    }
     return (
       <div style={{ padding: 16 }}>
         <div className="state-card" style={{ marginBottom: 14 }}>
           <strong>{tests.summary}</strong>
-          <span style={{ float: "right", fontFamily: "var(--mono)", fontSize: 11, color: "var(--txl)" }}>
-            {tests.cmd}
-          </span>
+          {tests.cmd && (
+            <div
+              style={{
+                marginTop: 8,
+                fontFamily: "var(--mono)",
+                fontSize: 11,
+                color: "var(--txl)",
+                wordBreak: "break-all",
+                lineHeight: 1.5,
+              }}
+            >
+              {tests.cmd}
+            </div>
+          )}
         </div>
         {tests.rows?.map((row, i) => (
           <div key={i} className="list-btn" style={{ marginBottom: 4 }}>
@@ -1294,12 +1365,22 @@ function ArtifactView({
   );
 }
 
-function EmptyArtifacts({ label = "No artifacts yet" }: { label?: string }) {
+function EmptyArtifacts({
+  label = "No artifacts yet",
+  children,
+}: {
+  label?: string;
+  children?: ReactNode;
+}) {
   return (
-    <div style={{ height: "100%", minHeight: 340, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--txl)", gap: 12 }}>
+    <div style={{ height: "100%", minHeight: 340, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--txl)", gap: 12, padding: 24 }}>
       <div style={{ fontFamily: "var(--dp)", fontSize: 14, color: "var(--txm)" }}>{label}</div>
-      {label === "No artifacts yet" && (
-        <div style={{ fontSize: 12.5, textAlign: "center", maxWidth: 280 }}>Artifacts appear when agent runs complete</div>
+      {children ? (
+        <div style={{ fontSize: 12.5, textAlign: "center", maxWidth: 320, lineHeight: 1.55 }}>{children}</div>
+      ) : (
+        label === "No artifacts yet" && (
+          <div style={{ fontSize: 12.5, textAlign: "center", maxWidth: 280 }}>Artifacts appear when agent runs complete</div>
+        )
       )}
     </div>
   );
