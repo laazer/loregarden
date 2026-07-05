@@ -4,6 +4,7 @@ Agents are not allowed to edit files within this folder.
 
 ## Core Rules (Applies to All Agents)
 - **Workflow compliance:** All execution must comply with the Workflow Enforcement Module (`agent_context/agents/common_assets/workflow_enforcement_v1.md`) in addition to each agent's role definition. Read that module before acting on any ticket.
+- **Loregarden MCP:** When Loregarden orchestrates runs, use MCP tools per `agent_context/agents/common_assets/loregarden_mcp_v1.md` for ticket workflow state.
 - **Ticket Template:** All tickets must be written using the Ticket Template (`agent_context/agents/common_assets/ticket_template_v1.md`). Read that template before writing any ticket.
 - **Project context:** When working a ticket under `agent_context/projects/<project>/`, read that project's README (and any "Existing codebase" or "Integrate with" section) so implementation extends existing code and does not duplicate or ignore it. Grep the codebase for related names before implementing.
 - Any unclear or ambiguous instructions **must be questioned** before proceeding.

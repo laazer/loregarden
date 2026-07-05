@@ -12,6 +12,7 @@ from loregarden.core.event_bus import event_bus
 from loregarden.core.state_machine import StateMachine
 from loregarden.models.domain import (
     Approval,
+    ApprovalKind,
     ApprovalStatus,
     Artifact,
     EventType,
@@ -289,6 +290,7 @@ class OrchestrationCallbackService:
         approval = Approval(
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
+            kind=ApprovalKind.WORKFLOW_GATE,
             title=title or f"Approve {ticket.title}",
             level=level,
             stage_key=stage_key,

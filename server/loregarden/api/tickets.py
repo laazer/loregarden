@@ -10,7 +10,9 @@ from loregarden.models.domain import (
     Cycle,
     StartOrchestrationRequest,
     StartRunRequest,
+    TriageMessageCreate,
     Ticket,
+    TicketCreate,
     TicketDetail,
     TicketState,
     TicketSummary,
@@ -18,10 +20,19 @@ from loregarden.models.domain import (
     UpdateTicketRequest,
     WorkItemType,
     Workspace,
+    WorkspaceRuntimeSettings,
+    WorkspaceRuntimeUpdate,
 )
 from loregarden.services.hierarchy_service import build_tree, child_count
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.run_service import RunService
+from loregarden.services.run_errors import normalize_timeout_stderr
+from loregarden.services.run_service import RunService, schedule_agent_run
+from loregarden.services.ticket_service import TicketService
+from loregarden.services.triage_service import (
+    send_triage_message,
+    set_triage_runtime,
+    triage_snapshot,
+)
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -75,21 +86,79 @@ def _ticket_summary(session: Session, ticket: Ticket) -> TicketSummary:
 
 
 def _artifacts_grouped(session: Session, ticket_id: str) -> dict:
+    from loregarden.models.domain import AgentRun, RunStatus
+
     artifacts = session.exec(
         select(Artifact).where(Artifact.ticket_id == ticket_id)
     ).all()
-    grouped: dict = {"diff": None, "logs": [], "tests": None, "context": []}
+    grouped: dict = {"diff": None, "logs": [], "tests": None, "context": [], "live": None, "error": None}
+    log_artifacts: list[Artifact] = []
+    error_artifacts: list[Artifact] = []
     for art in artifacts:
         content = json.loads(art.content_json or "{}")
         if art.kind == "diff":
             grouped["diff"] = content
         elif art.kind == "log":
-            grouped["logs"] = content.get("lines", [])
-            grouped["live"] = content.get("live")
+            log_artifacts.append(art)
+        elif art.kind == "error":
+            error_artifacts.append(art)
         elif art.kind == "test":
             grouped["tests"] = content
         elif art.kind == "context":
             grouped["context"].append(content)
+    if error_artifacts:
+        latest_error = sorted(error_artifacts, key=lambda a: -a.created_at.timestamp())[0]
+        error_content = json.loads(latest_error.content_json or "{}")
+        message = error_content.get("message")
+        if isinstance(message, str):
+            error_content["message"] = normalize_timeout_stderr(message)
+        grouped["error"] = error_content
+    if log_artifacts:
+        active_run = session.exec(
+            select(AgentRun)
+            .where(AgentRun.ticket_id == ticket_id, AgentRun.status == RunStatus.RUNNING)
+            .order_by(AgentRun.created_at.desc())
+        ).first()
+        if not active_run:
+            active_run = session.exec(
+                select(AgentRun)
+                .where(
+                    AgentRun.ticket_id == ticket_id,
+                    AgentRun.status == RunStatus.AWAITING_PERMISSION,
+                )
+                .order_by(AgentRun.created_at.desc())
+            ).first()
+
+        best: Artifact | None = None
+        if active_run:
+            best = next((art for art in log_artifacts if art.run_id == active_run.id), None)
+            if not best:
+                grouped["logs"] = []
+                if active_run.status == RunStatus.AWAITING_PERMISSION:
+                    grouped["live"] = "Awaiting your approval in Triage or Inbox…"
+                else:
+                    grouped["live"] = "Agent running…"
+                return grouped
+
+        if not best:
+            active_log_statuses = {RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION}
+
+            def _log_sort_key(item: Artifact) -> tuple:
+                body = json.loads(item.content_json or "{}")
+                run = session.get(AgentRun, item.run_id) if item.run_id else None
+                is_live = bool(body.get("live")) and run and run.status in active_log_statuses
+                live_rank = 0 if is_live else 1
+                return (live_rank, -item.created_at.timestamp())
+
+            best = sorted(log_artifacts, key=_log_sort_key)[0]
+
+        content = json.loads(best.content_json or "{}")
+        grouped["logs"] = content.get("lines", [])
+        live = content.get("live")
+        run = session.get(AgentRun, best.run_id) if best.run_id else None
+        if live and run and run.status not in {RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION}:
+            live = None
+        grouped["live"] = live
     return grouped
 
 
@@ -187,6 +256,66 @@ def list_tickets(
     return [_ticket_summary(session, t) for t in tickets]
 
 
+@router.post("", response_model=TicketDetail, status_code=201)
+def create_ticket(body: TicketCreate, session: Session = Depends(get_session)) -> TicketDetail:
+    svc = TicketService(session)
+    try:
+        ticket = svc.create_ticket(
+            workspace_slug=body.workspace_slug,
+            title=body.title,
+            work_item_type=body.work_item_type,
+            parent_ticket_id=body.parent_ticket_id,
+            description=body.description,
+            acceptance_criteria=body.acceptance_criteria,
+            priority=body.priority,
+            cycle_id=body.cycle_id,
+            milestone=body.milestone,
+            branch=body.branch,
+            external_id=body.external_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return get_ticket(ticket.id, session)
+
+
+@router.get("/{ticket_id}/triage")
+def get_ticket_triage(ticket_id: str, session: Session = Depends(get_session)) -> dict:
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    return triage_snapshot(session, ticket)
+
+
+@router.post("/{ticket_id}/triage/messages")
+def post_triage_message(
+    ticket_id: str,
+    body: TriageMessageCreate,
+    session: Session = Depends(get_session),
+) -> dict:
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    try:
+        return send_triage_message(session, ticket, body.content)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.patch("/{ticket_id}/triage/runtime", response_model=WorkspaceRuntimeSettings)
+def patch_triage_runtime(
+    ticket_id: str,
+    body: WorkspaceRuntimeUpdate,
+    session: Session = Depends(get_session),
+) -> WorkspaceRuntimeSettings:
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    try:
+        return set_triage_runtime(session, ticket, body)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @router.get("/{ticket_id}", response_model=TicketDetail)
 def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> TicketDetail:
     ticket = session.get(Ticket, ticket_id)
@@ -204,7 +333,7 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         last_updated_by=ticket.last_updated_by,
         next_agent=ticket.next_agent,
         next_status=ticket.next_status,
-        blocking_issues=ticket.blocking_issues,
+        blocking_issues=normalize_timeout_stderr(ticket.blocking_issues),
         state_locked=ticket.state_locked,
         stages=orch.build_stage_views(ticket),
         artifacts=_artifacts_grouped(session, ticket.id),
@@ -263,9 +392,10 @@ def start_run(
         )
     run_svc = RunService(session)
     try:
-        run_svc.start_and_execute(ticket, stage_key=body.stage_key)
+        run = run_svc.start_run_async(ticket, stage_key=body.stage_key)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    schedule_agent_run(run.id)
     session.refresh(ticket)
     return get_ticket(ticket_id, session)
 

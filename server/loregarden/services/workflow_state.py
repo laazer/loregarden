@@ -86,9 +86,16 @@ def _derive_ticket_state(
     *,
     blocking_issues: str,
     workflow_stage_key: str,
+    workflow_stage_status: StageStatus,
 ) -> TicketState:
     statuses = list(stage_map.values())
-    if any(s == StageStatus.BLOCKED for s in statuses) or blocking_issues:
+    if any(s == StageStatus.BLOCKED for s in statuses):
+        return TicketState.BLOCKED
+    if blocking_issues and workflow_stage_status in (
+        StageStatus.BLOCKED,
+        StageStatus.RUNNING,
+        StageStatus.AWAITING,
+    ):
         return TicketState.BLOCKED
 
     ordered = sorted(stages, key=lambda s: s.order)
@@ -117,6 +124,7 @@ def reconcile_workflow_state(
         stages,
         blocking_issues=ticket.blocking_issues,
         workflow_stage_key=current_key,
+        workflow_stage_status=current_status,
     )
 
     ticket.workflow_stage_key = current_key

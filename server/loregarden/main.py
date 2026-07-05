@@ -4,9 +4,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
-from loregarden.api import agents, cycles, events, export, inbox, mcp, orchestration, runs, tickets, workflows, workspaces
+from loregarden.api import agents, cycles, events, export, inbox, mcp, orchestration, runs, studio, tickets, workflows, workspaces
 from loregarden.config import settings
 from loregarden.db.session import engine, init_db
+from loregarden.services.run_service import fail_interrupted_runs
 from loregarden.services.seed import seed_database
 
 
@@ -15,6 +16,7 @@ async def lifespan(app: FastAPI):
     init_db()
     with Session(engine) as session:
         seed_database(session)
+        fail_interrupted_runs(session)
     yield
 
 
@@ -37,6 +39,7 @@ app.include_router(runs.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
 app.include_router(orchestration.router, prefix="/api")
+app.include_router(studio.router, prefix="/api")
 app.include_router(export.router, prefix="/api")
 app.include_router(mcp.router, prefix="/mcp")
 

@@ -10,6 +10,47 @@ def test_workflow_templates_loaded(client: TestClient):
     assert "extended-tdd" in slugs
 
 
+def test_runtime_options(client: TestClient):
+    res = client.get("/api/workspaces/runtime-options")
+    assert res.status_code == 200
+    data = res.json()
+    adapter_ids = {opt["id"] for opt in data["cli_adapters"]}
+    assert "default" in adapter_ids
+    assert "claude" in adapter_ids
+    assert len(data["claude_models"]) >= 2
+
+
+def test_workspace_runtime_settings(client: TestClient):
+    get = client.get("/api/workspaces/loregarden/runtime")
+    assert get.status_code == 200
+    assert get.json()["cli_adapter"] == "default"
+
+    patch = client.patch(
+        "/api/workspaces/loregarden/runtime",
+        json={"cli_adapter": "claude", "claude_model": "opus", "cursor_model": ""},
+    )
+    assert patch.status_code == 200
+    body = patch.json()
+    assert body["cli_adapter"] == "claude"
+    assert body["claude_model"] == "opus"
+
+    listed = client.get("/api/workspaces").json()
+    lore = next(w for w in listed if w["slug"] == "loregarden")
+    assert lore["cli_adapter"] == "claude"
+    assert lore["claude_model"] == "opus"
+
+    bad = client.patch(
+        "/api/workspaces/loregarden/runtime",
+        json={"cli_adapter": "not-a-cli", "claude_model": "", "cursor_model": ""},
+    )
+    assert bad.status_code == 400
+
+    client.patch(
+        "/api/workspaces/loregarden/runtime",
+        json={"cli_adapter": "default", "claude_model": "", "cursor_model": ""},
+    )
+
+
 def test_workspace_template_switch_changes_stages(client: TestClient):
     loregarden = client.get("/api/workspaces/loregarden/workflow").json()
     assert loregarden["template_slug"] == "loregarden-tdd"

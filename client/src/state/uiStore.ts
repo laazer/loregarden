@@ -3,7 +3,8 @@ import { persist } from "zustand/middleware";
 
 import type { TicketState, WorkItemType } from "../api/client";
 
-type Tab = "diff" | "logs" | "tests" | "context";
+type Tab = "diff" | "logs" | "tests" | "context" | "errors" | "triage";
+type AppPage = "dashboard" | "studio";
 
 export type PaneId = "workspaces" | "tickets" | "workflow" | "artifacts";
 
@@ -18,6 +19,7 @@ interface UiState {
   expandedTicketIds: string[];
   workspace: string;
   tab: Tab;
+  appPage: AppPage;
   inboxOpen: boolean;
   paneVisibility: PaneVisibility;
   setSelectedTicketId: (id: string | null) => void;
@@ -31,6 +33,7 @@ interface UiState {
   expandPath: (ids: string[]) => void;
   setWorkspace: (slug: string) => void;
   setTab: (tab: Tab) => void;
+  setAppPage: (page: AppPage) => void;
   setInboxOpen: (open: boolean) => void;
   setPaneVisible: (pane: PaneId, visible: boolean) => void;
   togglePane: (pane: PaneId) => void;
@@ -47,6 +50,7 @@ export const useUiStore = create<UiState>()(
       expandedTicketIds: [],
       workspace: "all",
       tab: "diff",
+      appPage: "dashboard",
       inboxOpen: false,
       paneVisibility: {
         workspaces: true,
@@ -74,6 +78,7 @@ export const useUiStore = create<UiState>()(
       },
       setWorkspace: (workspace) => set({ workspace }),
       setTab: (tab) => set({ tab }),
+      setAppPage: (appPage) => set({ appPage }),
       setInboxOpen: (inboxOpen) => set({ inboxOpen }),
       setPaneVisible: (pane, visible) =>
         set((state) => {

@@ -8,8 +8,15 @@ from loregarden.models.domain import (
     TicketState,
     Workspace,
     WorkspaceCreate,
+    WorkspaceRuntimeSettings,
+    WorkspaceRuntimeUpdate,
     WorkspaceTemplateUpdate,
     WorkflowTemplate,
+)
+from loregarden.services.cli_settings import (
+    VALID_CLI_ADAPTERS,
+    runtime_options_payload,
+    workspace_cli_settings,
 )
 from loregarden.services.workspace_paths import (
     resolve_workspace_root,
@@ -45,9 +52,45 @@ def list_workspaces(session: Session = Depends(get_session)) -> list[dict]:
                 "ticket_count": len(tickets),
                 "blocked_count": blocked,
                 "workflow_template_slug": _template_slug(session, ws),
+                **workspace_cli_settings(ws).__dict__,
             }
         )
     return result
+
+
+@router.get("/runtime-options")
+def get_runtime_options() -> dict:
+    return runtime_options_payload()
+
+
+@router.get("/{slug}/runtime", response_model=WorkspaceRuntimeSettings)
+def get_workspace_runtime(slug: str, session: Session = Depends(get_session)) -> WorkspaceRuntimeSettings:
+    ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
+    if not ws:
+        raise HTTPException(404, "Workspace not found")
+    return WorkspaceRuntimeSettings(**workspace_cli_settings(ws).__dict__)
+
+
+@router.patch("/{slug}/runtime", response_model=WorkspaceRuntimeSettings)
+def update_workspace_runtime(
+    slug: str,
+    body: WorkspaceRuntimeUpdate,
+    session: Session = Depends(get_session),
+) -> WorkspaceRuntimeSettings:
+    ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
+    if not ws:
+        raise HTTPException(404, "Workspace not found")
+    if body.cli_adapter not in VALID_CLI_ADAPTERS:
+        raise HTTPException(400, f"Invalid cli_adapter: {body.cli_adapter}")
+    ws.cli_adapter = body.cli_adapter
+    ws.claude_model = body.claude_model.strip()
+    ws.cursor_model = body.cursor_model.strip()
+    ws.lmstudio_base_url = body.lmstudio_base_url.strip()
+    ws.lmstudio_model = body.lmstudio_model.strip()
+    session.add(ws)
+    session.commit()
+    session.refresh(ws)
+    return WorkspaceRuntimeSettings(**workspace_cli_settings(ws).__dict__)
 
 
 @router.post("", status_code=201)

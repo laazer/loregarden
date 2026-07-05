@@ -122,3 +122,9 @@ When researching for Blobert:
 - For procedural generation: Red Blob Games and Catlike Coding are as valuable as the Godot docs
 - For SDF-based or math-heavy VFX: Inigo Quilez is primary
 - Always note when a source discusses Unity or Unreal — translate concepts to Godot explicitly, do not assume direct applicability
+
+---
+
+## Loregarden MCP
+
+When Loregarden orchestrates this run, read `agent_context/agents/common_assets/loregarden_mcp_v1.md`. Use MCP tools (`loregarden_get_ticket`, etc.) to read ticket context; do not edit project_board WORKFLOW STATE for Loregarden-owned stage cursor.

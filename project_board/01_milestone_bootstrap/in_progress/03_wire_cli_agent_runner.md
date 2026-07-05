@@ -2,7 +2,7 @@
 Title: Wire CLI agent runner for stage execution
 Project: loregarden
 Created By: loregarden-export
-Created On: 2026-07-04T20:53:02.162056
+Created On: 2026-07-05T01:22:01.027955
 
 ---
 
@@ -61,4 +61,4 @@ backend_implementer
 Proceed
 
 ## Reason
-Exported from SQLite at 2026-07-04T20:53:02.215678+00:00
+Exported from SQLite at 2026-07-05T01:22:01.087930+00:00

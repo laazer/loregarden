@@ -3,6 +3,7 @@ from sqlmodel import Session
 
 from loregarden.db.session import get_session
 from loregarden.models.domain import RunStatus
+from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.run_service import RunService
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -30,7 +31,7 @@ def list_runs(
             "started_at": r.started_at.isoformat() if r.started_at else None,
             "finished_at": r.finished_at.isoformat() if r.finished_at else None,
             "stdout": r.stdout[:2000] if r.stdout else "",
-            "stderr": r.stderr[:2000] if r.stderr else "",
+            "stderr": normalize_timeout_stderr(r.stderr[:2000] if r.stderr else ""),
         }
         for r in runs
     ]
@@ -53,7 +54,7 @@ def get_run(run_id: str, session: Session = Depends(get_session)) -> dict:
         "status": run.status.value,
         "command": run.command,
         "stdout": run.stdout,
-        "stderr": run.stderr,
+        "stderr": normalize_timeout_stderr(run.stderr or ""),
         "started_at": run.started_at.isoformat() if run.started_at else None,
         "finished_at": run.finished_at.isoformat() if run.finished_at else None,
     }

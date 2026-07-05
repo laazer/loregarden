@@ -1,10 +1,29 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
-import { api, type Approval, type StageStatus, type TicketDetail, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api, type StageStatus, type TicketDetail, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
+import { ApprovalCard } from "../components/ApprovalCard";
+import { LogsPanel } from "../components/LogsPanel";
+import { TriagePanel } from "../components/TriagePanel";
 import { collectExpandableIds, findAncestorIds, TicketTree } from "../components/TicketTree";
 import { ConfirmRunStageModal, currentStageRunLabel, stageRunButtonLabel } from "../components/ConfirmRunStageModal";
+import { CreateWorkItemModal, type CreateWorkItemDraft } from "../components/CreateWorkItemModal";
+import { SettingsModal } from "../components/SettingsModal";
+import { runtimeFromWorkspace, runtimeSettingsEqual } from "../components/WorkspaceRuntimeFields";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
 import { useUiStore, type PaneId } from "../state/uiStore";
+
+function mergeApprovals(...lists: Array<import("../api/client").Approval[] | undefined>) {
+  const seen = new Set<string>();
+  const merged: import("../api/client").Approval[] = [];
+  for (const list of lists) {
+    for (const item of list ?? []) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      merged.push(item);
+    }
+  }
+  return merged;
+}
 
 const PANE_LABELS: Record<PaneId, string> = {
   workspaces: "Workspaces",
@@ -67,7 +86,7 @@ function canRunStage(
   if (stage.status === "wont_do") {
     return { allowed: false, reason: "Stage marked won't do" };
   }
-  if (ticket.state === "done" || ticket.state === "blocked" || ticket.state === "wont_do") {
+  if (ticket.state === "done" || ticket.state === "wont_do") {
     return { allowed: false, reason: `Ticket is ${STATE_LABELS[ticket.state]}` };
   }
   if (ticket.workflow_stage_status === "awaiting") {
@@ -79,7 +98,18 @@ function canRunStage(
   ) {
     return { allowed: false, reason: "Current stage is still running" };
   }
-  return { allowed: true, reason: stage.status === "done" ? `Re-run ${stage.name}` : `Run ${stage.name}` };
+  if (ticket.state === "blocked") {
+    const retryable =
+      stage.status === "blocked" ||
+      stage.status === "done" ||
+      (stage.key === ticket.workflow_stage_key &&
+        (ticket.workflow_stage_status === "blocked" || ticket.workflow_stage_status === "running"));
+    if (!retryable) {
+      return { allowed: false, reason: "Resolve the blocked stage before running another" };
+    }
+  }
+  const verb = stage.status === "done" || stage.status === "blocked" ? "Re-run" : "Run";
+  return { allowed: true, reason: `${verb} ${stage.name}` };
 }
 
 function PrioBars({ priority }: { priority: number }) {
@@ -116,6 +146,7 @@ export function Dashboard() {
     expandPath,
     setWorkspace,
     setTab,
+    setAppPage,
     setInboxOpen,
     paneVisibility,
     setPaneVisible,
@@ -151,6 +182,12 @@ export function Dashboard() {
     refetchInterval: 5000,
   });
 
+  const allTickets = useQuery({
+    queryKey: ["tickets", workspace],
+    queryFn: () => api.tickets({ workspace: wsParam }),
+    enabled: !!wsParam,
+  });
+
   const flatTickets = useMemo(
     () => flattenTree(ticketTree.data ?? []),
     [ticketTree.data],
@@ -178,16 +215,34 @@ export function Dashboard() {
     if (ancestors.length) expandPath(ancestors);
   }, [selectedId, ticketTree.data, expandPath]);
 
+  const ticketRuns = useQuery({
+    queryKey: ["runs", selectedId],
+    queryFn: () => api.runs(selectedId!),
+    enabled: !!selectedId,
+    refetchInterval: (query) => {
+      const hasActive = query.state.data?.some(
+        (r) => r.status === "running" || r.status === "awaiting_permission",
+      );
+      return hasActive ? 1000 : 5000;
+    },
+  });
+
+  const hasActiveRun =
+    ticketRuns.data?.some((r) => r.status === "running" || r.status === "awaiting_permission") ?? false;
+
   const detail = useQuery({
     queryKey: ["ticket", selectedId],
     queryFn: () => api.ticket(selectedId!),
     enabled: !!selectedId,
-    refetchInterval: 3000,
+    refetchInterval: (query) => {
+      const status = query.state.data?.workflow_stage_status;
+      return hasActiveRun || status === "running" || status === "awaiting" ? 1000 : 3000;
+    },
   });
 
   const approvals = useQuery({
     queryKey: ["approvals"],
-    queryFn: api.approvals,
+    queryFn: () => api.approvals(),
     refetchInterval: 5000,
   });
 
@@ -208,6 +263,9 @@ export function Dashboard() {
       setTab("logs");
       setRunConfirmStageKey(null);
     },
+    onError: () => {
+      setRunConfirmStageKey(null);
+    },
   });
 
   const advance = useMutation({
@@ -220,8 +278,17 @@ export function Dashboard() {
   });
 
   const resolveApproval = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: "approve" | "reject" }) =>
-      api.resolveApproval(id, action),
+    mutationFn: ({
+      id,
+      action,
+      answers,
+      response,
+    }: {
+      id: string;
+      action: "approve" | "reject";
+      answers?: Record<string, string | string[]>;
+      response?: string;
+    }) => api.resolveApproval(id, { action, answers, response }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["approvals"] });
       qc.invalidateQueries({ queryKey: ["ticket"] });
@@ -230,6 +297,9 @@ export function Dashboard() {
 
   const [stateModalOpen, setStateModalOpen] = useState(false);
   const [runConfirmStageKey, setRunConfirmStageKey] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsWorkspaceSlug, setSettingsWorkspaceSlug] = useState("loregarden");
+  const [createWorkItemOpen, setCreateWorkItemOpen] = useState(false);
 
   const saveStateFromModal = useMutation({
     mutationFn: async ({
@@ -287,26 +357,136 @@ export function Dashboard() {
     },
   });
 
+  const runtimeOptions = useQuery({
+    queryKey: ["runtime-options"],
+    queryFn: api.runtimeOptions,
+  });
+
+  const setRuntime = useMutation({
+    mutationFn: ({
+      slug,
+      runtime,
+    }: {
+      slug: string;
+      runtime: { cli_adapter: string; claude_model: string; cursor_model: string; lmstudio_base_url: string; lmstudio_model: string };
+    }) => api.setWorkspaceRuntime(slug, runtime),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["workspaces"] });
+      qc.invalidateQueries({ queryKey: ["workspace-runtime", vars.slug] });
+    },
+  });
+
+  const createWorkItem = useMutation({
+    mutationFn: ({
+      draft,
+      workspaceSlug,
+    }: {
+      draft: CreateWorkItemDraft;
+      workspaceSlug: string;
+    }) =>
+      api.createTicket({
+        workspace_slug: workspaceSlug,
+        title: draft.title.trim(),
+        work_item_type: draft.work_item_type,
+        parent_ticket_id: draft.parent_ticket_id || null,
+        description: draft.description.trim(),
+        acceptance_criteria: draft.acceptance_criteria
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean),
+        priority: draft.priority,
+        cycle_id: draft.cycle_id || null,
+        branch: draft.branch.trim(),
+      }),
+    onSuccess: (ticket) => {
+      qc.invalidateQueries({ queryKey: ["ticket-tree"] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+      qc.invalidateQueries({ queryKey: ["cycles"] });
+      setSelectedTicketId(ticket.id);
+      if (ticket.parent_ticket_id) {
+        expandPath([ticket.parent_ticket_id]);
+      }
+      setCreateWorkItemOpen(false);
+    },
+  });
+
   const sel = detail.data;
   const runConfirmStage = sel?.stages.find((s) => s.key === runConfirmStageKey) ?? null;
 
-  const requestStageRun = (stageKey: string) => setRunConfirmStageKey(stageKey);
-  const confirmStageRun = () => {
-    if (runConfirmStageKey) startRun.mutate(runConfirmStageKey);
-  };
-
   const activeWorkspaceSlug =
     workspace === "all" ? (sel?.workspace_slug ?? "loregarden") : workspace;
+  const activeWorkspaceRecord = workspaces.data?.find((w) => w.slug === activeWorkspaceSlug);
+  const activeWorkspaceRuntime = runtimeFromWorkspace(activeWorkspaceRecord);
+
+  const requestStageRun = (stageKey: string) => setRunConfirmStageKey(stageKey);
+  const confirmStageRun = async (runtime: typeof activeWorkspaceRuntime) => {
+    if (!runConfirmStageKey) return;
+    try {
+      if (!runtimeSettingsEqual(runtime, activeWorkspaceRuntime)) {
+        await setRuntime.mutateAsync({ slug: activeWorkspaceSlug, runtime });
+      }
+      await startRun.mutateAsync(runConfirmStageKey);
+    } catch {
+      // Modal stays open; mutation error state clears on retry.
+    }
+  };
+
+  const openSettings = () => {
+    setSettingsWorkspaceSlug(activeWorkspaceSlug);
+    setSettingsOpen(true);
+  };
   const workspaceWorkflow = useQuery({
     queryKey: ["workspace-workflow", activeWorkspaceSlug],
     queryFn: () => api.workspaceWorkflow(activeWorkspaceSlug),
     enabled: !!activeWorkspaceSlug && activeWorkspaceSlug !== "all",
   });
-  const ticketRuns = useQuery({
-    queryKey: ["runs", selectedId],
-    queryFn: () => api.runs(selectedId!),
+
+  const workflowBusy =
+    sel?.workflow_stage_status === "awaiting" ||
+    hasActiveRun ||
+    (sel?.workflow_stage_status === "running" && startRun.isPending);
+  const isStageRunning = (stageKey: string) =>
+    (sel?.workflow_stage_key === stageKey && workflowBusy) ||
+    (startRun.isPending && startRun.variables === stageKey);
+
+  const triage = useQuery({
+    queryKey: ["triage", selectedId],
+    queryFn: () => api.triage(selectedId!),
     enabled: !!selectedId,
+    retry: 1,
+    refetchInterval: (query) => {
+      const pending = query.state.data?.pending_approvals?.length ?? 0;
+      return pending > 0 ? 2000 : 8000;
+    },
   });
+
+  const ticketApprovals = useQuery({
+    queryKey: ["approvals", selectedId],
+    queryFn: () => api.approvals(selectedId!),
+    enabled: !!selectedId,
+    refetchInterval: 2000,
+  });
+
+  const triagePendingCount =
+    mergeApprovals(triage.data?.pending_approvals, ticketApprovals.data).length;
+
+  const hasRunErrors = Boolean(
+    sel?.blocking_issues ||
+      sel?.artifacts?.error ||
+      ticketRuns.data?.some((r) => r.status === "failed" && r.stderr),
+  );
+
+  const lastAutoTabTicketId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!sel?.id) return;
+    if (lastAutoTabTicketId.current === sel.id) return;
+    lastAutoTabTicketId.current = sel.id;
+
+    if (sel.blocking_issues || sel.artifacts?.error) {
+      setTab("errors");
+    }
+  }, [sel?.id, sel?.blocking_issues, sel?.artifacts?.error, setTab]);
 
   const counts = flatTickets.reduce(
     (acc, t) => {
@@ -348,6 +528,12 @@ export function Dashboard() {
             ))}
           </div>
         )}
+        <button type="button" className="btn-secondary" onClick={() => setAppPage("studio")}>
+          Studio
+        </button>
+        <button type="button" className="btn-secondary" onClick={openSettings}>
+          Settings
+        </button>
         <button
           className="btn-secondary"
           onClick={() => setInboxOpen(true)}
@@ -457,6 +643,15 @@ export function Dashboard() {
                     <span className="pane-title">Work items</span>
                     <span className="count-pill">{flatTickets.length}</span>
                     <div className="tree-toolbar-actions">
+                      <button
+                        className="btn-secondary btn-compact"
+                        type="button"
+                        title="Create a new work item"
+                        disabled={workspace === "all"}
+                        onClick={() => setCreateWorkItemOpen(true)}
+                      >
+                        + New
+                      </button>
                       <button
                         className="btn-secondary btn-compact"
                         type="button"
@@ -613,19 +808,30 @@ export function Dashboard() {
                   Update state…
                 </button>
 
-                {sel.blocking_issues && (
+                {hasRunErrors && (
                   <div
                     style={{
                       marginTop: 16,
-                      padding: 12,
+                      padding: "10px 12px",
                       borderRadius: 11,
                       background: "rgba(240,96,63,.1)",
                       border: "1px solid rgba(240,96,63,.3)",
                       fontSize: 12,
                       color: "var(--rdl)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
                     }}
                   >
-                    {sel.blocking_issues}
+                    <span>Run or workflow issue recorded</span>
+                    <button
+                      type="button"
+                      className="btn-secondary btn-compact"
+                      onClick={() => setTab("errors")}
+                    >
+                      View Errors
+                    </button>
                   </div>
                 )}
 
@@ -635,8 +841,7 @@ export function Dashboard() {
                   </div>
                   {sel.stages.map((s) => {
                     const runCheck = canRunStage(sel, s);
-                    const isRunningThis =
-                      startRun.isPending && startRun.variables === s.key;
+                    const isRunningThis = isStageRunning(s.key);
                     return (
                     <div key={s.key} className="stage-row" style={{ paddingBottom: 18 }}>
                       <div
@@ -654,7 +859,7 @@ export function Dashboard() {
                           <button
                             type="button"
                             className="btn-secondary btn-compact stage-run-btn"
-                            disabled={!runCheck.allowed || startRun.isPending}
+                            disabled={!runCheck.allowed || workflowBusy || startRun.isPending}
                             title={runCheck.reason}
                             onClick={() => requestStageRun(s.key)}
                           >
@@ -707,17 +912,16 @@ export function Dashboard() {
                   disabled={!selectedId || orchestrate.isPending}
                   onClick={() => orchestrate.mutate()}
                 >
-                  Run orchestration
+                  Run Agents Assemble
                 </button>
                 {(() => {
                   const cursorStage = sel.stages.find((s) => s.key === sel.workflow_stage_key);
                   const cursorRun = cursorStage ? canRunStage(sel, cursorStage) : { allowed: false, reason: "No cursor stage" };
-                  const runningCursor =
-                    startRun.isPending && startRun.variables === sel.workflow_stage_key;
+                  const runningCursor = isStageRunning(sel.workflow_stage_key);
                   return (
                 <button
                   className="btn-secondary"
-                  disabled={!selectedId || startRun.isPending || !cursorRun.allowed}
+                  disabled={!selectedId || workflowBusy || startRun.isPending || !cursorRun.allowed}
                   onClick={() => requestStageRun(sel.workflow_stage_key)}
                   title={cursorRun.reason}
                 >
@@ -747,18 +951,42 @@ export function Dashboard() {
         {showArtifacts && (
         <section className={`artifacts-pane ${showWorkflow ? "" : "pane-fill"}`.trim()}>
           <div className="tab-bar">
-            {(["diff", "logs", "tests", "context"] as const).map((t) => (
+            {(["diff", "errors", "triage", "logs", "tests", "context"] as const).map((t) => (
               <button
                 key={t}
                 className={`tab-btn ${tab === t ? "active" : ""}`}
                 onClick={() => setTab(t)}
+                style={
+                  t === "errors" && hasRunErrors
+                    ? { color: "var(--rdl)" }
+                    : t === "triage" && triagePendingCount > 0
+                      ? { color: "var(--amb)" }
+                      : undefined
+                }
               >
                 {t.charAt(0).toUpperCase() + t.slice(1)}
+                {t === "errors" && hasRunErrors && (
+                  <span
+                    style={{
+                      marginLeft: 6,
+                      minWidth: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: "var(--red)",
+                      display: "inline-block",
+                    }}
+                  />
+                )}
+                {t === "triage" && triagePendingCount > 0 && (
+                  <span className="count-pill" style={{ marginLeft: 6, fontSize: 9 }}>
+                    {triagePendingCount}
+                  </span>
+                )}
               </button>
             ))}
             <div style={{ flex: 1 }} />
             <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}>
-              truth layer · execution output only
+              {tab === "triage" ? "operator channel · ticket context" : "truth layer · execution output only"}
             </span>
             <PaneHideButton
               pane="artifacts"
@@ -767,7 +995,29 @@ export function Dashboard() {
             />
           </div>
           <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
-            <ArtifactView tab={tab} ticket={sel} runs={ticketRuns.data ?? []} />
+            {tab === "triage" ? (
+              <TriagePanel
+                ticket={sel}
+                runtimeOptions={runtimeOptions.data}
+                onResolved={() => {
+                  qc.invalidateQueries({ queryKey: ["triage", selectedId] });
+                  qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
+                  qc.invalidateQueries({ queryKey: ["runs", selectedId] });
+                }}
+              />
+            ) : tab === "logs" && sel ? (
+              <LogsPanel
+                ticket={sel}
+                runtimeOptions={runtimeOptions.data}
+                onResolved={() => {
+                  qc.invalidateQueries({ queryKey: ["triage", selectedId] });
+                  qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
+                  qc.invalidateQueries({ queryKey: ["runs", selectedId] });
+                }}
+              />
+            ) : (
+              <ArtifactView tab={tab} ticket={sel} runs={ticketRuns.data ?? []} />
+            )}
           </div>
         </section>
         )}
@@ -782,11 +1032,42 @@ export function Dashboard() {
         onSave={(draft, original) => saveStateFromModal.mutateAsync({ draft, original })}
       />
 
+      <CreateWorkItemModal
+        open={createWorkItemOpen}
+        workspaceSlug={activeWorkspaceSlug}
+        tickets={allTickets.data ?? []}
+        cycles={cycles.data ?? []}
+        selectedTicketId={selectedId}
+        ticketTree={ticketTree.data ?? []}
+        isSaving={createWorkItem.isPending}
+        onClose={() => setCreateWorkItemOpen(false)}
+        onCreate={async (draft) => {
+          await createWorkItem.mutateAsync({ draft, workspaceSlug: activeWorkspaceSlug });
+        }}
+      />
+
+      <SettingsModal
+        open={settingsOpen}
+        workspaceSlug={settingsWorkspaceSlug}
+        workspaces={workspaces.data ?? []}
+        runtimeOptions={runtimeOptions.data}
+        isSaving={setRuntime.isPending}
+        onClose={() => setSettingsOpen(false)}
+        onWorkspaceChange={setSettingsWorkspaceSlug}
+        onSave={async (slug, runtime) => {
+          await setRuntime.mutateAsync({ slug, runtime });
+        }}
+      />
+
       <ConfirmRunStageModal
         open={!!runConfirmStageKey}
         ticket={sel ?? null}
         stage={runConfirmStage}
-        isRunning={startRun.isPending}
+        workspaceSlug={activeWorkspaceSlug}
+        workspaceRuntime={activeWorkspaceRuntime}
+        runtimeOptions={runtimeOptions.data}
+        isRunning={startRun.isPending || workflowBusy}
+        isSavingRuntime={setRuntime.isPending}
         onClose={() => setRunConfirmStageKey(null)}
         onConfirm={confirmStageRun}
       />
@@ -810,13 +1091,16 @@ export function Dashboard() {
                 <ApprovalCard
                   key={a.id}
                   approval={a}
-                  onApprove={() => resolveApproval.mutate({ id: a.id, action: "approve" })}
+                  onApprove={(payload) =>
+                    resolveApproval.mutate({ id: a.id, action: "approve", ...payload })
+                  }
                   onReject={() => resolveApproval.mutate({ id: a.id, action: "reject" })}
                   onInspect={() => {
                     setSelectedTicketId(a.ticket_id);
                     setInboxOpen(false);
                     setTab("diff");
                   }}
+                  isSubmitting={resolveApproval.isPending}
                 />
               ))}
               {!approvals.data?.length && (
@@ -832,49 +1116,6 @@ export function Dashboard() {
   );
 }
 
-function ApprovalCard({
-  approval,
-  onApprove,
-  onReject,
-  onInspect,
-}: {
-  approval: Approval;
-  onApprove: () => void;
-  onReject: () => void;
-  onInspect: () => void;
-}) {
-  return (
-    <div
-      style={{
-        border: "1px solid var(--bd)",
-        borderRadius: 12,
-        background: "var(--bg2)",
-        marginBottom: 10,
-        overflow: "hidden",
-      }}
-    >
-      <div style={{ padding: 12 }}>
-        <div style={{ fontWeight: 600, marginBottom: 8 }}>{approval.title}</div>
-        <div style={{ fontSize: 11, color: "var(--txl)", marginBottom: 8 }}>
-          {approval.workspace_slug} · {approval.stage_name}
-        </div>
-        <p style={{ margin: 0, fontSize: 12, color: "var(--txm)", lineHeight: 1.55 }}>{approval.impact}</p>
-      </div>
-      <div style={{ display: "flex", borderTop: "1px solid var(--bd)" }}>
-        <button className="btn-secondary" style={{ flex: 1, borderRadius: 0, color: "var(--grl)" }} onClick={onApprove}>
-          Approve
-        </button>
-        <button className="btn-secondary" style={{ flex: 1, borderRadius: 0, color: "var(--rdl)" }} onClick={onReject}>
-          Reject
-        </button>
-        <button className="btn-secondary" style={{ flex: 1, borderRadius: 0 }} onClick={onInspect}>
-          Inspect
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function ArtifactView({
   tab,
   ticket,
@@ -882,7 +1123,15 @@ function ArtifactView({
 }: {
   tab: string;
   ticket?: TicketDetail;
-  runs?: { id: string; run_code: string; status: string; command: string }[];
+  runs?: {
+    id: string;
+    run_code: string;
+    status: string;
+    command: string;
+    agent_id?: string;
+    stage_key?: string;
+    stderr?: string;
+  }[];
 }) {
   if (!ticket) {
     return <div style={{ padding: 40, color: "var(--txl)", textAlign: "center" }}>No ticket selected</div>;
@@ -921,19 +1170,74 @@ function ArtifactView({
     );
   }
 
-  if (tab === "logs") {
-    const lines = art.logs ?? [];
-    if (!lines.length && !art.live) return <EmptyArtifacts />;
+  if (tab === "errors") {
+    const errorArt = art.error;
+    const failedRuns = runs.filter((r) => r.status === "failed");
+    const hasContent = Boolean(ticket.blocking_issues || errorArt || failedRuns.length);
+    if (!hasContent) return <EmptyArtifacts label="No errors recorded" />;
+
     return (
-      <div style={{ fontFamily: "var(--mono)", fontSize: 12, padding: 16, lineHeight: 1.75 }}>
-        {lines.map((l, i) => (
-          <div key={i} style={{ display: "flex", gap: 12 }}>
-            <span style={{ color: "var(--txl)" }}>{l.time}</span>
-            <span style={{ width: 44, textAlign: "center", fontSize: 10, fontWeight: 600 }}>{l.tag}</span>
-            <span style={{ color: "var(--txm)" }}>{l.text}</span>
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+        {(ticket.blocking_issues || errorArt?.message) && (
+          <div
+            className="state-card"
+            style={{
+              borderColor: "rgba(240,96,63,.35)",
+              background: "rgba(240,96,63,.08)",
+            }}
+          >
+            <div className="state-label" style={{ color: "var(--rdl)" }}>
+              Blocking issue
+            </div>
+            <pre
+              style={{
+                margin: "8px 0 0",
+                fontFamily: "var(--mono)",
+                fontSize: 12,
+                lineHeight: 1.6,
+                whiteSpace: "pre-wrap",
+                color: "var(--tx)",
+              }}
+            >
+              {errorArt?.message || ticket.blocking_issues}
+            </pre>
+          </div>
+        )}
+        {errorArt && (
+          <div className="state-card">
+            <div className="state-label">Failed run</div>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--txm)", marginTop: 6 }}>
+              {errorArt.run_code} · {errorArt.agent_id} · {errorArt.stage_key}
+            </div>
+            {errorArt.command && (
+              <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--txl)", marginTop: 8, wordBreak: "break-all" }}>
+                {errorArt.command}
+              </div>
+            )}
+          </div>
+        )}
+        {failedRuns.map((run) => (
+          <div key={run.id} className="state-card">
+            <div className="state-label">{run.run_code}</div>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--txm)", marginTop: 6 }}>
+              {run.agent_id ?? "—"} · {run.stage_key ?? "—"}
+            </div>
+            {run.stderr && (
+              <pre
+                style={{
+                  margin: "8px 0 0",
+                  fontFamily: "var(--mono)",
+                  fontSize: 11,
+                  lineHeight: 1.55,
+                  whiteSpace: "pre-wrap",
+                  color: "var(--rdl)",
+                }}
+              >
+                {run.stderr}
+              </pre>
+            )}
           </div>
         ))}
-        {art.live && <div style={{ color: "var(--bll)", marginTop: 8 }}>{art.live} ▊</div>}
       </div>
     );
   }
@@ -990,11 +1294,13 @@ function ArtifactView({
   );
 }
 
-function EmptyArtifacts() {
+function EmptyArtifacts({ label = "No artifacts yet" }: { label?: string }) {
   return (
     <div style={{ height: "100%", minHeight: 340, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--txl)", gap: 12 }}>
-      <div style={{ fontFamily: "var(--dp)", fontSize: 14, color: "var(--txm)" }}>No artifacts yet</div>
-      <div style={{ fontSize: 12.5, textAlign: "center", maxWidth: 280 }}>Artifacts appear when agent runs complete</div>
+      <div style={{ fontFamily: "var(--dp)", fontSize: 14, color: "var(--txm)" }}>{label}</div>
+      {label === "No artifacts yet" && (
+        <div style={{ fontSize: 12.5, textAlign: "center", maxWidth: 280 }}>Artifacts appear when agent runs complete</div>
+      )}
     </div>
   );
 }

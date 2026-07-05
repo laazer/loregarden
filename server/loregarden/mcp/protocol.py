@@ -49,7 +49,10 @@ def handle_request(session: Session, req: dict[str, Any]) -> dict[str, Any] | No
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
-                "error": {"code": -32000, "message": str(exc)},
+                "result": {
+                    "content": [{"type": "text", "text": str(exc)}],
+                    "isError": True,
+                },
             }
 
     if method == "notifications/initialized":

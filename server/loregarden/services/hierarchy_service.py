@@ -20,6 +20,22 @@ def child_count(session: Session, ticket_id: str) -> int:
     )
 
 
+def collect_ticket_scope_ids(session: Session, ticket_id: str) -> list[str]:
+    """Ticket id plus all descendant work items (for triage/inbox roll-up)."""
+    scope = [ticket_id]
+    queue = [ticket_id]
+    while queue:
+        parent_id = queue.pop()
+        children = session.exec(
+            select(Ticket.id).where(Ticket.parent_ticket_id == parent_id)
+        ).all()
+        for child_id in children:
+            if child_id not in scope:
+                scope.append(child_id)
+                queue.append(child_id)
+    return scope
+
+
 def validate_parent_child(parent_type: WorkItemType, child_type: WorkItemType) -> None:
     allowed = VALID_HIERARCHY.get(parent_type, [])
     if child_type not in allowed:

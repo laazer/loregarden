@@ -1,29 +1,56 @@
-import type { TicketDetail, WorkflowStageView } from "../api/client";
+import { useEffect, useState } from "react";
+
+import type { RuntimeOptions, TicketDetail, WorkflowStageView, WorkspaceRuntimeSettings } from "../api/client";
+import {
+  WorkspaceRuntimeFields,
+  runtimeSettingsEqual,
+} from "./WorkspaceRuntimeFields";
 
 interface ConfirmRunStageModalProps {
   open: boolean;
   ticket: TicketDetail | null;
   stage: WorkflowStageView | null;
+  workspaceSlug: string;
+  workspaceRuntime: WorkspaceRuntimeSettings;
+  runtimeOptions: RuntimeOptions | undefined;
   isRunning: boolean;
+  isSavingRuntime: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (runtime: WorkspaceRuntimeSettings) => void | Promise<void>;
 }
 
 export function ConfirmRunStageModal({
   open,
   ticket,
   stage,
+  workspaceSlug: _workspaceSlug,
+  workspaceRuntime,
+  runtimeOptions,
   isRunning,
+  isSavingRuntime,
   onClose,
   onConfirm,
 }: ConfirmRunStageModalProps) {
+  const [draftRuntime, setDraftRuntime] = useState(workspaceRuntime);
+
+  useEffect(() => {
+    if (!open) return;
+    setDraftRuntime(workspaceRuntime);
+  }, [open, workspaceRuntime, stage?.key]);
+
   if (!open || !ticket || !stage) return null;
 
   const isRerun = stage.status === "done";
+  const busy = isRunning || isSavingRuntime;
+  const runtimeDirty = !runtimeSettingsEqual(draftRuntime, workspaceRuntime);
+
+  const handleConfirm = () => {
+    void onConfirm(draftRuntime);
+  };
 
   return (
     <>
-      <div className="modal-overlay" onClick={isRunning ? undefined : onClose} role="presentation" />
+      <div className="modal-overlay" onClick={busy ? undefined : onClose} role="presentation" />
       <div className="modal-panel" role="dialog" aria-labelledby="confirm-run-stage-title">
         <div className="modal-header">
           <div>
@@ -33,7 +60,7 @@ export function ConfirmRunStageModal({
             </h2>
             <p className="modal-subtitle">{ticket.title}</p>
           </div>
-          <button type="button" className="btn-secondary" disabled={isRunning} onClick={onClose}>
+          <button type="button" className="btn-secondary" disabled={busy} onClick={onClose}>
             ✕
           </button>
         </div>
@@ -61,14 +88,32 @@ export function ConfirmRunStageModal({
               </div>
             </div>
           )}
+
+          {runtimeOptions && (
+            <div style={{ marginTop: 8 }}>
+              <div className="modal-section-title">Model for this run</div>
+              <WorkspaceRuntimeFields
+                runtime={draftRuntime}
+                options={runtimeOptions}
+                disabled={busy}
+                compact
+                onChange={setDraftRuntime}
+              />
+              {runtimeDirty && (
+                <p className="modal-hint" style={{ marginTop: 8 }}>
+                  Runtime changes will be saved when you confirm this run.
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="modal-footer">
-          <button type="button" className="btn-secondary" disabled={isRunning} onClick={onClose}>
+          <button type="button" className="btn-secondary" disabled={busy} onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="btn-primary" disabled={isRunning} onClick={onConfirm}>
-            {isRunning ? "Running…" : isRerun ? "Re-run stage" : "Run stage"}
+          <button type="button" className="btn-primary" disabled={busy} onClick={handleConfirm}>
+            {isSavingRuntime ? "Saving…" : isRunning ? "Running…" : isRerun ? "Re-run stage" : "Run stage"}
           </button>
         </div>
       </div>

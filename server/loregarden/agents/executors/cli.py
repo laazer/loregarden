@@ -1,15 +1,23 @@
 import json
 import subprocess
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlmodel import Session
 
 from loregarden.agents.cli_adapters import resolve_cli_invocation
+from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.registry import get_agent
+from loregarden.agents.mcp_context import build_mcp_run_context, load_loregarden_mcp_doc
+from loregarden.services.studio_service import build_studio_prompt_sections
+from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.run_errors import agent_timeout_message
+from loregarden.services.run_log_stream import RunLogStreamer
+from loregarden.services.subprocess_lines import SubprocessLineReader
 from loregarden.services.workspace_paths import resolve_agent_context_dir, resolve_workspace_root
 from loregarden.skills.registry import get_skill
 
@@ -47,7 +55,7 @@ class CliAgentExecutor:
                 stderr=f"Workspace repo path does not exist: {repo_root}",
             )
 
-        prompt = self._build_prompt(ticket, run, agent, agent_context_dir)
+        prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace)
         with tempfile.TemporaryDirectory(prefix="loregarden-run-") as tmp:
             prompt_file = Path(tmp) / "prompt.md"
             prompt_file.write_text(prompt, encoding="utf-8")
@@ -59,6 +67,8 @@ class CliAgentExecutor:
                     prompt=prompt,
                     prompt_file=prompt_file,
                     skill_name=run.skill_name,
+                    workspace_root=repo_root,
+                    workspace=workspace,
                 )
             except ValueError as exc:
                 return self.orchestration.complete_run(
@@ -71,20 +81,38 @@ class CliAgentExecutor:
             self.session.add(run)
             self.session.commit()
 
+            streamer = RunLogStreamer(
+                run_id=run.id,
+                ticket_id=ticket.id,
+                run_code=run.run_code,
+                agent_id=run.agent_id,
+                skill_name=run.skill_name,
+            )
+            streamer.start(run.command)
+
+            timeout = agent.get("timeout", 120)
             try:
-                proc = subprocess.run(
-                    invocation.argv,
-                    cwd=str(repo_root),
-                    capture_output=True,
-                    text=True,
-                    input=invocation.stdin_prompt,
-                    timeout=agent.get("timeout", 120),
-                    check=False,
-                )
-                stdout = proc.stdout
-                stderr = proc.stderr
-                status = RunStatus.SUCCEEDED if proc.returncode == 0 else RunStatus.FAILED
-                artifacts = self._build_artifacts(ticket, run, stdout, stderr, status)
+                if invocation.interactive:
+                    bridge = PermissionBridgeRunner(self.session)
+                    result = bridge.run(
+                        run_id=run.id,
+                        ticket=ticket,
+                        invocation=invocation,
+                        prompt=prompt,
+                        timeout_seconds=timeout,
+                        streamer=streamer,
+                    )
+                    stdout, stderr, status = result.stdout, result.stderr, result.status
+                else:
+                    stdout, stderr, status = self._run_print_mode(
+                        invocation=invocation,
+                        repo_root=repo_root,
+                        timeout=timeout,
+                        streamer=streamer,
+                    )
+
+                streamer.finalize(status=status, stderr=stderr)
+                artifacts = self._build_context_artifact(ticket, run, status)
                 completed = self.orchestration.complete_run(
                     run,
                     status=status,
@@ -94,18 +122,73 @@ class CliAgentExecutor:
                 )
                 self._touch_ticket_agent(ticket, agent.get("name", run.agent_id), status)
                 return completed
-            except subprocess.TimeoutExpired as exc:
+            except subprocess.TimeoutExpired:
+                msg = agent_timeout_message(timeout)
+                streamer.finalize(status=RunStatus.FAILED, stderr=msg)
                 return self.orchestration.complete_run(
                     run,
                     status=RunStatus.FAILED,
-                    stderr=f"Agent timed out after {agent.get('timeout', 120)}s: {exc}",
+                    stderr=msg,
                 )
             except OSError as exc:
+                streamer.finalize(status=RunStatus.FAILED, stderr=str(exc))
                 return self.orchestration.complete_run(
                     run,
                     status=RunStatus.FAILED,
                     stderr=f"Failed to spawn agent CLI: {exc}",
                 )
+
+    def _run_print_mode(
+        self,
+        *,
+        invocation,
+        repo_root: Path,
+        timeout: int,
+        streamer: RunLogStreamer,
+    ) -> tuple[str, str, RunStatus]:
+        proc = subprocess.Popen(
+            invocation.argv,
+            cwd=invocation.cwd or str(repo_root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE if invocation.stdin_prompt else None,
+            bufsize=0,
+        )
+        if invocation.stdin_prompt and proc.stdin:
+            proc.stdin.write(invocation.stdin_prompt.encode("utf-8"))
+            proc.stdin.close()
+
+        stdout_lines: list[str] = []
+        assert proc.stdout is not None
+        reader = SubprocessLineReader(proc.stdout)
+        deadline = time.time() + timeout
+        try:
+            while True:
+                if proc.poll() is not None and reader.readline(timeout=0) is None:
+                    break
+                if time.time() >= deadline:
+                    proc.kill()
+                    raise subprocess.TimeoutExpired(invocation.argv, timeout)
+                line = reader.readline(timeout=0.5)
+                if line is None:
+                    if proc.poll() is not None:
+                        break
+                    continue
+                line = line.rstrip("\n")
+                stdout_lines.append(line)
+                streamer.append_stream_line(line)
+        finally:
+            if proc.poll() is None:
+                try:
+                    proc.wait(timeout=max(0.1, deadline - time.time()))
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    raise subprocess.TimeoutExpired(invocation.argv, timeout)
+
+        stderr = proc.stderr.read().decode("utf-8", errors="replace") if proc.stderr else ""
+        stdout = "\n".join(stdout_lines)
+        status = RunStatus.SUCCEEDED if proc.returncode == 0 else RunStatus.FAILED
+        return stdout, stderr, status
 
     def _touch_ticket_agent(self, ticket: Ticket, agent_name: str, status: RunStatus) -> None:
         ticket.last_updated_by = agent_name
@@ -124,17 +207,39 @@ class CliAgentExecutor:
         run: AgentRun,
         agent: dict,
         agent_context_dir: Path,
+        workspace: Workspace,
     ) -> str:
         role_path = agent_context_dir / agent.get("role_file", "")
-        role_body = ""
-        if role_path.is_file():
+        role_body = agent.get("role_body") or ""
+        if not role_body and role_path.is_file():
             role_body = role_path.read_text(encoding="utf-8")[:12000]
 
-        skill_body = get_skill(run.skill_name, agent_context_dir=agent_context_dir) or ""
+        skill_body = get_skill(run.skill_name or agent.get("default_skill", ""), agent_context_dir=agent_context_dir) or ""
         ac = json.loads(ticket.acceptance_criteria_json or "[]")
+
+        template = self.orchestration.get_template_for_ticket(ticket)
+        stage_def = None
+        if template:
+            from loregarden.core.workflow_loader import get_template_stages
+
+            stage_def = next(
+                (stage for stage in get_template_stages(template) if stage.key == run.stage_key),
+                None,
+            )
+        orchestration_context = build_orchestration_context(
+            ticket=ticket,
+            run=run,
+            stage_def=stage_def,
+        )
+        mcp_context = build_mcp_run_context(ticket=ticket, run=run, workspace=workspace)
+        mcp_doc = load_loregarden_mcp_doc(agent_context_dir)
 
         sections = [
             f"# Run: {run.run_code}",
+            orchestration_context,
+            "",
+            mcp_context,
+            "",
             f"Ticket: {ticket.external_id} — {ticket.title}",
             f"Stage: {run.stage_key}",
             f"Skill: {run.skill_name or '—'}",
@@ -149,35 +254,28 @@ class CliAgentExecutor:
             sections.extend(["", "## Skill", skill_body[:3000]])
         if role_body:
             sections.extend(["", "## Agent Role", role_body])
+        studio_sections = build_studio_prompt_sections(agent)
+        if studio_sections:
+            sections.extend(["", studio_sections])
+        if mcp_doc:
+            sections.extend(["", "## Loregarden MCP module", mcp_doc[:12000]])
+        sections.extend(
+            [
+                "",
+                "## Permission policy",
+                "Request human approval via Loregarden before destructive or high-risk tool use.",
+                "Do not bypass workspace permission checks.",
+            ]
+        )
         return "\n".join(sections)
 
-    def _build_artifacts(
+    def _build_context_artifact(
         self,
         ticket: Ticket,
         run: AgentRun,
-        stdout: str,
-        stderr: str,
         status: RunStatus,
     ) -> list[dict]:
-        now = datetime.now(timezone.utc).strftime("%H:%M:%S")
-        logs: list[dict] = [
-            {"time": now, "tag": "RUN", "text": f"{run.agent_id} invoked · skill={run.skill_name or '—'}"},
-        ]
-        for line in stdout.strip().splitlines()[:40]:
-            logs.append({"time": now, "tag": "OUT", "text": line})
-        for line in stderr.strip().splitlines()[:20]:
-            logs.append({"time": now, "tag": "ERR", "text": line})
-        if status == RunStatus.SUCCEEDED:
-            logs.append({"time": now, "tag": "OK", "text": "run completed"})
-        else:
-            logs.append({"time": now, "tag": "FAIL", "text": "run failed"})
-
         return [
-            {
-                "kind": "log",
-                "title": f"Run {run.run_code}",
-                "content": {"lines": logs, "live": None},
-            },
             {
                 "kind": "context",
                 "title": "Run context",

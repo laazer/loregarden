@@ -1,8 +1,29 @@
 import os
 import shlex
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+from loregarden.config import settings
+from loregarden.agents.mcp_context import append_mcp_cli_args
+from loregarden.services.cli_settings import (
+    resolve_claude_model,
+    resolve_cursor_model,
+    resolve_effective_adapter,
+    resolve_lmstudio_base_url,
+    resolve_lmstudio_model,
+)
+
+DEFAULT_CLAUDE_USER_PROMPT = (
+    "Execute the Loregarden stage task described in the appended system prompt. "
+    "Work in the workspace directory and complete the stage deliverables."
+)
+
+DEFAULT_CURSOR_USER_PROMPT = (
+    "Execute the Loregarden stage task below. Work in the workspace and complete "
+    "the stage deliverables.\n\n"
+)
 
 
 @dataclass(frozen=True)
@@ -10,6 +31,199 @@ class CliInvocation:
     argv: list[str]
     stdin_prompt: str | None = None
     use_prompt_file: bool = False
+    interactive: bool = False
+    adapter: str = "local"
+    cwd: str = ""
+    resume_session_id: str = ""
+
+
+def _bin(name: str, env_key: str) -> str:
+    override = os.environ.get(env_key)
+    if override:
+        return override
+    found = shutil.which(name)
+    return found or name
+
+
+def permission_bypass_enabled() -> bool:
+    if os.environ.get("LOREGARDEN_ALLOW_PERMISSION_BYPASS", "").lower() in {"1", "true", "yes"}:
+        return True
+    return settings.allow_permission_bypass
+
+
+def _claude_permission_mode() -> str:
+    if permission_bypass_enabled():
+        return os.environ.get("LOREGARDEN_CLAUDE_PERMISSION_MODE", "bypassPermissions")
+    return os.environ.get("LOREGARDEN_CLAUDE_PERMISSION_MODE", settings.claude_permission_mode)
+
+
+def _append_model_flag(argv: list[str], model: str) -> None:
+    if model:
+        argv.extend(["--model", model])
+
+
+def build_interactive_invocation(
+    *,
+    adapter: str,
+    prompt_file: Path,
+    workspace_root: Path,
+    resume_session_id: str = "",
+    claude_model: str = "",
+    cursor_model: str = "",
+) -> CliInvocation:
+    """Headless CLIs with permission prompts routed through Loregarden."""
+    cwd = str(workspace_root)
+
+    if adapter == "claude":
+        argv = [
+            _bin("claude", "LOREGARDEN_CLAUDE_BIN"),
+            "--output-format",
+            "stream-json",
+            "--input-format",
+            "stream-json",
+            "--verbose",
+            "--permission-mode",
+            _claude_permission_mode(),
+            "--permission-prompt-tool",
+            "stdio",
+            "--add-dir",
+            cwd,
+            "--append-system-prompt-file",
+            str(prompt_file),
+        ]
+        _append_model_flag(argv, claude_model)
+        if resume_session_id:
+            argv.extend(["--resume", resume_session_id])
+        append_mcp_cli_args(argv, adapter="claude")
+        return CliInvocation(
+            argv=argv,
+            interactive=True,
+            adapter="claude",
+            cwd=cwd,
+            resume_session_id=resume_session_id,
+            use_prompt_file=True,
+        )
+
+    if adapter == "cursor":
+        argv = [
+            _bin("cursor-agent", "LOREGARDEN_CURSOR_BIN"),
+            "agent",
+            "-p",
+            "--output-format",
+            os.environ.get("LOREGARDEN_CURSOR_OUTPUT_FORMAT", settings.cursor_output_format),
+            "--workspace",
+            cwd,
+        ]
+        _append_model_flag(argv, cursor_model)
+        if permission_bypass_enabled():
+            argv.extend(["--trust", "--force"])
+        extra = os.environ.get("LOREGARDEN_CURSOR_AGENT_ARGS")
+        if extra:
+            argv[2:2] = shlex.split(extra)
+        append_mcp_cli_args(argv, adapter="cursor")
+        return CliInvocation(
+            argv=argv,
+            interactive=False,
+            adapter="cursor",
+            cwd=cwd,
+            resume_session_id=resume_session_id,
+        )
+
+    raise ValueError(f"Interactive invocation unsupported for adapter: {adapter}")
+
+
+def _claude_print_invocation(
+    *,
+    prompt_file: Path,
+    workspace_root: Path,
+    claude_model: str = "",
+) -> CliInvocation:
+    output_format = os.environ.get("LOREGARDEN_CLAUDE_OUTPUT_FORMAT", settings.claude_output_format)
+    argv = [
+        _bin("claude", "LOREGARDEN_CLAUDE_BIN"),
+        "-p",
+        "--output-format",
+        output_format,
+        "--permission-mode",
+        _claude_permission_mode(),
+        "--add-dir",
+        str(workspace_root),
+        "--append-system-prompt-file",
+        str(prompt_file),
+        os.environ.get("LOREGARDEN_CLAUDE_USER_PROMPT", DEFAULT_CLAUDE_USER_PROMPT),
+    ]
+    _append_model_flag(argv, claude_model)
+    append_mcp_cli_args(argv, adapter="claude")
+    return CliInvocation(argv=argv, use_prompt_file=True, adapter="claude", cwd=str(workspace_root))
+
+
+def _cursor_print_invocation(
+    *,
+    prompt: str,
+    workspace_root: Path,
+    cursor_model: str = "",
+) -> CliInvocation:
+    argv = [
+        _bin("cursor-agent", "LOREGARDEN_CURSOR_BIN"),
+        "agent",
+        "-p",
+        "--output-format",
+        os.environ.get("LOREGARDEN_CURSOR_OUTPUT_FORMAT", settings.cursor_output_format),
+        "--workspace",
+        str(workspace_root),
+        f"{os.environ.get('LOREGARDEN_CURSOR_USER_PROMPT', DEFAULT_CURSOR_USER_PROMPT)}{prompt}",
+    ]
+    _append_model_flag(argv, cursor_model)
+    if permission_bypass_enabled():
+        argv[3:3] = ["--trust", "--force"]
+    extra = os.environ.get("LOREGARDEN_CURSOR_AGENT_ARGS")
+    if extra:
+        argv[2:2] = shlex.split(extra)
+    append_mcp_cli_args(argv, adapter="cursor")
+    return CliInvocation(argv=argv, adapter="cursor", cwd=str(workspace_root))
+
+
+def _local_invocation(*, agent_id: str, skill_name: str, prompt_file: Path) -> CliInvocation:
+    return CliInvocation(
+        argv=[
+            sys.executable,
+            "-m",
+            "loregarden.agents.executors.local_runner",
+            "--agent-id",
+            agent_id,
+            "--skill",
+            skill_name,
+            "--prompt-file",
+            str(prompt_file),
+        ],
+        adapter="local",
+    )
+
+
+def _lmstudio_invocation(
+    *,
+    prompt_file: Path,
+    workspace_root: Path,
+    base_url: str,
+    model: str,
+) -> CliInvocation:
+    argv = [
+        sys.executable,
+        "-m",
+        "loregarden.agents.executors.lmstudio_runner",
+        "--prompt-file",
+        str(prompt_file),
+        "--base-url",
+        base_url,
+    ]
+    if model:
+        argv.extend(["--model", model])
+    return CliInvocation(
+        argv=argv,
+        use_prompt_file=True,
+        adapter="lmstudio",
+        cwd=str(workspace_root),
+    )
 
 
 def resolve_cli_invocation(
@@ -19,6 +233,9 @@ def resolve_cli_invocation(
     prompt: str,
     prompt_file: Path,
     skill_name: str,
+    workspace_root: Path,
+    workspace=None,
+    resume_session_id: str = "",
 ) -> CliInvocation:
     """Resolve subprocess argv. Agents are adapters — no orchestration logic here."""
     env_key = f"LOREGARDEN_AGENT_{agent_id.upper()}_CMD"
@@ -30,40 +247,60 @@ def resolve_cli_invocation(
                 prompt=prompt,
                 agent_id=agent_id,
                 skill=skill_name,
+                workspace=str(workspace_root),
             )
         )
-        return CliInvocation(argv=argv, stdin_prompt=None)
+        return CliInvocation(argv=argv, stdin_prompt=None, cwd=str(workspace_root))
 
-    selected = os.environ.get("LOREGARDEN_CLI_ADAPTER", adapter)
+    selected = resolve_effective_adapter(agent_adapter=adapter, workspace=workspace)
+    claude_model = resolve_claude_model(workspace)
+    cursor_model = resolve_cursor_model(workspace)
 
     if selected == "local":
-        return CliInvocation(
-            argv=[
-                sys.executable,
-                "-m",
-                "loregarden.agents.executors.local_runner",
-                "--agent-id",
-                agent_id,
-                "--skill",
-                skill_name,
-                "--prompt-file",
-                str(prompt_file),
-            ]
+        return _local_invocation(
+            agent_id=agent_id,
+            skill_name=skill_name,
+            prompt_file=prompt_file,
+        )
+
+    if selected in {"claude", "cursor"} and not permission_bypass_enabled():
+        return build_interactive_invocation(
+            adapter=selected,
+            prompt_file=prompt_file,
+            workspace_root=workspace_root,
+            resume_session_id=resume_session_id,
+            claude_model=claude_model if selected == "claude" else "",
+            cursor_model=cursor_model if selected == "cursor" else "",
         )
 
     if selected == "claude":
-        return CliInvocation(argv=["claude", "-p", prompt], stdin_prompt=None)
+        return _claude_print_invocation(
+            prompt_file=prompt_file,
+            workspace_root=workspace_root,
+            claude_model=claude_model,
+        )
 
     if selected == "cursor":
-        return CliInvocation(
-            argv=["cursor", "agent", "--print", prompt],
-            stdin_prompt=None,
+        return _cursor_print_invocation(
+            prompt=prompt,
+            workspace_root=workspace_root,
+            cursor_model=cursor_model,
         )
 
     if selected == "codex":
         return CliInvocation(
-            argv=["codex", "exec", "-"],
+            argv=[_bin("codex", "LOREGARDEN_CODEX_BIN"), "exec", "-"],
             stdin_prompt=prompt,
+            adapter="codex",
+            cwd=str(workspace_root),
+        )
+
+    if selected == "lmstudio":
+        return _lmstudio_invocation(
+            prompt_file=prompt_file,
+            workspace_root=workspace_root,
+            base_url=resolve_lmstudio_base_url(workspace),
+            model=resolve_lmstudio_model(workspace),
         )
 
     raise ValueError(f"Unknown CLI adapter: {selected}")

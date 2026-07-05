@@ -1,0 +1,864 @@
+import json
+
+from loregarden.agents.cli_adapters import (
+    permission_bypass_enabled,
+    resolve_cli_invocation,
+)
+from loregarden.agents.executors.permission_bridge import (
+    ApprovalResolution,
+    PermissionBridgeRunner,
+    bare_mcp_tool_name,
+    build_ask_user_question_input,
+    build_control_response,
+    enrich_mcp_tool_input,
+    extract_permission_request,
+    is_ask_user_question,
+    is_auto_approved_mcp_tool,
+)
+
+
+def test_extract_permission_request_control_message():
+    payload = {
+        "type": "control_request",
+        "request_id": "perm_1",
+        "request": {
+            "subtype": "can_use_tool",
+            "tool_name": "Bash",
+            "tool_input": {"command": "npm test"},
+        },
+    }
+    parsed = extract_permission_request(payload)
+    assert parsed is not None
+    assert parsed["request_id"] == "perm_1"
+    assert parsed["tool_name"] == "Bash"
+
+
+def test_build_control_response_allow():
+    response = build_control_response(request_id="perm_1", approved=True)
+    assert response["response"]["response"]["behavior"] == "allow"
+    assert "updatedInput" not in response["response"]["response"]
+
+
+def test_build_control_response_allow_with_tool_input():
+    response = build_control_response(
+        request_id="perm_1",
+        approved=True,
+        updated_input={"command": "npm test"},
+    )
+    assert response["response"]["response"]["updatedInput"] == {"command": "npm test"}
+
+
+def test_build_control_response_with_updated_input():
+    updated = {
+        "questions": [{"question": "Pick one?", "options": [{"label": "A"}]}],
+        "answers": {"Pick one?": "A"},
+    }
+    response = build_control_response(
+        request_id="perm_1",
+        approved=True,
+        updated_input=updated,
+    )
+    assert response["response"]["response"]["updatedInput"] == updated
+
+
+def test_is_ask_user_question():
+    assert is_ask_user_question("AskUserQuestion") is True
+    assert is_ask_user_question("Bash") is False
+
+
+def test_auto_approved_mcp_tools():
+    assert is_auto_approved_mcp_tool("mcp__loregarden__loregarden_get_ticket") is True
+    assert is_auto_approved_mcp_tool("mcp__loregarden__loregarden_attach_artifact") is False
+    assert bare_mcp_tool_name("mcp__loregarden__loregarden_get_ticket") == "loregarden_get_ticket"
+
+
+def test_enrich_mcp_tool_input_fills_ticket_id():
+    from loregarden.models.domain import Ticket
+
+    ticket = Ticket(
+        id="ticket-uuid",
+        external_id="03-wire-cli-agent-runner",
+        title="Test",
+        workspace_id="ws-1",
+    )
+    enriched = enrich_mcp_tool_input(
+        bare_tool="loregarden_get_ticket",
+        tool_input={},
+        ticket=ticket,
+        workspace_slug="loregarden",
+    )
+    assert enriched == {"ticket_id": "ticket-uuid"}
+
+
+def test_build_ask_user_question_input():
+    tool_input = {
+        "questions": [
+            {
+                "question": "How should I format the output?",
+                "options": [{"label": "Summary"}, {"label": "Detailed"}],
+            }
+        ]
+    }
+    payload = build_ask_user_question_input(
+        tool_input,
+        answers={"How should I format the output?": "Summary"},
+    )
+    assert payload["questions"] == tool_input["questions"]
+    assert payload["answers"]["How should I format the output?"] == "Summary"
+
+
+def test_resolve_claude_adapter_uses_permission_bridge(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "claude")
+    monkeypatch.delenv("LOREGARDEN_ALLOW_PERMISSION_BYPASS", raising=False)
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("stage task", encoding="utf-8")
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+
+    inv = resolve_cli_invocation(
+        agent_id="planner",
+        adapter="claude",
+        prompt="stage task",
+        prompt_file=prompt_file,
+        skill_name="plan",
+        workspace_root=workspace,
+    )
+
+    assert inv.interactive is True
+    assert "--permission-prompt-tool" in inv.argv
+    assert "stdio" in inv.argv
+    assert "--mcp-config" in inv.argv
+    assert "--permission-mode" in inv.argv
+    mode_index = inv.argv.index("--permission-mode")
+    assert inv.argv[mode_index + 1] == "default"
+    assert "--output-format" in inv.argv
+    assert "stream-json" in inv.argv
+
+
+def test_permission_bypass_restores_headless_print_mode(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "claude")
+    monkeypatch.setenv("LOREGARDEN_ALLOW_PERMISSION_BYPASS", "1")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("stage task", encoding="utf-8")
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+
+    inv = resolve_cli_invocation(
+        agent_id="planner",
+        adapter="claude",
+        prompt="stage task",
+        prompt_file=prompt_file,
+        skill_name="plan",
+        workspace_root=workspace,
+    )
+
+    assert inv.interactive is False
+    assert "-p" in inv.argv
+    assert permission_bypass_enabled() is True
+
+
+def test_permission_bridge_creates_inbox_item_and_continues(tmp_path):
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    from loregarden.agents.cli_adapters import build_interactive_invocation
+    from loregarden.models.domain import AgentRun, Approval, ApprovalKind, RunStatus, Ticket
+    from loregarden.services.seed import seed_database
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        run = AgentRun(
+            run_code="run_perm_test",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="planner",
+            stage_key="planning",
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        workspace = tmp_path / "repo"
+        workspace.mkdir()
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("do work", encoding="utf-8")
+        invocation = build_interactive_invocation(
+            adapter="claude",
+            prompt_file=prompt_file,
+            workspace_root=workspace,
+        )
+
+        permission_line = json.dumps(
+            {
+                "type": "control_request",
+                "request_id": "perm_99",
+                "request": {
+                    "subtype": "can_use_tool",
+                    "tool_name": "Edit",
+                    "tool_input": {"path": "src/main.py"},
+                },
+            }
+        )
+        result_line = json.dumps({"type": "result", "session_id": "sess_1", "subtype": "success"})
+
+        class FakeStdout:
+            def __init__(self, lines):
+                self.lines = list(lines)
+                self._closed = False
+
+            def readline(self):
+                if self.lines:
+                    return self.lines.pop(0) + "\n"
+                self._closed = True
+                return ""
+
+        class FakeStdin:
+            def __init__(self):
+                self.writes: list[str] = []
+
+            def write(self, data):
+                self.writes.append(data)
+
+            def flush(self):
+                return None
+
+        class FakeProc:
+            returncode = 0
+
+            def __init__(self):
+                self.stdout = FakeStdout([permission_line, result_line])
+                self.stdin = FakeStdin()
+
+            def poll(self):
+                return 0 if self.stdout._closed else None
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                self.returncode = 1
+
+        approvals_seen: list[str] = []
+        captured_proc: FakeProc | None = None
+
+        def fake_spawn(*args, **kwargs):
+            nonlocal captured_proc
+            captured_proc = FakeProc()
+            return captured_proc
+
+        def fake_wait(approval_id, **kwargs):
+            approvals_seen.append(approval_id)
+            return ApprovalResolution(approved=True)
+
+        bridge = PermissionBridgeRunner(session)
+        result = bridge.run(
+            run_id=run.id,
+            ticket=ticket,
+            invocation=invocation,
+            prompt="do work",
+            timeout_seconds=30,
+            spawn_process=fake_spawn,
+            wait_for_approval=fake_wait,
+        )
+
+        assert result.status == RunStatus.SUCCEEDED
+        assert approvals_seen
+        approval = session.get(Approval, approvals_seen[0])
+        assert approval.kind == ApprovalKind.CLI_PERMISSION
+        assert captured_proc is not None
+        control_writes = []
+        for raw in captured_proc.stdin.writes:
+            text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+            for line in text.splitlines():
+                if line.strip().startswith("{"):
+                    control_writes.append(json.loads(line))
+        allow_response = next(
+            item for item in control_writes if item.get("type") == "control_response"
+        )
+        assert allow_response["response"]["response"]["updatedInput"] == {
+            "path": "src/main.py",
+        }
+
+
+def test_permission_bridge_bash_allow_passes_command(tmp_path):
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    from loregarden.agents.cli_adapters import build_interactive_invocation
+    from loregarden.models.domain import AgentRun, Approval, ApprovalKind, RunStatus, Ticket
+    from loregarden.services.orchestration import ApprovalService
+    from loregarden.services.seed import seed_database
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        run = AgentRun(
+            run_code="run_bash_perm",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="static_qa",
+            stage_key="testing",
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        workspace = tmp_path / "repo"
+        workspace.mkdir()
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("run tests", encoding="utf-8")
+        invocation = build_interactive_invocation(
+            adapter="claude",
+            prompt_file=prompt_file,
+            workspace_root=workspace,
+        )
+
+        permission_line = json.dumps(
+            {
+                "type": "control_request",
+                "request_id": "perm_bash_1",
+                "request": {
+                    "subtype": "can_use_tool",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "npm test"},
+                },
+            }
+        )
+        result_line = json.dumps({"type": "result", "session_id": "sess_bash", "subtype": "success"})
+
+        class FakeStdout:
+            def __init__(self, lines):
+                self.lines = list(lines)
+                self._closed = False
+
+            def readline(self):
+                if self.lines:
+                    return self.lines.pop(0) + "\n"
+                self._closed = True
+                return ""
+
+        class FakeStdin:
+            def __init__(self):
+                self.writes: list[str] = []
+
+            def write(self, data):
+                self.writes.append(data.decode("utf-8") if isinstance(data, bytes) else data)
+
+            def flush(self):
+                return None
+
+        class FakeProc:
+            returncode = 0
+
+            def __init__(self):
+                self.stdout = FakeStdout([permission_line, result_line])
+                self.stdin = FakeStdin()
+
+            def poll(self):
+                return 0 if self.stdout._closed else None
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                self.returncode = 1
+
+        captured_proc: FakeProc | None = None
+
+        def fake_spawn(*args, **kwargs):
+            nonlocal captured_proc
+            captured_proc = FakeProc()
+            return captured_proc
+
+        def fake_wait(approval_id, **kwargs):
+            ApprovalService(session).resolve(approval_id, approved=True)
+            approval = session.get(Approval, approval_id)
+            stored = json.loads(approval.response_json or "{}")
+            return ApprovalResolution(
+                approved=True,
+                updated_input=stored.get("updated_input"),
+            )
+
+        bridge = PermissionBridgeRunner(session)
+        result = bridge.run(
+            run_id=run.id,
+            ticket=ticket,
+            invocation=invocation,
+            prompt="run tests",
+            timeout_seconds=30,
+            spawn_process=fake_spawn,
+            wait_for_approval=fake_wait,
+        )
+
+        assert result.status == RunStatus.SUCCEEDED
+        approval = session.exec(select(Approval).where(Approval.run_id == run.id)).first()
+        assert approval.kind == ApprovalKind.CLI_PERMISSION
+        assert approval.tool_name == "Bash"
+        assert captured_proc is not None
+        control_writes = []
+        for raw in captured_proc.stdin.writes:
+            for line in raw.splitlines():
+                if line.strip().startswith("{"):
+                    control_writes.append(json.loads(line))
+        allow_response = next(
+            item for item in control_writes if item.get("type") == "control_response"
+        )
+        assert allow_response["response"]["response"]["updatedInput"] == {
+            "command": "npm test",
+        }
+
+
+def test_permission_bridge_auto_approves_mcp_get_ticket(tmp_path):
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    from loregarden.agents.cli_adapters import build_interactive_invocation
+    from loregarden.models.domain import AgentRun, Approval, RunStatus, Ticket
+    from loregarden.services.seed import seed_database
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        run = AgentRun(
+            run_code="run_mcp_auto",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="static_qa",
+            stage_key="testing",
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        workspace = tmp_path / "repo"
+        workspace.mkdir()
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("qa", encoding="utf-8")
+        invocation = build_interactive_invocation(
+            adapter="claude",
+            prompt_file=prompt_file,
+            workspace_root=workspace,
+        )
+
+        permission_line = json.dumps(
+            {
+                "type": "control_request",
+                "request_id": "perm_mcp_1",
+                "request": {
+                    "subtype": "can_use_tool",
+                    "tool_name": "mcp__loregarden__loregarden_get_ticket",
+                    "tool_input": {},
+                },
+            }
+        )
+        result_line = json.dumps({"type": "result", "session_id": "sess_mcp", "subtype": "success"})
+
+        class FakeStdout:
+            def __init__(self, lines):
+                self.lines = list(lines)
+                self._closed = False
+
+            def readline(self):
+                if self.lines:
+                    return self.lines.pop(0) + "\n"
+                self._closed = True
+                return ""
+
+        class FakeStdin:
+            def __init__(self):
+                self.writes: list[str] = []
+
+            def write(self, data):
+                self.writes.append(data.decode("utf-8") if isinstance(data, bytes) else data)
+
+            def flush(self):
+                return None
+
+        class FakeProc:
+            returncode = 0
+
+            def __init__(self):
+                self.stdout = FakeStdout([permission_line, result_line])
+                self.stdin = FakeStdin()
+
+            def poll(self):
+                return 0 if self.stdout._closed else None
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                self.returncode = 1
+
+        captured_proc: FakeProc | None = None
+
+        def fake_spawn(*args, **kwargs):
+            nonlocal captured_proc
+            captured_proc = FakeProc()
+            return captured_proc
+
+        bridge = PermissionBridgeRunner(session)
+        result = bridge.run(
+            run_id=run.id,
+            ticket=ticket,
+            invocation=invocation,
+            prompt="qa",
+            timeout_seconds=30,
+            spawn_process=fake_spawn,
+        )
+
+        assert result.status == RunStatus.SUCCEEDED
+        assert session.exec(select(Approval).where(Approval.run_id == run.id)).first() is None
+        assert captured_proc is not None
+        control_writes = []
+        for raw in captured_proc.stdin.writes:
+            for line in raw.splitlines():
+                if line.strip().startswith("{"):
+                    control_writes.append(json.loads(line))
+        allow_response = next(
+            item for item in control_writes if item.get("type") == "control_response"
+        )
+        assert allow_response["response"]["response"]["updatedInput"] == {
+            "ticket_id": ticket.id,
+        }
+
+
+def test_permission_bridge_finishes_on_result_when_process_stays_alive(tmp_path):
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    from loregarden.agents.cli_adapters import build_interactive_invocation
+    from loregarden.models.domain import AgentRun, RunStatus, Ticket
+    from loregarden.services.seed import seed_database
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        run = AgentRun(
+            run_code="run_hung",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="static_qa",
+            skill_name="run_tests",
+            stage_key="testing",
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        workspace = tmp_path / "repo"
+        workspace.mkdir()
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("review code", encoding="utf-8")
+        invocation = build_interactive_invocation(
+            adapter="claude",
+            prompt_file=prompt_file,
+            workspace_root=workspace,
+        )
+
+        result_line = json.dumps({"type": "result", "session_id": "sess_done", "subtype": "success"})
+
+        class FakeStdout:
+            def __init__(self, lines):
+                self.lines = list(lines)
+                self._closed = False
+
+            def readline(self):
+                if self.lines:
+                    return self.lines.pop(0) + "\n"
+                self._closed = True
+                return ""
+
+        class HungAfterResultProc:
+            returncode = None
+            killed = False
+
+            def __init__(self):
+                self.stdout = FakeStdout([result_line])
+                self.stdin = type(
+                    "In",
+                    (),
+                    {"write": lambda *a, **k: None, "flush": lambda *a, **k: None, "close": lambda *a, **k: None},
+                )()
+
+            def poll(self):
+                return None if not self.killed else 0
+
+            def wait(self, timeout=None):
+                return 0 if self.killed else None
+
+            def kill(self):
+                self.killed = True
+                self.returncode = 0
+
+        bridge = PermissionBridgeRunner(session)
+        result = bridge.run(
+            run_id=run.id,
+            ticket=ticket,
+            invocation=invocation,
+            prompt="review code",
+            timeout_seconds=30,
+            spawn_process=lambda *a, **k: HungAfterResultProc(),
+        )
+
+        assert result.status == RunStatus.SUCCEEDED
+        assert "result" in result.stdout
+
+
+def test_permission_bridge_question_returns_answers(tmp_path):
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    from loregarden.agents.cli_adapters import build_interactive_invocation
+    from loregarden.models.domain import AgentRun, Approval, ApprovalKind, RunStatus, Ticket
+    from loregarden.services.orchestration import ApprovalService
+    from loregarden.services.seed import seed_database
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        run = AgentRun(
+            run_code="run_question_test",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="planner",
+            stage_key="planning",
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        workspace = tmp_path / "repo"
+        workspace.mkdir()
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("do work", encoding="utf-8")
+        invocation = build_interactive_invocation(
+            adapter="claude",
+            prompt_file=prompt_file,
+            workspace_root=workspace,
+        )
+
+        question_line = json.dumps(
+            {
+                "type": "control_request",
+                "request_id": "q_1",
+                "request": {
+                    "subtype": "can_use_tool",
+                    "tool_name": "AskUserQuestion",
+                    "tool_input": {
+                        "questions": [
+                            {
+                                "question": "Which test runner?",
+                                "header": "Runner",
+                                "options": [
+                                    {"label": "pytest", "description": "Python tests"},
+                                    {"label": "npm test", "description": "Frontend tests"},
+                                ],
+                                "multiSelect": False,
+                            }
+                        ]
+                    },
+                },
+            }
+        )
+        result_line = json.dumps({"type": "result", "session_id": "sess_q", "subtype": "success"})
+
+        class FakeStdout:
+            def __init__(self, lines):
+                self.lines = list(lines)
+                self._closed = False
+
+            def readline(self):
+                if self.lines:
+                    return self.lines.pop(0) + "\n"
+                self._closed = True
+                return ""
+
+        class FakeStdin:
+            def __init__(self):
+                self.writes: list[str] = []
+
+            def write(self, data):
+                self.writes.append(data.decode("utf-8") if isinstance(data, bytes) else data)
+
+            def flush(self):
+                return None
+
+        class FakeProc:
+            returncode = 0
+
+            def __init__(self):
+                self.stdout = FakeStdout([question_line, result_line])
+                self.stdin = FakeStdin()
+
+            def poll(self):
+                return 0 if self.stdout._closed else None
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                self.returncode = 1
+
+        captured_proc: FakeProc | None = None
+
+        def fake_spawn(*args, **kwargs):
+            nonlocal captured_proc
+            captured_proc = FakeProc()
+            return captured_proc
+
+        def fake_wait(approval_id, **kwargs):
+            ApprovalService(session).resolve(
+                approval_id,
+                approved=True,
+                answers={"Which test runner?": "pytest"},
+            )
+            approval = session.get(Approval, approval_id)
+            return ApprovalResolution(
+                approved=True,
+                updated_input=json.loads(approval.response_json)["updated_input"],
+            )
+
+        bridge = PermissionBridgeRunner(session)
+        result = bridge.run(
+            run_id=run.id,
+            ticket=ticket,
+            invocation=invocation,
+            prompt="do work",
+            timeout_seconds=30,
+            spawn_process=fake_spawn,
+            wait_for_approval=fake_wait,
+        )
+
+        assert result.status == RunStatus.SUCCEEDED
+        assert captured_proc is not None
+        approval = session.exec(select(Approval).where(Approval.run_id == run.id)).first()
+        assert approval.kind == ApprovalKind.CLI_QUESTION
+        assert captured_proc.stdin.writes
+        response = json.loads(captured_proc.stdin.writes[1].strip())
+        updated = response["response"]["response"]["updatedInput"]
+        assert updated["answers"]["Which test runner?"] == "pytest"
+
+
+def test_permission_bridge_agent_timeout(tmp_path):
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    from loregarden.agents.cli_adapters import build_interactive_invocation
+    from loregarden.models.domain import AgentRun, RunStatus, Ticket
+    from loregarden.services.seed import seed_database
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        run = AgentRun(
+            run_code="run_timeout_test",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="planner",
+            stage_key="planning",
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        workspace = tmp_path / "repo"
+        workspace.mkdir()
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("do work", encoding="utf-8")
+        invocation = build_interactive_invocation(
+            adapter="claude",
+            prompt_file=prompt_file,
+            workspace_root=workspace,
+        )
+
+        class HungStdout:
+            def readline(self):
+                return ""
+
+        class HungProc:
+            returncode = None
+
+            def __init__(self):
+                self.stdout = HungStdout()
+                self.stdin = type("In", (), {"write": lambda *a, **k: None, "flush": lambda *a, **k: None})()
+
+            def poll(self):
+                return None
+
+            def wait(self, timeout=None):
+                import subprocess
+
+                raise subprocess.TimeoutExpired(["claude"], timeout or 0)
+
+            def kill(self):
+                self.returncode = -9
+
+        bridge = PermissionBridgeRunner(session)
+        result = bridge.run(
+            run_id=run.id,
+            ticket=ticket,
+            invocation=invocation,
+            prompt="do work",
+            timeout_seconds=2,
+            spawn_process=lambda *a, **k: HungProc(),
+        )
+
+        assert result.status == RunStatus.FAILED
+        assert result.stderr == "Agent timed out after 2s"

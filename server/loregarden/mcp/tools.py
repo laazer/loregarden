@@ -7,12 +7,183 @@ from typing import Any
 
 from sqlmodel import Session
 
-from loregarden.models.domain import OrchestrationDriver, OrchestrationRunStatus
+from loregarden.models.domain import OrchestrationDriver, OrchestrationRunStatus, Workspace
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
-from loregarden.models.domain import Workspace
+
+
+def _tool_schema(
+    *,
+    properties: dict[str, dict[str, Any]],
+    required: list[str],
+) -> dict[str, Any]:
+    """JSON Schema shape compatible with Claude Code / Zod MCP validators."""
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": required,
+        "additionalProperties": False,
+    }
+
+
+def _string_prop(description: str) -> dict[str, str]:
+    return {"type": "string", "description": description}
+
+
+def _integer_prop(description: str) -> dict[str, str]:
+    return {"type": "integer", "description": description}
+
+
+def _enum_string_prop(description: str, values: list[str]) -> dict[str, Any]:
+    return {"type": "string", "description": description, "enum": values}
+
+
+def _coerce_mapping(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str):
+        stripped = raw.strip()
+        if not stripped:
+            return {}
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
+def _coerce_string(value: Any, *, field: str) -> str:
+    if value is None:
+        raise ValueError(f"{field} is required")
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            raise ValueError(f"{field} is required")
+        return text
+    return str(value).strip()
+
+
+def _coerce_optional_string(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
+def _coerce_optional_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise ValueError("max_stages must be an integer")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        return int(text)
+    raise ValueError("max_stages must be an integer")
+
+
+def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
+    """Coerce Claude MCP bridge quirks (aliases, stringified JSON, camelCase)."""
+    args = _coerce_mapping(arguments)
+
+    alias_map = {
+        "ticket_id": ("ticketId", "id"),
+        "workspace_slug": ("workspaceSlug", "workspace"),
+        "external_id": ("externalId", "slug"),
+        "run_id": ("runId",),
+        "stage_key": ("stageKey", "stage"),
+        "agent_id": ("agentId",),
+        "skill_name": ("skillName",),
+        "content_json": ("contentJson", "content"),
+        "next_agent": ("nextAgent",),
+    }
+    for canonical, aliases in alias_map.items():
+        if canonical in args:
+            continue
+        for alias in aliases:
+            if alias in args:
+                args[canonical] = args.pop(alias)
+                break
+
+    if name == "loregarden_get_ticket":
+        return {"ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id")}
+
+    if name == "loregarden_get_ticket_by_external":
+        return {
+            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
+            "external_id": _coerce_string(args.get("external_id"), field="external_id"),
+        }
+
+    if name == "loregarden_start_orchestration":
+        payload = {
+            "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
+        }
+        if args.get("driver") is not None:
+            payload["driver"] = _coerce_string(args.get("driver"), field="driver")
+        max_stages = _coerce_optional_int(args.get("max_stages"))
+        if max_stages is not None:
+            payload["max_stages"] = max_stages
+        return payload
+
+    if name in {
+        "loregarden_start_stage",
+        "loregarden_complete_stage",
+        "loregarden_skip_stage",
+        "loregarden_request_approval",
+    }:
+        payload = {
+            "run_id": _coerce_string(args.get("run_id"), field="run_id"),
+            "stage_key": _coerce_string(args.get("stage_key"), field="stage_key"),
+        }
+        if name == "loregarden_start_stage":
+            payload["agent_id"] = _coerce_optional_string(args.get("agent_id"))
+        if name == "loregarden_complete_stage":
+            payload["next_agent"] = _coerce_optional_string(args.get("next_agent"))
+        if name == "loregarden_skip_stage":
+            payload["reason"] = _coerce_optional_string(args.get("reason"))
+        if name == "loregarden_request_approval":
+            payload["title"] = _coerce_optional_string(args.get("title"))
+            payload["impact"] = _coerce_optional_string(args.get("impact"))
+        return payload
+
+    if name == "loregarden_block_ticket":
+        return {
+            "run_id": _coerce_string(args.get("run_id"), field="run_id"),
+            "message": _coerce_string(args.get("message"), field="message"),
+            "stage_key": _coerce_optional_string(args.get("stage_key")),
+        }
+
+    if name == "loregarden_attach_artifact":
+        content_json = args.get("content_json")
+        if isinstance(content_json, dict):
+            content_json = json.dumps(content_json)
+        elif content_json is not None and not isinstance(content_json, str):
+            content_json = json.dumps(content_json)
+        return {
+            "run_id": _coerce_string(args.get("run_id"), field="run_id"),
+            "kind": _coerce_string(args.get("kind"), field="kind"),
+            "title": _coerce_string(args.get("title"), field="title"),
+            "content_json": _coerce_optional_string(content_json),
+        }
+
+    if name == "loregarden_complete_orchestration":
+        payload = {"run_id": _coerce_string(args.get("run_id"), field="run_id")}
+        if args.get("status") is not None:
+            payload["status"] = _coerce_string(args.get("status"), field="status")
+        payload["message"] = _coerce_optional_string(args.get("message"))
+        return payload
+
+    return args
 
 
 def _ticket_state_payload(session: Session, ticket_id: str) -> dict[str, Any]:
@@ -60,135 +231,127 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "loregarden_get_ticket",
         "description": "Read ticket workflow state, stage map, and active orchestration run.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {"ticket_id": {"type": "string"}},
-            "required": ["ticket_id"],
-        },
+        "inputSchema": _tool_schema(
+            properties={
+                "ticket_id": _string_prop("Loregarden ticket UUID from the run prompt."),
+            },
+            required=["ticket_id"],
+        ),
     },
     {
         "name": "loregarden_get_ticket_by_external",
         "description": "Read ticket state by workspace slug and external_id.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "workspace_slug": {"type": "string"},
-                "external_id": {"type": "string"},
+        "inputSchema": _tool_schema(
+            properties={
+                "workspace_slug": _string_prop("Workspace slug, e.g. loregarden."),
+                "external_id": _string_prop("Ticket external id slug, e.g. 03-wire-cli-agent-runner."),
             },
-            "required": ["workspace_slug", "external_id"],
-        },
+            required=["workspace_slug", "external_id"],
+        ),
     },
     {
         "name": "loregarden_start_orchestration",
         "description": "Start a top-level orchestration run for a ticket.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "ticket_id": {"type": "string"},
-                "driver": {
-                    "type": "string",
-                    "enum": ["builtin_autopilot", "external_mcp"],
-                },
-                "max_stages": {"type": "integer"},
+        "inputSchema": _tool_schema(
+            properties={
+                "ticket_id": _string_prop("Loregarden ticket UUID."),
+                "driver": _enum_string_prop(
+                    "Orchestration driver.",
+                    ["builtin_autopilot", "external_mcp"],
+                ),
+                "max_stages": _integer_prop("Optional cap on stages for builtin autopilot."),
             },
-            "required": ["ticket_id"],
-        },
+            required=["ticket_id"],
+        ),
     },
     {
         "name": "loregarden_start_stage",
         "description": "Mark a workflow stage as running before invoking a sub-agent.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "run_id": {"type": "string"},
-                "stage_key": {"type": "string"},
-                "agent_id": {"type": "string"},
+        "inputSchema": _tool_schema(
+            properties={
+                "run_id": _string_prop("Orchestration run UUID."),
+                "stage_key": _string_prop("Workflow stage key."),
+                "agent_id": _string_prop("Optional agent id override."),
             },
-            "required": ["run_id", "stage_key"],
-        },
+            required=["run_id", "stage_key"],
+        ),
     },
     {
         "name": "loregarden_complete_stage",
         "description": "Mark a stage done and advance the workflow cursor.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "run_id": {"type": "string"},
-                "stage_key": {"type": "string"},
-                "next_agent": {"type": "string"},
+        "inputSchema": _tool_schema(
+            properties={
+                "run_id": _string_prop("Orchestration run UUID."),
+                "stage_key": _string_prop("Workflow stage key."),
+                "next_agent": _string_prop("Optional next agent hint."),
             },
-            "required": ["run_id", "stage_key"],
-        },
+            required=["run_id", "stage_key"],
+        ),
     },
     {
         "name": "loregarden_skip_stage",
         "description": "Mark a stage as won't do.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "run_id": {"type": "string"},
-                "stage_key": {"type": "string"},
-                "reason": {"type": "string"},
+        "inputSchema": _tool_schema(
+            properties={
+                "run_id": _string_prop("Orchestration run UUID."),
+                "stage_key": _string_prop("Workflow stage key."),
+                "reason": _string_prop("Optional skip reason."),
             },
-            "required": ["run_id", "stage_key"],
-        },
+            required=["run_id", "stage_key"],
+        ),
     },
     {
         "name": "loregarden_block_ticket",
         "description": "Block the ticket and fail the orchestration run.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "run_id": {"type": "string"},
-                "message": {"type": "string"},
-                "stage_key": {"type": "string"},
+        "inputSchema": _tool_schema(
+            properties={
+                "run_id": _string_prop("Orchestration run UUID."),
+                "message": _string_prop("Blocking message for operators."),
+                "stage_key": _string_prop("Optional stage key context."),
             },
-            "required": ["run_id", "message"],
-        },
+            required=["run_id", "message"],
+        ),
     },
     {
         "name": "loregarden_attach_artifact",
         "description": "Attach an artifact (log, diff, test output) to a ticket.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "run_id": {"type": "string"},
-                "kind": {"type": "string"},
-                "title": {"type": "string"},
-                "content_json": {"type": "string"},
+        "inputSchema": _tool_schema(
+            properties={
+                "run_id": _string_prop("Agent or orchestration run UUID."),
+                "kind": _string_prop("Artifact kind, e.g. log, diff, test."),
+                "title": _string_prop("Short artifact title."),
+                "content_json": _string_prop("Optional JSON string payload."),
             },
-            "required": ["run_id", "kind", "title"],
-        },
+            required=["run_id", "kind", "title"],
+        ),
     },
     {
         "name": "loregarden_request_approval",
         "description": "Create a human approval inbox item for a stage.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "run_id": {"type": "string"},
-                "stage_key": {"type": "string"},
-                "title": {"type": "string"},
-                "impact": {"type": "string"},
+        "inputSchema": _tool_schema(
+            properties={
+                "run_id": _string_prop("Orchestration run UUID."),
+                "stage_key": _string_prop("Workflow stage key."),
+                "title": _string_prop("Approval title."),
+                "impact": _string_prop("Impact / description for the operator."),
             },
-            "required": ["run_id", "stage_key"],
-        },
+            required=["run_id", "stage_key"],
+        ),
     },
     {
         "name": "loregarden_complete_orchestration",
         "description": "Finish the top-level orchestration run.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "run_id": {"type": "string"},
-                "status": {
-                    "type": "string",
-                    "enum": ["succeeded", "failed", "blocked", "cancelled"],
-                },
-                "message": {"type": "string"},
+        "inputSchema": _tool_schema(
+            properties={
+                "run_id": _string_prop("Orchestration run UUID."),
+                "status": _enum_string_prop(
+                    "Final orchestration status.",
+                    ["succeeded", "failed", "blocked", "cancelled"],
+                ),
+                "message": _string_prop("Optional completion message."),
             },
-            "required": ["run_id"],
-        },
+            required=["run_id"],
+        ),
     },
 ]
 
@@ -202,8 +365,9 @@ def _get_run(session: Session, run_id: str):
     return run
 
 
-def execute_tool(session: Session, name: str, arguments: dict[str, Any]) -> str:
+def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -> str:
     svc = OrchestrationCallbackService(session)
+    arguments = normalize_tool_arguments(name, arguments)
 
     if name == "loregarden_get_ticket":
         return json.dumps(_ticket_state_payload(session, arguments["ticket_id"]), indent=2)

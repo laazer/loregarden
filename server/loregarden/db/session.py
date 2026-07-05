@@ -64,6 +64,12 @@ def _apply_sqlite_migrations(eng) -> None:
                         "ALTER TABLE tickets ADD COLUMN state_locked INTEGER NOT NULL DEFAULT 0"
                     )
                 )
+            if "triage_runtime_json" not in ticket_cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE tickets ADD COLUMN triage_runtime_json TEXT NOT NULL DEFAULT '{}'"
+                    )
+                )
 
         ws_rows = conn.execute(text("PRAGMA table_info(workspaces)")).fetchall()
         if ws_rows:
@@ -74,12 +80,60 @@ def _apply_sqlite_migrations(eng) -> None:
                         "ALTER TABLE workspaces ADD COLUMN orchestration_profile_slug TEXT NOT NULL DEFAULT ''"
                     )
                 )
+            runtime_cols = {
+                "cli_adapter": "ALTER TABLE workspaces ADD COLUMN cli_adapter TEXT NOT NULL DEFAULT ''",
+                "claude_model": "ALTER TABLE workspaces ADD COLUMN claude_model TEXT NOT NULL DEFAULT ''",
+                "cursor_model": "ALTER TABLE workspaces ADD COLUMN cursor_model TEXT NOT NULL DEFAULT ''",
+                "lmstudio_base_url": "ALTER TABLE workspaces ADD COLUMN lmstudio_base_url TEXT NOT NULL DEFAULT ''",
+                "lmstudio_model": "ALTER TABLE workspaces ADD COLUMN lmstudio_model TEXT NOT NULL DEFAULT ''",
+            }
+            ws_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(workspaces)")).fetchall()}
+            for col, stmt in runtime_cols.items():
+                if col not in ws_cols:
+                    conn.execute(text(stmt))
+
+        approval_rows = conn.execute(text("PRAGMA table_info(approvals)")).fetchall()
+        if approval_rows:
+            approval_cols = {row[1] for row in approval_rows}
+            migrations = {
+                "run_id": "ALTER TABLE approvals ADD COLUMN run_id TEXT",
+                "kind": "ALTER TABLE approvals ADD COLUMN kind TEXT NOT NULL DEFAULT 'workflow_gate'",
+                "permission_request_id": "ALTER TABLE approvals ADD COLUMN permission_request_id TEXT NOT NULL DEFAULT ''",
+                "tool_name": "ALTER TABLE approvals ADD COLUMN tool_name TEXT NOT NULL DEFAULT ''",
+                "tool_input_json": "ALTER TABLE approvals ADD COLUMN tool_input_json TEXT NOT NULL DEFAULT '{}'",
+                "cli_adapter": "ALTER TABLE approvals ADD COLUMN cli_adapter TEXT NOT NULL DEFAULT ''",
+                "cli_session_id": "ALTER TABLE approvals ADD COLUMN cli_session_id TEXT NOT NULL DEFAULT ''",
+                "response_json": "ALTER TABLE approvals ADD COLUMN response_json TEXT NOT NULL DEFAULT '{}'",
+            }
+            for col, stmt in migrations.items():
+                if col not in approval_cols:
+                    conn.execute(text(stmt))
 
         agent_rows = conn.execute(text("PRAGMA table_info(agent_runs)")).fetchall()
         if agent_rows:
             agent_cols = {row[1] for row in agent_rows}
             if "orchestration_run_id" not in agent_cols:
                 conn.execute(text("ALTER TABLE agent_runs ADD COLUMN orchestration_run_id TEXT"))
+
+        triage_rows = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='triage_messages'")
+        ).fetchall()
+        if not triage_rows:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE triage_messages (
+                        id TEXT PRIMARY KEY,
+                        ticket_id TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY(ticket_id) REFERENCES tickets(id)
+                    )
+                    """
+                )
+            )
+            conn.execute(text("CREATE INDEX ix_triage_messages_ticket_id ON triage_messages (ticket_id)"))
 
 
 def get_session() -> Generator[Session, None, None]:

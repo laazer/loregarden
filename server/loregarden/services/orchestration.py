@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 from loregarden.core.event_bus import event_bus
 from loregarden.core.state_machine import StateMachine
 from loregarden.core.workflow_loader import stage_display_name
+from loregarden.services.run_log_stream import bootstrap_run_log, finalize_run_log_artifact
 from loregarden.services.workflow_service import resolve_workspace_stages
 from loregarden.services.workflow_state import (
     build_stage_views,
@@ -18,6 +19,7 @@ from loregarden.services.workflow_state import (
 from loregarden.models.domain import (
     AgentRun,
     Approval,
+    ApprovalKind,
     ApprovalStatus,
     Artifact,
     EventType,
@@ -193,6 +195,9 @@ class OrchestrationService:
         ):
             set_stage_status(ticket, instance, stages, current, StageStatus.DONE)
 
+        if ticket.workflow_stage_status in (StageStatus.DONE, StageStatus.WONT_DO):
+            ticket.blocking_issues = ""
+
         next_key = StateMachine.next_stage_key(stages, current)
         if not next_key:
             reconcile_workflow_state(ticket, instance, stages)
@@ -260,6 +265,9 @@ class OrchestrationService:
         if stage_map.get(target_key) == StageStatus.WONT_DO:
             raise ValueError(f"Stage '{target_key}' is marked won't do")
 
+        if stage_map.get(target_key) in (StageStatus.BLOCKED, StageStatus.DONE):
+            ticket.blocking_issues = ""
+
         if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
             raise ValueError(f"Cannot start run for ticket in state: {ticket.state.value}")
 
@@ -274,13 +282,17 @@ class OrchestrationService:
         self.session.add(instance)
         self.session.commit()
 
+        from loregarden.services.studio_service import resolve_stage_execution
+
+        agent_id, skill_name = resolve_stage_execution(ticket, stage_def)
+
         run = AgentRun(
             run_code=_run_code(),
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             orchestration_run_id=orchestration_run_id,
-            agent_id=stage_def.agent_id,
-            skill_name=stage_def.skill_name,
+            agent_id=agent_id,
+            skill_name=skill_name or stage_def.skill_name,
             stage_key=target_key,
             status=RunStatus.RUNNING,
             started_at=datetime.now(timezone.utc),
@@ -295,8 +307,9 @@ class OrchestrationService:
             workspace_id=ticket.workspace_id,
             ticket_id=ticket.id,
             run_id=run.id,
-            payload={"agent_id": stage_def.agent_id, "stage_key": target_key},
+            payload={"agent_id": agent_id, "stage_key": target_key},
         )
+        bootstrap_run_log(run)
         return run
 
     def complete_run(
@@ -330,6 +343,7 @@ class OrchestrationService:
                         stage_name = stage_display_name(template, run.stage_key)
                         self._create_approval(ticket, run, stage_name)
                 set_stage_status(ticket, instance, stages, run.stage_key, stage_status)
+                ticket.blocking_issues = ""
             else:
                 ticket.blocking_issues = stderr[:2000] or "Agent run failed"
                 set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
@@ -337,7 +351,32 @@ class OrchestrationService:
             self.session.add(instance)
             self.session.commit()
 
+        if status != RunStatus.SUCCEEDED:
+            artifacts = list(artifacts or [])
+            artifacts.append(
+                {
+                    "kind": "error",
+                    "title": f"Run {run.run_code} failed",
+                    "content": {
+                        "message": stderr[:4000] or ticket.blocking_issues or "Agent run failed",
+                        "run_code": run.run_code,
+                        "agent_id": run.agent_id,
+                        "stage_key": run.stage_key,
+                        "command": run.command or "",
+                    },
+                }
+            )
+
         for item in artifacts or []:
+            if item.get("kind") == "log":
+                existing = self.session.exec(
+                    select(Artifact).where(
+                        Artifact.run_id == run.id,
+                        Artifact.kind == "log",
+                    )
+                ).first()
+                if existing:
+                    continue
             artifact = Artifact(
                 ticket_id=ticket.id,
                 run_id=run.id,
@@ -365,12 +404,14 @@ class OrchestrationService:
             run_id=run.id,
             payload={"status": status.value},
         )
+        finalize_run_log_artifact(run, status=status, stderr=stderr)
         return run
 
     def _create_approval(self, ticket: Ticket, run: AgentRun, stage_name: str) -> None:
         approval = Approval(
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
+            kind=ApprovalKind.WORKFLOW_GATE,
             title=f"Approve {ticket.title}",
             level="high" if ticket.priority == 1 else "medium",
             stage_key=run.stage_key,
@@ -393,12 +434,38 @@ class ApprovalService:
         self.session = session
         self.orchestration = OrchestrationService(session)
 
-    def resolve(self, approval_id: str, *, approved: bool) -> Approval:
+    def resolve(
+        self,
+        approval_id: str,
+        *,
+        approved: bool,
+        answers: dict[str, str | list[str]] | None = None,
+        response_text: str = "",
+    ) -> Approval:
+        from loregarden.agents.executors.permission_bridge import (
+            build_ask_user_question_input,
+            validate_question_answers,
+        )
+
         approval = self.session.get(Approval, approval_id)
         if not approval:
             raise ValueError("Approval not found")
         if approval.status != ApprovalStatus.PENDING:
             raise ValueError("Approval already resolved")
+
+        if approval.kind == ApprovalKind.CLI_QUESTION and approved:
+            tool_input = json.loads(approval.tool_input_json or "{}")
+            validate_question_answers(tool_input, answers, response=response_text)
+            updated_input = build_ask_user_question_input(
+                tool_input,
+                answers=answers or {},
+                response=response_text,
+            )
+            approval.response_json = json.dumps({"updated_input": updated_input})
+        elif approval.kind == ApprovalKind.CLI_PERMISSION and approved:
+            tool_input = json.loads(approval.tool_input_json or "{}")
+            if isinstance(tool_input, dict):
+                approval.response_json = json.dumps({"updated_input": tool_input})
 
         approval.status = ApprovalStatus.APPROVED if approved else ApprovalStatus.REJECTED
         approval.resolved_at = datetime.now(timezone.utc)
@@ -406,7 +473,7 @@ class ApprovalService:
         self.session.commit()
 
         ticket = self.session.get(Ticket, approval.ticket_id)
-        if ticket:
+        if ticket and approval.kind == ApprovalKind.WORKFLOW_GATE:
             instance, stages = self.orchestration._resolve_stages(ticket)
             if instance and stages and approval.stage_key:
                 if approved:

@@ -11,6 +11,8 @@ Your mission is to **relentlessly identify weaknesses, blind spots, and gaps** i
 
 **Workflow compliance:** All execution must comply with the Workflow Enforcement Module (`agent_context/agents/common_assets/workflow_enforcement_v1.md`) in addition to this agent's role definition. Read that module before acting on any ticket.
 
+**Loregarden MCP:** When Loregarden orchestrates this run, read and use `agent_context/agents/common_assets/loregarden_mcp_v1.md` — use MCP tools for ticket workflow state instead of editing project_board WORKFLOW STATE.
+
 ---
 
 ## Core Responsibilities

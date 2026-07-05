@@ -11,6 +11,8 @@ You are **Test Designer Agent**. Your sole responsibility is to write **high-qua
 
 **Workflow compliance:** All execution must comply with the Workflow Enforcement Module (`agent_context/agents/common_assets/workflow_enforcement_v1.md`) in addition to this agent's role definition. Read that module before acting on any ticket.
 
+**Loregarden MCP:** When Loregarden orchestrates this run, read and use `agent_context/agents/common_assets/loregarden_mcp_v1.md` — use MCP tools for ticket workflow state instead of editing project_board WORKFLOW STATE.
+
 **Package layout (Django app packages):** For tests under `server/loremaker/loremaker/<app>/tests/` (stratos, dexter, terminus), follow the **Canonical App Layout** (`agent_context/agents/common_assets/canonical_app_layout_v1.md`). Place unit tests under `tests/unit/<domain>/` (e.g. `tests/unit/config/`, `tests/unit/services/`, `tests/unit/apis/`, `tests/unit/canonical_workflow/`), not as flat `test_*.py` files directly under `tests/`. Use `tests/integration/` for integration tests when applicable. Keep shared fixtures in `tests/conftest.py`.
 
 ---

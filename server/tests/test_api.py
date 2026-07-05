@@ -8,6 +8,12 @@ def _ticket_id_by_external_id(client: TestClient, external_id: str) -> str:
     raise AssertionError(f"ticket not found: {external_id}")
 
 
+def _ticket_detail(client: TestClient, ticket_id: str) -> dict:
+    res = client.get(f"/api/tickets/{ticket_id}")
+    assert res.status_code == 200
+    return res.json()
+
+
 def test_health(client: TestClient):
     res = client.get("/health")
     assert res.status_code == 200
@@ -63,11 +69,20 @@ def test_start_run_specific_stage(client: TestClient):
         json={"manual": True, "stage_key": "planning"},
     )
     assert started.status_code == 200
-    body = started.json()
+    body = _ticket_detail(client, ticket_id)
     assert body["workflow_stage_key"] == "planning"
     assert body["workflow_stage_status"] == "done"
     stages = {s["key"]: s["status"] for s in body["stages"]}
     assert stages["planning"] == "done"
+
+
+def test_start_run_bootstraps_live_log(client: TestClient):
+    ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
+    started = client.post(f"/api/tickets/{ticket_id}/start", json={"manual": True})
+    assert started.status_code == 200
+    body = started.json()
+    assert body["artifacts"]["logs"]
+    assert any(line["tag"] == "RUN" for line in body["artifacts"]["logs"])
 
 
 def test_start_run_success_updates_stage(client: TestClient):
@@ -75,6 +90,9 @@ def test_start_run_success_updates_stage(client: TestClient):
     started = client.post(f"/api/tickets/{ticket_id}/start", json={"manual": True})
     assert started.status_code == 200
     body = started.json()
+    assert body["workflow_stage_status"] in {"running", "done"}
+    if body["workflow_stage_status"] == "running":
+        body = _ticket_detail(client, ticket_id)
     assert body["workflow_stage_status"] == "done"
     assert body["artifacts"]["logs"]
 
@@ -84,7 +102,7 @@ def test_start_run_failure_blocks_ticket(client: TestClient, monkeypatch):
     ticket_id = _ticket_id_by_external_id(client, "01-bootstrap-fastapi-control-plane")
     started = client.post(f"/api/tickets/{ticket_id}/start", json={"manual": True})
     assert started.status_code == 200
-    body = started.json()
+    body = _ticket_detail(client, ticket_id)
     assert body["state"] == "blocked"
     assert body["workflow_stage_status"] == "blocked"
     assert "forced to fail" in body["blocking_issues"].lower()

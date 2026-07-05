@@ -84,3 +84,114 @@ Bootstrap milestone for loregarden self-tracking. Tickets authoritative in SQLit
 
 ## Export: 2026-07-04T20:53:02Z
 - Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T20:59:34Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T20:59:48Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T22:31:33Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T22:32:04Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T22:32:21Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T22:35:19Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T22:40:56Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T22:41:15Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T22:42:31Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T22:42:44Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T22:45:32Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T22:45:56Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T22:55:07Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T22:55:25Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T22:57:49Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T22:58:15Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:01:14Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:06:00Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:06:24Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:11:08Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:15:11Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:19:10Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:22:02Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:22:22Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:24:56Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:27:57Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:28:18Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:31:29Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:31:44Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:34:31Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:40:27Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:44:37Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-04T23:52:29Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-05T00:02:32Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-05T00:12:05Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-05T00:40:27Z
+- Exported 13 tickets from SQLite
+
+## Export: 2026-07-05T01:22:01Z
+- Exported 13 tickets from SQLite

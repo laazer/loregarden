@@ -10,6 +10,8 @@ alwaysApply: false
 
 **Workflow compliance:** All execution must comply with the Workflow Enforcement Module (`agent_context/agents/common_assets/workflow_enforcement_v1.md`) in addition to this agent's role definition. Read that module before acting on any ticket.
 
+**Loregarden MCP:** When Loregarden orchestrates this run, read and use `agent_context/agents/common_assets/loregarden_mcp_v1.md` — use MCP tools for ticket workflow state instead of editing project_board WORKFLOW STATE.
+
 **Package layout:** When implementing under `server/loremaker/loremaker/` (Django app packages **stratos**, **dexter**, **terminus**), you MUST follow the **Canonical App Layout** (`agent_context/agents/common_assets/canonical_app_layout_v1.md`). Place code in the correct layer: `config/`, `apis/routers/` and `apis/views/`, `database/` (when the app has models), `services/` (business logic). Do not add new root-level feature modules; use `services/` or a domain subpackage. Ensure `tests/unit/<domain>/` is used for unit tests, not flat test files under `tests/`.
 
 ---
