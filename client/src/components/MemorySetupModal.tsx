@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type { MemoryConfigResponse, MemoryConfigSettings } from "../api/client";
-import { RepoPathExplorer } from "./RepoPathExplorer";
+import { RepoPathExplorer, sanitizeBrowsePath } from "./RepoPathExplorer";
 
 interface MemorySetupModalProps {
   open: boolean;
@@ -51,10 +51,14 @@ export function MemorySetupModal({
   onRefresh,
 }: MemorySetupModalProps) {
   const [draft, setDraft] = useState<MemoryConfigSettings>(() => data?.config ?? emptyConfig());
+  const [icloudJump, setIcloudJump] = useState("");
+  const [obsidianJump, setObsidianJump] = useState("");
 
   useEffect(() => {
     if (!open || !data?.config) return;
     setDraft(data.config);
+    setIcloudJump("");
+    setObsidianJump("");
   }, [open, data?.config]);
 
   if (!open) return null;
@@ -63,11 +67,50 @@ export function MemorySetupModal({
   const dirty = !configEqual(draft, saved);
   const status = data?.status;
   const defaultIcloud = data?.defaults.icloud_root;
+  const mobileDocuments = data?.defaults.mobile_documents_dir;
+  const obsidianIcloud = data?.defaults.obsidian_icloud_dir;
+  const obsidianDocuments = data?.defaults.obsidian_documents_dir;
+
+  const jumpIcloudExplorer = (path: string) => {
+    const target = sanitizeBrowsePath(path);
+    if (!target) return;
+    setDraft((d) => ({ ...d, icloud_root: target }));
+    setIcloudJump(target);
+  };
 
   const applyDefaultIcloud = () => {
     if (!defaultIcloud) return;
-    setDraft((d) => ({ ...d, icloud_root: defaultIcloud }));
+    jumpIcloudExplorer(defaultIcloud);
   };
+
+  const applyMobileDocuments = () => {
+    if (!mobileDocuments) return;
+    jumpIcloudExplorer(mobileDocuments);
+  };
+
+  const applyObsidianIcloud = () => {
+    if (!obsidianIcloud) return;
+    jumpIcloudExplorer(obsidianIcloud);
+  };
+
+  const openTypedObsidianPath = () => {
+    const target = sanitizeBrowsePath(draft.obsidian_vault_dir);
+    if (!target) return;
+    setDraft((d) => ({ ...d, obsidian_vault_dir: target }));
+    setObsidianJump(target);
+  };
+
+  const icloudBrowseStart =
+    sanitizeBrowsePath(draft.icloud_root) || mobileDocuments || defaultIcloud || ".";
+
+  const obsidianBrowseStart =
+    sanitizeBrowsePath(draft.obsidian_vault_dir) ||
+    obsidianDocuments ||
+    obsidianIcloud ||
+    sanitizeBrowsePath(draft.icloud_root) ||
+    mobileDocuments ||
+    defaultIcloud ||
+    ".";
 
   const suggestMemoryDb = () => {
     const vault = draft.obsidian_vault_dir.trim();
@@ -101,7 +144,8 @@ export function MemorySetupModal({
               iCloud &amp; Obsidian setup
             </h2>
             <p className="modal-subtitle">
-              Configure synced markdown notes and optional SQLite graph storage for agent learnings
+              Configure synced markdown notes and optional SQLite graph storage. Notes and graph DBs
+              are organized per workspace under your vault.
             </p>
           </div>
           <button type="button" className="btn-secondary" disabled={isSaving} onClick={onClose}>
@@ -145,7 +189,9 @@ export function MemorySetupModal({
                   value={draft.icloud_root}
                   disabled={isSaving}
                   placeholder={defaultIcloud ?? "~/Library/Mobile Documents/com~apple~CloudDocs"}
-                  onChange={(e) => setDraft((d) => ({ ...d, icloud_root: e.target.value }))}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, icloud_root: sanitizeBrowsePath(e.target.value) }))
+                  }
                 />
                 <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                   <button
@@ -154,12 +200,47 @@ export function MemorySetupModal({
                     disabled={isSaving || !defaultIcloud}
                     onClick={applyDefaultIcloud}
                   >
-                    Use detected iCloud
+                    iCloud Drive
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary btn-compact"
+                    disabled={isSaving || !mobileDocuments}
+                    onClick={applyMobileDocuments}
+                  >
+                    Mobile Documents
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary btn-compact"
+                    disabled={isSaving || !obsidianIcloud}
+                    onClick={applyObsidianIcloud}
+                  >
+                    Obsidian sync
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary btn-compact"
+                    disabled={isSaving || !draft.icloud_root.trim()}
+                    onClick={() => jumpIcloudExplorer(draft.icloud_root)}
+                  >
+                    Open typed path
                   </button>
                 </div>
+                <p className="modal-hint" style={{ marginTop: 6 }}>
+                  Obsidian&apos;s iCloud vault is <code>iCloud~md~obsidian</code> under Mobile
+                  Documents — not inside iCloud Drive. Use <strong>Obsidian sync</strong> or{" "}
+                  <strong>Mobile Documents</strong>, then open <code>Documents</code>.
+                </p>
                 <RepoPathExplorer
-                  value={draft.icloud_root || defaultIcloud || "."}
-                  onChange={(icloud_root) => setDraft((d) => ({ ...d, icloud_root }))}
+                  explorerKey="memory-icloud"
+                  absolutePaths
+                  value={draft.icloud_root}
+                  startPath={icloudBrowseStart}
+                  navigateTo={icloudJump}
+                  onChange={(icloud_root) =>
+                    setDraft((d) => ({ ...d, icloud_root: sanitizeBrowsePath(icloud_root) }))
+                  }
                   disabled={isSaving}
                 />
               </div>
@@ -171,14 +252,51 @@ export function MemorySetupModal({
                   style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
                   value={draft.obsidian_vault_dir}
                   disabled={isSaving}
-                  placeholder="/path/to/MyVault"
-                  onChange={(e) => setDraft((d) => ({ ...d, obsidian_vault_dir: e.target.value }))}
+                  placeholder={
+                    obsidianDocuments
+                      ? `${obsidianDocuments}/Aetherium/Project Vault`
+                      : "/path/to/MyVault"
+                  }
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, obsidian_vault_dir: sanitizeBrowsePath(e.target.value) }))
+                  }
                 />
+                <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="btn-secondary btn-compact"
+                    disabled={isSaving || !draft.obsidian_vault_dir.trim()}
+                    onClick={openTypedObsidianPath}
+                  >
+                    Open typed path
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary btn-compact"
+                    disabled={isSaving || !obsidianDocuments}
+                    onClick={() => setObsidianJump(obsidianDocuments ?? "")}
+                  >
+                    Browse Obsidian Documents
+                  </button>
+                </div>
                 <RepoPathExplorer
-                  value={draft.obsidian_vault_dir || draft.icloud_root || defaultIcloud || "."}
-                  onChange={(obsidian_vault_dir) => setDraft((d) => ({ ...d, obsidian_vault_dir }))}
+                  key={`memory-obsidian-${obsidianBrowseStart}`}
+                  explorerKey="memory-obsidian"
+                  absolutePaths
+                  value={draft.obsidian_vault_dir}
+                  startPath={obsidianBrowseStart}
+                  navigateTo={obsidianJump}
+                  onChange={(obsidian_vault_dir) =>
+                    setDraft((d) => ({ ...d, obsidian_vault_dir: sanitizeBrowsePath(obsidian_vault_dir) }))
+                  }
                   disabled={isSaving}
                 />
+                <p className="modal-hint" style={{ marginTop: 6 }}>
+                  Obsidian sync lives under{" "}
+                  <code>~/Library/Mobile Documents/iCloud~md~obsidian</code>, not iCloud Drive. Use
+                  “Browse Obsidian Documents”, then open <code>Aetherium</code> →{" "}
+                  <code>Project Vault</code>.
+                </p>
               </div>
 
               <div className="modal-field">
@@ -224,7 +342,8 @@ export function MemorySetupModal({
                   </button>
                 </div>
                 <p className="modal-hint" style={{ marginTop: 6 }}>
-                  Stored in iCloud uses DELETE journal mode to avoid sync conflicts.
+                  Base path for graph DBs. Each workspace gets its own subfolder (e.g. Loregarden/
+                  {"{workspace}"}/memory.db). iCloud uses DELETE journal mode to avoid sync conflicts.
                 </p>
               </div>
 

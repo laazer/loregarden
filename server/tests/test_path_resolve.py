@@ -3,11 +3,13 @@ from pathlib import Path
 import pytest
 
 from loregarden.services.path_resolve import (
+    detect_obsidian_documents_dir,
     expand_path,
     is_under_icloud,
     resolve_icloud_root,
     resolve_sqlite_path,
     sqlite_url_for_path,
+    unescape_shell_path,
 )
 
 
@@ -52,3 +54,27 @@ def test_resolve_icloud_root_override(tmp_path):
 def test_sqlite_url_for_path_absolute():
     path = Path("/tmp/test.db")
     assert sqlite_url_for_path(path) == f"sqlite:///{path.resolve()}"
+
+
+def test_unescape_shell_path():
+    raw = r"/Users/me/Library/Mobile\ Documents/iCloud\~md\~obsidian/Documents/Project\ Vault"
+    assert unescape_shell_path(raw) == (
+        "/Users/me/Library/Mobile Documents/iCloud~md~obsidian/Documents/Project Vault"
+    )
+
+
+def test_expand_path_unescapes_shell_spaces(tmp_path):
+    target = tmp_path / "Project Vault"
+    target.mkdir()
+    escaped = str(target).replace(" ", r"\ ")
+    assert expand_path(escaped) == target.resolve()
+
+
+def test_detect_obsidian_documents_dir_when_present(monkeypatch, tmp_path):
+    docs = tmp_path / "iCloud~md~obsidian" / "Documents"
+    docs.mkdir(parents=True)
+    monkeypatch.setattr(
+        "loregarden.services.path_resolve.OBSIDIAN_ICLOUD_CONTAINER",
+        tmp_path / "iCloud~md~obsidian",
+    )
+    assert detect_obsidian_documents_dir() == docs.resolve()

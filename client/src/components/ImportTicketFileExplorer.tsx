@@ -1,7 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 
 import { api } from "../api/client";
+import { usePathBrowse } from "../hooks/usePathBrowse";
+import { PathExplorerToolbar } from "./PathExplorerToolbar";
 
 export interface SelectedImportFile {
   path: string;
@@ -13,30 +14,32 @@ interface ImportTicketFileExplorerProps {
   selectedFiles: Map<string, SelectedImportFile>;
   onToggleFile: (file: SelectedImportFile, checked: boolean) => void;
   disabled?: boolean;
-  initialPath?: string;
+  startPath?: string;
+  navigateTo?: string;
+  explorerKey?: string;
 }
 
 export function ImportTicketFileExplorer({
   selectedFiles,
   onToggleFile,
   disabled = false,
-  initialPath = ".",
+  startPath = ".",
+  navigateTo = "",
+  explorerKey = "import-tickets",
 }: ImportTicketFileExplorerProps) {
-  const [browsePath, setBrowsePath] = useState<string | undefined>(undefined);
+  const fetchListing = useCallback(
+    (seed: string) => api.browseImportDirectory(seed === "." ? undefined : seed),
+    [],
+  );
 
-  useEffect(() => {
-    if (!disabled) {
-      setBrowsePath(initialPath);
-    }
-  }, [disabled, initialPath]);
-
-  const browse = useQuery({
-    queryKey: ["browse-import", browsePath ?? initialPath ?? "."],
-    queryFn: () => api.browseImportDirectory(browsePath ?? initialPath ?? "."),
+  const { data, loading, pathMismatch, error, displayPath, navigate, resetBrowse } = usePathBrowse({
+    explorerKey,
+    startPath,
+    navigateTo,
     enabled: !disabled,
+    fetchListing,
   });
 
-  const data = browse.data;
   const directories = useMemo(
     () => (data?.entries ?? []).filter((entry) => entry.kind === "directory"),
     [data?.entries],
@@ -46,51 +49,36 @@ export function ImportTicketFileExplorer({
     [data?.entries],
   );
 
-  const navigate = (path: string) => {
-    setBrowsePath(path);
-  };
-
   return (
     <div className="repo-path-explorer import-file-explorer">
-      <div className="repo-path-explorer-toolbar">
-        <button
-          type="button"
-          className="btn-secondary btn-compact"
-          disabled={disabled || !data?.parent_path || browse.isFetching}
-          onClick={() => data?.parent_path && navigate(data.parent_path)}
-        >
-          ↑ Up
-        </button>
-        <button
-          type="button"
-          className="btn-secondary btn-compact"
-          disabled={disabled || browse.isFetching}
-          onClick={() => data?.repo_root && navigate(data.repo_root)}
-        >
-          Loregarden root
-        </button>
-        <button
-          type="button"
-          className="btn-secondary btn-compact"
-          disabled={disabled || browse.isFetching}
-          onClick={() => navigate(initialPath)}
-        >
-          Workspace root
-        </button>
+      <PathExplorerToolbar
+        disabled={disabled}
+        loading={loading}
+        parentPath={data?.parent_path}
+        onUp={() => data?.parent_path && navigate(data.parent_path)}
+        onRoot={() => data?.repo_root && navigate(data.repo_root)}
+        onStart={resetBrowse}
+        startLabel="Workspace root"
+      />
+
+      <div className="repo-path-explorer-path" title={displayPath}>
+        {loading ? `Opening ${displayPath}…` : displayPath}
       </div>
 
-      <div className="repo-path-explorer-path" title={data?.current_path}>
-        {data?.current_path ?? "Loading…"}
-      </div>
-
-      {browse.error && (
+      {pathMismatch && data?.current_path && (
         <p className="modal-hint" style={{ color: "var(--rdl)", margin: "6px 10px 0" }}>
-          {browse.error instanceof Error ? browse.error.message : "Failed to browse directory"}
+          Could not open the requested folder. Showing <code>{data.current_path}</code> instead.
+        </p>
+      )}
+
+      {error && (
+        <p className="modal-hint" style={{ color: "var(--rdl)", margin: "6px 10px 0" }}>
+          {error instanceof Error ? error.message : "Failed to browse directory"}
         </p>
       )}
 
       <div className="repo-path-explorer-list import-file-explorer-list" aria-label="Import files">
-        {browse.isFetching && !data ? (
+        {loading ? (
           <div className="repo-path-explorer-empty">Loading…</div>
         ) : (
           <>
@@ -100,8 +88,16 @@ export function ImportTicketFileExplorer({
                 type="button"
                 className="list-btn repo-path-explorer-item"
                 disabled={disabled}
-                onClick={() => navigate(entry.path)}
-                onDoubleClick={() => navigate(entry.path)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  navigate(entry.path);
+                }}
+                onDoubleClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  navigate(entry.path);
+                }}
               >
                 <span className="repo-path-explorer-folder" aria-hidden>
                   📁
@@ -138,7 +134,7 @@ export function ImportTicketFileExplorer({
               );
             })}
 
-            {!browse.isFetching && directories.length === 0 && files.length === 0 && (
+            {!loading && directories.length === 0 && files.length === 0 && (
               <div className="repo-path-explorer-empty">No importable files in this folder</div>
             )}
           </>

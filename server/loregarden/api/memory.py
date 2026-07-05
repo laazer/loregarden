@@ -30,8 +30,8 @@ def _memory_config_response() -> dict:
 
 
 @router.get("/status")
-def memory_status() -> dict:
-    return AgentMemoryService.from_settings().status()
+def memory_status(workspace_slug: str = "") -> dict:
+    return AgentMemoryService.from_settings().status(workspace_slug=workspace_slug)
 
 
 @router.get("/config")

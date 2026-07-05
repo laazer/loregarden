@@ -7,7 +7,14 @@ from pathlib import Path
 from typing import Any
 
 from loregarden.config import settings
-from loregarden.services.path_resolve import detect_icloud_root, expand_path, resolve_sqlite_path
+from loregarden.services.path_resolve import (
+    detect_icloud_root,
+    detect_mobile_documents_root,
+    detect_obsidian_documents_dir,
+    detect_obsidian_icloud_dir,
+    expand_path,
+    resolve_sqlite_path,
+)
 
 MEMORY_CONFIG_FILENAME = "memory.local.json"
 CONFIG_KEYS = (
@@ -103,6 +110,12 @@ def _validate_memory_config(payload: dict[str, Any]) -> dict[str, str]:
 
 def memory_config_defaults() -> dict[str, str | None]:
     detected = detect_icloud_root()
+    mobile = detect_mobile_documents_root()
+    obsidian_icloud = detect_obsidian_icloud_dir()
+    obsidian_documents = detect_obsidian_documents_dir()
     return {
         "icloud_root": str(detected) if detected else None,
+        "mobile_documents_dir": str(mobile) if mobile else None,
+        "obsidian_icloud_dir": str(obsidian_icloud) if obsidian_icloud else None,
+        "obsidian_documents_dir": str(obsidian_documents) if obsidian_documents else None,
     }

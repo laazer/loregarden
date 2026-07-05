@@ -148,7 +148,9 @@ export function AddWorkspaceModal({
               onChange={(e) => setDraft((d) => ({ ...d, repo_path: e.target.value }))}
             />
             <RepoPathExplorer
+              explorerKey="workspace-repo"
               value={draft.repo_path}
+              startPath={draft.repo_path || "."}
               onChange={(repo_path) => setDraft((d) => ({ ...d, repo_path }))}
               disabled={isSaving}
             />

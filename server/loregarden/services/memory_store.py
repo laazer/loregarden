@@ -67,8 +67,8 @@ class ObsidianMemoryStore:
 
     def __init__(self, vault_dir: Path) -> None:
         self.vault_dir = vault_dir.resolve()
-        self.memory_dir = self.vault_dir / settings.obsidian_memory_subdir
-        self.learnings_dir = self.vault_dir / settings.obsidian_learnings_subdir
+        self._memory_subdir = settings.obsidian_memory_subdir
+        self._learnings_subdir = settings.obsidian_learnings_subdir
 
     @classmethod
     def from_settings(cls) -> ObsidianMemoryStore | None:
@@ -77,8 +77,28 @@ class ObsidianMemoryStore:
             return None
         return cls(vault)
 
-    def _note_path(self, *, note_type: str, note_id: str, title: str) -> Path:
-        base = self.learnings_dir if note_type == "learning" else self.memory_dir
+    def _workspace_segment(self, workspace_slug: str) -> str:
+        return _slugify(workspace_slug.strip()) if workspace_slug.strip() else ""
+
+    def memory_dir(self, workspace_slug: str = "") -> Path:
+        base = self.vault_dir / self._memory_subdir
+        segment = self._workspace_segment(workspace_slug)
+        return base / segment if segment else base
+
+    def learnings_dir(self, workspace_slug: str = "") -> Path:
+        base = self.vault_dir / self._learnings_subdir
+        segment = self._workspace_segment(workspace_slug)
+        return base / segment if segment else base
+
+    def _note_path(
+        self,
+        *,
+        note_type: str,
+        note_id: str,
+        title: str,
+        workspace_slug: str = "",
+    ) -> Path:
+        base = self.learnings_dir(workspace_slug) if note_type == "learning" else self.memory_dir(workspace_slug)
         filename = f"{_slugify(title)}-{note_id[:8]}.md"
         return base / filename
 
@@ -96,7 +116,12 @@ class ObsidianMemoryStore:
         note_id = note_id.strip() or str(uuid4())
         tags = list(tags or [])
         now = _utcnow_iso()
-        path = self._note_path(note_type=note_type, note_id=note_id, title=title)
+        path = self._note_path(
+            note_type=note_type,
+            note_id=note_id,
+            title=title,
+            workspace_slug=workspace_slug,
+        )
         path.parent.mkdir(parents=True, exist_ok=True)
 
         created_at = now
@@ -151,8 +176,19 @@ class ObsidianMemoryStore:
             note_type="learning",
         )
 
-    def list_notes(self, *, note_type: str = "", limit: int = 50) -> list[MemoryNote]:
-        roots = [self.memory_dir, self.learnings_dir]
+    def list_notes(
+        self,
+        *,
+        note_type: str = "",
+        workspace_slug: str = "",
+        limit: int = 50,
+    ) -> list[MemoryNote]:
+        if workspace_slug.strip():
+            roots = [self.memory_dir(workspace_slug), self.learnings_dir(workspace_slug)]
+        else:
+            memory_root = self.vault_dir / self._memory_subdir
+            learnings_root = self.vault_dir / self._learnings_subdir
+            roots = [p for p in (memory_root, learnings_root) if p.is_dir()]
         notes: list[MemoryNote] = []
         for root in roots:
             if not root.is_dir():
@@ -160,17 +196,25 @@ class ObsidianMemoryStore:
             for path in sorted(root.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
                 note = self._read_note(path)
                 if note and (not note_type or note.note_type == note_type):
+                    if workspace_slug.strip() and note.workspace_slug != workspace_slug.strip():
+                        continue
                     notes.append(note)
                 if len(notes) >= limit:
                     return notes
         return notes
 
-    def search(self, query: str, *, limit: int = 20) -> list[MemoryNote]:
+    def search(
+        self,
+        query: str,
+        *,
+        workspace_slug: str = "",
+        limit: int = 20,
+    ) -> list[MemoryNote]:
         needle = query.strip().lower()
         if not needle:
             return []
         hits: list[MemoryNote] = []
-        for note in self.list_notes(limit=500):
+        for note in self.list_notes(workspace_slug=workspace_slug, limit=500):
             haystack = f"{note.title}\n{note.body}\n{' '.join(note.tags)}".lower()
             if needle in haystack:
                 hits.append(note)
@@ -267,6 +311,7 @@ class MemoryGraphStore:
                     FOREIGN KEY(target_id) REFERENCES memory_nodes(id)
                 );
                 CREATE INDEX IF NOT EXISTS ix_memory_nodes_ticket ON memory_nodes(ticket_id);
+                CREATE INDEX IF NOT EXISTS ix_memory_nodes_workspace ON memory_nodes(workspace_slug);
                 CREATE INDEX IF NOT EXISTS ix_memory_relations_source ON memory_relations(source_id);
                 """
             )
@@ -352,21 +397,41 @@ class MemoryGraphStore:
             "created_at": now,
         }
 
-    def search(self, query: str, *, limit: int = 20) -> list[dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        *,
+        workspace_slug: str = "",
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
         needle = f"%{query.strip()}%"
         if query.strip() == "":
             return []
+        slug = workspace_slug.strip()
         with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT id, title, body, tags_json, ticket_id, workspace_slug, node_type, created_at, updated_at
-                FROM memory_nodes
-                WHERE title LIKE ? OR body LIKE ? OR tags_json LIKE ?
-                ORDER BY updated_at DESC
-                LIMIT ?
-                """,
-                (needle, needle, needle, limit),
-            ).fetchall()
+            if slug:
+                rows = conn.execute(
+                    """
+                    SELECT id, title, body, tags_json, ticket_id, workspace_slug, node_type, created_at, updated_at
+                    FROM memory_nodes
+                    WHERE workspace_slug = ?
+                      AND (title LIKE ? OR body LIKE ? OR tags_json LIKE ?)
+                    ORDER BY updated_at DESC
+                    LIMIT ?
+                    """,
+                    (slug, needle, needle, needle, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT id, title, body, tags_json, ticket_id, workspace_slug, node_type, created_at, updated_at
+                    FROM memory_nodes
+                    WHERE title LIKE ? OR body LIKE ? OR tags_json LIKE ?
+                    ORDER BY updated_at DESC
+                    LIMIT ?
+                    """,
+                    (needle, needle, needle, limit),
+                ).fetchall()
         return [
             {
                 "id": row["id"],
@@ -387,34 +452,51 @@ class MemoryGraphStore:
 
 
 class AgentMemoryService:
-    """Facade — writes to Obsidian and/or memory SQLite when configured."""
+    """Facade — writes to Obsidian and/or per-workspace memory SQLite when configured."""
 
     def __init__(
         self,
         obsidian: ObsidianMemoryStore | None = None,
-        graph: MemoryGraphStore | None = None,
+        graph_sqlite_base: Path | None = None,
     ) -> None:
         self.obsidian = obsidian
-        self.graph = graph
+        self._graph_sqlite_base = graph_sqlite_base
 
     @classmethod
     def from_settings(cls) -> AgentMemoryService:
         return cls(
             obsidian=ObsidianMemoryStore.from_settings(),
-            graph=MemoryGraphStore.from_settings(),
+            graph_sqlite_base=resolved_memory_sqlite_path(),
         )
 
-    def status(self) -> dict[str, Any]:
+    def _graph_path_for_workspace(self, workspace_slug: str) -> Path | None:
+        base = self._graph_sqlite_base or resolved_memory_sqlite_path()
+        if not base:
+            return None
+        slug = workspace_slug.strip()
+        if not slug:
+            return base
+        return base.parent / slug / base.name
+
+    def _graph_for_workspace(self, workspace_slug: str) -> MemoryGraphStore | None:
+        path = self._graph_path_for_workspace(workspace_slug)
+        if not path:
+            return None
+        return MemoryGraphStore(path)
+
+    def status(self, *, workspace_slug: str = "") -> dict[str, Any]:
         obsidian_vault = resolved_obsidian_vault()
-        memory_db = resolved_memory_sqlite_path()
+        memory_db = resolved_memory_sqlite_path(workspace_slug)
+        slug = workspace_slug.strip()
         return {
-            "enabled": self.obsidian is not None or self.graph is not None,
+            "enabled": self.obsidian is not None or memory_db is not None,
+            "workspace_slug": slug or None,
             "obsidian_vault": str(obsidian_vault) if obsidian_vault else None,
             "obsidian_memory_dir": (
-                str(obsidian_vault / settings.obsidian_memory_subdir) if obsidian_vault else None
+                str(self.obsidian.memory_dir(slug)) if self.obsidian and obsidian_vault else None
             ),
             "obsidian_learnings_dir": (
-                str(obsidian_vault / settings.obsidian_learnings_subdir) if obsidian_vault else None
+                str(self.obsidian.learnings_dir(slug)) if self.obsidian and obsidian_vault else None
             ),
             "memory_sqlite_path": str(memory_db) if memory_db else None,
             "memory_sqlite_in_icloud": (
@@ -433,7 +515,8 @@ class AgentMemoryService:
         content: str,
         tags: list[str] | None = None,
     ) -> dict[str, Any]:
-        if not self.obsidian and not self.graph:
+        graph = self._graph_for_workspace(workspace_slug)
+        if not self.obsidian and not graph:
             raise ValueError(
                 "No memory backend configured. Set LOREGARDEN_OBSIDIAN_VAULT_DIR and/or "
                 "LOREGARDEN_MEMORY_SQLITE_URL (or enable iCloud defaults)."
@@ -451,8 +534,8 @@ class AgentMemoryService:
                 "path": note.path,
                 "updated_at": note.updated_at,
             }
-        if self.graph:
-            node = self.graph.upsert_node(
+        if graph:
+            node = graph.upsert_node(
                 title=f"Learning — {ticket_id}",
                 body=content,
                 tags=["learning", "loregarden", *(tags or [])],
@@ -473,7 +556,8 @@ class AgentMemoryService:
         ticket_id: str = "",
         workspace_slug: str = "",
     ) -> dict[str, Any]:
-        if not self.obsidian and not self.graph:
+        graph = self._graph_for_workspace(workspace_slug)
+        if not self.obsidian and not graph:
             raise ValueError("No memory backend configured.")
         result: dict[str, Any] = {}
         if self.obsidian:
@@ -487,8 +571,8 @@ class AgentMemoryService:
                 note_type="memory",
             )
             result["obsidian"] = {"id": note.id, "path": note.path, "updated_at": note.updated_at}
-        if self.graph:
-            result["graph"] = self.graph.upsert_node(
+        if graph:
+            result["graph"] = graph.upsert_node(
                 node_id=node_id,
                 title=title,
                 body=body,
@@ -505,18 +589,27 @@ class AgentMemoryService:
         source_id: str,
         target_id: str,
         relation_type: str = "related",
+        workspace_slug: str = "",
     ) -> dict[str, Any]:
-        if not self.graph:
+        graph = self._graph_for_workspace(workspace_slug)
+        if not graph:
             raise ValueError("Memory graph SQLite is not configured.")
-        return self.graph.create_relation(
+        return graph.create_relation(
             source_id=source_id,
             target_id=target_id,
             relation_type=relation_type,
         )
 
-    def search(self, query: str, *, limit: int = 20) -> dict[str, Any]:
+    def search(
+        self,
+        query: str,
+        *,
+        workspace_slug: str = "",
+        limit: int = 20,
+    ) -> dict[str, Any]:
         obsidian_hits: list[dict[str, Any]] = []
         graph_hits: list[dict[str, Any]] = []
+        graph = self._graph_for_workspace(workspace_slug)
         if self.obsidian:
             obsidian_hits = [
                 {
@@ -530,8 +623,16 @@ class AgentMemoryService:
                     "path": n.path,
                     "source": "obsidian",
                 }
-                for n in self.obsidian.search(query, limit=limit)
+                for n in self.obsidian.search(query, workspace_slug=workspace_slug, limit=limit)
             ]
-        if self.graph:
-            graph_hits = [{**row, "source": "sqlite"} for row in self.graph.search(query, limit=limit)]
-        return {"query": query, "obsidian": obsidian_hits, "graph": graph_hits}
+        if graph:
+            graph_hits = [
+                {**row, "source": "sqlite"}
+                for row in graph.search(query, workspace_slug=workspace_slug, limit=limit)
+            ]
+        return {
+            "query": query,
+            "workspace_slug": workspace_slug.strip() or None,
+            "obsidian": obsidian_hits,
+            "graph": graph_hits,
+        }

@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 ICLOUD_DRIVE_CONTAINER = Path.home() / "Library/Mobile Documents/com~apple~CloudDocs"
+MOBILE_DOCUMENTS_CONTAINER = Path.home() / "Library/Mobile Documents"
+OBSIDIAN_ICLOUD_CONTAINER = MOBILE_DOCUMENTS_CONTAINER / "iCloud~md~obsidian"
+
+
+def unescape_shell_path(raw: str) -> str:
+    """Undo shell-style escapes in pasted paths (e.g. ``Mobile\\ Documents``)."""
+    return re.sub(r"\\(.)", r"\1", raw.strip())
 
 
 def expand_path(raw: str | Path, *, repo_root: Path | None = None) -> Path:
-    text = str(raw).strip()
+    text = unescape_shell_path(str(raw))
     if not text:
         raise ValueError("path is required")
     path = Path(os.path.expanduser(text))
@@ -18,9 +26,28 @@ def expand_path(raw: str | Path, *, repo_root: Path | None = None) -> Path:
     return path.resolve(strict=False)
 
 
+def detect_mobile_documents_root() -> Path | None:
+    if MOBILE_DOCUMENTS_CONTAINER.is_dir():
+        return MOBILE_DOCUMENTS_CONTAINER.resolve()
+    return None
+
+
 def detect_icloud_root() -> Path | None:
     if ICLOUD_DRIVE_CONTAINER.is_dir():
         return ICLOUD_DRIVE_CONTAINER.resolve()
+    return None
+
+
+def detect_obsidian_icloud_dir() -> Path | None:
+    if OBSIDIAN_ICLOUD_CONTAINER.is_dir():
+        return OBSIDIAN_ICLOUD_CONTAINER.resolve()
+    return None
+
+
+def detect_obsidian_documents_dir() -> Path | None:
+    docs = OBSIDIAN_ICLOUD_CONTAINER / "Documents"
+    if docs.is_dir():
+        return docs.resolve()
     return None
 
 

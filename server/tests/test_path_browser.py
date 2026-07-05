@@ -6,6 +6,7 @@ from loregarden.services.path_browser import (
     assert_browse_allowed,
     list_browse,
     list_import_browse,
+    normalize_browse_target,
     read_import_files,
     resolve_browse_target,
     to_workspace_repo_path,
@@ -89,7 +90,41 @@ def test_read_import_files(tmp_path, monkeypatch):
     assert files == [("ticket.json", '{"title":"Hello"}')]
 
 
-def test_browse_directory_api(client, tmp_path, monkeypatch):
+def test_normalize_browse_target_falls_back_for_sqlite_url(tmp_path):
+    repo = tmp_path / "loregarden"
+    repo.mkdir()
+    assert normalize_browse_target("sqlite:///data/loregarden.db", repo_root=repo) == repo.resolve()
+
+
+def test_normalize_browse_target_unescapes_shell_spaces(tmp_path, monkeypatch):
+    repo = tmp_path / "loregarden"
+    vault = tmp_path / "Project Vault"
+    repo.mkdir()
+    vault.mkdir()
+    monkeypatch.setattr("loregarden.services.path_browser.BROWSE_CEILING", tmp_path.resolve())
+    escaped = str(vault).replace(" ", r"\ ")
+    assert normalize_browse_target(escaped, repo_root=repo) == vault.resolve()
+
+
+def test_normalize_browse_target_uses_parent_for_file_seed(tmp_path, monkeypatch):
+    repo = tmp_path / "loregarden"
+    repo.mkdir()
+    db_file = repo / "memory.db"
+    db_file.write_text("", encoding="utf-8")
+    monkeypatch.setattr("loregarden.services.path_browser.BROWSE_CEILING", tmp_path.resolve())
+    assert normalize_browse_target(str(db_file), repo_root=repo) == repo.resolve()
+
+
+def test_normalize_browse_target_walks_up_missing_path(tmp_path, monkeypatch):
+    repo = tmp_path / "loregarden"
+    repo.mkdir()
+    (repo / "vault").mkdir()
+    monkeypatch.setattr("loregarden.services.path_browser.BROWSE_CEILING", tmp_path.resolve())
+    missing = repo / "vault" / "missing" / "nested"
+    assert normalize_browse_target(str(missing), repo_root=repo) == (repo / "vault").resolve()
+
+
+def test_browse_directory_api_accepts_sqlite_url_seed(client, tmp_path, monkeypatch):
     repo = tmp_path / "loregarden"
     sibling = tmp_path / "blobert"
     repo.mkdir()
@@ -111,3 +146,7 @@ def test_browse_directory_api(client, tmp_path, monkeypatch):
 
     blocked = client.get("/api/system/browse", params={"path": "/etc"})
     assert blocked.status_code == 400
+
+    sqlite_seed = client.get("/api/system/browse", params={"path": "sqlite:///data/loregarden.db"})
+    assert sqlite_seed.status_code == 200
+    assert sqlite_seed.json()["repo_path"] == "."

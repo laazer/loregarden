@@ -17,6 +17,24 @@ def vault_dir(tmp_path):
     return vault
 
 
+def test_obsidian_append_learning_writes_workspace_subdir(vault_dir):
+    store = ObsidianMemoryStore(vault_dir)
+    note = store.append_learning(
+        ticket_id="feat-memory",
+        workspace_slug="loregarden",
+        content="Always use DELETE journal on iCloud SQLite.",
+        tags=["sqlite"],
+    )
+    path = vault_dir / note.path
+    assert path.is_file()
+    assert "loregarden" in str(path)
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("---\n")
+    assert 'type: "learning"' in text
+    assert "feat-memory" in text
+    assert "DELETE journal" in text
+
+
 def test_obsidian_append_learning_writes_frontmatter_note(vault_dir):
     store = ObsidianMemoryStore(vault_dir)
     note = store.append_learning(
@@ -34,6 +52,23 @@ def test_obsidian_append_learning_writes_frontmatter_note(vault_dir):
     assert "DELETE journal" in text
 
 
+def test_obsidian_search_scoped_to_workspace(vault_dir):
+    store = ObsidianMemoryStore(vault_dir)
+    store.upsert_note(
+        title="Loregarden pattern",
+        body="Scoped to loregarden workspace.",
+        workspace_slug="loregarden",
+    )
+    store.upsert_note(
+        title="Other pattern",
+        body="Scoped to other workspace.",
+        workspace_slug="other",
+    )
+    hits = store.search("pattern", workspace_slug="loregarden")
+    assert len(hits) == 1
+    assert hits[0].title == "Loregarden pattern"
+
+
 def test_obsidian_search_finds_note(vault_dir):
     store = ObsidianMemoryStore(vault_dir)
     store.upsert_note(
@@ -44,6 +79,17 @@ def test_obsidian_search_finds_note(vault_dir):
     hits = store.search("permission bridge")
     assert len(hits) == 1
     assert hits[0].title == "Permission bridge timeout"
+
+
+def test_memory_graph_workspace_scoped_db(tmp_path):
+    base = tmp_path / "Loregarden" / "memory.db"
+    ws_a = MemoryGraphStore(base.parent / "loregarden" / base.name)
+    ws_b = MemoryGraphStore(base.parent / "other" / base.name)
+    ws_a.upsert_node(title="Pattern A", body="Workspace A only.", workspace_slug="loregarden")
+    ws_b.upsert_node(title="Pattern B", body="Workspace B only.", workspace_slug="other")
+    assert len(ws_a.search("Pattern", workspace_slug="loregarden")) == 1
+    assert len(ws_b.search("Pattern", workspace_slug="other")) == 1
+    assert len(ws_a.search("Pattern", workspace_slug="other")) == 0
 
 
 def test_memory_graph_upsert_and_relation(tmp_path):
@@ -74,7 +120,7 @@ def test_memory_graph_uses_delete_journal_in_icloud(tmp_path, monkeypatch):
 def test_agent_memory_service_dual_write(vault_dir, tmp_path):
     service = AgentMemoryService(
         obsidian=ObsidianMemoryStore(vault_dir),
-        graph=MemoryGraphStore(tmp_path / "graph.db"),
+        graph_sqlite_base=tmp_path / "Loregarden" / "memory.db",
     )
     result = service.append_learning(
         ticket_id="t-01",
@@ -83,9 +129,13 @@ def test_agent_memory_service_dual_write(vault_dir, tmp_path):
     )
     assert "obsidian" in result
     assert "graph" in result
-    search = service.search("dual-write")
+    assert "loregarden" in result["obsidian"]["path"]
+    search = service.search("dual-write", workspace_slug="loregarden")
     assert len(search["obsidian"]) == 1
     assert len(search["graph"]) == 1
+    other_search = service.search("dual-write", workspace_slug="other")
+    assert len(other_search["obsidian"]) == 0
+    assert len(other_search["graph"]) == 0
 
 
 def test_mcp_memory_tools(client, vault_dir, tmp_path, monkeypatch):
@@ -113,6 +163,7 @@ def test_mcp_memory_tools(client, vault_dir, tmp_path, monkeypatch):
                     "title": "Checkpoint protocol",
                     "body": "Subagents write scoped logs only.",
                     "tags": ["workflow"],
+                    "workspace_slug": "loregarden",
                 },
             )
         )
@@ -123,7 +174,7 @@ def test_mcp_memory_tools(client, vault_dir, tmp_path, monkeypatch):
             execute_tool(
                 session,
                 "loregarden_search_memory",
-                {"query": "checkpoint"},
+                {"query": "checkpoint", "workspace_slug": "loregarden"},
             )
         )
         assert len(search["obsidian"]) >= 1

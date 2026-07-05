@@ -261,17 +261,23 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
         return payload
 
     if name == "loregarden_search_memory":
-        return {
+        payload = {
             "query": _coerce_string(args.get("query"), field="query"),
             "limit": _coerce_optional_int(args.get("limit")) or 20,
         }
+        if args.get("workspace_slug") is not None:
+            payload["workspace_slug"] = _coerce_optional_string(args.get("workspace_slug")) or ""
+        return payload
 
     if name == "loregarden_create_memory_relation":
-        return {
+        payload = {
             "source_id": _coerce_string(args.get("source_id"), field="source_id"),
             "target_id": _coerce_string(args.get("target_id"), field="target_id"),
             "relation_type": _coerce_optional_string(args.get("relation_type")) or "related",
         }
+        if args.get("workspace_slug") is not None:
+            payload["workspace_slug"] = _coerce_optional_string(args.get("workspace_slug")) or ""
+        return payload
 
     return args
 
@@ -538,10 +544,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "loregarden_search_memory",
-        "description": "Search Obsidian notes and memory graph nodes.",
+        "description": "Search Obsidian notes and memory graph nodes, optionally scoped to a workspace.",
         "inputSchema": _tool_schema(
             properties={
                 "query": _string_prop("Search text."),
+                "workspace_slug": _string_prop("Optional workspace slug to scope results."),
                 "limit": _integer_prop("Max results per backend (default 20)."),
             },
             required=["query"],
@@ -549,12 +556,13 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "loregarden_create_memory_relation",
-        "description": "Link two memory graph nodes in the SQLite memory store.",
+        "description": "Link two memory graph nodes in the workspace-scoped SQLite memory store.",
         "inputSchema": _tool_schema(
             properties={
                 "source_id": _string_prop("Source memory node id."),
                 "target_id": _string_prop("Target memory node id."),
                 "relation_type": _string_prop("Relation label (default related)."),
+                "workspace_slug": _string_prop("Workspace slug for the memory graph DB."),
             },
             required=["source_id", "target_id"],
         ),
@@ -670,7 +678,11 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
         return json.dumps(result, indent=2)
 
     if name == "loregarden_search_memory":
-        result = memory.search(arguments["query"], limit=int(arguments.get("limit") or 20))
+        result = memory.search(
+            arguments["query"],
+            workspace_slug=arguments.get("workspace_slug", ""),
+            limit=int(arguments.get("limit") or 20),
+        )
         return json.dumps(result, indent=2)
 
     if name == "loregarden_create_memory_relation":
@@ -678,6 +690,7 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
             source_id=arguments["source_id"],
             target_id=arguments["target_id"],
             relation_type=arguments.get("relation_type", "related"),
+            workspace_slug=arguments.get("workspace_slug", ""),
         )
         return json.dumps(result, indent=2)
 

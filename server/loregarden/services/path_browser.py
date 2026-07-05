@@ -28,6 +28,45 @@ def resolve_browse_target(raw: str | None, *, repo_root: Path | None = None) -> 
     return expand_path(text, repo_root=root).resolve()
 
 
+def normalize_browse_target(raw: str | None, *, repo_root: Path | None = None) -> Path:
+    """Resolve a browse path, falling back when the seed is a file, URL, or missing path."""
+    root = (repo_root or settings.repo_root).resolve()
+    text = (raw or "").strip()
+    if not text or text == ".":
+        return root
+    if text.lower().startswith("sqlite:///"):
+        return root
+
+    try:
+        target = assert_browse_allowed(resolve_browse_target(text, repo_root=root))
+    except ValueError as exc:
+        if "outside the allowed browse scope" in str(exc):
+            raise
+        return root
+
+    if target.is_file():
+        target = target.parent
+    if target.is_dir():
+        return target
+
+    cursor = target
+    for _ in range(32):
+        parent = cursor.parent
+        if parent == cursor:
+            break
+        try:
+            parent = assert_browse_allowed(parent)
+        except ValueError:
+            break
+        if parent.is_dir():
+            return parent
+        cursor = parent
+
+    if root.is_dir():
+        return root
+    raise ValueError(f"Not a directory: {target}")
+
+
 def assert_browse_allowed(path: Path) -> Path:
     resolved = path.resolve()
     if not is_under(resolved, BROWSE_CEILING):

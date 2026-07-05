@@ -84,7 +84,7 @@ def resolved_database_path() -> Path:
     return resolve_sqlite_path(settings.database_url, settings.repo_root)
 
 
-def resolved_memory_sqlite_path() -> Path | None:
+def _memory_sqlite_base_path() -> Path | None:
     raw = settings.memory_sqlite_url.strip()
     if raw:
         return resolve_sqlite_path(raw, settings.repo_root)
@@ -95,6 +95,16 @@ def resolved_memory_sqlite_path() -> Path | None:
     if icloud:
         return icloud / "Loregarden" / "memory.db"
     return None
+
+
+def resolved_memory_sqlite_path(workspace_slug: str = "") -> Path | None:
+    base = _memory_sqlite_base_path()
+    if not base:
+        return None
+    slug = workspace_slug.strip()
+    if not slug:
+        return base
+    return base.parent / slug / base.name
 
 
 def memory_backends_enabled() -> bool:

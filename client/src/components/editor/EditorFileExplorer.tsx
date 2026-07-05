@@ -1,7 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 import { api } from "../../api/client";
+import { usePathBrowse } from "../../hooks/usePathBrowse";
+import { PathExplorerToolbar } from "../PathExplorerToolbar";
 
 interface EditorFileExplorerProps {
   workspaceSlug: string;
@@ -18,19 +19,22 @@ export function EditorFileExplorer({
   onOpenFile,
   disabled = false,
 }: EditorFileExplorerProps) {
-  const [browsePath, setBrowsePath] = useState(".");
+  const fetchListing = useCallback(
+    (seed: string) => api.editorBrowse(workspaceSlug, seed, contextRoot),
+    [workspaceSlug, contextRoot],
+  );
 
-  useEffect(() => {
-    setBrowsePath(".");
-  }, [workspaceSlug, contextRoot]);
-
-  const browse = useQuery({
-    queryKey: ["editor-browse", workspaceSlug, contextRoot, browsePath],
-    queryFn: () => api.editorBrowse(workspaceSlug, browsePath, contextRoot),
+  const { data, loading, error, displayPath, navigate, resetBrowse } = usePathBrowse({
+    explorerKey: `editor-${workspaceSlug}-${contextRoot}`,
+    startPath: ".",
     enabled: !disabled && Boolean(workspaceSlug),
+    fetchListing,
   });
 
-  const data = browse.data;
+  useEffect(() => {
+    resetBrowse();
+  }, [workspaceSlug, contextRoot, resetBrowse]);
+
   const directories = useMemo(
     () => (data?.entries ?? []).filter((entry) => entry.kind === "directory"),
     [data?.entries],
@@ -42,37 +46,27 @@ export function EditorFileExplorer({
 
   return (
     <div className="editor-file-explorer">
-      <div className="editor-explorer-toolbar">
-        <button
-          type="button"
-          className="btn-secondary btn-compact"
-          disabled={disabled || browsePath === "." || !data?.parent_repo_path || browse.isFetching}
-          onClick={() => data?.parent_repo_path && setBrowsePath(data.parent_repo_path)}
-        >
-          ↑ Up
-        </button>
-        <button
-          type="button"
-          className="btn-secondary btn-compact"
-          disabled={disabled || browse.isFetching}
-          onClick={() => setBrowsePath(".")}
-        >
-          Root
-        </button>
-      </div>
+      <PathExplorerToolbar
+        disabled={disabled}
+        loading={loading}
+        parentPath={data?.parent_repo_path}
+        onUp={() => data?.parent_repo_path && navigate(data.parent_repo_path)}
+        onRoot={resetBrowse}
+        rootLabel="Root"
+      />
 
       <div className="editor-explorer-path" title={data?.current_path}>
-        {data?.repo_path ?? "Loading…"}
+        {loading ? `Opening ${displayPath}…` : data?.repo_path ?? "Loading…"}
       </div>
 
-      {browse.error && (
+      {error && (
         <p className="modal-hint editor-explorer-error">
-          {browse.error instanceof Error ? browse.error.message : "Failed to browse files"}
+          {error instanceof Error ? error.message : "Failed to browse files"}
         </p>
       )}
 
       <div className="editor-explorer-list" aria-label="Repository files">
-        {browse.isFetching && !data ? (
+        {loading ? (
           <div className="repo-path-explorer-empty">Loading…</div>
         ) : (
           <>
@@ -82,7 +76,11 @@ export function EditorFileExplorer({
                 type="button"
                 className="list-btn editor-explorer-item"
                 disabled={disabled}
-                onClick={() => setBrowsePath(entry.repo_path)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  navigate(entry.repo_path);
+                }}
               >
                 <span className="editor-explorer-icon" aria-hidden>
                   📁
@@ -108,7 +106,7 @@ export function EditorFileExplorer({
               </button>
             ))}
 
-            {!browse.isFetching && directories.length === 0 && files.length === 0 && (
+            {!loading && directories.length === 0 && files.length === 0 && (
               <div className="repo-path-explorer-empty">No files in this folder</div>
             )}
           </>

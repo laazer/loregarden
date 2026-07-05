@@ -81,10 +81,11 @@ export function ImportTicketsModal({
           )}
 
           <ImportTicketFileExplorer
+            explorerKey={`import-tickets-${workspaceSlug}`}
             selectedFiles={selectedFiles}
             onToggleFile={toggleFile}
             disabled={isLoading}
-            initialPath={initialBrowsePath}
+            startPath={initialBrowsePath}
           />
 
           {selected.length > 0 && (

@@ -1,91 +1,112 @@
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useCallback } from "react";
+
 import { api } from "../api/client";
+import { usePathBrowse } from "../hooks/usePathBrowse";
+import { browseSeed } from "../lib/pathExplorer";
+import { PathExplorerToolbar } from "./PathExplorerToolbar";
 
 interface RepoPathExplorerProps {
   value: string;
   onChange: (repoPath: string) => void;
   disabled?: boolean;
+  /** Store absolute filesystem paths (for iCloud/Obsidian) instead of repo-relative paths. */
+  absolutePaths?: boolean;
+  /** Isolate React Query cache between multiple explorers on one screen. */
+  explorerKey?: string;
+  /** Browse location when the user has not navigated yet. */
+  startPath?: string;
+  /** Jump the explorer to a typed/pasted path when this value changes. */
+  navigateTo?: string;
 }
 
-export function RepoPathExplorer({ value, onChange, disabled = false }: RepoPathExplorerProps) {
-  const [browsePath, setBrowsePath] = useState<string | undefined>(undefined);
+export { sanitizeBrowsePath } from "../lib/pathExplorer";
 
-  useEffect(() => {
-    setBrowsePath(undefined);
-  }, [value]);
+export function RepoPathExplorer({
+  value,
+  onChange,
+  disabled = false,
+  absolutePaths = false,
+  explorerKey = "default",
+  startPath = ".",
+  navigateTo = "",
+}: RepoPathExplorerProps) {
+  const fetchListing = useCallback(
+    (seed: string) => api.browseDirectory(seed === "." ? undefined : seed),
+    [],
+  );
 
-  const browse = useQuery({
-    queryKey: ["browse-directory", browsePath ?? (value || ".")],
-    queryFn: () => api.browseDirectory(browsePath ?? (value || ".")),
+  const { data, loading, pathMismatch, error, displayPath, navigate, resetBrowse } = usePathBrowse({
+    explorerKey,
+    startPath,
+    navigateTo,
     enabled: !disabled,
+    fetchListing,
   });
 
-  const data = browse.data;
-  const currentRepoPath = data?.repo_path ?? value;
-
-  const navigate = (path: string) => {
-    setBrowsePath(path);
-  };
+  const storedPath = absolutePaths ? value || displayPath : value || data?.repo_path || displayPath;
+  const startFolder = browseSeed(startPath || ".");
+  const showEntries = !loading && Boolean(data?.entries.length);
 
   const selectCurrent = () => {
+    if (absolutePaths) {
+      if (data?.current_path) onChange(data.current_path);
+      return;
+    }
     if (data?.repo_path) onChange(data.repo_path);
   };
 
   return (
     <div className="repo-path-explorer">
-      <div className="repo-path-explorer-toolbar">
-        <button
-          type="button"
-          className="btn-secondary btn-compact"
-          disabled={disabled || !data?.parent_path || browse.isFetching}
-          onClick={() => data?.parent_path && navigate(data.parent_path)}
-        >
-          ↑ Up
-        </button>
-        <button
-          type="button"
-          className="btn-secondary btn-compact"
-          disabled={disabled || browse.isFetching}
-          onClick={() => data?.repo_root && navigate(data.repo_root)}
-        >
-          Loregarden root
-        </button>
-        <button
-          type="button"
-          className="btn-primary btn-compact"
-          disabled={disabled || !data}
-          onClick={selectCurrent}
-        >
-          Use this folder
-        </button>
+      <PathExplorerToolbar
+        disabled={disabled}
+        loading={loading}
+        parentPath={data?.parent_path}
+        onUp={() => data?.parent_path && navigate(data.parent_path)}
+        onRoot={!absolutePaths ? () => data?.repo_root && navigate(data.repo_root) : undefined}
+        onStart={absolutePaths && startFolder !== "." ? resetBrowse : undefined}
+        showSelect
+        selectDisabled={!data || loading}
+        onSelect={selectCurrent}
+      />
+
+      <div className="repo-path-explorer-path" title={displayPath}>
+        {loading ? `Opening ${displayPath}…` : displayPath}
       </div>
 
-      <div className="repo-path-explorer-path" title={data?.current_path}>
-        {data?.current_path ?? "Loading…"}
-      </div>
-
-      {browse.error && (
+      {error && (
         <p className="modal-hint" style={{ color: "var(--rdl)", marginTop: 6 }}>
-          {browse.error instanceof Error ? browse.error.message : "Failed to browse directory"}
+          {error instanceof Error ? error.message : "Failed to browse directory"}
+        </p>
+      )}
+
+      {pathMismatch && data?.current_path && (
+        <p className="modal-hint" style={{ color: "var(--rdl)", marginTop: 6 }}>
+          Could not open the requested folder. Showing{" "}
+          <code>{data.current_path}</code> instead.
         </p>
       )}
 
       <div className="repo-path-explorer-list" role="listbox" aria-label="Directories">
-        {browse.isFetching && !data ? (
+        {loading ? (
           <div className="repo-path-explorer-empty">Loading directories…</div>
-        ) : data?.entries.length ? (
-          data.entries.map((entry) => (
+        ) : showEntries ? (
+          data!.entries.map((entry) => (
             <button
               key={entry.path}
               type="button"
               className={`list-btn repo-path-explorer-item ${
-                entry.repo_path === currentRepoPath ? "active" : ""
+                (absolutePaths ? entry.path : entry.repo_path) === storedPath ? "active" : ""
               }`.trim()}
               disabled={disabled}
-              onClick={() => navigate(entry.path)}
-              onDoubleClick={() => {
-                onChange(entry.repo_path);
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                navigate(entry.path);
+              }}
+              onDoubleClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onChange(absolutePaths ? entry.path : entry.repo_path);
               }}
             >
               <span className="repo-path-explorer-folder" aria-hidden>
@@ -102,7 +123,7 @@ export function RepoPathExplorer({ value, onChange, disabled = false }: RepoPath
 
       <p className="modal-hint" style={{ marginTop: 6 }}>
         Click a folder to open it, double-click to select, or use “Use this folder” for the current
-        directory. Stored path: <code>{currentRepoPath || "."}</code>
+        directory. Stored path: <code>{storedPath || "."}</code>
       </p>
     </div>
   );

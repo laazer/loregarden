@@ -276,6 +276,7 @@ export interface MemoryConfigSettings {
 
 export interface MemoryStatus {
   enabled: boolean;
+  workspace_slug: string | null;
   obsidian_vault: string | null;
   obsidian_memory_dir: string | null;
   obsidian_learnings_dir: string | null;
@@ -287,7 +288,12 @@ export interface MemoryStatus {
 export interface MemoryConfigResponse {
   config: MemoryConfigSettings;
   status: MemoryStatus;
-  defaults: { icloud_root: string | null };
+  defaults: {
+    icloud_root: string | null;
+    mobile_documents_dir: string | null;
+    obsidian_icloud_dir: string | null;
+    obsidian_documents_dir: string | null;
+  };
 }
 
 export interface OrchestrationProfileView {
