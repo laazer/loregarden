@@ -1237,24 +1237,44 @@ export function Dashboard() {
                   <div className="state-label" style={{ marginBottom: 6 }}>
                     Branch
                   </div>
-                  <input
-                    className="btn-secondary"
-                    style={{ width: "100%", maxWidth: 360, fontSize: 12, boxSizing: "border-box" }}
-                    value={sel.branch || ""}
-                    placeholder={`loregarden/${sel.external_id}`}
-                    onChange={(e) => {
-                      if (!selectedId) return;
-                      qc.setQueryData(["ticket", selectedId], (current: TicketDetail | undefined) =>
-                        current ? { ...current, branch: e.target.value } : current,
-                      );
-                    }}
-                    onBlur={(e) => {
-                      if (!selectedId || e.target.value === (detail.data?.branch ?? "")) return;
-                      api.updateTicket(selectedId, { branch: e.target.value.trim() }).then(() => {
-                        qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
-                      });
-                    }}
-                  />
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", maxWidth: 360 }}>
+                    <input
+                      className="btn-secondary"
+                      style={{ flex: 1, minWidth: 0, fontSize: 12, boxSizing: "border-box" }}
+                      value={sel.branch || ""}
+                      placeholder={`loregarden/${sel.external_id}`}
+                      onChange={(e) => {
+                        if (!selectedId) return;
+                        qc.setQueryData(["ticket", selectedId], (current: TicketDetail | undefined) =>
+                          current ? { ...current, branch: e.target.value } : current,
+                        );
+                      }}
+                      onBlur={(e) => {
+                        if (!selectedId || e.target.value === (detail.data?.branch ?? "")) return;
+                        api.updateTicket(selectedId, { branch: e.target.value.trim() }).then(() => {
+                          qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
+                        });
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary btn-compact"
+                      title="Set branch to main"
+                      onClick={() => {
+                        if (!selectedId) return;
+                        qc.setQueryData(["ticket", selectedId], (current: TicketDetail | undefined) =>
+                          current ? { ...current, branch: "main" } : current,
+                        );
+                        if ((detail.data?.branch ?? "") !== "main") {
+                          api.updateTicket(selectedId, { branch: "main" }).then(() => {
+                            qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
+                          });
+                        }
+                      }}
+                    >
+                      Use main
+                    </button>
+                  </div>
                 </div>
                 <div className="dual-state">
                   <div className="state-card">
