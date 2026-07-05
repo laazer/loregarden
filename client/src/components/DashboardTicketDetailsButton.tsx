@@ -63,7 +63,11 @@ export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButton
 
   const handleSave = async (draft: TicketDetailsSaveDraft) => {
     setSaveError(undefined);
-    await saveDetails.mutateAsync(draft);
+    try {
+      await saveDetails.mutateAsync(draft);
+    } catch {
+      // saveError is set via mutation onError
+    }
   };
 
   return (

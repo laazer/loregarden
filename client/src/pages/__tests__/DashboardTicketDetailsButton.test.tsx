@@ -1,7 +1,8 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Dashboard } from '../Dashboard';
 import * as apiClient from '../../api/client';
+import { useUiStore } from '../../state/uiStore';
 
 /**
  * Integration tests for "View Details" button in Dashboard ticket pane.
@@ -17,22 +18,8 @@ import * as apiClient from '../../api/client';
  * - Modal can be closed and reopened
  */
 
-// Mock the API
-jest.mock('../../api/client', () => {
-  const actual = jest.requireActual('../../api/client') as typeof import('../../api/client');
-  return {
-    ...actual,
-    api: {
-      ...actual.api,
-      ticketTree: jest.fn(),
-      ticket: jest.fn(),
-      workspaces: jest.fn(),
-      workspaceWorkflow: jest.fn(),
-      workflowTemplates: jest.fn(),
-      approvals: jest.fn(),
-    },
-  };
-});
+// Mock the API without loading import.meta-bearing module
+jest.mock('../../api/client', () => require('../../test/apiClientMock'));
 
 describe('Dashboard - Ticket Details Button Integration', () => {
   let queryClient: QueryClient;
@@ -43,8 +30,34 @@ describe('Dashboard - Ticket Details Button Integration', () => {
         queries: { retry: false },
       },
     });
+    useUiStore.setState({
+      selectedTicketId: null,
+      stateFilters: [],
+      typeFilters: [],
+      search: '',
+      expandedTicketIds: [],
+      workspace: 'all',
+      paneVisibility: {
+        workspaces: true,
+        tickets: true,
+        workflow: true,
+        artifacts: true,
+      },
+    });
+    useUiStore.persist?.clearStorage?.();
     jest.clearAllMocks();
+    jest.mocked(apiClient.api.ticket).mockImplementation(async (id: string) => createMockTicket({ id }));
+    jest.mocked(apiClient.api.runs).mockResolvedValue([]);
+    jest.mocked(apiClient.api.triage).mockResolvedValue({ pending_approvals: [] });
+    jest.mocked(apiClient.api.approvals).mockResolvedValue([]);
   });
+
+  const waitForDetailsButton = async () => {
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /view ticket details/i })).toBeInTheDocument();
+    });
+    return screen.getByRole('button', { name: /view ticket details/i });
+  };
 
   const renderDashboard = (initialProps = {}) => {
     return render(
@@ -87,7 +100,7 @@ describe('Dashboard - Ticket Details Button Integration', () => {
 
       // Details button should appear in the workflow pane header
       await waitFor(() => {
-        const button = screen.getByRole('button', { name: /details|view details|ticket details/i });
+        const button = screen.getByRole('button', { name: /view ticket details/i });
         expect(button).toBeInTheDocument();
         // Verify it's in the workflow pane area
         const workflowPane = screen.getByText('Workflow');
@@ -104,7 +117,7 @@ describe('Dashboard - Ticket Details Button Integration', () => {
 
       renderDashboard();
 
-      const detailsButtons = screen.queryAllByRole('button', { name: /details/i });
+      const detailsButtons = screen.queryAllByRole('button', { name: /view ticket details/i });
       // Should not have a details button for workflow pane (may have other buttons)
       expect(detailsButtons.length).toBe(0);
     });
@@ -121,20 +134,15 @@ describe('Dashboard - Ticket Details Button Integration', () => {
 
       jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
       jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
-      jest.mocked(apiClient.api.ticket)
-        .mockResolvedValueOnce(mockTicket1)
-        .mockResolvedValueOnce(mockTicket2);
+      jest.mocked(apiClient.api.ticket).mockImplementation(async (id: string) => {
+        if (id === 'ticket-1') return mockTicket1;
+        if (id === 'ticket-2') return mockTicket2;
+        return createMockTicket({ id });
+      });
 
       renderDashboard();
 
-      // Select first ticket
-      await waitFor(() => {
-        const item = screen.getByText('First Ticket');
-        fireEvent.click(item);
-      });
-
-      let button = screen.getByRole('button', { name: /details/i });
-      expect(button).toBeInTheDocument();
+      await waitForDetailsButton();
 
       // Select second ticket
       await waitFor(() => {
@@ -142,8 +150,7 @@ describe('Dashboard - Ticket Details Button Integration', () => {
         fireEvent.click(item);
       });
 
-      button = screen.getByRole('button', { name: /details/i });
-      expect(button).toBeInTheDocument();
+      await waitForDetailsButton();
     });
   });
 
@@ -170,14 +177,14 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       });
 
       // Click Details button
-      const button = screen.getByRole('button', { name: /details/i });
+      const button = screen.getByRole('button', { name: /view ticket details/i });
       fireEvent.click(button);
 
       // Modal should appear with ticket details
       await waitFor(() => {
-        expect(screen.getByRole('dialog')).toBeInTheDocument();
-        expect(screen.getByText('Test Feature')).toBeInTheDocument();
-        expect(screen.getByText('This is a test feature')).toBeInTheDocument();
+        const dialog = screen.getByRole('dialog');
+        expect(within(dialog).getByDisplayValue('Test Feature')).toBeInTheDocument();
+        expect(within(dialog).getByDisplayValue('This is a test feature')).toBeInTheDocument();
       });
     });
 
@@ -211,16 +218,17 @@ describe('Dashboard - Ticket Details Button Integration', () => {
         fireEvent.click(screen.getByText('Complete Feature'));
       });
 
-      const button = screen.getByRole('button', { name: /details/i });
+      const button = screen.getByRole('button', { name: /view ticket details/i });
       fireEvent.click(button);
 
       // Verify all details are displayed
       await waitFor(() => {
-        expect(screen.getByText('Complete Feature')).toBeInTheDocument();
-        expect(screen.getByText('16-modal-with-ticket-details')).toBeInTheDocument();
-        expect(screen.getByText('Full description')).toBeInTheDocument();
-        expect(screen.getByText('User can click button')).toBeInTheDocument();
-        expect(screen.getByText('Awaiting API review')).toBeInTheDocument();
+        const dialog = screen.getByRole('dialog');
+        expect(within(dialog).getByDisplayValue('Complete Feature')).toBeInTheDocument();
+        expect(within(dialog).getByText('16-modal-with-ticket-details')).toBeInTheDocument();
+        expect(within(dialog).getByDisplayValue('Full description')).toBeInTheDocument();
+        expect(within(dialog).getByText('User can click button')).toBeInTheDocument();
+        expect(within(dialog).getByText('Awaiting API review')).toBeInTheDocument();
       });
     });
 
@@ -236,19 +244,17 @@ describe('Dashboard - Ticket Details Button Integration', () => {
 
       renderDashboard();
 
-      await waitFor(() => {
-        fireEvent.click(screen.getByText('Test Ticket'));
-      });
+      await waitForDetailsButton();
 
       // Open modal
-      fireEvent.click(screen.getByRole('button', { name: /details/i }));
+      fireEvent.click(await waitForDetailsButton());
 
       await waitFor(() => {
         expect(screen.getByRole('dialog')).toBeInTheDocument();
       });
 
       // Close modal
-      const closeButton = screen.getByRole('button', { name: /close|x/i });
+      const closeButton = screen.getByRole('button', { name: /^Close$/i });
       fireEvent.click(closeButton);
 
       await waitFor(() => {
@@ -268,11 +274,7 @@ describe('Dashboard - Ticket Details Button Integration', () => {
 
       renderDashboard();
 
-      await waitFor(() => {
-        fireEvent.click(screen.getByText('Test Ticket'));
-      });
-
-      const detailsButton = screen.getByRole('button', { name: /details/i });
+      const detailsButton = await waitForDetailsButton();
 
       // Open modal
       fireEvent.click(detailsButton);
@@ -281,7 +283,7 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       });
 
       // Close modal
-      fireEvent.click(screen.getByRole('button', { name: /close|x/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^Close$/i }));
       await waitFor(() => {
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       });
@@ -310,12 +312,8 @@ describe('Dashboard - Ticket Details Button Integration', () => {
 
       renderDashboard();
 
-      // Select ticket and open modal
-      await waitFor(() => {
-        fireEvent.click(screen.getByText('Ticket 1'));
-      });
-
-      fireEvent.click(screen.getByRole('button', { name: /details/i }));
+      await waitForDetailsButton();
+      fireEvent.click(await waitForDetailsButton());
 
       await waitFor(() => {
         expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -337,12 +335,10 @@ describe('Dashboard - Ticket Details Button Integration', () => {
 
       renderDashboard();
 
-      await waitFor(() => {
-        fireEvent.click(screen.getByText('Test Ticket'));
-      });
+      await waitForDetailsButton();
 
       // Open modal
-      fireEvent.click(screen.getByRole('button', { name: /details/i }));
+      fireEvent.click(await waitForDetailsButton());
 
       await waitFor(() => {
         expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -364,21 +360,19 @@ describe('Dashboard - Ticket Details Button Integration', () => {
 
       jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
       jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
-      jest.mocked(apiClient.api.ticket)
-        .mockResolvedValueOnce(mockTicket1)
-        .mockResolvedValueOnce(mockTicket2);
+      jest.mocked(apiClient.api.ticket).mockImplementation(async (id: string) => {
+        if (id === 'ticket-1') return mockTicket1;
+        if (id === 'ticket-2') return mockTicket2;
+        return createMockTicket({ id });
+      });
 
       renderDashboard();
 
-      // Open first ticket's details
-      await waitFor(() => {
-        fireEvent.click(screen.getByText('First'));
-      });
-
-      fireEvent.click(screen.getByRole('button', { name: /details/i }));
+      const detailsButton = await waitForDetailsButton();
+      fireEvent.click(detailsButton);
 
       await waitFor(() => {
-        expect(screen.getByText('First')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('First')).toBeInTheDocument();
       });
 
       // Switch to second ticket
@@ -386,10 +380,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
 
       // Modal should close automatically or be updated
       await waitFor(() => {
-        // Either modal closes or shows second ticket details
         const modal = screen.queryByRole('dialog');
         if (modal) {
-          expect(screen.getByText('Second')).toBeInTheDocument();
+          expect(within(modal).getByDisplayValue('Second')).toBeInTheDocument();
         }
       });
     });
@@ -408,11 +401,7 @@ describe('Dashboard - Ticket Details Button Integration', () => {
 
       renderDashboard();
 
-      await waitFor(() => {
-        fireEvent.click(screen.getByText('Test'));
-      });
-
-      const button = screen.getByRole('button', { name: /details/i });
+      const button = await waitForDetailsButton();
       expect(button).toHaveAttribute('aria-label');
     });
 
@@ -428,11 +417,7 @@ describe('Dashboard - Ticket Details Button Integration', () => {
 
       renderDashboard();
 
-      await waitFor(() => {
-        fireEvent.click(screen.getByText('Test Ticket'));
-      });
-
-      const button = screen.getByRole('button', { name: /details/i });
+      const button = await waitForDetailsButton();
       // Should be keyboard accessible
       expect(button).not.toBeDisabled();
       fireEvent.keyDown(button, { key: 'Enter' });
@@ -448,22 +433,18 @@ describe('Dashboard - Ticket Details Button Integration', () => {
 
       jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
       jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
-      jest.mocked(apiClient.api.ticket).mockRejectedValue(new Error('Failed to load'));
+      jest.mocked(apiClient.api.ticket).mockImplementation(async () => {
+        throw new Error('Failed to load');
+      });
 
       renderDashboard();
 
-      await waitFor(() => {
-        fireEvent.click(screen.getByText('Test Ticket'));
-      });
-
-      // Button should still work but might show error
-      const button = screen.getByRole('button', { name: /details/i });
+      const button = await waitForDetailsButton();
       fireEvent.click(button);
 
       // Should show error state in modal
       await waitFor(() => {
-        const errorOrDialog = screen.queryByRole('dialog') || screen.queryByText(/error|failed/i);
-        expect(errorOrDialog).toBeInTheDocument();
+        expect(screen.getByText('Failed to load')).toBeInTheDocument();
       });
     });
 
@@ -475,26 +456,24 @@ describe('Dashboard - Ticket Details Button Integration', () => {
 
       jest.mocked(apiClient.api.workspaces).mockResolvedValue(mockWorkspaces);
       jest.mocked(apiClient.api.ticketTree).mockResolvedValue(mockTree);
-      // First call fails, second succeeds
-      jest.mocked(apiClient.api.ticket)
-        .mockRejectedValueOnce(new Error('Network error'))
-        .mockResolvedValueOnce(mockTicket);
-
       renderDashboard();
 
+      const button = await waitForDetailsButton();
+
+      jest.mocked(apiClient.api.ticket).mockRejectedValue(new Error('Network error'));
+      fireEvent.click(button);
+
       await waitFor(() => {
-        fireEvent.click(screen.getByText('Test Ticket'));
+        expect(screen.getByText('Network error')).toBeInTheDocument();
       });
 
-      // First attempt
-      fireEvent.click(screen.getByRole('button', { name: /details/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^Close$/i }));
 
-      // Retry should be possible
+      jest.mocked(apiClient.api.ticket).mockResolvedValue(mockTicket);
+      fireEvent.click(button);
+
       await waitFor(() => {
-        const retryButton = screen.queryByRole('button', { name: /retry|try again/i });
-        if (retryButton) {
-          fireEvent.click(retryButton);
-        }
+        expect(screen.getByDisplayValue('Test Ticket')).toBeInTheDocument();
       });
     });
   });
@@ -534,6 +513,9 @@ function createMockTicket(overrides?: Partial<apiClient.TicketDetail>): apiClien
     work_item_type: 'feature',
     parent_ticket_id: null,
     milestone: '',
+    branch: 'main',
+    workflow_template_slug: 'default',
+    workflow_template_name: 'Default',
     child_count: 0,
     revision: 1,
     last_updated_by: 'test@example.com',

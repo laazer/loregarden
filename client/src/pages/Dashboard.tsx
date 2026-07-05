@@ -643,6 +643,7 @@ export function Dashboard() {
   });
 
   const sel = detail.data;
+  const selectedSummary = flatTickets.find((ticket) => ticket.id === selectedId) ?? null;
   const runConfirmStage = sel?.stages.find((s) => s.key === runConfirmStageKey) ?? null;
 
   const activeWorkspaceSlug =
@@ -1170,8 +1171,11 @@ export function Dashboard() {
               </span>
             )}
             <div style={{ flex: 1 }} />
-            {sel && (
-              <DashboardTicketDetailsButton ticketId={sel.id} ticket={sel} />
+            {selectedId && (
+              <DashboardTicketDetailsButton
+                ticketId={selectedId}
+                ticket={selectedSummary ?? undefined}
+              />
             )}
             <PaneHideButton
               pane="workflow"

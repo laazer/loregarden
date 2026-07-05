@@ -645,7 +645,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
         </QueryClientProvider>
       );
 
-      expect(screen.getByText('Ticket 2')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Ticket 2')).toBeInTheDocument();
     });
   });
 

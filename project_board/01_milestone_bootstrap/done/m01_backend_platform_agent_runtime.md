@@ -2,7 +2,7 @@
 Title: CLI agent runtime
 Project: loregarden
 Created By: loregarden-export
-Created On: 2026-07-05T22:52:29.941185
+Created On: 2026-07-05T23:04:10.584420
 
 ---
 
@@ -59,4 +59,4 @@ Human
 Proceed
 
 ## Reason
-Exported from SQLite at 2026-07-05T22:52:30.079970+00:00
+Exported from SQLite at 2026-07-05T23:04:10.771067+00:00

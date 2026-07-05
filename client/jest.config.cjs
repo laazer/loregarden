@@ -17,6 +17,9 @@ module.exports = {
             },
           },
         },
+        module: {
+          type: "commonjs",
+        },
       },
     ],
   },
