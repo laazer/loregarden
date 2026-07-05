@@ -224,6 +224,31 @@ export interface BrowseImportDirectoryResponse extends Omit<BrowseDirectoryRespo
   entries: BrowseImportEntry[];
 }
 
+export interface MemoryConfigSettings {
+  icloud_root: string;
+  obsidian_vault_dir: string;
+  obsidian_memory_subdir: string;
+  obsidian_learnings_subdir: string;
+  memory_sqlite_url: string;
+  database_url: string;
+}
+
+export interface MemoryStatus {
+  enabled: boolean;
+  obsidian_vault: string | null;
+  obsidian_memory_dir: string | null;
+  obsidian_learnings_dir: string | null;
+  memory_sqlite_path: string | null;
+  memory_sqlite_in_icloud: boolean;
+  database_path: string;
+}
+
+export interface MemoryConfigResponse {
+  config: MemoryConfigSettings;
+  status: MemoryStatus;
+  defaults: { icloud_root: string | null };
+}
+
 export interface OrchestrationProfileView {
   slug: string;
   name: string;
@@ -693,4 +718,11 @@ export const api = {
   publishStudioWorkflow: (slug: string) =>
     request<StudioWorkflow>(`/api/studio/workflows/${slug}/publish`, { method: "POST" }),
   usage: () => request<UsageSnapshot>("/api/usage"),
+  memoryConfig: () => request<MemoryConfigResponse>("/api/memory/config"),
+  setMemoryConfig: (body: MemoryConfigSettings) =>
+    request<MemoryConfigResponse>("/api/memory/config", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  memoryStatus: () => request<MemoryStatus>("/api/memory/status"),
 };

@@ -24,6 +24,7 @@ import { ImportTicketsModal } from "../components/ImportTicketsModal";
 import { AddWorkspaceModal, type AddWorkspaceDraft } from "../components/AddWorkspaceModal";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { SettingsModal } from "../components/SettingsModal";
+import { MemorySetupModal } from "../components/MemorySetupModal";
 import { UsageModal } from "../components/UsageModal";
 import { runtimeFromWorkspace, runtimeSettingsEqual } from "../components/WorkspaceRuntimeFields";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
@@ -424,6 +425,7 @@ export function Dashboard() {
   const [runConfirmStageKey, setRunConfirmStageKey] = useState<string | null>(null);
   const [assembleModalOpen, setAssembleModalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
   const [settingsWorkspaceSlug, setSettingsWorkspaceSlug] = useState("loregarden");
 
@@ -503,6 +505,19 @@ export function Dashboard() {
     queryFn: api.usage,
     refetchInterval: usageOpen ? 60_000 : 5 * 60_000,
     staleTime: 30_000,
+  });
+
+  const memoryConfig = useQuery({
+    queryKey: ["memory-config"],
+    queryFn: api.memoryConfig,
+    enabled: memoryOpen,
+  });
+
+  const setMemoryConfig = useMutation({
+    mutationFn: api.setMemoryConfig,
+    onSuccess: (data) => {
+      qc.setQueryData(["memory-config"], data);
+    },
   });
 
   const setRuntime = useMutation({
@@ -872,6 +887,9 @@ export function Dashboard() {
         )}
         <button type="button" className="btn-secondary" onClick={() => setAppPage("studio")}>
           Studio
+        </button>
+        <button type="button" className="btn-secondary" onClick={() => setMemoryOpen(true)}>
+          Memory
         </button>
         <button
           type="button"
@@ -1625,6 +1643,34 @@ export function Dashboard() {
         onWorkspaceChange={setSettingsWorkspaceSlug}
         onSave={async (slug, runtime) => {
           await setRuntime.mutateAsync({ slug, runtime });
+        }}
+      />
+
+      <MemorySetupModal
+        open={memoryOpen}
+        data={memoryConfig.data}
+        isLoading={memoryConfig.isLoading}
+        isSaving={setMemoryConfig.isPending}
+        errorMessage={
+          setMemoryConfig.error
+            ? (() => {
+                try {
+                  const parsed = JSON.parse(setMemoryConfig.error.message) as { detail?: string };
+                  return parsed.detail ?? setMemoryConfig.error.message;
+                } catch {
+                  return setMemoryConfig.error.message;
+                }
+              })()
+            : undefined
+        }
+        onClose={() => {
+          if (setMemoryConfig.isPending) return;
+          setMemoryConfig.reset();
+          setMemoryOpen(false);
+        }}
+        onRefresh={() => void memoryConfig.refetch()}
+        onSave={async (config) => {
+          await setMemoryConfig.mutateAsync(config);
         }}
       />
 

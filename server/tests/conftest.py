@@ -2,10 +2,24 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
+import threading
 
 from loregarden.db.session import get_session
 from loregarden.main import app
 from loregarden.services.seed import seed_database
+
+
+@pytest.fixture(autouse=True)
+def sqlite_commit_lock(monkeypatch):
+    """Serialize SQLite commits in tests — StaticPool + threads otherwise flake."""
+    lock = threading.Lock()
+    original_commit = Session.commit
+
+    def locked_commit(self, *args, **kwargs):
+        with lock:
+            return original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "commit", locked_commit)
 
 
 @pytest.fixture(autouse=True)

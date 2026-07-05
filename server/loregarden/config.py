@@ -63,6 +63,10 @@ settings.agent_context_dir = settings.repo_root / settings.agent_context_dir
 settings.project_board_dir = settings.repo_root / settings.project_board_dir
 settings.workflow_templates_dir = settings.repo_root / settings.workflow_templates_dir
 
+from loregarden.services.memory_config import load_local_memory_config_into_settings  # noqa: E402
+
+load_local_memory_config_into_settings()
+
 
 def resolved_icloud_root() -> Path | None:
     return resolve_icloud_root(settings.icloud_root)

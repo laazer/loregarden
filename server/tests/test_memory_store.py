@@ -139,6 +139,44 @@ def test_memory_api_status(client, vault_dir, monkeypatch):
     assert body["obsidian_vault"] == str(vault_dir.resolve())
 
 
+def test_memory_api_config_get_put(client, vault_dir, tmp_path, monkeypatch):
+    db_path = tmp_path / "control.db"
+    monkeypatch.setattr("loregarden.config.settings.repo_root", tmp_path)
+    payload = {
+        "icloud_root": str(vault_dir.parent),
+        "obsidian_vault_dir": str(vault_dir),
+        "obsidian_memory_subdir": "Loregarden/Memory",
+        "obsidian_learnings_subdir": "Loregarden/Learnings",
+        "memory_sqlite_url": f"sqlite:///{tmp_path / 'memory.db'}",
+        "database_url": f"sqlite:///{db_path}",
+    }
+    res = client.put("/api/memory/config", json=payload)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["config"]["obsidian_vault_dir"] == str(vault_dir)
+    assert body["status"]["enabled"] is True
+    assert (tmp_path / "data" / "memory.local.json").is_file()
+
+    get_res = client.get("/api/memory/config")
+    assert get_res.status_code == 200
+    assert get_res.json()["config"]["obsidian_vault_dir"] == str(vault_dir)
+
+
+def test_memory_api_config_rejects_bad_vault(client):
+    res = client.put(
+        "/api/memory/config",
+        json={
+            "icloud_root": "",
+            "obsidian_vault_dir": "/no/such/vault",
+            "obsidian_memory_subdir": "Loregarden/Memory",
+            "obsidian_learnings_subdir": "Loregarden/Learnings",
+            "memory_sqlite_url": "",
+            "database_url": "sqlite:///data/loregarden.db",
+        },
+    )
+    assert res.status_code == 400
+
+
 def test_sqlite_db_in_icloud_dir(tmp_path, monkeypatch):
     import os
     import subprocess

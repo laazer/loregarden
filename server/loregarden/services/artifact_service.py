@@ -8,6 +8,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+import threading
 
 from sqlmodel import Session, select
 
@@ -16,6 +17,8 @@ from loregarden.services.workspace_paths import resolve_workspace_root
 
 MAX_DIFF_LINES = 400
 MAX_DIFF_LINE_CHARS = 500
+
+_artifact_upsert_lock = threading.Lock()
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -361,31 +364,32 @@ def _upsert_artifact(
     title: str,
     content: dict[str, Any],
 ) -> Artifact:
-    existing = session.exec(
-        select(Artifact).where(Artifact.ticket_id == ticket_id, Artifact.kind == kind)
-    ).first()
-    payload = json.dumps(content)
-    if existing:
-        existing.run_id = run_id or existing.run_id
-        existing.title = title
-        existing.content_json = payload
-        existing.created_at = datetime.now(timezone.utc)
-        session.add(existing)
-        session.commit()
-        persisted = session.get(Artifact, existing.id)
-        return persisted or existing
+    with _artifact_upsert_lock:
+        existing = session.exec(
+            select(Artifact).where(Artifact.ticket_id == ticket_id, Artifact.kind == kind)
+        ).first()
+        payload = json.dumps(content)
+        if existing:
+            existing.run_id = run_id or existing.run_id
+            existing.title = title
+            existing.content_json = payload
+            existing.created_at = datetime.now(timezone.utc)
+            session.add(existing)
+            session.commit()
+            persisted = session.get(Artifact, existing.id)
+            return persisted or existing
 
-    artifact = Artifact(
-        ticket_id=ticket_id,
-        run_id=run_id,
-        kind=kind,
-        title=title,
-        content_json=payload,
-    )
-    session.add(artifact)
-    session.commit()
-    persisted = session.get(Artifact, artifact.id)
-    return persisted or artifact
+        artifact = Artifact(
+            ticket_id=ticket_id,
+            run_id=run_id,
+            kind=kind,
+            title=title,
+            content_json=payload,
+        )
+        session.add(artifact)
+        session.commit()
+        persisted = session.get(Artifact, artifact.id)
+        return persisted or artifact
 
 
 def refresh_execution_artifacts(
