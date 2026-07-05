@@ -148,6 +148,39 @@ class RunService:
         self.session.refresh(ticket)
         return run
 
+    def start_stage_execution(
+        self, ticket: Ticket, *, stage_key: str | None = None
+    ) -> AgentRun | None:
+        """Start an agent CLI run, or enter a human approval gate for agentless stages."""
+        from loregarden.services.studio_service import is_agentless_stage
+
+        template = self.orchestration.get_template_for_ticket(ticket)
+        if not template:
+            raise ValueError("No workflow template for ticket workspace")
+
+        _, stages = self.orchestration._resolve_stages(ticket)
+        if not stages:
+            raise ValueError("Ticket has no workflow instance")
+
+        target_key = stage_key or ticket.workflow_stage_key
+        if not target_key:
+            raise ValueError("No stage selected")
+
+        stage_def = next((s for s in stages if s.key == target_key), None)
+        if not stage_def:
+            raise ValueError(f"Unknown stage key: {target_key}")
+
+        if is_agentless_stage(stage_def):
+            if stage_def.key == "done":
+                self.orchestration.finalize_workflow(ticket)
+                self.session.refresh(ticket)
+                return None
+            self.orchestration.enter_human_gate(ticket, stage_key=target_key)
+            self.session.refresh(ticket)
+            return None
+
+        return self.start_run_async(ticket, stage_key=stage_key)
+
     def list_runs(
         self,
         *,

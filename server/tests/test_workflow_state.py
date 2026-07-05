@@ -4,7 +4,18 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 
-from loregarden.models.domain import StageStatus, Ticket, TicketState, WorkflowInstance, Workspace
+from loregarden.models.domain import (
+    Approval,
+    ApprovalKind,
+    ApprovalStatus,
+    AgentRun,
+    RunStatus,
+    StageStatus,
+    Ticket,
+    TicketState,
+    WorkflowInstance,
+    Workspace,
+)
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.seed import seed_database
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
@@ -300,3 +311,99 @@ def test_reconcile_repairs_drifted_instance():
             assert view_status.value in {
                 s["status"] for s in json.loads(instance.stages_json)
             }
+
+
+def test_human_gate_stage_opens_approval_without_agent(client: TestClient, monkeypatch):
+    from loregarden.db.session import engine
+
+    ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
+    with Session(engine) as session:
+        ticket = session.get(Ticket, ticket_id)
+        instance = session.exec(
+            select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)
+        ).first()
+        ws = session.get(Workspace, ticket.workspace_id)
+        _, stages = resolve_workspace_stages(session, ws)
+        ticket.workflow_stage_key = "approval"
+        ticket.workflow_stage_status = StageStatus.PENDING
+        set_stage_status(ticket, instance, stages, "approval", StageStatus.PENDING)
+        session.add(ticket)
+        session.add(instance)
+        session.commit()
+
+    scheduled: list[str] = []
+    monkeypatch.setattr(
+        "loregarden.api.tickets.schedule_agent_run",
+        lambda run_id: scheduled.append(run_id),
+    )
+
+    res = client.post(
+        f"/api/tickets/{ticket_id}/start",
+        json={"manual": True, "stage_key": "approval"},
+    )
+    assert res.status_code == 200
+    assert scheduled == []
+    body = res.json()
+    assert body["workflow_stage_key"] == "approval"
+    assert body["workflow_stage_status"] == "awaiting"
+    assert _stage_statuses(body)["approval"] == "awaiting"
+    assert body["artifacts"]["live"] == "Awaiting your approval in Triage or Inbox…"
+
+    with Session(engine) as session:
+        approvals = session.exec(
+            select(Approval).where(
+                Approval.ticket_id == ticket_id,
+                Approval.stage_key == "approval",
+                Approval.kind == ApprovalKind.WORKFLOW_GATE,
+                Approval.status == ApprovalStatus.PENDING,
+            )
+        ).all()
+        assert len(approvals) == 1
+        failed_runs = session.exec(
+            select(AgentRun).where(
+                AgentRun.ticket_id == ticket_id,
+                AgentRun.stage_key == "approval",
+                AgentRun.status == RunStatus.FAILED,
+            )
+        ).all()
+        assert failed_runs == []
+
+
+def test_done_stage_completes_ticket_without_agent(client: TestClient, monkeypatch):
+    from loregarden.db.session import engine
+
+    ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
+    with Session(engine) as session:
+        ticket = session.get(Ticket, ticket_id)
+        instance = session.exec(
+            select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)
+        ).first()
+        ws = session.get(Workspace, ticket.workspace_id)
+        _, stages = resolve_workspace_stages(session, ws)
+        for key in ("planning", "context", "specification", "test_design", "test_break", "implementation", "testing", "review", "approval"):
+            if key in {s.key for s in stages}:
+                set_stage_status(ticket, instance, stages, key, StageStatus.DONE)
+        ticket.workflow_stage_key = "done"
+        ticket.workflow_stage_status = StageStatus.PENDING
+        set_stage_status(ticket, instance, stages, "done", StageStatus.PENDING)
+        session.add(ticket)
+        session.add(instance)
+        session.commit()
+
+    scheduled: list[str] = []
+    monkeypatch.setattr(
+        "loregarden.api.tickets.schedule_agent_run",
+        lambda run_id: scheduled.append(run_id),
+    )
+
+    res = client.post(
+        f"/api/tickets/{ticket_id}/start",
+        json={"manual": True, "stage_key": "done"},
+    )
+    assert res.status_code == 200
+    assert scheduled == []
+    body = res.json()
+    assert body["state"] == "done"
+    assert body["workflow_stage_key"] == "done"
+    assert body["workflow_stage_status"] == "done"
+    assert _stage_statuses(body)["done"] == "done"

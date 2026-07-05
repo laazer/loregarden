@@ -40,6 +40,22 @@ class BridgeResult:
     session_id: str = ""
 
 
+def serialize_tool_input(tool_input: Any) -> str:
+    """Persist full tool input JSON without truncation."""
+    return json.dumps(tool_input, ensure_ascii=False)
+
+
+def parse_stored_tool_input(raw: str) -> dict[str, Any]:
+    """Parse stored tool input; tolerate legacy truncated payloads."""
+    if not raw or raw == "{}":
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _parse_ndjson_line(line: str) -> dict[str, Any] | None:
     line = line.strip()
     if not line:
@@ -282,9 +298,7 @@ def poll_approval_resolution(approval_id: str) -> ApprovalResolution | None:
             stored = json.loads(approval.response_json or "{}")
             updated_input = stored.get("updated_input")
             if updated_input is None and approval.kind == ApprovalKind.CLI_PERMISSION:
-                raw = json.loads(approval.tool_input_json or "{}")
-                if isinstance(raw, dict):
-                    updated_input = raw
+                updated_input = parse_stored_tool_input(approval.tool_input_json)
             return ApprovalResolution(
                 approved=True,
                 updated_input=updated_input if isinstance(updated_input, dict) else None,
@@ -657,7 +671,7 @@ class PermissionBridgeRunner:
             impact=summary[:2000],
             permission_request_id=request_id,
             tool_name=ASK_USER_QUESTION_TOOL,
-            tool_input_json=json.dumps(tool_input)[:8000],
+            tool_input_json=serialize_tool_input(tool_input),
             cli_adapter=cli_adapter,
             cli_session_id=cli_session_id,
             status=ApprovalStatus.PENDING,
@@ -711,7 +725,7 @@ class PermissionBridgeRunner:
             impact=f"Agent requested `{tool_name}` during stage `{ticket.workflow_stage_key}`.",
             permission_request_id=request_id,
             tool_name=tool_name,
-            tool_input_json=json.dumps(tool_input)[:4000],
+            tool_input_json=serialize_tool_input(tool_input),
             cli_adapter=cli_adapter,
             cli_session_id=cli_session_id,
             status=ApprovalStatus.PENDING,

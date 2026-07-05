@@ -45,6 +45,10 @@ VALID_HIERARCHY: dict[WorkItemType, list[WorkItemType]] = {
     WorkItemType.BUG: [],
 }
 
+WORKFLOW_WORK_ITEM_TYPES = frozenset(
+    {WorkItemType.FEATURE, WorkItemType.TASK, WorkItemType.BUG}
+)
+
 
 class CycleStatus(str, Enum):
     PLANNED = "planned"
@@ -353,12 +357,9 @@ class TicketSummary(SQLModel):
     workflow_stage_key: str
     workflow_stage_status: StageStatus
     workflow_stage_name: str = ""
-    branch: str = ""
     run_code: str = ""
     work_item_type: WorkItemType = WorkItemType.TASK
     parent_ticket_id: Optional[str] = None
-    cycle_id: Optional[str] = None
-    cycle_name: str = ""
     milestone: str = ""
     child_count: int = 0
 
@@ -545,9 +546,7 @@ class TicketCreate(SQLModel):
     description: str = ""
     acceptance_criteria: list[str] = []
     priority: int = 3
-    cycle_id: Optional[str] = None
     milestone: str = ""
-    branch: str = ""
     external_id: str = ""
 
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
-import type { CycleSummary, TicketSummary, TicketTreeNode, WorkItemType } from "../api/client";
+import type { TicketSummary, TicketTreeNode, WorkItemType } from "../api/client";
+import { isWorkflowWorkItem } from "../api/client";
 
 const WORK_ITEM_TYPES: { id: WorkItemType; label: string }[] = [
   { id: "milestone", label: "Milestone" },
@@ -24,18 +25,19 @@ export interface CreateWorkItemDraft {
   description: string;
   acceptance_criteria: string;
   priority: number;
-  cycle_id: string;
-  branch: string;
 }
 
 interface CreateWorkItemModalProps {
   open: boolean;
   workspaceSlug: string;
+  workspacePicker: boolean;
+  workspaces: { slug: string; name: string }[];
+  onWorkspaceSlugChange: (slug: string) => void;
   tickets: TicketSummary[];
-  cycles: CycleSummary[];
   selectedTicketId: string | null;
   ticketTree: TicketTreeNode[];
   isSaving: boolean;
+  errorMessage?: string | null;
   onClose: () => void;
   onCreate: (draft: CreateWorkItemDraft) => Promise<void>;
 }
@@ -86,6 +88,8 @@ function initialDraft(
   } else if (selectedNode) {
     work_item_type = defaultChildType(selectedNode.work_item_type);
     parent_ticket_id = selectedNode.id;
+  } else {
+    work_item_type = "milestone";
   }
 
   return {
@@ -95,19 +99,20 @@ function initialDraft(
     description: "",
     acceptance_criteria: "",
     priority: 3,
-    cycle_id: selected?.cycle_id ?? "",
-    branch: "",
   };
 }
 
 export function CreateWorkItemModal({
   open,
   workspaceSlug,
+  workspacePicker,
+  workspaces,
+  onWorkspaceSlugChange,
   tickets,
-  cycles,
   selectedTicketId,
   ticketTree,
   isSaving,
+  errorMessage,
   onClose,
   onCreate,
 }: CreateWorkItemModalProps) {
@@ -149,7 +154,7 @@ export function CreateWorkItemModal({
   const needsParent = draft.work_item_type !== "milestone";
   const canSubmit =
     draft.title.trim().length > 0 &&
-    workspaceSlug !== "all" &&
+    !!workspaceSlug &&
     (!needsParent || !!draft.parent_ticket_id);
 
   const handleCreate = () => {
@@ -175,8 +180,37 @@ export function CreateWorkItemModal({
         </div>
 
         <div className="modal-body">
-          {workspaceSlug === "all" && (
+          {workspacePicker && (
+            <div className="modal-field">
+              <div className="modal-field-label">Workspace</div>
+              <select
+                className="btn-secondary filter-select"
+                style={{ width: "100%", fontSize: 12 }}
+                value={workspaceSlug}
+                disabled={isSaving || workspaces.length === 0}
+                onChange={(e) => onWorkspaceSlugChange(e.target.value)}
+              >
+                {workspaces.length === 0 ? (
+                  <option value="">No workspaces available</option>
+                ) : (
+                  workspaces.map((w) => (
+                    <option key={w.slug} value={w.slug}>
+                      {w.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+          )}
+
+          {!workspaceSlug && (
             <p className="modal-hint">Select a workspace before creating work items.</p>
+          )}
+
+          {errorMessage && (
+            <p className="modal-hint" style={{ color: "var(--rdl)" }}>
+              {errorMessage}
+            </p>
           )}
 
           <div className="modal-field">
@@ -244,7 +278,7 @@ export function CreateWorkItemModal({
             />
           </div>
 
-          {(draft.work_item_type === "task" || draft.work_item_type === "bug") && (
+          {(isWorkflowWorkItem(draft.work_item_type)) && (
             <div className="modal-field">
               <div className="modal-field-label">Acceptance criteria (one per line)</div>
               <textarea
@@ -272,38 +306,6 @@ export function CreateWorkItemModal({
               <option value={3}>P3 — Low</option>
             </select>
           </div>
-
-          <div className="modal-field">
-            <div className="modal-field-label">Cycle</div>
-            <select
-              className="btn-secondary filter-select"
-              style={{ width: "100%", fontSize: 12 }}
-              value={draft.cycle_id}
-              disabled={isSaving}
-              onChange={(e) => setDraft((d) => ({ ...d, cycle_id: e.target.value }))}
-            >
-              <option value="">Inherit from parent</option>
-              {cycles.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {(draft.work_item_type === "task" || draft.work_item_type === "bug") && (
-            <div className="modal-field">
-              <div className="modal-field-label">Branch (optional)</div>
-              <input
-                className="btn-secondary filter-select"
-                style={{ width: "100%", fontSize: 12 }}
-                value={draft.branch}
-                disabled={isSaving}
-                placeholder="feat/my-change"
-                onChange={(e) => setDraft((d) => ({ ...d, branch: e.target.value }))}
-              />
-            </div>
-          )}
         </div>
 
         <div className="modal-footer">

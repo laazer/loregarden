@@ -9,6 +9,7 @@ from loregarden.core.workflow_loader import get_template_stages, sync_workflow_t
 from loregarden.services.workflow_state import initial_stages_json, reconcile_workflow_state
 from loregarden.models.domain import (
     Ticket,
+    WORKFLOW_WORK_ITEM_TYPES,
     WorkflowInstance,
     WorkflowStageDef,
     WorkflowTemplate,
@@ -121,6 +122,8 @@ class WorkflowService:
             select(Ticket).where(Ticket.workspace_id == workspace.id)
         ).all()
         for ticket in tickets:
+            if ticket.work_item_type not in WORKFLOW_WORK_ITEM_TYPES:
+                continue
             instance = self.session.exec(
                 select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)
             ).first()

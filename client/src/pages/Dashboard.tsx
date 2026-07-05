@@ -1,16 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, type DiffArtifact, type DiffFileSection, type StageStatus, type TicketDetail, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
+import { api, isWorkflowWorkItem, type DiffArtifact, type DiffFileSection, type StageStatus, type TicketDetail, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { LogsPanel } from "../components/LogsPanel";
 import { TriagePanel } from "../components/TriagePanel";
 import { collectExpandableIds, findAncestorIds, TicketTree } from "../components/TicketTree";
-import { ConfirmRunStageModal, currentStageRunLabel, stageRunButtonLabel } from "../components/ConfirmRunStageModal";
+import { ConfirmRunStageModal, currentStageRunLabel, isDoneStage, isHumanGateStage, stageRunButtonLabel } from "../components/ConfirmRunStageModal";
 import { CreateWorkItemModal, type CreateWorkItemDraft } from "../components/CreateWorkItemModal";
 import { SettingsModal } from "../components/SettingsModal";
 import { runtimeFromWorkspace, runtimeSettingsEqual } from "../components/WorkspaceRuntimeFields";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
 import { useUiStore, type PaneId } from "../state/uiStore";
+import { formatApprovalResolveError } from "../utils/approvalErrors";
 
 function mergeApprovals(...lists: Array<import("../api/client").Approval[] | undefined>) {
   const seen = new Set<string>();
@@ -83,6 +84,14 @@ function canRunStage(
   ticket: TicketDetail,
   stage: WorkflowStageView,
 ): { allowed: boolean; reason: string } {
+  if (stage.key === "done") {
+    if (ticket.state === "done") {
+      return { allowed: false, reason: "Ticket already complete" };
+    }
+    if (stage.status === "done") {
+      return { allowed: false, reason: "Ticket already complete" };
+    }
+  }
   if (stage.status === "wont_do") {
     return { allowed: false, reason: "Stage marked won't do" };
   }
@@ -108,7 +117,12 @@ function canRunStage(
       return { allowed: false, reason: "Resolve the blocked stage before running another" };
     }
   }
-  const verb = stage.status === "done" || stage.status === "blocked" ? "Re-run" : "Run";
+  const verb =
+    stage.key === "done"
+      ? "Complete"
+      : stage.status === "done" || stage.status === "blocked"
+        ? "Re-run"
+        : "Run";
   return { allowed: true, reason: `${verb} ${stage.name}` };
 }
 
@@ -174,7 +188,6 @@ export function Dashboard() {
     selectedTicketId,
     filter,
     typeFilter,
-    cycleFilter,
     search,
     expandedTicketIds,
     workspace,
@@ -183,7 +196,6 @@ export function Dashboard() {
     setSelectedTicketId,
     setFilter,
     setTypeFilter,
-    setCycleFilter,
     setSearch,
     toggleExpanded,
     expandAll,
@@ -209,28 +221,25 @@ export function Dashboard() {
 
   const wsParam = workspace === "all" ? undefined : workspace;
 
-  const cycles = useQuery({
-    queryKey: ["cycles", workspace],
-    queryFn: () => api.cycles(wsParam),
-  });
-
   const ticketTree = useQuery({
-    queryKey: ["ticket-tree", workspace, filter, typeFilter, cycleFilter, search],
+    queryKey: ["ticket-tree", workspace, filter, typeFilter, search],
     queryFn: () =>
       api.ticketTree({
         workspace: wsParam,
         state: filter === "all" ? undefined : filter,
         work_item_type: typeFilter === "all" ? undefined : typeFilter,
-        cycle_id: cycleFilter === "all" ? undefined : cycleFilter,
         search: search.trim() || undefined,
       }),
     refetchInterval: 5000,
   });
 
-  const allTickets = useQuery({
-    queryKey: ["tickets", workspace],
-    queryFn: () => api.tickets({ workspace: wsParam }),
-    enabled: !!wsParam,
+  const [createWorkItemOpen, setCreateWorkItemOpen] = useState(false);
+  const [createTargetWorkspace, setCreateTargetWorkspace] = useState("");
+
+  const createTickets = useQuery({
+    queryKey: ["tickets", "create", createTargetWorkspace],
+    queryFn: () => api.tickets({ workspace: createTargetWorkspace }),
+    enabled: createWorkItemOpen && !!createTargetWorkspace,
   });
 
   const flatTickets = useMemo(
@@ -246,7 +255,7 @@ export function Dashboard() {
 
   const selectedId =
     selectedTicketId ??
-    flatTickets.find((t) => t.work_item_type === "task" || t.work_item_type === "bug")?.id ??
+    flatTickets.find((t) => isWorkflowWorkItem(t.work_item_type))?.id ??
     flatTickets[0]?.id ??
     null;
 
@@ -344,7 +353,6 @@ export function Dashboard() {
   const [runConfirmStageKey, setRunConfirmStageKey] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsWorkspaceSlug, setSettingsWorkspaceSlug] = useState("loregarden");
-  const [createWorkItemOpen, setCreateWorkItemOpen] = useState(false);
 
   const saveStateFromModal = useMutation({
     mutationFn: async ({
@@ -440,13 +448,10 @@ export function Dashboard() {
           .map((line) => line.trim())
           .filter(Boolean),
         priority: draft.priority,
-        cycle_id: draft.cycle_id || null,
-        branch: draft.branch.trim(),
       }),
     onSuccess: (ticket) => {
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
-      qc.invalidateQueries({ queryKey: ["cycles"] });
       setSelectedTicketId(ticket.id);
       if (ticket.parent_ticket_id) {
         expandPath([ticket.parent_ticket_id]);
@@ -459,9 +464,30 @@ export function Dashboard() {
   const runConfirmStage = sel?.stages.find((s) => s.key === runConfirmStageKey) ?? null;
 
   const activeWorkspaceSlug =
-    workspace === "all" ? (sel?.workspace_slug ?? "loregarden") : workspace;
+    workspace === "all" ? (sel?.workspace_slug ?? workspaces.data?.[0]?.slug ?? "loregarden") : workspace;
+  const defaultCreateWorkspaceSlug =
+    sel?.workspace_slug ?? workspaces.data?.[0]?.slug ?? "loregarden";
   const activeWorkspaceRecord = workspaces.data?.find((w) => w.slug === activeWorkspaceSlug);
   const activeWorkspaceRuntime = runtimeFromWorkspace(activeWorkspaceRecord);
+
+  const openCreateWorkItem = () => {
+    const slug = workspace === "all" ? defaultCreateWorkspaceSlug : workspace;
+    setCreateTargetWorkspace(slug);
+    createWorkItem.reset();
+    setCreateWorkItemOpen(true);
+  };
+
+  const createWorkItemError =
+    createWorkItem.error instanceof Error
+      ? (() => {
+          try {
+            const parsed = JSON.parse(createWorkItem.error.message) as { detail?: string };
+            return parsed.detail ?? createWorkItem.error.message;
+          } catch {
+            return createWorkItem.error.message;
+          }
+        })()
+      : null;
 
   const requestStageRun = (stageKey: string) => setRunConfirmStageKey(stageKey);
   const confirmStageRun = async (runtime: typeof activeWorkspaceRuntime) => {
@@ -535,7 +561,7 @@ export function Dashboard() {
 
   const counts = flatTickets.reduce(
     (acc, t) => {
-      if (t.work_item_type === "task" || t.work_item_type === "bug") {
+      if (isWorkflowWorkItem(t.work_item_type)) {
         acc.all += 1;
         acc[t.state] += 1;
       }
@@ -691,9 +717,13 @@ export function Dashboard() {
                       <button
                         className="btn-secondary btn-compact"
                         type="button"
-                        title="Create a new work item"
-                        disabled={workspace === "all"}
-                        onClick={() => setCreateWorkItemOpen(true)}
+                        title={
+                          defaultCreateWorkspaceSlug
+                            ? "Create a new work item"
+                            : "Load workspaces before creating work items"
+                        }
+                        disabled={!defaultCreateWorkspaceSlug}
+                        onClick={openCreateWorkItem}
                       >
                         + New
                       </button>
@@ -735,18 +765,6 @@ export function Dashboard() {
                   {TYPE_FILTERS.map((f) => (
                     <option key={f.id} value={f.id}>
                       {f.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="filter-select"
-                  value={cycleFilter}
-                  onChange={(e) => setCycleFilter(e.target.value)}
-                >
-                  <option value="all">All cycles</option>
-                  {(cycles.data ?? []).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.ticket_count})
                     </option>
                   ))}
                 </select>
@@ -814,8 +832,6 @@ export function Dashboard() {
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                   <span className="count-pill">{sel.workspace_slug}</span>
                   <span className="count-pill">{sel.work_item_type}</span>
-                  {sel.cycle_name && <span className="count-pill">{sel.cycle_name}</span>}
-                  <span className="count-pill">{sel.branch || "—"}</span>
                   {workspaceWorkflow.data?.template_slug && (
                     <span className="count-pill" style={{ color: "var(--ac2)" }}>
                       {workspaceWorkflow.data.template_name}
@@ -925,11 +941,21 @@ export function Dashboard() {
                             {s.status}
                           </span>
                         </div>
-                        {s.agent_id && (
+                        {isDoneStage(s) ? (
+                          <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txm)", marginTop: 5 }}>
+                            terminal stage · marks ticket complete
+                          </div>
+                        ) : isHumanGateStage(s) ? (
+                          <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txm)", marginTop: 5 }}>
+                            human approval gate
+                          </div>
+                        ) : (
+                          s.agent_id && (
                           <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txm)", marginTop: 5 }}>
                             {s.agent_id}
                             {s.skill_name ? ` · ${s.skill_name}` : ""}
                           </div>
+                          )
                         )}
                         {s.note && (
                           <div
@@ -1079,15 +1105,21 @@ export function Dashboard() {
 
       <CreateWorkItemModal
         open={createWorkItemOpen}
-        workspaceSlug={activeWorkspaceSlug}
-        tickets={allTickets.data ?? []}
-        cycles={cycles.data ?? []}
+        workspaceSlug={createTargetWorkspace}
+        workspacePicker={workspace === "all"}
+        workspaces={(workspaces.data ?? []).map((w) => ({ slug: w.slug, name: w.name }))}
+        onWorkspaceSlugChange={setCreateTargetWorkspace}
+        tickets={createTickets.data ?? []}
         selectedTicketId={selectedId}
         ticketTree={ticketTree.data ?? []}
         isSaving={createWorkItem.isPending}
-        onClose={() => setCreateWorkItemOpen(false)}
+        errorMessage={createWorkItemError}
+        onClose={() => {
+          createWorkItem.reset();
+          setCreateWorkItemOpen(false);
+        }}
         onCreate={async (draft) => {
-          await createWorkItem.mutateAsync({ draft, workspaceSlug: activeWorkspaceSlug });
+          await createWorkItem.mutateAsync({ draft, workspaceSlug: createTargetWorkspace });
         }}
       />
 
@@ -1132,6 +1164,21 @@ export function Dashboard() {
               </div>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+              {resolveApproval.isError && (
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    color: "var(--rdl)",
+                    marginBottom: 12,
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    background: "rgba(240,96,63,.08)",
+                    border: "1px solid rgba(240,96,63,.25)",
+                  }}
+                >
+                  {formatApprovalResolveError(resolveApproval.error)}
+                </div>
+              )}
               {approvals.data?.map((a) => (
                 <ApprovalCard
                   key={a.id}
@@ -1145,7 +1192,7 @@ export function Dashboard() {
                     setInboxOpen(false);
                     setTab("diff");
                   }}
-                  isSubmitting={resolveApproval.isPending}
+                  isSubmitting={resolveApproval.isPending && resolveApproval.variables?.id === a.id}
                 />
               ))}
               {!approvals.data?.length && (

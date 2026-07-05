@@ -41,6 +41,8 @@ export function ConfirmRunStageModal({
   if (!open || !ticket || !stage) return null;
 
   const isRerun = stage.status === "done";
+  const humanGate = isHumanGateStage(stage);
+  const doneStage = isDoneStage(stage);
   const busy = isRunning || isSavingRuntime;
   const runtimeDirty = !runtimeSettingsEqual(draftRuntime, workspaceRuntime);
 
@@ -56,7 +58,15 @@ export function ConfirmRunStageModal({
           <div>
             <div className="state-label">Stage execution</div>
             <h2 id="confirm-run-stage-title" className="modal-title">
-              {isRerun ? "Re-run stage?" : "Run stage?"}
+              {doneStage
+                ? "Complete ticket?"
+                : humanGate
+                  ? isRerun
+                    ? "Re-request approval?"
+                    : "Request approval?"
+                  : isRerun
+                    ? "Re-run stage?"
+                    : "Run stage?"}
             </h2>
             <p className="modal-subtitle">{ticket.title}</p>
           </div>
@@ -67,7 +77,26 @@ export function ConfirmRunStageModal({
 
         <div className="modal-body">
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: "var(--txm)" }}>
-            {isRerun ? (
+            {doneStage ? (
+              <>
+                Mark <strong style={{ color: "var(--tx)" }}>{ticket.title}</strong> complete? This
+                closes the workflow — no agent is invoked.
+              </>
+            ) : humanGate ? (
+              isRerun ? (
+                <>
+                  Re-open human approval for{" "}
+                  <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>? A new inbox item will
+                  be created for sign-off.
+                </>
+              ) : (
+                <>
+                  Request human sign-off for{" "}
+                  <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>. This creates an inbox
+                  approval — no agent CLI is invoked.
+                </>
+              )
+            ) : isRerun ? (
               <>
                 Are you sure you want to re-run <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>?
                 This stage is already marked done and will invoke its sub-agent again.
@@ -89,7 +118,7 @@ export function ConfirmRunStageModal({
             </div>
           )}
 
-          {runtimeOptions && (
+          {runtimeOptions && !humanGate && !doneStage && (
             <div style={{ marginTop: 8 }}>
               <div className="modal-section-title">Model for this run</div>
               <WorkspaceRuntimeFields
@@ -113,7 +142,23 @@ export function ConfirmRunStageModal({
             Cancel
           </button>
           <button type="button" className="btn-primary" disabled={busy} onClick={handleConfirm}>
-            {isSavingRuntime ? "Saving…" : isRunning ? "Running…" : isRerun ? "Re-run stage" : "Run stage"}
+            {isSavingRuntime
+              ? "Saving…"
+              : isRunning
+                ? doneStage
+                  ? "Completing…"
+                  : humanGate
+                    ? "Requesting…"
+                    : "Running…"
+                : doneStage
+                  ? "Complete ticket"
+                  : humanGate
+                    ? isRerun
+                      ? "Re-request approval"
+                      : "Request approval"
+                    : isRerun
+                      ? "Re-run stage"
+                      : "Run stage"}
           </button>
         </div>
       </div>
@@ -121,8 +166,25 @@ export function ConfirmRunStageModal({
   );
 }
 
+export function isHumanGateStage(stage: WorkflowStageView): boolean {
+  return !stage.agent_id?.trim() && stage.key !== "done";
+}
+
+export function isDoneStage(stage: WorkflowStageView): boolean {
+  return stage.key === "done";
+}
+
 export function stageRunButtonLabel(stage: WorkflowStageView, isRunning: boolean): string {
   if (isRunning) return "Running…";
+  if (isDoneStage(stage)) {
+    if (stage.status === "done") return "Complete";
+    return "Complete ticket";
+  }
+  if (isHumanGateStage(stage)) {
+    if (stage.status === "awaiting") return "Awaiting approval";
+    if (stage.status === "done") return "Re-request";
+    return "Request approval";
+  }
   if (stage.status === "done") return "Re-Run";
   return "Run";
 }
@@ -130,6 +192,15 @@ export function stageRunButtonLabel(stage: WorkflowStageView, isRunning: boolean
 export function currentStageRunLabel(stage: WorkflowStageView | undefined, isRunning: boolean): string {
   if (!stage) return "Run current stage";
   if (isRunning) return "Running…";
+  if (isDoneStage(stage)) {
+    if (stage.status === "done") return "Ticket complete";
+    return "Complete ticket";
+  }
+  if (isHumanGateStage(stage)) {
+    if (stage.status === "awaiting") return "Awaiting approval";
+    if (stage.status === "done") return "Re-request approval";
+    return "Request approval";
+  }
   if (stage.status === "done") return "Re-run current stage";
   return "Run current stage";
 }

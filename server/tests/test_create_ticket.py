@@ -11,6 +11,42 @@ def _capability_id(client: TestClient) -> str:
     raise AssertionError("capability not found")
 
 
+def test_create_feature_work_item_gets_workflow(client: TestClient):
+    milestone_id = next(
+        t["id"]
+        for t in client.get("/api/tickets?workspace=loregarden").json()
+        if t["work_item_type"] == "milestone"
+    )
+    res = client.post(
+        "/api/tickets",
+        json={
+            "workspace_slug": "loregarden",
+            "title": "Feature-level workflow test",
+            "work_item_type": "feature",
+            "parent_ticket_id": milestone_id,
+            "description": "Runs the standard SDLC workflow at feature scope.",
+            "acceptance_criteria": ["Planning through review stages are available"],
+            "priority": 2,
+        },
+    )
+    assert res.status_code == 201
+    body = res.json()
+    assert body["work_item_type"] == "feature"
+    assert body["workflow_stage_key"] == "planning"
+    assert len(body["stages"]) >= 5
+
+
+def test_feature_ticket_backfills_workflow_on_load(client: TestClient):
+    feature = next(
+        t
+        for t in client.get("/api/tickets?workspace=loregarden").json()
+        if t["external_id"] == "m01-backend-platform"
+    )
+    detail = client.get(f"/api/tickets/{feature['id']}").json()
+    assert len(detail["stages"]) >= 5
+    assert detail["workflow_stage_key"]
+
+
 def test_create_task_work_item(client: TestClient):
     parent_id = _capability_id(client)
     res = client.post(
@@ -23,7 +59,6 @@ def test_create_task_work_item(client: TestClient):
             "description": "Filter tickets in the tree view.",
             "acceptance_criteria": ["User can filter by type", "Filters persist in URL"],
             "priority": 2,
-            "branch": "feat/export-filters",
         },
     )
     assert res.status_code == 201

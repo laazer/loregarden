@@ -592,6 +592,12 @@ button {
   cursor: pointer;
 }
 
+.btn-secondary:disabled,
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .tab-bar {
   height: 47px;
   display: flex;

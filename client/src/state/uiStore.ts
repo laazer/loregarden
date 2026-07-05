@@ -14,7 +14,6 @@ interface UiState {
   selectedTicketId: string | null;
   filter: TicketState | "all";
   typeFilter: WorkItemType | "all";
-  cycleFilter: string | "all";
   search: string;
   expandedTicketIds: string[];
   workspace: string;
@@ -25,7 +24,6 @@ interface UiState {
   setSelectedTicketId: (id: string | null) => void;
   setFilter: (f: TicketState | "all") => void;
   setTypeFilter: (t: WorkItemType | "all") => void;
-  setCycleFilter: (id: string | "all") => void;
   setSearch: (s: string) => void;
   toggleExpanded: (id: string) => void;
   expandAll: (ids: string[]) => void;
@@ -45,7 +43,6 @@ export const useUiStore = create<UiState>()(
       selectedTicketId: null,
       filter: "all",
       typeFilter: "all",
-      cycleFilter: "all",
       search: "",
       expandedTicketIds: [],
       workspace: "all",
@@ -61,7 +58,6 @@ export const useUiStore = create<UiState>()(
       setSelectedTicketId: (id) => set({ selectedTicketId: id }),
       setFilter: (filter) => set({ filter }),
       setTypeFilter: (typeFilter) => set({ typeFilter }),
-      setCycleFilter: (cycleFilter) => set({ cycleFilter }),
       setSearch: (search) => set({ search }),
       toggleExpanded: (id) => {
         const cur = new Set(get().expandedTicketIds);
@@ -103,7 +99,6 @@ export const useUiStore = create<UiState>()(
         expandedTicketIds: s.expandedTicketIds,
         workspace: s.workspace,
         typeFilter: s.typeFilter,
-        cycleFilter: s.cycleFilter,
         paneVisibility: s.paneVisibility,
       }),
     },

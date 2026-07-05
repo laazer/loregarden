@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { api, type Approval, type RuntimeOptions, type TicketDetail, type TriageMessage } from "../api/client";
+import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { TriageComposer } from "./TriageComposer";
 
@@ -271,7 +272,8 @@ export function TriagePanel({
       <PendingApprovalsSection
         approvals={pending}
         ticketExternalId={ticket.external_id}
-        isSubmitting={resolveApproval.isPending}
+        submittingApprovalId={resolveApproval.isPending ? resolveApproval.variables?.id ?? null : null}
+        submitError={resolveApproval.isError ? formatApprovalResolveError(resolveApproval.error) : null}
         onApprove={(approval, payload) =>
           resolveApproval.mutate({ id: approval.id, action: "approve", ...payload })
         }

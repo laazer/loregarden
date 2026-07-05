@@ -9,8 +9,6 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.workflow_state import stages_up_to_done_json
 from loregarden.services.workflow_service import resolve_workspace_stages
 from loregarden.models.domain import (
-    Cycle,
-    CycleStatus,
     EventType,
     StageStatus,
     Ticket,
@@ -33,7 +31,6 @@ BOOTSTRAP_TASKS = [
         "priority": 1,
         "stage_key": "implementation",
         "stage_status": StageStatus.DONE,
-        "branch": "main",
         "capability_key": "api-core",
         "acceptance_criteria": [
             "FastAPI app serves ticket and workspace endpoints",
@@ -53,7 +50,6 @@ BOOTSTRAP_TASKS = [
         "priority": 1,
         "stage_key": "implementation",
         "stage_status": StageStatus.DONE,
-        "branch": "feat/bootstrap-ui",
         "capability_key": "ui-shell",
         "acceptance_criteria": [
             "UI renders ticket list and selected ticket workflow",
@@ -73,7 +69,6 @@ BOOTSTRAP_TASKS = [
         "priority": 2,
         "stage_key": "implementation",
         "stage_status": StageStatus.DONE,
-        "branch": "feat/cli-runner",
         "capability_key": "agent-runtime",
         "acceptance_criteria": [
             "Start run invokes agent registry + CLI executor",
@@ -92,7 +87,6 @@ BOOTSTRAP_TASKS = [
         "priority": 2,
         "stage_key": "implementation",
         "stage_status": StageStatus.DONE,
-        "branch": "feat/workflow-templates",
         "capability_key": "workflow-config",
         "acceptance_criteria": [
             "Workflow templates load from agent_context/workflows YAML",
@@ -111,7 +105,6 @@ BOOTSTRAP_TASKS = [
         "priority": 3,
         "stage_key": "implementation",
         "stage_status": StageStatus.DONE,
-        "branch": "feat/self-tracking",
         "capability_key": "self-tracking",
         "acceptance_criteria": [
             "agent_context/agents and skills present",
@@ -154,7 +147,6 @@ def _add_ticket(
     title: str,
     work_item_type: WorkItemType,
     parent_ticket_id: str | None = None,
-    cycle_id: str | None = None,
     description: str = "",
     state: TicketState = TicketState.BACKLOG,
     priority: int = 3,
@@ -171,7 +163,6 @@ def _add_ticket(
         milestone=milestone,
         work_item_type=work_item_type,
         parent_ticket_id=parent_ticket_id,
-        cycle_id=cycle_id,
         last_updated_by="seed",
         **kwargs,
     )
@@ -192,7 +183,6 @@ def _seed_hierarchy(
     session: Session,
     ws: Workspace,
     loregarden_tpl: WorkflowTemplate | None,
-    cycle: Cycle | None,
 ) -> dict[str, str]:
     """Create milestone → feature → capability containers; return capability id map."""
     capability_ids: dict[str, str] = {}
@@ -203,7 +193,6 @@ def _seed_hierarchy(
         external_id=root["external_id"],
         title=root["title"],
         work_item_type=WorkItemType.MILESTONE,
-        cycle_id=cycle.id if cycle else None,
         state=TicketState.DONE,
         priority=1,
     )
@@ -215,7 +204,6 @@ def _seed_hierarchy(
             title=feat["title"],
             work_item_type=WorkItemType.FEATURE,
             parent_ticket_id=milestone.id,
-            cycle_id=cycle.id if cycle else None,
             state=TicketState.DONE,
             priority=2,
         )
@@ -227,7 +215,6 @@ def _seed_hierarchy(
                 title=cap["title"],
                 work_item_type=WorkItemType.CAPABILITY,
                 parent_ticket_id=feature.id,
-                cycle_id=cycle.id if cycle else None,
                 state=TicketState.DONE,
                 priority=2,
             )
@@ -246,24 +233,10 @@ def _ensure_hierarchy(session: Session, ws: Workspace) -> None:
     if milestone:
         return
 
-    cycle = session.exec(
-        select(Cycle).where(Cycle.workspace_id == ws.id, Cycle.name == "Bootstrap Sprint")
-    ).first()
-    if not cycle:
-        cycle = Cycle(
-            workspace_id=ws.id,
-            name="Bootstrap Sprint",
-            status=CycleStatus.COMPLETED,
-            goal="Ship loregarden bootstrap vertical slice",
-        )
-        session.add(cycle)
-        session.commit()
-        session.refresh(cycle)
-
     loregarden_tpl = session.exec(
         select(WorkflowTemplate).where(WorkflowTemplate.slug == "loregarden-tdd")
     ).first()
-    capability_ids = _seed_hierarchy(session, ws, loregarden_tpl, cycle)
+    capability_ids = _seed_hierarchy(session, ws, loregarden_tpl)
 
     for item in BOOTSTRAP_TASKS:
         ticket = session.exec(
@@ -276,7 +249,6 @@ def _ensure_hierarchy(session: Session, ws: Workspace) -> None:
             continue
         ticket.work_item_type = WorkItemType.TASK
         ticket.parent_ticket_id = capability_ids.get(item["capability_key"])
-        ticket.cycle_id = cycle.id
         ticket.milestone = "01_milestone_bootstrap"
         session.add(ticket)
     session.commit()
@@ -329,17 +301,7 @@ def seed_database(session: Session) -> None:
         _reconcile_task_workflows(session, ws)
         return
 
-    cycle = Cycle(
-        workspace_id=ws.id,
-        name="Bootstrap Sprint",
-        status=CycleStatus.COMPLETED,
-        goal="Ship loregarden bootstrap vertical slice",
-    )
-    session.add(cycle)
-    session.commit()
-    session.refresh(cycle)
-
-    capability_ids = _seed_hierarchy(session, ws, loregarden_tpl, cycle)
+    capability_ids = _seed_hierarchy(session, ws, loregarden_tpl)
 
     for item in BOOTSTRAP_TASKS:
         ticket = _add_ticket(
@@ -350,10 +312,8 @@ def seed_database(session: Session) -> None:
             description=item["description"],
             work_item_type=WorkItemType.TASK,
             parent_ticket_id=capability_ids.get(item["capability_key"]),
-            cycle_id=cycle.id,
             state=item["state"],
             priority=item["priority"],
-            branch=item["branch"],
             acceptance_criteria_json=json.dumps(item["acceptance_criteria"]),
             workflow_stage_key=item["stage_key"],
             workflow_stage_status=item["stage_status"],

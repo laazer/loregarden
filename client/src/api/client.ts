@@ -16,6 +16,10 @@ export type TicketState = "backlog" | "in_progress" | "blocked" | "done" | "wont
 export type StageStatus = "pending" | "running" | "blocked" | "awaiting" | "done" | "wont_do";
 export type WorkItemType = "milestone" | "feature" | "capability" | "task" | "bug";
 
+export function isWorkflowWorkItem(type: WorkItemType): boolean {
+  return type === "feature" || type === "task" || type === "bug";
+}
+
 export interface TicketSummary {
   id: string;
   external_id: string;
@@ -26,12 +30,9 @@ export interface TicketSummary {
   workflow_stage_key: string;
   workflow_stage_status: StageStatus;
   workflow_stage_name: string;
-  branch: string;
   run_code: string;
   work_item_type: WorkItemType;
   parent_ticket_id: string | null;
-  cycle_id: string | null;
-  cycle_name: string;
   milestone: string;
   child_count: number;
 }
@@ -334,15 +335,6 @@ export interface StudioWorkflow {
   updated_at: string;
 }
 
-export interface CycleSummary {
-  id: string;
-  name: string;
-  status: string;
-  goal: string;
-  workspace_slug: string;
-  ticket_count: number;
-}
-
 export interface CreateTicketRequest {
   workspace_slug: string;
   title: string;
@@ -351,9 +343,7 @@ export interface CreateTicketRequest {
   description?: string;
   acceptance_criteria?: string[];
   priority?: number;
-  cycle_id?: string | null;
   milestone?: string;
-  branch?: string;
   external_id?: string;
 }
 
@@ -363,7 +353,6 @@ function ticketQuery(params?: {
   work_item_type?: WorkItemType;
   parent_ticket_id?: string;
   roots_only?: boolean;
-  cycle_id?: string;
   milestone?: string;
   search?: string;
 }) {
@@ -373,7 +362,6 @@ function ticketQuery(params?: {
   if (params?.work_item_type) q.set("work_item_type", params.work_item_type);
   if (params?.parent_ticket_id) q.set("parent_ticket_id", params.parent_ticket_id);
   if (params?.roots_only) q.set("roots_only", "true");
-  if (params?.cycle_id) q.set("cycle_id", params.cycle_id);
   if (params?.milestone) q.set("milestone", params.milestone);
   if (params?.search) q.set("search", params.search);
   const suffix = q.toString() ? `?${q}` : "";
@@ -417,20 +405,14 @@ export const api = {
     workspace?: string;
     state?: TicketState;
     work_item_type?: WorkItemType;
-    cycle_id?: string;
     search?: string;
   }) => request<TicketSummary[]>(`/api/tickets${ticketQuery(params)}`),
   ticketTree: (params?: {
     workspace?: string;
     state?: TicketState;
     work_item_type?: WorkItemType;
-    cycle_id?: string;
     search?: string;
   }) => request<TicketTreeNode[]>(`/api/tickets/tree${ticketQuery(params)}`),
-  cycles: (workspace?: string) => {
-    const q = workspace ? `?workspace=${encodeURIComponent(workspace)}` : "";
-    return request<CycleSummary[]>(`/api/cycles${q}`);
-  },
   ticket: (id: string) => request<TicketDetail>(`/api/tickets/${id}`),
   createTicket: (body: CreateTicketRequest) =>
     request<TicketDetail>("/api/tickets", {

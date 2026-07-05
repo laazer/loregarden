@@ -17,13 +17,15 @@ function approvalKindLabel(kind: Approval["kind"]) {
 export function PendingApprovalsSection({
   approvals,
   ticketExternalId,
-  isSubmitting,
+  submittingApprovalId,
+  submitError,
   onApprove,
   onReject,
 }: {
   approvals: Approval[];
   ticketExternalId?: string;
-  isSubmitting: boolean;
+  submittingApprovalId?: string | null;
+  submitError?: string | null;
   onApprove: (approval: Approval, payload?: { answers?: Record<string, string | string[]>; response?: string }) => void;
   onReject: (approval: Approval) => void;
 }) {
@@ -42,6 +44,21 @@ export function PendingApprovalsSection({
       <div className="state-label" style={{ marginBottom: 10 }}>
         Needs attention
       </div>
+      {submitError && (
+        <div
+          style={{
+            fontSize: 11.5,
+            color: "var(--rdl)",
+            marginBottom: 10,
+            padding: "8px 10px",
+            borderRadius: 8,
+            background: "rgba(240,96,63,.08)",
+            border: "1px solid rgba(240,96,63,.25)",
+          }}
+        >
+          {submitError}
+        </div>
+      )}
       {approvals.map((approval) => (
         <div key={approval.id}>
           {approval.ticket_external_id &&
@@ -54,7 +71,7 @@ export function PendingApprovalsSection({
           <ApprovalCard
             approval={approval}
             compact
-            isSubmitting={isSubmitting}
+            isSubmitting={submittingApprovalId === approval.id}
             onApprove={(payload) => onApprove(approval, payload)}
             onReject={() => onReject(approval)}
           />

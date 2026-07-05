@@ -7,7 +7,8 @@ from loregarden.db.session import get_session
 from loregarden.models.domain import (
     AdvanceStageRequest,
     Artifact,
-    Cycle,
+    RunStatus,
+    StageStatus,
     StartOrchestrationRequest,
     StartRunRequest,
     TriageMessageCreate,
@@ -48,13 +49,6 @@ def _latest_run_code(session: Session, ticket_id: str) -> str:
     return run.run_code if run else ""
 
 
-def _cycle_name(session: Session, cycle_id: str | None) -> str:
-    if not cycle_id:
-        return ""
-    cycle = session.get(Cycle, cycle_id)
-    return cycle.name if cycle else ""
-
-
 def _ticket_summary(session: Session, ticket: Ticket) -> TicketSummary:
     ws = session.get(Workspace, ticket.workspace_id)
     orch = OrchestrationService(session)
@@ -74,12 +68,9 @@ def _ticket_summary(session: Session, ticket: Ticket) -> TicketSummary:
         workflow_stage_key=ticket.workflow_stage_key,
         workflow_stage_status=ticket.workflow_stage_status,
         workflow_stage_name=stage_name,
-        branch=ticket.branch,
         run_code=_latest_run_code(session, ticket.id),
         work_item_type=ticket.work_item_type,
         parent_ticket_id=ticket.parent_ticket_id,
-        cycle_id=ticket.cycle_id,
-        cycle_name=_cycle_name(session, ticket.cycle_id),
         milestone=ticket.milestone,
         child_count=child_count(session, ticket.id),
     )
@@ -173,6 +164,8 @@ def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
             grouped["diff"] = ensure_diff_artifact(session, ticket=ticket, workspace=workspace)
         if not grouped["tests"] or not _test_artifact_is_valid(grouped["tests"] or {}):
             grouped["tests"] = ensure_test_artifact(session, ticket=ticket)
+    if not grouped.get("live") and ticket.workflow_stage_status == StageStatus.AWAITING:
+        grouped["live"] = "Awaiting your approval in Triage or Inbox…"
     return grouped
 
 
@@ -191,7 +184,6 @@ def ticket_tree(
     workspace: str | None = None,
     state: TicketState | None = None,
     work_item_type: WorkItemType | None = None,
-    cycle_id: str | None = None,
     milestone: str | None = None,
     search: str | None = None,
     session: Session = Depends(get_session),
@@ -207,8 +199,6 @@ def ticket_tree(
         query = query.where(Ticket.state == state)
     if work_item_type:
         query = query.where(Ticket.work_item_type == work_item_type)
-    if cycle_id:
-        query = query.where(Ticket.cycle_id == cycle_id)
     if milestone:
         query = query.where(Ticket.milestone == milestone)
     if search:
@@ -237,7 +227,6 @@ def list_tickets(
     work_item_type: WorkItemType | None = None,
     parent_ticket_id: str | None = None,
     roots_only: bool = False,
-    cycle_id: str | None = None,
     milestone: str | None = None,
     search: str | None = None,
     session: Session = Depends(get_session),
@@ -257,8 +246,6 @@ def list_tickets(
         query = query.where(Ticket.parent_ticket_id == parent_ticket_id)
     if roots_only:
         query = query.where(Ticket.parent_ticket_id.is_(None))  # type: ignore[union-attr]
-    if cycle_id:
-        query = query.where(Ticket.cycle_id == cycle_id)
     if milestone:
         query = query.where(Ticket.milestone == milestone)
     if search:
@@ -282,9 +269,7 @@ def create_ticket(body: TicketCreate, session: Session = Depends(get_session)) -
             description=body.description,
             acceptance_criteria=body.acceptance_criteria,
             priority=body.priority,
-            cycle_id=body.cycle_id,
             milestone=body.milestone,
-            branch=body.branch,
             external_id=body.external_id,
         )
     except ValueError as exc:
@@ -406,10 +391,11 @@ def start_run(
         )
     run_svc = RunService(session)
     try:
-        run = run_svc.start_run_async(ticket, stage_key=body.stage_key)
+        run = run_svc.start_stage_execution(ticket, stage_key=body.stage_key)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    schedule_agent_run(run.id)
+    if run:
+        schedule_agent_run(run.id)
     session.refresh(ticket)
     return get_ticket(ticket_id, session)
 

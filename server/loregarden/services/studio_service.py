@@ -386,7 +386,6 @@ def resolve_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str
         [
             ticket.title or "",
             ticket.description or "",
-            ticket.branch or "",
             ticket.external_id or "",
         ]
     ).lower()
@@ -406,6 +405,13 @@ def resolve_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str
 
     first = stage.classify_routes[0]
     return first.agent_id, first.skill_name or stage.skill_name
+
+
+def is_agentless_stage(stage: WorkflowStageDef) -> bool:
+    """Stages with no CLI agent (human gates, terminal markers)."""
+    if stage.stage_type in {"classify", "gate"}:
+        return False
+    return not (stage.agent_id or "").strip()
 
 
 def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:

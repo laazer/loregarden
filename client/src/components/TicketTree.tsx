@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { TicketState, TicketTreeNode, WorkItemType } from "../api/client";
+import { isWorkflowWorkItem } from "../api/client";
 
 const STATE_COLORS: Record<TicketState, string> = {
   backlog: "var(--txm)",
@@ -74,7 +75,7 @@ function TreeRow({
 }) {
   const hasChildren = node.children.length > 0;
   const expanded = expandedIds.has(node.id);
-  const isLeaf = node.work_item_type === "task" || node.work_item_type === "bug";
+  const isWorkflowItem = isWorkflowWorkItem(node.work_item_type);
   const isSelected = selectedId === node.id;
 
   const handleRowClick = () => {
@@ -87,7 +88,7 @@ function TreeRow({
       <div
         className={`tree-row list-btn ${isSelected ? "active" : ""}`}
         style={{
-          borderLeft: `2px solid ${isLeaf ? STATE_COLORS[node.state] : TYPE_COLORS[node.work_item_type]}`,
+          borderLeft: `2px solid ${isWorkflowItem ? STATE_COLORS[node.state] : TYPE_COLORS[node.work_item_type]}`,
         }}
         onClick={handleRowClick}
         onKeyDown={(e) => {
@@ -130,7 +131,7 @@ function TreeRow({
             <span className="count-pill tree-child-count">{node.child_count}</span>
           )}
         </div>
-        {isLeaf && (
+        {isWorkflowItem && (
           <div className="tree-meta">
             <span style={{ color: STATE_COLORS[node.state] }}>{node.state.replace("_", " ")}</span>
             {node.workflow_stage_name && (

@@ -14,6 +14,7 @@ from loregarden.models.domain import (
     StageStatus,
     Ticket,
     TicketState,
+    WORKFLOW_WORK_ITEM_TYPES,
     WorkItemType,
     WorkflowInstance,
     Workspace,
@@ -69,9 +70,7 @@ class TicketService:
         description: str = "",
         acceptance_criteria: list[str] | None = None,
         priority: int = 3,
-        cycle_id: str | None = None,
         milestone: str = "",
-        branch: str = "",
         external_id: str = "",
     ) -> Ticket:
         title = title.strip()
@@ -114,7 +113,6 @@ class TicketService:
             raise ValueError(f"external_id already exists: {ext_id}")
 
         inherited_milestone = milestone.strip() or (parent.milestone if parent else "")
-        inherited_cycle = cycle_id or (parent.cycle_id if parent else None)
 
         ticket = Ticket(
             external_id=ext_id,
@@ -126,8 +124,6 @@ class TicketService:
             milestone=inherited_milestone,
             work_item_type=work_item_type,
             parent_ticket_id=parent_ticket_id,
-            cycle_id=inherited_cycle,
-            branch=branch.strip(),
             acceptance_criteria_json=json.dumps(
                 [line.strip() for line in (acceptance_criteria or []) if line.strip()]
             ),
@@ -135,7 +131,7 @@ class TicketService:
         )
 
         template, stages = resolve_workspace_stages(self.session, ws)
-        if work_item_type in (WorkItemType.TASK, WorkItemType.BUG):
+        if work_item_type in WORKFLOW_WORK_ITEM_TYPES:
             if not template or not stages:
                 raise ValueError("Workspace has no workflow template for executable work items")
             first_stage = min(stages, key=lambda s: s.order)
@@ -147,7 +143,7 @@ class TicketService:
         self.session.commit()
         self.session.refresh(ticket)
 
-        if work_item_type in (WorkItemType.TASK, WorkItemType.BUG) and template:
+        if work_item_type in WORKFLOW_WORK_ITEM_TYPES and template:
             instance = WorkflowInstance(
                 ticket_id=ticket.id,
                 template_id=template.id,

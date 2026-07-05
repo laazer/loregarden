@@ -14,6 +14,25 @@ def _ticket_detail(client: TestClient, ticket_id: str) -> dict:
     return res.json()
 
 
+def test_create_milestone_ticket(client: TestClient):
+    res = client.post(
+        "/api/tickets",
+        json={
+            "workspace_slug": "loregarden",
+            "title": "New milestone from test",
+            "work_item_type": "milestone",
+            "description": "Created via API test",
+            "priority": 3,
+        },
+    )
+    assert res.status_code == 201
+    body = res.json()
+    assert body["title"] == "New milestone from test"
+    assert body["work_item_type"] == "milestone"
+    assert body["workspace_slug"] == "loregarden"
+    assert body["state"] == "backlog"
+
+
 def test_health(client: TestClient):
     res = client.get("/health")
     assert res.status_code == 200
@@ -46,13 +65,6 @@ def test_ticket_tree_hierarchy(client: TestClient):
     assert "feature" in flat_types
     assert "capability" in flat_types
     assert "task" in flat_types
-
-
-def test_cycles_list(client: TestClient):
-    res = client.get("/api/cycles")
-    assert res.status_code == 200
-    cycles = res.json()
-    assert any(c["name"] == "Bootstrap Sprint" for c in cycles)
 
 
 def test_ticket_detail_has_stages(client: TestClient):

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { AgentQuestion, Approval } from "../api/client";
+import { formatJsonForDisplay } from "../utils/formatJson";
 
 function questionList(approval: Approval): AgentQuestion[] {
   if (approval.questions?.length) return approval.questions;
@@ -53,6 +54,10 @@ export function ApprovalCard({
   }, [approval.id]);
 
   const canSubmit = !isQuestion || answersComplete(questions, answers, freeformResponse);
+  const toolInputDisplay = useMemo(
+    () => formatJsonForDisplay(approval.tool_input_json),
+    [approval.tool_input_json],
+  );
 
   const submitAnswers = () => {
     const merged: Record<string, string | string[]> = { ...answers };
@@ -213,13 +218,14 @@ export function ApprovalCard({
             }}
           >
             {approval.tool_name}
-            {approval.tool_input_json && approval.tool_input_json !== "{}" ? `\n${approval.tool_input_json}` : ""}
+            {toolInputDisplay ? `\n${toolInputDisplay}` : ""}
           </pre>
         )}
       </div>
       <div style={{ display: "flex", borderTop: "1px solid var(--bd)" }}>
         {isQuestion ? (
           <button
+            type="button"
             className="btn-secondary"
             style={{ flex: 1, borderRadius: 0, color: "var(--grl)" }}
             disabled={!canSubmit || isSubmitting}
@@ -229,6 +235,7 @@ export function ApprovalCard({
           </button>
         ) : (
           <button
+            type="button"
             className="btn-secondary"
             style={{ flex: 1, borderRadius: 0, color: "var(--grl)" }}
             disabled={isSubmitting}
@@ -238,6 +245,7 @@ export function ApprovalCard({
           </button>
         )}
         <button
+          type="button"
           className="btn-secondary"
           style={{ flex: 1, borderRadius: 0, color: "var(--rdl)" }}
           disabled={isSubmitting}
@@ -246,7 +254,7 @@ export function ApprovalCard({
           {isQuestion ? "Decline" : approval.kind === "cli_permission" ? "Deny" : "Reject"}
         </button>
         {!compact && onInspect && (
-          <button className="btn-secondary" style={{ flex: 1, borderRadius: 0 }} onClick={onInspect}>
+          <button type="button" className="btn-secondary" style={{ flex: 1, borderRadius: 0 }} onClick={onInspect}>
             Inspect
           </button>
         )}
