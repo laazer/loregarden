@@ -19,7 +19,6 @@ Categories covered:
 - Determinism Validation
 """
 
-
 from fastapi.testclient import TestClient
 from loregarden.models.domain import (
     Ticket,

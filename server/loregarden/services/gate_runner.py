@@ -57,8 +57,7 @@ def format_gate_command(template: str, context: dict[str, str]) -> str:
         return template.format(**context)
     except KeyError as exc:
         logger.warning(
-            "gate command template references unknown placeholder %s; running it "
-            "verbatim: %r",
+            "gate command template references unknown placeholder %s; running it verbatim: %r",
             exc,
             template,
         )

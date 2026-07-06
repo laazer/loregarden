@@ -39,6 +39,8 @@ jobs:
 
       - name: Pytest
         run: uv run pytest -q
+        env:
+          LOREGARDEN_REPO_ROOT: ${{ github.workspace }}
 
   client:
     name: Client (TypeScript)
