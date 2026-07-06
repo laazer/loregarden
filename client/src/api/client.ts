@@ -16,10 +16,6 @@ export type TicketState = "backlog" | "in_progress" | "blocked" | "done" | "wont
 export type StageStatus = "pending" | "running" | "blocked" | "awaiting" | "done" | "wont_do";
 export type WorkItemType = "milestone" | "feature" | "capability" | "task" | "bug";
 
-export function isWorkflowWorkItem(_type: WorkItemType): boolean {
-  return true;
-}
-
 export interface TicketSummary {
   id: string;
   external_id: string;

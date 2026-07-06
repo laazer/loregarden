@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, API_BASE, isWorkflowWorkItem, type DiffArtifact, type DiffFileSection, type StageStatus, type TicketDetail, type TicketImportPreviewResponse, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
+import { api, API_BASE, type DiffArtifact, type DiffFileSection, type StageStatus, type TicketDetail, type TicketImportPreviewResponse, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { BrandMark } from "../components/BrandMark";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
@@ -301,11 +301,7 @@ export function Dashboard() {
     queryFn: api.workflowTemplates,
   });
 
-  const selectedId =
-    selectedTicketId ??
-    flatTickets.find((t) => isWorkflowWorkItem(t.work_item_type))?.id ??
-    flatTickets[0]?.id ??
-    null;
+  const selectedId = selectedTicketId ?? flatTickets[0]?.id ?? null;
 
   useEffect(() => {
     setRunConfirmStageKey(null);
@@ -644,7 +640,6 @@ export function Dashboard() {
   });
 
   const sel = detail.data;
-  const selectedSummary = flatTickets.find((ticket) => ticket.id === selectedId) ?? null;
   const runConfirmStage = sel?.stages.find((s) => s.key === runConfirmStageKey) ?? null;
 
   const activeWorkspaceSlug =
@@ -851,10 +846,8 @@ export function Dashboard() {
 
   const counts = flatTickets.reduce(
     (acc, t) => {
-      if (isWorkflowWorkItem(t.work_item_type)) {
-        acc.all += 1;
-        acc[t.state] += 1;
-      }
+      acc.all += 1;
+      acc[t.state] += 1;
       return acc;
     },
     { all: 0, backlog: 0, in_progress: 0, blocked: 0, done: 0, wont_do: 0 } as Record<string, number>,
@@ -1175,12 +1168,7 @@ export function Dashboard() {
               </span>
             )}
             <div style={{ flex: 1 }} />
-            {selectedId && (
-              <DashboardTicketDetailsButton
-                ticketId={selectedId}
-                ticket={selectedSummary ?? undefined}
-              />
-            )}
+            {selectedId && <DashboardTicketDetailsButton ticketId={selectedId} />}
             <PaneHideButton
               pane="workflow"
               onHide={() => hidePane("workflow")}

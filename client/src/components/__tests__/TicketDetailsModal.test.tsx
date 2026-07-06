@@ -305,9 +305,9 @@ describe('TicketDetailsModal', () => {
       // SPEC: Modal should show workflow stages if this is a workflow item
       const ticket = createMockTicket({
         stages: [
-          { key: 'planning', name: 'Planning', status: 'done' },
-          { key: 'implementation', name: 'Implementation', status: 'in_progress' },
-          { key: 'testing', name: 'Testing', status: 'pending' },
+          { key: 'planning', name: 'Planning', status: 'done', agent_id: '', skill_name: '', optional: false, note: '', stage_type: '', agents: [] },
+          { key: 'implementation', name: 'Implementation', status: 'running', agent_id: '', skill_name: '', optional: false, note: '', stage_type: '', agents: [] },
+          { key: 'testing', name: 'Testing', status: 'pending', agent_id: '', skill_name: '', optional: false, note: '', stage_type: '', agents: [] },
         ],
       });
       renderWithQueryClient(
@@ -327,6 +327,9 @@ describe('TicketDetailsModal', () => {
         artifacts: {
           diff: {
             file: 'src/components/Button.tsx',
+            add: '5',
+            del: '2',
+            files: '1',
             sections: [
               { path: 'src/components/Button.tsx', add: 5, del: 2, lines: [] },
             ],
@@ -345,10 +348,9 @@ describe('TicketDetailsModal', () => {
       const ticket = createMockTicket({
         artifacts: {
           tests: {
-            command: 'npm test',
-            passed: 5,
-            failed: 0,
-            status: 'passed',
+            summary: '5 passed',
+            cmd: 'npm test',
+            rows: [],
           },
         },
       });
@@ -364,8 +366,8 @@ describe('TicketDetailsModal', () => {
       const ticket = createMockTicket({
         artifacts: {
           logs: [
-            { text: 'Starting agent run...', type: 'info' },
-            { text: 'Process completed', type: 'info' },
+            { time: '00:00', tag: 'info', text: 'Starting agent run...' },
+            { time: '00:01', tag: 'info', text: 'Process completed' },
           ],
         },
       });
@@ -383,8 +385,10 @@ describe('TicketDetailsModal', () => {
         artifacts: {
           error: {
             message: 'Stage failed: timeout exceeded',
+            run_code: 'timeout',
             stage_key: 'implementation',
             agent_id: 'backend_implementer',
+            command: 'pytest',
           },
         },
       });
@@ -460,10 +464,10 @@ describe('TicketDetailsModal', () => {
       const ticket = createMockTicket({
         artifacts: {
           diff: null,
-          logs: null,
+          logs: undefined,
           tests: null,
           error: null,
-          context: null,
+          context: undefined,
           live: null,
         },
       });
@@ -491,7 +495,7 @@ describe('TicketDetailsModal', () => {
     it('should manage focus correctly when modal opens', () => {
       // SPEC: Focus should move to modal when it opens
       const ticket = createMockTicket();
-      const { container } = renderWithQueryClient(
+      renderWithQueryClient(
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
       );
 
@@ -578,10 +582,12 @@ describe('TicketDetailsModal', () => {
           skill_name: 'skill',
           optional: false,
           note: '',
+          stage_type: '',
+          agents: [],
         })),
       });
 
-      const { container } = renderWithQueryClient(
+      renderWithQueryClient(
         <TicketDetailsModal ticket={largeTicket} isOpen={true} onClose={() => {}} />
       );
 
@@ -788,7 +794,7 @@ describe('TicketDetailsModal', () => {
         blocking_issues: 'D'.repeat(1000),
       });
 
-      const { container } = renderWithQueryClient(
+      renderWithQueryClient(
         <TicketDetailsModal ticket={maxContent} isOpen={true} onClose={() => {}} />
       );
 
@@ -817,6 +823,7 @@ function createMockTicket(overrides?: Partial<apiClient.TicketDetail>): apiClien
     work_item_type: 'feature',
     parent_ticket_id: null,
     milestone: '',
+    branch: '',
     child_count: 0,
     revision: 1,
     last_updated_by: 'test@example.com',
@@ -824,6 +831,8 @@ function createMockTicket(overrides?: Partial<apiClient.TicketDetail>): apiClien
     next_status: 'ready',
     blocking_issues: '',
     state_locked: false,
+    workflow_template_slug: '',
+    workflow_template_name: '',
     stages: [],
     artifacts: {
       diff: null,
