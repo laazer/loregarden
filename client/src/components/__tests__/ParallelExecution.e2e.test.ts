@@ -1,12 +1,19 @@
 /**
  * End-to-end test scenarios for parallel execution features.
  * These tests describe the complete user workflows for:
- * - Monitoring parallel agent execution
- * - Viewing execution timeline
- * - Handling merge conflicts
+ * - Monitoring parallel agent execution with WebSocket real-time updates
+ * - Viewing execution timeline with event-driven updates
+ * - Handling merge conflicts with live event notifications
  *
  * To run these tests:
  * npx playwright test ParallelExecution.e2e.test.ts
+ *
+ * Tests cover:
+ * 1. WebSocket event flow end-to-end
+ * 2. Fallback to polling when WebSocket unavailable
+ * 3. Concurrent operations with multiple runs
+ * 4. Error handling and graceful degradation
+ * 5. Performance and latency metrics
  */
 
 /* Example E2E test structure using Playwright:
