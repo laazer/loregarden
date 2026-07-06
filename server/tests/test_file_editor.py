@@ -15,7 +15,11 @@ from loregarden.services.file_editor import (
 
 
 def _init_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True, text=True)
+    # Force the initial branch to "main" so tests don't depend on the host git's
+    # default (older git / some CI images still default to "master").
+    subprocess.run(
+        ["git", "init", "-b", "main"], cwd=path, check=True, capture_output=True, text=True
+    )
     subprocess.run(
         ["git", "config", "user.email", "test@example.com"],
         cwd=path,

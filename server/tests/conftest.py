@@ -8,43 +8,38 @@ from loregarden.services.seed import seed_database
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 
-# Pre-existing broken tests, quarantined so CI reflects the real regression
-# surface without hiding these. Each invokes DB-backed code (studio agent
-# lookup, permission allowlist, run bootstrapping) without seeding a database,
-# so it fails on a fresh checkout independently of any recent change. They were
-# previously masked as collection "errors" by the engine leak fixed in the
-# client fixture. Marked xfail(strict=False): a fix flips them to XPASS, which
-# is visible in the report. Remove an entry once its test sets up its own DB.
+# Every module that binds the DB engine at import time via
+# `from loregarden.db.session import engine`. The isolated_db fixture redirects
+# all of them to the per-test engine; missing one lets that code path hit the
+# real (unschema'd) database in a fresh checkout — "no such table" errors.
+_ENGINE_BINDINGS = (
+    "loregarden.db.session.engine",
+    "loregarden.main.engine",
+    "loregarden.services.run_service.engine",
+    "loregarden.services.run_log_stream.engine",
+    "loregarden.services.builtin_orchestrator.engine",
+    "loregarden.agents.executors.permission_bridge.engine",
+)
+
+# One pre-existing test remains quarantined: it drives 10 concurrent ticket
+# creations through a single shared SQLite connection (StaticPool), which flakes
+# on lock contention. It needs a genuinely concurrent DB (a WAL file engine with
+# a real pool) or a rewrite to a deterministic barrier; left as a tracked
+# follow-up rather than slowing the whole suite with per-connection WAL setup.
 _KNOWN_PREEXISTING_FAILURES = frozenset(
     {
-        "tests/test_cli_runner.py::test_cli_executor_unknown_agent",
-        "tests/test_file_editor.py::test_checkout_branch_updates_context",
-        "tests/test_interrupted_runs.py::test_fail_interrupted_runs_marks_orphans_failed",
-        "tests/test_interrupted_runs.py::test_start_run_async_fails_prior_running_run",
-        "tests/test_live_logs.py::test_start_run_bootstraps_live_log",
-        "tests/test_next_agent_and_parallel.py::test_resolve_classify_route_ignores_unknown_next_agent",
-        "tests/test_next_agent_and_parallel.py::test_resolve_classify_route_prefers_next_agent",
-        "tests/test_next_agent_and_parallel.py::test_resolve_stage_execution_honors_next_agent_on_implementation",
-        "tests/test_permission_allowlist.py::test_add_workspace_allow_rule_deduplicates",
-        "tests/test_permission_allowlist.py::test_permission_bridge_auto_approves_workspace_allowlist",
-        "tests/test_permission_allowlist.py::test_resolve_cli_permission_with_always_allow",
-        "tests/test_permission_allowlist.py::test_resolve_cli_permission_with_ticket_and_stage_allow",
-        "tests/test_permission_allowlist.py::test_stage_allow_rule_does_not_apply_to_other_stages",
-        "tests/test_studio.py::test_resolve_classify_route_prefers_ticket_next_agent",
         "tests/test_workflow_deep_adversarial.py::TestStateConsistencyUnderConcurrency::test_concurrent_milestone_creation_no_state_leakage",
-        "tests/test_workspace_paths.py::test_cli_executor_fails_when_workspace_repo_missing",
     }
 )
 
 
 def pytest_collection_modifyitems(config, items):
     marker = pytest.mark.xfail(
-        reason="pre-existing failure: exercises DB-backed code without seeding a database",
+        reason="pre-existing flake: concurrent writes over one shared SQLite connection",
         strict=False,
     )
     for item in items:
-        nodeid = item.nodeid.split("[", 1)[0]
-        if nodeid in _KNOWN_PREEXISTING_FAILURES:
+        if item.nodeid.split("[", 1)[0] in _KNOWN_PREEXISTING_FAILURES:
             item.add_marker(marker)
 
 
@@ -69,35 +64,36 @@ def force_local_cli_adapter(monkeypatch):
     monkeypatch.setenv("LOREGARDEN_SYNC_ORCHESTRATION", "1")
 
 
-@pytest.fixture(name="client")
-def client_fixture(tmp_path, monkeypatch):
-    db_path = tmp_path / "pytest.db"
+@pytest.fixture(name="isolated_db", autouse=True)
+def isolated_db_fixture(tmp_path, monkeypatch):
+    """Give every test an isolated, schema'd SQLite engine and point all
+    module-global engine bindings at it.
+
+    This makes DB-backed code work whether it is reached through the API or
+    called directly (a service that spawns a run recorder on the global engine
+    now shares the test engine). It does NOT seed — request the ``client``
+    fixture, or call ``seed_database(session)``, when a test needs the built-in
+    workspace/ticket/agent data.
+    """
     engine = create_engine(
-        f"sqlite:///{db_path}",
+        f"sqlite:///{tmp_path / 'pytest.db'}",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     SQLModel.metadata.create_all(engine)
-    # Redirect every module that bound the module-global engine via
-    # `from loregarden.db.session import engine` to this test engine. Missing any
-    # of these lets a service hit the real (unschema'd) database in a fresh
-    # checkout, surfacing as spurious "no such table" errors.
-    for target in (
-        "loregarden.db.session.engine",
-        "loregarden.main.engine",
-        "loregarden.services.run_service.engine",
-        "loregarden.services.run_log_stream.engine",
-        "loregarden.services.builtin_orchestrator.engine",
-        "loregarden.agents.executors.permission_bridge.engine",
-    ):
+    for target in _ENGINE_BINDINGS:
         monkeypatch.setattr(target, engine)
+    return engine
 
+
+@pytest.fixture(name="client")
+def client_fixture(isolated_db):
     def override_session():
-        with Session(engine) as session:
+        with Session(isolated_db) as session:
             yield session
 
     app.dependency_overrides[get_session] = override_session
-    with Session(engine) as session:
+    with Session(isolated_db) as session:
         seed_database(session)
     with TestClient(app) as client:
         yield client
@@ -105,8 +101,6 @@ def client_fixture(tmp_path, monkeypatch):
 
 
 @pytest.fixture(name="db_session")
-def db_session_fixture(client):
-    from loregarden.db.session import engine
-
-    with Session(engine) as session:
+def db_session_fixture(client, isolated_db):
+    with Session(isolated_db) as session:
         yield session

@@ -8,35 +8,21 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 
 
-def test_start_run_bootstraps_live_log():
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    SQLModel.metadata.create_all(engine)
-
-    import loregarden.services.run_log_stream as stream_mod
-
-    original_engine = stream_mod.engine
-    stream_mod.engine = engine
-    try:
-        with Session(engine) as session:
-            seed_database(session)
-            ticket = session.exec(
-                select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
-            ).first()
-            orch = OrchestrationService(session)
-            run = orch.start_run(ticket, stage_key="planning")
-            artifact = session.exec(
-                select(Artifact).where(Artifact.run_id == run.id, Artifact.kind == "log")
-            ).first()
-            assert artifact is not None
-            content = json.loads(artifact.content_json)
-            assert content["live"] == "Agent running…"
-            assert any(line["tag"] == "RUN" for line in content["lines"])
-    finally:
-        stream_mod.engine = original_engine
+def test_start_run_bootstraps_live_log(isolated_db):
+    with Session(isolated_db) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        orch = OrchestrationService(session)
+        run = orch.start_run(ticket, stage_key="planning")
+        artifact = session.exec(
+            select(Artifact).where(Artifact.run_id == run.id, Artifact.kind == "log")
+        ).first()
+        assert artifact is not None
+        content = json.loads(artifact.content_json)
+        assert content["live"] == "Agent running…"
+        assert any(line["tag"] == "RUN" for line in content["lines"])
 
 
 def test_artifacts_grouped_prefers_active_run_without_stale_fallback():

@@ -4,7 +4,6 @@ from loregarden.agents.executors.permission_bridge import (
     ApprovalResolution,
     PermissionBridgeRunner,
 )
-from loregarden.db.session import engine
 from loregarden.models.domain import (
     AgentRun,
     Approval,
@@ -33,10 +32,10 @@ def test_permission_rule_matches_exact_tool_input():
     assert permission_rule_matches(rule, "Write", {"command": "npm test"}) is False
 
 
-def test_add_workspace_allow_rule_deduplicates():
+def test_add_workspace_allow_rule_deduplicates(isolated_db):
     import uuid
 
-    with Session(engine) as session:
+    with Session(isolated_db) as session:
         seed_database(session)
         workspace = session.exec(select(Workspace).limit(1)).first()
         assert workspace is not None
@@ -63,8 +62,8 @@ def test_add_workspace_allow_rule_deduplicates():
         assert len(matching) == 1
 
 
-def test_resolve_cli_permission_with_always_allow():
-    with Session(engine) as session:
+def test_resolve_cli_permission_with_always_allow(isolated_db):
+    with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(select(Ticket).limit(1)).first()
         assert ticket is not None
@@ -95,10 +94,10 @@ def test_resolve_cli_permission_with_always_allow():
         assert is_workspace_allowed(session, workspace_id, "Bash", {"command": "npm test"}) is True
 
 
-def test_permission_bridge_auto_approves_workspace_allowlist(tmp_path):
+def test_permission_bridge_auto_approves_workspace_allowlist(tmp_path, isolated_db):
     from loregarden.agents.cli_adapters import build_interactive_invocation
 
-    with Session(engine) as session:
+    with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
             select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
@@ -217,8 +216,8 @@ def test_permission_bridge_auto_approves_workspace_allowlist(tmp_path):
         assert allow_response["response"]["response"]["updatedInput"] == {"command": "npm test"}
 
 
-def test_resolve_cli_permission_with_ticket_and_stage_allow():
-    with Session(engine) as session:
+def test_resolve_cli_permission_with_ticket_and_stage_allow(isolated_db):
+    with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(select(Ticket).limit(1)).first()
         assert ticket is not None
@@ -298,8 +297,8 @@ def test_resolve_cli_permission_with_ticket_and_stage_allow():
         )
 
 
-def test_stage_allow_rule_does_not_apply_to_other_stages():
-    with Session(engine) as session:
+def test_stage_allow_rule_does_not_apply_to_other_stages(isolated_db):
+    with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(select(Ticket).limit(1)).first()
         assert ticket is not None
