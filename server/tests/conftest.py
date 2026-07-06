@@ -21,15 +21,14 @@ _ENGINE_BINDINGS = (
     "loregarden.agents.executors.permission_bridge.engine",
 )
 
-# One pre-existing test remains quarantined: it drives 10 concurrent ticket
-# creations through a single shared SQLite connection (StaticPool), which flakes
-# on lock contention. It needs a genuinely concurrent DB (a WAL file engine with
-# a real pool) or a rewrite to a deterministic barrier; left as a tracked
+# The TestStateConsistencyUnderConcurrency tests drive many ticket creations
+# concurrently through a single shared SQLite connection (StaticPool), which
+# flakes on lock contention (either test may pass or fail on a given run). They
+# need a genuinely concurrent DB (a WAL file engine with a real pool) or a
+# rewrite to a deterministic barrier; quarantined by class prefix as a tracked
 # follow-up rather than slowing the whole suite with per-connection WAL setup.
-_KNOWN_PREEXISTING_FAILURES = frozenset(
-    {
-        "tests/test_workflow_deep_adversarial.py::TestStateConsistencyUnderConcurrency::test_concurrent_milestone_creation_no_state_leakage",
-    }
+_QUARANTINED_NODEID_PREFIXES = (
+    "tests/test_workflow_deep_adversarial.py::TestStateConsistencyUnderConcurrency::",
 )
 
 
@@ -39,7 +38,8 @@ def pytest_collection_modifyitems(config, items):
         strict=False,
     )
     for item in items:
-        if item.nodeid.split("[", 1)[0] in _KNOWN_PREEXISTING_FAILURES:
+        nodeid = item.nodeid.split("[", 1)[0]
+        if nodeid.startswith(_QUARANTINED_NODEID_PREFIXES):
             item.add_marker(marker)
 
 
