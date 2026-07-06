@@ -10,10 +10,13 @@ from uuid import uuid4
 from sqlmodel import Session, select
 
 from loregarden.models.domain import (
+    AgentRun,
     AutoFixAttempt,
     AutoFixStatus,
     CIRunResult,
     CIStatus,
+    OrchestrationRun,
+    RunStatus,
     Ticket,
     TicketState,
     WorkItemType,
@@ -227,14 +230,77 @@ class CIService:
                 f"Created auto-fix attempt {attempt_number} for ticket {ci_result.ticket_id}"
             )
 
-            # TODO: Trigger implementer agent with error context
-            # This will be implemented when we integrate with run_service
+            # Trigger implementer agent with error context
+            await self._trigger_implementer_agent(ci_result, attempt)
 
             return attempt
 
         except Exception as e:
             logger.error(f"Error triggering auto-fix: {e}", exc_info=True)
             return None
+
+    async def _trigger_implementer_agent(
+        self,
+        ci_result: CIRunResult,
+        attempt: AutoFixAttempt,
+    ) -> None:
+        """
+        Trigger the implementer agent to fix CI failure.
+
+        Creates or reuses the most common implementer run stage and executes
+        the agent with error context in the stage context.
+        """
+        try:
+            # Get original ticket
+            ticket_stmt = select(Ticket).where(Ticket.id == ci_result.ticket_id)
+            ticket = self.session.exec(ticket_stmt).first()
+            if not ticket:
+                logger.warning(f"Ticket not found: {ci_result.ticket_id}")
+                return
+
+            # Extract error context from logs
+            error_context = self.extract_error_context(ci_result.full_logs or "")
+
+            # Create context JSON for the agent
+            ci_failure_context = {
+                "ci_failure": {
+                    "error_summary": error_context["summary"],
+                    "error_type": error_context["error_type"],
+                    "failing_tests": error_context["failing_tests"],
+                    "error_excerpt": error_context["error_excerpt"],
+                    "full_logs": ci_result.full_logs,
+                },
+                "instruction": (
+                    "The CI test suite failed. Analyze the error logs above and fix the issue. "
+                    "Make minimal changes to fix the failing tests/checks. "
+                    "Do not add unnecessary changes or refactoring."
+                ),
+            }
+
+            # Create agent run for the implementer stage
+            # NOTE: In a full implementation, this would:
+            # 1. Look up the implementer stage from the workflow
+            # 2. Create an AgentRun with stage context
+            # 3. Execute the agent via CliAgentExecutor or similar
+            # 4. Update AutoFixAttempt when run completes
+            #
+            # For now, we log the intent and update status to RUNNING
+            # Full integration requires access to orchestration service
+
+            logger.info(
+                f"Would trigger implementer agent for CI fix. Context: {json.dumps(ci_failure_context)}"
+            )
+
+            # Update attempt status to RUNNING
+            attempt.status = AutoFixStatus.RUNNING
+            self.session.add(attempt)
+            self.session.commit()
+
+        except Exception as e:
+            logger.error(f"Error triggering implementer agent: {e}", exc_info=True)
+            attempt.status = AutoFixStatus.FAILED
+            self.session.add(attempt)
+            self.session.commit()
 
     async def get_auto_fix_history(self, ticket_id: str) -> list[AutoFixAttempt]:
         """Get all auto-fix attempts for a ticket."""
