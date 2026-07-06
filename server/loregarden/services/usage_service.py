@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
 import re
@@ -12,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 WARNING_PERCENT = 80.0
 CRITICAL_PERCENT = 90.0
@@ -143,7 +146,8 @@ def _read_claude_credentials_file() -> dict[str, Any] | None:
         return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.debug("could not read claude credentials file %s: %s", path, exc)
         return None
 
 
@@ -161,7 +165,8 @@ def _read_claude_keychain_credentials() -> dict[str, Any] | None:
         if result.returncode != 0 or not result.stdout.strip():
             return None
         return json.loads(result.stdout)
-    except (OSError, json.JSONDecodeError, subprocess.SubprocessError):
+    except (OSError, json.JSONDecodeError, subprocess.SubprocessError) as exc:
+        logger.debug("could not read claude keychain credentials: %s", exc)
         return None
 
 
@@ -469,7 +474,8 @@ def _read_cursor_access_token() -> str | None:
         if isinstance(raw, bytes):
             return raw.decode("utf-8") or None
         return str(raw) or None
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        logger.debug("cursor credential sqlite read failed: %s", exc)
         return None
 
 
@@ -559,7 +565,8 @@ def _scan_cursor_activity(days_back: int = 7) -> list[UsageBreakdownItem]:
             ).fetchall()
         finally:
             conn.close()
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        logger.debug("cursor usage sqlite read failed: %s", exc)
         return []
     for name, count in rows:
         totals[str(name)] = int(count)

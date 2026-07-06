@@ -2,6 +2,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from loregarden.config import settings
 from loregarden.models.domain import Workspace
 from loregarden.services.file_editor import (
     checkout_editor_branch,
@@ -41,7 +42,7 @@ def editor_repo(tmp_path, monkeypatch):
     subprocess.run(["git", "branch", "feature/editor"], cwd=repo, check=True, capture_output=True)
     monkeypatch.setenv("LOREGARDEN_REPO_ROOT", str(repo))
     monkeypatch.setattr("loregarden.config.settings.repo_root", repo.resolve())
-    monkeypatch.setattr("loregarden.services.path_browser.BROWSE_CEILING", tmp_path.resolve())
+    monkeypatch.setattr(settings, "browse_root", str(tmp_path))
     return repo
 
 

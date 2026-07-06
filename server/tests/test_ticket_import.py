@@ -1,6 +1,7 @@
 import textwrap
 
 from fastapi.testclient import TestClient
+from loregarden.config import settings
 
 
 def _capability_id(client: TestClient) -> str:
@@ -203,7 +204,7 @@ def test_import_requires_parent(client: TestClient):
 def test_preview_ticket_import_paths(client: TestClient, tmp_path, monkeypatch):
     import json
 
-    monkeypatch.setattr("loregarden.services.path_browser.BROWSE_CEILING", tmp_path.resolve())
+    monkeypatch.setattr(settings, "browse_root", str(tmp_path))
 
     parent_id = _capability_id(client)
     parent = next(

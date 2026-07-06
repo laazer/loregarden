@@ -2,14 +2,29 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
 from loregarden.config import settings
 from loregarden.services.path_resolve import expand_path
 
-BROWSE_CEILING = Path.home().resolve()
+logger = logging.getLogger(__name__)
+
 IMPORTABLE_SUFFIXES = {".md", ".json", ".yaml", ".yml"}
+
+
+def browse_ceiling() -> Path:
+    """Highest directory the path browser / importer may reach.
+
+    Defaults to the user's home directory but can be tightened via the
+    ``LOREGARDEN_BROWSE_ROOT`` setting to shrink the filesystem surface the
+    (unauthenticated) browse and import endpoints can read.
+    """
+    configured = (settings.browse_root or "").strip()
+    if configured:
+        return expand_path(configured, repo_root=settings.repo_root).resolve()
+    return Path.home().resolve()
 
 
 def is_under(path: Path, root: Path) -> bool:
@@ -42,6 +57,7 @@ def normalize_browse_target(raw: str | None, *, repo_root: Path | None = None) -
     except ValueError as exc:
         if "outside the allowed browse scope" in str(exc):
             raise
+        logger.debug("browse target %r did not resolve; falling back to root: %s", raw, exc)
         return root
 
     if target.is_file():
@@ -69,7 +85,7 @@ def normalize_browse_target(raw: str | None, *, repo_root: Path | None = None) -
 
 def assert_browse_allowed(path: Path) -> Path:
     resolved = path.resolve()
-    if not is_under(resolved, BROWSE_CEILING):
+    if not is_under(resolved, browse_ceiling()):
         raise ValueError("Path is outside the allowed browse scope")
     return resolved
 
@@ -88,7 +104,7 @@ def to_workspace_repo_path(target: Path, *, repo_root: Path) -> str:
 def parent_browse_path(path: Path) -> str | None:
     resolved = path.resolve()
     parent = resolved.parent
-    if parent == resolved or not is_under(parent, BROWSE_CEILING):
+    if parent == resolved or not is_under(parent, browse_ceiling()):
         return None
     return str(parent)
 
@@ -99,6 +115,7 @@ def list_browse(path: Path, *, repo_root: Path | None = None) -> dict:
     if not current.is_dir():
         raise ValueError("Not a directory")
 
+    ceiling = browse_ceiling()
     entries: list[dict[str, str]] = []
     try:
         with os.scandir(current) as scan:
@@ -108,10 +125,11 @@ def list_browse(path: Path, *, repo_root: Path | None = None) -> dict:
                 try:
                     if not entry.is_dir(follow_symlinks=False):
                         continue
-                except OSError:
+                except OSError as exc:
+                    logger.debug("skipping unreadable entry %s: %s", entry.path, exc)
                     continue
                 child = Path(entry.path).resolve()
-                if not is_under(child, BROWSE_CEILING):
+                if not is_under(child, ceiling):
                     continue
                 entries.append(
                     {
@@ -143,6 +161,7 @@ def list_import_browse(path: Path, *, repo_root: Path | None = None) -> dict:
     if not current.is_dir():
         raise ValueError("Not a directory")
 
+    ceiling = browse_ceiling()
     entries: list[dict[str, str]] = []
     try:
         with os.scandir(current) as scan:
@@ -152,12 +171,13 @@ def list_import_browse(path: Path, *, repo_root: Path | None = None) -> dict:
                 try:
                     is_dir = entry.is_dir(follow_symlinks=False)
                     is_file = entry.is_file(follow_symlinks=False)
-                except OSError:
+                except OSError as exc:
+                    logger.debug("skipping unreadable entry %s: %s", entry.path, exc)
                     continue
                 if not is_dir and not (is_file and _is_importable_file(entry.name)):
                     continue
                 child = Path(entry.path).resolve()
-                if not is_under(child, BROWSE_CEILING):
+                if not is_under(child, ceiling):
                     continue
                 entries.append(
                     {

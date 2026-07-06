@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shlex
 import subprocess
 import sys
@@ -11,6 +12,8 @@ from pathlib import Path
 from loregarden.models.domain import Ticket, WorkflowStageDef, Workspace
 from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile
 from loregarden.services.workspace_paths import resolve_workspace_root
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_TRANSITION_SCRIPT = "ci/scripts/run_workflow_transition_gates.py"
 GATE_TIMEOUT_SECONDS = 300
@@ -52,7 +55,13 @@ def build_gate_context(
 def format_gate_command(template: str, context: dict[str, str]) -> str:
     try:
         return template.format(**context)
-    except KeyError:
+    except KeyError as exc:
+        logger.warning(
+            "gate command template references unknown placeholder %s; running it "
+            "verbatim: %r",
+            exc,
+            template,
+        )
         return template
 
 

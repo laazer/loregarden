@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from loregarden.config import settings
 from loregarden.services.path_browser import (
     assert_browse_allowed,
     list_browse,
@@ -17,7 +18,7 @@ def test_to_workspace_repo_path_relative_and_absolute(tmp_path, monkeypatch):
     sibling = tmp_path / "blobert"
     repo.mkdir()
     sibling.mkdir()
-    monkeypatch.setattr("loregarden.services.path_browser.BROWSE_CEILING", tmp_path.resolve())
+    monkeypatch.setattr(settings, "browse_root", str(tmp_path))
 
     assert to_workspace_repo_path(repo, repo_root=repo) == "."
     assert to_workspace_repo_path(sibling, repo_root=repo) == str(sibling.resolve())
@@ -30,7 +31,7 @@ def test_list_browse_lists_sibling_directories(tmp_path, monkeypatch):
     sibling.mkdir()
     (repo / "client").mkdir()
     (repo / ".hidden").mkdir()
-    monkeypatch.setattr("loregarden.services.path_browser.BROWSE_CEILING", tmp_path.resolve())
+    monkeypatch.setattr(settings, "browse_root", str(tmp_path))
 
     payload = list_browse(tmp_path, repo_root=repo)
     names = {entry["name"] for entry in payload["entries"]}
@@ -55,7 +56,7 @@ def test_assert_browse_allowed_blocks_outside_home(tmp_path, monkeypatch):
     repo = tmp_path / "loregarden"
     repo.mkdir()
     outside = Path("/tmp")
-    monkeypatch.setattr("loregarden.services.path_browser.BROWSE_CEILING", repo.resolve())
+    monkeypatch.setattr(settings, "browse_root", str(repo))
 
     assert_browse_allowed(repo)
     with pytest.raises(ValueError, match="outside the allowed browse scope"):
@@ -70,7 +71,7 @@ def test_browse_import_lists_files_and_directories(tmp_path, monkeypatch):
     (board / "ticket.md").write_text("# TICKET: x\nTitle: Test\n", encoding="utf-8")
     (board / "notes.txt").write_text("ignore me", encoding="utf-8")
     (board / "nested").mkdir()
-    monkeypatch.setattr("loregarden.services.path_browser.BROWSE_CEILING", tmp_path.resolve())
+    monkeypatch.setattr(settings, "browse_root", str(tmp_path))
 
     payload = list_import_browse(board, repo_root=repo)
     kinds = {entry["name"]: entry["kind"] for entry in payload["entries"]}
@@ -83,7 +84,7 @@ def test_read_import_files(tmp_path, monkeypatch):
     repo.mkdir()
     ticket = repo / "ticket.json"
     ticket.write_text('{"title":"Hello"}', encoding="utf-8")
-    monkeypatch.setattr("loregarden.services.path_browser.BROWSE_CEILING", tmp_path.resolve())
+    monkeypatch.setattr(settings, "browse_root", str(tmp_path))
 
     files = read_import_files([str(ticket)])
     assert files == [("ticket.json", '{"title":"Hello"}')]
@@ -100,7 +101,7 @@ def test_normalize_browse_target_unescapes_shell_spaces(tmp_path, monkeypatch):
     vault = tmp_path / "Project Vault"
     repo.mkdir()
     vault.mkdir()
-    monkeypatch.setattr("loregarden.services.path_browser.BROWSE_CEILING", tmp_path.resolve())
+    monkeypatch.setattr(settings, "browse_root", str(tmp_path))
     escaped = str(vault).replace(" ", r"\ ")
     assert normalize_browse_target(escaped, repo_root=repo) == vault.resolve()
 
@@ -110,7 +111,7 @@ def test_normalize_browse_target_uses_parent_for_file_seed(tmp_path, monkeypatch
     repo.mkdir()
     db_file = repo / "memory.db"
     db_file.write_text("", encoding="utf-8")
-    monkeypatch.setattr("loregarden.services.path_browser.BROWSE_CEILING", tmp_path.resolve())
+    monkeypatch.setattr(settings, "browse_root", str(tmp_path))
     assert normalize_browse_target(str(db_file), repo_root=repo) == repo.resolve()
 
 
@@ -118,7 +119,7 @@ def test_normalize_browse_target_walks_up_missing_path(tmp_path, monkeypatch):
     repo = tmp_path / "loregarden"
     repo.mkdir()
     (repo / "vault").mkdir()
-    monkeypatch.setattr("loregarden.services.path_browser.BROWSE_CEILING", tmp_path.resolve())
+    monkeypatch.setattr(settings, "browse_root", str(tmp_path))
     missing = repo / "vault" / "missing" / "nested"
     assert normalize_browse_target(str(missing), repo_root=repo) == (repo / "vault").resolve()
 
@@ -131,7 +132,7 @@ def test_browse_directory_api_accepts_sqlite_url_seed(client, tmp_path, monkeypa
     (repo / "server").mkdir()
     monkeypatch.setenv("LOREGARDEN_REPO_ROOT", str(repo))
     monkeypatch.setattr("loregarden.config.settings.repo_root", repo.resolve())
-    monkeypatch.setattr("loregarden.services.path_browser.BROWSE_CEILING", tmp_path.resolve())
+    monkeypatch.setattr(settings, "browse_root", str(tmp_path))
 
     res = client.get("/api/system/browse")
     assert res.status_code == 200
