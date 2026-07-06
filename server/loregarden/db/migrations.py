@@ -181,6 +181,75 @@ def _m_triage_messages_table(conn: Connection) -> None:
     conn.execute(text("CREATE INDEX ix_triage_messages_ticket_id ON triage_messages (ticket_id)"))
 
 
+def _m_ticket_studio_tables(conn: Connection) -> None:
+    if not _table_exists(conn, "ticket_studio_sessions"):
+        conn.execute(
+            text(
+                """
+                CREATE TABLE ticket_studio_sessions (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    brief TEXT NOT NULL DEFAULT '',
+                    parent_ticket_id TEXT,
+                    status TEXT NOT NULL DEFAULT 'draft',
+                    draft_json TEXT NOT NULL DEFAULT '[]',
+                    summary TEXT NOT NULL DEFAULT '',
+                    clarifying_questions_json TEXT NOT NULL DEFAULT '[]',
+                    clarifying_answers_json TEXT NOT NULL DEFAULT '[]',
+                    runtime_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(workspace_id) REFERENCES workspaces(id),
+                    FOREIGN KEY(parent_ticket_id) REFERENCES tickets(id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX ix_ticket_studio_sessions_workspace_id "
+                "ON ticket_studio_sessions (workspace_id)"
+            )
+        )
+        conn.execute(
+            text("CREATE INDEX ix_ticket_studio_sessions_status ON ticket_studio_sessions (status)")
+        )
+    else:
+        _add_columns_if_missing(
+            conn,
+            "ticket_studio_sessions",
+            {
+                "clarifying_answers_json": (
+                    "ALTER TABLE ticket_studio_sessions "
+                    "ADD COLUMN clarifying_answers_json TEXT NOT NULL DEFAULT '[]'"
+                ),
+            },
+        )
+
+    if not _table_exists(conn, "ticket_studio_messages"):
+        conn.execute(
+            text(
+                """
+                CREATE TABLE ticket_studio_messages (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(session_id) REFERENCES ticket_studio_sessions(id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX ix_ticket_studio_messages_session_id "
+                "ON ticket_studio_messages (session_id)"
+            )
+        )
+
+
 # Ordered registry. Append new migrations here with the next id; never reorder or
 # rewrite an id that may already be recorded in a deployed database.
 MIGRATIONS: list[tuple[str, Migration]] = [
@@ -191,6 +260,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0005_agent_run_orchestration_id", _m_agent_run_orchestration_id),
     ("0006_orchestration_run_columns", _m_orchestration_run_columns),
     ("0007_triage_messages_table", _m_triage_messages_table),
+    ("0008_ticket_studio_tables", _m_ticket_studio_tables),
 ]
 
 
