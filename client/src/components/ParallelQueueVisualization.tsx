@@ -41,6 +41,8 @@ export function ParallelQueueVisualization({
 
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [hoverPosition, setHoverPosition] = useState<number | null>(null);
+  const [isReordering, setIsReordering] = useState(false);
+  const [reorderError, setReorderError] = useState<string | null>(null);
 
   // Compute slot views
   const slotViews = useMemo(() => {
@@ -112,6 +114,53 @@ export function ParallelQueueVisualization({
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     } catch {
       return 'Unknown';
+    }
+  };
+
+  const handleReorderDrop = async (draggedRunId: string, newPosition: number) => {
+    setIsReordering(true);
+    setReorderError(null);
+
+    try {
+      const response = await fetch(
+        `/api/parallel/queue/${draggedRunId}/reorder?new_position=${newPosition}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage =
+          errorData.detail || `Failed to reorder (${response.status})`;
+        setReorderError(errorMessage);
+        console.error('Reorder failed:', errorMessage);
+        return;
+      }
+
+      const result = await response.json();
+      if (result.status === 'no_change') {
+        // Run already at this position, no action needed
+        return;
+      }
+
+      if (result.status !== 'reordered') {
+        setReorderError(`Reorder failed: ${result.status}`);
+        return;
+      }
+
+      // Success - WebSocket will update the UI with new queue state
+      console.log(`Reordered ${draggedRunId} to position ${newPosition}`);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to reorder run';
+      setReorderError(errorMessage);
+      console.error('Reorder error:', error);
+    } finally {
+      setIsReordering(false);
     }
   };
 
@@ -226,6 +275,21 @@ export function ParallelQueueVisualization({
         </div>
       </div>
 
+      {/* Reorder Error Notification */}
+      {reorderError && (
+        <div className="queue-error-notification">
+          <span className="error-icon">⚠️</span>
+          <span className="error-message">{reorderError}</span>
+          <button
+            className="error-close"
+            onClick={() => setReorderError(null)}
+            aria-label="Dismiss error"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Queue List with Drag-to-Reorder */}
       {queuedRuns && queuedRuns.length > 0 && (
         <div className="queue-list-section">
@@ -244,8 +308,12 @@ export function ParallelQueueVisualization({
                   setHoverPosition(index);
                 }}
                 onDragLeave={() => setHoverPosition(null)}
-                onDrop={() => {
-                  // TODO: Implement reorder API call
+                onDrop={async () => {
+                  if (draggedItem && draggedItem !== item.runId) {
+                    // Calculate new position: hoverPosition is 0-indexed, but positions are 1-indexed
+                    const newPosition = (hoverPosition ?? index) + 1;
+                    await handleReorderDrop(draggedItem, newPosition);
+                  }
                   setDraggedItem(null);
                   setHoverPosition(null);
                 }}
