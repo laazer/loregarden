@@ -344,6 +344,54 @@ class AutoFixAttempt(SQLModel, table=True):
     completed_at: Optional[datetime] = None
 
 
+class WorktreeState(str, Enum):
+    """Git worktree lifecycle states."""
+    CREATED = "created"
+    ACTIVE = "active"
+    MERGED = "merged"
+    FAILED = "failed"
+    CLEANUP = "cleanup"
+
+
+class Worktree(SQLModel, table=True):
+    """Isolated git worktree for parallel agent execution."""
+    __tablename__ = "worktrees"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    agent_run_id: str = Field(foreign_key="agent_runs.id", index=True)
+    parent_branch: str = Field(index=True)  # e.g., "main" or "feature/ticket-123"
+    worktree_path: str  # Absolute filesystem path to worktree
+    state: WorktreeState = Field(
+        default=WorktreeState.CREATED,
+        sa_column=_str_enum_column(WorktreeState, WorktreeState.CREATED),
+    )
+    has_conflicts: bool = Field(default=False, index=True)
+    conflict_files: list[str] = Field(default_factory=list)  # List of conflicting file paths
+    merge_base: Optional[str] = None  # Git commit hash for merge base
+    conflict_summary: Optional[str] = None  # Human-readable conflict description
+    created_at: datetime = Field(default_factory=utcnow)
+    merged_at: Optional[datetime] = None
+    cleaned_at: Optional[datetime] = None
+
+
+class ConflictReport(SQLModel, table=True):
+    """Detailed conflict information from merge attempts."""
+    __tablename__ = "conflict_reports"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    worktree_id: str = Field(foreign_key="worktrees.id", index=True)
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    merge_attempt_number: int = Field(ge=1)
+    conflict_type: str  # "auto_merge_failure", "manual_resolution_needed", etc
+    conflicting_files: list[str]  # JSON list of file paths
+    conflict_details: str  # Full git merge output
+    resolution_attempted: bool = Field(default=False)
+    resolution_successful: bool = Field(default=False)
+    resolution_summary: Optional[str] = None
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class TriageMessage(SQLModel, table=True):
     __tablename__ = "triage_messages"
 
