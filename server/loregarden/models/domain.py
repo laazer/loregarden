@@ -259,6 +259,7 @@ class AgentRun(SQLModel, table=True):
     orchestration_run_id: Optional[str] = Field(
         default=None, foreign_key="orchestration_runs.id", index=True
     )
+    worktree_id: Optional[str] = Field(default=None, foreign_key="worktrees.id")  # Parallel execution
     agent_id: str
     skill_name: str = ""
     stage_key: str = ""
