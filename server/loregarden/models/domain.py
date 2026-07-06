@@ -417,6 +417,11 @@ class QueuedRun(SQLModel, table=True):
     estimated_start_at: Optional[datetime] = None
     promoted_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
+    # Retry tracking for failure recovery
+    retry_count: int = Field(default=0, ge=0)
+    max_retries: int = Field(default=3, ge=0)
+    failure_reason: str = ""  # Error message from last failure
+    last_failed_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=utcnow)
 
 
