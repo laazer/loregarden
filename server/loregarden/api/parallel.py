@@ -18,6 +18,12 @@ from loregarden.services.conflict_detector import ConflictDetectorService
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.services.worktree_service import WorktreeService
+from loregarden.websocket_events import (
+    emit_execution_update,
+    emit_error,
+    emit_conflict_detected,
+    emit_conflict_resolved,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,12 +69,42 @@ async def create_parallel_run(
             max_concurrent=max_concurrent,
         )
 
+        # Emit execution update to WebSocket subscribers
+        try:
+            queue_service = ParallelQueueService(session, max_concurrent=max_concurrent)
+            active_runs = await queue_service.get_active_runs(ticket.workspace_id)
+            queued_runs = await queue_service.get_queued_runs(ticket.workspace_id)
+            stats = queue_service.get_queue_stats(ticket.workspace_id)
+
+            emit_execution_update(
+                workspace_id=ticket.workspace_id,
+                active_runs=active_runs,
+                queued_runs=queued_runs,
+                stats=stats,
+            )
+        except Exception as e:
+            logger.warning(f'Failed to emit execution_update: {e}')
+
         return result
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error creating parallel run: {e}", exc_info=True)
+
+        # Emit error event
+        try:
+            ticket = session.get(Ticket, ticket_id)
+            if ticket:
+                emit_error(
+                    target_room=f'workspace:{ticket.workspace_id}',
+                    message=f'Failed to create run: {str(e)}',
+                    code='RUN_CREATION_ERROR',
+                    context={'ticket_id': ticket_id}
+                )
+        except Exception as emit_err:
+            logger.warning(f'Failed to emit error: {emit_err}')
+
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -134,12 +170,31 @@ async def cancel_queued_run(
         }
     """
     try:
-        queue_service = ParallelQueueService(session)
+        # Get the run to get workspace_id
+        run = session.get(AgentRun, run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail="Run not found")
 
+        queue_service = ParallelQueueService(session)
         cancelled = await queue_service.cancel_queued_run(run_id)
 
         if not cancelled:
             raise HTTPException(status_code=404, detail="Queued run not found")
+
+        # Emit execution update to show updated queue state
+        try:
+            active_runs = await queue_service.get_active_runs(run.workspace_id)
+            queued_runs = await queue_service.get_queued_runs(run.workspace_id)
+            stats = queue_service.get_queue_stats(run.workspace_id)
+
+            emit_execution_update(
+                workspace_id=run.workspace_id,
+                active_runs=active_runs,
+                queued_runs=queued_runs,
+                stats=stats,
+            )
+        except Exception as e:
+            logger.warning(f'Failed to emit execution_update: {e}')
 
         return {
             "status": "cancelled",
@@ -150,6 +205,20 @@ async def cancel_queued_run(
         raise
     except Exception as e:
         logger.error(f"Error cancelling queued run: {e}", exc_info=True)
+
+        # Emit error event
+        try:
+            run = session.get(AgentRun, run_id)
+            if run:
+                emit_error(
+                    target_room=f'workspace:{run.workspace_id}',
+                    message=f'Failed to cancel run: {str(e)}',
+                    code='RUN_CANCELLATION_ERROR',
+                    context={'run_id': run_id}
+                )
+        except Exception as emit_err:
+            logger.warning(f'Failed to emit error: {emit_err}')
+
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -203,6 +272,18 @@ async def check_conflicts(
             worktree, target_branch
         )
 
+        # Emit conflict detected event
+        try:
+            emit_conflict_detected(
+                worktree_id=worktree_id,
+                run_id=worktree.agent_run_id,
+                conflicts=details.get("conflicts", []),
+                preview=preview,
+                severity=details.get("severity", "medium"),
+            )
+        except Exception as e:
+            logger.warning(f'Failed to emit conflict_detected: {e}')
+
         return {
             "has_conflicts": True,
             "conflicting_files": preview.get("conflicting_files", []),
@@ -217,6 +298,18 @@ async def check_conflicts(
         raise
     except Exception as e:
         logger.error(f"Error checking conflicts: {e}", exc_info=True)
+
+        # Emit error event
+        try:
+            emit_error(
+                target_room=f'worktree:{worktree_id}',
+                message=f'Failed to check conflicts: {str(e)}',
+                code='CONFLICT_CHECK_ERROR',
+                context={'worktree_id': worktree_id}
+            )
+        except Exception as emit_err:
+            logger.warning(f'Failed to emit error: {emit_err}')
+
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -263,6 +356,15 @@ async def merge_worktree(
         )
 
         if success:
+            # Emit conflict resolved event on successful merge
+            try:
+                emit_conflict_resolved(
+                    worktree_id=worktree_id,
+                    run_id=worktree.agent_run_id,
+                )
+            except Exception as e:
+                logger.warning(f'Failed to emit conflict_resolved: {e}')
+
             return {
                 "status": "merged",
                 "message": f"Worktree merged to {target_branch}",
@@ -270,6 +372,21 @@ async def merge_worktree(
         else:
             # Get conflict details
             if worktree.has_conflicts:
+                # Emit error event for merge failure with remaining conflicts
+                try:
+                    emit_error(
+                        target_room=f'worktree:{worktree_id}',
+                        message=f'Merge failed with {len(worktree.conflict_files)} conflicting files',
+                        code='MERGE_FAILED_WITH_CONFLICTS',
+                        context={
+                            'worktree_id': worktree_id,
+                            'conflict_count': len(worktree.conflict_files),
+                            'conflict_files': worktree.conflict_files
+                        }
+                    )
+                except Exception as e:
+                    logger.warning(f'Failed to emit error: {e}')
+
                 return {
                     "status": "conflicts",
                     "message": f"Merge conflicts in {len(worktree.conflict_files)} files",
@@ -285,6 +402,20 @@ async def merge_worktree(
         raise
     except Exception as e:
         logger.error(f"Error merging worktree: {e}", exc_info=True)
+
+        # Emit error event
+        try:
+            worktree = session.get(Worktree, worktree_id)
+            if worktree:
+                emit_error(
+                    target_room=f'worktree:{worktree_id}',
+                    message=f'Failed to merge worktree: {str(e)}',
+                    code='MERGE_ERROR',
+                    context={'worktree_id': worktree_id}
+                )
+        except Exception as emit_err:
+            logger.warning(f'Failed to emit error: {emit_err}')
+
         raise HTTPException(status_code=500, detail=str(e))
 
 

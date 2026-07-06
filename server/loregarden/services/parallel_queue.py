@@ -14,6 +14,12 @@ from loregarden.models.domain import (
     QueuePosition,
     RunStatus,
 )
+from loregarden.websocket_events import (
+    emit_execution_update,
+    emit_queue_promoted,
+    emit_run_completed,
+    emit_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +107,21 @@ class ParallelQueueService:
 
                 logger.info(f"Run {run_id} started immediately on slot {available_slot.slot_number}")
 
+                # Emit execution update
+                try:
+                    active_runs = await self.get_active_runs(workspace_id)
+                    queued_runs = await self.get_queued_runs(workspace_id)
+                    stats = self.get_queue_stats(workspace_id)
+
+                    emit_execution_update(
+                        workspace_id=workspace_id,
+                        active_runs=active_runs,
+                        queued_runs=queued_runs,
+                        stats=stats,
+                    )
+                except Exception as e:
+                    logger.warning(f'Failed to emit execution_update: {e}')
+
                 return {
                     "status": "started",
                     "slot_number": available_slot.slot_number,
@@ -133,6 +154,21 @@ class ParallelQueueService:
 
             logger.info(f"Run {run_id} queued at position {position}")
 
+            # Emit execution update
+            try:
+                active_runs = await self.get_active_runs(workspace_id)
+                queued_runs = await self.get_queued_runs(workspace_id)
+                stats = self.get_queue_stats(workspace_id)
+
+                emit_execution_update(
+                    workspace_id=workspace_id,
+                    active_runs=active_runs,
+                    queued_runs=queued_runs,
+                    stats=stats,
+                )
+            except Exception as e:
+                logger.warning(f'Failed to emit execution_update: {e}')
+
             return {
                 "status": "queued",
                 "position": position,
@@ -143,6 +179,18 @@ class ParallelQueueService:
 
         except Exception as e:
             logger.error(f"Error queueing run: {e}", exc_info=True)
+
+            # Emit error event
+            try:
+                emit_error(
+                    target_room=f'workspace:{workspace_id}',
+                    message=f'Failed to queue run: {str(e)}',
+                    code='QUEUE_ERROR',
+                    context={'run_id': run_id}
+                )
+            except Exception as emit_err:
+                logger.warning(f'Failed to emit error: {emit_err}')
+
             return {
                 "status": "error",
                 "message": str(e),
@@ -308,8 +356,33 @@ class ParallelQueueService:
                 f"to slot {available_slot.slot_number}"
             )
 
+            # Emit queue promoted event
+            try:
+                emit_queue_promoted(
+                    workspace_id=workspace_id,
+                    run_id=queued_run.run_id,
+                    slot_number=available_slot.slot_number,
+                )
+            except Exception as e:
+                logger.warning(f'Failed to emit queue_promoted: {e}')
+
             # Re-order remaining queue
             await self._reorder_queue(workspace_id)
+
+            # Emit execution update with new state
+            try:
+                active_runs = await self.get_active_runs(workspace_id)
+                queued_runs = await self.get_queued_runs(workspace_id)
+                stats = self.get_queue_stats(workspace_id)
+
+                emit_execution_update(
+                    workspace_id=workspace_id,
+                    active_runs=active_runs,
+                    queued_runs=queued_runs,
+                    stats=stats,
+                )
+            except Exception as e:
+                logger.warning(f'Failed to emit execution_update: {e}')
 
             return {
                 "run_id": queued_run.run_id,
@@ -320,6 +393,18 @@ class ParallelQueueService:
 
         except Exception as e:
             logger.error(f"Error promoting from queue: {e}", exc_info=True)
+
+            # Emit error event
+            try:
+                emit_error(
+                    target_room=f'workspace:{workspace_id}',
+                    message=f'Failed to promote from queue: {str(e)}',
+                    code='PROMOTION_ERROR',
+                    context={'workspace_id': workspace_id}
+                )
+            except Exception as emit_err:
+                logger.warning(f'Failed to emit error: {emit_err}')
+
             return None
 
     async def on_run_complete(self, workspace_id: str, run_id: str) -> Optional[dict]:
@@ -335,6 +420,20 @@ class ParallelQueueService:
             Next run promoted, or None if queue empty
         """
         try:
+            # Get run details for event emission
+            run = self.session.get(AgentRun, run_id)
+            run_status = run.status.value if run else "completed"
+
+            # Emit run completed event
+            try:
+                emit_run_completed(
+                    workspace_id=workspace_id,
+                    run_id=run_id,
+                    status=run_status,
+                )
+            except Exception as e:
+                logger.warning(f'Failed to emit run_completed: {e}')
+
             # Find slot with this run
             slot_stmt = select(AgentSlot).where(AgentSlot.current_run_id == run_id)
             slot = self.session.exec(slot_stmt).first()
@@ -348,8 +447,23 @@ class ParallelQueueService:
 
                 logger.info(f"Released run {run_id} from slot {slot.slot_number}")
 
-            # Promote from queue
+            # Promote from queue (promote_from_queue already emits events)
             promoted = await self.promote_from_queue(workspace_id)
+
+            # Emit final execution update
+            try:
+                active_runs = await self.get_active_runs(workspace_id)
+                queued_runs = await self.get_queued_runs(workspace_id)
+                stats = self.get_queue_stats(workspace_id)
+
+                emit_execution_update(
+                    workspace_id=workspace_id,
+                    active_runs=active_runs,
+                    queued_runs=queued_runs,
+                    stats=stats,
+                )
+            except Exception as e:
+                logger.warning(f'Failed to emit execution_update: {e}')
 
             if promoted:
                 return {
@@ -364,6 +478,18 @@ class ParallelQueueService:
 
         except Exception as e:
             logger.error(f"Error on run complete: {e}", exc_info=True)
+
+            # Emit error event
+            try:
+                emit_error(
+                    target_room=f'workspace:{workspace_id}',
+                    message=f'Failed to handle run completion: {str(e)}',
+                    code='COMPLETION_HANDLER_ERROR',
+                    context={'run_id': run_id}
+                )
+            except Exception as emit_err:
+                logger.warning(f'Failed to emit error: {emit_err}')
+
             return None
 
     async def _reorder_queue(self, workspace_id: str) -> None:
