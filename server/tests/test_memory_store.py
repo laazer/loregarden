@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from loregarden.services.memory_store import (
     AgentMemoryService,
     MemoryGraphStore,
@@ -145,10 +144,9 @@ def test_mcp_memory_tools(client, vault_dir, tmp_path, monkeypatch):
         f"sqlite:///{tmp_path / 'mcp-memory.db'}",
     )
 
+    from loregarden.db.session import engine
     from loregarden.mcp.tools import execute_tool
     from sqlmodel import Session
-
-    from loregarden.db.session import engine
 
     with Session(engine) as session:
         status = json.loads(execute_tool(session, "loregarden_memory_status", {}))
@@ -256,9 +254,8 @@ def test_sqlite_db_in_icloud_dir(tmp_path, monkeypatch):
     assert proc.returncode == 0, proc.stderr
     assert db_path.is_file()
 
-    from sqlmodel import create_engine
-
     from loregarden.services.path_resolve import resolve_sqlite_path, sqlite_url_for_path
+    from sqlmodel import create_engine
 
     eng = create_engine(
         sqlite_url_for_path(resolve_sqlite_path(env["LOREGARDEN_DATABASE_URL"], repo)),

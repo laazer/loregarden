@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-
-import sys
 
 from loregarden.models.domain import Ticket, WorkflowStageDef, Workspace
 from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile

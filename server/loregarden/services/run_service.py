@@ -4,15 +4,21 @@ import logging
 import os
 import threading
 
-from sqlmodel import Session, col, select
-
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.db.session import engine
-from loregarden.models.domain import AgentRun, OrchestrationDriver, OrchestrationRun, RunStatus, Ticket, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    OrchestrationDriver,
+    OrchestrationRun,
+    RunStatus,
+    Ticket,
+    Workspace,
+)
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
@@ -196,9 +202,7 @@ class RunService:
         self.session.refresh(ticket)
         return completed_run, ticket
 
-    def start_run_async(
-        self, ticket: Ticket, *, stage_key: str | None = None
-    ) -> AgentRun:
+    def start_run_async(self, ticket: Ticket, *, stage_key: str | None = None) -> AgentRun:
         """Create a run and mark the stage running; CLI executes in a background task."""
         target_key = stage_key or ticket.workflow_stage_key
         fail_interrupted_runs(

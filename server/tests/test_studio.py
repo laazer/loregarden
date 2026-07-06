@@ -1,11 +1,6 @@
-import json
-
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-
-from loregarden.models.domain import StudioAgent, StudioWorkflow, WorkflowTemplate
-from loregarden.services.studio_service import resolve_classify_route
 from loregarden.models.domain import ClassifyRoute, Ticket, WorkflowStageDef
+from loregarden.services.studio_service import resolve_classify_route
 
 
 def test_studio_agent_crud(client: TestClient):
@@ -19,8 +14,12 @@ def test_studio_agent_crud(client: TestClient):
             "adapter": "claude",
             "mcp_enabled": True,
             "mcp_tools": ["loregarden_get_ticket", "loregarden_complete_stage"],
-            "gate_checks": [{"kind": "workflow_gate", "title": "Sign off tests", "impact": "Blocks merge"}],
-            "handoff_checks": [{"kind": "mcp_complete", "prompt": "Call loregarden_complete_stage when done."}],
+            "gate_checks": [
+                {"kind": "workflow_gate", "title": "Sign off tests", "impact": "Blocks merge"}
+            ],
+            "handoff_checks": [
+                {"kind": "mcp_complete", "prompt": "Call loregarden_complete_stage when done."}
+            ],
         },
     )
     assert create.status_code == 200

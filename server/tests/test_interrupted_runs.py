@@ -1,6 +1,3 @@
-from sqlmodel import Session, SQLModel, create_engine, select
-from sqlmodel.pool import StaticPool
-
 from loregarden.models.domain import AgentRun, RunStatus, StageStatus, Ticket
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_service import (
@@ -9,6 +6,8 @@ from loregarden.services.run_service import (
     fail_interrupted_runs,
 )
 from loregarden.services.seed import seed_database
+from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel.pool import StaticPool
 
 
 def test_fail_interrupted_runs_marks_orphans_failed():

@@ -1,6 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session
-
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     StudioAgentCreate,
@@ -10,6 +8,7 @@ from loregarden.models.domain import (
     StudioWorkflowUpdate,
 )
 from loregarden.services.studio_service import StudioService
+from sqlmodel import Session
 
 router = APIRouter(prefix="/studio", tags=["studio"])
 
@@ -30,7 +29,9 @@ def studio_defaults(session: Session = Depends(get_session)) -> dict:
 
 
 @router.post("/agents/preview")
-def preview_studio_agent(body: StudioAgentPreviewRequest, session: Session = Depends(get_session)) -> dict:
+def preview_studio_agent(
+    body: StudioAgentPreviewRequest, session: Session = Depends(get_session)
+) -> dict:
     return StudioService(session).preview_agent(body).model_dump()
 
 
@@ -90,7 +91,9 @@ def get_studio_workflow(slug: str, session: Session = Depends(get_session)) -> d
 
 
 @router.post("/workflows")
-def create_studio_workflow(body: StudioWorkflowCreate, session: Session = Depends(get_session)) -> dict:
+def create_studio_workflow(
+    body: StudioWorkflowCreate, session: Session = Depends(get_session)
+) -> dict:
     try:
         return StudioService(session).create_workflow(body).model_dump()
     except ValueError as exc:

@@ -4,7 +4,23 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session
 
-from loregarden.api import agents, editor, events, export, inbox, mcp, memory, orchestration, runs, studio, system, tickets, usage, workflows, workspaces
+from loregarden.api import (
+    agents,
+    editor,
+    events,
+    export,
+    inbox,
+    mcp,
+    memory,
+    orchestration,
+    runs,
+    studio,
+    system,
+    tickets,
+    usage,
+    workflows,
+    workspaces,
+)
 from loregarden.config import settings
 from loregarden.db.session import engine, init_db
 from loregarden.services.run_service import fail_interrupted_runs

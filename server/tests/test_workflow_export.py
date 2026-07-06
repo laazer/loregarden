@@ -1,4 +1,3 @@
-import pytest
 from fastapi.testclient import TestClient
 
 
@@ -65,7 +64,10 @@ def test_workspace_template_switch_changes_stages(client: TestClient):
 
     extended = client.get("/api/workspaces/loregarden/workflow").json()
     assert extended["template_slug"] == "extended-tdd"
-    assert len(extended["stages"]) != lore_stages or extended["stages"][1]["key"] == "domain_consultation"
+    assert (
+        len(extended["stages"]) != lore_stages
+        or extended["stages"][1]["key"] == "domain_consultation"
+    )
 
     ticket_id = None
     for t in client.get("/api/tickets").json():

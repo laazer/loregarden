@@ -1,12 +1,11 @@
 import json
 
-from sqlmodel import Session, SQLModel, create_engine, select
-from sqlmodel.pool import StaticPool
-
 from loregarden.api.tickets import _artifacts_grouped
 from loregarden.models.domain import AgentRun, Artifact, RunStatus, Ticket
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.seed import seed_database
+from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel.pool import StaticPool
 
 
 def test_start_run_bootstraps_live_log():

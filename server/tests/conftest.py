@@ -1,12 +1,12 @@
-import pytest
-from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, create_engine
-from sqlmodel.pool import StaticPool
 import threading
 
+import pytest
+from fastapi.testclient import TestClient
 from loregarden.db.session import get_session
 from loregarden.main import app
 from loregarden.services.seed import seed_database
+from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel.pool import StaticPool
 
 
 @pytest.fixture(autouse=True)

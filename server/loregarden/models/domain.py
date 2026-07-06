@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
 from enum import Enum, StrEnum
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
+from sqlalchemy import Column
+from sqlalchemy import Enum as SAEnum
 from sqlmodel import Field, SQLModel
-from sqlalchemy import Column, Enum as SAEnum
 
 
 def _str_enum_column(enum_cls: type[Enum], default: Enum, *, index: bool = False) -> Column:
@@ -30,6 +31,7 @@ class TicketState(str, Enum):
 
 class WorkItemType(str, Enum):
     """Hierarchy types — matches lllm-charge convention."""
+
     MILESTONE = "milestone"
     FEATURE = "feature"
     CAPABILITY = "capability"
@@ -121,7 +123,7 @@ class Workspace(SQLModel, table=True):
     slug: str = Field(index=True, unique=True)
     name: str
     repo_path: str = ""
-    workflow_template_id: Optional[str] = Field(default=None, foreign_key="workflow_templates.id")
+    workflow_template_id: str | None = Field(default=None, foreign_key="workflow_templates.id")
     workflow_override_json: str = "{}"
     orchestration_profile_slug: str = ""
     cli_adapter: str = ""
@@ -154,7 +156,7 @@ class WorkflowTemplate(SQLModel, table=True):
     slug: str = Field(index=True, unique=True)
     name: str
     description: str = ""
-  # JSON list of stage definitions
+    # JSON list of stage definitions
     stages_json: str = "[]"
     transitions_json: str = "[]"
     source_path: str = ""
@@ -177,8 +179,8 @@ class Ticket(SQLModel, table=True):
         default=WorkItemType.TASK,
         sa_column=_str_enum_column(WorkItemType, WorkItemType.TASK, index=True),
     )
-    parent_ticket_id: Optional[str] = Field(default=None, foreign_key="tickets.id", index=True)
-    cycle_id: Optional[str] = Field(default=None, foreign_key="cycles.id", index=True)
+    parent_ticket_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
+    cycle_id: str | None = Field(default=None, foreign_key="cycles.id", index=True)
     acceptance_criteria_json: str = "[]"
     workflow_stage_key: str = ""
     workflow_stage_status: StageStatus = Field(default=StageStatus.PENDING)
@@ -229,8 +231,8 @@ class OrchestrationRun(SQLModel, table=True):
     error_message: str = ""
     auto_approve: bool = Field(default=False)
     stop_at_stage_key: str = ""
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -241,7 +243,7 @@ class AgentRun(SQLModel, table=True):
     run_code: str = Field(index=True)
     ticket_id: str = Field(foreign_key="tickets.id", index=True)
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
-    orchestration_run_id: Optional[str] = Field(
+    orchestration_run_id: str | None = Field(
         default=None, foreign_key="orchestration_runs.id", index=True
     )
     agent_id: str
@@ -251,8 +253,8 @@ class AgentRun(SQLModel, table=True):
     command: str = ""
     stdout: str = ""
     stderr: str = ""
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -261,7 +263,7 @@ class Artifact(SQLModel, table=True):
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     ticket_id: str = Field(foreign_key="tickets.id", index=True)
-    run_id: Optional[str] = Field(default=None, foreign_key="agent_runs.id")
+    run_id: str | None = Field(default=None, foreign_key="agent_runs.id")
     kind: str = Field(index=True)  # diff | log | test | context
     title: str = ""
     content_json: str = "{}"
@@ -274,7 +276,7 @@ class Approval(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     ticket_id: str = Field(foreign_key="tickets.id", index=True)
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
-    run_id: Optional[str] = Field(default=None, foreign_key="agent_runs.id", index=True)
+    run_id: str | None = Field(default=None, foreign_key="agent_runs.id", index=True)
     kind: ApprovalKind = Field(
         default=ApprovalKind.WORKFLOW_GATE,
         sa_column=_str_enum_column(ApprovalKind, ApprovalKind.WORKFLOW_GATE),
@@ -291,7 +293,7 @@ class Approval(SQLModel, table=True):
     response_json: str = "{}"
     status: ApprovalStatus = Field(default=ApprovalStatus.PENDING)
     created_at: datetime = Field(default_factory=utcnow)
-    resolved_at: Optional[datetime] = None
+    resolved_at: datetime | None = None
 
 
 class TriageMessage(SQLModel, table=True):
@@ -309,10 +311,10 @@ class DomainEvent(SQLModel, table=True):
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     type: EventType
-    workspace_id: Optional[str] = Field(default=None, foreign_key="workspaces.id")
-    ticket_id: Optional[str] = Field(default=None, foreign_key="tickets.id")
-    run_id: Optional[str] = Field(default=None, foreign_key="agent_runs.id")
-    artifact_id: Optional[str] = Field(default=None, foreign_key="artifacts.id")
+    workspace_id: str | None = Field(default=None, foreign_key="workspaces.id")
+    ticket_id: str | None = Field(default=None, foreign_key="tickets.id")
+    run_id: str | None = Field(default=None, foreign_key="agent_runs.id")
+    artifact_id: str | None = Field(default=None, foreign_key="artifacts.id")
     payload_json: str = "{}"
     created_at: datetime = Field(default_factory=utcnow)
 
@@ -372,7 +374,7 @@ class TicketSummary(SQLModel):
     workflow_stage_name: str = ""
     run_code: str = ""
     work_item_type: WorkItemType = WorkItemType.TASK
-    parent_ticket_id: Optional[str] = None
+    parent_ticket_id: str | None = None
     milestone: str = ""
     branch: str = ""
     child_count: int = 0
@@ -464,21 +466,21 @@ class ApprovalView(SQLModel):
 class EventView(SQLModel):
     id: str
     type: EventType
-    ticket_id: Optional[str]
-    workspace_id: Optional[str]
+    ticket_id: str | None
+    workspace_id: str | None
     payload: dict[str, Any]
     created_at: datetime
 
 
 class StartRunRequest(SQLModel):
-    stage_key: Optional[str] = None
+    stage_key: str | None = None
     manual: bool = False
 
 
 class StartOrchestrationRequest(SQLModel):
-    driver: Optional[OrchestrationDriver] = None
-    max_stages: Optional[int] = None
-    stop_at_stage_key: Optional[str] = None
+    driver: OrchestrationDriver | None = None
+    max_stages: int | None = None
+    stop_at_stage_key: str | None = None
     auto_approve: bool = False
 
 
@@ -530,8 +532,8 @@ class OrchestrationRunView(SQLModel):
     status: OrchestrationRunStatus
     current_stage_key: str
     error_message: str
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
 
 class OrchestrationProfileView(SQLModel):
@@ -545,29 +547,29 @@ class OrchestrationProfileView(SQLModel):
 
 
 class AdvanceStageRequest(SQLModel):
-  # backend decides transition; optional hint only for logging
+    # backend decides transition; optional hint only for logging
     reason: str = ""
 
 
 class UpdateTicketRequest(SQLModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    state: Optional[TicketState] = None
-    branch: Optional[str] = None
-    workflow_stage_key: Optional[str] = None
-    workflow_stage_status: Optional[StageStatus] = None
-    workflow_template_slug: Optional[str] = None
-    stage_key: Optional[str] = None
-    stage_status: Optional[StageStatus] = None
-    stage_updates: Optional[dict[str, StageStatus]] = None
-    auto_state: Optional[bool] = None
+    title: str | None = None
+    description: str | None = None
+    state: TicketState | None = None
+    branch: str | None = None
+    workflow_stage_key: str | None = None
+    workflow_stage_status: StageStatus | None = None
+    workflow_template_slug: str | None = None
+    stage_key: str | None = None
+    stage_status: StageStatus | None = None
+    stage_updates: dict[str, StageStatus] | None = None
+    auto_state: bool | None = None
 
 
 class TicketCreate(SQLModel):
     workspace_slug: str
     title: str
     work_item_type: WorkItemType = WorkItemType.TASK
-    parent_ticket_id: Optional[str] = None
+    parent_ticket_id: str | None = None
     description: str = ""
     acceptance_criteria: list[str] = []
     priority: int = 3
@@ -589,7 +591,7 @@ class TicketImportItem(SQLModel):
     milestone: str = ""
     external_id: str = ""
     parent_external_id: str = ""
-    parent_ticket_id: Optional[str] = None
+    parent_ticket_id: str | None = None
     source_format: str = ""
     source_label: str = ""
     preview_markdown: str = ""
@@ -678,7 +680,7 @@ class StudioWorkflow(SQLModel, table=True):
     description: str = ""
     stages_json: str = "[]"
     transitions_json: str = "[]"
-    published_template_id: Optional[str] = Field(default=None, foreign_key="workflow_templates.id")
+    published_template_id: str | None = Field(default=None, foreign_key="workflow_templates.id")
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -698,16 +700,16 @@ class StudioAgentCreate(SQLModel):
 
 
 class StudioAgentUpdate(SQLModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    role_body: Optional[str] = None
-    adapter: Optional[str] = None
-    timeout: Optional[int] = None
-    default_skill: Optional[str] = None
-    mcp_enabled: Optional[bool] = None
-    mcp_tools: Optional[list[str]] = None
-    gate_checks: Optional[list[StudioGateCheck]] = None
-    handoff_checks: Optional[list[StudioHandoffCheck]] = None
+    name: str | None = None
+    description: str | None = None
+    role_body: str | None = None
+    adapter: str | None = None
+    timeout: int | None = None
+    default_skill: str | None = None
+    mcp_enabled: bool | None = None
+    mcp_tools: list[str] | None = None
+    gate_checks: list[StudioGateCheck] | None = None
+    handoff_checks: list[StudioHandoffCheck] | None = None
 
 
 class StudioAgentView(SQLModel):
@@ -781,10 +783,10 @@ class StudioWorkflowCreate(SQLModel):
 
 
 class StudioWorkflowUpdate(SQLModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    stages: Optional[list[StudioWorkflowStage]] = None
-    transitions: Optional[list[dict[str, str]]] = None
+    name: str | None = None
+    description: str | None = None
+    stages: list[StudioWorkflowStage] | None = None
+    transitions: list[dict[str, str]] | None = None
 
 
 class StudioWorkflowView(SQLModel):
@@ -794,7 +796,7 @@ class StudioWorkflowView(SQLModel):
     description: str
     stages: list[StudioWorkflowStage]
     transitions: list[dict[str, str]]
-    published_template_id: Optional[str] = None
+    published_template_id: str | None = None
     published_template_slug: str = ""
     built_in: bool = False
     source_path: str = ""

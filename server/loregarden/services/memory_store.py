@@ -16,7 +16,11 @@ from loregarden.config import (
     resolved_obsidian_vault,
     settings,
 )
-from loregarden.services.path_resolve import is_under_icloud, resolve_icloud_root, sqlite_url_for_path
+from loregarden.services.path_resolve import (
+    is_under_icloud,
+    resolve_icloud_root,
+    sqlite_url_for_path,
+)
 
 
 def _utcnow_iso() -> str:
@@ -98,7 +102,11 @@ class ObsidianMemoryStore:
         title: str,
         workspace_slug: str = "",
     ) -> Path:
-        base = self.learnings_dir(workspace_slug) if note_type == "learning" else self.memory_dir(workspace_slug)
+        base = (
+            self.learnings_dir(workspace_slug)
+            if note_type == "learning"
+            else self.memory_dir(workspace_slug)
+        )
         filename = f"{_slugify(title)}-{note_id[:8]}.md"
         return base / filename
 
@@ -240,7 +248,7 @@ class ObsidianMemoryStore:
         title_match = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
         title = title_match.group(1).strip() if title_match else path.stem
         tags: list[str] = []
-        for line in (fm_match.group(1).splitlines() if fm_match else []):
+        for line in fm_match.group(1).splitlines() if fm_match else []:
             stripped = line.strip()
             if stripped.startswith("- "):
                 tags.append(stripped[2:].strip())
@@ -331,7 +339,9 @@ class MemoryGraphStore:
         now = _utcnow_iso()
         tags_json = json.dumps(tags or [])
         with self._connect() as conn:
-            row = conn.execute("SELECT created_at FROM memory_nodes WHERE id = ?", (node_id,)).fetchone()
+            row = conn.execute(
+                "SELECT created_at FROM memory_nodes WHERE id = ?", (node_id,)
+            ).fetchone()
             created_at = row["created_at"] if row else now
             conn.execute(
                 """

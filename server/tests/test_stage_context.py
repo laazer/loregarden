@@ -1,11 +1,10 @@
-from sqlmodel import Session, SQLModel, create_engine, select
-from sqlmodel.pool import StaticPool
-
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef, Workspace
 from loregarden.services.seed import seed_database
 from loregarden.services.workspace_paths import resolve_agent_context_dir
+from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel.pool import StaticPool
 
 
 def test_build_orchestration_context_maps_testing_to_static_qa():

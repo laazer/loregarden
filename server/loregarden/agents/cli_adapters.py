@@ -5,8 +5,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from loregarden.config import settings
 from loregarden.agents.mcp_context import append_mcp_cli_args
+from loregarden.config import settings
 from loregarden.services.cli_settings import (
     resolve_claude_model,
     resolve_cursor_model,
@@ -341,7 +341,6 @@ def build_triage_invocation(
         return CliInvocation(argv=argv, stdin_prompt=None, cwd=str(workspace_root))
 
     selected = resolve_effective_adapter(agent_adapter=adapter, workspace=workspace)
-    claude_model = resolve_claude_model(workspace)
     cursor_model = resolve_cursor_model(workspace)
     triage_user_prompt = os.environ.get("LOREGARDEN_TRIAGE_USER_PROMPT", DEFAULT_TRIAGE_USER_PROMPT)
 

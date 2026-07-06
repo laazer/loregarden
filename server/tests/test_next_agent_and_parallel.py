@@ -1,8 +1,6 @@
 import json
 
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-
 from loregarden.models.domain import (
     AgentRun,
     ClassifyRoute,
@@ -15,6 +13,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.studio_service import resolve_classify_route, resolve_stage_execution
+from sqlmodel import Session, select
 
 
 def test_resolve_classify_route_prefers_next_agent():

@@ -1,23 +1,21 @@
 import json
-from datetime import datetime, timezone
-
-from sqlmodel import Session, select
 
 from loregarden.core.event_bus import event_bus
 from loregarden.core.workflow_loader import sync_workflow_templates
-from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.workflow_state import stages_up_to_done_json
-from loregarden.services.workflow_service import resolve_workspace_stages
 from loregarden.models.domain import (
     EventType,
     StageStatus,
     Ticket,
     TicketState,
-    WorkItemType,
     WorkflowInstance,
     WorkflowTemplate,
+    WorkItemType,
     Workspace,
 )
+from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.workflow_service import resolve_workspace_stages
+from loregarden.services.workflow_state import stages_up_to_done_json
+from sqlmodel import Session, select
 
 BOOTSTRAP_TASKS = [
     {
@@ -373,8 +371,16 @@ def seed_database(session: Session) -> None:
                     "del": "−6",
                     "files": "3 files changed",
                     "lines": [
-                        {"type": "a", "ln": "1", "text": "workflowTemplates query + template selector"},
-                        {"type": "a", "ln": "2", "text": "workspaceWorkflow badge in workflow pane"},
+                        {
+                            "type": "a",
+                            "ln": "1",
+                            "text": "workflowTemplates query + template selector",
+                        },
+                        {
+                            "type": "a",
+                            "ln": "2",
+                            "text": "workspaceWorkflow badge in workflow pane",
+                        },
                         {"type": "c", "ln": "3", "text": "ArtifactView runs list in context tab"},
                     ],
                 }

@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import sys
-
-from sqlmodel import Session, select
-
 from loregarden.db.session import engine, init_db
 from loregarden.models.domain import Ticket
 from loregarden.services.export_service import ExportService
 from loregarden.services.seed import seed_database
+from sqlmodel import Session, select
 
 
 def main() -> int:

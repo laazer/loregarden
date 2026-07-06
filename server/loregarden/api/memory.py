@@ -1,12 +1,11 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
-
 from loregarden.services.memory_config import (
     apply_memory_config,
     current_memory_config,
     memory_config_defaults,
 )
 from loregarden.services.memory_store import AgentMemoryService
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 

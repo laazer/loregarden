@@ -19,25 +19,23 @@ Categories covered:
 - Determinism Validation
 """
 
-import json
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-
 from loregarden.models.domain import (
     Ticket,
-    WorkItemType,
-    StageStatus,
     WorkflowInstance,
+    WorkItemType,
 )
+from sqlmodel import Session, select
 
 
 class TestNullAndEmptyValues:
     """Test null, empty, and missing values in workflow initialization."""
 
-    def test_milestone_with_empty_workflow_stage_key_persists(self, client: TestClient, db_session: Session):
+    def test_milestone_with_empty_workflow_stage_key_persists(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Mutation: What if workflow_stage_key is empty string instead of None?
 
@@ -58,15 +56,15 @@ class TestNullAndEmptyValues:
 
         # If workflow_stage_key is empty, verify it's not actually empty in DB
         # (this would indicate initialization failure)
-        db_ticket = db_session.exec(
-            select(Ticket).where(Ticket.id == milestone["id"])
-        ).first()
+        db_ticket = db_session.exec(select(Ticket).where(Ticket.id == milestone["id"])).first()
 
         assert db_ticket is not None
-        assert db_ticket.workflow_stage_key != "", \
+        assert db_ticket.workflow_stage_key != "", (
             "workflow_stage_key should not be empty string after creation"
-        assert db_ticket.workflow_stage_key is not None, \
+        )
+        assert db_ticket.workflow_stage_key is not None, (
             "workflow_stage_key should not be None for workflow-eligible ticket"
+        )
 
     def test_capability_workflow_stages_not_empty_array(self, client: TestClient):
         """
@@ -95,8 +93,7 @@ class TestNullAndEmptyValues:
         # Stages must never be empty
         assert "stages" in capability
         assert isinstance(capability["stages"], list)
-        assert len(capability["stages"]) > 0, \
-            "stages array must not be empty for workflow tickets"
+        assert len(capability["stages"]) > 0, "stages array must not be empty for workflow tickets"
 
         # Every stage must have required fields
         for stage in capability["stages"]:
@@ -125,13 +122,15 @@ class TestBoundaryConditions:
         )
 
         # Should succeed (or fail gracefully with 400, not 500)
-        assert res.status_code in [201, 400], \
+        assert res.status_code in [201, 400], (
             f"Long title should succeed or return 400, not {res.status_code}: {res.text}"
+        )
 
         if res.status_code == 201:
             milestone = res.json()
-            assert milestone["workflow_stage_key"] != "", \
+            assert milestone["workflow_stage_key"] != "", (
                 "Workflow should initialize even with long title"
+            )
 
     def test_multiple_concurrent_milestone_creations_each_get_workflow(self, client: TestClient):
         """
@@ -156,16 +155,18 @@ class TestBoundaryConditions:
 
         # All should have workflows initialized
         milestone_ids = [r["id"] for r in results]
-        assert len(set(milestone_ids)) == len(milestone_ids), \
-            "Each milestone should have unique ID"
+        assert len(set(milestone_ids)) == len(milestone_ids), "Each milestone should have unique ID"
 
         for r in results:
-            assert r["workflow_stage_key"] == "planning", \
+            assert r["workflow_stage_key"] == "planning", (
                 f"Milestone {r['id']} missing workflow initialization"
+            )
             assert r["workflow_stage_status"] == "pending"
             assert len(r["stages"]) > 0
 
-    def test_zero_sized_capability_collection_edge_case(self, client: TestClient, db_session: Session):
+    def test_zero_sized_capability_collection_edge_case(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Boundary: When fetching a feature with no capabilities,
         verify workflow state is still correct.
@@ -191,9 +192,7 @@ class TestBoundaryConditions:
         assert feature["workflow_stage_key"] == "planning"
 
         # Database should reflect this
-        db_feature = db_session.exec(
-            select(Ticket).where(Ticket.id == feature["id"])
-        ).first()
+        db_feature = db_session.exec(select(Ticket).where(Ticket.id == feature["id"])).first()
         assert db_feature.workflow_stage_key == "planning"
 
 
@@ -218,10 +217,10 @@ class TestTypeMutations:
         )
 
         # Should fail with 400 (bad request), not 201
-        assert res.status_code != 201, \
-            "CAPABILITY without parent should not be allowed"
-        assert res.status_code in [400, 422], \
+        assert res.status_code != 201, "CAPABILITY without parent should not be allowed"
+        assert res.status_code in [400, 422], (
             f"CAPABILITY without parent should return 400/422, not {res.status_code}"
+        )
 
     def test_wrong_work_item_type_string_rejected(self, client: TestClient):
         """
@@ -238,10 +237,8 @@ class TestTypeMutations:
         )
 
         # Should reject with 400/422, not 201
-        assert res.status_code != 201, \
-            "Invalid work_item_type should be rejected"
-        assert res.status_code in [400, 422, 400], \
-            f"Expected 400/422, got {res.status_code}"
+        assert res.status_code != 201, "Invalid work_item_type should be rejected"
+        assert res.status_code in [400, 422, 400], f"Expected 400/422, got {res.status_code}"
 
 
 class TestInvalidAndCorruptInputs:
@@ -421,16 +418,16 @@ class TestCombinatorialInputs:
             (capability, "capability"),
             (task, "task"),
         ]:
-            assert ticket["workflow_stage_key"] == "planning", \
-                f"{name} missing workflow_stage_key"
-            assert len(ticket["stages"]) > 0, \
-                f"{name} has empty stages"
+            assert ticket["workflow_stage_key"] == "planning", f"{name} missing workflow_stage_key"
+            assert len(ticket["stages"]) > 0, f"{name} has empty stages"
 
 
 class TestMutationTesting:
     """Introduce controlled mutations to reveal hidden assumptions."""
 
-    def test_workflow_stage_status_mutation_invalid_state(self, client: TestClient, db_session: Session):
+    def test_workflow_stage_status_mutation_invalid_state(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Mutation: If stage status is manually set to invalid value,
         does the system handle it gracefully?
@@ -448,9 +445,7 @@ class TestMutationTesting:
         milestone_id = res.json()["id"]
 
         # Mutate the database directly
-        db_ticket = db_session.exec(
-            select(Ticket).where(Ticket.id == milestone_id)
-        ).first()
+        db_ticket = db_session.exec(select(Ticket).where(Ticket.id == milestone_id)).first()
 
         # Try to set invalid status (not in StageStatus enum)
         # This should either be prevented or handled gracefully
@@ -464,16 +459,17 @@ class TestMutationTesting:
 
         # Re-fetch and verify — invalid enum values may fail on read (acceptable enforcement).
         try:
-            db_ticket = db_session.exec(
-                select(Ticket).where(Ticket.id == milestone_id)
-            ).first()
+            db_ticket = db_session.exec(select(Ticket).where(Ticket.id == milestone_id)).first()
         except LookupError:
             return
 
         valid_statuses = {"pending", "running", "blocked", "awaiting", "done", "wont_do"}
-        status_value = getattr(db_ticket.workflow_stage_status, "value", db_ticket.workflow_stage_status)
-        assert str(status_value) in valid_statuses or status_value == "invalid_status", \
+        status_value = getattr(
+            db_ticket.workflow_stage_status, "value", db_ticket.workflow_stage_status
+        )
+        assert str(status_value) in valid_statuses or status_value == "invalid_status", (
             "Stage status mutation should be handled"
+        )
 
     def test_workflow_work_item_types_constant_not_hardcoded_enum(self, db_session: Session):
         """
@@ -482,17 +478,20 @@ class TestMutationTesting:
 
         This catches if someone reverts the constant to the old three-type set.
         """
-        from loregarden.models.domain import WORKFLOW_WORK_ITEM_TYPES, WorkItemType
+        from loregarden.models.domain import WORKFLOW_WORK_ITEM_TYPES
 
         # Should include all 5 types (was previously 3)
-        assert len(WORKFLOW_WORK_ITEM_TYPES) >= 5, \
+        assert len(WORKFLOW_WORK_ITEM_TYPES) >= 5, (
             f"WORKFLOW_WORK_ITEM_TYPES has only {len(WORKFLOW_WORK_ITEM_TYPES)} types, expected >= 5"
+        )
 
         # Should include MILESTONE and CAPABILITY
-        assert WorkItemType.MILESTONE in WORKFLOW_WORK_ITEM_TYPES, \
+        assert WorkItemType.MILESTONE in WORKFLOW_WORK_ITEM_TYPES, (
             "MILESTONE not in WORKFLOW_WORK_ITEM_TYPES"
-        assert WorkItemType.CAPABILITY in WORKFLOW_WORK_ITEM_TYPES, \
+        )
+        assert WorkItemType.CAPABILITY in WORKFLOW_WORK_ITEM_TYPES, (
             "CAPABILITY not in WORKFLOW_WORK_ITEM_TYPES"
+        )
 
         # Should still include the original three
         assert WorkItemType.FEATURE in WORKFLOW_WORK_ITEM_TYPES
@@ -524,8 +523,9 @@ class TestErrorHandling:
         milestone = res.json()
 
         # If it succeeded, workflow must be initialized
-        assert milestone["workflow_stage_key"] != "", \
+        assert milestone["workflow_stage_key"] != "", (
             "If ticket creation succeeded, workflow must initialize"
+        )
 
     def test_invalid_parent_type_hierarchy_violation(self, client: TestClient):
         """
@@ -556,8 +556,7 @@ class TestErrorHandling:
         )
 
         # Should fail, not succeed
-        assert task_res.status_code != 201, \
-            "TASK under MILESTONE should fail per VALID_HIERARCHY"
+        assert task_res.status_code != 201, "TASK under MILESTONE should fail per VALID_HIERARCHY"
 
 
 class TestAssumptionChecks:
@@ -580,8 +579,9 @@ class TestAssumptionChecks:
 
         # First stage key should match workflow_stage_key
         first_stage_key = milestone["stages"][0]["key"]
-        assert milestone["workflow_stage_key"] == first_stage_key, \
+        assert milestone["workflow_stage_key"] == first_stage_key, (
             f"workflow_stage_key '{milestone['workflow_stage_key']}' should match first stage '{first_stage_key}'"
+        )
 
     def test_next_agent_matches_current_stage_agent(self, client: TestClient):
         """
@@ -600,14 +600,14 @@ class TestAssumptionChecks:
 
         # Find current stage
         current_stage = next(
-            s for s in milestone["stages"]
-            if s["key"] == milestone["workflow_stage_key"]
+            s for s in milestone["stages"] if s["key"] == milestone["workflow_stage_key"]
         )
 
         # next_agent should match stage's agent_id (if stage has one)
         if "agent_id" in current_stage and current_stage["agent_id"]:
-            assert milestone.get("next_agent") == current_stage["agent_id"], \
-                f"next_agent should match current stage's agent_id"
+            assert milestone.get("next_agent") == current_stage["agent_id"], (
+                "next_agent should match current stage's agent_id"
+            )
 
     def test_all_ticket_types_have_consistent_workflow_fields(self, client: TestClient):
         """
@@ -638,10 +638,8 @@ class TestAssumptionChecks:
         expected_fields = {"workflow_stage_key", "workflow_stage_status", "stages", "next_agent"}
 
         for ticket_type, ticket in tickets.items():
-            actual_fields = {k for k in ticket.keys() if "workflow" in k or k in {"stages", "next_agent"}}
             for field in expected_fields:
-                assert field in ticket, \
-                    f"{ticket_type} missing field '{field}'"
+                assert field in ticket, f"{ticket_type} missing field '{field}'"
 
 
 class TestDeterminismValidation:
@@ -673,8 +671,9 @@ class TestDeterminismValidation:
         m2 = res2.json()
 
         # Both should have same workflow initialization
-        assert m1["workflow_stage_key"] == m2["workflow_stage_key"], \
+        assert m1["workflow_stage_key"] == m2["workflow_stage_key"], (
             "Same input should produce same workflow_stage_key"
+        )
         assert m1["workflow_stage_status"] == m2["workflow_stage_status"]
         assert len(m1["stages"]) == len(m2["stages"])
 
@@ -712,14 +711,17 @@ class TestDeterminismValidation:
         stage_keys_1 = [s["key"] for s in capabilities[1]["stages"]]
         stage_keys_2 = [s["key"] for s in capabilities[2]["stages"]]
 
-        assert stage_keys_0 == stage_keys_1 == stage_keys_2, \
+        assert stage_keys_0 == stage_keys_1 == stage_keys_2, (
             "All capability instances should have identical stage definitions"
+        )
 
 
 class TestWorkflowInstanceDataIntegrity:
     """Test WorkflowInstance creation and consistency."""
 
-    def test_workflow_instance_references_correct_template(self, client: TestClient, db_session: Session):
+    def test_workflow_instance_references_correct_template(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Assumption: WorkflowInstance should reference the workspace's
         active workflow template, not a stale one.
@@ -738,19 +740,17 @@ class TestWorkflowInstanceDataIntegrity:
 
         # Verify WorkflowInstance references a valid template
         instance = db_session.exec(
-            select(WorkflowInstance).where(
-                WorkflowInstance.ticket_id == milestone_id
-            )
+            select(WorkflowInstance).where(WorkflowInstance.ticket_id == milestone_id)
         ).first()
 
         assert instance is not None
-        assert instance.template_id is not None, \
-            "WorkflowInstance must reference a template"
+        assert instance.template_id is not None, "WorkflowInstance must reference a template"
         assert instance.current_stage_key == "planning"
-        assert instance.stages_json is not None, \
-            "WorkflowInstance stages_json should be populated"
+        assert instance.stages_json is not None, "WorkflowInstance stages_json should be populated"
 
-    def test_multiple_instances_dont_share_stages_json(self, client: TestClient, db_session: Session):
+    def test_multiple_instances_dont_share_stages_json(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Assumption: Each WorkflowInstance should have its own stages_json,
         not share references.
@@ -803,9 +803,7 @@ class TestClientSideValidation:
         Assumption: isWorkflowWorkItem() should return True for all 5 types,
         not just the original 3.
         """
-        client_ts = (
-            Path(__file__).resolve().parents[2] / "client" / "src" / "api" / "client.ts"
-        )
+        client_ts = Path(__file__).resolve().parents[2] / "client" / "src" / "api" / "client.ts"
         source = client_ts.read_text(encoding="utf-8")
         assert "export function isWorkflowWorkItem" in source
         collapsed = source.replace(" ", "").replace("\n", "").lower()

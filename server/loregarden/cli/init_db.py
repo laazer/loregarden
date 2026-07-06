@@ -43,10 +43,9 @@ def main(argv: list[str] | None = None) -> int:
     removed = remove_sqlite_files(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    from sqlmodel import Session
-
     from loregarden.db.session import engine, init_db
     from loregarden.services.seed import seed_database
+    from sqlmodel import Session
 
     init_db()
     if not args.empty:

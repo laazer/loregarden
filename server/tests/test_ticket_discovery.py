@@ -1,11 +1,10 @@
 import json
 
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-
 from loregarden.models.domain import Ticket
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.ticket_discovery import list_tickets_mcp, looks_like_ticket_uuid
+from sqlmodel import Session, select
 
 
 def test_looks_like_ticket_uuid():

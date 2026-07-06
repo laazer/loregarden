@@ -1,9 +1,6 @@
 from collections.abc import Generator
 from pathlib import Path
 
-from sqlalchemy import event, text
-from sqlmodel import Session, SQLModel, create_engine
-
 from loregarden.config import settings
 from loregarden.services.path_resolve import (
     is_under_icloud,
@@ -11,6 +8,8 @@ from loregarden.services.path_resolve import (
     resolve_sqlite_path,
     sqlite_url_for_path,
 )
+from sqlalchemy import event, text
+from sqlmodel import Session, SQLModel, create_engine
 
 
 def _sqlite_url(url: str) -> str:
@@ -76,16 +75,12 @@ def _apply_sqlite_migrations(eng) -> None:
                     )
                 )
             if "parent_ticket_id" not in ticket_cols:
-                conn.execute(
-                    text("ALTER TABLE tickets ADD COLUMN parent_ticket_id TEXT")
-                )
+                conn.execute(text("ALTER TABLE tickets ADD COLUMN parent_ticket_id TEXT"))
             if "cycle_id" not in ticket_cols:
                 conn.execute(text("ALTER TABLE tickets ADD COLUMN cycle_id TEXT"))
             if "state_locked" not in ticket_cols:
                 conn.execute(
-                    text(
-                        "ALTER TABLE tickets ADD COLUMN state_locked INTEGER NOT NULL DEFAULT 0"
-                    )
+                    text("ALTER TABLE tickets ADD COLUMN state_locked INTEGER NOT NULL DEFAULT 0")
                 )
             if "triage_runtime_json" not in ticket_cols:
                 conn.execute(
@@ -122,11 +117,15 @@ def _apply_sqlite_migrations(eng) -> None:
                 "lmstudio_base_url": "ALTER TABLE workspaces ADD COLUMN lmstudio_base_url TEXT NOT NULL DEFAULT ''",
                 "lmstudio_model": "ALTER TABLE workspaces ADD COLUMN lmstudio_model TEXT NOT NULL DEFAULT ''",
             }
-            ws_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(workspaces)")).fetchall()}
+            ws_cols = {
+                row[1] for row in conn.execute(text("PRAGMA table_info(workspaces)")).fetchall()
+            }
             for col, stmt in runtime_cols.items():
                 if col not in ws_cols:
                     conn.execute(text(stmt))
-            ws_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(workspaces)")).fetchall()}
+            ws_cols = {
+                row[1] for row in conn.execute(text("PRAGMA table_info(workspaces)")).fetchall()
+            }
             if "permission_allowlist_json" not in ws_cols:
                 conn.execute(
                     text(
@@ -191,7 +190,9 @@ def _apply_sqlite_migrations(eng) -> None:
                     """
                 )
             )
-            conn.execute(text("CREATE INDEX ix_triage_messages_ticket_id ON triage_messages (ticket_id)"))
+            conn.execute(
+                text("CREATE INDEX ix_triage_messages_ticket_id ON triage_messages (ticket_id)")
+            )
 
 
 def get_session() -> Generator[Session, None, None]:

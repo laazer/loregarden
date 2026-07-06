@@ -8,7 +8,11 @@ from pathlib import Path
 
 from loregarden.models.domain import Workspace
 from loregarden.services.git_branch import validate_branch_name
-from loregarden.services.path_browser import assert_browse_allowed, parent_browse_path, to_workspace_repo_path
+from loregarden.services.path_browser import (
+    assert_browse_allowed,
+    parent_browse_path,
+    to_workspace_repo_path,
+)
 from loregarden.services.workspace_paths import resolve_workspace_root
 
 MAX_FILE_BYTES = 512_000
@@ -72,7 +76,13 @@ def _is_git_repo(path: Path) -> bool:
 def _parse_worktrees(repo_root: Path) -> list[dict[str, str]]:
     proc = _git(repo_root, "worktree", "list", "--porcelain")
     if proc.returncode != 0:
-        return [{"path": str(repo_root.resolve()), "branch": _current_branch(repo_root), "label": "workspace"}]
+        return [
+            {
+                "path": str(repo_root.resolve()),
+                "branch": _current_branch(repo_root),
+                "label": "workspace",
+            }
+        ]
 
     worktrees: list[dict[str, str]] = []
     current_path = ""
@@ -176,7 +186,11 @@ def list_editor_refs(workspace: Workspace, *, context_root: str | None = None) -
         "context_path": str(editor_root.resolve()),
         "current_branch": current_branch,
         "branches": [
-            {"name": name, "current": name == current_branch and editor_root.resolve() == workspace_root.resolve()}
+            {
+                "name": name,
+                "current": name == current_branch
+                and editor_root.resolve() == workspace_root.resolve(),
+            }
             for name in branches
         ],
         "worktrees": [
@@ -204,7 +218,9 @@ def checkout_editor_branch(workspace: Workspace, branch: str) -> dict:
     return list_editor_refs(workspace, context_root=".")
 
 
-def list_editor_browse(workspace: Workspace, path: str | None = None, *, context_root: str | None = None) -> dict:
+def list_editor_browse(
+    workspace: Workspace, path: str | None = None, *, context_root: str | None = None
+) -> dict:
     workspace_root = resolve_workspace_root(workspace)
     editor_root = resolve_editor_root(workspace, context_root)
     rel = (path or ".").strip() or "."

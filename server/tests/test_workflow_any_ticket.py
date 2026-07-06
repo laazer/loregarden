@@ -10,17 +10,11 @@ Previously, workflows were restricted to FEATURE, TASK, and BUG only.
 This suite ensures the restriction is removed while maintaining backward compatibility.
 """
 
-import json
-import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-
 from loregarden.models.domain import (
-    Ticket,
-    WorkItemType,
-    StageStatus,
     WorkflowInstance,
 )
+from sqlmodel import Session, select
 
 
 class TestWorkflowInitializationForAllTicketTypes:
@@ -51,12 +45,13 @@ class TestWorkflowInitializationForAllTicketTypes:
         assert body["id"] is not None
 
         # Verify workflow was initialized
-        assert body["workflow_stage_key"] == "planning", \
+        assert body["workflow_stage_key"] == "planning", (
             f"Expected workflow_stage_key='planning', got {body['workflow_stage_key']}"
-        assert body["workflow_stage_status"] == "pending", \
+        )
+        assert body["workflow_stage_status"] == "pending", (
             f"Expected workflow_stage_status='pending', got {body['workflow_stage_status']}"
-        assert len(body["stages"]) >= 5, \
-            f"Expected at least 5 stages, got {len(body['stages'])}"
+        )
+        assert len(body["stages"]) >= 5, f"Expected at least 5 stages, got {len(body['stages'])}"
 
     def test_capability_gets_workflow_on_creation(self, client: TestClient):
         """
@@ -91,12 +86,13 @@ class TestWorkflowInitializationForAllTicketTypes:
         assert body["id"] is not None
 
         # Verify workflow was initialized
-        assert body["workflow_stage_key"] == "planning", \
+        assert body["workflow_stage_key"] == "planning", (
             f"Expected workflow_stage_key='planning', got {body['workflow_stage_key']}"
-        assert body["workflow_stage_status"] == "pending", \
+        )
+        assert body["workflow_stage_status"] == "pending", (
             f"Expected workflow_stage_status='pending', got {body['workflow_stage_status']}"
-        assert len(body["stages"]) >= 5, \
-            f"Expected at least 5 stages, got {len(body['stages'])}"
+        )
+        assert len(body["stages"]) >= 5, f"Expected at least 5 stages, got {len(body['stages'])}"
 
     def test_feature_still_gets_workflow_backward_compatibility(self, client: TestClient):
         """
@@ -199,15 +195,12 @@ class TestWorkflowInstanceCreation:
 
         # Verify WorkflowInstance exists
         from loregarden.db.session import engine
-        from sqlmodel import Session
+
         with Session(engine) as session:
             instance = session.exec(
-                select(WorkflowInstance).where(
-                    WorkflowInstance.ticket_id == milestone_id
-                )
+                select(WorkflowInstance).where(WorkflowInstance.ticket_id == milestone_id)
             ).first()
-            assert instance is not None, \
-                f"No WorkflowInstance found for milestone {milestone_id}"
+            assert instance is not None, f"No WorkflowInstance found for milestone {milestone_id}"
             assert instance.template_id is not None
             assert instance.current_stage_key == "planning"
 
@@ -238,15 +231,12 @@ class TestWorkflowInstanceCreation:
 
         # Verify WorkflowInstance exists
         from loregarden.db.session import engine
-        from sqlmodel import Session
+
         with Session(engine) as session:
             instance = session.exec(
-                select(WorkflowInstance).where(
-                    WorkflowInstance.ticket_id == capability_id
-                )
+                select(WorkflowInstance).where(WorkflowInstance.ticket_id == capability_id)
             ).first()
-            assert instance is not None, \
-                f"No WorkflowInstance found for capability {capability_id}"
+            assert instance is not None, f"No WorkflowInstance found for capability {capability_id}"
             assert instance.template_id is not None
             assert instance.current_stage_key == "planning"
 
@@ -271,8 +261,9 @@ class TestWorkflowStageFields:
 
         # Verify the stage status is one of the valid values
         valid_statuses = {"pending", "running", "blocked", "awaiting", "done", "wont_do"}
-        assert body["workflow_stage_status"] in valid_statuses, \
+        assert body["workflow_stage_status"] in valid_statuses, (
             f"Invalid workflow_stage_status: {body['workflow_stage_status']}"
+        )
 
     def test_capability_has_valid_stage_status(self, client: TestClient):
         """
@@ -297,8 +288,9 @@ class TestWorkflowStageFields:
         body = res.json()
 
         valid_statuses = {"pending", "running", "blocked", "awaiting", "done", "wont_do"}
-        assert body["workflow_stage_status"] in valid_statuses, \
+        assert body["workflow_stage_status"] in valid_statuses, (
             f"Invalid workflow_stage_status: {body['workflow_stage_status']}"
+        )
 
     def test_all_ticket_types_have_stages_array(self, client: TestClient):
         """
@@ -320,10 +312,8 @@ class TestWorkflowStageFields:
             ("task", task),
         ]:
             assert "stages" in ticket, f"{ticket_type} missing stages"
-            assert isinstance(ticket["stages"], list), \
-                f"{ticket_type} stages is not a list"
-            assert len(ticket["stages"]) > 0, \
-                f"{ticket_type} has empty stages array"
+            assert isinstance(ticket["stages"], list), f"{ticket_type} stages is not a list"
+            assert len(ticket["stages"]) > 0, f"{ticket_type} has empty stages array"
 
 
 class TestWorkflowHierarchyInteractions:
@@ -689,17 +679,13 @@ class TestWorkflowEdgeCases:
 
         # Get their instances
         from loregarden.db.session import engine
-        from sqlmodel import Session
+
         with Session(engine) as session:
             inst1 = session.exec(
-                select(WorkflowInstance).where(
-                    WorkflowInstance.ticket_id == milestone1["id"]
-                )
+                select(WorkflowInstance).where(WorkflowInstance.ticket_id == milestone1["id"])
             ).first()
             inst2 = session.exec(
-                select(WorkflowInstance).where(
-                    WorkflowInstance.ticket_id == milestone2["id"]
-                )
+                select(WorkflowInstance).where(WorkflowInstance.ticket_id == milestone2["id"])
             ).first()
 
             # Both should exist

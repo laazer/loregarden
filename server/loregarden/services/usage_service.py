@@ -23,9 +23,7 @@ CLAUDE_SCOPES = (
 CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 CLAUDE_REFRESH_URL = "https://platform.claude.com/v1/oauth/token"
 
-CURSOR_USAGE_URL = (
-    "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage"
-)
+CURSOR_USAGE_URL = "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage"
 CURSOR_PLAN_URL = "https://api2.cursor.sh/aiserver.v1.DashboardService/GetPlanInfo"
 CURSOR_ACCESS_KEY = "cursorAuth/accessToken"
 
@@ -219,9 +217,9 @@ def _refresh_claude_token(oauth: dict[str, Any], client: httpx.Client) -> dict[s
     if payload.get("refresh_token"):
         updated["refreshToken"] = payload["refresh_token"]
     if payload.get("expires_in") is not None:
-        updated["expiresAt"] = datetime.now(tz=timezone.utc).timestamp() * 1000 + float(
-            payload["expires_in"]
-        ) * 1000
+        updated["expiresAt"] = (
+            datetime.now(tz=timezone.utc).timestamp() * 1000 + float(payload["expires_in"]) * 1000
+        )
     return updated
 
 
@@ -245,7 +243,8 @@ def _append_claude_window(
             limit=100.0,
             unit="percent",
             percent_used=used,
-            resets_at=_iso_from_text(window.get("resets_at")) or _iso_from_epoch_ms(window.get("resets_at")),
+            resets_at=_iso_from_text(window.get("resets_at"))
+            or _iso_from_epoch_ms(window.get("resets_at")),
             status=_meter_status(used),
         )
     )
@@ -279,7 +278,8 @@ def _append_claude_scoped_limit(
                 limit=100.0,
                 unit="percent",
                 percent_used=used,
-                resets_at=_iso_from_text(entry.get("resets_at")) or _iso_from_epoch_ms(entry.get("resets_at")),
+                resets_at=_iso_from_text(entry.get("resets_at"))
+                or _iso_from_epoch_ms(entry.get("resets_at")),
                 status=_meter_status(used),
             )
         )
@@ -344,8 +344,7 @@ def _scan_claude_logs(days_back: int = 7) -> list[UsageBreakdownItem]:
                     if not isinstance(usage, dict):
                         continue
                     model = (
-                        row.get("model")
-                        or row.get("message", {}).get("model")
+                        row.get("model") or row.get("message", {}).get("model")
                         if isinstance(row.get("message"), dict)
                         else None
                     )
@@ -397,7 +396,10 @@ def _fetch_claude_usage(client: httpx.Client) -> ProviderUsage:
 
     access_token = str(oauth.get("accessToken") or "").strip()
     expires_at = _as_number(oauth.get("expiresAt"))
-    if expires_at is not None and expires_at <= datetime.now(tz=timezone.utc).timestamp() * 1000 + 300_000:
+    if (
+        expires_at is not None
+        and expires_at <= datetime.now(tz=timezone.utc).timestamp() * 1000 + 300_000
+    ):
         oauth = _refresh_claude_token(oauth, client)
         access_token = str(oauth.get("accessToken") or "").strip()
 
@@ -598,12 +600,19 @@ def _fetch_cursor_usage(client: httpx.Client) -> ProviderUsage:
     plan_body = plan_response.json() if plan_response.status_code < 400 else {}
     plan_name = None
     if isinstance(plan_body, dict):
-        plan_name = str(
-            plan_body.get("planName")
-            or plan_body.get("plan")
-            or (plan_body.get("membershipType") if isinstance(plan_body.get("membershipType"), str) else "")
-            or ""
-        ).strip() or None
+        plan_name = (
+            str(
+                plan_body.get("planName")
+                or plan_body.get("plan")
+                or (
+                    plan_body.get("membershipType")
+                    if isinstance(plan_body.get("membershipType"), str)
+                    else ""
+                )
+                or ""
+            ).strip()
+            or None
+        )
 
     if usage_body.get("enabled") is False:
         return ProviderUsage(
@@ -639,18 +648,28 @@ def _fetch_cursor_usage(client: httpx.Client) -> ProviderUsage:
 
     normalized_plan = (plan_name or "").lower()
     spend_limit = usage_body.get("spendLimitUsage")
-    pooled_limit = _as_number(spend_limit.get("pooledLimit")) if isinstance(spend_limit, dict) else None
+    pooled_limit = (
+        _as_number(spend_limit.get("pooledLimit")) if isinstance(spend_limit, dict) else None
+    )
     is_team = normalized_plan == "team" or (pooled_limit or 0) > 0
 
     if is_team and limit_cents and total_spend_cents is not None:
-        _append_cursor_dollar_meter(meters, "total", "Total usage", total_spend_cents, limit_cents, cycle_end)
+        _append_cursor_dollar_meter(
+            meters, "total", "Total usage", total_spend_cents, limit_cents, cycle_end
+        )
     elif total_percent is not None:
         _append_cursor_percent_meter(meters, "total", "Total usage", total_percent, cycle_end)
     elif limit_cents and total_spend_cents is not None:
-        _append_cursor_dollar_meter(meters, "total", "Total usage", total_spend_cents, limit_cents, cycle_end)
+        _append_cursor_dollar_meter(
+            meters, "total", "Total usage", total_spend_cents, limit_cents, cycle_end
+        )
 
-    _append_cursor_percent_meter(meters, "auto", "Auto usage", plan_usage.get("autoPercentUsed"), cycle_end)
-    _append_cursor_percent_meter(meters, "api", "API usage", plan_usage.get("apiPercentUsed"), cycle_end)
+    _append_cursor_percent_meter(
+        meters, "auto", "Auto usage", plan_usage.get("autoPercentUsed"), cycle_end
+    )
+    _append_cursor_percent_meter(
+        meters, "api", "API usage", plan_usage.get("apiPercentUsed"), cycle_end
+    )
 
     if isinstance(spend_limit, dict):
         on_demand_limit = _as_number(spend_limit.get("individualLimit")) or _as_number(
@@ -661,7 +680,9 @@ def _fetch_cursor_usage(client: httpx.Client) -> ProviderUsage:
         )
         if on_demand_limit and on_demand_limit > 0 and on_demand_remaining is not None:
             spent = max(0.0, on_demand_limit - on_demand_remaining)
-            _append_cursor_dollar_meter(meters, "on_demand", "On-demand", spent, on_demand_limit, cycle_end)
+            _append_cursor_dollar_meter(
+                meters, "on_demand", "On-demand", spent, on_demand_limit, cycle_end
+            )
 
     return ProviderUsage(
         provider="cursor",
@@ -682,10 +703,14 @@ def get_usage_snapshot() -> dict[str, Any]:
         for meter in provider.meters:
             if meter.status == "warning":
                 near_limit = True
-                warnings.append(f"{provider.provider.title()} {meter.label} is above {WARNING_PERCENT:.0f}%")
+                warnings.append(
+                    f"{provider.provider.title()} {meter.label} is above {WARNING_PERCENT:.0f}%"
+                )
             elif meter.status == "critical":
                 near_limit = True
-                warnings.append(f"{provider.provider.title()} {meter.label} is above {CRITICAL_PERCENT:.0f}%")
+                warnings.append(
+                    f"{provider.provider.title()} {meter.label} is above {CRITICAL_PERCENT:.0f}%"
+                )
         if provider.error and provider.logged_in:
             warnings.append(f"{provider.provider.title()}: {provider.error}")
 

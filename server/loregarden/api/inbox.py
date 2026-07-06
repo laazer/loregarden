@@ -1,12 +1,9 @@
-import json
-
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session
-
 from loregarden.db.session import get_session
 from loregarden.models.domain import ApprovalAction
 from loregarden.services.approval_views import approval_to_view
 from loregarden.services.orchestration import ApprovalService
+from sqlmodel import Session
 
 router = APIRouter(prefix="/inbox", tags=["inbox"])
 
@@ -16,10 +13,9 @@ def list_approvals(
     ticket_id: str | None = None,
     session: Session = Depends(get_session),
 ) -> list[dict]:
-    from sqlmodel import col, select
-
     from loregarden.models.domain import Approval, ApprovalStatus
     from loregarden.services.hierarchy_service import collect_ticket_scope_ids
+    from sqlmodel import col, select
 
     query = select(Approval).where(Approval.status == ApprovalStatus.PENDING)
     if ticket_id:

@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest
-
 from loregarden.services.path_resolve import (
     detect_obsidian_documents_dir,
     expand_path,

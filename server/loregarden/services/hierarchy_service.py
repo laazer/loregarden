@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from sqlmodel import Session, select
-
 from loregarden.models.domain import (
     VALID_HIERARCHY,
     Ticket,
@@ -11,14 +9,11 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from sqlmodel import Session, select
 
 
 def child_count(session: Session, ticket_id: str) -> int:
-    return len(
-        session.exec(
-            select(Ticket).where(Ticket.parent_ticket_id == ticket_id)
-        ).all()
-    )
+    return len(session.exec(select(Ticket).where(Ticket.parent_ticket_id == ticket_id)).all())
 
 
 def collect_ticket_scope_ids(session: Session, ticket_id: str) -> list[str]:
@@ -27,9 +22,7 @@ def collect_ticket_scope_ids(session: Session, ticket_id: str) -> list[str]:
     queue = [ticket_id]
     while queue:
         parent_id = queue.pop()
-        children = session.exec(
-            select(Ticket.id).where(Ticket.parent_ticket_id == parent_id)
-        ).all()
+        children = session.exec(select(Ticket.id).where(Ticket.parent_ticket_id == parent_id)).all()
         for child_id in children:
             if child_id not in scope:
                 scope.append(child_id)

@@ -1,7 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlmodel import Session, select
-
 from loregarden.db.session import get_session
 from loregarden.models.domain import Workspace
 from loregarden.services.file_editor import (
@@ -11,6 +8,8 @@ from loregarden.services.file_editor import (
     read_editor_file,
     write_editor_file,
 )
+from pydantic import BaseModel
+from sqlmodel import Session, select
 
 router = APIRouter(prefix="/workspaces", tags=["editor"])
 
@@ -34,7 +33,9 @@ class EditorWriteRequest(BaseModel):
 
 
 @router.get("/{slug}/editor/refs")
-def editor_refs(slug: str, context_root: str | None = None, session: Session = Depends(get_session)) -> dict:
+def editor_refs(
+    slug: str, context_root: str | None = None, session: Session = Depends(get_session)
+) -> dict:
     ws = _workspace_or_404(session, slug)
     try:
         return list_editor_refs(ws, context_root=context_root)

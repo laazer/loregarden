@@ -1,13 +1,19 @@
 import json
 
-from sqlmodel import Session, select
-
 from loregarden.agents.executors.permission_bridge import (
     ApprovalResolution,
     PermissionBridgeRunner,
 )
 from loregarden.db.session import engine
-from loregarden.models.domain import AgentRun, Approval, ApprovalKind, ApprovalStatus, RunStatus, Ticket, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    Approval,
+    ApprovalKind,
+    ApprovalStatus,
+    RunStatus,
+    Ticket,
+    Workspace,
+)
 from loregarden.services.orchestration import ApprovalService
 from loregarden.services.permission_allowlist import (
     add_ticket_allow_rule,
@@ -17,6 +23,7 @@ from loregarden.services.permission_allowlist import (
     permission_rule_matches,
 )
 from loregarden.services.seed import seed_database
+from sqlmodel import Session, select
 
 
 def test_permission_rule_matches_exact_tool_input():
@@ -51,9 +58,7 @@ def test_add_workspace_allow_rule_deduplicates():
             session.get(Workspace, workspace.id).permission_allowlist_json  # type: ignore[union-attr]
         )
         matching = [
-            rule
-            for rule in stored
-            if permission_rule_matches(rule, "Bash", {"command": command})
+            rule for rule in stored if permission_rule_matches(rule, "Bash", {"command": command})
         ]
         assert len(matching) == 1
 
@@ -138,7 +143,9 @@ def test_permission_bridge_auto_approves_workspace_allowlist(tmp_path):
                 },
             }
         )
-        result_line = json.dumps({"type": "result", "session_id": "sess_allowlist", "subtype": "success"})
+        result_line = json.dumps(
+            {"type": "result", "session_id": "sess_allowlist", "subtype": "success"}
+        )
 
         class FakeStdout:
             def __init__(self, lines):

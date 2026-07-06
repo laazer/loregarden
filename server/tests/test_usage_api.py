@@ -1,7 +1,6 @@
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-
 from loregarden.services import usage_service
 
 
@@ -25,49 +24,14 @@ def test_usage_endpoint_returns_snapshot(client: TestClient):
                         "status": "ok",
                     }
                 ],
-                "breakdown": [{"name": "claude-sonnet-4-6", "amount": 1200, "unit": "tokens", "share_percent": 100}],
-            },
-            {
-                "provider": "cursor",
-                "plan": "Ultra",
-                "logged_in": True,
-                "error": None,
-                "meters": [],
-                "breakdown": [],
-            },
-        ],
-        "near_limit": False,
-        "warnings": [],
-        "fetched_at": "2026-07-05T20:00:00+00:00",
-    }
-from unittest.mock import patch
-
-from fastapi.testclient import TestClient
-
-from loregarden.services import usage_service
-
-
-def test_usage_endpoint_returns_snapshot(client: TestClient):
-    snapshot = {
-        "providers": [
-            {
-                "provider": "claude",
-                "plan": "Max 20x",
-                "logged_in": True,
-                "error": None,
-                "meters": [
+                "breakdown": [
                     {
-                        "key": "five_hour",
-                        "label": "Session (5h)",
-                        "used": 42.0,
-                        "limit": 100.0,
-                        "unit": "percent",
-                        "percent_used": 42.0,
-                        "resets_at": None,
-                        "status": "ok",
+                        "name": "claude-sonnet-4-6",
+                        "amount": 1200,
+                        "unit": "tokens",
+                        "share_percent": 100,
                     }
                 ],
-                "breakdown": [{"name": "claude-sonnet-4-6", "amount": 1200, "unit": "tokens", "share_percent": 100}],
             },
             {
                 "provider": "cursor",

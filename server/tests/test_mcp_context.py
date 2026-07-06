@@ -1,6 +1,3 @@
-from sqlmodel import Session, SQLModel, create_engine, select
-from sqlmodel.pool import StaticPool
-
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.mcp_context import (
     build_mcp_run_context,
@@ -11,6 +8,8 @@ from loregarden.agents.mcp_context import (
 from loregarden.models.domain import AgentRun, Ticket, Workspace
 from loregarden.services.seed import seed_database
 from loregarden.services.workspace_paths import resolve_agent_context_dir
+from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel.pool import StaticPool
 
 
 def test_resolve_mcp_url_env(monkeypatch):

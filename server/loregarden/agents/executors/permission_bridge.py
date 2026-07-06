@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from sqlmodel import Session
 
@@ -76,10 +77,7 @@ def extract_permission_request(payload: dict[str, Any]) -> dict[str, Any] | None
         subtype = request.get("subtype", "")
         if subtype in {"permission", "can_use_tool"}:
             request_id = (
-                payload.get("request_id")
-                or request.get("request_id")
-                or request.get("id")
-                or ""
+                payload.get("request_id") or request.get("request_id") or request.get("id") or ""
             )
             tool_name = request.get("tool_name") or request.get("tool") or "tool"
             tool_input = request.get("tool_input") or request.get("input") or {}
@@ -502,7 +500,9 @@ class PermissionBridgeRunner:
                 question = is_ask_user_question(permission["tool_name"])
                 if bare_mcp and is_auto_approved_mcp_tool(permission["tool_name"]):
                     tool_input = (
-                        permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
+                        permission["tool_input"]
+                        if isinstance(permission["tool_input"], dict)
+                        else {}
                     )
                     enriched = enrich_mcp_tool_input(
                         bare_tool=bare_mcp,
@@ -528,7 +528,9 @@ class PermissionBridgeRunner:
 
                 if auto_approve and not question:
                     tool_input = (
-                        permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
+                        permission["tool_input"]
+                        if isinstance(permission["tool_input"], dict)
+                        else {}
                     )
                     bare_mcp = bare_mcp_tool_name(permission["tool_name"])
                     if bare_mcp:
@@ -792,7 +794,6 @@ class PermissionBridgeRunner:
             )
             self.session.add(instance)
 
-        tool_preview = json.dumps(tool_input, indent=2)[:1500]
         approval = Approval(
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,

@@ -1,10 +1,9 @@
 from fastapi.testclient import TestClient
-from sqlmodel import Session
-
 from loregarden.agents.cli_adapters import build_triage_invocation
 from loregarden.models.domain import Ticket, TriageMessage
 from loregarden.services.cli_output import extract_triage_reply
 from loregarden.services.triage_service import build_triage_prompt, resolve_triage_timeout
+from sqlmodel import Session
 
 
 def test_resolve_triage_timeout_defaults_to_settings():

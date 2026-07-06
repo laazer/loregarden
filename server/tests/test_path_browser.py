@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from loregarden.services.path_browser import (
     assert_browse_allowed,
     list_browse,
