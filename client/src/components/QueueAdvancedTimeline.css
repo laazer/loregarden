@@ -1,0 +1,483 @@
+/**
+ * Gantt-style timeline visualization for queue progression
+ * Shows active runs and queued items with estimated completion times
+ */
+
+.timeline-container {
+  display: flex;
+  flex-direction: column;
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  gap: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .timeline-container {
+    background: #1e1e1e;
+    color: #e0e0e0;
+  }
+}
+
+/* Header Section */
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.timeline-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.timeline-info {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.timeline-metric {
+  font-size: 12px;
+  padding: 4px 8px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  color: #666;
+}
+
+@media (prefers-color-scheme: dark) {
+  .timeline-metric {
+    background: #2a2a2a;
+    color: #aaa;
+  }
+}
+
+/* Timeline Wrapper */
+.timeline-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+/* Timeline Ruler (Time Markers) */
+.timeline-ruler {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.ruler-track {
+  position: relative;
+  height: 40px;
+  background: #fafafa;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  overflow: visible;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ruler-track {
+    background: #0a0a0a;
+    border-color: #444;
+  }
+}
+
+.ruler-marker {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  top: 0;
+  height: 100%;
+}
+
+.marker-line {
+  width: 1px;
+  height: 12px;
+  background: #bbb;
+  margin-top: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .marker-line {
+    background: #666;
+  }
+}
+
+.marker-label {
+  font-size: 10px;
+  color: #999;
+  margin-top: 2px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+@media (prefers-color-scheme: dark) {
+  .marker-label {
+    color: #aaa;
+  }
+}
+
+/* Timeline Content */
+.timeline-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Timeline Sections */
+.timeline-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .section-label {
+    color: #aaa;
+  }
+}
+
+/* Timeline Rows */
+.timeline-row {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+}
+
+@media (max-width: 768px) {
+  .timeline-row {
+    grid-template-columns: 100px 1fr;
+    gap: 8px;
+  }
+}
+
+.row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.slot-badge,
+.position-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  background: #e3f2fd;
+  color: #1976d2;
+  border-radius: 3px;
+  width: fit-content;
+}
+
+@media (prefers-color-scheme: dark) {
+  .slot-badge,
+  .position-badge {
+    background: #1a3a52;
+    color: #64b5f6;
+  }
+}
+
+.ticket-id {
+  font-size: 12px;
+  font-weight: 500;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ticket-id {
+    color: #bbb;
+  }
+}
+
+/* Timeline Bar Container */
+.timeline-bar {
+  display: flex;
+  position: relative;
+  height: 28px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  overflow: hidden;
+  align-items: center;
+  border: 1px solid #e0e0e0;
+  gap: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .timeline-bar {
+    background: #2a2a2a;
+    border-color: #444;
+  }
+}
+
+/* Bar Background (Estimated Duration) */
+.bar-background {
+  display: flex;
+  height: 100%;
+  background: #fff;
+  border-right: 1px solid #e0e0e0;
+  position: relative;
+  overflow: hidden;
+}
+
+@media (prefers-color-scheme: dark) {
+  .bar-background {
+    background: #1e1e1e;
+  }
+}
+
+/* Progress Section (Completed) */
+.bar-progress {
+  height: 100%;
+  background: linear-gradient(90deg, #4caf50 0%, #45a049 100%);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 4px;
+}
+
+.bar-progress.active {
+  animation: progress-pulse 2s ease-in-out infinite;
+}
+
+@keyframes progress-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* Remaining Section (Not Yet Started) */
+.bar-remaining {
+  height: 100%;
+  background: linear-gradient(90deg, #fff9c4 0%, #fff59d 100%);
+  border-right: 1px solid #f9a825;
+}
+
+@media (prefers-color-scheme: dark) {
+  .bar-remaining {
+    background: linear-gradient(90deg, #4a4a00 0%, #5a5a00 100%);
+    border-right-color: #8a8a00;
+  }
+}
+
+/* Waiting Section (Before Queued Run Starts) */
+.bar-waiting {
+  height: 100%;
+  background: #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #999;
+}
+
+@media (prefers-color-scheme: dark) {
+  .bar-waiting {
+    background: #444;
+    color: #aaa;
+  }
+}
+
+/* Queued Bar */
+.bar-background.queued {
+  background: linear-gradient(90deg, #ff9800 0%, #f57c00 100%);
+  border-right: none;
+  opacity: 0.8;
+}
+
+/* Bar Label */
+.bar-label {
+  position: absolute;
+  right: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #333;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
+}
+
+@media (prefers-color-scheme: dark) {
+  .bar-label {
+    color: #e0e0e0;
+  }
+}
+
+/* Timeline Completion Indicator */
+.timeline-completion {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 2px dashed #e0e0e0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .timeline-completion {
+    border-top-color: #444;
+  }
+}
+
+.completion-line {
+  width: 2px;
+  height: 24px;
+  background: #2196f3;
+  border-radius: 1px;
+}
+
+.completion-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2196f3;
+}
+
+@media (prefers-color-scheme: dark) {
+  .completion-label {
+    color: #42a5f5;
+  }
+}
+
+/* Legend */
+.timeline-legend {
+  display: flex;
+  gap: 20px;
+  padding: 12px;
+  background: #fafafa;
+  border-radius: 4px;
+  flex-wrap: wrap;
+  border: 1px solid #e0e0e0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .timeline-legend {
+    background: #0a0a0a;
+    border-color: #444;
+  }
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.legend-box {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.legend-box.active {
+  background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+}
+
+.legend-box.progress {
+  background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+}
+
+.legend-box.remaining {
+  background: linear-gradient(135deg, #fff9c4 0%, #fff59d 100%);
+  border: 1px solid #f9a825;
+}
+
+@media (prefers-color-scheme: dark) {
+  .legend-box.remaining {
+    background: linear-gradient(135deg, #4a4a00 0%, #5a5a00 100%);
+    border-color: #8a8a00;
+  }
+}
+
+.legend-box.waiting {
+  background: #e0e0e0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .legend-box.waiting {
+    background: #444;
+  }
+}
+
+/* Empty State */
+.timeline-empty {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 120px;
+  color: #999;
+  text-align: center;
+  font-size: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .timeline-empty {
+    color: #aaa;
+  }
+}
+
+.timeline-empty p {
+  margin: 0;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+  .timeline-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .timeline-info {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .timeline-metric {
+    font-size: 11px;
+    flex: 1;
+  }
+
+  .ruler-marker {
+    transform: scaleX(0.8);
+    transform-origin: left center;
+  }
+
+  .bar-label {
+    font-size: 10px;
+    right: 4px;
+  }
+
+  .timeline-legend {
+    gap: 12px;
+  }
+
+  .legend-item {
+    font-size: 11px;
+  }
+
+  .legend-box {
+    width: 14px;
+    height: 14px;
+  }
+}
