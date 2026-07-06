@@ -425,6 +425,21 @@ class QueuedRun(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class QueueSnapshot(SQLModel, table=True):
+    """Persistent storage of queue state for restore/replay."""
+    __tablename__ = "queue_snapshots"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    name: str  # User-friendly name (e.g., "Before reorder", "Checkpoint A")
+    description: str = ""  # Optional description
+    queue_state_json: str  # JSON array of queued runs at snapshot time
+    stats_json: str = ""  # Queue stats at snapshot time
+    tags: str = ""  # Comma-separated tags for filtering
+    created_at: datetime = Field(default_factory=utcnow)
+    created_by: str = ""  # User who created the snapshot
+
+
 class AgentSlot(SQLModel, table=True):
     """Track available execution slots for parallel agents."""
     __tablename__ = "agent_slots"
