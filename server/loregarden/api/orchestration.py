@@ -1,8 +1,6 @@
 """REST API for orchestration callbacks — used by MCP server and external drivers."""
 
 from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlmodel import Session, select
-
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     AttachArtifactRequest,
@@ -26,6 +24,7 @@ from loregarden.services.orchestration_profile import (
     list_profiles,
     resolve_orchestration_profile,
 )
+from sqlmodel import Session, select
 
 router = APIRouter(prefix="/orchestration", tags=["orchestration"])
 
@@ -65,7 +64,9 @@ def _get_run(session: Session, run_id: str) -> OrchestrationRun:
 
 
 @router.get("/workspaces/{slug}/profile", response_model=OrchestrationProfileView)
-def get_workspace_profile(slug: str, session: Session = Depends(get_session)) -> OrchestrationProfileView:
+def get_workspace_profile(
+    slug: str, session: Session = Depends(get_session)
+) -> OrchestrationProfileView:
     ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
     if not ws:
         raise HTTPException(404, "Workspace not found")
@@ -73,7 +74,9 @@ def get_workspace_profile(slug: str, session: Session = Depends(get_session)) ->
 
 
 @router.get("/workspaces/{slug}/profiles", response_model=list[OrchestrationProfileView])
-def list_workspace_profiles(slug: str, session: Session = Depends(get_session)) -> list[OrchestrationProfileView]:
+def list_workspace_profiles(
+    slug: str, session: Session = Depends(get_session)
+) -> list[OrchestrationProfileView]:
     ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
     if not ws:
         raise HTTPException(404, "Workspace not found")

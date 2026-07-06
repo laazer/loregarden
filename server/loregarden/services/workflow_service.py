@@ -2,20 +2,19 @@ import json
 from pathlib import Path
 
 import yaml
-from sqlmodel import Session, select
-
 from loregarden.config import settings
 from loregarden.core.workflow_loader import get_template_stages, sync_workflow_templates
-from loregarden.services.workflow_state import initial_stages_json, reconcile_workflow_state
 from loregarden.models.domain import (
+    WORKFLOW_WORK_ITEM_TYPES,
     StageStatus,
     Ticket,
-    WORKFLOW_WORK_ITEM_TYPES,
     WorkflowInstance,
     WorkflowStageDef,
     WorkflowTemplate,
     Workspace,
 )
+from loregarden.services.workflow_state import initial_stages_json, reconcile_workflow_state
+from sqlmodel import Session, select
 
 
 def _overrides_dir() -> Path:
@@ -30,9 +29,7 @@ def load_workspace_override(workspace_slug: str) -> dict:
         return yaml.safe_load(f) or {}
 
 
-def apply_stage_overrides(
-    stages: list[WorkflowStageDef], override: dict
-) -> list[WorkflowStageDef]:
+def apply_stage_overrides(stages: list[WorkflowStageDef], override: dict) -> list[WorkflowStageDef]:
     if not override:
         return stages
     skip = set(override.get("skip_stages", []))
@@ -133,9 +130,7 @@ class WorkflowService:
         return ws
 
     def set_workspace_template(self, workspace_slug: str, template_slug: str) -> Workspace:
-        ws = self.session.exec(
-            select(Workspace).where(Workspace.slug == workspace_slug)
-        ).first()
+        ws = self.session.exec(select(Workspace).where(Workspace.slug == workspace_slug)).first()
         if not ws:
             raise ValueError(f"Workspace not found: {workspace_slug}")
         template = self.get_template_by_slug(template_slug)
@@ -224,9 +219,7 @@ class WorkflowService:
         previous_template_id: str | None = None,
     ) -> None:
         _, stages = resolve_workspace_stages(self.session, workspace)
-        tickets = self.session.exec(
-            select(Ticket).where(Ticket.workspace_id == workspace.id)
-        ).all()
+        tickets = self.session.exec(select(Ticket).where(Ticket.workspace_id == workspace.id)).all()
         for ticket in tickets:
             if ticket.work_item_type not in WORKFLOW_WORK_ITEM_TYPES:
                 continue

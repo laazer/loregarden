@@ -1,11 +1,10 @@
 import json
 
-from sqlmodel import Session, SQLModel, create_engine, select
-from sqlmodel.pool import StaticPool
-
 from loregarden.models.domain import Artifact, RunStatus, Ticket
 from loregarden.services.run_log_stream import RunLogStreamer, format_stream_payload
 from loregarden.services.seed import seed_database
+from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel.pool import StaticPool
 
 
 def test_format_stream_payload_assistant_text():

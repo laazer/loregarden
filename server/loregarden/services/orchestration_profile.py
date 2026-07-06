@@ -5,11 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
-
 from loregarden.config import settings
 from loregarden.models.domain import OrchestrationDriver, Workspace
 from loregarden.services.workspace_paths import resolve_agent_context_dir
+from pydantic import BaseModel, Field
 
 
 class OrchestratorConfig(BaseModel):

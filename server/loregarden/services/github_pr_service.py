@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import json
 import subprocess
-from pathlib import Path
-
-from sqlmodel import Session
 
 from loregarden.models.domain import Artifact, Ticket, Workspace
 from loregarden.services.workspace_paths import resolve_workspace_root
+from sqlmodel import Session
 
 
 def _build_pr_body(ticket: Ticket) -> str:

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import json
 
-from sqlmodel import Session
-
 from loregarden.core.workflow_loader import stage_display_name
-from loregarden.models.domain import Approval, ApprovalKind, Ticket, Workspace, WorkflowTemplate
+from loregarden.models.domain import Approval, ApprovalKind, Ticket, WorkflowTemplate, Workspace
+from sqlmodel import Session
 
 
 def approval_to_view(session: Session, approval: Approval) -> dict:
@@ -47,7 +46,9 @@ def approval_to_view(session: Session, approval: Approval) -> dict:
         "ticket_id": approval.ticket_id,
         "ticket_external_id": ticket.external_id if ticket else "",
         "kind": approval.kind.value if hasattr(approval.kind, "value") else str(approval.kind),
-        "status": approval.status.value if hasattr(approval.status, "value") else str(approval.status),
+        "status": approval.status.value
+        if hasattr(approval.status, "value")
+        else str(approval.status),
         "run_id": approval.run_id or "",
         "tool_name": approval.tool_name,
         "tool_input_json": approval.tool_input_json,

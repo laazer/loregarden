@@ -2,7 +2,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
+from loregarden.config import settings
 from loregarden.models.domain import Workspace
 from loregarden.services.file_editor import (
     checkout_editor_branch,
@@ -15,9 +15,20 @@ from loregarden.services.file_editor import (
 
 
 def _init_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True, text=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=path, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True, capture_output=True)
+    # Force the initial branch to "main" so tests don't depend on the host git's
+    # default (older git / some CI images still default to "master").
+    subprocess.run(
+        ["git", "init", "-b", "main"], cwd=path, check=True, capture_output=True, text=True
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"], cwd=path, check=True, capture_output=True
+    )
     (path / "README.md").write_text("# test\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True)
@@ -35,7 +46,7 @@ def editor_repo(tmp_path, monkeypatch):
     subprocess.run(["git", "branch", "feature/editor"], cwd=repo, check=True, capture_output=True)
     monkeypatch.setenv("LOREGARDEN_REPO_ROOT", str(repo))
     monkeypatch.setattr("loregarden.config.settings.repo_root", repo.resolve())
-    monkeypatch.setattr("loregarden.services.path_browser.BROWSE_CEILING", tmp_path.resolve())
+    monkeypatch.setattr(settings, "browse_root", str(tmp_path))
     return repo
 
 
@@ -62,10 +73,14 @@ def test_read_and_write_editor_file(editor_workspace, editor_repo):
 
 def test_checkout_branch_updates_context(editor_workspace, editor_repo):
     (editor_repo / "README.md").write_text("# on main\n", encoding="utf-8")
-    subprocess.run(["git", "checkout", "feature/editor"], cwd=editor_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "checkout", "feature/editor"], cwd=editor_repo, check=True, capture_output=True
+    )
     (editor_repo / "README.md").write_text("# on feature\n", encoding="utf-8")
     subprocess.run(["git", "add", "README.md"], cwd=editor_repo, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "feature change"], cwd=editor_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "feature change"], cwd=editor_repo, check=True, capture_output=True
+    )
     subprocess.run(["git", "checkout", "main"], cwd=editor_repo, check=True, capture_output=True)
 
     refs = checkout_editor_branch(editor_workspace, "feature/editor")

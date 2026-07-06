@@ -3,9 +3,8 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
-from sqlmodel import Session, select
-
 from loregarden.models.domain import DomainEvent, EventType
+from sqlmodel import Session, select
 
 
 class EventBus:

@@ -1,8 +1,6 @@
 import json
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from sqlmodel import Session, col, select
-
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     AdvanceStageRequest,
@@ -11,18 +9,18 @@ from loregarden.models.domain import (
     StageStatus,
     StartOrchestrationRequest,
     StartRunRequest,
-    TriageMessageCreate,
     Ticket,
     TicketCreate,
     TicketDetail,
-    TicketImportPreviewRequest,
     TicketImportPreviewPathsRequest,
+    TicketImportPreviewRequest,
     TicketImportPreviewResponse,
     TicketImportRequest,
     TicketImportResult,
     TicketState,
     TicketSummary,
     TicketTreeNode,
+    TriageMessageCreate,
     UpdateTicketRequest,
     WorkItemType,
     Workspace,
@@ -31,17 +29,18 @@ from loregarden.models.domain import (
 )
 from loregarden.services.hierarchy_service import build_tree, child_count
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-from loregarden.services.run_service import RunService, schedule_agent_run, schedule_orchestration
-from loregarden.services.ticket_service import TicketService
-from loregarden.services.ticket_import_service import TicketImportService
 from loregarden.services.path_browser import read_import_files
+from loregarden.services.run_errors import normalize_timeout_stderr
+from loregarden.services.run_service import RunService, schedule_agent_run, schedule_orchestration
+from loregarden.services.ticket_import_service import TicketImportService
+from loregarden.services.ticket_service import TicketService
 from loregarden.services.triage_service import (
     send_triage_message,
     set_triage_runtime,
     triage_snapshot,
 )
+from sqlmodel import Session, col, select
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -50,9 +49,7 @@ def _latest_run_code(session: Session, ticket_id: str) -> str:
     from loregarden.models.domain import AgentRun
 
     run = session.exec(
-        select(AgentRun)
-        .where(AgentRun.ticket_id == ticket_id)
-        .order_by(AgentRun.created_at.desc())
+        select(AgentRun).where(AgentRun.ticket_id == ticket_id).order_by(AgentRun.created_at.desc())
     ).first()
     return run.run_code if run else ""
 
@@ -90,7 +87,7 @@ def _ticket_summary(session: Session, ticket: Ticket) -> TicketSummary:
 
 
 def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
-    from loregarden.models.domain import AgentRun, RunStatus, Workspace
+    from loregarden.models.domain import AgentRun, Workspace
     from loregarden.services.artifact_service import (
         _diff_artifact_is_valid,
         _test_artifact_is_valid,
@@ -99,10 +96,16 @@ def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
     )
 
     ticket_id = ticket.id
-    grouped: dict = {"diff": None, "logs": [], "tests": None, "context": [], "live": None, "error": None, "pr": None}
-    artifacts = session.exec(
-        select(Artifact).where(Artifact.ticket_id == ticket_id)
-    ).all()
+    grouped: dict = {
+        "diff": None,
+        "logs": [],
+        "tests": None,
+        "context": [],
+        "live": None,
+        "error": None,
+        "pr": None,
+    }
+    artifacts = session.exec(select(Artifact).where(Artifact.ticket_id == ticket_id)).all()
     log_artifacts: list[Artifact] = []
     error_artifacts: list[Artifact] = []
     for art in artifacts:
@@ -209,9 +212,7 @@ def _apply_ticket_query_filters(
         query = query.where(Ticket.milestone == milestone)
     if search:
         term = f"%{search.strip()}%"
-        query = query.where(
-            (col(Ticket.title).like(term)) | (col(Ticket.external_id).like(term))
-        )
+        query = query.where((col(Ticket.title).like(term)) | (col(Ticket.external_id).like(term)))
     return query
 
 

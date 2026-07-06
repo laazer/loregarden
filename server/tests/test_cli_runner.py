@@ -1,13 +1,11 @@
-import pytest
-from sqlmodel import Session, SQLModel, create_engine, select
-from sqlmodel.pool import StaticPool
-
 from loregarden.agents.cli_adapters import resolve_cli_invocation
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.executors.lmstudio_runner import main as lmstudio_runner_main
 from loregarden.agents.executors.local_runner import main as local_runner_main
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, TicketState, Workspace
 from loregarden.services.seed import seed_database
+from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel.pool import StaticPool
 
 
 def test_resolve_local_adapter(tmp_path):
@@ -164,7 +162,15 @@ def test_local_runner_success(tmp_path, monkeypatch):
     prompt_file.write_text("ticket body", encoding="utf-8")
     monkeypatch.setattr(
         "sys.argv",
-        ["local_runner", "--agent-id", "planner", "--skill", "plan", "--prompt-file", str(prompt_file)],
+        [
+            "local_runner",
+            "--agent-id",
+            "planner",
+            "--skill",
+            "plan",
+            "--prompt-file",
+            str(prompt_file),
+        ],
     )
     assert local_runner_main() == 0
 

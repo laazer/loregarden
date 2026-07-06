@@ -6,10 +6,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
-from sqlmodel import Session
-
 from loregarden.db.session import get_session
 from loregarden.mcp.protocol import SERVER_INFO, handle_message
+from sqlmodel import Session
 
 router = APIRouter(tags=["mcp"])
 

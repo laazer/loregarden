@@ -9,6 +9,7 @@ from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.core.state_machine import StateMachine
 from loregarden.db.session import engine
 from loregarden.models.domain import (
+    WORKFLOW_WORK_ITEM_TYPES,
     AgentRun,
     OrchestrationDriver,
     OrchestrationRun,
@@ -17,10 +18,9 @@ from loregarden.models.domain import (
     StageStatus,
     Ticket,
     TicketState,
-    WORKFLOW_WORK_ITEM_TYPES,
+    WorkflowStageDef,
     WorkItemType,
     Workspace,
-    WorkflowStageDef,
 )
 from loregarden.services.gate_runner import run_transition_gates
 from loregarden.services.orchestration import OrchestrationService
@@ -425,9 +425,7 @@ class BuiltinOrchestrator:
     ) -> str | None:
         """Run direct child workflows sequentially before advancing the parent."""
         children = list(
-            self.session.exec(
-                select(Ticket).where(Ticket.parent_ticket_id == ticket.id)
-            ).all()
+            self.session.exec(select(Ticket).where(Ticket.parent_ticket_id == ticket.id)).all()
         )
         children.sort(key=self._child_sort_key)
         for child in children:

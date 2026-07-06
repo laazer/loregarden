@@ -7,10 +7,8 @@ in a full workflow, rather than stopping after a single stage.
 Acceptance Criteria: Running agents assemble should run full orchestration
 """
 
-from fastapi.testclient import TestClient
 import pytest
-
-from loregarden.models.domain import OrchestrationRunStatus, TicketState, StageStatus
+from fastapi.testclient import TestClient
 
 
 class TestMaxStagesParameterBehavior:
@@ -90,9 +88,7 @@ class TestMaxStagesParameterBehavior:
         body = res.json()
         assert body["state"] in ("in_progress", "blocked", "done")
 
-    def test_orchestrate_uses_profile_default_when_max_stages_none(
-        self, client: TestClient
-    ):
+    def test_orchestrate_uses_profile_default_when_max_stages_none(self, client: TestClient):
         """
         Spec: When max_stages is None, the orchestrator should use
         profile.max_stages_per_run (default 0 = unlimited).
@@ -100,9 +96,7 @@ class TestMaxStagesParameterBehavior:
         Expected: Behavior same as max_stages=0
         """
         # Check profile first
-        profile_res = client.get(
-            "/api/orchestration/workspaces/loregarden/profile"
-        )
+        profile_res = client.get("/api/orchestration/workspaces/loregarden/profile")
         assert profile_res.status_code == 200
         profile = profile_res.json()
         # Default profile should have max_stages_per_run = 0
@@ -119,9 +113,7 @@ class TestMaxStagesParameterBehavior:
         body = res.json()
         assert body["state"] in ("in_progress", "blocked", "done")
 
-    def test_orchestrate_pauses_after_stage_limit_with_pending_stages(
-        self, client: TestClient
-    ):
+    def test_orchestrate_pauses_after_stage_limit_with_pending_stages(self, client: TestClient):
         """
         Spec: When limit is reached and stages remain pending, orchestrator
         should return with pause message.
@@ -152,9 +144,7 @@ class TestMaxStagesParameterBehavior:
 class TestDashboardOrchestrationMutation:
     """Frontend integration tests for Dashboard orchestration button."""
 
-    def test_orchestrate_endpoint_accepts_no_max_stages_param(
-        self, client: TestClient
-    ):
+    def test_orchestrate_endpoint_accepts_no_max_stages_param(self, client: TestClient):
         """
         Spec: The /api/tickets/{id}/orchestrate endpoint should work
         when called without max_stages parameter.
@@ -171,9 +161,7 @@ class TestDashboardOrchestrationMutation:
         assert body["id"] == ticket_id
         assert body["state"] in ("in_progress", "blocked", "done")
 
-    def test_orchestrate_endpoint_accepts_explicit_max_stages(
-        self, client: TestClient
-    ):
+    def test_orchestrate_endpoint_accepts_explicit_max_stages(self, client: TestClient):
         """
         Spec: The endpoint should still accept explicit max_stages for
         backward compatibility and testing.
@@ -219,9 +207,7 @@ class TestDashboardOrchestrationMutation:
 class TestFullWorkflowOrchestration:
     """Integration tests for complete orchestration workflow."""
 
-    def test_orchestrate_ticket_runs_multiple_stages_to_completion(
-        self, client: TestClient
-    ):
+    def test_orchestrate_ticket_runs_multiple_stages_to_completion(self, client: TestClient):
         """
         Acceptance Criteria Test: Running agents assemble should run full
         orchestration.
@@ -245,9 +231,7 @@ class TestFullWorkflowOrchestration:
         # Ticket should progress through orchestration
         assert body["state"] in ("in_progress", "blocked", "done")
 
-    def test_orchestrate_ticket_with_limit_pauses_appropriately(
-        self, client: TestClient
-    ):
+    def test_orchestrate_ticket_with_limit_pauses_appropriately(self, client: TestClient):
         """
         Spec: When max_stages limit is set, orchestration should pause
         after reaching the limit and allow resumption.
@@ -273,9 +257,7 @@ class TestFullWorkflowOrchestration:
         )
         assert res2.status_code == 200
 
-    def test_orchestrate_preserves_ticket_state_across_runs(
-        self, client: TestClient
-    ):
+    def test_orchestrate_preserves_ticket_state_across_runs(self, client: TestClient):
         """
         Spec: Multiple orchestration runs should not lose state or data.
 
@@ -324,16 +306,12 @@ class TestEdgeCases:
                 break
 
         if done_ticket:
-            res = client.post(
-                f"/api/tickets/{done_ticket['id']}/orchestrate", json={}
-            )
+            res = client.post(f"/api/tickets/{done_ticket['id']}/orchestrate", json={})
             assert res.status_code == 200
             body = res.json()
             assert body["state"] == "done"
 
-    def test_orchestrate_blocked_ticket_returns_appropriate_state(
-        self, client: TestClient
-    ):
+    def test_orchestrate_blocked_ticket_returns_appropriate_state(self, client: TestClient):
         """
         Spec: Orchestrating a blocked ticket should not execute stages.
 
@@ -348,9 +326,7 @@ class TestEdgeCases:
                 break
 
         if blocked_ticket:
-            res = client.post(
-                f"/api/tickets/{blocked_ticket['id']}/orchestrate", json={}
-            )
+            res = client.post(f"/api/tickets/{blocked_ticket['id']}/orchestrate", json={})
             assert res.status_code == 200
             body = res.json()
             assert body["state"] == "blocked"
@@ -361,9 +337,7 @@ class TestEdgeCases:
 
         Expected: 404 response
         """
-        res = client.post(
-            "/api/tickets/00000000-0000-0000-0000-000000000000/orchestrate", json={}
-        )
+        res = client.post("/api/tickets/00000000-0000-0000-0000-000000000000/orchestrate", json={})
         assert res.status_code in (404, 500)  # Either 404 or 500 is acceptable
 
     def test_orchestrate_with_invalid_max_stages_type(self, client: TestClient):
@@ -451,9 +425,7 @@ class TestOrchestrationRunTracking:
 class TestAcceptanceCriteria:
     """Direct tests for acceptance criteria."""
 
-    def test_agents_assemble_button_runs_full_orchestration(
-        self, client: TestClient
-    ):
+    def test_agents_assemble_button_runs_full_orchestration(self, client: TestClient):
         """
         PRIMARY ACCEPTANCE CRITERIA: Running agents assemble should run
         full orchestration.

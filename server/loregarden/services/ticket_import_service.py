@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from sqlmodel import Session, select
-
 from loregarden.models.domain import (
     Ticket,
     TicketImportItem,
@@ -18,6 +16,7 @@ from loregarden.services.ticket_import import (
     should_show_import_preview,
 )
 from loregarden.services.ticket_service import TicketService
+from sqlmodel import Session, select
 
 
 def _import_sort_key(item: TicketImportItem) -> tuple[int, str]:
@@ -76,14 +75,18 @@ class TicketImportService:
     ) -> TicketImportResult:
         ws = self.session.exec(select(Workspace).where(Workspace.slug == workspace_slug)).first()
         if not ws:
-            return TicketImportResult(created_count=0, ticket_ids=[], errors=[f"Workspace not found: {workspace_slug}"])
+            return TicketImportResult(
+                created_count=0, ticket_ids=[], errors=[f"Workspace not found: {workspace_slug}"]
+            )
 
         svc = TicketService(self.session)
         created_ids: list[str] = []
         errors: list[str] = []
         external_to_id: dict[str, str] = {
             ticket.external_id: ticket.id
-            for ticket in self.session.exec(select(Ticket).where(Ticket.workspace_id == ws.id)).all()
+            for ticket in self.session.exec(
+                select(Ticket).where(Ticket.workspace_id == ws.id)
+            ).all()
             if ticket.external_id
         }
 

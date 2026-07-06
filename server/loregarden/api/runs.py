@@ -1,10 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlmodel import Session
-
 from loregarden.db.session import get_session
-from loregarden.models.domain import RunStatus
 from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.run_service import RunService
+from sqlmodel import Session
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 

@@ -7,23 +7,22 @@ import re
 import threading
 from datetime import datetime, timezone
 
-from sqlmodel import Session, select
-
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import (
+    WORKFLOW_WORK_ITEM_TYPES,
     EventType,
     StageStatus,
     Ticket,
     TicketState,
-    WORKFLOW_WORK_ITEM_TYPES,
-    WorkItemType,
     WorkflowInstance,
+    WorkItemType,
     Workspace,
 )
 from loregarden.services.hierarchy_service import validate_parent_child
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.workflow_service import resolve_workspace_stages
 from loregarden.services.workflow_state import initial_stages_json
+from sqlmodel import Session, select
 
 
 def _slugify(text: str) -> str:

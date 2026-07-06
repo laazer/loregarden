@@ -10,20 +10,14 @@ Complements test_agents_assemble_orchestration.py with additional coverage:
 - Error recovery scenarios
 """
 
-from fastapi.testclient import TestClient
 import pytest
-import json
-from datetime import datetime
-
-from loregarden.models.domain import TicketState, StageStatus
+from fastapi.testclient import TestClient
 
 
 class TestStageExecutionSequencing:
     """Tests for verifying stages execute in correct order."""
 
-    def test_orchestrate_executes_stages_in_workflow_order(
-        self, client: TestClient
-    ):
+    def test_orchestrate_executes_stages_in_workflow_order(self, client: TestClient):
         """
         Spec: Stages must execute in the order defined by the workflow,
         not in arbitrary order.
@@ -52,9 +46,7 @@ class TestStageExecutionSequencing:
             # Earlier stage should come before later stage in list
             assert initial_stages[i]["key"] == final_stages[i]["key"]
 
-    def test_orchestrate_stage_status_transitions_are_forward_only(
-        self, client: TestClient
-    ):
+    def test_orchestrate_stage_status_transitions_are_forward_only(self, client: TestClient):
         """
         Spec: Stage status should only move forward: pending -> running/done,
         never backward or skip.
@@ -89,13 +81,11 @@ class TestStageExecutionSequencing:
             if initial_status == final_status:
                 continue
             valid_next = valid_progressions.get(initial_status, set())
-            assert (
-                final_status in valid_next
-            ), f"Stage {stage_key} moved from {initial_status} to {final_status}"
+            assert final_status in valid_next, (
+                f"Stage {stage_key} moved from {initial_status} to {final_status}"
+            )
 
-    def test_orchestrate_no_stages_execute_if_blocker_present(
-        self, client: TestClient
-    ):
+    def test_orchestrate_no_stages_execute_if_blocker_present(self, client: TestClient):
         """
         Spec: If a stage is blocked, subsequent stages should not execute.
 
@@ -110,9 +100,7 @@ class TestStageExecutionSequencing:
                 break
 
         if blocked_ticket:
-            res = client.post(
-                f"/api/tickets/{blocked_ticket['id']}/orchestrate", json={}
-            )
+            res = client.post(f"/api/tickets/{blocked_ticket['id']}/orchestrate", json={})
             assert res.status_code == 200
             result = res.json()
             # Should be blocked
@@ -129,9 +117,7 @@ class TestStageExecutionSequencing:
 class TestConcurrentOrchestration:
     """Tests for behavior when orchestration is called concurrently."""
 
-    def test_concurrent_orchestrate_calls_are_serialized(
-        self, client: TestClient
-    ):
+    def test_concurrent_orchestrate_calls_are_serialized(self, client: TestClient):
         """
         Spec: Concurrent orchestration calls should be serialized or one
         should fail gracefully, not corrupt state.
@@ -166,7 +152,6 @@ class TestConcurrentOrchestration:
             json={"max_stages": 1},
         )
         assert res1.status_code == 200
-        state1 = res1.json()
 
         # Get stages after first run
         ticket1 = client.get(f"/api/tickets/{ticket_id}").json()
@@ -197,9 +182,7 @@ class TestConcurrentOrchestration:
 class TestOrchestrationResumption:
     """Detailed tests for pause and resumption logic."""
 
-    def test_orchestrate_pause_message_indicates_stage_count(
-        self, client: TestClient
-    ):
+    def test_orchestrate_pause_message_indicates_stage_count(self, client: TestClient):
         """
         Spec: When orchestration pauses, the error_message should clearly
         indicate how many stages ran and that resumption is possible.
@@ -221,9 +204,7 @@ class TestOrchestrationResumption:
             # Message should be informative
             assert isinstance(body["error_message"], str)
 
-    def test_orchestrate_with_max_stages_n_runs_exactly_n_stages(
-        self, client: TestClient
-    ):
+    def test_orchestrate_with_max_stages_n_runs_exactly_n_stages(self, client: TestClient):
         """
         Spec: When max_stages=N and there are >N pending stages, exactly
         N stages should execute.
@@ -251,9 +232,7 @@ class TestOrchestrationResumption:
         stages_run = final_done - initial_done
         assert stages_run <= 2
 
-    def test_orchestrate_resumption_picks_up_from_right_stage(
-        self, client: TestClient
-    ):
+    def test_orchestrate_resumption_picks_up_from_right_stage(self, client: TestClient):
         """
         Spec: After pausing with max_stages=1, resuming should execute the
         next stage, not re-run the previous one.
@@ -307,9 +286,7 @@ class TestOrchestrationResumption:
 class TestAPIContractValidation:
     """Tests for API request/response contract compliance."""
 
-    def test_orchestrate_endpoint_accepts_empty_json_object(
-        self, client: TestClient
-    ):
+    def test_orchestrate_endpoint_accepts_empty_json_object(self, client: TestClient):
         """
         Spec: POST /api/tickets/{id}/orchestrate should accept {} (empty
         JSON object), treating it same as omitting body.
@@ -336,9 +313,7 @@ class TestAPIContractValidation:
         res = client.post(f"/api/tickets/{ticket_id}/orchestrate")
         assert res.status_code == 200
 
-    def test_orchestrate_response_includes_required_fields(
-        self, client: TestClient
-    ):
+    def test_orchestrate_response_includes_required_fields(self, client: TestClient):
         """
         Spec: Response from orchestrate endpoint must include ticket detail
         with all critical fields.
@@ -396,9 +371,7 @@ class TestAPIContractValidation:
 class TestStageDataPersistence:
     """Tests for data persistence between orchestration runs."""
 
-    def test_stage_outputs_persist_across_orchestration_runs(
-        self, client: TestClient
-    ):
+    def test_stage_outputs_persist_across_orchestration_runs(self, client: TestClient):
         """
         Spec: If stage A completes and produces output (artifacts, state),
         that output should be available to stage B in a subsequent run.
@@ -431,9 +404,7 @@ class TestStageDataPersistence:
         # At minimum, artifact keys should be preserved
         assert set(artifacts_2.keys()) == set(artifacts_1.keys())
 
-    def test_ticket_revision_increments_after_orchestration(
-        self, client: TestClient
-    ):
+    def test_ticket_revision_increments_after_orchestration(self, client: TestClient):
         """
         Spec: Each orchestration run that modifies the ticket should
         increment the revision number.
@@ -467,9 +438,7 @@ class TestStageDataPersistence:
 class TestErrorRecovery:
     """Tests for error handling and recovery scenarios."""
 
-    def test_orchestrate_with_invalid_ticket_id_returns_404(
-        self, client: TestClient
-    ):
+    def test_orchestrate_with_invalid_ticket_id_returns_404(self, client: TestClient):
         """
         Spec: Orchestrating a non-existent ticket should return 404.
 
@@ -480,9 +449,7 @@ class TestErrorRecovery:
 
         assert res.status_code in (404, 500)
 
-    def test_orchestrate_with_malformed_request_returns_4xx(
-        self, client: TestClient
-    ):
+    def test_orchestrate_with_malformed_request_returns_4xx(self, client: TestClient):
         """
         Spec: Malformed JSON should return 400/422.
 
@@ -499,9 +466,7 @@ class TestErrorRecovery:
         # Should be validation error, not success
         assert res.status_code in (200, 400, 422)
 
-    def test_orchestrate_handles_extremely_high_max_stages(
-        self, client: TestClient
-    ):
+    def test_orchestrate_handles_extremely_high_max_stages(self, client: TestClient):
         """
         Spec: Very high max_stages value should be clamped or ignored
         gracefully, not cause overflow or timeout.
@@ -530,9 +495,7 @@ class TestErrorRecovery:
 class TestBackendOrchestrationLogic:
     """Tests for the core orchestration algorithm."""
 
-    def test_builtin_orchestrator_respects_max_stages_limit(
-        self, client: TestClient
-    ):
+    def test_builtin_orchestrator_respects_max_stages_limit(self, client: TestClient):
         """
         Spec: BuiltinOrchestrator.execute_stage_loop should stop after
         max_stages have been run, even if more remain.
@@ -553,17 +516,13 @@ class TestBackendOrchestrationLogic:
         assert res.status_code == 200
 
         final = client.get(f"/api/tickets/{ticket_id}").json()
-        pending_count_final = len(
-            [s for s in final.get("stages", []) if s["status"] == "pending"]
-        )
+        pending_count_final = len([s for s in final.get("stages", []) if s["status"] == "pending"])
 
         # At least one stage should have progressed
         stages_completed = pending_count_initial - pending_count_final
         assert stages_completed >= 0
 
-    def test_orchestrator_uses_profile_max_stages_when_parameter_none(
-        self, client: TestClient
-    ):
+    def test_orchestrator_uses_profile_max_stages_when_parameter_none(self, client: TestClient):
         """
         Spec: When max_stages parameter is None, BuiltinOrchestrator should
         use profile.max_stages_per_run (default 0 = unlimited).
@@ -571,11 +530,8 @@ class TestBackendOrchestrationLogic:
         Expected: Behavior is same as unlimited
         """
         # Get profile
-        profile_res = client.get(
-            "/api/orchestration/workspaces/loregarden/profile"
-        )
+        profile_res = client.get("/api/orchestration/workspaces/loregarden/profile")
         assert profile_res.status_code == 200
-        profile = profile_res.json()
 
         # Assuming profile.max_stages_per_run defaults to 0 (unlimited)
         # This test verifies that behavior

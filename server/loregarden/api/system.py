@@ -1,5 +1,4 @@
 from fastapi import APIRouter, HTTPException
-
 from loregarden.config import settings
 from loregarden.services.path_browser import (
     list_browse,

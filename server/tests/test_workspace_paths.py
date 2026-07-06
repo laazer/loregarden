@@ -3,7 +3,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
 from sqlmodel.pool import StaticPool
 
 
@@ -84,9 +83,8 @@ def test_create_workspace_with_orchestration_profile(client, db_session):
     )
     assert res.status_code == 201
 
-    from sqlmodel import select
-
     from loregarden.models.domain import Workspace
+    from sqlmodel import select
 
     row = db_session.exec(select(Workspace).where(Workspace.slug == "blobert-ref")).first()
     assert row is not None
@@ -94,11 +92,10 @@ def test_create_workspace_with_orchestration_profile(client, db_session):
 
 
 def test_cli_executor_fails_when_workspace_repo_missing(tmp_path):
-    from sqlmodel import Session, SQLModel, create_engine
-
     from loregarden.agents.executors.cli import CliAgentExecutor
     from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace
     from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine
 
     engine = create_engine(
         "sqlite://",
@@ -162,9 +159,8 @@ def test_init_db_cli_creates_seeded_database(tmp_path, monkeypatch):
     assert db_path.is_file()
     assert "seeded bootstrap data" in proc.stdout
 
-    from sqlmodel import Session, create_engine, select
-
     from loregarden.models.domain import Ticket, Workspace
+    from sqlmodel import Session, create_engine, select
 
     engine = create_engine(f"sqlite:///{db_path}")
     with Session(engine) as session:
@@ -191,9 +187,8 @@ def test_init_db_empty_skips_seed(tmp_path, monkeypatch):
     assert proc.returncode == 0, proc.stderr
     assert "schema only" in proc.stdout
 
-    from sqlmodel import Session, create_engine, select
-
     from loregarden.models.domain import Ticket
+    from sqlmodel import Session, create_engine, select
 
     engine = create_engine(f"sqlite:///{db_path}")
     with Session(engine) as session:

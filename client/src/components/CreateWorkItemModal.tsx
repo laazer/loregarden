@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { TicketSummary, TicketTreeNode, WorkItemType } from "../api/client";
-import { isWorkflowWorkItem } from "../api/client";
 import {
   allowedChildTypes,
   defaultChildType,
@@ -330,7 +329,7 @@ export function CreateWorkItemModal({
             />
           </div>
 
-          {isWorkflowWorkItem(draft.work_item_type) && (
+          {(
             <div className="modal-field">
               <div className="modal-field-label">Acceptance criteria (one per line)</div>
               <textarea

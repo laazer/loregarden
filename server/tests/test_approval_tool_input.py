@@ -1,10 +1,12 @@
 import json
 
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-
-from loregarden.agents.executors.permission_bridge import parse_stored_tool_input, serialize_tool_input
+from loregarden.agents.executors.permission_bridge import (
+    parse_stored_tool_input,
+    serialize_tool_input,
+)
 from loregarden.models.domain import Approval, ApprovalKind, ApprovalStatus, Ticket
+from sqlmodel import Session, select
 
 
 def test_serialize_tool_input_preserves_large_write_payload():

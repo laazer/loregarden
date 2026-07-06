@@ -6,9 +6,8 @@ import re
 from typing import Any
 from uuid import UUID
 
-from sqlmodel import Session, col, select
-
 from loregarden.models.domain import Ticket, TicketState, WorkItemType, Workspace
+from sqlmodel import Session, col, select
 
 _UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",

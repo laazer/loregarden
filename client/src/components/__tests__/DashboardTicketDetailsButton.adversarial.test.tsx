@@ -1,10 +1,9 @@
-import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DashboardTicketDetailsButton } from '../DashboardTicketDetailsButton';
 import * as apiClient from '../../api/client';
 
-jest.mock('../../api/client', () => require('../../test/apiClientMock'));
+jest.mock('../../api/client', () => jest.requireActual('../../test/apiClientMock'));
 
 describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
   let queryClient: QueryClient;

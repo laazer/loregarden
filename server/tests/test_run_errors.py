@@ -8,9 +8,7 @@ def test_agent_timeout_message():
 
 
 def test_normalize_legacy_timeout_stderr():
-    legacy = (
-        "Agent timed out after 600s: Command '['claude']' timed out after 1 seconds"
-    )
+    legacy = "Agent timed out after 600s: Command '['claude']' timed out after 1 seconds"
     assert normalize_timeout_stderr(legacy) == "Agent timed out after 600s"
 
 

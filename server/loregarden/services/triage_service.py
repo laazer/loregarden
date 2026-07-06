@@ -9,9 +9,8 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlmodel import Session, col, select
-
 from loregarden.agents.cli_adapters import build_triage_invocation
+from loregarden.agents.mcp_context import build_mcp_triage_context
 from loregarden.agents.registry import get_agent
 from loregarden.config import settings
 from loregarden.models.domain import (
@@ -24,12 +23,12 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
 )
-from loregarden.agents.mcp_context import build_mcp_triage_context
 from loregarden.services.approval_views import approval_to_view
-from loregarden.services.hierarchy_service import collect_ticket_scope_ids
 from loregarden.services.cli_output import extract_triage_reply
 from loregarden.services.cli_settings import VALID_CLI_ADAPTERS
-from loregarden.services.workspace_paths import resolve_agent_context_dir, resolve_workspace_root
+from loregarden.services.hierarchy_service import collect_ticket_scope_ids
+from loregarden.services.workspace_paths import resolve_workspace_root
+from sqlmodel import Session, col, select
 
 TRIAGE_AGENT_ID = "triage"
 MAX_TRIAGE_HISTORY_MESSAGES = 12
@@ -92,7 +91,9 @@ def apply_triage_runtime_overrides(workspace: Workspace, ticket: Ticket) -> Work
     return Workspace.model_validate(data)
 
 
-def list_triage_messages(session: Session, ticket_id: str, *, limit: int = 200) -> list[TriageMessage]:
+def list_triage_messages(
+    session: Session, ticket_id: str, *, limit: int = 200
+) -> list[TriageMessage]:
     return list(
         session.exec(
             select(TriageMessage)
@@ -234,7 +235,10 @@ def invoke_triage_model(session: Session, ticket: Ticket, latest_user_message: s
             raise TimeoutError(f"Triage assistant timed out after {timeout}s") from None
 
         if proc.returncode != 0:
-            detail = stderr.decode("utf-8", errors="replace").strip() or stdout.decode("utf-8", errors="replace").strip()
+            detail = (
+                stderr.decode("utf-8", errors="replace").strip()
+                or stdout.decode("utf-8", errors="replace").strip()
+            )
             raise RuntimeError(detail or f"Triage CLI exited with code {proc.returncode}")
 
         reply = extract_triage_reply(stdout.decode("utf-8", errors="replace"))

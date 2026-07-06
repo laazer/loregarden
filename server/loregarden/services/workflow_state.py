@@ -6,12 +6,10 @@ import json
 from datetime import datetime, timezone
 
 from loregarden.models.domain import (
-    VALID_HIERARCHY,
     ParallelAgentSpec,
     StageStatus,
     Ticket,
     TicketState,
-    WorkItemType,
     WorkflowInstance,
     WorkflowStageDef,
     WorkflowStageView,
@@ -103,11 +101,20 @@ def _derive_ticket_state(
 
     ordered = sorted(stages, key=lambda s: s.order)
     required = [s for s in ordered if not s.optional]
-    if required and all(_stage_resolved(stage_map.get(s.key, StageStatus.PENDING)) for s in required):
+    if required and all(
+        _stage_resolved(stage_map.get(s.key, StageStatus.PENDING)) for s in required
+    ):
         return TicketState.DONE
 
     if any(
-        s in (StageStatus.RUNNING, StageStatus.AWAITING, StageStatus.BLOCKED, StageStatus.DONE, StageStatus.WONT_DO)
+        s
+        in (
+            StageStatus.RUNNING,
+            StageStatus.AWAITING,
+            StageStatus.BLOCKED,
+            StageStatus.DONE,
+            StageStatus.WONT_DO,
+        )
         for s in statuses
     ):
         return TicketState.IN_PROGRESS
@@ -208,7 +215,9 @@ def _stage_agent_refs(stage: WorkflowStageDef) -> list[ParallelAgentSpec]:
         refs = list(stage.parallel_agents)
     elif stage.stage_type == "classify" and stage.classify_routes:
         refs = [
-            ParallelAgentSpec(agent_id=route.agent_id, skill_name=route.skill_name or stage.skill_name)
+            ParallelAgentSpec(
+                agent_id=route.agent_id, skill_name=route.skill_name or stage.skill_name
+            )
             for route in stage.classify_routes
             if route.agent_id
         ]
