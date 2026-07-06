@@ -1,0 +1,384 @@
+/**
+ * Failed runs panel styling
+ */
+
+.failed-runs-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  position: relative;
+}
+
+@media (prefers-color-scheme: dark) {
+  .failed-runs-panel {
+    background: #1e1e1e;
+    border-color: #444;
+  }
+}
+
+/* Empty State */
+.failed-runs-panel.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: 20px;
+}
+
+.empty-state {
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.empty-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .empty-text {
+    color: #aaa;
+  }
+}
+
+.empty-hint {
+  font-size: 12px;
+  color: #999;
+}
+
+@media (prefers-color-scheme: dark) {
+  .empty-hint {
+    color: #666;
+  }
+}
+
+/* Header */
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .panel-header {
+    border-bottom-color: #333;
+  }
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+@media (prefers-color-scheme: dark) {
+  .panel-header h3 {
+    color: #e0e0e0;
+  }
+}
+
+.panel-stats {
+  display: flex;
+  gap: 8px;
+}
+
+.stat {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat.retryable {
+  background: #fff3cd;
+  color: #856404;
+}
+
+@media (prefers-color-scheme: dark) {
+  .stat.retryable {
+    background: #3a2a1a;
+    color: #ffb74d;
+  }
+}
+
+.stat.exhausted {
+  background: #ffebee;
+  color: #c62828;
+}
+
+@media (prefers-color-scheme: dark) {
+  .stat.exhausted {
+    background: #3a1a1a;
+    color: #ff6b6b;
+  }
+}
+
+/* Actions */
+.panel-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn.btn-retry-all {
+  background: #4caf50;
+  color: white;
+}
+
+.btn.btn-retry-all:hover:not(:disabled) {
+  background: #45a049;
+}
+
+.btn.btn-skip-all {
+  background: #2196f3;
+  color: white;
+}
+
+.btn.btn-skip-all:hover:not(:disabled) {
+  background: #1976d2;
+}
+
+/* Runs List */
+.runs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.run-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #fafafa;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .run-item {
+    background: #2a2a2a;
+    border-color: #444;
+  }
+}
+
+/* Run Header */
+.run-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.run-identity,
+.run-ticket {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.run-id-label,
+.ticket-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .run-id-label,
+  .ticket-label {
+    color: #bbb;
+  }
+}
+
+.run-id-value,
+.ticket-value {
+  font-size: 12px;
+  font-weight: 500;
+  color: #333;
+  font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  .run-id-value,
+  .ticket-value {
+    color: #e0e0e0;
+  }
+}
+
+/* Run Retry Info */
+.run-retry-info {
+  margin: 4px 0;
+}
+
+/* Run Action Button */
+.btn-run-retry {
+  padding: 6px 10px;
+  background: #4caf50;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  align-self: flex-start;
+}
+
+.btn-run-retry:hover:not(:disabled) {
+  background: #45a049;
+}
+
+.btn-run-retry:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Exhausted Badge */
+.exhausted-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  background: #ffebee;
+  color: #c62828;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  align-self: flex-start;
+}
+
+@media (prefers-color-scheme: dark) {
+  .exhausted-badge {
+    background: #3a1a1a;
+    color: #ff6b6b;
+  }
+}
+
+/* Loading State */
+.panel-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 6px;
+  z-index: 10;
+}
+
+@media (prefers-color-scheme: dark) {
+  .panel-loading {
+    background: rgba(30, 30, 30, 0.95);
+  }
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #2196f3;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Scrollbar Styling */
+.runs-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.runs-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.runs-list::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 3px;
+}
+
+.runs-list::-webkit-scrollbar-thumb:hover {
+  background: #bbb;
+}
+
+@media (prefers-color-scheme: dark) {
+  .runs-list::-webkit-scrollbar-thumb {
+    background: #555;
+  }
+
+  .runs-list::-webkit-scrollbar-thumb:hover {
+    background: #666;
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .failed-runs-panel {
+    padding: 12px;
+  }
+
+  .run-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .panel-actions {
+    flex-direction: column;
+  }
+
+  .btn {
+    width: 100%;
+  }
+
+  .runs-list {
+    max-height: 400px;
+  }
+}

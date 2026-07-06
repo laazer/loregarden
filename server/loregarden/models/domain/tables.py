@@ -10,6 +10,7 @@ from loregarden.models.domain.enums import (
     EventType,
     OrchestrationDriver,
     OrchestrationRunStatus,
+    QueueOperationType,
     RunStatus,
     StageStatus,
     TicketState,
@@ -252,5 +253,63 @@ class StudioWorkflow(SQLModel, table=True):
     stages_json: str = "[]"
     transitions_json: str = "[]"
     published_template_id: str | None = Field(default=None, foreign_key="workflow_templates.id")
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class QueueOperation(SQLModel, table=True):
+    """Tracks queue operations for diff review and approval."""
+
+    __tablename__ = "queue_operations"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    operation_type: QueueOperationType = Field(
+        default=QueueOperationType.BULK_CANCEL,
+        sa_column=_str_enum_column(QueueOperationType, QueueOperationType.BULK_CANCEL),
+    )
+    description: str = ""
+    before_state_json: str
+    after_state_json: str
+    diff_json: str = ""
+    affected_run_ids: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+    created_by: str = ""
+    approved: bool = Field(default=False, index=True)
+    approved_at: datetime | None = None
+    approved_by: str = ""
+    executed: bool = Field(default=False, index=True)
+
+
+class QueueOperationComment(SQLModel, table=True):
+    """Comments on queue operations (GitHub-style inline review)."""
+
+    __tablename__ = "queue_operation_comments"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    operation_id: str = Field(foreign_key="queue_operations.id", index=True)
+    line_number: int | None = None
+    run_id: str | None = None
+    content: str
+    resolved: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=utcnow)
+    created_by: str = ""
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class RunOutputReview(SQLModel, table=True):
+    """Line-by-line review of run output (stdout/stderr)."""
+
+    __tablename__ = "run_output_reviews"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    run_id: str = Field(foreign_key="agent_runs.id", index=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    output_type: str = Field(index=True)
+    output_content: str
+    comments_json: str = ""
+    approved: bool = Field(default=False)
+    approved_by: str = ""
+    approved_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

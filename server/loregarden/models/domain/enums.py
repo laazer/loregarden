@@ -113,3 +113,15 @@ class EventType(str, Enum):
     ARTIFACT_CREATED = "ArtifactCreated"
     APPROVAL_REQUESTED = "ApprovalRequested"
     APPROVAL_RESOLVED = "ApprovalResolved"
+
+
+class QueueOperationType(str, Enum):
+    """Types of queue operations that can be reviewed."""
+
+    BULK_CANCEL = "bulk_cancel"
+    BULK_PAUSE = "bulk_pause"
+    BULK_REORDER = "bulk_reorder"
+    RETRY = "retry"
+    RETRY_ALL = "retry_all"
+    SKIP_FAILED = "skip_failed"
+    RESTORE = "restore"

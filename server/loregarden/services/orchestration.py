@@ -687,6 +687,205 @@ class OrchestrationService:
         )
         return approval
 
+    async def create_parallel_run(
+        self,
+        ticket: Ticket,
+        *,
+        stage_key: str | None = None,
+        max_concurrent: int = 3,
+    ) -> dict:
+        """
+        Create a run with parallel execution support.
+
+        Checks queue and either:
+        - Starts immediately if slot available
+        - Queues run if no slots available
+
+        Args:
+            ticket: Ticket to run
+            stage_key: Stage to start (optional)
+            max_concurrent: Max concurrent runs (default 3)
+
+        Returns:
+            {
+                "status": "started" | "queued",
+                "run": AgentRun (if started),
+                "position": int (if queued),
+                "message": str
+            }
+        """
+        from loregarden.services.parallel_queue import ParallelQueueService
+        from loregarden.services.worktree_service import WorktreeService
+        from loregarden.config import settings
+
+        try:
+            queue_service = ParallelQueueService(self.session, max_concurrent=max_concurrent)
+            worktree_service = WorktreeService(self.session, repo_path=".")
+
+            # Get queue stats
+            queue_stats = queue_service.get_queue_stats(ticket.workspace_id)
+
+            # Check available slots
+            if queue_stats.get("available_slots", 0) > 0:
+                # Create worktree and run immediately
+                return await self._create_run_in_worktree(
+                    ticket=ticket,
+                    stage_key=stage_key,
+                    worktree_service=worktree_service,
+                    queue_service=queue_service,
+                )
+            else:
+                # Queue the run
+                queue_result = await queue_service.queue_run(
+                    workspace_id=ticket.workspace_id,
+                    ticket_id=ticket.id,
+                    run_id="",  # Placeholder, will be created on promotion
+                )
+                return {
+                    "status": "queued",
+                    "position": queue_result.get("position"),
+                    "queue_length": queue_result.get("queue_length"),
+                    "message": queue_result.get("message"),
+                }
+
+        except Exception as e:
+            import logging
+            logging.error(f"Error creating parallel run: {e}", exc_info=True)
+            raise
+
+    async def _create_run_in_worktree(
+        self,
+        ticket: Ticket,
+        stage_key: str | None,
+        worktree_service,
+        queue_service,
+    ) -> dict:
+        """
+        Create a run in an isolated worktree.
+
+        Args:
+            ticket: Ticket to run
+            stage_key: Stage key (optional)
+            worktree_service: WorktreeService instance
+            queue_service: ParallelQueueService instance
+
+        Returns:
+            {
+                "status": "started",
+                "run": AgentRun,
+                "worktree_id": str,
+                "message": str
+            }
+        """
+        try:
+            # Create agent run (without worktree yet)
+            run = self.start_run(ticket, stage_key=stage_key)
+
+            # Create worktree for this run
+            worktree = worktree_service.create_worktree(
+                workspace_id=ticket.workspace_id,
+                agent_run_id=run.id,
+                parent_branch="main",
+            )
+
+            if worktree:
+                # Link worktree to run
+                run.worktree_id = worktree.id
+                self.session.add(run)
+                self.session.commit()
+
+            # Queue the run in available slot
+            queue_result = await queue_service.queue_run(
+                workspace_id=ticket.workspace_id,
+                ticket_id=ticket.id,
+                run_id=run.id,
+            )
+
+            return {
+                "status": "started",
+                "run": run,
+                "worktree_id": worktree.id if worktree else None,
+                "slot_number": queue_result.get("slot_number"),
+                "message": f"Started in {worktree.worktree_path if worktree else 'main repo'}",
+            }
+
+        except Exception as e:
+            import logging
+            logging.error(f"Error creating run in worktree: {e}", exc_info=True)
+            raise
+
+    async def on_parallel_run_complete(
+        self,
+        run: AgentRun,
+        auto_merge: bool = False,
+    ) -> dict:
+        """
+        Called when a parallel run completes.
+
+        Handles:
+        - Merging worktree changes
+        - Freeing slot
+        - Promoting next run from queue
+
+        Args:
+            run: Completed AgentRun
+            auto_merge: Whether to auto-merge if conflicts (default False)
+
+        Returns:
+            {
+                "status": "merged" | "failed" | "conflicts",
+                "next_run": AgentRun (if promoted),
+                "message": str
+            }
+        """
+        from loregarden.services.parallel_queue import ParallelQueueService
+        from loregarden.services.worktree_service import WorktreeService
+
+        try:
+            # Merge worktree if exists
+            if run.worktree_id:
+                worktree_service = WorktreeService(self.session, repo_path=".")
+                worktree = worktree_service.get_worktree(run.worktree_id)
+
+                if worktree:
+                    merge_success = worktree_service.merge_worktree(
+                        worktree,
+                        target_branch="main",
+                        auto_resolve=auto_merge,
+                    )
+
+                    if not merge_success:
+                        return {
+                            "status": "conflicts",
+                            "worktree_id": worktree.id,
+                            "conflict_files": worktree.conflict_files,
+                            "message": f"Merge conflicts in {len(worktree.conflict_files)} files",
+                        }
+
+            # Free slot and promote from queue
+            queue_service = ParallelQueueService(self.session, max_concurrent=3)
+            promotion = await queue_service.on_run_complete(
+                workspace_id=run.workspace_id,
+                run_id=run.id,
+            )
+
+            if promotion and promotion.get("status") == "promoted":
+                return {
+                    "status": "merged",
+                    "next_run": promotion.get("next_run"),
+                    "message": promotion.get("message"),
+                }
+            else:
+                return {
+                    "status": "merged",
+                    "message": "Run completed, slot freed, queue empty",
+                }
+
+        except Exception as e:
+            import logging
+            logging.error(f"Error on parallel run complete: {e}", exc_info=True)
+            raise
+
 
 class ApprovalService:
     def __init__(self, session: Session) -> None:

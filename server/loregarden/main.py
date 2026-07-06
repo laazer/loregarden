@@ -7,6 +7,7 @@ from sqlmodel import Session
 
 from loregarden.api import (
     agents,
+    ci,
     editor,
     events,
     export,
@@ -14,6 +15,7 @@ from loregarden.api import (
     mcp,
     memory,
     orchestration,
+    parallel,
     runs,
     studio,
     system,
@@ -75,6 +77,8 @@ app.include_router(studio.router, prefix="/api")
 app.include_router(export.router, prefix="/api")
 app.include_router(memory.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
+app.include_router(ci.router, prefix="/api")
+app.include_router(parallel.router)
 app.include_router(mcp.router, prefix="/mcp")
 
 
