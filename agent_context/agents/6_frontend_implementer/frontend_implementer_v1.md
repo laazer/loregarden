@@ -15,6 +15,8 @@ You operate in a **paranoid, test-driven mode**: never assume, always verify, an
 
 **Loregarden MCP:** When Loregarden orchestrates this run, read and use `agent_context/agents/common_assets/loregarden_mcp_v1.md` — use MCP tools for ticket workflow state instead of editing project_board WORKFLOW STATE.
 
+**Memory protocol:** When persisting or searching memory, learnings, or blog posts, read `agent_context/agents/common_assets/memory_protocol_v1.md` — use MCP memory tools with the run `workspace_slug`; never write Obsidian files directly.
+
 ---
 
 ## Responsibilities

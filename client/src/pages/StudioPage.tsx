@@ -14,6 +14,7 @@ import { BrandMark } from "../components/BrandMark";
 import { AgentPreviewPanel } from "../components/studio/AgentPreviewPanel";
 import { McpToolGuideSection } from "../components/studio/McpToolGuideSection";
 import { GateHandoffEditor } from "../components/studio/GateHandoffEditor";
+import { TicketStudioPanel } from "../components/studio/TicketStudioPanel";
 import { useUiStore } from "../state/uiStore";
 
 const ADAPTERS = [
@@ -57,7 +58,7 @@ function emptyStage(order: number): StudioWorkflowStage {
 export function StudioPage() {
   const qc = useQueryClient();
   const setAppPage = useUiStore((s) => s.setAppPage);
-  const [tab, setTab] = useState<"agents" | "workflows">("agents");
+  const [tab, setTab] = useState<"agents" | "workflows" | "tickets">("agents");
   const [selectedAgentSlug, setSelectedAgentSlug] = useState<string | null>(null);
   const [selectedWorkflowSlug, setSelectedWorkflowSlug] = useState<string | null>(null);
   const [agentDraft, setAgentDraft] = useState({ ...EMPTY_AGENT });
@@ -73,6 +74,8 @@ export function StudioPage() {
   const agents = useQuery({ queryKey: ["studio-agents"], queryFn: api.studioAgents });
   const workflows = useQuery({ queryKey: ["studio-workflows"], queryFn: api.studioWorkflows });
   const skills = useQuery({ queryKey: ["agent-skills"], queryFn: api.skills });
+  const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
+  const runtimeOptions = useQuery({ queryKey: ["runtime-options"], queryFn: api.runtimeOptions });
 
   const customAgents = useMemo(
     () => (agents.data ?? []).filter((agent) => !agent.built_in),
@@ -306,12 +309,12 @@ export function StudioPage() {
 
   return (
     <div className="app-shell">
-      <header className="top-bar">
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <header className="topbar">
+        <div className="brand">
           <BrandMark />
           <div>
-            <div className="brand-title">Agent & Workflow Studio</div>
-            <div className="brand-sub">Design agents, gates, handoffs, and agent chains</div>
+            <div className="brand-title">Studios</div>
+            <div className="brand-sub">Agents, workflows, and feature scoping</div>
           </div>
         </div>
         <div style={{ flex: 1 }} />
@@ -346,9 +349,21 @@ export function StudioPage() {
           >
             Workflow Studio
           </button>
+          <button
+            type="button"
+            className={`list-btn ${tab === "tickets" ? "active" : ""}`}
+            onClick={() => setTab("tickets")}
+          >
+            Ticket Studio
+          </button>
         </aside>
 
-        {tab === "agents" ? (
+        {tab === "tickets" ? (
+          <TicketStudioPanel
+            workspaces={workspaces.data ?? []}
+            runtimeOptions={runtimeOptions.data}
+          />
+        ) : tab === "agents" ? (
           <>
             <aside
               style={{

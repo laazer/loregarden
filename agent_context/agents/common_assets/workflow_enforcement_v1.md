@@ -16,6 +16,7 @@ LOREGARDEN CONTROL PLANE (MCP)
 When Loregarden orchestrates tickets (IDE, API, SQLite control plane):
 
 - Read and follow `agent_context/agents/common_assets/loregarden_mcp_v1.md`
+- Read and follow `agent_context/agents/common_assets/memory_protocol_v1.md` when persisting or searching memory, learnings, or blog posts
 - Use Loregarden MCP tools for workflow state, stage transitions, approvals, and artifacts
 - Do **not** edit project_board ticket `WORKFLOW STATE` for stage cursor changes Loregarden owns
 - MCP endpoint: `POST http://127.0.0.1:8000/mcp` (or `LOREGARDEN_MCP_URL` / `./scripts/mcp-server.sh`)

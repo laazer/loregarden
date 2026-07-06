@@ -103,6 +103,12 @@ AGENTS: dict[str, dict] = {
         "adapter": "claude",
         "timeout": 600,
     },
+    "blog_post": {
+        "name": "Blog Post Agent",
+        "role_file": "agents/10_blog_post/blog_post_v1.md",
+        "adapter": "claude",
+        "timeout": 600,
+    },
     "retriever": {
         "name": "Research Librarian",
         "role_file": "agents/misc_agents/research_librarian_v1.md",

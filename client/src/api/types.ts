@@ -526,3 +526,48 @@ export interface UsageSnapshot {
   warnings: string[];
   fetched_at: string;
 }
+
+export interface TicketStudioDraftItem {
+  ref: string;
+  work_item_type: WorkItemType;
+  parent_ref: string | null;
+  title: string;
+  description: string;
+  acceptance_criteria: string[];
+  priority: number;
+  suggested_agent: string;
+  selected: boolean;
+}
+
+export interface TicketStudioMessage {
+  id: string;
+  role: string;
+  content: string;
+  display_content?: string;
+  created_at: string;
+}
+
+export interface TicketStudioSession {
+  id: string;
+  workspace_slug: string;
+  title: string;
+  brief: string;
+  parent_ticket_id: string | null;
+  parent_ticket_title: string;
+  status: "draft" | "committed";
+  summary: string;
+  clarifying_questions: string[];
+  clarifying_answers: string[];
+  clarifying_resolved: boolean;
+  draft: TicketStudioDraftItem[];
+  messages: TicketStudioMessage[];
+  runtime: WorkspaceRuntimeSettings;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TicketStudioCommitResult {
+  session_id: string;
+  created_ticket_ids: string[];
+  created_count: number;
+}

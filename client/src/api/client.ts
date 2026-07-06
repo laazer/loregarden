@@ -51,6 +51,9 @@ import type {
   TicketImportItem,
   TicketImportPreviewResponse,
   TicketImportResult,
+  TicketStudioCommitResult,
+  TicketStudioDraftItem,
+  TicketStudioSession,
   UsageSnapshot,
 } from "./types";
 
@@ -277,6 +280,57 @@ export const api = {
     request<{ ok: boolean }>(`/api/studio/workflows/${slug}`, { method: "DELETE" }),
   publishStudioWorkflow: (slug: string) =>
     request<StudioWorkflow>(`/api/studio/workflows/${slug}/publish`, { method: "POST" }),
+  ticketStudioSessions: (workspace?: string) => {
+    const q = workspace ? `?workspace=${encodeURIComponent(workspace)}` : "";
+    return request<TicketStudioSession[]>(`/api/ticket-studio/sessions${q}`);
+  },
+  createTicketStudioSession: (body: {
+    workspace_slug: string;
+    title: string;
+    brief?: string;
+    parent_ticket_id?: string | null;
+  }) =>
+    request<TicketStudioSession>("/api/ticket-studio/sessions", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  ticketStudioSession: (id: string) => request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}`),
+  updateTicketStudioSession: (
+    id: string,
+    body: { title?: string; brief?: string; parent_ticket_id?: string | null },
+  ) =>
+    request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteTicketStudioSession: (id: string) =>
+    request<{ ok: boolean }>(`/api/ticket-studio/sessions/${id}`, { method: "DELETE" }),
+  setTicketStudioRuntime: (id: string, body: WorkspaceRuntimeSettings) =>
+    request<WorkspaceRuntimeSettings>(`/api/ticket-studio/sessions/${id}/runtime`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  updateTicketStudioDraft: (id: string, items: TicketStudioDraftItem[]) =>
+    request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}/draft`, {
+      method: "PATCH",
+      body: JSON.stringify({ items }),
+    }),
+  sendTicketStudioMessage: (id: string, content: string) =>
+    request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
+  requestTicketStudioClarifications: (id: string) =>
+    request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}/clarify`, { method: "POST" }),
+  saveTicketStudioClarifications: (id: string, answers: string[]) =>
+    request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}/clarifications`, {
+      method: "PATCH",
+      body: JSON.stringify({ answers }),
+    }),
+  generateTicketStudioScope: (id: string) =>
+    request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}/scope`, { method: "POST" }),
+  commitTicketStudioSession: (id: string) =>
+    request<TicketStudioCommitResult>(`/api/ticket-studio/sessions/${id}/commit`, { method: "POST" }),
   usage: () => request<UsageSnapshot>("/api/usage"),
   memoryConfig: () => request<MemoryConfigResponse>("/api/memory/config"),
   setMemoryConfig: (body: MemoryConfigSettings) =>

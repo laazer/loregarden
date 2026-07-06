@@ -213,6 +213,9 @@ button {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  margin-left: 10px;
+  padding-left: 12px;
+  border-left: 1px solid var(--bd2);
 }
 
 .ticket-tree {
@@ -753,6 +756,20 @@ button {
   padding: 11px 12px;
 }
 
+.tree-row.list-btn {
+  padding: 8px 12px 8px calc(10px + var(--tree-depth, 0) * 20px);
+}
+
+.tree-external-id {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txl);
+}
+
+.tree-title-sep {
+  color: var(--txl);
+}
+
 .list-btn.active {
   background: var(--bg2);
   border-color: var(--bd2);
@@ -1188,12 +1205,74 @@ button {
   width: min(720px, calc(100vw - 32px));
 }
 
+.parent-ticket-selector-trigger {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  padding: 8px 12px;
+}
+
+.parent-ticket-selector-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.parent-ticket-selector-placeholder {
+  color: var(--txl);
+}
+
+.parent-ticket-selector-action {
+  flex: none;
+  font-size: 11px;
+  color: var(--txm);
+  font-family: var(--mono);
+}
+
+.parent-ticket-selector-modal .modal-body {
+  min-height: 280px;
+}
+
+.parent-ticket-selector-tree {
+  flex: 1;
+  min-height: 220px;
+  max-height: 48vh;
+  overflow: auto;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg0);
+  padding: 8px;
+}
+
+.parent-ticket-selector-tree .tree-row {
+  cursor: pointer;
+}
+
 .modal-header {
   padding: 18px 20px;
   border-bottom: 1px solid var(--bd);
   display: flex;
   align-items: flex-start;
   gap: 12px;
+}
+
+.modal-header > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.modal-close-btn {
+  flex: none;
+  align-self: flex-start;
+  min-width: 36px;
+  padding: 6px 10px;
 }
 
 .modal-title {

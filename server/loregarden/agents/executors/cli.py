@@ -7,7 +7,11 @@ from pathlib import Path
 
 from loregarden.agents.cli_adapters import resolve_cli_invocation
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
-from loregarden.agents.mcp_context import build_mcp_run_context, load_loregarden_mcp_doc
+from loregarden.agents.mcp_context import (
+    build_mcp_run_context,
+    load_loregarden_mcp_doc,
+    load_memory_protocol_doc,
+)
 from loregarden.agents.registry import get_agent
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace
@@ -265,6 +269,7 @@ class CliAgentExecutor:
         )
         mcp_context = build_mcp_run_context(ticket=ticket, run=run, workspace=workspace)
         mcp_doc = load_loregarden_mcp_doc(agent_context_dir)
+        memory_doc = load_memory_protocol_doc(agent_context_dir)
 
         sections = [
             f"# Run: {run.run_code}",
@@ -291,6 +296,8 @@ class CliAgentExecutor:
             sections.extend(["", studio_sections])
         if mcp_doc:
             sections.extend(["", "## Loregarden MCP module", mcp_doc[:12000]])
+        if memory_doc:
+            sections.extend(["", "## Memory protocol module", memory_doc[:8000]])
         sections.extend(
             [
                 "",

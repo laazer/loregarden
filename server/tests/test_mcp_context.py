@@ -2,6 +2,7 @@ from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.mcp_context import (
     build_mcp_run_context,
     load_loregarden_mcp_doc,
+    load_memory_protocol_doc,
     loregarden_mcp_cli_config_json,
     resolve_mcp_url,
 )
@@ -42,6 +43,12 @@ def test_build_mcp_run_context_includes_ids():
     assert "ticket-1" in text
     assert "03-wire-cli-agent-runner" in text
     assert "orch-1" in text
+    assert "Loregarden memory (workspace-scoped)" in text or "Loregarden artifacts" in text
+    assert "loregarden_memory_status" in text
+    assert "loregarden_upsert_blog_post" in text
+    assert "memory_sqlite_path" in text
+    assert "create_memory_relation" in text
+    assert 'workspace_slug="loregarden"' in text
 
 
 def test_cli_prompt_includes_mcp_module():
@@ -77,8 +84,11 @@ def test_cli_prompt_includes_mcp_module():
             workspace,
         )
         assert "Loregarden MCP (required for workflow state)" in prompt
+        assert ("Loregarden memory (workspace-scoped)" in prompt or "Loregarden artifacts" in prompt)
+        assert "Memory protocol module" in prompt
         assert "loregarden_get_ticket" in prompt
         assert load_loregarden_mcp_doc(resolve_agent_context_dir(workspace))[:200] in prompt
+        assert load_memory_protocol_doc(resolve_agent_context_dir(workspace))[:200] in prompt
 
 
 def test_loregarden_mcp_cli_config_uses_http_transport_by_default():

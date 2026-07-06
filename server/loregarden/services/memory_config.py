@@ -22,6 +22,7 @@ CONFIG_KEYS = (
     "obsidian_vault_dir",
     "obsidian_memory_subdir",
     "obsidian_learnings_subdir",
+    "obsidian_blogposts_subdir",
     "memory_sqlite_url",
     "database_url",
 )
@@ -47,6 +48,8 @@ def read_local_memory_config(repo_root: Path | None = None) -> dict[str, str]:
         value = raw.get(key)
         if isinstance(value, str):
             out[key] = value.strip()
+    if not out.get("obsidian_blogposts_subdir"):
+        out["obsidian_blogposts_subdir"] = settings.obsidian_blogposts_subdir
     return out
 
 
@@ -59,7 +62,10 @@ def write_local_memory_config(payload: dict[str, str], repo_root: Path | None = 
 
 
 def current_memory_config() -> dict[str, str]:
-    return {key: str(getattr(settings, key, "") or "").strip() for key in CONFIG_KEYS}
+    out = {key: str(getattr(settings, key, "") or "").strip() for key in CONFIG_KEYS}
+    if not out.get("obsidian_blogposts_subdir"):
+        out["obsidian_blogposts_subdir"] = "Loregarden/BlogPosts"
+    return out
 
 
 def apply_memory_config(payload: dict[str, Any], *, persist: bool = True) -> dict[str, str]:
@@ -100,7 +106,11 @@ def _validate_memory_config(payload: dict[str, Any]) -> dict[str, str]:
         if url:
             resolve_sqlite_path(url, settings.repo_root)
 
-    for subdir_key in ("obsidian_memory_subdir", "obsidian_learnings_subdir"):
+    for subdir_key in (
+        "obsidian_memory_subdir",
+        "obsidian_learnings_subdir",
+        "obsidian_blogposts_subdir",
+    ):
         subdir = cleaned[subdir_key]
         if not subdir:
             raise ValueError(f"{subdir_key} is required")

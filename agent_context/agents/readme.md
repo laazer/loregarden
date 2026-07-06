@@ -5,6 +5,7 @@ Agents are not allowed to edit files within this folder.
 ## Core Rules (Applies to All Agents)
 - **Workflow compliance:** All execution must comply with the Workflow Enforcement Module (`agent_context/agents/common_assets/workflow_enforcement_v1.md`) in addition to each agent's role definition. Read that module before acting on any ticket.
 - **Loregarden MCP:** When Loregarden orchestrates runs, use MCP tools per `agent_context/agents/common_assets/loregarden_mcp_v1.md` for ticket workflow state.
+- **Memory protocol:** When persisting or searching learnings, memory, or blog posts, follow `agent_context/agents/common_assets/memory_protocol_v1.md` — use MCP memory tools with the run `workspace_slug`; never write Obsidian files directly.
 - **Ticket Template:** All tickets must be written using the Ticket Template (`agent_context/agents/common_assets/ticket_template_v1.md`). Read that template before writing any ticket.
 - **Project context:** When working a ticket under `agent_context/projects/<project>/`, read that project's README (and any "Existing codebase" or "Integrate with" section) so implementation extends existing code and does not duplicate or ignore it. Grep the codebase for related names before implementing.
 - Any unclear or ambiguous instructions **must be questioned** before proceeding.
@@ -400,15 +401,16 @@ Use `agent_context/agents/readme.md` as the source of truth for their responsibi
 
 **Owns:**
 - `/learning-output.md` (per ticket)
-- Memory graph nodes and relations (via contextplus MCP)
+- Memory graph nodes and relations (via Loregarden MCP memory tools)
 
 **Inputs (checkpoints):** Prefer `agent_context/projects/<PROJECT>/project_board/checkpoints/<ticket-id>/<run-id>.md` for assumption audit detail; use `project_board/CHECKPOINTS.md` only as a pointer index; use `project_board/checkpoints/frozen/` only when reading legacy history.
 
 **Responsibilities:**
 - Extract reusable insights from completed task outputs, test results, bugs, and agent artifacts
 - Identify anti-patterns, prompt patches, and workflow improvements
-- Persist learnings via `upsert_memory_node` and `create_relation`
-- Run `prune_stale_links` periodically to decay outdated memory edges
+- Call `loregarden_memory_status` with `workspace_slug` to confirm resolved paths
+- Persist ticket learnings via `loregarden_append_learning`
+- Persist durable nodes via `loregarden_upsert_memory` and link related nodes with `loregarden_create_memory_relation`
 
 **Restrictions:**
 - Cannot write code
@@ -419,3 +421,28 @@ Use `agent_context/agents/readme.md` as the source of truth for their responsibi
 **Outputs:**
 - `/learning-output.md` with structured sections: Learnings, Anti-Patterns, Prompt Patches, Workflow Improvements
 - Memory graph nodes persisted for future agent sessions
+
+---
+
+## 17. Blog Post Agent
+**Purpose:** Writes human-readable ticket retrospectives for operators and stakeholders.
+
+**Runs:** After Learning (Stage 8 in autopilot), before final human report.
+
+**Owns:**
+- Blog post markdown in Obsidian via `loregarden_upsert_blog_post` (workspace-scoped `Loregarden/BlogPosts/{workspace}/`)
+
+**Inputs:** Blog context capsule from orchestrator (ticket id, goal, outcome, commits, checkpoint path, rework bullets).
+
+**Responsibilities:**
+- Call `loregarden_memory_status` with `workspace_slug` to confirm `obsidian_blogposts_dir`
+- Draft an engaging, factual retrospective from the capsule
+- Persist via `loregarden_upsert_blog_post` — never write vault files directly
+
+**Restrictions:**
+- Cannot write code or modify workflow state
+- May not fabricate commits or outcomes unsupported by the capsule
+
+**Outputs:**
+- Human-facing blog post markdown (returned to orchestrator)
+- Obsidian note path from MCP response

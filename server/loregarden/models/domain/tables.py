@@ -14,6 +14,7 @@ from loregarden.models.domain.enums import (
     RunStatus,
     StageStatus,
     TicketState,
+    TicketStudioSessionStatus,
     WorkItemType,
     _str_enum_column,
     utcnow,
@@ -313,3 +314,34 @@ class RunOutputReview(SQLModel, table=True):
     approved_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+class TicketStudioSession(SQLModel, table=True):
+    __tablename__ = "ticket_studio_sessions"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    title: str = ""
+    brief: str = ""
+    parent_ticket_id: str | None = Field(default=None, foreign_key="tickets.id")
+    status: TicketStudioSessionStatus = Field(
+        default=TicketStudioSessionStatus.DRAFT,
+        sa_column=_str_enum_column(TicketStudioSessionStatus, TicketStudioSessionStatus.DRAFT, index=True),
+    )
+    draft_json: str = "[]"
+    summary: str = ""
+    clarifying_questions_json: str = "[]"
+    clarifying_answers_json: str = "[]"
+    runtime_json: str = "{}"
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class TicketStudioMessage(SQLModel, table=True):
+    __tablename__ = "ticket_studio_messages"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    session_id: str = Field(foreign_key="ticket_studio_sessions.id", index=True)
+    role: str = Field(index=True)  # user | assistant | system
+    content: str = ""
+    created_at: datetime = Field(default_factory=utcnow)

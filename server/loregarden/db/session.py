@@ -50,6 +50,65 @@ def init_db() -> None:
     SQLModel.metadata.create_all(engine)
     apply_migrations(engine)
 
+        studio_session_rows = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='ticket_studio_sessions'")
+        ).fetchall()
+        if not studio_session_rows:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE ticket_studio_sessions (
+                        id TEXT PRIMARY KEY,
+                        workspace_id TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        brief TEXT NOT NULL DEFAULT '',
+                        parent_ticket_id TEXT,
+                        status TEXT NOT NULL DEFAULT 'draft',
+                        draft_json TEXT NOT NULL DEFAULT '[]',
+                        summary TEXT NOT NULL DEFAULT '',
+                        clarifying_questions_json TEXT NOT NULL DEFAULT '[]',
+                        runtime_json TEXT NOT NULL DEFAULT '{}',
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        FOREIGN KEY(workspace_id) REFERENCES workspaces(id),
+                        FOREIGN KEY(parent_ticket_id) REFERENCES tickets(id)
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX ix_ticket_studio_sessions_workspace_id ON ticket_studio_sessions (workspace_id)"
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX ix_ticket_studio_sessions_status ON ticket_studio_sessions (status)")
+            )
+
+        studio_message_rows = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='ticket_studio_messages'")
+        ).fetchall()
+        if not studio_message_rows:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE ticket_studio_messages (
+                        id TEXT PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY(session_id) REFERENCES ticket_studio_sessions(id)
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX ix_ticket_studio_messages_session_id ON ticket_studio_messages (session_id)"
+                )
+            )
+
 
 def get_session() -> Generator[Session, None, None]:
     with Session(engine) as session:

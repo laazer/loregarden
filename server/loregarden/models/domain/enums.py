@@ -125,3 +125,8 @@ class QueueOperationType(str, Enum):
     RETRY_ALL = "retry_all"
     SKIP_FAILED = "skip_failed"
     RESTORE = "restore"
+
+
+class TicketStudioSessionStatus(str, Enum):
+    DRAFT = "draft"
+    COMMITTED = "committed"

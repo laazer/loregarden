@@ -51,6 +51,24 @@ def test_obsidian_append_learning_writes_frontmatter_note(vault_dir):
     assert "DELETE journal" in text
 
 
+def test_obsidian_upsert_blog_post_writes_workspace_subdir(vault_dir):
+    store = ObsidianMemoryStore(vault_dir)
+    note = store.upsert_blog_post(
+        ticket_id="feat-blog",
+        workspace_slug="loregarden",
+        title="Shipping workspace memory",
+        body="We organized memory per workspace.",
+        tags=["retrospective"],
+    )
+    path = vault_dir / note.path
+    assert path.is_file()
+    assert "BlogPosts" in str(path)
+    assert "loregarden" in str(path)
+    text = path.read_text(encoding="utf-8")
+    assert 'type: "blog_post"' in text
+    assert "feat-blog" in text
+
+
 def test_obsidian_search_scoped_to_workspace(vault_dir):
     store = ObsidianMemoryStore(vault_dir)
     store.upsert_note(
@@ -153,6 +171,38 @@ def test_mcp_memory_tools(client, vault_dir, tmp_path, monkeypatch):
         assert status["enabled"] is True
         assert status["obsidian_vault"] == str(vault_dir.resolve())
 
+        scoped = json.loads(
+            execute_tool(
+                session,
+                "loregarden_memory_status",
+                {"workspace_slug": "loregarden"},
+            )
+        )
+        assert scoped["workspace_slug"] == "loregarden"
+        assert scoped["obsidian_memory_dir"].endswith("Loregarden/Memory/loregarden")
+        assert scoped["obsidian_learnings_dir"].endswith("Loregarden/Learnings/loregarden")
+        assert scoped["obsidian_blogposts_dir"].endswith("Loregarden/BlogPosts/loregarden")
+        assert "loregarden" in scoped["memory_sqlite_path"]
+        assert scoped["memory_sqlite_path"].endswith("mcp-memory.db")
+        assert scoped["memory_graph_tables"] == ["memory_nodes", "memory_relations"]
+        assert scoped["memory_graph_node_types"] == ["memory", "learning"]
+        assert scoped["memory_graph_excludes"] == ["blog_post"]
+
+        blog = json.loads(
+            execute_tool(
+                session,
+                "loregarden_upsert_blog_post",
+                {
+                    "ticket_id": "feat-memory",
+                    "workspace_slug": "loregarden",
+                    "title": "Memory setup retrospective",
+                    "body": "Workspace-scoped paths for memory, learnings, and blog posts.",
+                },
+            )
+        )
+        assert "obsidian" in blog
+        assert "BlogPosts" in blog["obsidian"]["path"]
+
         upsert = json.loads(
             execute_tool(
                 session,
@@ -196,6 +246,7 @@ def test_memory_api_config_get_put(client, vault_dir, tmp_path, monkeypatch):
         "obsidian_vault_dir": str(vault_dir),
         "obsidian_memory_subdir": "Loregarden/Memory",
         "obsidian_learnings_subdir": "Loregarden/Learnings",
+        "obsidian_blogposts_subdir": "Loregarden/BlogPosts",
         "memory_sqlite_url": f"sqlite:///{tmp_path / 'memory.db'}",
         "database_url": f"sqlite:///{db_path}",
     }

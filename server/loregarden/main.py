@@ -20,6 +20,7 @@ from loregarden.api import (
     runs,
     studio,
     system,
+    ticket_studio,
     tickets,
     usage,
     workflows,
@@ -75,6 +76,7 @@ app.include_router(agents.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
 app.include_router(orchestration.router, prefix="/api")
 app.include_router(studio.router, prefix="/api")
+app.include_router(ticket_studio.router, prefix="/api")
 app.include_router(export.router, prefix="/api")
 app.include_router(memory.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { TicketSummary, TicketTreeNode, WorkItemType } from "../api/client";
+import { ParentTicketSelector } from "./ParentTicketSelector";
 import {
   allowedChildTypes,
   defaultChildType,
@@ -270,28 +271,21 @@ export function CreateWorkItemModal({
           </div>
 
           {needsParent && !lockParent && (
-            <div className="modal-field">
-              <div className="modal-field-label">Parent</div>
-              <select
-                className="btn-secondary filter-select"
-                style={{ width: "100%", fontSize: 12 }}
-                value={draft.parent_ticket_id}
-                disabled={isSaving || parentOptions.length === 0}
-                onChange={(e) => setDraft((d) => ({ ...d, parent_ticket_id: e.target.value }))}
-              >
-                {parentOptions.length === 0 ? (
-                  <option value="">
-                    No valid parent — create a {REQUIRED_PARENT[draft.work_item_type]} first
-                  </option>
-                ) : (
-                  parentOptions.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.external_id} · {p.title}
-                    </option>
-                  ))
-                )}
-              </select>
-            </div>
+            <ParentTicketSelector
+              workspaceSlug={workspaceSlug}
+              value={draft.parent_ticket_id || null}
+              onChange={(parentId) => setDraft((d) => ({ ...d, parent_ticket_id: parentId ?? "" }))}
+              childWorkItemType={draft.work_item_type}
+              allowNone={false}
+              disabled={isSaving || !workspaceSlug}
+              label="Parent"
+              placeholder={`Choose a ${REQUIRED_PARENT[draft.work_item_type] ?? "parent"}…`}
+              hint={
+                parentOptions.length === 0
+                  ? `Create a ${workItemTypeLabel(REQUIRED_PARENT[draft.work_item_type]!)} first.`
+                  : undefined
+              }
+            />
           )}
 
           {needsParent && lockParent && (

@@ -46,6 +46,51 @@ DEFAULT_STAGE_MCP_TOOLS = [
     "loregarden_request_approval",
 ]
 
+DEFAULT_MEMORY_MCP_TOOLS = [
+    "loregarden_memory_status",
+    "loregarden_search_memory",
+    "loregarden_append_learning",
+    "loregarden_upsert_memory",
+    "loregarden_upsert_blog_post",
+    "loregarden_create_memory_relation",
+]
+
+STUDIO_ROLE_PREAMBLE = """**Loregarden MCP:** Use MCP tools per `agent_context/agents/common_assets/loregarden_mcp_v1.md` for ticket workflow state.
+
+**Memory protocol:** Read `agent_context/agents/common_assets/memory_protocol_v1.md` — use MCP for memory, learnings, and blog posts (Obsidian + SQLite graph); always pass `workspace_slug`; never write vault or SQLite files directly.
+"""
+
+
+def _merge_tool_lists(*groups: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for group in groups:
+        for name in group:
+            if name not in seen:
+                seen.add(name)
+                out.append(name)
+    return out
+
+
+def default_mcp_tools() -> list[str]:
+    return _merge_tool_lists(DEFAULT_STAGE_MCP_TOOLS, DEFAULT_MEMORY_MCP_TOOLS)
+
+
+def _resolve_studio_mcp_tools(raw_tools: list[str] | None, *, mcp_enabled: bool) -> list[str]:
+    if not mcp_enabled:
+        return []
+    base = raw_tools if raw_tools else default_mcp_tools()
+    return _merge_tool_lists(base, DEFAULT_MEMORY_MCP_TOOLS)
+
+
+def _ensure_studio_role_preamble(role_body: str) -> str:
+    body = (role_body or "").strip()
+    if "memory_protocol_v1.md" in body:
+        return body
+    if body:
+        return f"{STUDIO_ROLE_PREAMBLE}\n{body}"
+    return STUDIO_ROLE_PREAMBLE.strip()
+
 DEFAULT_HANDOFF_CHECKS = [
     StudioHandoffCheck(
         kind="mcp_complete",
@@ -149,6 +194,48 @@ MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
         orchestrator_only=True,
         stage_agent=False,
     ),
+    StudioMcpToolGuide(
+        name="loregarden_memory_status",
+        description="Discover workspace-scoped Obsidian dirs (memory, learnings, blog posts) and SQLite graph path.",
+        when_to_use="Before writing or searching agent memory artifacts — always pass workspace_slug from the run prompt.",
+        example='tools/call loregarden_memory_status {"workspace_slug": "loregarden"}',
+        stage_agent=True,
+    ),
+    StudioMcpToolGuide(
+        name="loregarden_append_learning",
+        description="Persist ticket learnings to obsidian_learnings_dir and optional graph SQLite.",
+        when_to_use="Learning Agent after Gatekeeper — ticket-scoped insights.",
+        example='tools/call loregarden_append_learning {"ticket_id": "03-wire-cli", "workspace_slug": "loregarden", "content": "…"}',
+        stage_agent=True,
+    ),
+    StudioMcpToolGuide(
+        name="loregarden_upsert_memory",
+        description="Upsert durable memory nodes under obsidian_memory_dir and graph SQLite.",
+        when_to_use="Patterns, anti-patterns, and reusable knowledge — never write vault files directly.",
+        example='tools/call loregarden_upsert_memory {"title": "MCP workflow state", "body": "…", "workspace_slug": "loregarden"}',
+        stage_agent=True,
+    ),
+    StudioMcpToolGuide(
+        name="loregarden_upsert_blog_post",
+        description="Persist human-readable blog post markdown under obsidian_blogposts_dir.",
+        when_to_use="Blog Post Agent after learning — retrospective for operators.",
+        example='tools/call loregarden_upsert_blog_post {"ticket_id": "03-wire-cli", "workspace_slug": "loregarden", "title": "…", "body": "…"}',
+        stage_agent=True,
+    ),
+    StudioMcpToolGuide(
+        name="loregarden_create_memory_relation",
+        description="Link two memory graph nodes in the workspace SQLite DB (memory_relations table).",
+        when_to_use="Learning Agent — use graph.id values from upsert/append responses as source_id and target_id.",
+        example='tools/call loregarden_create_memory_relation {"source_id": "<uuid>", "target_id": "<uuid>", "workspace_slug": "loregarden", "relation_type": "supports"}',
+        stage_agent=True,
+    ),
+    StudioMcpToolGuide(
+        name="loregarden_search_memory",
+        description="Search memory, learnings, and blog post notes plus SQLite graph nodes in a workspace.",
+        when_to_use="Before acting when prior workspace context may exist (planner, spec, implementers).",
+        example='tools/call loregarden_search_memory {"query": "permission bridge", "workspace_slug": "loregarden"}',
+        stage_agent=True,
+    ),
 ]
 
 
@@ -179,18 +266,19 @@ def _load_role_body(role_file: str) -> tuple[str, str]:
 
 
 def _agent_view(agent: StudioAgent) -> StudioAgentView:
+    raw_tools = json.loads(agent.mcp_tools_json or "[]")
     return StudioAgentView(
         id=agent.id,
         slug=agent.slug,
         name=agent.name,
         description=agent.description,
-        role_body=agent.role_body,
+        role_body=_ensure_studio_role_preamble(agent.role_body),
         role_file="",
         adapter=agent.adapter,
         timeout=agent.timeout,
         default_skill=agent.default_skill,
         mcp_enabled=agent.mcp_enabled,
-        mcp_tools=json.loads(agent.mcp_tools_json or "[]"),
+        mcp_tools=_resolve_studio_mcp_tools(raw_tools, mcp_enabled=agent.mcp_enabled),
         gate_checks=_parse_json_list(agent.gate_checks_json, StudioGateCheck),
         handoff_checks=_parse_json_list(agent.handoff_checks_json, StudioHandoffCheck),
         built_in=False,
@@ -287,15 +375,15 @@ def studio_agent_config(session: Session, agent_id: str) -> dict | None:
 
 
 def _studio_agent_dict(agent: StudioAgent) -> dict:
-    enabled_tools = json.loads(agent.mcp_tools_json or "[]")
+    raw_tools = json.loads(agent.mcp_tools_json or "[]")
     return {
         "name": agent.name,
-        "role_body": agent.role_body,
+        "role_body": _ensure_studio_role_preamble(agent.role_body),
         "adapter": agent.adapter,
         "timeout": agent.timeout,
         "default_skill": agent.default_skill,
         "mcp_enabled": agent.mcp_enabled,
-        "mcp_tools": enabled_tools or _tool_names(),
+        "mcp_tools": _resolve_studio_mcp_tools(raw_tools, mcp_enabled=agent.mcp_enabled),
         "gate_checks": json.loads(agent.gate_checks_json or "[]"),
         "handoff_checks": json.loads(agent.handoff_checks_json or "[]"),
         "studio": True,
@@ -312,6 +400,7 @@ def build_studio_prompt_sections(agent_cfg: dict) -> str:
                 "Use these MCP tools for ticket workflow state:",
                 ", ".join(tools),
                 "Read `agent_context/agents/common_assets/loregarden_mcp_v1.md` for full reference.",
+                "Read `agent_context/agents/common_assets/memory_protocol_v1.md` for memory, learnings, and blog post paths — MCP only, always pass `workspace_slug`.",
             ]
         )
         guide_map = {item.name: item for item in MCP_TOOL_GUIDES}
@@ -349,15 +438,15 @@ def build_studio_prompt_sections(agent_cfg: dict) -> str:
 
 
 def _preview_agent_cfg(body: StudioAgentPreviewRequest) -> dict:
-    tools = body.mcp_tools or (DEFAULT_STAGE_MCP_TOOLS if body.mcp_enabled else [])
+    tools = body.mcp_tools or (default_mcp_tools() if body.mcp_enabled else [])
     return {
         "name": body.name,
-        "role_body": body.role_body,
+        "role_body": _ensure_studio_role_preamble(body.role_body),
         "adapter": body.adapter,
         "timeout": body.timeout,
         "default_skill": body.default_skill,
         "mcp_enabled": body.mcp_enabled,
-        "mcp_tools": tools,
+        "mcp_tools": _resolve_studio_mcp_tools(tools, mcp_enabled=body.mcp_enabled),
         "gate_checks": [item.model_dump() for item in body.gate_checks],
         "handoff_checks": [item.model_dump() for item in body.handoff_checks],
     }
@@ -383,6 +472,11 @@ def preview_agent_markdown(body: StudioAgentPreviewRequest) -> StudioAgentPrevie
         section_names.append("mcp_module")
         mcp_doc = mcp_doc_path.read_text(encoding="utf-8")[:8000]
         parts.extend(["", "## Loregarden MCP module (excerpt)", mcp_doc])
+    memory_doc_path = settings.agent_context_dir / "agents/common_assets/memory_protocol_v1.md"
+    if body.mcp_enabled and memory_doc_path.is_file():
+        section_names.append("memory_protocol_module")
+        memory_doc = memory_doc_path.read_text(encoding="utf-8")[:8000]
+        parts.extend(["", "## Memory protocol module (excerpt)", memory_doc])
     parts.extend(
         [
             "",
@@ -531,7 +625,8 @@ class StudioService:
 
     def agent_defaults(self) -> dict:
         return {
-            "mcp_tools": DEFAULT_STAGE_MCP_TOOLS,
+            "mcp_tools": default_mcp_tools(),
+            "memory_mcp_tools": DEFAULT_MEMORY_MCP_TOOLS,
             "handoff_checks": [item.model_dump() for item in DEFAULT_HANDOFF_CHECKS],
             "gate_checks": [item.model_dump() for item in DEFAULT_GATE_CHECKS],
         }
@@ -570,13 +665,13 @@ class StudioService:
         if slug in AGENTS:
             raise ValueError(f"Slug conflicts with built-in agent: {slug}")
         now = datetime.now(timezone.utc)
-        mcp_tools = body.mcp_tools if body.mcp_tools else DEFAULT_STAGE_MCP_TOOLS
+        mcp_tools = body.mcp_tools if body.mcp_tools else default_mcp_tools()
         handoffs = body.handoff_checks if body.handoff_checks else DEFAULT_HANDOFF_CHECKS
         agent = StudioAgent(
             slug=slug,
             name=body.name.strip(),
             description=body.description.strip(),
-            role_body=body.role_body,
+            role_body=_ensure_studio_role_preamble(body.role_body),
             adapter=body.adapter or "claude",
             timeout=body.timeout,
             default_skill=body.default_skill,
@@ -601,7 +696,7 @@ class StudioService:
         if body.description is not None:
             agent.description = body.description.strip()
         if body.role_body is not None:
-            agent.role_body = body.role_body
+            agent.role_body = _ensure_studio_role_preamble(body.role_body)
         if body.adapter is not None:
             agent.adapter = body.adapter
         if body.timeout is not None:

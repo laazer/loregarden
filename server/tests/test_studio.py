@@ -26,6 +26,8 @@ def test_studio_agent_crud(client: TestClient):
     data = create.json()
     assert data["slug"] == "api-tester"
     assert "loregarden_get_ticket" in data["mcp_tools"]
+    assert "loregarden_memory_status" in data["mcp_tools"]
+    assert "memory_protocol_v1.md" in data["role_body"]
 
     listed = client.get("/api/studio/agents")
     assert listed.status_code == 200
@@ -37,7 +39,9 @@ def test_studio_agent_crud(client: TestClient):
 
     cfg = get_agent("api-tester")
     assert cfg is not None
-    assert cfg["role_body"].startswith("You test HTTP")
+    assert "You test HTTP" in cfg["role_body"]
+    assert "memory_protocol_v1.md" in cfg["role_body"]
+    assert "loregarden_memory_status" in cfg["mcp_tools"]
 
 
 def test_studio_workflow_publish(client: TestClient):
@@ -190,6 +194,8 @@ def test_studio_defaults(client: TestClient):
     assert res.status_code == 200
     body = res.json()
     assert "loregarden_get_ticket" in body["mcp_tools"]
+    assert "loregarden_memory_status" in body["mcp_tools"]
+    assert "loregarden_search_memory" in body["mcp_tools"]
     assert len(body["handoff_checks"]) >= 1
 
 
@@ -209,6 +215,7 @@ def test_studio_agent_preview(client: TestClient):
     body = res.json()
     assert "Preview Bot" in body["markdown"]
     assert "loregarden_get_ticket" in body["markdown"]
+    assert "memory_protocol_v1.md" in body["markdown"]
     assert "Finish cleanly." in body["markdown"]
     assert "role" in body["sections"]
 
@@ -234,3 +241,4 @@ def test_builtin_agent_has_role_body(client: TestClient):
     assert body["built_in"] is True
     assert body["read_only"] is True
     assert len(body["role_body"]) > 20
+    assert "memory_protocol_v1.md" in body["role_body"]

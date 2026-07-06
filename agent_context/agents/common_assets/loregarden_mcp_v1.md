@@ -33,7 +33,24 @@ Use `"type": "stdio"` or `"type": "http"` in MCP config — never bare `url` alo
 | Attach log/diff/test output | `loregarden_attach_artifact` |
 | Finish orchestration run | `loregarden_complete_orchestration` |
 | Persist learnings / memory (Obsidian + iCloud SQLite) | `loregarden_append_learning`, `loregarden_upsert_memory`, `loregarden_search_memory` |
+| Persist blog post markdown | `loregarden_upsert_blog_post` |
 | Inspect memory backend config | `loregarden_memory_status` |
+
+## Memory, learnings, and blog posts (workspace-scoped)
+
+Agent artifacts are **per workspace**. Loregarden resolves Obsidian and SQLite paths — agents must **not** write vault files directly.
+
+1. Read `agent_context/agents/common_assets/memory_protocol_v1.md`
+2. Call `loregarden_memory_status` with `workspace_slug` from the run prompt
+3. Always pass `workspace_slug` on memory tools
+
+| Artifact | Tool | Resolved path field |
+|----------|------|---------------------|
+| Durable memory | `loregarden_upsert_memory` | `obsidian_memory_dir` + `memory_sqlite_path` (`memory_nodes`) |
+| Ticket learnings | `loregarden_append_learning` | `obsidian_learnings_dir` + `memory_sqlite_path` (`memory_nodes`) |
+| Blog posts | `loregarden_upsert_blog_post` | `obsidian_blogposts_dir` only (not in SQLite) |
+| Graph links | `loregarden_create_memory_relation` | `memory_sqlite_path` (`memory_relations`) |
+| Prior context | `loregarden_search_memory` | searches Obsidian notes + SQLite `memory_nodes` |
 
 ## Stage-run agents (planner, static_qa, implementers, …)
 

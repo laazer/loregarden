@@ -56,6 +56,7 @@ interface TicketTreeProps {
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
   onAddChild?: (node: TicketTreeNode) => void;
+  showExternalId?: boolean;
   depth?: number;
 }
 
@@ -66,6 +67,7 @@ function TreeRow({
   onSelect,
   onToggle,
   onAddChild,
+  showExternalId = false,
   depth = 0,
 }: {
   node: TicketTreeNode;
@@ -74,6 +76,7 @@ function TreeRow({
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
   onAddChild?: (node: TicketTreeNode) => void;
+  showExternalId?: boolean;
   depth?: number;
 }) {
   const hasChildren = node.children.length > 0;
@@ -131,7 +134,17 @@ function TreeRow({
           >
             {TYPE_LABELS[node.work_item_type]}
           </span>
-          <span className="tree-title">{node.title}</span>
+          <span className="tree-title">
+            {showExternalId ? (
+              <>
+                <span className="tree-external-id">{node.external_id}</span>
+                <span className="tree-title-sep"> · </span>
+                {node.title}
+              </>
+            ) : (
+              node.title
+            )}
+          </span>
           <div className="tree-row-trail">
             {workflowRunning && (
               <span
@@ -182,6 +195,7 @@ function TreeRow({
             onSelect={onSelect}
             onToggle={onToggle}
             onAddChild={onAddChild}
+            showExternalId={showExternalId}
             depth={depth + 1}
           />
         </div>
@@ -197,6 +211,7 @@ export function TicketTree({
   onSelect,
   onToggle,
   onAddChild,
+  showExternalId = false,
   depth = 0,
 }: TicketTreeProps) {
   return (
@@ -210,6 +225,7 @@ export function TicketTree({
           onSelect={onSelect}
           onToggle={onToggle}
           onAddChild={onAddChild}
+          showExternalId={showExternalId}
           depth={depth}
         />
       ))}

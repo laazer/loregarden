@@ -21,6 +21,16 @@ export function allowedChildTypes(parentType: WorkItemType): WorkItemType[] {
   return VALID_HIERARCHY[parentType] ?? [];
 }
 
+export function allowedParentTypes(childType: WorkItemType): WorkItemType[] {
+  const parents: WorkItemType[] = [];
+  for (const [parentType, children] of Object.entries(VALID_HIERARCHY) as [WorkItemType, WorkItemType[]][]) {
+    if (children.includes(childType)) {
+      parents.push(parentType);
+    }
+  }
+  return parents;
+}
+
 export function canHaveChildren(parentType: WorkItemType): boolean {
   return allowedChildTypes(parentType).length > 0;
 }

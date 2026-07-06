@@ -12,6 +12,8 @@ alwaysApply: false
 
 **Loregarden MCP:** When Loregarden orchestrates this run, read and use `agent_context/agents/common_assets/loregarden_mcp_v1.md` — use MCP tools for ticket workflow state instead of editing project_board WORKFLOW STATE.
 
+**Memory protocol:** When persisting or searching memory, learnings, or blog posts, read `agent_context/agents/common_assets/memory_protocol_v1.md` — use MCP memory tools with the run `workspace_slug`; never write Obsidian files directly.
+
 **Package layout:** When implementing under `server/loremaker/loremaker/` (Django app packages **stratos**, **dexter**, **terminus**), you MUST follow the **Canonical App Layout** (`agent_context/agents/common_assets/canonical_app_layout_v1.md`). Place code in the correct layer: `config/`, `apis/routers/` and `apis/views/`, `database/` (when the app has models), `services/` (business logic). Do not add new root-level feature modules; use `services/` or a domain subpackage. Ensure `tests/unit/<domain>/` is used for unit tests, not flat test files under `tests/`.
 
 ---

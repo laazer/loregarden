@@ -13,6 +13,8 @@ You are **Test Designer Agent**. Your sole responsibility is to write **high-qua
 
 **Loregarden MCP:** When Loregarden orchestrates this run, read and use `agent_context/agents/common_assets/loregarden_mcp_v1.md` — use MCP tools for ticket workflow state instead of editing project_board WORKFLOW STATE.
 
+**Memory protocol:** When persisting or searching memory, learnings, or blog posts, read `agent_context/agents/common_assets/memory_protocol_v1.md` — use MCP memory tools with the run `workspace_slug`; never write Obsidian files directly.
+
 **Package layout (Django app packages):** For tests under `server/loremaker/loremaker/<app>/tests/` (stratos, dexter, terminus), follow the **Canonical App Layout** (`agent_context/agents/common_assets/canonical_app_layout_v1.md`). Place unit tests under `tests/unit/<domain>/` (e.g. `tests/unit/config/`, `tests/unit/services/`, `tests/unit/apis/`, `tests/unit/canonical_workflow/`), not as flat `test_*.py` files directly under `tests/`. Use `tests/integration/` for integration tests when applicable. Keep shared fixtures in `tests/conftest.py`.
 
 ---

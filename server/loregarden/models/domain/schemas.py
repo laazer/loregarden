@@ -9,6 +9,7 @@ from loregarden.models.domain.enums import (
     OrchestrationRunStatus,
     StageStatus,
     TicketState,
+    TicketStudioSessionStatus,
     WorkItemType,
 )
 from sqlmodel import Field, SQLModel
@@ -464,6 +465,68 @@ class StudioWorkflowView(SQLModel):
     read_only: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+class TicketStudioDraftItem(SQLModel):
+    ref: str
+    work_item_type: WorkItemType
+    parent_ref: str | None = None
+    title: str
+    description: str = ""
+    acceptance_criteria: list[str] = Field(default_factory=list)
+    priority: int = 3
+    suggested_agent: str = ""
+    selected: bool = True
+
+
+class TicketStudioSessionCreate(SQLModel):
+    workspace_slug: str
+    title: str
+    brief: str = ""
+    parent_ticket_id: str | None = None
+
+
+class TicketStudioSessionUpdate(SQLModel):
+    title: str | None = None
+    brief: str | None = None
+    parent_ticket_id: str | None = None
+
+
+class TicketStudioDraftUpdate(SQLModel):
+    items: list[TicketStudioDraftItem]
+
+
+class TicketStudioClarificationsUpdate(SQLModel):
+    answers: list[str]
+
+
+class TicketStudioMessageCreate(SQLModel):
+    content: str
+
+
+class TicketStudioSessionView(SQLModel):
+    id: str
+    workspace_slug: str
+    title: str
+    brief: str
+    parent_ticket_id: str | None = None
+    parent_ticket_title: str = ""
+    status: TicketStudioSessionStatus
+    summary: str = ""
+    clarifying_questions: list[str] = Field(default_factory=list)
+    clarifying_answers: list[str] = Field(default_factory=list)
+    clarifying_resolved: bool = True
+    draft: list[TicketStudioDraftItem] = Field(default_factory=list)
+    messages: list[dict[str, Any]] = Field(default_factory=list)
+    runtime: dict[str, str] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class TicketStudioCommitResult(SQLModel):
+    session_id: str
+    created_ticket_ids: list[str]
+    created_count: int
 
 
 TicketTreeNode.model_rebuild()

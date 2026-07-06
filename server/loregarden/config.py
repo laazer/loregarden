@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     obsidian_vault_dir: str = ""
     obsidian_memory_subdir: str = "Loregarden/Memory"
     obsidian_learnings_subdir: str = "Loregarden/Learnings"
+    obsidian_blogposts_subdir: str = "Loregarden/BlogPosts"
     # Structured memory graph SQLite (optional; defaults under iCloud when vault is set)
     memory_sqlite_url: str = ""
     # CI Integration settings

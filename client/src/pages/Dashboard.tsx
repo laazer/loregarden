@@ -841,7 +841,7 @@ export function Dashboard() {
           Editor
         </button>
         <button type="button" className="btn-secondary" onClick={() => setAppPage("studio")}>
-          Studio
+          Studios
         </button>
         <button type="button" className="btn-secondary" onClick={() => setMemoryOpen(true)}>
           Memory

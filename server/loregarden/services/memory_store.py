@@ -73,6 +73,7 @@ class ObsidianMemoryStore:
         self.vault_dir = vault_dir.resolve()
         self._memory_subdir = settings.obsidian_memory_subdir
         self._learnings_subdir = settings.obsidian_learnings_subdir
+        self._blogposts_subdir = settings.obsidian_blogposts_subdir
 
     @classmethod
     def from_settings(cls) -> ObsidianMemoryStore | None:
@@ -94,6 +95,18 @@ class ObsidianMemoryStore:
         segment = self._workspace_segment(workspace_slug)
         return base / segment if segment else base
 
+    def blogposts_dir(self, workspace_slug: str = "") -> Path:
+        base = self.vault_dir / self._blogposts_subdir
+        segment = self._workspace_segment(workspace_slug)
+        return base / segment if segment else base
+
+    def _dir_for_note_type(self, note_type: str, workspace_slug: str = "") -> Path:
+        if note_type == "learning":
+            return self.learnings_dir(workspace_slug)
+        if note_type == "blog_post":
+            return self.blogposts_dir(workspace_slug)
+        return self.memory_dir(workspace_slug)
+
     def _note_path(
         self,
         *,
@@ -102,11 +115,7 @@ class ObsidianMemoryStore:
         title: str,
         workspace_slug: str = "",
     ) -> Path:
-        base = (
-            self.learnings_dir(workspace_slug)
-            if note_type == "learning"
-            else self.memory_dir(workspace_slug)
-        )
+        base = self._dir_for_note_type(note_type, workspace_slug)
         filename = f"{_slugify(title)}-{note_id[:8]}.md"
         return base / filename
 
@@ -184,6 +193,27 @@ class ObsidianMemoryStore:
             note_type="learning",
         )
 
+    def upsert_blog_post(
+        self,
+        *,
+        ticket_id: str,
+        workspace_slug: str,
+        title: str,
+        body: str,
+        tags: list[str] | None = None,
+        note_id: str = "",
+    ) -> MemoryNote:
+        merged_tags = ["blog_post", "loregarden", *(tags or [])]
+        return self.upsert_note(
+            note_id=note_id,
+            title=title,
+            body=body,
+            tags=merged_tags,
+            ticket_id=ticket_id,
+            workspace_slug=workspace_slug,
+            note_type="blog_post",
+        )
+
     def list_notes(
         self,
         *,
@@ -192,11 +222,16 @@ class ObsidianMemoryStore:
         limit: int = 50,
     ) -> list[MemoryNote]:
         if workspace_slug.strip():
-            roots = [self.memory_dir(workspace_slug), self.learnings_dir(workspace_slug)]
+            roots = [
+                self.memory_dir(workspace_slug),
+                self.learnings_dir(workspace_slug),
+                self.blogposts_dir(workspace_slug),
+            ]
         else:
             memory_root = self.vault_dir / self._memory_subdir
             learnings_root = self.vault_dir / self._learnings_subdir
-            roots = [p for p in (memory_root, learnings_root) if p.is_dir()]
+            blogposts_root = self.vault_dir / self._blogposts_subdir
+            roots = [p for p in (memory_root, learnings_root, blogposts_root) if p.is_dir()]
         notes: list[MemoryNote] = []
         for root in roots:
             if not root.is_dir():
@@ -498,6 +533,7 @@ class AgentMemoryService:
         obsidian_vault = resolved_obsidian_vault()
         memory_db = resolved_memory_sqlite_path(workspace_slug)
         slug = workspace_slug.strip()
+        graph_path = memory_db
         return {
             "enabled": self.obsidian is not None or memory_db is not None,
             "workspace_slug": slug or None,
@@ -508,12 +544,19 @@ class AgentMemoryService:
             "obsidian_learnings_dir": (
                 str(self.obsidian.learnings_dir(slug)) if self.obsidian and obsidian_vault else None
             ),
+            "obsidian_blogposts_dir": (
+                str(self.obsidian.blogposts_dir(slug)) if self.obsidian and obsidian_vault else None
+            ),
             "memory_sqlite_path": str(memory_db) if memory_db else None,
+            "memory_sqlite_url": sqlite_url_for_path(memory_db) if memory_db else None,
             "memory_sqlite_in_icloud": (
                 is_under_icloud(memory_db, resolve_icloud_root(settings.icloud_root))
                 if memory_db
                 else False
             ),
+            "memory_graph_tables": ["memory_nodes", "memory_relations"] if memory_db else [],
+            "memory_graph_node_types": ["memory", "learning"] if memory_db else [],
+            "memory_graph_excludes": ["blog_post"],
             "database_path": str(settings.database_url),
         }
 
@@ -592,6 +635,34 @@ class AgentMemoryService:
                 node_type="memory",
             )
         return result
+
+    def upsert_blog_post(
+        self,
+        *,
+        ticket_id: str,
+        workspace_slug: str,
+        title: str,
+        body: str,
+        tags: list[str] | None = None,
+        note_id: str = "",
+    ) -> dict[str, Any]:
+        if not self.obsidian:
+            raise ValueError(
+                "No Obsidian vault configured. Set LOREGARDEN_OBSIDIAN_VAULT_DIR for blog post storage."
+            )
+        note = self.obsidian.upsert_blog_post(
+            ticket_id=ticket_id,
+            workspace_slug=workspace_slug,
+            title=title,
+            body=body,
+            tags=tags,
+            note_id=note_id,
+        )
+        return {
+            "ticket_id": ticket_id,
+            "workspace_slug": workspace_slug,
+            "obsidian": {"id": note.id, "path": note.path, "updated_at": note.updated_at},
+        }
 
     def create_relation(
         self,

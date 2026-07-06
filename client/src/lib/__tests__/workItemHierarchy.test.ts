@@ -1,6 +1,7 @@
 import {
   addChildActionLabel,
   allowedChildTypes,
+  allowedParentTypes,
   canHaveChildren,
   defaultChildType,
 } from "../workItemHierarchy";
@@ -25,5 +26,11 @@ describe("workItemHierarchy", () => {
   it("labels add actions", () => {
     expect(addChildActionLabel("capability")).toBe("Add task or bug");
     expect(addChildActionLabel("milestone")).toBe("Add feature or bug");
+  });
+
+  it("resolves parent types for children", () => {
+    expect(allowedParentTypes("feature")).toEqual(["milestone"]);
+    expect(allowedParentTypes("task")).toEqual(["capability"]);
+    expect(allowedParentTypes("bug")).toEqual(["milestone", "feature", "capability"]);
   });
 });

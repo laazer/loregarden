@@ -256,8 +256,27 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
     if name == "loregarden_upsert_memory":
         payload = {
             "title": _coerce_string(args.get("title"), field="title"),
+            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
         }
-        for field in ("node_id", "body", "ticket_id", "workspace_slug"):
+        for field in ("node_id", "body", "ticket_id"):
+            if args.get(field) is not None:
+                payload[field] = _coerce_optional_string(args.get(field))
+        tags = args.get("tags")
+        if tags is not None:
+            if isinstance(tags, str):
+                payload["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
+            elif isinstance(tags, list):
+                payload["tags"] = [str(t).strip() for t in tags if str(t).strip()]
+        return payload
+
+    if name == "loregarden_upsert_blog_post":
+        payload = {
+            "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
+            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
+            "title": _coerce_string(args.get("title"), field="title"),
+            "body": _coerce_string(args.get("body"), field="body"),
+        }
+        for field in ("note_id",):
             if args.get(field) is not None:
                 payload[field] = _coerce_optional_string(args.get(field))
         tags = args.get("tags")
@@ -282,7 +301,12 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             "source_id": _coerce_string(args.get("source_id"), field="source_id"),
             "target_id": _coerce_string(args.get("target_id"), field="target_id"),
             "relation_type": _coerce_optional_string(args.get("relation_type")) or "related",
+            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
         }
+        return payload
+
+    if name == "loregarden_memory_status":
+        payload: dict[str, Any] = {}
         if args.get("workspace_slug") is not None:
             payload["workspace_slug"] = _coerce_optional_string(args.get("workspace_slug")) or ""
         return payload
@@ -524,8 +548,17 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "loregarden_memory_status",
-        "description": "Report configured Obsidian/iCloud memory backends and SQLite paths.",
-        "inputSchema": _tool_schema(properties={}, required=[]),
+        "description": (
+            "Report configured Obsidian/iCloud memory backends and workspace-scoped resolved paths."
+        ),
+        "inputSchema": _tool_schema(
+            properties={
+                "workspace_slug": _string_prop(
+                    "Workspace slug — returns per-workspace memory, learnings, blog post dirs, and SQLite path."
+                ),
+            },
+            required=[],
+        ),
     },
     {
         "name": "loregarden_append_learning",
@@ -542,7 +575,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "loregarden_upsert_memory",
-        "description": "Upsert a durable memory node (Obsidian note + optional graph SQLite).",
+        "description": (
+            "Upsert a durable memory node under the workspace-scoped Obsidian dir and graph SQLite."
+        ),
         "inputSchema": _tool_schema(
             properties={
                 "node_id": _string_prop("Optional stable node id for updates."),
@@ -550,9 +585,26 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "body": _string_prop("Memory body (markdown)."),
                 "tags": _string_prop("Optional comma-separated tags or JSON array."),
                 "ticket_id": _string_prop("Optional related ticket id."),
-                "workspace_slug": _string_prop("Optional workspace slug."),
+                "workspace_slug": _string_prop("Workspace slug (required — scopes note and graph DB)."),
             },
-            required=["title"],
+            required=["title", "workspace_slug"],
+        ),
+    },
+    {
+        "name": "loregarden_upsert_blog_post",
+        "description": (
+            "Persist a human-readable blog post markdown note under the workspace-scoped BlogPosts Obsidian dir."
+        ),
+        "inputSchema": _tool_schema(
+            properties={
+                "ticket_id": _string_prop("Ticket external id or UUID."),
+                "workspace_slug": _string_prop("Workspace slug (required — scopes blog post dir)."),
+                "title": _string_prop("Blog post title."),
+                "body": _string_prop("Blog post body (markdown)."),
+                "note_id": _string_prop("Optional stable note id for updates."),
+                "tags": _string_prop("Optional comma-separated tags or JSON array."),
+            },
+            required=["ticket_id", "workspace_slug", "title", "body"],
         ),
     },
     {
@@ -577,7 +629,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "relation_type": _string_prop("Relation label (default related)."),
                 "workspace_slug": _string_prop("Workspace slug for the memory graph DB."),
             },
-            required=["source_id", "target_id"],
+            required=["source_id", "target_id", "workspace_slug"],
         ),
     },
 ]
@@ -668,7 +720,10 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
 
     memory = AgentMemoryService.from_settings()
     if name == "loregarden_memory_status":
-        return json.dumps(memory.status(), indent=2)
+        return json.dumps(
+            memory.status(workspace_slug=arguments.get("workspace_slug", "")),
+            indent=2,
+        )
 
     if name == "loregarden_append_learning":
         result = memory.append_learning(
@@ -686,7 +741,18 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
             body=arguments.get("body", ""),
             tags=arguments.get("tags"),
             ticket_id=arguments.get("ticket_id", ""),
-            workspace_slug=arguments.get("workspace_slug", ""),
+            workspace_slug=arguments["workspace_slug"],
+        )
+        return json.dumps(result, indent=2)
+
+    if name == "loregarden_upsert_blog_post":
+        result = memory.upsert_blog_post(
+            ticket_id=arguments["ticket_id"],
+            workspace_slug=arguments["workspace_slug"],
+            title=arguments["title"],
+            body=arguments["body"],
+            tags=arguments.get("tags"),
+            note_id=arguments.get("note_id", ""),
         )
         return json.dumps(result, indent=2)
 
@@ -703,7 +769,7 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
             source_id=arguments["source_id"],
             target_id=arguments["target_id"],
             relation_type=arguments.get("relation_type", "related"),
-            workspace_slug=arguments.get("workspace_slug", ""),
+            workspace_slug=arguments["workspace_slug"],
         )
         return json.dumps(result, indent=2)
 

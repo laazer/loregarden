@@ -1,0 +1,24 @@
+version: "3"
+
+tasks:
+  server:
+    desc: Start FastAPI control plane (http://127.0.0.1:8000)
+    dir: "{{.ROOT_DIR}}"
+    env:
+      LOREGARDEN_REPO_ROOT: "{{.ROOT_DIR}}"
+    cmds:
+      - ./scripts/dev-server.sh
+    interactive: true
+
+  client:
+    desc: Start React IDE dev server (http://localhost:5173)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./scripts/dev-client.sh
+    interactive: true
+
+  dev:
+    desc: Start client and server together
+    deps:
+      - server
+      - client
