@@ -1471,6 +1471,152 @@ button {
   gap: 8px;
 }
 
+.chat-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.chat-section-title {
+  margin-bottom: 10px;
+}
+
+.chat-window {
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  background: var(--bg2);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+}
+
+.chat-empty {
+  font-size: 12px;
+  color: var(--txm);
+  line-height: 1.55;
+}
+
+.chat-message {
+  max-width: 92%;
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+
+.chat-message-user {
+  align-self: flex-end;
+  background: rgba(96, 165, 250, 0.12);
+  border: 1px solid rgba(96, 165, 250, 0.25);
+}
+
+.chat-message-assistant {
+  align-self: flex-start;
+  background: var(--bg3);
+  border: 1px solid var(--bd);
+}
+
+.chat-message-meta {
+  font-size: 10px;
+  color: var(--txl);
+  margin-bottom: 4px;
+}
+
+.chat-message-body {
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.chat-message-body.markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.chat-message-body.markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-message-body.markdown-preview h1,
+.chat-message-body.markdown-preview h2,
+.chat-message-body.markdown-preview h3,
+.chat-message-body.markdown-preview h4 {
+  margin-top: 0.65em;
+  margin-bottom: 0.35em;
+}
+
+.chat-message-body.markdown-preview p {
+  margin: 0.35em 0;
+}
+
+.chat-message-body.markdown-preview ul,
+.chat-message-body.markdown-preview ol {
+  margin: 0.35em 0;
+}
+
+.chat-message-body.markdown-preview pre {
+  margin: 0.45em 0;
+}
+
+.chat-thinking {
+  font-size: 12px;
+  color: var(--bll);
+}
+
+.chat-composer {
+  border-top: 1px solid var(--bd);
+  padding: 12px;
+  background: var(--bg1);
+}
+
+.chat-composer-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.chat-composer-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--txm);
+  cursor: pointer;
+}
+
+.chat-composer-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--bd);
+  background: var(--bg2);
+  color: var(--tx);
+  font-size: 12.5px;
+  resize: vertical;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+}
+
+.chat-composer-toolbar {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chat-composer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.chat-composer-error {
+  font-size: 11.5px;
+  color: var(--rdl);
+  margin-top: 8px;
+  text-align: right;
+}
+
 .inbox-panel {
   position: fixed;
   top: 0;

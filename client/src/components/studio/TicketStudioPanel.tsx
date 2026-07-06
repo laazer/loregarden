@@ -13,6 +13,9 @@ import { ParentTicketSelector } from "../ParentTicketSelector";
 import { workItemTypeLabel } from "../../lib/workItemHierarchy";
 import { runtimeSummaryLabel } from "../WorkspaceRuntimeFields";
 import { TriageModelModal } from "../TriageModelModal";
+import { ChatComposer } from "../chat/ChatComposer";
+import { ChatWindow } from "../chat/ChatWindow";
+import { TicketStudioDraftModal } from "./TicketStudioDraftModal";
 
 const DEFAULT_RUNTIME: WorkspaceRuntimeSettings = {
   cli_adapter: "default",
@@ -22,7 +25,16 @@ const DEFAULT_RUNTIME: WorkspaceRuntimeSettings = {
   lmstudio_model: "",
 };
 
-const TYPE_OPTIONS = ["feature", "capability", "task", "bug", "milestone"] as const;
+function draftSummaryLine(item: TicketStudioDraftItem): string {
+  const parts: string[] = [];
+  if (item.parent_ref) parts.push(`parent: ${item.parent_ref}`);
+  if (item.acceptance_criteria.length > 0) {
+    parts.push(`${item.acceptance_criteria.length} AC`);
+  }
+  if (item.priority !== 3) parts.push(`P${item.priority}`);
+  if (item.suggested_agent) parts.push(item.suggested_agent);
+  return parts.join(" · ");
+}
 
 function emptySessionDraft(): { title: string; brief: string; parent_ticket_id: string } {
   return { title: "", brief: "", parent_ticket_id: "" };
@@ -43,11 +55,18 @@ export function TicketStudioPanel({
   const [modelModalOpen, setModelModalOpen] = useState(false);
   const [localDraft, setLocalDraft] = useState<TicketStudioDraftItem[]>([]);
   const [draftDirty, setDraftDirty] = useState(false);
+  const [answerDraft, setAnswerDraft] = useState<string[]>([]);
+  const [expandedDraftIndex, setExpandedDraftIndex] = useState<number | null>(null);
 
   const sessions = useQuery({
     queryKey: ["ticket-studio-sessions", workspaceSlug],
     queryFn: () => api.ticketStudioSessions(workspaceSlug),
     enabled: !!workspaceSlug,
+  });
+
+  const studioAgents = useQuery({
+    queryKey: ["studio-agents"],
+    queryFn: api.studioAgents,
   });
 
   const selectedSession = useMemo(
@@ -59,23 +78,60 @@ export function TicketStudioPanel({
     if (!selectedSession) {
       setLocalDraft([]);
       setDraftDirty(false);
+      setAnswerDraft([]);
       return;
     }
     setLocalDraft(selectedSession.draft);
     setDraftDirty(false);
-  }, [selectedSession?.id, selectedSession?.draft, selectedSession?.updated_at]);
+    setAnswerDraft(selectedSession.clarifying_answers);
+    setExpandedDraftIndex(null);
+  }, [selectedSession?.id, selectedSession?.draft, selectedSession?.updated_at, selectedSession?.clarifying_answers]);
+
+  const requestClarifications = useMutation({
+    mutationFn: () => api.requestTicketStudioClarifications(selectedSessionId!),
+    onSuccess: (updated) => {
+      qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
+        current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
+      );
+      setAnswerDraft(updated.clarifying_answers);
+    },
+  });
+
+  const saveClarifications = useMutation({
+    mutationFn: () => api.saveTicketStudioClarifications(selectedSessionId!, answerDraft),
+    onSuccess: (updated) => {
+      qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
+        current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
+      );
+      setAnswerDraft(updated.clarifying_answers);
+    },
+  });
 
   const createSession = useMutation({
-    mutationFn: () =>
-      api.createTicketStudioSession({
+    mutationFn: async () => {
+      const created = await api.createTicketStudioSession({
         workspace_slug: workspaceSlug,
         title: newDraft.title.trim(),
         brief: newDraft.brief.trim(),
         parent_ticket_id: newDraft.parent_ticket_id || null,
-      }),
-    onSuccess: (created) => {
+      });
+      try {
+        const clarified = await api.requestTicketStudioClarifications(created.id);
+        if (clarified.clarifying_resolved && clarified.clarifying_questions.length === 0) {
+          return api.generateTicketStudioScope(clarified.id);
+        }
+        return clarified;
+      } catch {
+        return created;
+      }
+    },
+    onSuccess: (updated) => {
       qc.invalidateQueries({ queryKey: ["ticket-studio-sessions", workspaceSlug] });
-      setSelectedSessionId(created.id);
+      qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
+        current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
+      );
+      setSelectedSessionId(updated.id);
+      setAnswerDraft(updated.clarifying_answers);
       setNewDraft(emptySessionDraft());
     },
   });
@@ -142,11 +198,26 @@ export function TicketStudioPanel({
   const selectedCount = localDraft.filter((item) => item.selected).length;
   const runtime = selectedSession?.runtime ?? DEFAULT_RUNTIME;
   const modelLabel = runtimeSummaryLabel(runtime, runtimeOptions);
+  const hasOpenQuestions = (selectedSession?.clarifying_questions.length ?? 0) > 0;
+  const clarifyingResolved = selectedSession?.clarifying_resolved ?? true;
+  const answersDirty =
+    hasOpenQuestions &&
+    answerDraft.some(
+      (answer, index) => answer.trim() !== (selectedSession?.clarifying_answers[index] ?? "").trim(),
+    );
+  const answersComplete =
+    !hasOpenQuestions ||
+    (selectedSession?.clarifying_questions.every((_, index) => answerDraft[index]?.trim()) ?? false);
+  const isScoperThinking =
+    sendMessage.isPending || requestClarifications.isPending || generateScope.isPending || createSession.isPending;
 
   const updateDraftItem = (index: number, patch: Partial<TicketStudioDraftItem>) => {
     setLocalDraft((items) => items.map((item, idx) => (idx === index ? { ...item, ...patch } : item)));
     setDraftDirty(true);
   };
+
+  const expandedDraftItem =
+    expandedDraftIndex != null ? (localDraft[expandedDraftIndex] ?? null) : null;
 
   return (
     <>
@@ -258,7 +329,7 @@ export function TicketStudioPanel({
               disabled={!newDraft.title.trim() || createSession.isPending}
               onClick={() => createSession.mutate()}
             >
-              {createSession.isPending ? "Creating…" : "Start scoping session"}
+              {createSession.isPending ? "Starting scope…" : "Start scoping session"}
             </button>
             {createSession.isError && (
               <p className="modal-hint" style={{ color: "var(--rdl)", marginTop: 8 }}>
@@ -273,7 +344,7 @@ export function TicketStudioPanel({
                 <div>
                   <h2 style={{ margin: "0 0 4px", fontFamily: "var(--dp)" }}>{selectedSession.title}</h2>
                   <p className="modal-hint" style={{ margin: 0 }}>
-                    {isReadOnly ? "Committed to workspace" : "Chat with Planner to refine scope"}
+                    {isReadOnly ? "Committed to workspace" : "Chat with the scoper to refine scope"}
                     {selectedSession.parent_ticket_title
                       ? ` · under ${selectedSession.parent_ticket_title}`
                       : ""}
@@ -297,91 +368,113 @@ export function TicketStudioPanel({
                 </div>
               )}
 
-              {selectedSession.clarifying_questions.length > 0 && (
+              {hasOpenQuestions && !isReadOnly && (
+                <div className="state-card" style={{ marginTop: 12, padding: 12 }}>
+                  <div className="modal-section-title" style={{ marginTop: 0 }}>
+                    Clarifying questions
+                  </div>
+                  <p className="modal-hint" style={{ margin: "0 0 10px" }}>
+                    Answer these before generating tickets.
+                  </p>
+                  {selectedSession.clarifying_questions.map((question, index) => (
+                    <div key={question} className="modal-field" style={{ marginBottom: 10 }}>
+                      <div className="modal-field-label">{question}</div>
+                      <textarea
+                        className="btn-secondary"
+                        style={{ width: "100%", minHeight: 56, boxSizing: "border-box", fontSize: 12 }}
+                        value={answerDraft[index] ?? ""}
+                        onChange={(e) =>
+                          setAnswerDraft((current) => {
+                            const next = [...current];
+                            next[index] = e.target.value;
+                            return next;
+                          })
+                        }
+                      />
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="btn-secondary btn-compact"
+                    disabled={!answersComplete || saveClarifications.isPending || !answersDirty}
+                    onClick={() => saveClarifications.mutate()}
+                  >
+                    {saveClarifications.isPending ? "Saving…" : "Save answers"}
+                  </button>
+                  {!clarifyingResolved && (
+                    <p className="modal-hint" style={{ margin: "8px 0 0", color: "var(--amb)" }}>
+                      Save your answers to unlock ticket generation.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {hasOpenQuestions && isReadOnly && (
                 <div style={{ marginTop: 12 }}>
                   <div className="modal-section-title">Clarifying questions</div>
                   <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12.5, color: "var(--txm)" }}>
-                    {selectedSession.clarifying_questions.map((q) => (
-                      <li key={q}>{q}</li>
+                    {selectedSession.clarifying_questions.map((q, index) => (
+                      <li key={q}>
+                        <div>{q}</div>
+                        {selectedSession.clarifying_answers[index] && (
+                          <div style={{ color: "var(--txl)", marginTop: 2 }}>{selectedSession.clarifying_answers[index]}</div>
+                        )}
+                      </li>
                     ))}
                   </ul>
                 </div>
               )}
 
-              <div
-                className="state-card"
-                style={{
-                  marginTop: 14,
-                  maxHeight: 280,
-                  overflow: "auto",
-                  padding: 12,
-                  fontSize: 12.5,
-                }}
-              >
-                {selectedSession.messages.length === 0 ? (
-                  <p className="modal-hint" style={{ margin: 0 }}>
-                    No messages yet. Generate scope or ask the agent to refine the breakdown.
-                  </p>
-                ) : (
-                  selectedSession.messages.map((msg) => (
-                    <div key={msg.id} style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: 10.5, color: "var(--txl)", marginBottom: 2 }}>
-                        {msg.role === "user" ? "You" : "Planner"}
-                      </div>
-                      <div style={{ whiteSpace: "pre-wrap" }}>{msg.content}</div>
-                    </div>
-                  ))
+              <div style={{ marginTop: 14, display: "flex", flexDirection: "column", minHeight: 0 }}>
+                <ChatWindow
+                  title="Scope chat"
+                  messages={selectedSession.messages}
+                  assistantLabel="Scoper"
+                  emptyMessage="Review the brief for questions, then generate tickets."
+                  isThinking={isScoperThinking}
+                  thinkingMessage="Scoper is thinking…"
+                  maxHeight={280}
+                />
+                {!isReadOnly && (
+                  <ChatComposer
+                    value={chatDraft}
+                    onChange={setChatDraft}
+                    onSubmit={() => sendMessage.mutate(chatDraft.trim())}
+                    placeholder="Ask to refine scope, split work, or tighten acceptance criteria…"
+                    isSending={sendMessage.isPending}
+                    disabled={isScoperThinking}
+                    actions={
+                      <>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={!runtimeOptions}
+                          onClick={() => setModelModalOpen(true)}
+                        >
+                          Model · {modelLabel}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={isScoperThinking}
+                          onClick={() => requestClarifications.mutate()}
+                        >
+                          {requestClarifications.isPending ? "Reviewing…" : "Review brief"}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={!clarifyingResolved || isScoperThinking}
+                          onClick={() => generateScope.mutate()}
+                          title={!clarifyingResolved ? "Answer clarifying questions first" : undefined}
+                        >
+                          {generateScope.isPending ? "Generating…" : "Generate tickets"}
+                        </button>
+                      </>
+                    }
+                  />
                 )}
               </div>
-
-              {!isReadOnly && (
-                <>
-                  <textarea
-                    value={chatDraft}
-                    onChange={(e) => setChatDraft(e.target.value)}
-                    rows={3}
-                    placeholder="Ask to add tasks, split capabilities, tighten acceptance criteria…"
-                    style={{
-                      width: "100%",
-                      marginTop: 10,
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: "1px solid var(--bd)",
-                      background: "var(--bg2)",
-                      color: "var(--tx)",
-                      fontSize: 12.5,
-                      resize: "vertical",
-                      boxSizing: "border-box",
-                    }}
-                  />
-                  <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      disabled={!runtimeOptions}
-                      onClick={() => setModelModalOpen(true)}
-                    >
-                      Model · {modelLabel}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      disabled={generateScope.isPending || sendMessage.isPending}
-                      onClick={() => generateScope.mutate()}
-                    >
-                      {generateScope.isPending ? "Scoping…" : "Generate scope"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      disabled={!chatDraft.trim() || sendMessage.isPending}
-                      onClick={() => sendMessage.mutate(chatDraft.trim())}
-                    >
-                      {sendMessage.isPending ? "Sending…" : "Send"}
-                    </button>
-                  </div>
-                </>
-              )}
             </section>
 
             <section style={{ minWidth: 0 }}>
@@ -402,66 +495,101 @@ export function TicketStudioPanel({
               </div>
 
               {localDraft.length === 0 ? (
-                <p className="modal-hint">Generate scope to populate draft tickets.</p>
+                <p className="modal-hint">
+                  {hasOpenQuestions && !clarifyingResolved
+                    ? "Answer clarifying questions, then generate tickets."
+                    : "Review the brief or generate tickets to populate the draft."}
+                </p>
               ) : (
-                localDraft.map((item, index) => (
-                  <div key={item.ref} className="state-card" style={{ marginBottom: 10, padding: 10 }}>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-                      <input
-                        type="checkbox"
-                        checked={item.selected}
-                        disabled={isReadOnly}
-                        onChange={(e) => updateDraftItem(index, { selected: e.target.checked })}
-                      />
-                      <select
-                        className="btn-secondary filter-select"
-                        style={{ width: 110 }}
-                        value={item.work_item_type}
-                        disabled={isReadOnly}
-                        onChange={(e) =>
-                          updateDraftItem(index, {
-                            work_item_type: e.target.value as TicketStudioDraftItem["work_item_type"],
-                          })
-                        }
-                      >
-                        {TYPE_OPTIONS.map((t) => (
-                          <option key={t} value={t}>
-                            {workItemTypeLabel(t)}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        className="btn-secondary"
-                        style={{ flex: 1, boxSizing: "border-box" }}
-                        value={item.title}
-                        readOnly={isReadOnly}
-                        onChange={(e) => updateDraftItem(index, { title: e.target.value })}
-                      />
-                    </div>
-                    {item.parent_ref && (
-                      <div style={{ fontSize: 10.5, color: "var(--txl)", marginBottom: 6, fontFamily: "var(--mono)" }}>
-                        parent: {item.parent_ref}
+                localDraft.map((item, index) => {
+                  const summary = draftSummaryLine(item);
+                  return (
+                    <div key={item.ref} className="state-card" style={{ marginBottom: 10, padding: 10 }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={item.selected}
+                          disabled={isReadOnly}
+                          onChange={(e) => updateDraftItem(index, { selected: e.target.checked })}
+                          aria-label={`Include ${item.title}`}
+                        />
+                        <span
+                          style={{
+                            fontSize: 10.5,
+                            fontWeight: 600,
+                            color: "var(--txl)",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.04em",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {workItemTypeLabel(item.work_item_type)}
+                        </span>
+                        <button
+                          type="button"
+                          className="list-btn"
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            textAlign: "left",
+                            padding: "4px 8px",
+                            fontWeight: 600,
+                          }}
+                          onClick={() => setExpandedDraftIndex(index)}
+                        >
+                          <span
+                            style={{
+                              display: "block",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {item.title}
+                          </span>
+                          {summary && (
+                            <span
+                              style={{
+                                display: "block",
+                                fontSize: 10.5,
+                                fontWeight: 400,
+                                color: "var(--txl)",
+                                marginTop: 2,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {summary}
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary btn-compact"
+                          onClick={() => setExpandedDraftIndex(index)}
+                        >
+                          Details
+                        </button>
                       </div>
-                    )}
-                    {!isReadOnly ? (
-                      <textarea
-                        className="btn-secondary"
-                        style={{ width: "100%", minHeight: 48, boxSizing: "border-box", fontSize: 11.5 }}
-                        value={item.description}
-                        onChange={(e) => updateDraftItem(index, { description: e.target.value })}
-                      />
-                    ) : (
-                      <p style={{ margin: 0, fontSize: 11.5, color: "var(--txm)" }}>{item.description}</p>
-                    )}
-                    {item.acceptance_criteria.length > 0 && (
-                      <ul style={{ margin: "6px 0 0", paddingLeft: 16, fontSize: 11, color: "var(--txl)" }}>
-                        {item.acceptance_criteria.map((ac) => (
-                          <li key={ac}>{ac}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                ))
+                      {item.description && (
+                        <p
+                          style={{
+                            margin: "8px 0 0",
+                            fontSize: 11.5,
+                            color: "var(--txm)",
+                            overflow: "hidden",
+                            display: "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: "vertical",
+                          }}
+                        >
+                          {item.description}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })
               )}
 
               {!isReadOnly && localDraft.length > 0 && (
@@ -492,6 +620,23 @@ export function TicketStudioPanel({
           </div>
         ) : null}
       </main>
+
+      <TicketStudioDraftModal
+        item={expandedDraftItem}
+        allItems={localDraft}
+        agentOptions={studioAgents.data ?? []}
+        isOpen={expandedDraftIndex != null}
+        readOnly={isReadOnly}
+        onClose={() => setExpandedDraftIndex(null)}
+        onSave={
+          isReadOnly
+            ? undefined
+            : (updated) => {
+                if (expandedDraftIndex == null) return;
+                updateDraftItem(expandedDraftIndex, updated);
+              }
+        }
+      />
 
       <TriageModelModal
         open={modelModalOpen}

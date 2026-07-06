@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type Approval, type RuntimeOptions, type TicketDetail, type TriageMessage } from "../api/client";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { formatLogExcerpt } from "../utils/logExcerpt";
+import { ChatMessageBubble } from "./chat/ChatMessageBubble";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { TriageComposer } from "./TriageComposer";
 
@@ -18,14 +19,6 @@ function mergeApprovals(...lists: Array<Approval[] | undefined>): Approval[] {
     }
   }
   return merged;
-}
-
-function formatTime(iso: string) {
-  try {
-    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "";
-  }
 }
 
 export function LogsPanel({
@@ -152,23 +145,7 @@ export function LogsPanel({
             </button>
             {showTriageReplies &&
               recentReplies.map((msg) => (
-                <div
-                  key={msg.id}
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: 10,
-                    background: "var(--bg3)",
-                    border: "1px solid var(--bd)",
-                    marginBottom: 8,
-                  }}
-                >
-                  <div style={{ fontSize: 10, color: "var(--txl)", marginBottom: 4 }}>
-                    Triage assistant · {formatTime(msg.created_at)}
-                  </div>
-                  <div style={{ fontSize: 12.5, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-                    {msg.content}
-                  </div>
-                </div>
+                <ChatMessageBubble key={msg.id} message={msg} assistantLabel="Triage assistant" />
               ))}
           </section>
         )}

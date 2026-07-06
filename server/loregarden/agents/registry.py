@@ -122,6 +122,12 @@ AGENTS: dict[str, dict] = {
         "timeout": 300,
         "claude_model": "haiku",
     },
+    "ticket_scoper": {
+        "name": "Ticket Scoper",
+        "role_file": "agents/misc_agents/ticket_scoper_v1.md",
+        "adapter": "claude",
+        "timeout": 600,
+    },
 }
 
 

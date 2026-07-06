@@ -1,6 +1,10 @@
 from fastapi.testclient import TestClient
 
-from loregarden.services.ticket_studio_service import parse_scope_payload
+from loregarden.services.ticket_studio_service import (
+    clarifying_questions_resolved,
+    format_studio_reply_for_display,
+    parse_scope_payload,
+)
 
 
 SCOPE_STUB = """Here is the scoped breakdown:
@@ -8,7 +12,7 @@ SCOPE_STUB = """Here is the scoped breakdown:
 ```json
 {
   "summary": "Ticket Studio MVP for feature scoping",
-  "clarifying_questions": ["Should scope sessions persist after commit?"],
+  "clarifying_questions": [],
   "tickets": [
     {
       "ref": "feature-1",
@@ -45,11 +49,39 @@ SCOPE_STUB = """Here is the scoped breakdown:
 ```
 """
 
+CLARIFY_STUB = """I need a bit more context before scoping.
+
+```json
+{
+  "summary": "Ticket Studio needs scope decisions on persistence and UX.",
+  "clarifying_questions": [
+    "Should scope sessions persist after commit?",
+    "Is ticket generation always manual?"
+  ],
+  "tickets": []
+}
+```
+"""
+
+
+def test_format_studio_reply_for_display_strips_json():
+    display = format_studio_reply_for_display(SCOPE_STUB)
+    assert "Ticket Studio MVP" in display
+    assert "```json" not in display
+    assert "3 draft ticket" in display
+
+
+def test_clarifying_questions_resolved():
+    assert clarifying_questions_resolved([], [])
+    assert not clarifying_questions_resolved(["Q1"], [])
+    assert clarifying_questions_resolved(["Q1"], ["A1"])
+    assert not clarifying_questions_resolved(["Q1", "Q2"], ["A1", ""])
+
 
 def test_parse_scope_payload_extracts_tickets():
     summary, questions, items = parse_scope_payload(SCOPE_STUB)
     assert "Ticket Studio MVP" in summary
-    assert len(questions) == 1
+    assert len(questions) == 0
     assert len(items) == 3
     assert items[0].work_item_type.value == "feature"
     assert items[1].parent_ref == "feature-1"
@@ -110,7 +142,7 @@ def test_ticket_studio_scope_and_commit(client: TestClient, monkeypatch):
     scoped = scope.json()
     assert len(scoped["draft"]) == 3
     assert scoped["summary"]
-    assert scoped["clarifying_questions"]
+    assert scoped["clarifying_questions"] == []
 
     commit = client.post(f"/api/ticket-studio/sessions/{session_id}/commit")
     assert commit.status_code == 200, commit.text
@@ -127,6 +159,42 @@ def test_ticket_studio_scope_and_commit(client: TestClient, monkeypatch):
 
     dup_commit = client.post(f"/api/ticket-studio/sessions/{session_id}/commit")
     assert dup_commit.status_code == 400
+
+
+def test_ticket_studio_clarify_then_scope(client: TestClient, monkeypatch):
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", CLARIFY_STUB)
+
+    create = client.post(
+        "/api/ticket-studio/sessions",
+        json={
+            "workspace_slug": "loregarden",
+            "title": "Clarify flow",
+            "brief": "Ambiguous feature brief.",
+        },
+    )
+    session_id = create.json()["id"]
+
+    clarify = client.post(f"/api/ticket-studio/sessions/{session_id}/clarify")
+    assert clarify.status_code == 200, clarify.text
+    body = clarify.json()
+    assert len(body["clarifying_questions"]) == 2
+    assert body["clarifying_resolved"] is False
+    assert body["draft"] == []
+
+    blocked = client.post(f"/api/ticket-studio/sessions/{session_id}/scope")
+    assert blocked.status_code == 400
+
+    saved = client.patch(
+        f"/api/ticket-studio/sessions/{session_id}/clarifications",
+        json={"answers": ["Yes, keep sessions.", "Manual commit only."]},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["clarifying_resolved"] is True
+
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", SCOPE_STUB)
+    scope = client.post(f"/api/ticket-studio/sessions/{session_id}/scope")
+    assert scope.status_code == 200, scope.text
+    assert len(scope.json()["draft"]) == 3
 
 
 def test_ticket_studio_chat_applies_scope_from_stub(client: TestClient, monkeypatch):
@@ -149,7 +217,9 @@ def test_ticket_studio_chat_applies_scope_from_stub(client: TestClient, monkeypa
     assert msg.status_code == 200, msg.text
     body = msg.json()
     assert len(body["messages"]) == 2
-    assert len(body["draft"]) == 3
+    assert body["messages"][-1]["display_content"]
+    assert "```json" not in body["messages"][-1]["display_content"]
+    assert len(body["draft"]) == 0
 
 
 def test_ticket_studio_draft_validation(client: TestClient, monkeypatch):

@@ -27,5 +27,6 @@ module.exports = {
   testMatch: ["<rootDir>/src/**/__tests__/**/*.(test|spec).(ts|tsx)"],
   moduleNameMapper: {
     "\\.(css|less|scss|sass)$": "<rootDir>/src/test/styleMock.ts",
+    "^react-markdown$": "<rootDir>/src/test/reactMarkdownMock.tsx",
   },
 };

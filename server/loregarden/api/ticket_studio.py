@@ -3,6 +3,7 @@ from sqlmodel import Session
 
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
+    TicketStudioClarificationsUpdate,
     TicketStudioDraftUpdate,
     TicketStudioMessageCreate,
     TicketStudioSessionCreate,
@@ -94,6 +95,26 @@ def send_ticket_studio_message(
 ) -> dict:
     try:
         return TicketStudioService(session).send_message(session_id, body.content).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/sessions/{session_id}/clarify")
+def request_ticket_studio_clarifications(session_id: str, session: Session = Depends(get_session)) -> dict:
+    try:
+        return TicketStudioService(session).request_clarifications(session_id).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/sessions/{session_id}/clarifications")
+def save_ticket_studio_clarifications(
+    session_id: str,
+    body: TicketStudioClarificationsUpdate,
+    session: Session = Depends(get_session),
+) -> dict:
+    try:
+        return TicketStudioService(session).save_clarifications(session_id, body.answers).model_dump(mode="json")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

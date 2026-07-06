@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
-import { api, type Approval, type RuntimeOptions, type TicketDetail, type TriageMessage } from "../api/client";
+import { api, type Approval, type RuntimeOptions, type TicketDetail } from "../api/client";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
+import { ChatWindow } from "./chat/ChatWindow";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { TriageComposer } from "./TriageComposer";
 
@@ -29,14 +30,6 @@ function approvalKindLabel(kind: Approval["kind"]) {
       return "Agent question";
     default:
       return kind;
-  }
-}
-
-function formatTime(iso: string) {
-  try {
-    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "";
   }
 }
 
@@ -83,7 +76,6 @@ export function TriagePanel({
   onResolved?: () => void;
 }) {
   const qc = useQueryClient();
-  const bottomRef = useRef<HTMLDivElement | null>(null);
   const [recentExpanded, setRecentExpanded] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -136,17 +128,11 @@ export function TriagePanel({
   const messages = triage.data?.messages ?? [];
   const pending = mergeApprovals(triage.data?.pending_approvals, ticketApprovals.data);
   const recent = triage.data?.recent_approvals ?? [];
-  const triageUnavailable = triage.isError && pending.length === 0;
 
   useEffect(() => {
     setRecentExpanded(false);
     setAutoScroll(true);
   }, [ticket?.id]);
-
-  useEffect(() => {
-    if (!autoScroll) return;
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [autoScroll, messages.length, isSending]);
 
   if (!ticket) {
     return <div style={{ padding: 40, color: "var(--txl)", textAlign: "center" }}>Select a ticket to triage</div>;
@@ -222,57 +208,16 @@ export function TriagePanel({
           </section>
         )}
 
-        <section>
-          <div className="state-label" style={{ marginBottom: 10 }}>
-            Triage chat
-          </div>
-          <div
-            style={{
-              border: "1px solid var(--bd)",
-              borderRadius: 12,
-              background: "var(--bg2)",
-              padding: 12,
-              minHeight: 220,
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-            }}
-          >
-            {triageUnavailable ? (
-              <div style={{ fontSize: 12, color: "var(--txm)" }}>
-                Could not load triage data. Restart <code>./scripts/dev-server.sh</code> and refresh.
-              </div>
-            ) : messages.length === 0 && !isSending ? (
-              <div style={{ fontSize: 12, color: "var(--txm)", lineHeight: 1.55 }}>
-                Ask about requirements, failures, or next steps. The triage assistant sees this ticket&apos;s
-                description, workflow state, blocking issues, recent runs, and this conversation.
-              </div>
-            ) : (
-              messages.map((msg: TriageMessage) => (
-                <div
-                  key={msg.id}
-                  style={{
-                    alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
-                    maxWidth: "92%",
-                    padding: "10px 12px",
-                    borderRadius: 10,
-                    background: msg.role === "user" ? "rgba(96,165,250,.12)" : "var(--bg3)",
-                    border: `1px solid ${msg.role === "user" ? "rgba(96,165,250,.25)" : "var(--bd)"}`,
-                  }}
-                >
-                  <div style={{ fontSize: 10, color: "var(--txl)", marginBottom: 4 }}>
-                    {msg.role === "user" ? "You" : "Triage assistant"} · {formatTime(msg.created_at)}
-                  </div>
-                  <div style={{ fontSize: 12.5, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{msg.content}</div>
-                </div>
-              ))
-            )}
-            {isSending && (
-              <div style={{ fontSize: 12, color: "var(--bll)" }}>Triage assistant is thinking…</div>
-            )}
-            <div ref={bottomRef} />
-          </div>
-        </section>
+        <ChatWindow
+          title="Triage chat"
+          messages={messages}
+          assistantLabel="Triage assistant"
+          emptyMessage="Ask about requirements, failures, or next steps. The triage assistant sees this ticket's description, workflow state, blocking issues, recent runs, and this conversation."
+          isThinking={isSending}
+          thinkingMessage="Triage assistant is thinking…"
+          autoScroll={autoScroll}
+          flex
+        />
       </div>
 
       <PendingApprovalsSection

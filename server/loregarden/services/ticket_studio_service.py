@@ -37,7 +37,7 @@ from loregarden.services.hierarchy_service import validate_parent_child
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.workspace_paths import resolve_workspace_root
 
-TICKET_STUDIO_AGENT_ID = "planner"
+TICKET_STUDIO_AGENT_ID = "ticket_scoper"
 MAX_STUDIO_HISTORY_MESSAGES = 16
 MAX_STUDIO_MESSAGE_CHARS = 3000
 MAX_STUDIO_BRIEF_CHARS = 8000
@@ -164,6 +164,69 @@ def parse_scope_payload(text: str) -> tuple[str, list[str], list[TicketStudioDra
     return summary, questions, items
 
 
+def _load_clarifying_answers(session_row: TicketStudioSession) -> list[str]:
+    data = json.loads(session_row.clarifying_answers_json or "[]")
+    return [str(item) for item in data]
+
+
+def clarifying_questions_resolved(questions: list[str], answers: list[str]) -> bool:
+    if not questions:
+        return True
+    if len(answers) < len(questions):
+        return False
+    return all(str(answers[index] or "").strip() for index in range(len(questions)))
+
+
+def format_studio_reply_for_display(content: str) -> str:
+    payload = extract_json_block(content)
+    prose = re.sub(r"```(?:json)?\s*\{.*?\}\s*```", "", content, flags=re.DOTALL).strip()
+    if not payload:
+        return prose or content.strip()
+
+    parts: list[str] = []
+    if prose:
+        parts.append(prose)
+
+    summary = str(payload.get("summary") or "").strip()
+    if summary and summary not in prose:
+        parts.append(summary)
+
+    questions = [str(item).strip() for item in (payload.get("clarifying_questions") or []) if str(item).strip()]
+    if questions:
+        parts.append("**Questions**\n" + "\n".join(f"- {question}" for question in questions))
+
+    tickets = payload.get("tickets") or []
+    if tickets:
+        parts.append(f"**Proposed {len(tickets)} draft ticket(s)** — see the draft panel.")
+
+    if parts:
+        return "\n\n".join(parts)
+    return "Updated scope."
+
+
+def _clarifications_block(questions: list[str], answers: list[str]) -> list[str]:
+    if not questions:
+        return []
+    lines = ["## Operator clarifications"]
+    for index, question in enumerate(questions):
+        answer = answers[index].strip() if index < len(answers) else ""
+        lines.append(f"Q: {question}")
+        lines.append(f"A: {answer or '—'}")
+    return lines
+
+
+def _message_view(msg: TicketStudioMessage) -> dict:
+    return {
+        "id": msg.id,
+        "role": msg.role,
+        "content": msg.content,
+        "display_content": format_studio_reply_for_display(msg.content)
+        if msg.role == "assistant"
+        else msg.content,
+        "created_at": msg.created_at.isoformat(),
+    }
+
+
 def _load_draft(session_row: TicketStudioSession) -> list[TicketStudioDraftItem]:
     data = json.loads(session_row.draft_json or "[]")
     return [TicketStudioDraftItem.model_validate(item) for item in data]
@@ -183,6 +246,8 @@ def _session_view(
             parent_title = parent.title
     if messages is None:
         messages = list_studio_messages(session, session_row.id)
+    questions = json.loads(session_row.clarifying_questions_json or "[]")
+    answers = _load_clarifying_answers(session_row)
     return TicketStudioSessionView(
         id=session_row.id,
         workspace_slug=workspace.slug if workspace else "",
@@ -192,17 +257,11 @@ def _session_view(
         parent_ticket_title=parent_title,
         status=session_row.status,
         summary=session_row.summary,
-        clarifying_questions=json.loads(session_row.clarifying_questions_json or "[]"),
+        clarifying_questions=questions,
+        clarifying_answers=answers,
+        clarifying_resolved=clarifying_questions_resolved(questions, answers),
         draft=_load_draft(session_row),
-        messages=[
-            {
-                "id": msg.id,
-                "role": msg.role,
-                "content": msg.content,
-                "created_at": msg.created_at.isoformat(),
-            }
-            for msg in messages
-        ],
+        messages=[_message_view(msg) for msg in messages],
         runtime=get_studio_runtime(session_row).model_dump(),
         created_at=session_row.created_at,
         updated_at=session_row.updated_at,
@@ -252,10 +311,14 @@ def build_studio_prompt(
             + (f" (parent: {item.parent_ref})" if item.parent_ref else "")
         )
 
+    questions = json.loads(session_row.clarifying_questions_json or "[]")
+    answers = _load_clarifying_answers(session_row)
+
     sections = [
         "# Loregarden Ticket Studio",
-        "You are the Ticket Studio scoping assistant (Planner Agent mode).",
+        "You are the Ticket Studio scoping assistant.",
         "Help the operator break a feature or initiative into a hierarchy of Loregarden work items.",
+        "Respond in concise prose. When emitting structured scope, use a single fenced JSON block only — no markdown tables.",
         "",
         "Valid hierarchy:",
         "- milestone → feature | bug",
@@ -273,6 +336,10 @@ def build_studio_prompt(
     if current_draft:
         sections.extend(["## Current draft tickets", *draft_lines, ""])
 
+    clarification_lines = _clarifications_block(questions, answers)
+    if clarification_lines:
+        sections.extend([*clarification_lines, ""])
+
     if history:
         sections.append("## Conversation")
         for msg in history[-MAX_STUDIO_HISTORY_MESSAGES:]:
@@ -285,31 +352,40 @@ def build_studio_prompt(
 
     sections.extend(["## Latest operator message", latest_user_message, ""])
 
-    if mode == "scope":
+    if mode == "clarify":
         sections.extend(
             [
                 "## Task",
-                "Produce a complete scoped ticket breakdown for the feature brief.",
-                "Output a single JSON object in a fenced code block using this shape:",
+                "Review the feature brief and identify ambiguities before ticket generation.",
+                "Output JSON with `summary`, `clarifying_questions`, and `tickets: []`.",
+                "Do not propose tickets yet.",
+                "If the brief is already clear, return an empty `clarifying_questions` array.",
+                SCOPE_JSON_SCHEMA,
+            ]
+        )
+    elif mode == "scope":
+        sections.extend(
+            [
+                "## Task",
+                "Produce the full ticket breakdown using operator clarifications when provided.",
+                "Output JSON with `summary`, `clarifying_questions: []`, and populated `tickets`.",
+                "Do not ask new clarifying questions — use reasonable defaults for anything still ambiguous.",
                 SCOPE_JSON_SCHEMA,
                 "",
                 "Rules:",
                 "- Use unique `ref` values and `parent_ref` pointers (null for roots).",
-                "- Prefer feature → capabilities → tasks unless the brief is already under a feature/capability parent.",
+                "- Prefer feature → capabilities → tasks unless scoped under an existing parent.",
                 "- Each ticket needs testable acceptance_criteria.",
                 "- Keep tasks small enough for one agent run.",
-                "- Include clarifying_questions when requirements are ambiguous.",
-                "- Do not write code — only scope tickets.",
             ]
         )
     else:
         sections.extend(
             [
                 "## Task",
-                "Reply conversationally to refine the scope.",
-                "When the operator asks to generate or update tickets, include the JSON scope block described below.",
-                "JSON shape when scoping:",
-                SCOPE_JSON_SCHEMA,
+                "Reply conversationally in 2–6 sentences to refine the scope.",
+                "If the operator asks to generate tickets, remind them to answer clarifying questions first,",
+                "then use Generate tickets. Only include JSON when explicitly asked to draft tickets.",
             ]
         )
 
@@ -358,7 +434,7 @@ def invoke_ticket_studio_model(
             adapter=agent.get("adapter", "claude"),
             prompt=prompt,
             prompt_file=prompt_file,
-            skill_name="plan",
+            skill_name="",
             workspace_root=repo_root,
             workspace=effective_workspace,
         )
@@ -390,17 +466,28 @@ def invoke_ticket_studio_model(
         return reply[:12000]
 
 
-def _apply_scope_to_session(session_row: TicketStudioSession, reply: str) -> bool:
+def _apply_scope_to_session(
+    session_row: TicketStudioSession,
+    reply: str,
+    *,
+    apply_tickets: bool = True,
+) -> bool:
     summary, questions, items = parse_scope_payload(reply)
-    if not items and not summary:
+    if not items and not summary and not questions:
         return False
     if summary:
         session_row.summary = summary
     if questions:
         session_row.clarifying_questions_json = json.dumps(questions)
-    if items:
+        existing = _load_clarifying_answers(session_row)
+        session_row.clarifying_answers_json = json.dumps(
+            [existing[index] if index < len(existing) else "" for index in range(len(questions))]
+        )
+    if items and apply_tickets:
         session_row.draft_json = json.dumps([item.model_dump(mode="json") for item in items])
-    return bool(items or summary)
+        session_row.clarifying_questions_json = "[]"
+        session_row.clarifying_answers_json = "[]"
+    return bool(items or summary or questions)
 
 
 def _validate_draft_hierarchy(
@@ -605,7 +692,7 @@ class TicketStudioService:
 
         assistant_message = TicketStudioMessage(session_id=row.id, role="assistant", content=reply)
         self.session.add(assistant_message)
-        _apply_scope_to_session(row, reply)
+        _apply_scope_to_session(row, reply, apply_tickets=False)
         row.updated_at = datetime.now(timezone.utc)
         self.session.add(row)
         self.session.commit()
@@ -614,6 +701,56 @@ class TicketStudioService:
         self.session.refresh(row)
         return _session_view(self.session, row, messages=messages)
 
+    def request_clarifications(self, session_id: str) -> TicketStudioSessionView:
+        row = self.session.get(TicketStudioSession, session_id)
+        if not row:
+            raise ValueError("Ticket studio session not found")
+        if row.status != TicketStudioSessionStatus.DRAFT:
+            raise ValueError("Cannot clarify a committed session")
+
+        prompt = "Review this feature brief and return clarifying questions only (no tickets yet)."
+        user_message = TicketStudioMessage(session_id=row.id, role="user", content=prompt)
+        self.session.add(user_message)
+        row.updated_at = datetime.now(timezone.utc)
+        self.session.add(row)
+        self.session.commit()
+
+        try:
+            reply = invoke_ticket_studio_model(self.session, row, prompt, mode="clarify")
+        except Exception as exc:
+            reply = f"Ticket studio assistant unavailable: {exc}"
+
+        assistant_message = TicketStudioMessage(session_id=row.id, role="assistant", content=reply)
+        self.session.add(assistant_message)
+        _apply_scope_to_session(row, reply, apply_tickets=False)
+        row.updated_at = datetime.now(timezone.utc)
+        self.session.add(row)
+        self.session.commit()
+        self.session.refresh(row)
+        return _session_view(self.session, row)
+
+    def save_clarifications(self, session_id: str, answers: list[str]) -> TicketStudioSessionView:
+        row = self.session.get(TicketStudioSession, session_id)
+        if not row:
+            raise ValueError("Ticket studio session not found")
+        if row.status != TicketStudioSessionStatus.DRAFT:
+            raise ValueError("Only draft sessions can be edited")
+
+        questions = json.loads(row.clarifying_questions_json or "[]")
+        if not questions:
+            raise ValueError("No clarifying questions to answer")
+
+        normalized = [str(answers[index] if index < len(answers) else "").strip() for index in range(len(questions))]
+        if not clarifying_questions_resolved(questions, normalized):
+            raise ValueError("Answer every clarifying question before generating tickets")
+
+        row.clarifying_answers_json = json.dumps(normalized)
+        row.updated_at = datetime.now(timezone.utc)
+        self.session.add(row)
+        self.session.commit()
+        self.session.refresh(row)
+        return _session_view(self.session, row)
+
     def generate_scope(self, session_id: str) -> TicketStudioSessionView:
         row = self.session.get(TicketStudioSession, session_id)
         if not row:
@@ -621,7 +758,12 @@ class TicketStudioService:
         if row.status != TicketStudioSessionStatus.DRAFT:
             raise ValueError("Cannot scope a committed session")
 
-        prompt = "Generate the full ticket breakdown for this feature. Output the JSON scope block."
+        questions = json.loads(row.clarifying_questions_json or "[]")
+        answers = _load_clarifying_answers(session_row=row)
+        if questions and not clarifying_questions_resolved(questions, answers):
+            raise ValueError("Answer all clarifying questions before generating tickets")
+
+        prompt = "Generate the full ticket breakdown for this feature. Output tickets in the JSON scope block."
         user_message = TicketStudioMessage(session_id=row.id, role="user", content=prompt)
         self.session.add(user_message)
         row.updated_at = datetime.now(timezone.utc)
@@ -635,7 +777,7 @@ class TicketStudioService:
 
         assistant_message = TicketStudioMessage(session_id=row.id, role="assistant", content=reply)
         self.session.add(assistant_message)
-        if not _apply_scope_to_session(row, reply):
+        if not _apply_scope_to_session(row, reply, apply_tickets=True):
             row.summary = row.summary or "Scope generation did not return structured tickets — refine the brief or chat further."
         row.updated_at = datetime.now(timezone.utc)
         self.session.add(row)

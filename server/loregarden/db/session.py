@@ -109,6 +109,17 @@ def init_db() -> None:
                 )
             )
 
+        studio_cols = conn.execute(text("PRAGMA table_info(ticket_studio_sessions)")).fetchall()
+        if studio_cols:
+            studio_col_names = {row[1] for row in studio_cols}
+            if "clarifying_answers_json" not in studio_col_names:
+                conn.execute(
+                    text(
+                        "ALTER TABLE ticket_studio_sessions "
+                        "ADD COLUMN clarifying_answers_json TEXT NOT NULL DEFAULT '[]'"
+                    )
+                )
+
 
 def get_session() -> Generator[Session, None, None]:
     with Session(engine) as session:

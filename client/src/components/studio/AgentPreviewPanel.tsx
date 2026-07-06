@@ -1,6 +1,5 @@
-import ReactMarkdown from "react-markdown";
-
 import type { StudioAgentPreview } from "../../api/client";
+import { MarkdownContent } from "../chat/MarkdownContent";
 
 export function AgentPreviewPanel({
   preview,
@@ -49,11 +48,7 @@ export function AgentPreviewPanel({
       </div>
       <div style={{ flex: 1, overflow: "auto", padding: 14 }}>
         {loading && <p className="modal-hint">Updating preview…</p>}
-        {!loading && preview?.markdown && (
-          <div className="markdown-preview">
-            <ReactMarkdown>{preview.markdown}</ReactMarkdown>
-          </div>
-        )}
+        {!loading && preview?.markdown && <MarkdownContent content={preview.markdown} />}
         {!loading && !preview?.markdown && (
           <p className="modal-hint">Select or edit an agent to see the assembled prompt.</p>
         )}

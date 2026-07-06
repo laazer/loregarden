@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { api, type RuntimeOptions, type WorkspaceRuntimeSettings } from "../api/client";
+import { ChatComposer } from "./chat/ChatComposer";
 import { TriageModelModal } from "./TriageModelModal";
 import { runtimeSummaryLabel } from "./WorkspaceRuntimeFields";
 
@@ -99,90 +100,50 @@ export function TriageComposer({
   };
 
   const modelLabel = runtimeSummaryLabel(savedRuntime, runtimeOptions);
+  const composerError =
+    (sendMessage.isError ? (sendMessage.error as Error)?.message || "Failed to send message" : null) ??
+    (saveRuntime.isError
+      ? (saveRuntime.error as Error)?.message || "Failed to save triage model settings"
+      : null);
+
+  const optionsRow =
+    showAttachLogsToggle || showAutoScrollToggle ? (
+      <>
+        {showAttachLogsToggle && (
+          <label className="chat-composer-option">
+            <input
+              type="checkbox"
+              checked={attachLogs}
+              onChange={(e) => setAttachLogs(e.target.checked)}
+            />
+            Include recent log output with your question
+          </label>
+        )}
+        {showAutoScrollToggle && onAutoScrollChange && (
+          <label className="chat-composer-option">
+            <input
+              type="checkbox"
+              checked={autoScroll}
+              onChange={(e) => onAutoScrollChange(e.target.checked)}
+            />
+            Auto-scroll
+          </label>
+        )}
+      </>
+    ) : undefined;
 
   return (
     <>
-      <div
-        style={{
-          borderTop: "1px solid var(--bd)",
-          padding: 12,
-          background: "var(--bg1)",
-        }}
-      >
-        {(showAttachLogsToggle || showAutoScrollToggle) && (
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 12,
-              marginBottom: 8,
-            }}
-          >
-            {showAttachLogsToggle && (
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontSize: 11.5,
-                  color: "var(--txm)",
-                  cursor: "pointer",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={attachLogs}
-                  onChange={(e) => setAttachLogs(e.target.checked)}
-                />
-                Include recent log output with your question
-              </label>
-            )}
-            {showAutoScrollToggle && onAutoScrollChange && (
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontSize: 11.5,
-                  color: "var(--txm)",
-                  cursor: "pointer",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={autoScroll}
-                  onChange={(e) => onAutoScrollChange(e.target.checked)}
-                />
-                Auto-scroll
-              </label>
-            )}
-          </div>
-        )}
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          rows={3}
-          placeholder={placeholder}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              submitChat();
-            }
-          }}
-          style={{
-            width: "100%",
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: "1px solid var(--bd)",
-            background: "var(--bg2)",
-            color: "var(--tx)",
-            fontSize: 12.5,
-            resize: "vertical",
-            marginBottom: 8,
-            boxSizing: "border-box",
-          }}
-        />
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
+      <ChatComposer
+        value={draft}
+        onChange={setDraft}
+        onSubmit={submitChat}
+        placeholder={placeholder}
+        isSending={sendMessage.isPending}
+        sendLabel="Ask triage"
+        optionsRow={optionsRow}
+        error={composerError}
+        actions={
           <button
             type="button"
             className="btn-secondary"
@@ -192,26 +153,8 @@ export function TriageComposer({
           >
             Model · {modelLabel}
           </button>
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={!draft.trim() || sendMessage.isPending}
-            onClick={submitChat}
-          >
-            {sendMessage.isPending ? "Sending…" : "Ask triage"}
-          </button>
-        </div>
-        {sendMessage.isError && (
-          <div style={{ fontSize: 11.5, color: "var(--rdl)", marginTop: 8, textAlign: "right" }}>
-            {(sendMessage.error as Error)?.message || "Failed to send message"}
-          </div>
-        )}
-        {saveRuntime.isError && (
-          <div style={{ fontSize: 11.5, color: "var(--rdl)", marginTop: 8, textAlign: "right" }}>
-            {(saveRuntime.error as Error)?.message || "Failed to save triage model settings"}
-          </div>
-        )}
-      </div>
+        }
+      />
 
       <TriageModelModal
         open={modelModalOpen}
