@@ -440,6 +440,73 @@ class QueueSnapshot(SQLModel, table=True):
     created_by: str = ""  # User who created the snapshot
 
 
+class QueueOperationType(str, Enum):
+    """Types of queue operations that can be reviewed."""
+    BULK_CANCEL = "bulk_cancel"
+    BULK_PAUSE = "bulk_pause"
+    BULK_REORDER = "bulk_reorder"
+    RETRY = "retry"
+    RETRY_ALL = "retry_all"
+    SKIP_FAILED = "skip_failed"
+    RESTORE = "restore"
+
+
+class QueueOperation(SQLModel, table=True):
+    """Tracks queue operations for diff review and approval."""
+    __tablename__ = "queue_operations"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    operation_type: QueueOperationType = Field(
+        default=QueueOperationType.BULK_CANCEL,
+        sa_column=_str_enum_column(QueueOperationType, QueueOperationType.BULK_CANCEL),
+    )
+    description: str = ""  # Human description of the operation
+    before_state_json: str  # Queue state before operation
+    after_state_json: str  # Queue state after operation
+    diff_json: str = ""  # Calculated diff
+    affected_run_ids: str = ""  # Comma-separated run IDs affected
+    created_at: datetime = Field(default_factory=utcnow)
+    created_by: str = ""  # User who initiated operation
+    approved: bool = Field(default=False, index=True)
+    approved_at: Optional[datetime] = None
+    approved_by: str = ""
+    executed: bool = Field(default=False, index=True)
+    executed_at: Optional[datetime] = None
+
+
+class QueueOperationComment(SQLModel, table=True):
+    """Comments on queue operations (GitHub-style inline review)."""
+    __tablename__ = "queue_operation_comments"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    operation_id: str = Field(foreign_key="queue_operations.id", index=True)
+    line_number: Optional[int] = None  # Line in diff for inline comments
+    run_id: Optional[str] = None  # Which run comment is about
+    content: str  # Comment text
+    resolved: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=utcnow)
+    created_by: str = ""
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class RunOutputReview(SQLModel, table=True):
+    """Line-by-line review of run output (stdout/stderr)."""
+    __tablename__ = "run_output_reviews"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    run_id: str = Field(foreign_key="agent_runs.id", index=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    output_type: str = Field(index=True)  # "stdout", "stderr"
+    output_content: str  # Full output content
+    comments_json: str = ""  # JSON array of line-specific comments
+    approved: bool = Field(default=False)
+    approved_by: str = ""
+    approved_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 class AgentSlot(SQLModel, table=True):
     """Track available execution slots for parallel agents."""
     __tablename__ = "agent_slots"
