@@ -39,10 +39,19 @@ def client_fixture(tmp_path, monkeypatch):
         poolclass=StaticPool,
     )
     SQLModel.metadata.create_all(engine)
-    monkeypatch.setattr("loregarden.db.session.engine", engine)
-    monkeypatch.setattr("loregarden.services.run_service.engine", engine)
-    monkeypatch.setattr("loregarden.services.run_log_stream.engine", engine)
-    monkeypatch.setattr("loregarden.services.builtin_orchestrator.engine", engine)
+    # Redirect every module that bound the module-global engine via
+    # `from loregarden.db.session import engine` to this test engine. Missing any
+    # of these lets a service hit the real (unschema'd) database in a fresh
+    # checkout, surfacing as spurious "no such table" errors.
+    for target in (
+        "loregarden.db.session.engine",
+        "loregarden.main.engine",
+        "loregarden.services.run_service.engine",
+        "loregarden.services.run_log_stream.engine",
+        "loregarden.services.builtin_orchestrator.engine",
+        "loregarden.agents.executors.permission_bridge.engine",
+    ):
+        monkeypatch.setattr(target, engine)
 
     def override_session():
         with Session(engine) as session:
