@@ -392,6 +392,47 @@ class ConflictReport(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class QueuePosition(str, Enum):
+    """Status of queued run."""
+    QUEUED = "queued"
+    SCHEDULED = "scheduled"
+    PROMOTED = "promoted"
+    STARTED = "started"
+
+
+class QueuedRun(SQLModel, table=True):
+    """Tracks runs waiting in execution queue."""
+    __tablename__ = "queued_runs"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    run_id: str = Field(foreign_key="agent_runs.id", index=True, unique=True)
+    position: int = Field(ge=1)  # Position in queue (1 = first)
+    status: QueuePosition = Field(
+        default=QueuePosition.QUEUED,
+        sa_column=_str_enum_column(QueuePosition, QueuePosition.QUEUED),
+    )
+    estimated_start_at: Optional[datetime] = None
+    promoted_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class AgentSlot(SQLModel, table=True):
+    """Track available execution slots for parallel agents."""
+    __tablename__ = "agent_slots"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    slot_number: int = Field(ge=1)  # Slot 1, 2, 3, etc
+    is_available: bool = Field(default=True, index=True)
+    current_run_id: Optional[str] = Field(default=None, foreign_key="agent_runs.id")
+    assigned_at: Optional[datetime] = None
+    released_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class TriageMessage(SQLModel, table=True):
     __tablename__ = "triage_messages"
 
