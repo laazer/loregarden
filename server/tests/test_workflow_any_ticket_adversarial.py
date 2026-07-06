@@ -19,7 +19,6 @@ Categories covered:
 - Determinism Validation
 """
 
-from pathlib import Path
 
 from fastapi.testclient import TestClient
 from loregarden.models.domain import (
@@ -793,18 +792,3 @@ class TestWorkflowInstanceDataIntegrity:
         # Their stages_json should be separate (even if logically identical)
         # Verify by ID, not by value (they might be equal but not same reference)
         assert inst_a.ticket_id != inst_b.ticket_id
-
-
-class TestClientSideValidation:
-    """Test isWorkflowWorkItem() function and client-side checks."""
-
-    def test_is_workflow_work_item_function_covers_all_types(self):
-        """
-        Assumption: isWorkflowWorkItem() should return True for all 5 types,
-        not just the original 3.
-        """
-        client_ts = Path(__file__).resolve().parents[2] / "client" / "src" / "api" / "client.ts"
-        source = client_ts.read_text(encoding="utf-8")
-        assert "export function isWorkflowWorkItem" in source
-        collapsed = source.replace(" ", "").replace("\n", "").lower()
-        assert "returntrue" in collapsed

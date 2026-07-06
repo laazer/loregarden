@@ -1,0 +1,469 @@
+"""API request/response DTOs (non-table SQLModel schemas)."""
+
+from datetime import datetime
+from typing import Any
+
+from loregarden.models.domain.enums import (
+    EventType,
+    OrchestrationDriver,
+    OrchestrationRunStatus,
+    StageStatus,
+    TicketState,
+    WorkItemType,
+)
+from sqlmodel import Field, SQLModel
+
+# --- API DTOs ---
+
+
+class ClassifyRoute(SQLModel):
+    languages: list[str] = Field(default_factory=list)
+    specialties: list[str] = Field(default_factory=list)
+    agent_id: str
+    skill_name: str = ""
+    default: bool = False
+
+
+class ParallelAgentSpec(SQLModel):
+    agent_id: str
+    skill_name: str = ""
+
+
+class WorkflowStageDef(SQLModel):
+    key: str
+    name: str
+    agent_id: str = ""
+    skill_name: str = ""
+    optional: bool = False
+    order: int = 0
+    stage_type: str = "agent"  # agent | classify | gate | parallel
+    classify_routes: list[ClassifyRoute] = Field(default_factory=list)
+    parallel_agents: list[ParallelAgentSpec] = Field(default_factory=list)
+    gate_commands: list[str] = Field(default_factory=list)
+    gate_required: bool = False
+
+
+class WorkflowStageView(SQLModel):
+    key: str
+    name: str
+    status: StageStatus
+    order: int = 0
+    agent_id: str = ""
+    skill_name: str = ""
+    optional: bool = False
+    note: str = ""
+    stage_type: str = "agent"
+    agents: list[ParallelAgentSpec] = Field(default_factory=list)
+
+
+class TicketSummary(SQLModel):
+    id: str
+    external_id: str
+    title: str
+    state: TicketState
+    priority: int
+    workspace_slug: str
+    workflow_stage_key: str
+    workflow_stage_status: StageStatus
+    workflow_stage_name: str = ""
+    run_code: str = ""
+    work_item_type: WorkItemType = WorkItemType.TASK
+    parent_ticket_id: str | None = None
+    milestone: str = ""
+    branch: str = ""
+    child_count: int = 0
+    next_agent: str = ""
+    stages: list[WorkflowStageView] = []
+
+
+class TicketTreeNode(SQLModel):
+    id: str
+    external_id: str
+    title: str
+    state: TicketState
+    priority: int
+    work_item_type: WorkItemType
+    workspace_slug: str = ""
+    workflow_stage_name: str = ""
+    workflow_stage_status: StageStatus = StageStatus.PENDING
+    child_count: int = 0
+    children: list["TicketTreeNode"] = []
+
+
+class TicketDetail(TicketSummary):
+    description: str
+    acceptance_criteria: list[str]
+    revision: int
+    last_updated_by: str
+    next_status: str
+    blocking_issues: str
+    state_locked: bool = False
+    workflow_template_slug: str = ""
+    workflow_template_name: str = ""
+    artifacts: dict[str, Any]
+
+
+class WorkspaceSummary(SQLModel):
+    id: str
+    slug: str
+    name: str
+    ticket_count: int
+    blocked_count: int
+    workflow_template_slug: str = ""
+
+
+class WorkspaceCreate(SQLModel):
+    slug: str
+    name: str
+    workflow_template_slug: str = "loregarden-tdd"
+    repo_path: str = "."
+    orchestration_profile_slug: str = ""
+
+
+class WorkspaceTemplateUpdate(SQLModel):
+    workflow_template_slug: str
+
+
+class WorkspaceRuntimeUpdate(SQLModel):
+    cli_adapter: str = "default"
+    claude_model: str = ""
+    cursor_model: str = ""
+    lmstudio_base_url: str = ""
+    lmstudio_model: str = ""
+
+
+class WorkspaceRuntimeSettings(SQLModel):
+    cli_adapter: str = "default"
+    claude_model: str = ""
+    cursor_model: str = ""
+    lmstudio_base_url: str = ""
+    lmstudio_model: str = ""
+
+
+class ApprovalView(SQLModel):
+    id: str
+    title: str
+    level: str
+    workspace_slug: str
+    stage_key: str
+    stage_name: str
+    impact: str
+    ticket_id: str
+    ticket_external_id: str
+    kind: str = "workflow_gate"
+    run_id: str = ""
+    tool_name: str = ""
+    tool_input_json: str = "{}"
+    cli_adapter: str = ""
+
+
+class EventView(SQLModel):
+    id: str
+    type: EventType
+    ticket_id: str | None
+    workspace_id: str | None
+    payload: dict[str, Any]
+    created_at: datetime
+
+
+class StartRunRequest(SQLModel):
+    stage_key: str | None = None
+    manual: bool = False
+
+
+class StartOrchestrationRequest(SQLModel):
+    driver: OrchestrationDriver | None = None
+    max_stages: int | None = None
+    stop_at_stage_key: str | None = None
+    auto_approve: bool = False
+
+
+class CompleteStageRequest(SQLModel):
+    stage_key: str
+    next_agent: str = ""
+    blocking_issues: str = ""
+
+
+class StartStageRequest(SQLModel):
+    stage_key: str
+    agent_id: str = ""
+
+
+class BlockTicketRequest(SQLModel):
+    stage_key: str = ""
+    message: str
+
+
+class SkipStageRequest(SQLModel):
+    stage_key: str
+    reason: str = ""
+
+
+class AttachArtifactRequest(SQLModel):
+    kind: str = "log"
+    title: str = ""
+    content: dict[str, Any] = {}
+
+
+class RequestApprovalRequest(SQLModel):
+    stage_key: str
+    title: str = ""
+    impact: str = ""
+    level: str = "medium"
+
+
+class CompleteOrchestrationRequest(SQLModel):
+    status: OrchestrationRunStatus = OrchestrationRunStatus.SUCCEEDED
+    message: str = ""
+
+
+class OrchestrationRunView(SQLModel):
+    id: str
+    run_code: str
+    ticket_id: str
+    driver: OrchestrationDriver
+    profile_slug: str
+    status: OrchestrationRunStatus
+    current_stage_key: str
+    error_message: str
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class OrchestrationProfileView(SQLModel):
+    slug: str
+    name: str
+    driver: OrchestrationDriver
+    workflow_template: str
+    orchestrator_skill: str = ""
+    gates_enabled: bool = False
+    max_stages_per_run: int = 0
+
+
+class AdvanceStageRequest(SQLModel):
+    # backend decides transition; optional hint only for logging
+    reason: str = ""
+
+
+class UpdateTicketRequest(SQLModel):
+    title: str | None = None
+    description: str | None = None
+    state: TicketState | None = None
+    branch: str | None = None
+    workflow_stage_key: str | None = None
+    workflow_stage_status: StageStatus | None = None
+    workflow_template_slug: str | None = None
+    stage_key: str | None = None
+    stage_status: StageStatus | None = None
+    stage_updates: dict[str, StageStatus] | None = None
+    auto_state: bool | None = None
+
+
+class TicketCreate(SQLModel):
+    workspace_slug: str
+    title: str
+    work_item_type: WorkItemType = WorkItemType.TASK
+    parent_ticket_id: str | None = None
+    description: str = ""
+    acceptance_criteria: list[str] = []
+    priority: int = 3
+    milestone: str = ""
+    external_id: str = ""
+
+
+class TicketImportFile(SQLModel):
+    name: str
+    content: str
+
+
+class TicketImportItem(SQLModel):
+    title: str
+    work_item_type: WorkItemType = WorkItemType.TASK
+    description: str = ""
+    acceptance_criteria: list[str] = []
+    priority: int = 3
+    milestone: str = ""
+    external_id: str = ""
+    parent_external_id: str = ""
+    parent_ticket_id: str | None = None
+    source_format: str = ""
+    source_label: str = ""
+    preview_markdown: str = ""
+
+
+class TicketImportPreviewRequest(SQLModel):
+    workspace_slug: str
+    files: list[TicketImportFile]
+
+
+class TicketImportPreviewPathsRequest(SQLModel):
+    workspace_slug: str
+    file_paths: list[str]
+
+
+class TicketImportPreviewResponse(SQLModel):
+    tickets: list[TicketImportItem]
+    errors: list[str]
+    warnings: list[str]
+    total: int
+    by_type: dict[str, int]
+    formats: list[str]
+    show_preview: bool
+
+
+class TicketImportRequest(SQLModel):
+    workspace_slug: str
+    tickets: list[TicketImportItem]
+
+
+class TicketImportResult(SQLModel):
+    created_count: int
+    ticket_ids: list[str]
+    errors: list[str]
+
+
+class ApprovalAction(SQLModel):
+    action: str  # approve | reject
+    answers: dict[str, str | list[str]] | None = None
+    response: str = ""
+    always_allow: bool = False
+    allow_for_ticket: bool = False
+    allow_for_stage: bool = False
+
+
+class TriageMessageCreate(SQLModel):
+    content: str
+
+
+class StudioGateCheck(SQLModel):
+    kind: str = "workflow_gate"  # workflow_gate | ac_review | human_approval
+    title: str = ""
+    impact: str = ""
+
+
+class StudioHandoffCheck(SQLModel):
+    kind: str = "mcp_complete"  # mcp_complete | blocking_clear | custom
+    prompt: str = ""
+
+
+class StudioAgentCreate(SQLModel):
+    slug: str
+    name: str
+    description: str = ""
+    role_body: str = ""
+    adapter: str = "claude"
+    timeout: int = 600
+    default_skill: str = ""
+    mcp_enabled: bool = True
+    mcp_tools: list[str] = Field(default_factory=list)
+    gate_checks: list[StudioGateCheck] = Field(default_factory=list)
+    handoff_checks: list[StudioHandoffCheck] = Field(default_factory=list)
+
+
+class StudioAgentUpdate(SQLModel):
+    name: str | None = None
+    description: str | None = None
+    role_body: str | None = None
+    adapter: str | None = None
+    timeout: int | None = None
+    default_skill: str | None = None
+    mcp_enabled: bool | None = None
+    mcp_tools: list[str] | None = None
+    gate_checks: list[StudioGateCheck] | None = None
+    handoff_checks: list[StudioHandoffCheck] | None = None
+
+
+class StudioAgentView(SQLModel):
+    id: str
+    slug: str
+    name: str
+    description: str
+    role_body: str
+    role_file: str = ""
+    adapter: str
+    timeout: int
+    default_skill: str
+    mcp_enabled: bool
+    mcp_tools: list[str]
+    gate_checks: list[StudioGateCheck]
+    handoff_checks: list[StudioHandoffCheck]
+    built_in: bool = False
+    read_only: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+class StudioMcpToolGuide(SQLModel):
+    name: str
+    description: str
+    when_to_use: str
+    example: str
+    orchestrator_only: bool = False
+    stage_agent: bool = True
+
+
+class StudioAgentPreview(SQLModel):
+    markdown: str
+    sections: list[str]
+
+
+class StudioAgentPreviewRequest(SQLModel):
+    slug: str = ""
+    name: str = "Preview Agent"
+    description: str = ""
+    role_body: str = ""
+    adapter: str = "claude"
+    timeout: int = 600
+    default_skill: str = ""
+    mcp_enabled: bool = True
+    mcp_tools: list[str] = Field(default_factory=list)
+    gate_checks: list[StudioGateCheck] = Field(default_factory=list)
+    handoff_checks: list[StudioHandoffCheck] = Field(default_factory=list)
+
+
+class StudioWorkflowStage(SQLModel):
+    key: str
+    name: str
+    stage_type: str = "agent"
+    agent_id: str = ""
+    skill_name: str = ""
+    optional: bool = False
+    order: int = 0
+    gate_required: bool = False
+    classify_routes: list[ClassifyRoute] = Field(default_factory=list)
+    parallel_agents: list[ParallelAgentSpec] = Field(default_factory=list)
+    gate_commands: list[str] = Field(default_factory=list)
+
+
+class StudioWorkflowCreate(SQLModel):
+    slug: str
+    name: str
+    description: str = ""
+    stages: list[StudioWorkflowStage] = Field(default_factory=list)
+    transitions: list[dict[str, str]] = Field(default_factory=list)
+
+
+class StudioWorkflowUpdate(SQLModel):
+    name: str | None = None
+    description: str | None = None
+    stages: list[StudioWorkflowStage] | None = None
+    transitions: list[dict[str, str]] | None = None
+
+
+class StudioWorkflowView(SQLModel):
+    id: str
+    slug: str
+    name: str
+    description: str
+    stages: list[StudioWorkflowStage]
+    transitions: list[dict[str, str]]
+    published_template_id: str | None = None
+    published_template_slug: str = ""
+    built_in: bool = False
+    source_path: str = ""
+    read_only: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+TicketTreeNode.model_rebuild()
