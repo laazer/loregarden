@@ -1,14 +1,11 @@
 import json
 
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, create_engine, select
-from sqlmodel.pool import StaticPool
-
 from loregarden.models.domain import (
+    AgentRun,
     Approval,
     ApprovalKind,
     ApprovalStatus,
-    AgentRun,
     RunStatus,
     StageStatus,
     Ticket,
@@ -18,8 +15,10 @@ from loregarden.models.domain import (
 )
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.seed import seed_database
-from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from loregarden.services.workflow_service import resolve_workspace_stages
+from loregarden.services.workflow_state import parse_stage_map, set_stage_status
+from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel.pool import StaticPool
 
 
 def _ticket_id_by_external_id(client: TestClient, external_id: str) -> str:
@@ -70,8 +69,7 @@ def test_start_run_syncs_all_layers(client: TestClient):
 def test_failed_run_blocks_ticket_and_stage(client: TestClient, monkeypatch):
     monkeypatch.setenv("LOREGARDEN_FORCE_AGENT_FAIL", "1")
     ticket_id = _ticket_id_by_external_id(client, "01-bootstrap-fastapi-control-plane")
-    detail_before = _ticket_detail(client, ticket_id)
-    stage_key = detail_before["workflow_stage_key"]
+    _ticket_detail(client, ticket_id)
     res = client.post(f"/api/tickets/{ticket_id}/start", json={"manual": True})
     assert res.status_code == 200
     body = _ticket_detail(client, ticket_id)
@@ -318,9 +316,7 @@ def test_reconcile_repairs_drifted_instance():
         ws = session.get(Workspace, ticket.workspace_id)
         ticket.workflow_stage_status = StageStatus.RUNNING
         ticket.state = TicketState.IN_PROGRESS
-        instance.stages_json = json.dumps(
-            [{"key": "implementation", "status": "pending"}]
-        )
+        instance.stages_json = json.dumps([{"key": "implementation", "status": "pending"}])
         session.add(ticket)
         session.add(instance)
         session.commit()
@@ -335,9 +331,7 @@ def test_reconcile_repairs_drifted_instance():
         assert ticket.workflow_stage_status == stage_map[ticket.workflow_stage_key]
         for stage in stages:
             view_status = stage_map[stage.key]
-            assert view_status.value in {
-                s["status"] for s in json.loads(instance.stages_json)
-            }
+            assert view_status.value in {s["status"] for s in json.loads(instance.stages_json)}
 
 
 def test_human_gate_stage_opens_approval_without_agent(client: TestClient, monkeypatch):
@@ -407,7 +401,17 @@ def test_done_stage_completes_ticket_without_agent(client: TestClient, monkeypat
         ).first()
         ws = session.get(Workspace, ticket.workspace_id)
         _, stages = resolve_workspace_stages(session, ws)
-        for key in ("planning", "context", "specification", "test_design", "test_break", "implementation", "testing", "review", "approval"):
+        for key in (
+            "planning",
+            "context",
+            "specification",
+            "test_design",
+            "test_break",
+            "implementation",
+            "testing",
+            "review",
+            "approval",
+        ):
             if key in {s.key for s in stages}:
                 set_stage_status(ticket, instance, stages, key, StageStatus.DONE)
         ticket.workflow_stage_key = "done"

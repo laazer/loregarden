@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session
-
 from loregarden.db.session import get_session
 from loregarden.models.domain import Ticket, TriageMessageCreate
 from loregarden.services.triage_service import send_triage_message, triage_snapshot
+from sqlmodel import Session
 
 router = APIRouter(prefix="/tickets", tags=["triage"])
 

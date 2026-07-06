@@ -5,9 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from sqlmodel import Session
-
 from loregarden.models.domain import Ticket, Workspace
+from sqlmodel import Session
 
 PermissionScope = Literal["workspace", "ticket", "stage"]
 
@@ -48,7 +47,9 @@ def load_ticket_allowlist(ticket: Ticket | None) -> list[dict[str, Any]]:
     return load_allowlist(ticket.permission_allowlist_json)
 
 
-def permission_rule_matches(rule: dict[str, Any], tool_name: str, tool_input: dict[str, Any]) -> bool:
+def permission_rule_matches(
+    rule: dict[str, Any], tool_name: str, tool_input: dict[str, Any]
+) -> bool:
     if not isinstance(rule, dict):
         return False
     if str(rule.get("tool_name") or "") != tool_name:

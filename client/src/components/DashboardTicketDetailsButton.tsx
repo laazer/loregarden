@@ -5,13 +5,11 @@ import * as apiClient from '../api/client';
 
 export interface DashboardTicketDetailsButtonProps {
   ticketId: string;
-  ticket?: apiClient.TicketSummary;
   className?: string;
 }
 
 export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButtonProps> = ({
   ticketId,
-  ticket,
   className = '',
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);

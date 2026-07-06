@@ -5,15 +5,14 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-import threading
-
-from sqlmodel import Session, select
 
 from loregarden.models.domain import AgentRun, Artifact, Ticket, Workspace
 from loregarden.services.workspace_paths import resolve_workspace_root
+from sqlmodel import Session, select
 
 MAX_DIFF_LINES = 400
 MAX_DIFF_LINE_CHARS = 500
@@ -412,7 +411,11 @@ def refresh_execution_artifacts(
         )
 
     test_stages = {"testing", "test_break", "test_design"}
-    if run.stage_key in test_stages or run.agent_id in {"static_qa", "test_breaker", "test_designer"}:
+    if run.stage_key in test_stages or run.agent_id in {
+        "static_qa",
+        "test_breaker",
+        "test_designer",
+    }:
         tests = _build_test_artifact(session, run)
         if tests:
             _upsert_artifact(
@@ -473,9 +476,7 @@ def ensure_test_artifact(
             return stored
 
     runs = session.exec(
-        select(AgentRun)
-        .where(AgentRun.ticket_id == ticket.id)
-        .order_by(AgentRun.created_at.desc())
+        select(AgentRun).where(AgentRun.ticket_id == ticket.id).order_by(AgentRun.created_at.desc())
     ).all()
     for run in runs:
         if run.stage_key not in {"testing", "test_break", "test_design"} and run.agent_id not in {

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TicketDetailsModal } from '../TicketDetailsModal';
 import * as apiClient from '../../api/client';
@@ -94,7 +94,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
         { description: '\t' },
       ];
 
-      testCases.forEach((testCase, index) => {
+      testCases.forEach((testCase) => {
         const ticket = createMockTicket(testCase);
         const { unmount } = renderWithQueryClient(
           <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
@@ -116,10 +116,10 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
       const ticket = createMockTicket({
         artifacts: {
           diff: null,
-          logs: null,
+          logs: undefined,
           tests: null,
           error: null,
-          context: null,
+          context: undefined,
           live: null,
         },
       });
@@ -231,6 +231,8 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
         skill_name: `skill_${i}`,
         optional: false,
         note: `Note ${i}`,
+        stage_type: '',
+        agents: [],
       }));
       const ticket = createMockTicket({ stages: largeStages });
       renderWithQueryClient(
@@ -322,7 +324,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
       const ticket = createMockTicket({
         artifacts: {
           diff: { file: 'test.tsx' } as any, // Missing sections
-          logs: null,
+          logs: undefined,
           tests: { passed: 5 } as any, // Missing other fields
           context: [],
           error: null,
@@ -434,7 +436,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
       const ticket = createMockTicket({
         artifacts: {
           diff: circularData,
-          logs: null,
+          logs: undefined,
           tests: null,
           context: [],
           error: null,
@@ -712,7 +714,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
           logs: [],
           tests: null,
           context: [],
-          error: { message: 'Test failed', stage_key: 'testing', agent_id: 'qa' },
+          error: { message: 'Test failed', run_code: 'fail', stage_key: 'testing', agent_id: 'qa', command: 'pytest' },
           live: null,
         },
       });
@@ -913,9 +915,9 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
     it('should not assume stages are properly ordered', () => {
       const ticket = createMockTicket({
         stages: [
-          { key: 'stage_5', name: 'Stage 5', status: 'pending', agent_id: 'a', skill_name: 's', optional: false, note: '' },
-          { key: 'stage_1', name: 'Stage 1', status: 'done', agent_id: 'a', skill_name: 's', optional: false, note: '' },
-          { key: 'stage_3', name: 'Stage 3', status: 'in_progress', agent_id: 'a', skill_name: 's', optional: false, note: '' },
+          { key: 'stage_5', name: 'Stage 5', status: 'pending', agent_id: 'a', skill_name: 's', optional: false, note: '', stage_type: '', agents: [] },
+          { key: 'stage_1', name: 'Stage 1', status: 'done', agent_id: 'a', skill_name: 's', optional: false, note: '', stage_type: '', agents: [] },
+          { key: 'stage_3', name: 'Stage 3', status: 'running', agent_id: 'a', skill_name: 's', optional: false, note: '', stage_type: '', agents: [] },
         ],
       });
 
@@ -939,7 +941,7 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
       const outputs = [];
 
       for (let i = 0; i < 3; i++) {
-        const { container, unmount } = renderWithQueryClient(
+        const { unmount } = renderWithQueryClient(
           <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
         );
 
@@ -1180,6 +1182,7 @@ function createMockTicket(overrides?: Partial<apiClient.TicketDetail>): apiClien
     work_item_type: 'feature',
     parent_ticket_id: null,
     milestone: '',
+    branch: '',
     child_count: 0,
     revision: 1,
     last_updated_by: 'test@example.com',
@@ -1187,6 +1190,8 @@ function createMockTicket(overrides?: Partial<apiClient.TicketDetail>): apiClien
     next_status: 'ready',
     blocking_issues: '',
     state_locked: false,
+    workflow_template_slug: '',
+    workflow_template_name: '',
     stages: [],
     artifacts: {
       diff: null,

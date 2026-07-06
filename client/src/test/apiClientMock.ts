@@ -1,9 +1,5 @@
 export const API_BASE = "http://127.0.0.1:8000";
 
-export function isWorkflowWorkItem(): boolean {
-  return true;
-}
-
 export const api = {
   workspaces: jest.fn().mockResolvedValue([]),
   ticketTree: jest.fn().mockResolvedValue([]),
@@ -14,8 +10,18 @@ export const api = {
   workspaceWorkflow: jest.fn().mockResolvedValue(null),
   approvals: jest.fn().mockResolvedValue([]),
   runs: jest.fn().mockResolvedValue([]),
-  triage: jest.fn().mockResolvedValue({ pending_approvals: [] }),
-  triage: jest.fn().mockResolvedValue(null),
+  triage: jest.fn().mockResolvedValue({
+    pending_approvals: [],
+    recent_approvals: [],
+    messages: [],
+    runtime: {
+      cli_adapter: "",
+      claude_model: "",
+      cursor_model: "",
+      lmstudio_base_url: "",
+      lmstudio_model: "",
+    },
+  }),
   runtimeOptions: jest.fn().mockResolvedValue([]),
   usage: jest.fn().mockResolvedValue({}),
   memoryConfig: jest.fn().mockResolvedValue({}),

@@ -98,11 +98,11 @@ def build_mcp_run_context(
         "**First call — load ticket state (use these exact values):**",
         f"- `{CLAUDE_MCP_TOOL_PREFIX}loregarden_get_ticket_by_external` with "
         f'`workspace_slug="{workspace.slug}"`, `external_id="{ticket.external_id}"`',
-        f"- or `{CLAUDE_MCP_TOOL_PREFIX}loregarden_get_ticket` with `ticket_id=\"{ticket.id}\"` "
-        f'(UUID) or `ticket_id=\"{ticket.external_id}\"` + `workspace_slug=\"{workspace.slug}\"` (slug)',
+        f'- or `{CLAUDE_MCP_TOOL_PREFIX}loregarden_get_ticket` with `ticket_id="{ticket.id}"` '
+        f'(UUID) or `ticket_id="{ticket.external_id}"` + `workspace_slug="{workspace.slug}"` (slug)',
         "",
         "**Discover related or other tickets:**",
-        f"- `{CLAUDE_MCP_TOOL_PREFIX}loregarden_list_tickets` with `workspace_slug=\"{workspace.slug}\"` "
+        f'- `{CLAUDE_MCP_TOOL_PREFIX}loregarden_list_tickets` with `workspace_slug="{workspace.slug}"` '
         "and optional `search`, `parent_external_id`, or `state` filters",
         "- `loregarden_get_ticket` responses include a `hierarchy` block (parent, siblings, children)",
         "",

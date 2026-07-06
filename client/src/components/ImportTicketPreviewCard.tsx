@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 
 import type { TicketImportItem, TicketSummary } from "../api/client";
-import { isWorkflowWorkItem } from "../api/client";
 import {
   applyMilestoneToTicket,
   applyParentToTicket,
@@ -264,7 +263,7 @@ export function ImportTicketPreviewCard({
           </div>
         </div>
 
-        {isWorkflowWorkItem(ticket.work_item_type) && (
+        {(
           <div className="import-preview-field import-preview-field-span">
             <div className="import-preview-field-label">Acceptance criteria</div>
             <textarea

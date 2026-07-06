@@ -6,11 +6,9 @@ import json
 import re
 from datetime import datetime, timezone
 
-from sqlmodel import Session, select
-
-from loregarden.agents.registry import AGENTS, list_agents as list_builtin_agents
+from loregarden.agents.registry import AGENTS
+from loregarden.agents.registry import list_agents as list_builtin_agents
 from loregarden.config import settings
-from loregarden.services.workflow_service import WorkflowService
 from loregarden.models.domain import (
     ClassifyRoute,
     StudioAgent,
@@ -31,6 +29,8 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     WorkflowTemplate,
 )
+from loregarden.services.workflow_service import WorkflowService
+from sqlmodel import Session, select
 
 
 def _tool_names() -> list[str]:
@@ -236,7 +236,10 @@ def _workflow_view(session: Session, workflow: StudioWorkflow) -> StudioWorkflow
         slug=workflow.slug,
         name=workflow.name,
         description=workflow.description,
-        stages=[StudioWorkflowStage.model_validate(item) for item in json.loads(workflow.stages_json or "[]")],
+        stages=[
+            StudioWorkflowStage.model_validate(item)
+            for item in json.loads(workflow.stages_json or "[]")
+        ],
         transitions=json.loads(workflow.transitions_json or "[]"),
         published_template_id=workflow.published_template_id,
         published_template_slug=template_slug,
@@ -325,7 +328,9 @@ def build_studio_prompt_sections(agent_cfg: dict) -> str:
                 ]
             )
             if guide.orchestrator_only:
-                sections.append("_Orchestrator-only — stage agents usually should not call this directly._")
+                sections.append(
+                    "_Orchestrator-only — stage agents usually should not call this directly._"
+                )
     handoffs = agent_cfg.get("handoff_checks") or []
     if handoffs:
         sections.append("## Handoff checks (required before stage completion)")
@@ -337,7 +342,9 @@ def build_studio_prompt_sections(agent_cfg: dict) -> str:
         sections.append("## Gate checks (human approval may be required)")
         for item in gates:
             if isinstance(item, dict):
-                sections.append(f"- [{item.get('kind', 'gate')}] {item.get('title', '')}: {item.get('impact', '')}")
+                sections.append(
+                    f"- [{item.get('kind', 'gate')}] {item.get('title', '')}: {item.get('impact', '')}"
+                )
     return "\n".join(sections)
 
 
@@ -410,7 +417,9 @@ def resolve_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str
             default_route = route
             continue
         lang_ok = not route.languages or any(lang.lower() in haystack for lang in route.languages)
-        spec_ok = not route.specialties or any(spec.lower() in haystack for spec in route.specialties)
+        spec_ok = not route.specialties or any(
+            spec.lower() in haystack for spec in route.specialties
+        )
         if lang_ok and spec_ok:
             return route.agent_id, route.skill_name or stage.skill_name
 
@@ -444,7 +453,11 @@ def _resolve_next_agent_from_routes(
 
 
 def _resolve_next_agent_override(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str] | None:
-    if not (stage.agent_id or "").strip() and stage.stage_type not in {"classify", "gate", "parallel"}:
+    if not (stage.agent_id or "").strip() and stage.stage_type not in {
+        "classify",
+        "gate",
+        "parallel",
+    }:
         return None
 
     next_agent = (ticket.next_agent or "").strip()
@@ -527,7 +540,10 @@ class StudioService:
         return preview_agent_markdown(body)
 
     def list_agents(self, *, include_builtin: bool = True) -> list[StudioAgentView]:
-        custom = [_agent_view(agent) for agent in self.session.exec(select(StudioAgent).order_by(StudioAgent.name)).all()]
+        custom = [
+            _agent_view(agent)
+            for agent in self.session.exec(select(StudioAgent).order_by(StudioAgent.name)).all()
+        ]
         if not include_builtin:
             return custom
         builtin_ids = {item.slug for item in custom}
@@ -599,7 +615,9 @@ class StudioService:
         if body.gate_checks is not None:
             agent.gate_checks_json = json.dumps([item.model_dump() for item in body.gate_checks])
         if body.handoff_checks is not None:
-            agent.handoff_checks_json = json.dumps([item.model_dump() for item in body.handoff_checks])
+            agent.handoff_checks_json = json.dumps(
+                [item.model_dump() for item in body.handoff_checks]
+            )
         agent.updated_at = datetime.now(timezone.utc)
         self.session.add(agent)
         self.session.commit()
@@ -614,9 +632,16 @@ class StudioService:
         self.session.commit()
 
     def list_workflows(self) -> list[StudioWorkflowView]:
-        custom = [_workflow_view(self.session, item) for item in self.session.exec(select(StudioWorkflow).order_by(StudioWorkflow.name)).all()]
+        custom = [
+            _workflow_view(self.session, item)
+            for item in self.session.exec(
+                select(StudioWorkflow).order_by(StudioWorkflow.name)
+            ).all()
+        ]
         custom_slugs = {item.slug for item in custom}
-        published_slugs = {item.published_template_slug for item in custom if item.published_template_slug}
+        published_slugs = {
+            item.published_template_slug for item in custom if item.published_template_slug
+        }
         merged = list(custom)
         for template in WorkflowService(self.session).list_templates():
             if template.slug in published_slugs:
@@ -629,7 +654,9 @@ class StudioService:
         return sorted(merged, key=lambda item: (not item.built_in, item.name.lower()))
 
     def get_workflow(self, slug: str) -> StudioWorkflowView | None:
-        workflow = self.session.exec(select(StudioWorkflow).where(StudioWorkflow.slug == slug)).first()
+        workflow = self.session.exec(
+            select(StudioWorkflow).where(StudioWorkflow.slug == slug)
+        ).first()
         if workflow:
             return _workflow_view(self.session, workflow)
         template = WorkflowService(self.session).get_template_by_slug(slug)
@@ -659,7 +686,9 @@ class StudioService:
         return _workflow_view(self.session, workflow)
 
     def update_workflow(self, slug: str, body: StudioWorkflowUpdate) -> StudioWorkflowView:
-        workflow = self.session.exec(select(StudioWorkflow).where(StudioWorkflow.slug == slug)).first()
+        workflow = self.session.exec(
+            select(StudioWorkflow).where(StudioWorkflow.slug == slug)
+        ).first()
         if not workflow:
             raise ValueError(f"Studio workflow not found: {slug}")
         if body.name is not None:
@@ -680,17 +709,24 @@ class StudioService:
         return _workflow_view(self.session, workflow)
 
     def delete_workflow(self, slug: str) -> None:
-        workflow = self.session.exec(select(StudioWorkflow).where(StudioWorkflow.slug == slug)).first()
+        workflow = self.session.exec(
+            select(StudioWorkflow).where(StudioWorkflow.slug == slug)
+        ).first()
         if not workflow:
             raise ValueError(f"Studio workflow not found: {slug}")
         self.session.delete(workflow)
         self.session.commit()
 
     def publish_workflow(self, slug: str) -> StudioWorkflowView:
-        workflow = self.session.exec(select(StudioWorkflow).where(StudioWorkflow.slug == slug)).first()
+        workflow = self.session.exec(
+            select(StudioWorkflow).where(StudioWorkflow.slug == slug)
+        ).first()
         if not workflow:
             raise ValueError(f"Studio workflow not found: {slug}")
-        stages = [StudioWorkflowStage.model_validate(item) for item in json.loads(workflow.stages_json or "[]")]
+        stages = [
+            StudioWorkflowStage.model_validate(item)
+            for item in json.loads(workflow.stages_json or "[]")
+        ]
         if not stages:
             raise ValueError("Workflow must have at least one stage")
 
@@ -700,7 +736,10 @@ class StudioService:
             agent_id = stage.agent_id
             skill_name = stage.skill_name
             if stage.stage_type == "classify" and stage.classify_routes:
-                default = next((route for route in stage.classify_routes if route.default), stage.classify_routes[0])
+                default = next(
+                    (route for route in stage.classify_routes if route.default),
+                    stage.classify_routes[0],
+                )
                 agent_id = agent_id or default.agent_id
                 skill_name = skill_name or default.skill_name
             stage_defs.append(

@@ -138,7 +138,9 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
         if args.get("external_id") is not None:
             payload["external_id"] = _coerce_string(args.get("external_id"), field="external_id")
         if args.get("workspace_slug") is not None:
-            payload["workspace_slug"] = _coerce_string(args.get("workspace_slug"), field="workspace_slug")
+            payload["workspace_slug"] = _coerce_string(
+                args.get("workspace_slug"), field="workspace_slug"
+            )
         if not payload.get("ticket_id") and not payload.get("external_id"):
             raise ValueError("ticket_id or external_id is required")
         return payload
@@ -147,7 +149,13 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
         payload = {
             "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
         }
-        for field in ("state", "work_item_type", "search", "parent_ticket_id", "parent_external_id"):
+        for field in (
+            "state",
+            "work_item_type",
+            "search",
+            "parent_ticket_id",
+            "parent_external_id",
+        ):
             if args.get(field) is not None:
                 payload[field] = _coerce_string(args.get(field), field=field)
         if args.get("roots_only") is not None:
@@ -374,7 +382,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 ),
                 "parent_ticket_id": _string_prop("Optional parent ticket UUID."),
                 "parent_external_id": _string_prop("Optional parent external_id slug."),
-                "roots_only": {"type": "boolean", "description": "Only top-level tickets (no parent)."},
+                "roots_only": {
+                    "type": "boolean",
+                    "description": "Only top-level tickets (no parent).",
+                },
                 "limit": _integer_prop("Max results (default 50, max 100)."),
             },
             required=["workspace_slug"],
@@ -386,7 +397,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "inputSchema": _tool_schema(
             properties={
                 "workspace_slug": _string_prop("Workspace slug, e.g. loregarden."),
-                "external_id": _string_prop("Ticket external id slug, e.g. 03-wire-cli-agent-runner."),
+                "external_id": _string_prop(
+                    "Ticket external id slug, e.g. 03-wire-cli-agent-runner."
+                ),
             },
             required=["workspace_slug", "external_id"],
         ),

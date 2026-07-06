@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from pydantic import field_validator
@@ -11,7 +12,7 @@ from loregarden.services.path_resolve import (
 
 
 def _find_repo_root() -> Path:
-    env = __import__("os").environ.get("LOREGARDEN_REPO_ROOT")
+    env = os.environ.get("LOREGARDEN_REPO_ROOT")
     if env:
         return Path(env).resolve()
     here = Path(__file__).resolve()
@@ -42,6 +43,15 @@ class Settings(BaseSettings):
     triage_timeout_seconds: int = 300
     mcp_url: str = "http://127.0.0.1:8000/mcp"
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    # Optional shared-secret bearer token. When set, all /api and /mcp requests
+    # must present it (Authorization: Bearer <token> or X-Loregarden-Token).
+    # Empty (default) keeps the zero-config local dev flow with auth disabled.
+    api_token: str = ""
+    # Filesystem ceiling for the workspace path browser / importer. Empty
+    # defaults to the user's home directory (legacy behaviour). Set this to a
+    # narrower directory (e.g. your projects folder) to restrict how far the
+    # unauthenticated browse/import endpoints can read.
+    browse_root: str = ""
     # iCloud + Obsidian memory (optional — empty disables external memory backends)
     icloud_root: str = ""
     obsidian_vault_dir: str = ""

@@ -7,7 +7,6 @@ import os
 import sys
 
 import httpx
-
 from loregarden.mcp.protocol import handle_message
 
 API_BASE = os.environ.get("LOREGARDEN_API_BASE", "http://127.0.0.1:8000").rstrip("/")
@@ -42,9 +41,8 @@ def _handle_stdio_line(line: str) -> dict | list | None:
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "--cli":
         from loregarden.db.session import engine, init_db
-        from sqlmodel import Session
-
         from loregarden.mcp.tools import execute_tool
+        from sqlmodel import Session
 
         init_db()
         cmd = sys.argv[2]

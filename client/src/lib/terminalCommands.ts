@@ -1,5 +1,4 @@
 import type { TicketDetail, WorkflowStageView } from "../api/client";
-import { isAgentStage } from "./stageDisplay";
 
 export function isAgentWorkflowTicket(ticket: TicketDetail): boolean {
   return Boolean(ticket.workflow_template_slug?.trim());

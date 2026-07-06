@@ -1,28 +1,26 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session, select
-
-from loregarden.core.workflow_loader import get_template_stages
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     Ticket,
     TicketState,
+    WorkflowTemplate,
     Workspace,
     WorkspaceCreate,
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
     WorkspaceTemplateUpdate,
-    WorkflowTemplate,
 )
 from loregarden.services.cli_settings import (
     VALID_CLI_ADAPTERS,
     runtime_options_payload,
     workspace_cli_settings,
 )
+from loregarden.services.workflow_service import WorkflowService, resolve_workspace_stages
 from loregarden.services.workspace_paths import (
     resolve_workspace_root,
     workspace_repo_exists,
 )
-from loregarden.services.workflow_service import WorkflowService, resolve_workspace_stages
+from sqlmodel import Session, select
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -64,7 +62,9 @@ def get_runtime_options() -> dict:
 
 
 @router.get("/{slug}/runtime", response_model=WorkspaceRuntimeSettings)
-def get_workspace_runtime(slug: str, session: Session = Depends(get_session)) -> WorkspaceRuntimeSettings:
+def get_workspace_runtime(
+    slug: str, session: Session = Depends(get_session)
+) -> WorkspaceRuntimeSettings:
     ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
     if not ws:
         raise HTTPException(404, "Workspace not found")

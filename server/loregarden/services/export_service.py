@@ -1,11 +1,9 @@
 import json
 from datetime import datetime, timezone
-from pathlib import Path
-
-from sqlmodel import Session, select
 
 from loregarden.config import settings
 from loregarden.models.domain import Ticket, TicketState, Workspace
+from sqlmodel import Session, select
 
 STATE_FOLDER: dict[TicketState, str] = {
     TicketState.BACKLOG: "backlog",

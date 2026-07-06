@@ -1,9 +1,6 @@
-import json
-
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-
 from loregarden.models.domain import Ticket, TriageMessage, Workspace
+from sqlmodel import Session, select
 
 
 def _ticket_id(client: TestClient, *, external_id: str | None = None) -> str:
@@ -13,15 +10,6 @@ def _ticket_id(client: TestClient, *, external_id: str | None = None) -> str:
         if match:
             return match["id"]
     return tickets[0]["id"]
-
-
-def test_triage_snapshot_empty(client: TestClient):
-    ticket_id = _ticket_id(client, external_id="01-bootstrap-fastapi-control-plane")
-    res = client.get(f"/api/tickets/{ticket_id}/triage")
-    assert res.status_code == 200
-    body = res.json()
-    assert body["pending_approvals"] == []
-    assert body["messages"] == []
 
 
 def test_triage_snapshot_empty(client: TestClient):
@@ -73,7 +61,7 @@ def test_triage_runtime_rejects_invalid_adapter(client: TestClient):
 
 def test_triage_invoke_uses_runtime_override(client: TestClient, monkeypatch):
     from loregarden.db.session import engine
-    from loregarden.models.domain import Ticket, Workspace
+    from loregarden.models.domain import Ticket
     from loregarden.services import triage_service
     from loregarden.services.triage_service import apply_triage_runtime_overrides
 
@@ -215,9 +203,14 @@ def test_triage_includes_workflow_gate_and_cli_approvals(client: TestClient):
 
 
 def test_triage_includes_child_ticket_approvals(client: TestClient):
-    from loregarden.models.domain import Approval, ApprovalKind, ApprovalStatus, Ticket, WorkItemType
-
     from loregarden.db.session import engine
+    from loregarden.models.domain import (
+        Approval,
+        ApprovalKind,
+        ApprovalStatus,
+        Ticket,
+        WorkItemType,
+    )
 
     with Session(engine) as session:
         parent = session.exec(select(Ticket).limit(1)).first()

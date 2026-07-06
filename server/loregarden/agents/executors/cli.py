@@ -5,21 +5,20 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlmodel import Session
-
 from loregarden.agents.cli_adapters import resolve_cli_invocation
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
-from loregarden.agents.registry import get_agent
 from loregarden.agents.mcp_context import build_mcp_run_context, load_loregarden_mcp_doc
-from loregarden.services.studio_service import build_studio_prompt_sections
+from loregarden.agents.registry import get_agent
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_errors import agent_timeout_message
 from loregarden.services.run_log_stream import RunLogStreamer
+from loregarden.services.studio_service import build_studio_prompt_sections
 from loregarden.services.subprocess_lines import SubprocessLineReader
 from loregarden.services.workspace_paths import resolve_agent_context_dir, resolve_workspace_root
 from loregarden.skills.registry import get_skill
+from sqlmodel import Session
 
 
 class CliAgentExecutor:
@@ -29,7 +28,14 @@ class CliAgentExecutor:
         self.session = session
         self.orchestration = OrchestrationService(session)
 
-    def execute(self, run: AgentRun, ticket: Ticket, *, advance_workflow: bool = True, skip_git_branch: bool = False) -> AgentRun:
+    def execute(
+        self,
+        run: AgentRun,
+        ticket: Ticket,
+        *,
+        advance_workflow: bool = True,
+        skip_git_branch: bool = False,
+    ) -> AgentRun:
         agent = get_agent(run.agent_id)
         if not agent:
             return self.orchestration.complete_run(
@@ -203,7 +209,7 @@ class CliAgentExecutor:
                     proc.wait(timeout=max(0.1, deadline - time.time()))
                 except subprocess.TimeoutExpired:
                     proc.kill()
-                    raise subprocess.TimeoutExpired(invocation.argv, timeout)
+                    raise subprocess.TimeoutExpired(invocation.argv, timeout) from None
 
         stderr = proc.stderr.read().decode("utf-8", errors="replace") if proc.stderr else ""
         stdout = "\n".join(stdout_lines)
@@ -234,7 +240,13 @@ class CliAgentExecutor:
         if not role_body and role_path.is_file():
             role_body = role_path.read_text(encoding="utf-8")[:12000]
 
-        skill_body = get_skill(run.skill_name or agent.get("default_skill", ""), agent_context_dir=agent_context_dir) or ""
+        skill_body = (
+            get_skill(
+                run.skill_name or agent.get("default_skill", ""),
+                agent_context_dir=agent_context_dir,
+            )
+            or ""
+        )
         ac = json.loads(ticket.acceptance_criteria_json or "[]")
 
         template = self.orchestration.get_template_for_ticket(ticket)

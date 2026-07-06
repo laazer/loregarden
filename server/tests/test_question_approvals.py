@@ -1,9 +1,8 @@
 import json
 
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-
 from loregarden.models.domain import Approval, ApprovalKind, ApprovalStatus
+from sqlmodel import Session, select
 
 
 def test_resolve_question_approval_requires_answers(client: TestClient):

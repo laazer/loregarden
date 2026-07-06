@@ -3,7 +3,6 @@
 import subprocess
 
 import pytest
-
 from loregarden.models.domain import Ticket, WorkItemType
 from loregarden.services.git_branch import (
     default_ticket_branch,
@@ -14,7 +13,9 @@ from loregarden.services.git_branch import (
 
 
 def test_default_ticket_branch():
-    ticket = Ticket(external_id="42-my-feature", work_item_type=WorkItemType.TASK, title="x", workspace_id="w")
+    ticket = Ticket(
+        external_id="42-my-feature", work_item_type=WorkItemType.TASK, title="x", workspace_id="w"
+    )
     assert default_ticket_branch(ticket) == "loregarden/42-my-feature"
 
 

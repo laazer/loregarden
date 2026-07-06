@@ -2,10 +2,9 @@ import json
 from pathlib import Path
 
 import yaml
-from sqlmodel import Session, select
-
 from loregarden.config import settings
 from loregarden.models.domain import WorkflowStageDef, WorkflowTemplate
+from sqlmodel import Session, select
 
 
 def load_workflow_yaml(path: Path) -> dict:

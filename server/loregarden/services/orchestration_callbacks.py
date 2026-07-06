@@ -6,8 +6,6 @@ import json
 import secrets
 from datetime import datetime, timezone
 
-from sqlmodel import Session, select
-
 from loregarden.core.event_bus import event_bus
 from loregarden.core.state_machine import StateMachine
 from loregarden.models.domain import (
@@ -26,6 +24,7 @@ from loregarden.models.domain import (
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
+from sqlmodel import Session, select
 
 
 def _orch_code() -> str:

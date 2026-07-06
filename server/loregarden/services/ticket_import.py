@@ -9,7 +9,6 @@ from pathlib import PurePath
 from typing import Any
 
 import yaml
-
 from loregarden.models.domain import TicketImportItem, WorkItemType
 
 _MD_TICKET_RE = re.compile(r"^#\s*TICKET:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
@@ -126,7 +125,9 @@ def _parse_markdown_ticket(content: str, *, source_label: str) -> TicketImportIt
         parent_external_id = parent_match.group(1).strip()
 
     description = _extract_md_section(content, "Description")
-    acceptance_criteria = _normalize_acceptance_criteria(_extract_md_section(content, "Acceptance Criteria"))
+    acceptance_criteria = _normalize_acceptance_criteria(
+        _extract_md_section(content, "Acceptance Criteria")
+    )
 
     return TicketImportItem(
         title=title,
@@ -143,7 +144,9 @@ def _parse_markdown_ticket(content: str, *, source_label: str) -> TicketImportIt
     )
 
 
-def _coerce_ticket_dict(raw: dict[str, Any], *, source_label: str, source_format: str) -> TicketImportItem:
+def _coerce_ticket_dict(
+    raw: dict[str, Any], *, source_label: str, source_format: str
+) -> TicketImportItem:
     title = str(raw.get("title") or raw.get("name") or "").strip()
     if not title:
         raise ValueError("Ticket is missing title")
@@ -153,16 +156,22 @@ def _coerce_ticket_dict(raw: dict[str, Any], *, source_label: str, source_format
     )
 
     parent_ticket_id = raw.get("parent_ticket_id") or raw.get("parentTicketId")
-    parent_external_id = raw.get("parent_external_id") or raw.get("parentExternalId") or raw.get("parent")
+    parent_external_id = (
+        raw.get("parent_external_id") or raw.get("parentExternalId") or raw.get("parent")
+    )
 
     return TicketImportItem(
         title=title,
         work_item_type=work_item_type,
         description=str(raw.get("description") or "").strip(),
-        acceptance_criteria=_normalize_acceptance_criteria(raw.get("acceptance_criteria") or raw.get("acceptanceCriteria")),
+        acceptance_criteria=_normalize_acceptance_criteria(
+            raw.get("acceptance_criteria") or raw.get("acceptanceCriteria")
+        ),
         priority=int(raw.get("priority") or 3),
         milestone=str(raw.get("milestone") or "").strip(),
-        external_id=str(raw.get("external_id") or raw.get("externalId") or raw.get("id") or "").strip(),
+        external_id=str(
+            raw.get("external_id") or raw.get("externalId") or raw.get("id") or ""
+        ).strip(),
         parent_external_id=str(parent_external_id or "").strip(),
         parent_ticket_id=str(parent_ticket_id).strip() if parent_ticket_id else None,
         source_format=source_format,
@@ -178,7 +187,9 @@ def _parse_structured_payload(
 ) -> list[TicketImportItem]:
     if isinstance(payload, list):
         return [
-            _coerce_ticket_dict(item, source_label=f"{source_label}[{index}]", source_format=source_format)
+            _coerce_ticket_dict(
+                item, source_label=f"{source_label}[{index}]", source_format=source_format
+            )
             for index, item in enumerate(payload)
             if isinstance(item, dict)
         ]
@@ -189,13 +200,17 @@ def _parse_structured_payload(
     nested = payload.get("tickets")
     if isinstance(nested, list):
         return [
-            _coerce_ticket_dict(item, source_label=f"{source_label}[{index}]", source_format=source_format)
+            _coerce_ticket_dict(
+                item, source_label=f"{source_label}[{index}]", source_format=source_format
+            )
             for index, item in enumerate(nested)
             if isinstance(item, dict)
         ]
 
     if "title" in payload or "name" in payload:
-        return [_coerce_ticket_dict(payload, source_label=source_label, source_format=source_format)]
+        return [
+            _coerce_ticket_dict(payload, source_label=source_label, source_format=source_format)
+        ]
 
     raise ValueError(f"No tickets found in {source_label}")
 
@@ -274,10 +289,16 @@ def enrich_import_preview(
     for item in tickets:
         by_type[item.work_item_type.value] = by_type.get(item.work_item_type.value, 0) + 1
         formats.add(item.source_format)
-        if item.work_item_type != WorkItemType.MILESTONE and not item.parent_ticket_id and not item.parent_external_id:
+        if (
+            item.work_item_type != WorkItemType.MILESTONE
+            and not item.parent_ticket_id
+            and not item.parent_external_id
+        ):
             label = item.source_label or item.title
             warnings.append(f"{label}: missing parent — import will fail unless parent is set")
-        preview = item.preview_markdown.strip() or render_import_preview_markdown(item, workspace_slug=workspace_slug)
+        preview = item.preview_markdown.strip() or render_import_preview_markdown(
+            item, workspace_slug=workspace_slug
+        )
         enriched.append(item.model_copy(update={"preview_markdown": preview}))
 
     return enriched, by_type, sorted(formats), warnings

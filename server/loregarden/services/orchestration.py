@@ -2,22 +2,11 @@ import json
 import secrets
 from datetime import datetime, timezone
 
-from sqlmodel import Session, select
-
 from loregarden.core.event_bus import event_bus
 from loregarden.core.state_machine import StateMachine
 from loregarden.core.workflow_loader import stage_display_name
-from loregarden.services.run_log_stream import bootstrap_run_log, finalize_run_log_artifact
-from loregarden.services.workflow_service import resolve_ticket_stages, resolve_workspace_stages
-from loregarden.services.workflow_state import (
-    build_stage_views,
-    initial_stages_json,
-    parse_stage_map,
-    reconcile_workflow_state,
-    serialize_stage_map,
-    set_stage_status,
-)
 from loregarden.models.domain import (
+    WORKFLOW_WORK_ITEM_TYPES,
     AgentRun,
     Approval,
     ApprovalKind,
@@ -29,12 +18,22 @@ from loregarden.models.domain import (
     Ticket,
     TicketState,
     UpdateTicketRequest,
-    WORKFLOW_WORK_ITEM_TYPES,
     WorkflowInstance,
     WorkflowStageView,
     WorkflowTemplate,
     Workspace,
 )
+from loregarden.services.run_log_stream import bootstrap_run_log, finalize_run_log_artifact
+from loregarden.services.workflow_service import resolve_ticket_stages, resolve_workspace_stages
+from loregarden.services.workflow_state import (
+    build_stage_views,
+    initial_stages_json,
+    parse_stage_map,
+    reconcile_workflow_state,
+    serialize_stage_map,
+    set_stage_status,
+)
+from sqlmodel import Session, select
 
 
 def _run_code() -> str:
@@ -329,9 +328,14 @@ class OrchestrationService:
             raise ValueError("Current stage must complete before finishing the ticket")
 
         current = ticket.workflow_stage_key
-        if current and current != "done" and ticket.workflow_stage_status not in (
-            StageStatus.DONE,
-            StageStatus.WONT_DO,
+        if (
+            current
+            and current != "done"
+            and ticket.workflow_stage_status
+            not in (
+                StageStatus.DONE,
+                StageStatus.WONT_DO,
+            )
         ):
             raise ValueError("Advance to the Done stage before completing the ticket")
 
@@ -960,9 +964,7 @@ class ApprovalService:
             instance, stages = self.orchestration._resolve_stages(ticket)
             if instance and stages and approval.stage_key:
                 if approved:
-                    set_stage_status(
-                        ticket, instance, stages, approval.stage_key, StageStatus.DONE
-                    )
+                    set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.DONE)
                 else:
                     ticket.blocking_issues = "Human rejected approval"
                     set_stage_status(

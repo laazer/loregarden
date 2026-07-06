@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 from loregarden.services.artifact_service import capture_git_diff, parse_test_output
 
@@ -26,7 +25,6 @@ def test_parse_test_output_empty():
 
 
 def test_capture_git_diff_from_repo():
-    from loregarden.config import settings
     from loregarden.models.domain import Workspace
 
     ws = Workspace(slug="loregarden", name="Loregarden", repo_path=".")
@@ -65,11 +63,11 @@ diff --git a/bar.ts b/bar.ts
 
 
 def test_extract_pytest_from_stream_json():
+    from loregarden.models.domain import AgentRun
     from loregarden.services.artifact_service import (
         extract_pytest_sections_from_stream_json,
         extract_test_source_from_run,
     )
-    from loregarden.models.domain import AgentRun
 
     assistant = json.dumps(
         {
@@ -115,9 +113,9 @@ def test_extract_pytest_from_stream_json():
         stdout=f"{assistant}\n{result}",
     )
     text, cmd = extract_test_source_from_run(run)
-    parsed = __import__("loregarden.services.artifact_service", fromlist=["parse_test_output"]).parse_test_output(
-        text, cmd=cmd
-    )
+    parsed = __import__(
+        "loregarden.services.artifact_service", fromlist=["parse_test_output"]
+    ).parse_test_output(text, cmd=cmd)
     assert parsed is not None
     assert parsed["summary"] == "122 passed · 0 failed · 0 skipped"
     assert parsed["cmd"] == "python -m pytest -x 2>&1 | tail -50"

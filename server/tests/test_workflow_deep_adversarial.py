@@ -18,30 +18,30 @@ Focus areas:
 """
 
 import json
-import pytest
-from fastapi.testclient import TestClient
-from sqlmodel import Session, select
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from fastapi.testclient import TestClient
 from loregarden.models.domain import (
     Ticket,
-    WorkItemType,
-    StageStatus,
     WorkflowInstance,
-    WorkflowTemplate,
+    WorkItemType,
 )
+from sqlmodel import Session, select
 
 
 class TestStateConsistencyUnderConcurrency:
     """Expose race conditions and state consistency issues under concurrent access."""
 
-    def test_concurrent_milestone_creation_no_state_leakage(self, client: TestClient, db_session: Session):
+    def test_concurrent_milestone_creation_no_state_leakage(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Concurrency mutation: Creating many MILESTONEs simultaneously.
 
         Exposes: Race conditions in WorkflowInstance creation, duplicate instances,
         or shared state between concurrent tickets.
         """
+
         def create_milestone(i: int):
             return client.post(
                 "/api/tickets",
@@ -68,18 +68,22 @@ class TestStateConsistencyUnderConcurrency:
 
         # All should have workflow initialized
         for ticket in results:
-            assert ticket["workflow_stage_key"] != "", \
+            assert ticket["workflow_stage_key"] != "", (
                 f"Ticket {ticket['id']} has empty workflow_stage_key"
+            )
 
         # Verify database consistency: each ticket has exactly one WorkflowInstance
         for ticket_id in ids:
             instances = db_session.exec(
                 select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket_id)
             ).all()
-            assert len(instances) == 1, \
+            assert len(instances) == 1, (
                 f"Ticket {ticket_id} has {len(instances)} instances (expected 1)"
+            )
 
-    def test_concurrent_workflow_instance_creation_isolation(self, client: TestClient, db_session: Session):
+    def test_concurrent_workflow_instance_creation_isolation(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Concurrency mutation: Verify WorkflowInstance records are isolated,
         not shared, even when created rapidly.
@@ -127,8 +131,7 @@ class TestStateConsistencyUnderConcurrency:
         for i, inst1 in enumerate(instances):
             for j, inst2 in enumerate(instances):
                 if i != j:
-                    assert inst1.id != inst2.id, \
-                        f"Instances {i} and {j} have same ID"
+                    assert inst1.id != inst2.id, f"Instances {i} and {j} have same ID"
                     # stages_json should be separate (even if logically identical)
                     assert inst1.ticket_id != inst2.ticket_id
 
@@ -136,7 +139,9 @@ class TestStateConsistencyUnderConcurrency:
 class TestWorkflowInitializationMutations:
     """Mutation testing: flip conditions to expose initialization assumptions."""
 
-    def test_milestone_workflow_NOT_skipped_by_condition(self, client: TestClient, db_session: Session):
+    def test_milestone_workflow_NOT_skipped_by_condition(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Mutation: The code that initializes workflows must NOT skip MILESTONE.
 
@@ -155,19 +160,24 @@ class TestWorkflowInitializationMutations:
         milestone = res.json()
 
         # Mutation: verify workflow WAS initialized (not skipped)
-        assert milestone["workflow_stage_key"] != "", \
+        assert milestone["workflow_stage_key"] != "", (
             "MILESTONE workflow was skipped (conditional check bug)"
-        assert milestone["workflow_stage_status"] == "pending", \
+        )
+        assert milestone["workflow_stage_status"] == "pending", (
             "MILESTONE workflow status not initialized"
+        )
 
         # Verify WorkflowInstance was created (not skipped)
         instance = db_session.exec(
             select(WorkflowInstance).where(WorkflowInstance.ticket_id == milestone["id"])
         ).first()
-        assert instance is not None, \
+        assert instance is not None, (
             "MILESTONE WorkflowInstance was skipped (conditional check bug)"
+        )
 
-    def test_capability_workflow_NOT_skipped_by_condition(self, client: TestClient, db_session: Session):
+    def test_capability_workflow_NOT_skipped_by_condition(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Mutation: The code that initializes workflows must NOT skip CAPABILITY.
         """
@@ -190,15 +200,13 @@ class TestWorkflowInitializationMutations:
         capability = res.json()
 
         # Mutation: flip expectation - workflow SHOULD be there
-        assert capability["workflow_stage_key"] != "", \
-            "CAPABILITY workflow was skipped"
+        assert capability["workflow_stage_key"] != "", "CAPABILITY workflow was skipped"
 
         # Verify instance exists
         instance = db_session.exec(
             select(WorkflowInstance).where(WorkflowInstance.ticket_id == capability["id"])
         ).first()
-        assert instance is not None, \
-            "CAPABILITY WorkflowInstance was not created"
+        assert instance is not None, "CAPABILITY WorkflowInstance was not created"
 
     def test_workflow_constants_includes_all_types(self, db_session: Session):
         """
@@ -207,7 +215,7 @@ class TestWorkflowInitializationMutations:
 
         Catches: Incomplete implementation, reverted changes, conditional logic errors.
         """
-        from loregarden.models.domain import WORKFLOW_WORK_ITEM_TYPES, WorkItemType
+        from loregarden.models.domain import WORKFLOW_WORK_ITEM_TYPES
 
         # Must include all 5 types
         expected_types = {
@@ -219,11 +227,13 @@ class TestWorkflowInitializationMutations:
         }
 
         for work_type in expected_types:
-            assert work_type in WORKFLOW_WORK_ITEM_TYPES, \
+            assert work_type in WORKFLOW_WORK_ITEM_TYPES, (
                 f"{work_type} missing from WORKFLOW_WORK_ITEM_TYPES (mutation detected)"
+            )
 
-        assert len(WORKFLOW_WORK_ITEM_TYPES) == 5, \
+        assert len(WORKFLOW_WORK_ITEM_TYPES) == 5, (
             f"WORKFLOW_WORK_ITEM_TYPES has {len(WORKFLOW_WORK_ITEM_TYPES)} types, expected 5"
+        )
 
 
 class TestSerializationEdgeCases:
@@ -255,8 +265,7 @@ class TestSerializationEdgeCases:
         }
 
         missing = required_fields - set(milestone.keys())
-        assert not missing, \
-            f"MILESTONE response missing fields: {missing}"
+        assert not missing, f"MILESTONE response missing fields: {missing}"
 
         # Verify types
         assert isinstance(milestone["workflow_stage_key"], str)
@@ -309,12 +318,9 @@ class TestSerializationEdgeCases:
         }
 
         for field in workflow_fields:
-            assert field in capability_from_create, \
-                f"Create response missing '{field}'"
-            assert field in capability_from_detail, \
-                f"Detail response missing '{field}'"
-            assert field in capability_from_list, \
-                f"List response missing '{field}'"
+            assert field in capability_from_create, f"Create response missing '{field}'"
+            assert field in capability_from_detail, f"Detail response missing '{field}'"
+            assert field in capability_from_list, f"List response missing '{field}'"
 
     def test_stages_array_structure_is_consistent(self, client: TestClient):
         """
@@ -338,16 +344,12 @@ class TestSerializationEdgeCases:
 
         for i, stage in enumerate(milestone["stages"]):
             missing = required_stage_fields - set(stage.keys())
-            assert not missing, \
-                f"Stage {i} missing fields: {missing}"
+            assert not missing, f"Stage {i} missing fields: {missing}"
 
             # Values should not be None or empty
-            assert stage["key"] is not None and stage["key"] != "", \
-                f"Stage {i} has empty key"
-            assert stage["order"] is not None, \
-                f"Stage {i} has null order"
-            assert stage["status"] is not None, \
-                f"Stage {i} has null status"
+            assert stage["key"] is not None and stage["key"] != "", f"Stage {i} has empty key"
+            assert stage["order"] is not None, f"Stage {i} has null order"
+            assert stage["status"] is not None, f"Stage {i} has null status"
 
 
 class TestHierarchyWorkflowOrthogonality:
@@ -384,8 +386,9 @@ class TestHierarchyWorkflowOrthogonality:
 
         # Should fail because TASK cannot be child of MILESTONE
         # This must work regardless of workflow eligibility
-        assert task_res.status_code != 201, \
+        assert task_res.status_code != 201, (
             "Hierarchy validation must work (orthogonal from workflow)"
+        )
 
     def test_workflow_initialization_independent_of_hierarchy(self, client: TestClient):
         """
@@ -431,17 +434,23 @@ class TestHierarchyWorkflowOrthogonality:
         capability = capability_res.json()
 
         # All must have workflows regardless of depth
-        for ticket, name in [(milestone, "milestone"), (feature, "feature"), (capability, "capability")]:
-            assert ticket["workflow_stage_key"] != "", \
+        for ticket, name in [
+            (milestone, "milestone"),
+            (feature, "feature"),
+            (capability, "capability"),
+        ]:
+            assert ticket["workflow_stage_key"] != "", (
                 f"{name} workflow not initialized (hierarchy interference)"
-            assert len(ticket["stages"]) > 0, \
-                f"{name} has empty stages (hierarchy interference)"
+            )
+            assert len(ticket["stages"]) > 0, f"{name} has empty stages (hierarchy interference)"
 
 
 class TestErrorRecoveryAndPartialFailures:
     """Expose error recovery paths and partial failure scenarios."""
 
-    def test_workflow_init_failure_doesnt_create_ticket_half_state(self, client: TestClient, db_session: Session):
+    def test_workflow_init_failure_doesnt_create_ticket_half_state(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Error recovery: If workflow initialization fails, ticket should not
         be left in a half-initialized state.
@@ -467,13 +476,12 @@ class TestErrorRecoveryAndPartialFailures:
                 # This is the bad case: ticket created but workflow not initialized
                 # Verify there's a WorkflowInstance anyway (or handle gracefully)
                 instance = db_session.exec(
-                    select(WorkflowInstance).where(
-                        WorkflowInstance.ticket_id == milestone["id"]
-                    )
+                    select(WorkflowInstance).where(WorkflowInstance.ticket_id == milestone["id"])
                 ).first()
                 # Either instance should exist or error should have been thrown
-                assert instance is not None or milestone.get("error"), \
+                assert instance is not None or milestone.get("error"), (
                     "Partial failure: ticket created but workflow not initialized"
+                )
 
     def test_invalid_parent_doesnt_create_ticket(self, client: TestClient, db_session: Session):
         """
@@ -493,23 +501,21 @@ class TestErrorRecoveryAndPartialFailures:
             },
         )
 
-        assert res.status_code != 201, \
-            "Should not create ticket with invalid parent"
+        assert res.status_code != 201, "Should not create ticket with invalid parent"
 
         # Verify no ticket was created with this description
         orphan = db_session.exec(
-            select(Ticket).where(
-                Ticket.title == "Invalid parent test"
-            )
+            select(Ticket).where(Ticket.title == "Invalid parent test")
         ).first()
-        assert orphan is None, \
-            "Ticket was partially created despite invalid parent"
+        assert orphan is None, "Ticket was partially created despite invalid parent"
 
 
 class TestIdempotencyAndReplayability:
     """Verify operations are idempotent and can be replayed safely."""
 
-    def test_multiple_workflow_initializations_idempotent(self, client: TestClient, db_session: Session):
+    def test_multiple_workflow_initializations_idempotent(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Idempotency: Initializing workflow multiple times should result
         in same state, not duplicates.
@@ -530,9 +536,7 @@ class TestIdempotencyAndReplayability:
 
         # Simulate replaying initialization (e.g., retry in service)
         # by directly checking state
-        db_ticket = db_session.exec(
-            select(Ticket).where(Ticket.id == milestone_id)
-        ).first()
+        db_ticket = db_session.exec(select(Ticket).where(Ticket.id == milestone_id)).first()
 
         initial_stage_key = db_ticket.workflow_stage_key
 
@@ -540,15 +544,17 @@ class TestIdempotencyAndReplayability:
         instances = db_session.exec(
             select(WorkflowInstance).where(WorkflowInstance.ticket_id == milestone_id)
         ).all()
-        assert len(instances) == 1, \
-            f"Non-idempotent: got {len(instances)} instances after creation"
+        assert len(instances) == 1, f"Non-idempotent: got {len(instances)} instances after creation"
 
         # State should be unchanged
         db_session.refresh(db_ticket)
-        assert db_ticket.workflow_stage_key == initial_stage_key, \
+        assert db_ticket.workflow_stage_key == initial_stage_key, (
             "Workflow stage changed on idempotent operation"
+        )
 
-    def test_stage_transition_not_duplicated_on_replay(self, client: TestClient, db_session: Session):
+    def test_stage_transition_not_duplicated_on_replay(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Idempotency: Replaying a stage transition should be safe.
 
@@ -575,8 +581,9 @@ class TestIdempotencyAndReplayability:
         if len(stages_json) > 1:
             # If we could replay a transition, verify idempotency
             # (This is a placeholder; actual replay test would update stage)
-            assert instance.current_stage_key is not None, \
+            assert instance.current_stage_key is not None, (
                 "Current stage is null (not tracking state)"
+            )
 
 
 class TestAssumptionFlipping:
@@ -601,8 +608,9 @@ class TestAssumptionFlipping:
 
         # Verify the assumption holds
         first_stage_key = milestone["stages"][0]["key"]
-        assert milestone["workflow_stage_key"] == first_stage_key, \
+        assert milestone["workflow_stage_key"] == first_stage_key, (
             "Assumption violated: workflow_stage_key must be first stage"
+        )
 
     def test_assume_workflow_stage_exists_in_stages_array(self, client: TestClient):
         """
@@ -627,9 +635,10 @@ class TestAssumptionFlipping:
         capability = res.json()
 
         stage_keys = {s["key"] for s in capability["stages"]}
-        assert capability["workflow_stage_key"] in stage_keys, \
-            f"Assumption violated: workflow_stage_key '{capability['workflow_stage_key']}' " \
+        assert capability["workflow_stage_key"] in stage_keys, (
+            f"Assumption violated: workflow_stage_key '{capability['workflow_stage_key']}' "
             f"not in stages {stage_keys}"
+        )
 
     def test_assume_stages_never_null_or_empty(self, client: TestClient):
         """
@@ -646,18 +655,17 @@ class TestAssumptionFlipping:
         assert res.status_code == 201
         milestone = res.json()
 
-        assert milestone["stages"] is not None, \
-            "Assumption violated: stages is null"
-        assert isinstance(milestone["stages"], list), \
-            "Assumption violated: stages is not a list"
-        assert len(milestone["stages"]) > 0, \
-            "Assumption violated: stages is empty"
+        assert milestone["stages"] is not None, "Assumption violated: stages is null"
+        assert isinstance(milestone["stages"], list), "Assumption violated: stages is not a list"
+        assert len(milestone["stages"]) > 0, "Assumption violated: stages is empty"
 
 
 class TestMockOveruseDetection:
     """Verify system works with real dependencies, not mocks."""
 
-    def test_workflow_instance_actually_persisted_to_database(self, client: TestClient, db_session: Session):
+    def test_workflow_instance_actually_persisted_to_database(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Mock overuse: Verify WorkflowInstance is actually persisted,
         not just mocked in memory.
@@ -683,13 +691,17 @@ class TestMockOveruseDetection:
             select(WorkflowInstance).where(WorkflowInstance.ticket_id == milestone_id)
         ).first()
 
-        assert instance is not None, \
+        assert instance is not None, (
             "WorkflowInstance not found in database (possible mock overuse)"
+        )
         assert instance.ticket_id == milestone_id
-        assert instance.template_id is not None, \
+        assert instance.template_id is not None, (
             "Template reference missing (incomplete persistence)"
+        )
 
-    def test_workflow_template_actually_loaded_not_mocked(self, client: TestClient, db_session: Session):
+    def test_workflow_template_actually_loaded_not_mocked(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Mock overuse: Verify workflow template is loaded from database,
         not mocked.
@@ -709,8 +721,7 @@ class TestMockOveruseDetection:
 
         # Verify stages came from real template
         stage_keys = [s["key"] for s in milestone["stages"]]
-        assert len(stage_keys) > 0, \
-            "No stages loaded (template not loaded)"
+        assert len(stage_keys) > 0, "No stages loaded (template not loaded)"
 
         # Verify consistency: all creations get same stage definitions
         res2 = client.post(
@@ -725,14 +736,15 @@ class TestMockOveruseDetection:
         milestone2 = res2.json()
 
         stage_keys2 = [s["key"] for s in milestone2["stages"]]
-        assert stage_keys == stage_keys2, \
-            "Template not loaded consistently (mock detection)"
+        assert stage_keys == stage_keys2, "Template not loaded consistently (mock detection)"
 
 
 class TestDataConsistencyInvariantsViolations:
     """Detect violations of data consistency invariants."""
 
-    def test_workflow_stage_status_must_be_valid_enum(self, client: TestClient, db_session: Session):
+    def test_workflow_stage_status_must_be_valid_enum(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Invariant: workflow_stage_status must always be a valid StageStatus enum value.
 
@@ -749,15 +761,16 @@ class TestDataConsistencyInvariantsViolations:
         assert res.status_code == 201
         milestone_id = res.json()["id"]
 
-        db_ticket = db_session.exec(
-            select(Ticket).where(Ticket.id == milestone_id)
-        ).first()
+        db_ticket = db_session.exec(select(Ticket).where(Ticket.id == milestone_id)).first()
 
         valid_statuses = {"pending", "running", "blocked", "awaiting", "done", "wont_do"}
-        assert str(db_ticket.workflow_stage_status) in valid_statuses, \
+        assert str(db_ticket.workflow_stage_status) in valid_statuses, (
             f"Invalid stage status: {db_ticket.workflow_stage_status}"
+        )
 
-    def test_workflow_instance_references_valid_ticket(self, client: TestClient, db_session: Session):
+    def test_workflow_instance_references_valid_ticket(
+        self, client: TestClient, db_session: Session
+    ):
         """
         Invariant: WorkflowInstance.ticket_id must reference an existing Ticket.
 
@@ -779,11 +792,10 @@ class TestDataConsistencyInvariantsViolations:
         ).first()
 
         # Verify ticket exists
-        ticket = db_session.exec(
-            select(Ticket).where(Ticket.id == instance.ticket_id)
-        ).first()
-        assert ticket is not None, \
+        ticket = db_session.exec(select(Ticket).where(Ticket.id == instance.ticket_id)).first()
+        assert ticket is not None, (
             f"WorkflowInstance references non-existent ticket {instance.ticket_id}"
+        )
 
     def test_multiple_instances_no_orphaned_records(self, client: TestClient, db_session: Session):
         """
@@ -808,18 +820,16 @@ class TestDataConsistencyInvariantsViolations:
 
         # Count instances for these tickets
         instances = db_session.exec(
-            select(WorkflowInstance).where(
-                WorkflowInstance.ticket_id.in_(milestone_ids)
-            )
+            select(WorkflowInstance).where(WorkflowInstance.ticket_id.in_(milestone_ids))
         ).all()
 
-        assert len(instances) == len(milestone_ids), \
+        assert len(instances) == len(milestone_ids), (
             f"Expected {len(milestone_ids)} instances, got {len(instances)} (orphaned or missing)"
+        )
 
         # All instances should reference existing tickets
         for instance in instances:
-            ticket = db_session.exec(
-                select(Ticket).where(Ticket.id == instance.ticket_id)
-            ).first()
-            assert ticket is not None, \
+            ticket = db_session.exec(select(Ticket).where(Ticket.id == instance.ticket_id)).first()
+            assert ticket is not None, (
                 f"Orphaned instance: references non-existent ticket {instance.ticket_id}"
+            )

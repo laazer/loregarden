@@ -158,12 +158,11 @@ def test_permission_bypass_restores_headless_print_mode(tmp_path, monkeypatch):
 
 
 def test_permission_bridge_creates_inbox_item_and_continues(tmp_path):
-    from sqlmodel import Session, SQLModel, create_engine, select
-    from sqlmodel.pool import StaticPool
-
     from loregarden.agents.cli_adapters import build_interactive_invocation
     from loregarden.models.domain import AgentRun, Approval, ApprovalKind, RunStatus, Ticket
     from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
 
     engine = create_engine(
         "sqlite://",
@@ -291,13 +290,12 @@ def test_permission_bridge_creates_inbox_item_and_continues(tmp_path):
 
 
 def test_permission_bridge_bash_allow_passes_command(tmp_path):
-    from sqlmodel import Session, SQLModel, create_engine, select
-    from sqlmodel.pool import StaticPool
-
     from loregarden.agents.cli_adapters import build_interactive_invocation
     from loregarden.models.domain import AgentRun, Approval, ApprovalKind, RunStatus, Ticket
     from loregarden.services.orchestration import ApprovalService
     from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
 
     engine = create_engine(
         "sqlite://",
@@ -343,7 +341,9 @@ def test_permission_bridge_bash_allow_passes_command(tmp_path):
                 },
             }
         )
-        result_line = json.dumps({"type": "result", "session_id": "sess_bash", "subtype": "success"})
+        result_line = json.dumps(
+            {"type": "result", "session_id": "sess_bash", "subtype": "success"}
+        )
 
         class FakeStdout:
             def __init__(self, lines):
@@ -428,12 +428,11 @@ def test_permission_bridge_bash_allow_passes_command(tmp_path):
 
 
 def test_permission_bridge_auto_approves_mcp_get_ticket(tmp_path):
-    from sqlmodel import Session, SQLModel, create_engine, select
-    from sqlmodel.pool import StaticPool
-
     from loregarden.agents.cli_adapters import build_interactive_invocation
     from loregarden.models.domain import AgentRun, Approval, RunStatus, Ticket
     from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
 
     engine = create_engine(
         "sqlite://",
@@ -552,12 +551,11 @@ def test_permission_bridge_auto_approves_mcp_get_ticket(tmp_path):
 
 
 def test_permission_bridge_finishes_on_result_when_process_stays_alive(tmp_path):
-    from sqlmodel import Session, SQLModel, create_engine, select
-    from sqlmodel.pool import StaticPool
-
     from loregarden.agents.cli_adapters import build_interactive_invocation
     from loregarden.models.domain import AgentRun, RunStatus, Ticket
     from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
 
     engine = create_engine(
         "sqlite://",
@@ -594,7 +592,9 @@ def test_permission_bridge_finishes_on_result_when_process_stays_alive(tmp_path)
             workspace_root=workspace,
         )
 
-        result_line = json.dumps({"type": "result", "session_id": "sess_done", "subtype": "success"})
+        result_line = json.dumps(
+            {"type": "result", "session_id": "sess_done", "subtype": "success"}
+        )
 
         class FakeStdout:
             def __init__(self, lines):
@@ -616,7 +616,11 @@ def test_permission_bridge_finishes_on_result_when_process_stays_alive(tmp_path)
                 self.stdin = type(
                     "In",
                     (),
-                    {"write": lambda *a, **k: None, "flush": lambda *a, **k: None, "close": lambda *a, **k: None},
+                    {
+                        "write": lambda *a, **k: None,
+                        "flush": lambda *a, **k: None,
+                        "close": lambda *a, **k: None,
+                    },
                 )()
 
             def poll(self):
@@ -644,13 +648,12 @@ def test_permission_bridge_finishes_on_result_when_process_stays_alive(tmp_path)
 
 
 def test_permission_bridge_question_returns_answers(tmp_path):
-    from sqlmodel import Session, SQLModel, create_engine, select
-    from sqlmodel.pool import StaticPool
-
     from loregarden.agents.cli_adapters import build_interactive_invocation
     from loregarden.models.domain import AgentRun, Approval, ApprovalKind, RunStatus, Ticket
     from loregarden.services.orchestration import ApprovalService
     from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
 
     engine = create_engine(
         "sqlite://",
@@ -788,12 +791,11 @@ def test_permission_bridge_question_returns_answers(tmp_path):
 
 
 def test_permission_bridge_agent_timeout(tmp_path):
-    from sqlmodel import Session, SQLModel, create_engine, select
-    from sqlmodel.pool import StaticPool
-
     from loregarden.agents.cli_adapters import build_interactive_invocation
     from loregarden.models.domain import AgentRun, RunStatus, Ticket
     from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
 
     engine = create_engine(
         "sqlite://",
@@ -837,7 +839,9 @@ def test_permission_bridge_agent_timeout(tmp_path):
 
             def __init__(self):
                 self.stdout = HungStdout()
-                self.stdin = type("In", (), {"write": lambda *a, **k: None, "flush": lambda *a, **k: None})()
+                self.stdin = type(
+                    "In", (), {"write": lambda *a, **k: None, "flush": lambda *a, **k: None}
+                )()
 
             def poll(self):
                 return None

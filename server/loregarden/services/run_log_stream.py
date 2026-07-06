@@ -7,10 +7,9 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlmodel import Session, select
-
 from loregarden.db.session import engine
 from loregarden.models.domain import AgentRun, Artifact, RunStatus, Ticket
+from sqlmodel import Session, select
 
 
 def format_stream_payload(payload: dict[str, Any]) -> tuple[str, str] | None:
@@ -121,7 +120,11 @@ class RunLogStreamer:
         if len(self._lines) > self.MAX_LINES:
             self._lines = self._lines[-self.MAX_LINES :]
         now = time.time()
-        if force or now - self._last_persist >= 0.4 or tag in {"RUN", "CMD", "ERR", "OK", "FAIL", "TOOL"}:
+        if (
+            force
+            or now - self._last_persist >= 0.4
+            or tag in {"RUN", "CMD", "ERR", "OK", "FAIL", "TOOL"}
+        ):
             self._persist()
 
     def _prefer_stream_text(self, text: str) -> None:
@@ -158,7 +161,9 @@ class RunLogStreamer:
         self._hydrate()
         has_run = any(line.get("tag") == "RUN" for line in self._lines)
         if not has_run:
-            self.append("RUN", f"{self.agent_id} invoked · skill={self.skill_name or '—'}", force=True)
+            self.append(
+                "RUN", f"{self.agent_id} invoked · skill={self.skill_name or '—'}", force=True
+            )
         cmd_updated = False
         if command:
             updated = False
@@ -263,7 +268,9 @@ class RunLogStreamer:
         for line in stderr.strip().splitlines()[:30]:
             self.append("ERR", line, force=False)
         tag = "OK" if status == RunStatus.SUCCEEDED else "FAIL"
-        self.append(tag, "run completed" if status == RunStatus.SUCCEEDED else "run failed", force=True)
+        self.append(
+            tag, "run completed" if status == RunStatus.SUCCEEDED else "run failed", force=True
+        )
         self._stream_buffer = ""
         self._live = ""
         self._persist()

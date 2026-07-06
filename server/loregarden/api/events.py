@@ -1,11 +1,10 @@
 import json
 
 from fastapi import APIRouter, Depends
-from sqlmodel import Session
-
 from loregarden.core.event_bus import event_bus
 from loregarden.db.session import get_session
 from loregarden.models.domain import EventView
+from sqlmodel import Session
 
 router = APIRouter(prefix="/events", tags=["events"])
 

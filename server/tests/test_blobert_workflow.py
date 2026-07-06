@@ -1,11 +1,15 @@
-import json
-
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-
 from loregarden.core.workflow_loader import get_template_stages, sync_workflow_templates
-from loregarden.models.domain import Ticket, TicketState, WorkItemType, WorkflowInstance, WorkflowTemplate, Workspace
+from loregarden.models.domain import (
+    Ticket,
+    TicketState,
+    WorkflowInstance,
+    WorkflowTemplate,
+    WorkItemType,
+    Workspace,
+)
 from loregarden.services.workflow_state import build_stage_views, initial_stages_json
+from sqlmodel import Session, select
 
 
 def test_blobert_template_loaded(client: TestClient):

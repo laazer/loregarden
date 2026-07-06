@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
 import type { TicketState, TicketTreeNode, WorkItemType } from "../api/client";
-import { isWorkflowWorkItem } from "../api/client";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 
 const STATE_COLORS: Record<TicketState, string> = {
@@ -79,7 +78,7 @@ function TreeRow({
 }) {
   const hasChildren = node.children.length > 0;
   const expanded = expandedIds.has(node.id);
-  const isWorkflowItem = isWorkflowWorkItem(node.work_item_type);
+  const isWorkflowItem = true;
   const isSelected = selectedId === node.id;
   const workflowRunning = isWorkflowItem && node.workflow_stage_status === "running";
   const showAddChild = !!onAddChild && canHaveChildren(node.work_item_type);

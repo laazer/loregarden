@@ -1,4 +1,4 @@
-import type { WorkflowStageView } from "../api/client";
+import type { WorkflowStageView } from "../../api/client";
 import {
   isAgentStage,
   isClassifyStage,

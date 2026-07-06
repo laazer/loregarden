@@ -7,7 +7,6 @@ data/loregarden.db-*
 *.db-wal
 *.db-shm
 server/.venv/
-server/uv.lock
 client/node_modules/
 client/dist/
 
