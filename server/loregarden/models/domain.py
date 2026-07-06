@@ -99,6 +99,21 @@ class ApprovalStatus(str, Enum):
     REJECTED = "rejected"
 
 
+class CIStatus(str, Enum):
+    PENDING = "pending"  # Not run yet
+    PASSING = "passing"  # All checks passed
+    FAILING = "failing"  # Tests/checks failed
+    PARTIAL = "partial"  # Some checks passed
+    SKIPPED = "skipped"  # CI skipped (e.g., docs-only)
+
+
+class AutoFixStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
 class EventType(str, Enum):
     TICKET_CREATED = "TicketCreated"
     TICKET_STATE_CHANGED = "TicketStateChanged"
@@ -292,6 +307,41 @@ class Approval(SQLModel, table=True):
     status: ApprovalStatus = Field(default=ApprovalStatus.PENDING)
     created_at: datetime = Field(default_factory=utcnow)
     resolved_at: Optional[datetime] = None
+
+
+class CIRunResult(SQLModel, table=True):
+    __tablename__ = "ci_run_results"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    status: CIStatus = Field(
+        default=CIStatus.PENDING,
+        sa_column=_str_enum_column(CIStatus, CIStatus.PENDING),
+    )
+    provider: str = ""  # "github_actions", "gitlab_ci", "generic_webhook"
+    external_run_id: Optional[str] = None  # GitHub run ID, GitLab pipeline ID, etc
+    logs_url: Optional[str] = None
+    failure_summary: Optional[str] = None  # Truncated error message for UI
+    full_logs: Optional[str] = None  # Complete output for inspection
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class AutoFixAttempt(SQLModel, table=True):
+    __tablename__ = "auto_fix_attempts"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    ci_run_result_id: str = Field(foreign_key="ci_run_results.id", index=True)
+    attempt_number: int = Field(ge=1)  # 1, 2, 3, etc
+    run_id: Optional[str] = Field(default=None, foreign_key="agent_runs.id")  # Link to fix-it agent run
+    status: AutoFixStatus = Field(
+        default=AutoFixStatus.PENDING,
+        sa_column=_str_enum_column(AutoFixStatus, AutoFixStatus.PENDING),
+    )
+    result_summary: Optional[str] = None  # e.g., "Fixed 3 failing tests"
+    created_at: datetime = Field(default_factory=utcnow)
+    completed_at: Optional[datetime] = None
 
 
 class TriageMessage(SQLModel, table=True):

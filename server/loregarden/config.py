@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     obsidian_learnings_subdir: str = "Loregarden/Learnings"
     # Structured memory graph SQLite (optional; defaults under iCloud when vault is set)
     memory_sqlite_url: str = ""
+    # CI Integration settings
+    ci_webhook_secret: str = ""  # GitHub webhook secret (empty disables signature verification)
+    ci_retry_limit: int = 3  # Max auto-fix attempts per CI failure
+    ci_enabled: bool = True  # Feature flag
+    ci_log_retention_days: int = 30  # How long to keep CI logs
+    ci_auto_fix_timeout: int = 600  # 10 min timeout for fix agent
 
     @field_validator("database_url", "memory_sqlite_url", mode="before")
     @classmethod
