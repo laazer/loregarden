@@ -1,0 +1,232 @@
+"""Lightweight, version-tracked SQLite migrations.
+
+Replaces the previous ad-hoc chain of ``PRAGMA table_info`` + ``ALTER TABLE``
+calls with an ordered registry recorded in a ``schema_migrations`` table. Each
+migration still guards its own changes (so it is safe to run against databases
+at any prior point in history, including brand-new ones created by
+``SQLModel.metadata.create_all``), but now the applied set is tracked, ordered,
+and auditable — and future non-idempotent migrations can rely on run-once
+semantics.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+
+from sqlalchemy import text
+from sqlalchemy.engine import Connection, Engine
+
+Migration = Callable[[Connection], None]
+
+
+def _columns(conn: Connection, table: str) -> set[str]:
+    rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+    return {row[1] for row in rows}
+
+
+def _table_exists(conn: Connection, table: str) -> bool:
+    row = conn.execute(
+        text("SELECT name FROM sqlite_master WHERE type='table' AND name=:name"),
+        {"name": table},
+    ).fetchone()
+    return row is not None
+
+
+def _add_columns_if_missing(conn: Connection, table: str, columns: dict[str, str]) -> None:
+    """Add each ``name -> ALTER statement`` whose column is absent from ``table``."""
+    if not _table_exists(conn, table):
+        return
+    existing = _columns(conn, table)
+    for name, statement in columns.items():
+        if name not in existing:
+            conn.execute(text(statement))
+
+
+def _m_workspace_workflow_override(conn: Connection) -> None:
+    _add_columns_if_missing(
+        conn,
+        "workspaces",
+        {
+            "workflow_override_json": (
+                "ALTER TABLE workspaces ADD COLUMN workflow_override_json "
+                "TEXT NOT NULL DEFAULT '{}'"
+            )
+        },
+    )
+
+
+def _m_ticket_columns(conn: Connection) -> None:
+    _add_columns_if_missing(
+        conn,
+        "tickets",
+        {
+            "work_item_type": (
+                "ALTER TABLE tickets ADD COLUMN work_item_type TEXT NOT NULL DEFAULT 'task'"
+            ),
+            "parent_ticket_id": "ALTER TABLE tickets ADD COLUMN parent_ticket_id TEXT",
+            "cycle_id": "ALTER TABLE tickets ADD COLUMN cycle_id TEXT",
+            "state_locked": (
+                "ALTER TABLE tickets ADD COLUMN state_locked INTEGER NOT NULL DEFAULT 0"
+            ),
+            "triage_runtime_json": (
+                "ALTER TABLE tickets ADD COLUMN triage_runtime_json TEXT NOT NULL DEFAULT '{}'"
+            ),
+            "workflow_disabled": (
+                "ALTER TABLE tickets ADD COLUMN workflow_disabled INTEGER NOT NULL DEFAULT 0"
+            ),
+            "permission_allowlist_json": (
+                "ALTER TABLE tickets ADD COLUMN permission_allowlist_json "
+                "TEXT NOT NULL DEFAULT '[]'"
+            ),
+        },
+    )
+
+
+def _m_workspace_runtime_columns(conn: Connection) -> None:
+    _add_columns_if_missing(
+        conn,
+        "workspaces",
+        {
+            "orchestration_profile_slug": (
+                "ALTER TABLE workspaces ADD COLUMN orchestration_profile_slug "
+                "TEXT NOT NULL DEFAULT ''"
+            ),
+            "cli_adapter": "ALTER TABLE workspaces ADD COLUMN cli_adapter TEXT NOT NULL DEFAULT ''",
+            "claude_model": (
+                "ALTER TABLE workspaces ADD COLUMN claude_model TEXT NOT NULL DEFAULT ''"
+            ),
+            "cursor_model": (
+                "ALTER TABLE workspaces ADD COLUMN cursor_model TEXT NOT NULL DEFAULT ''"
+            ),
+            "lmstudio_base_url": (
+                "ALTER TABLE workspaces ADD COLUMN lmstudio_base_url TEXT NOT NULL DEFAULT ''"
+            ),
+            "lmstudio_model": (
+                "ALTER TABLE workspaces ADD COLUMN lmstudio_model TEXT NOT NULL DEFAULT ''"
+            ),
+            "permission_allowlist_json": (
+                "ALTER TABLE workspaces ADD COLUMN permission_allowlist_json "
+                "TEXT NOT NULL DEFAULT '[]'"
+            ),
+        },
+    )
+
+
+def _m_approval_columns(conn: Connection) -> None:
+    _add_columns_if_missing(
+        conn,
+        "approvals",
+        {
+            "run_id": "ALTER TABLE approvals ADD COLUMN run_id TEXT",
+            "kind": ("ALTER TABLE approvals ADD COLUMN kind TEXT NOT NULL DEFAULT 'workflow_gate'"),
+            "permission_request_id": (
+                "ALTER TABLE approvals ADD COLUMN permission_request_id TEXT NOT NULL DEFAULT ''"
+            ),
+            "tool_name": "ALTER TABLE approvals ADD COLUMN tool_name TEXT NOT NULL DEFAULT ''",
+            "tool_input_json": (
+                "ALTER TABLE approvals ADD COLUMN tool_input_json TEXT NOT NULL DEFAULT '{}'"
+            ),
+            "cli_adapter": "ALTER TABLE approvals ADD COLUMN cli_adapter TEXT NOT NULL DEFAULT ''",
+            "cli_session_id": (
+                "ALTER TABLE approvals ADD COLUMN cli_session_id TEXT NOT NULL DEFAULT ''"
+            ),
+            "response_json": (
+                "ALTER TABLE approvals ADD COLUMN response_json TEXT NOT NULL DEFAULT '{}'"
+            ),
+        },
+    )
+
+
+def _m_agent_run_orchestration_id(conn: Connection) -> None:
+    _add_columns_if_missing(
+        conn,
+        "agent_runs",
+        {"orchestration_run_id": "ALTER TABLE agent_runs ADD COLUMN orchestration_run_id TEXT"},
+    )
+
+
+def _m_orchestration_run_columns(conn: Connection) -> None:
+    _add_columns_if_missing(
+        conn,
+        "orchestration_runs",
+        {
+            "auto_approve": (
+                "ALTER TABLE orchestration_runs ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 0"
+            ),
+            "stop_at_stage_key": (
+                "ALTER TABLE orchestration_runs ADD COLUMN stop_at_stage_key "
+                "TEXT NOT NULL DEFAULT ''"
+            ),
+        },
+    )
+
+
+def _m_triage_messages_table(conn: Connection) -> None:
+    if _table_exists(conn, "triage_messages"):
+        return
+    conn.execute(
+        text(
+            """
+            CREATE TABLE triage_messages (
+                id TEXT PRIMARY KEY,
+                ticket_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(ticket_id) REFERENCES tickets(id)
+            )
+            """
+        )
+    )
+    conn.execute(text("CREATE INDEX ix_triage_messages_ticket_id ON triage_messages (ticket_id)"))
+
+
+# Ordered registry. Append new migrations here with the next id; never reorder or
+# rewrite an id that may already be recorded in a deployed database.
+MIGRATIONS: list[tuple[str, Migration]] = [
+    ("0001_workspace_workflow_override", _m_workspace_workflow_override),
+    ("0002_ticket_columns", _m_ticket_columns),
+    ("0003_workspace_runtime_columns", _m_workspace_runtime_columns),
+    ("0004_approval_columns", _m_approval_columns),
+    ("0005_agent_run_orchestration_id", _m_agent_run_orchestration_id),
+    ("0006_orchestration_run_columns", _m_orchestration_run_columns),
+    ("0007_triage_messages_table", _m_triage_messages_table),
+]
+
+
+def _ensure_migrations_table(conn: Connection) -> None:
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                id TEXT PRIMARY KEY,
+                applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+    )
+
+
+def _applied_ids(conn: Connection) -> set[str]:
+    rows = conn.execute(text("SELECT id FROM schema_migrations")).fetchall()
+    return {row[0] for row in rows}
+
+
+def apply_migrations(engine: Engine) -> list[str]:
+    """Apply pending migrations in order. Returns the ids that ran this call."""
+    if not str(engine.url).startswith("sqlite"):
+        return []
+    applied: list[str] = []
+    with engine.begin() as conn:
+        _ensure_migrations_table(conn)
+        already = _applied_ids(conn)
+        for migration_id, migrate in MIGRATIONS:
+            if migration_id in already:
+                continue
+            migrate(conn)
+            conn.execute(
+                text("INSERT INTO schema_migrations (id) VALUES (:id)"),
+                {"id": migration_id},
+            )
+            applied.append(migration_id)
+    return applied

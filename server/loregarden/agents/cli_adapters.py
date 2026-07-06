@@ -67,6 +67,39 @@ def _append_model_flag(argv: list[str], model: str) -> None:
         argv.extend(["--model", model])
 
 
+def _env_command_override(
+    *,
+    agent_id: str,
+    prompt: str,
+    prompt_file: Path,
+    skill_name: str,
+    workspace_root: Path,
+) -> CliInvocation | None:
+    """Honor a per-agent ``LOREGARDEN_AGENT_<ID>_CMD`` argv template, if set."""
+    override = os.environ.get(f"LOREGARDEN_AGENT_{agent_id.upper()}_CMD")
+    if not override:
+        return None
+    argv = shlex.split(
+        override.format(
+            prompt_file=str(prompt_file),
+            prompt=prompt,
+            agent_id=agent_id,
+            skill=skill_name,
+            workspace=str(workspace_root),
+        )
+    )
+    return CliInvocation(argv=argv, stdin_prompt=None, cwd=str(workspace_root))
+
+
+def _codex_invocation(*, prompt: str, workspace_root: Path) -> CliInvocation:
+    return CliInvocation(
+        argv=[_bin("codex", "LOREGARDEN_CODEX_BIN"), "exec", "-"],
+        stdin_prompt=prompt,
+        adapter="codex",
+        cwd=str(workspace_root),
+    )
+
+
 def build_interactive_invocation(
     *,
     adapter: str,
@@ -243,19 +276,15 @@ def resolve_cli_invocation(
     resume_session_id: str = "",
 ) -> CliInvocation:
     """Resolve subprocess argv. Agents are adapters — no orchestration logic here."""
-    env_key = f"LOREGARDEN_AGENT_{agent_id.upper()}_CMD"
-    override = os.environ.get(env_key)
-    if override:
-        argv = shlex.split(
-            override.format(
-                prompt_file=str(prompt_file),
-                prompt=prompt,
-                agent_id=agent_id,
-                skill=skill_name,
-                workspace=str(workspace_root),
-            )
-        )
-        return CliInvocation(argv=argv, stdin_prompt=None, cwd=str(workspace_root))
+    override = _env_command_override(
+        agent_id=agent_id,
+        prompt=prompt,
+        prompt_file=prompt_file,
+        skill_name=skill_name,
+        workspace_root=workspace_root,
+    )
+    if override is not None:
+        return override
 
     selected = resolve_effective_adapter(agent_adapter=adapter, workspace=workspace)
     claude_model = resolve_claude_model(workspace)
@@ -293,12 +322,7 @@ def resolve_cli_invocation(
         )
 
     if selected == "codex":
-        return CliInvocation(
-            argv=[_bin("codex", "LOREGARDEN_CODEX_BIN"), "exec", "-"],
-            stdin_prompt=prompt,
-            adapter="codex",
-            cwd=str(workspace_root),
-        )
+        return _codex_invocation(prompt=prompt, workspace_root=workspace_root)
 
     if selected == "lmstudio":
         return _lmstudio_invocation(
@@ -326,19 +350,15 @@ def build_triage_invocation(
     Stage runs use stream-json + permission bridge; triage must return plain text
     from stdout in a single communicate() call.
     """
-    env_key = f"LOREGARDEN_AGENT_{agent_id.upper()}_CMD"
-    override = os.environ.get(env_key)
-    if override:
-        argv = shlex.split(
-            override.format(
-                prompt_file=str(prompt_file),
-                prompt=prompt,
-                agent_id=agent_id,
-                skill=skill_name,
-                workspace=str(workspace_root),
-            )
-        )
-        return CliInvocation(argv=argv, stdin_prompt=None, cwd=str(workspace_root))
+    override = _env_command_override(
+        agent_id=agent_id,
+        prompt=prompt,
+        prompt_file=prompt_file,
+        skill_name=skill_name,
+        workspace_root=workspace_root,
+    )
+    if override is not None:
+        return override
 
     selected = resolve_effective_adapter(agent_adapter=adapter, workspace=workspace)
     cursor_model = resolve_cursor_model(workspace)
@@ -396,12 +416,7 @@ def build_triage_invocation(
         return CliInvocation(argv=argv, adapter="cursor", cwd=str(workspace_root))
 
     if selected == "codex":
-        return CliInvocation(
-            argv=[_bin("codex", "LOREGARDEN_CODEX_BIN"), "exec", "-"],
-            stdin_prompt=prompt,
-            adapter="codex",
-            cwd=str(workspace_root),
-        )
+        return _codex_invocation(prompt=prompt, workspace_root=workspace_root)
 
     if selected == "lmstudio":
         return _lmstudio_invocation(
