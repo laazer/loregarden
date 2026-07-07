@@ -432,6 +432,9 @@ button {
   border: 1px solid transparent;
   background: transparent;
   color: var(--txm);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
 }
 
 .studio-subtab:hover {

@@ -4,6 +4,8 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { AppLayout } from "./components/AppLayout";
 import { RouterBridgeSync } from "./components/RouterBridgeSync";
+import { StudioSectionRedirect } from "./components/StudioSectionRedirect";
+import { TicketTabRedirect } from "./components/TicketTabRedirect";
 import { Dashboard } from "./pages/Dashboard";
 import { EditorPage } from "./pages/EditorPage";
 import { QueuePage } from "./pages/QueuePage";
@@ -53,8 +55,11 @@ function AppShell() {
       <PageErrorBoundary>
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/tickets/:ticketId" element={<Dashboard />} />
-          <Route path="/studio/*" element={<StudioPage />} />
+          <Route path="/tickets/:ticketId" element={<TicketTabRedirect />} />
+          <Route path="/tickets/:ticketId/:artifactTab" element={<Dashboard />} />
+          <Route path="/studio" element={<StudioSectionRedirect />} />
+          <Route path="/studio/:studioSection/:resourceId/*" element={<StudioPage />} />
+          <Route path="/studio/:studioSection/*" element={<StudioPage />} />
           <Route path="/editor/*" element={<EditorPage />} />
           <Route path="/queue/*" element={<QueuePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

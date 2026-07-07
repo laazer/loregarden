@@ -4,8 +4,6 @@ import { persist } from "zustand/middleware";
 import type { TicketState, WorkItemType } from "../api/client";
 import { navigateToPage } from "../lib/useAppNavigation";
 
-type Tab = "diff" | "logs" | "tests" | "hive" | "context" | "errors" | "triage" | "pr";
-
 export type PaneId = "workspaces" | "tickets" | "workflow" | "artifacts";
 
 export type PaneVisibility = Record<PaneId, boolean>;
@@ -16,7 +14,6 @@ interface UiState {
   search: string;
   expandedTicketIds: string[];
   workspace: string;
-  tab: Tab;
   inboxOpen: boolean;
   paneVisibility: PaneVisibility;
   editorWorkspace: string;
@@ -33,7 +30,6 @@ interface UiState {
   collapseAll: () => void;
   expandPath: (ids: string[]) => void;
   setWorkspace: (slug: string) => void;
-  setTab: (tab: Tab) => void;
   setInboxOpen: (open: boolean) => void;
   setPaneVisible: (pane: PaneId, visible: boolean) => void;
   togglePane: (pane: PaneId) => void;
@@ -57,7 +53,6 @@ export const useUiStore = create<UiState>()(
       search: "",
       expandedTicketIds: [],
       workspace: "all",
-      tab: "diff",
       inboxOpen: false,
       paneVisibility: {
         workspaces: true,
@@ -102,7 +97,6 @@ export const useUiStore = create<UiState>()(
         set({ expandedTicketIds: [...cur] });
       },
       setWorkspace: (workspace) => set({ workspace }),
-      setTab: (tab) => set({ tab }),
       setInboxOpen: (inboxOpen) => set({ inboxOpen }),
       setPaneVisible: (pane, visible) =>
         set((state) => {

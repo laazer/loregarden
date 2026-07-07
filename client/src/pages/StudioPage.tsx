@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { NavLink } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -17,6 +18,8 @@ import { McpToolGuideSection } from "../components/studio/McpToolGuideSection";
 import { GateHandoffEditor } from "../components/studio/GateHandoffEditor";
 import { TicketStudioPanel } from "../components/studio/TicketStudioPanel";
 import { WorkflowPreviewPanel } from "../components/studio/WorkflowPreviewPanel";
+import { navigateToStudio, navigateToStudioAgent, navigateToStudioAgentNew, navigateToStudioWorkflow, navigateToStudioWorkflowNew, useStudioResourceFromRoute, useStudioSectionFromRoute } from "../lib/useAppNavigation";
+import { isStudioNewResource, studioPath } from "../lib/appNavigation";
 
 const ADAPTERS = [
   { id: "claude", label: "Claude Code" },
@@ -76,10 +79,19 @@ function stageTypeClass(type: StudioWorkflowStage["stage_type"]): string {
 
 export function StudioPage() {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"agents" | "workflows" | "tickets">("agents");
+  const tab = useStudioSectionFromRoute();
+  const studioResourceId = useStudioResourceFromRoute();
+  const isNewAgent = tab === "agents" && isStudioNewResource(studioResourceId);
+  const isNewWorkflow = tab === "workflows" && isStudioNewResource(studioResourceId);
+  const selectedAgentSlug =
+    tab === "agents" && studioResourceId && !isStudioNewResource(studioResourceId)
+      ? studioResourceId
+      : null;
+  const selectedWorkflowSlug =
+    tab === "workflows" && studioResourceId && !isStudioNewResource(studioResourceId)
+      ? studioResourceId
+      : null;
   const [layoutMode, setLayoutMode] = useState<"workbench" | "focus">("workbench");
-  const [selectedAgentSlug, setSelectedAgentSlug] = useState<string | null>(null);
-  const [selectedWorkflowSlug, setSelectedWorkflowSlug] = useState<string | null>(null);
   const [agentDraft, setAgentDraft] = useState({ ...EMPTY_AGENT });
   const [workflowDraft, setWorkflowDraft] = useState<{
     slug: string;
@@ -179,7 +191,7 @@ export function StudioPage() {
     },
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["studio-agents"] });
-      setSelectedAgentSlug(saved.slug);
+      navigateToStudioAgent(saved.slug, true);
     },
   });
 
@@ -187,7 +199,7 @@ export function StudioPage() {
     mutationFn: (slug: string) => api.deleteStudioAgent(slug),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["studio-agents"] });
-      setSelectedAgentSlug(null);
+      navigateToStudio("agents", true);
       setAgentDraft({ ...EMPTY_AGENT });
     },
   });
@@ -207,7 +219,7 @@ export function StudioPage() {
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["studio-workflows"] });
       qc.invalidateQueries({ queryKey: ["workflow-templates"] });
-      setSelectedWorkflowSlug(saved.slug);
+      navigateToStudioWorkflow(saved.slug, true);
     },
   });
 
@@ -223,7 +235,7 @@ export function StudioPage() {
     mutationFn: (slug: string) => api.deleteStudioWorkflow(slug),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["studio-workflows"] });
-      setSelectedWorkflowSlug(null);
+      navigateToStudio("workflows", true);
       setWorkflowDraft({ slug: "", name: "", description: "", stages: [emptyStage(1)] });
     },
   });
@@ -259,8 +271,8 @@ export function StudioPage() {
     });
   }, [selectedWorkflowSlug, workflows.data]);
 
-  const startNewAgent = () => {
-    setSelectedAgentSlug(null);
+  useEffect(() => {
+    if (!isNewAgent) return;
     const defaults = studioDefaults.data;
     setAgentDraft({
       ...EMPTY_AGENT,
@@ -268,10 +280,33 @@ export function StudioPage() {
       handoff_checks: defaults?.handoff_checks ?? [],
       gate_checks: defaults?.gate_checks ?? [],
     });
+  }, [isNewAgent, studioDefaults.data]);
+
+  useEffect(() => {
+    if (!isNewWorkflow) return;
+    setWorkflowDraft({ slug: "", name: "", description: "", stages: [emptyStage(1)] });
+  }, [isNewWorkflow]);
+
+  useEffect(() => {
+    if (tab !== "agents" || !selectedAgentSlug || !agents.data) return;
+    if (!agents.data.some((agent) => agent.slug === selectedAgentSlug)) {
+      navigateToStudio("agents", true);
+    }
+  }, [tab, selectedAgentSlug, agents.data]);
+
+  useEffect(() => {
+    if (tab !== "workflows" || !selectedWorkflowSlug || !workflows.data) return;
+    if (!workflows.data.some((workflow) => workflow.slug === selectedWorkflowSlug)) {
+      navigateToStudio("workflows", true);
+    }
+  }, [tab, selectedWorkflowSlug, workflows.data]);
+
+  const startNewAgent = () => {
+    navigateToStudioAgentNew();
   };
 
   const duplicateAgent = (agent: StudioAgent) => {
-    setSelectedAgentSlug(null);
+    navigateToStudioAgentNew();
     setAgentDraft({
       slug: `${agent.slug}-copy`,
       name: `${agent.name} (copy)`,
@@ -288,13 +323,17 @@ export function StudioPage() {
   };
 
   const duplicateWorkflow = (workflow: StudioWorkflow) => {
-    setSelectedWorkflowSlug(null);
+    navigateToStudioWorkflowNew();
     setWorkflowDraft({
       slug: `${workflow.slug}-copy`,
       name: `${workflow.name} (copy)`,
       description: workflow.description,
       stages: workflow.stages.map((stage, idx) => ({ ...stage, order: idx + 1 })),
     });
+  };
+
+  const startNewWorkflow = () => {
+    navigateToStudioWorkflowNew();
   };
 
   const toggleMcpTool = (tool: string) => {
@@ -379,33 +418,23 @@ export function StudioPage() {
       </header>
 
       <div className="studio-subtabs" role="tablist" aria-label="Studio sections">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "agents"}
-          className={`studio-subtab${tab === "agents" ? " active" : ""}`}
-          onClick={() => setTab("agents")}
-        >
-          Agent Studio
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "workflows"}
-          className={`studio-subtab${tab === "workflows" ? " active" : ""}`}
-          onClick={() => setTab("workflows")}
-        >
-          Workflow Studio
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "tickets"}
-          className={`studio-subtab${tab === "tickets" ? " active" : ""}`}
-          onClick={() => setTab("tickets")}
-        >
-          Ticket Studio
-        </button>
+        {(
+          [
+            ["agents", "Agent Studio"],
+            ["workflows", "Workflow Studio"],
+            ["tickets", "Ticket Studio"],
+          ] as const
+        ).map(([section, label]) => (
+          <NavLink
+            key={section}
+            to={studioPath(section)}
+            role="tab"
+            aria-selected={tab === section}
+            className={`studio-subtab${tab === section ? " active" : ""}`}
+          >
+            {label}
+          </NavLink>
+        ))}
       </div>
 
       <div className="studio-body">
@@ -437,7 +466,7 @@ export function StudioPage() {
                             key={agent.slug}
                             type="button"
                             className={`studio-library-item${selectedAgentSlug === agent.slug ? " active" : ""}`}
-                            onClick={() => setSelectedAgentSlug(agent.slug)}
+                            onClick={() => navigateToStudioAgent(agent.slug)}
                           >
                             <span className="studio-library-item-name">{agent.name}</span>
                             <div className="studio-library-item-meta">
@@ -459,7 +488,7 @@ export function StudioPage() {
                         key={agent.slug}
                         type="button"
                         className={`studio-library-item${selectedAgentSlug === agent.slug ? " active" : ""}`}
-                        onClick={() => setSelectedAgentSlug(agent.slug)}
+                        onClick={() => navigateToStudioAgent(agent.slug)}
                       >
                         <span className="studio-library-item-name">{agent.name}</span>
                         <div className="studio-library-item-meta">
@@ -488,7 +517,7 @@ export function StudioPage() {
                       key={agent.slug}
                       type="button"
                       className={`studio-focus-chip${selectedAgentSlug === agent.slug ? " active" : ""}`}
-                      onClick={() => setSelectedAgentSlug(agent.slug)}
+                      onClick={() => navigateToStudioAgent(agent.slug)}
                     >
                       {agent.name}
                     </button>
@@ -706,10 +735,7 @@ export function StudioPage() {
                 <button
                   type="button"
                   className="studio-library-cta"
-                  onClick={() => {
-                    setSelectedWorkflowSlug(null);
-                    setWorkflowDraft({ slug: "", name: "", description: "", stages: [emptyStage(1)] });
-                  }}
+                  onClick={startNewWorkflow}
                 >
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
                     <path d="M12 5v14M5 12h14" />
@@ -725,7 +751,7 @@ export function StudioPage() {
                           key={workflow.slug}
                           type="button"
                           className={`studio-library-item${selectedWorkflowSlug === workflow.slug ? " active" : ""}`}
-                          onClick={() => setSelectedWorkflowSlug(workflow.slug)}
+                          onClick={() => navigateToStudioWorkflow(workflow.slug)}
                         >
                           <span className="studio-library-item-name">{workflow.name}</span>
                           <div className="studio-library-item-meta">
@@ -745,7 +771,7 @@ export function StudioPage() {
                       key={workflow.slug}
                       type="button"
                       className={`studio-library-item${selectedWorkflowSlug === workflow.slug ? " active" : ""}`}
-                      onClick={() => setSelectedWorkflowSlug(workflow.slug)}
+                      onClick={() => navigateToStudioWorkflow(workflow.slug)}
                     >
                       <span className="studio-library-item-name">{workflow.name}</span>
                       <div className="studio-library-item-meta">
@@ -764,10 +790,7 @@ export function StudioPage() {
                   <button
                     type="button"
                     className="studio-focus-chip-new"
-                    onClick={() => {
-                      setSelectedWorkflowSlug(null);
-                      setWorkflowDraft({ slug: "", name: "", description: "", stages: [emptyStage(1)] });
-                    }}
+                    onClick={startNewWorkflow}
                   >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
                       <path d="M12 5v14M5 12h14" />
@@ -779,7 +802,7 @@ export function StudioPage() {
                       key={workflow.slug}
                       type="button"
                       className={`studio-focus-chip${selectedWorkflowSlug === workflow.slug ? " active" : ""}`}
-                      onClick={() => setSelectedWorkflowSlug(workflow.slug)}
+                      onClick={() => navigateToStudioWorkflow(workflow.slug)}
                     >
                       {workflow.name}
                     </button>

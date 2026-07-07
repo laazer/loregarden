@@ -86,6 +86,7 @@ describe('Dashboard - Ticket Details Button Integration', () => {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/tickets/:ticketId" element={<Dashboard />} />
+            <Route path="/tickets/:ticketId/:artifactTab" element={<Dashboard />} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>

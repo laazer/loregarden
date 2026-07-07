@@ -53,7 +53,7 @@ export function AppIconRail({ onOpenSettings }: AppIconRailProps) {
         </svg>
       </NavButton>
 
-      <NavButton active={appPage === "studio"} title="Studios" to="/studio">
+      <NavButton active={appPage === "studio"} title="Studios" to="/studio/agents">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
           <path d="M12 3 3 8v8l9 5 9-5V8z" />
           <path d="M3 8l9 5 9-5M12 13v8" />

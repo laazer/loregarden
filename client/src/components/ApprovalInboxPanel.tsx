@@ -11,7 +11,6 @@ export function ApprovalInboxPanel() {
   const qc = useQueryClient();
   const inboxOpen = useUiStore((s) => s.inboxOpen);
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
-  const setTab = useUiStore((s) => s.setTab);
 
   const approvals = useQuery({
     queryKey: ["approvals"],
@@ -91,9 +90,8 @@ export function ApprovalInboxPanel() {
               }
               onReject={() => resolveApproval.mutate({ id: a.id, action: "reject" })}
               onInspect={() => {
-                navigateToTicket(a.ticket_id);
+                navigateToTicket(a.ticket_id, { tab: "diff" });
                 setInboxOpen(false);
-                setTab("diff");
               }}
               isSubmitting={resolveApproval.isPending && resolveApproval.variables?.id === a.id}
             />

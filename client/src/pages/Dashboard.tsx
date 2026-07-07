@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useParams } from "react-router-dom";
 import { api, API_BASE, type StageStatus, type TicketDetail, type TicketImportPreviewResponse, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
 import { AppTopbarActions } from "../components/AppTopbarActions";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
@@ -29,7 +30,8 @@ import { AddWorkspaceModal, type AddWorkspaceDraft } from "../components/AddWork
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { runtimeFromWorkspace, runtimeSettingsEqual } from "../components/WorkspaceRuntimeFields";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
-import { navigateToTicket, useTicketIdFromRoute } from "../lib/useAppNavigation";
+import { navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
+import { isArtifactTab } from "../lib/appNavigation";
 import { useUiStore, type PaneId } from "../state/uiStore";
 import { agentsAssembleLabel } from "../lib/workflowHelpers";
 import { PANE_LABELS } from "../lib/appTopbarConfig";
@@ -140,13 +142,14 @@ function canRunStage(
 export function Dashboard() {
   const qc = useQueryClient();
   const routeTicketId = useTicketIdFromRoute();
+  const { artifactTab: rawArtifactTab } = useParams<{ artifactTab?: string }>();
+  const artifactTab = useArtifactTabFromRoute();
   const {
     stateFilters,
     typeFilters,
     search,
     expandedTicketIds,
     workspace,
-    tab,
     toggleStateFilter,
     clearStateFilters,
     toggleTypeFilter,
@@ -155,7 +158,6 @@ export function Dashboard() {
     toggleExpanded,
     expandPath,
     setWorkspace,
-    setTab,
     paneVisibility,
     setPaneVisible,
     openEditorFile,
@@ -171,8 +173,8 @@ export function Dashboard() {
   const artifactTabRefs = useRef<Partial<Record<string, HTMLButtonElement>>>({});
 
   useEffect(() => {
-    artifactTabRefs.current[tab]?.scrollIntoView({ block: "nearest", inline: "center" });
-  }, [tab]);
+    artifactTabRefs.current[artifactTab]?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [artifactTab]);
 
   const wsParam = workspace === "all" ? undefined : workspace;
 
@@ -222,9 +224,19 @@ export function Dashboard() {
 
   const selectedId = routeTicketId ?? flatTickets[0]?.id ?? null;
 
-  const selectTicket = useCallback((id: string) => {
-    navigateToTicket(id);
-  }, []);
+  const selectTicket = useCallback(
+    (id: string) => {
+      navigateToTicket(id, { tab: artifactTab });
+    },
+    [artifactTab],
+  );
+
+  useEffect(() => {
+    if (!routeTicketId || !rawArtifactTab) return;
+    if (!isArtifactTab(rawArtifactTab)) {
+      navigateToTicket(routeTicketId, { tab: "diff", replace: true });
+    }
+  }, [routeTicketId, rawArtifactTab]);
 
   useEffect(() => {
     setRunConfirmStageKey(null);
@@ -283,7 +295,7 @@ export function Dashboard() {
     mutationFn: (ticketId: string) => api.openPr(ticketId),
     onSuccess: (_data, ticketId) => {
       qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
-      setTab("pr");
+      navigateToTicketTab(ticketId, "pr");
       setRunConfirmStageKey(null);
     },
   });
@@ -294,7 +306,7 @@ export function Dashboard() {
       qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
       qc.invalidateQueries({ queryKey: ["runs", selectedId] });
-      setTab("logs");
+      navigateToTicketTab(selectedId!, "logs");
       setRunConfirmStageKey(null);
     },
     onError: () => {
@@ -741,9 +753,9 @@ export function Dashboard() {
     lastAutoTabTicketId.current = sel.id;
 
     if (sel.blocking_issues || sel.artifacts?.error) {
-      setTab("errors");
+      navigateToTicketTab(sel.id, "errors", true);
     }
-  }, [sel?.id, sel?.blocking_issues, sel?.artifacts?.error, setTab]);
+  }, [sel?.id, sel?.blocking_issues, sel?.artifacts?.error]);
 
   const counts = flatTickets.reduce(
     (acc, t) => {
@@ -1154,7 +1166,7 @@ export function Dashboard() {
                     <button
                       type="button"
                       className="btn-secondary btn-compact"
-                      onClick={() => setTab("errors")}
+                      onClick={() => selectedId && navigateToTicketTab(selectedId, "errors")}
                     >
                       View Errors
                     </button>
@@ -1296,9 +1308,9 @@ export function Dashboard() {
                     if (el) artifactTabRefs.current[t] = el;
                   }}
                   role="tab"
-                  aria-selected={tab === t}
-                  className={`tab-btn ${tab === t ? "active" : ""}`}
-                  onClick={() => setTab(t)}
+                  aria-selected={artifactTab === t}
+                  className={`tab-btn ${artifactTab === t ? "active" : ""}`}
+                  onClick={() => selectedId && navigateToTicketTab(selectedId, t)}
                   style={
                     t === "errors" && hasRunErrors
                       ? { color: "var(--rdl)" }
@@ -1349,7 +1361,7 @@ export function Dashboard() {
             </div>
           </div>
           <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
-            {tab === "triage" ? (
+            {artifactTab === "triage" ? (
               <TriagePanel
                 ticket={sel}
                 runtimeOptions={runtimeOptions.data}
@@ -1359,7 +1371,7 @@ export function Dashboard() {
                   qc.invalidateQueries({ queryKey: ["runs", selectedId] });
                 }}
               />
-            ) : tab === "logs" && sel ? (
+            ) : artifactTab === "logs" && sel ? (
               <LogsPanel
                 ticket={sel}
                 runtimeOptions={runtimeOptions.data}
@@ -1369,11 +1381,11 @@ export function Dashboard() {
                   qc.invalidateQueries({ queryKey: ["runs", selectedId] });
                 }}
               />
-            ) : tab === "hive" && sel ? (
+            ) : artifactTab === "hive" && sel ? (
               <HiveSimulationPanel ticket={sel} />
             ) : (
               <ArtifactView
-                tab={tab}
+                tab={artifactTab}
                 ticket={sel}
                 runs={ticketRuns.data ?? []}
                 onOpenEditorFile={(filePath) =>

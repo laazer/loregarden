@@ -9,6 +9,13 @@ import {
   type WorkspaceRuntimeSettings,
   type WorkspaceSummary,
 } from "../../api/client";
+import { isStudioNewResource } from "../../lib/appNavigation";
+import {
+  navigateToStudio,
+  navigateToStudioTicketSession,
+  navigateToStudioTicketSessionNew,
+  useStudioResourceFromRoute,
+} from "../../lib/useAppNavigation";
 import { ParentTicketSelector } from "../ParentTicketSelector";
 import { workItemTypeLabel } from "../../lib/workItemHierarchy";
 import { runtimeSummaryLabel } from "../WorkspaceRuntimeFields";
@@ -47,8 +54,11 @@ export function TicketStudioPanel({
   runtimeOptions: RuntimeOptions | undefined;
 }) {
   const qc = useQueryClient();
+  const routeSessionId = useStudioResourceFromRoute();
+  const isNewSession = isStudioNewResource(routeSessionId);
+  const selectedSessionId =
+    routeSessionId && !isStudioNewResource(routeSessionId) ? routeSessionId : null;
   const [workspaceSlug, setWorkspaceSlug] = useState(workspaces[0]?.slug ?? "loregarden");
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [newDraft, setNewDraft] = useState(emptySessionDraft);
   const [chatDraft, setChatDraft] = useState("");
   const [modelModalOpen, setModelModalOpen] = useState(false);
@@ -63,15 +73,43 @@ export function TicketStudioPanel({
     enabled: !!workspaceSlug,
   });
 
+  const sessionById = useQuery({
+    queryKey: ["ticket-studio-session", selectedSessionId],
+    queryFn: () => api.ticketStudioSession(selectedSessionId!),
+    enabled: Boolean(selectedSessionId),
+  });
+
   const studioAgents = useQuery({
     queryKey: ["studio-agents"],
     queryFn: api.studioAgents,
   });
 
-  const selectedSession = useMemo(
-    () => sessions.data?.find((s) => s.id === selectedSessionId) ?? null,
-    [sessions.data, selectedSessionId],
-  );
+  const selectedSession = useMemo(() => {
+    if (!selectedSessionId) return null;
+    return (
+      sessions.data?.find((session) => session.id === selectedSessionId) ??
+      sessionById.data ??
+      null
+    );
+  }, [selectedSessionId, sessions.data, sessionById.data]);
+
+  useEffect(() => {
+    const workspace = sessionById.data?.workspace_slug;
+    if (!workspace || workspace === workspaceSlug) return;
+    setWorkspaceSlug(workspace);
+  }, [sessionById.data?.workspace_slug, workspaceSlug]);
+
+  useEffect(() => {
+    if (!selectedSessionId || sessionById.isLoading || sessionById.isFetching) return;
+    if (sessionById.isError) {
+      navigateToStudio("tickets", true);
+    }
+  }, [selectedSessionId, sessionById.isError, sessionById.isLoading, sessionById.isFetching]);
+
+  useEffect(() => {
+    if (!isNewSession) return;
+    setNewDraft(emptySessionDraft());
+  }, [isNewSession]);
 
   useEffect(() => {
     if (!selectedSession) {
@@ -129,7 +167,7 @@ export function TicketStudioPanel({
       qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
         current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
       );
-      setSelectedSessionId(updated.id);
+      navigateToStudioTicketSession(updated.id, true);
       setAnswerDraft(updated.clarifying_answers);
       setNewDraft(emptySessionDraft());
     },
@@ -177,7 +215,7 @@ export function TicketStudioPanel({
     mutationFn: (id: string) => api.deleteTicketStudioSession(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ticket-studio-sessions", workspaceSlug] });
-      setSelectedSessionId(null);
+      navigateToStudio("tickets", true);
     },
   });
 
@@ -344,7 +382,7 @@ export function TicketStudioPanel({
               value={workspaceSlug}
               onChange={(e) => {
                 setWorkspaceSlug(e.target.value);
-                setSelectedSessionId(null);
+                navigateToStudio("tickets");
               }}
             >
               {workspaces.map((ws) => (
@@ -371,10 +409,7 @@ export function TicketStudioPanel({
             type="button"
             className="studio-library-cta"
             style={{ marginBottom: 16 }}
-            onClick={() => {
-              setSelectedSessionId(null);
-              setNewDraft(emptySessionDraft());
-            }}
+            onClick={() => navigateToStudioTicketSessionNew()}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
               <path d="M12 5v14M5 12h14" />
@@ -389,7 +424,7 @@ export function TicketStudioPanel({
                 key={session.id}
                 type="button"
                 className={`ticket-studio-session-item${selectedSessionId === session.id ? " active" : ""}`}
-                onClick={() => setSelectedSessionId(session.id)}
+                onClick={() => navigateToStudioTicketSession(session.id)}
               >
                 <div className="ticket-studio-session-title">{session.title}</div>
                 <div className="ticket-studio-session-meta">
