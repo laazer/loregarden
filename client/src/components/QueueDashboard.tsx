@@ -3,11 +3,13 @@
  * Combines visualization, controls, notifications, and analytics
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ParallelQueueVisualization } from './ParallelQueueVisualization';
 import { QueueNotifications } from './QueueNotifications';
 import { QueueAdvancedControls } from './QueueAdvancedControls';
 import { QueueHistoricalAnalytics } from './QueueHistoricalAnalytics';
+import { QueueOperationReview, OperationComment } from './QueueOperationReview';
+import { RunOutputReview, OutputLine } from './RunOutputReview';
 import { useParallelExecutionWS } from '../hooks/useParallelExecutionWS';
 import './QueueDashboard.css';
 
@@ -28,12 +30,20 @@ export function QueueDashboard({
     useParallelExecutionWS(workspaceId, userId);
 
   const [activeSidebarTab, setActiveSidebarTab] = useState<
-    'overview' | 'controls' | 'analytics'
+    'overview' | 'controls' | 'analytics' | 'review'
   >('overview');
 
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(['overview'])
   );
+
+  // Review tab state
+  const [operations, setOperations] = useState<any[]>([]);
+  const [selectedOperationId, setSelectedOperationId] = useState<string | null>(null);
+  const [operationDetails, setOperationDetails] = useState<any | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [outputReview, setOutputReview] = useState<any | null>(null);
+  const [isLoadingReview, setIsLoadingReview] = useState(false);
 
   const toggleSection = (sectionId: string) => {
     const newSections = new Set(expandedSections);
@@ -43,6 +53,175 @@ export function QueueDashboard({
       newSections.add(sectionId);
     }
     setExpandedSections(newSections);
+  };
+
+  // Fetch operations list
+  useEffect(() => {
+    if (activeSidebarTab === 'review') {
+      fetchOperations();
+    }
+  }, [activeSidebarTab, workspaceId]);
+
+  const fetchOperations = async () => {
+    try {
+      const response = await fetch(
+        `/api/parallel/workspace/${workspaceId}/queue/operations?limit=10&approved_only=false`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setOperations(data.operations || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch operations:', error);
+    }
+  };
+
+  // Fetch operation details
+  useEffect(() => {
+    if (selectedOperationId) {
+      fetchOperationDetails(selectedOperationId);
+    }
+  }, [selectedOperationId]);
+
+  const fetchOperationDetails = async (operationId: string) => {
+    setIsLoadingReview(true);
+    try {
+      const response = await fetch(
+        `/api/parallel/workspace/${workspaceId}/queue/operations/${operationId}/diff`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setOperationDetails(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch operation details:', error);
+    } finally {
+      setIsLoadingReview(false);
+    }
+  };
+
+  // Fetch run output review
+  useEffect(() => {
+    if (selectedRunId) {
+      fetchRunOutputReview(selectedRunId);
+    }
+  }, [selectedRunId]);
+
+  const fetchRunOutputReview = async (runId: string) => {
+    setIsLoadingReview(true);
+    try {
+      // First, create a review if it doesn't exist
+      const reviewResponse = await fetch(
+        `/api/parallel/workspace/${workspaceId}/runs/${runId}/output-review`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            output_type: 'stdout',
+            output_content: '', // Would fetch from actual run data
+          }),
+        }
+      );
+
+      if (reviewResponse.ok) {
+        const reviewData = await reviewResponse.json();
+        setOutputReview(reviewData);
+      }
+    } catch (error) {
+      console.error('Failed to fetch output review:', error);
+    } finally {
+      setIsLoadingReview(false);
+    }
+  };
+
+  // API handlers for review actions
+  const handleAddComment = async (content: string, runId?: string) => {
+    if (!selectedOperationId) return;
+
+    try {
+      await fetch(
+        `/api/parallel/workspace/${workspaceId}/queue/operations/${selectedOperationId}/comment`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content,
+            run_id: runId,
+            created_by: userId || 'system',
+          }),
+        }
+      );
+      // Refresh operation details
+      await fetchOperationDetails(selectedOperationId);
+    } catch (error) {
+      console.error('Failed to add comment:', error);
+    }
+  };
+
+  const handleApproveOperation = async () => {
+    if (!selectedOperationId) return;
+
+    try {
+      await fetch(
+        `/api/parallel/workspace/${workspaceId}/queue/operations/${selectedOperationId}/approve`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            approved_by: userId || 'system',
+          }),
+        }
+      );
+      // Refresh operation details
+      await fetchOperationDetails(selectedOperationId);
+    } catch (error) {
+      console.error('Failed to approve operation:', error);
+    }
+  };
+
+  const handleSubmitToAgent = async (agentId: string, instructions?: string) => {
+    if (!selectedOperationId) return;
+
+    try {
+      await fetch(
+        `/api/parallel/workspace/${workspaceId}/queue/operations/${selectedOperationId}/submit-to-agent`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agent_id: agentId,
+            instructions: instructions || '',
+            approved_by: userId || 'system',
+          }),
+        }
+      );
+      // Refresh operation details
+      await fetchOperationDetails(selectedOperationId);
+    } catch (error) {
+      console.error('Failed to submit to agent:', error);
+    }
+  };
+
+  const handleAddLineComment = async (lineNumber: number, content: string) => {
+    if (!selectedRunId || !outputReview) return;
+
+    try {
+      await fetch(
+        `/api/parallel/workspace/${workspaceId}/runs/${selectedRunId}/output-review/${outputReview.review_id}/comment`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            line_number: lineNumber,
+            content,
+          }),
+        }
+      );
+      // Refresh output review
+      await fetchRunOutputReview(selectedRunId);
+    } catch (error) {
+      console.error('Failed to add line comment:', error);
+    }
   };
 
   // Calculate dashboard metrics
@@ -116,6 +295,13 @@ export function QueueDashboard({
                 onClick={() => setActiveSidebarTab('overview')}
               >
                 📊 Overview
+              </button>
+
+              <button
+                className={`tab-btn ${activeSidebarTab === 'review' ? 'active' : ''}`}
+                onClick={() => setActiveSidebarTab('review')}
+              >
+                💬 Review
               </button>
 
               {showControls && (
@@ -199,6 +385,76 @@ export function QueueDashboard({
                         : 'Fallback to polling mode'}
                     </p>
                   </div>
+                </div>
+              )}
+
+              {activeSidebarTab === 'review' && (
+                <div className="review-panel">
+                  {!selectedOperationId ? (
+                    <div className="review-list">
+                      <h3>Queue Operations</h3>
+                      {operations.length === 0 ? (
+                        <p className="no-items">No operations to review</p>
+                      ) : (
+                        <div className="operations-list">
+                          {operations.map((op) => (
+                            <button
+                              key={op.id}
+                              className={`operation-item ${
+                                selectedOperationId === op.id ? 'selected' : ''
+                              }`}
+                              onClick={() => setSelectedOperationId(op.id)}
+                            >
+                              <span className="op-type">{op.operation_type}</span>
+                              <span className="op-status">
+                                {op.approved ? '✓ Approved' : '◯ Pending'}
+                              </span>
+                              <span className="op-affects">
+                                {op.affected_count} runs
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : operationDetails ? (
+                    <div className="review-detail">
+                      <button
+                        className="back-btn"
+                        onClick={() => {
+                          setSelectedOperationId(null);
+                          setOperationDetails(null);
+                          setSelectedRunId(null);
+                        }}
+                      >
+                        ← Back
+                      </button>
+
+                      {!selectedRunId ? (
+                        <QueueOperationReview
+                          operationId={operationDetails.operation_id}
+                          comments={operationDetails.comments || []}
+                          approved={operationDetails.approved}
+                          approvedBy={operationDetails.approved_by}
+                          onAddComment={handleAddComment}
+                          onApprove={handleApproveOperation}
+                          onSubmitToAgent={handleSubmitToAgent}
+                          isLoading={isLoadingReview}
+                        />
+                      ) : outputReview ? (
+                        <RunOutputReview
+                          outputType={outputReview.output_type || 'stdout'}
+                          lines={outputReview.lines || []}
+                          approved={outputReview.approved}
+                          approvedBy={outputReview.approved_by}
+                          onAddComment={handleAddLineComment}
+                          isLoading={isLoadingReview}
+                        />
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="loading">Loading operation details...</div>
+                  )}
                 </div>
               )}
 

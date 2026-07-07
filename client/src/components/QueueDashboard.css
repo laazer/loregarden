@@ -428,3 +428,178 @@
     min-width: 80px;
   }
 }
+
+/* Review Panel */
+.review-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.review-list h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.operations-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.operation-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  background: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  font-size: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .operation-item {
+    background: #2a2a2a;
+    border-color: #444;
+  }
+}
+
+.operation-item:hover {
+  background: #f0f0f0;
+  border-color: #2196f3;
+}
+
+@media (prefers-color-scheme: dark) {
+  .operation-item:hover {
+    background: #333;
+  }
+}
+
+.operation-item.selected {
+  background: #e3f2fd;
+  border-color: #2196f3;
+}
+
+@media (prefers-color-scheme: dark) {
+  .operation-item.selected {
+    background: #1a2a3a;
+    border-color: #66b3ff;
+  }
+}
+
+.operation-item .op-type {
+  font-weight: 600;
+  color: #2196f3;
+  min-width: 100px;
+}
+
+.operation-item .op-status {
+  flex: 1;
+  text-align: center;
+  font-size: 11px;
+}
+
+.operation-item .op-affects {
+  font-size: 11px;
+  color: #999;
+}
+
+@media (prefers-color-scheme: dark) {
+  .operation-item .op-affects {
+    color: #bbb;
+  }
+}
+
+.no-items {
+  text-align: center;
+  padding: 20px;
+  color: #999;
+  font-size: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .no-items {
+    color: #bbb;
+  }
+}
+
+.review-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.back-btn {
+  padding: 6px 12px;
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+@media (prefers-color-scheme: dark) {
+  .back-btn {
+    background: #2a2a2a;
+    border-color: #444;
+    color: #e0e0e0;
+  }
+}
+
+.back-btn:hover {
+  background: #e8e8e8;
+  border-color: #999;
+}
+
+@media (prefers-color-scheme: dark) {
+  .back-btn:hover {
+    background: #333;
+  }
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #999;
+  font-size: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .loading {
+    color: #bbb;
+  }
+}
+
+/* Review components inside sidebar */
+.review-detail > div[class*="queue-operation"] {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.review-detail > div[class*="run-output"] {
+  flex: 1;
+  overflow-y: auto;
+}
