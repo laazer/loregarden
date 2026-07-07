@@ -6,16 +6,11 @@
 .queue-dashboard {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  background: #f5f5f5;
+  flex: 1;
+  min-height: 0;
+  background: var(--bg0);
+  color: var(--tx);
   overflow: hidden;
-}
-
-@media (prefers-color-scheme: dark) {
-  .queue-dashboard {
-    background: #0a0a0a;
-    color: #e0e0e0;
-  }
 }
 
 /* Header */
@@ -24,16 +19,9 @@
   justify-content: space-between;
   align-items: center;
   padding: 20px;
-  background: white;
-  border-bottom: 2px solid #e0e0e0;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--bd);
   gap: 20px;
-}
-
-@media (prefers-color-scheme: dark) {
-  .dashboard-header {
-    background: #1e1e1e;
-    border-bottom-color: #444;
-  }
 }
 
 @media (max-width: 768px) {
@@ -52,7 +40,7 @@
 .workspace-indicator {
   margin: 0;
   font-size: 12px;
-  color: #999;
+  color: var(--txl);
 }
 
 .header-metrics {
@@ -66,16 +54,9 @@
   flex-direction: column;
   align-items: center;
   padding: 8px 12px;
-  background: #f5f5f5;
+  background: var(--bg2);
   border-radius: 6px;
-  border: 1px solid #e0e0e0;
-}
-
-@media (prefers-color-scheme: dark) {
-  .metric-badge {
-    background: #2a2a2a;
-    border-color: #444;
-  }
+  border: 1px solid var(--bd);
 }
 
 .metric-label {
@@ -602,4 +583,17 @@
 .review-detail > div[class*="run-output"] {
   flex: 1;
   overflow-y: auto;
+}
+
+.review-main-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.review-main-back {
+  align-self: flex-start;
 }

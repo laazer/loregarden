@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Request, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlmodel import Session
 
 from loregarden.config import settings
@@ -56,7 +56,7 @@ async def receive_ci_webhook(
     x_github_event: Optional[str] = Header(None),
     x_github_signature_256: Optional[str] = Header(None),
     x_gitlab_event: Optional[str] = Header(None),
-    session: Session = next(get_session()),
+    session: Session = Depends(get_session),
 ):
     """
     Receive CI results from GitHub Actions, GitLab CI, or generic webhook.
@@ -138,7 +138,7 @@ async def receive_ci_webhook(
 @router.get("/status/{ticket_id}")
 async def get_ci_status(
     ticket_id: str,
-    session: Session = next(get_session()),
+    session: Session = Depends(get_session),
 ):
     """
     Get latest CI status and auto-fix history for a ticket.
@@ -185,7 +185,7 @@ async def get_ci_status(
 @router.post("/manual-override/{ticket_id}")
 async def skip_ci_check(
     ticket_id: str,
-    session: Session = next(get_session()),
+    session: Session = Depends(get_session),
 ):
     """
     Admin: Skip CI gate and proceed to approval.
@@ -212,7 +212,7 @@ async def skip_ci_check(
 @router.post("/trigger-auto-fix/{ticket_id}")
 async def trigger_manual_auto_fix(
     ticket_id: str,
-    session: Session = next(get_session()),
+    session: Session = Depends(get_session),
 ):
     """
     Manually trigger auto-fix for a failing CI.

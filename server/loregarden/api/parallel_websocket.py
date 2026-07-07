@@ -8,10 +8,10 @@ This file demonstrates the pattern - integrate into existing api/parallel.py
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlmodel import Session, select
 
-from loregarden.core.db import get_session
+from loregarden.db.session import get_session
 from loregarden.models.domain import AgentRun, Ticket, WorktreeState
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.parallel_queue import ParallelQueueService
@@ -32,7 +32,7 @@ async def create_parallel_run_ws(
     ticket_id: str = Path(...),
     stage_key: Optional[str] = Query(None),
     max_concurrent: int = Query(3),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Create a new run with WebSocket event emission.
@@ -106,7 +106,7 @@ async def create_parallel_run_ws(
 async def complete_run_ws(
     run_id: str = Path(...),
     status: str = Query(...),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Mark a run as complete with WebSocket event emission.
@@ -196,7 +196,7 @@ async def complete_run_ws(
 @router.post("/runs/{run_id}/cancel")
 async def cancel_run_ws(
     run_id: str = Path(...),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Cancel a run with WebSocket event emission.

@@ -1,50 +1,6 @@
 import type { ReactNode } from "react";
-import type { DiffArtifact, DiffFileSection, TicketDetail } from "../../api/client";
-
-function diffFileSections(diff: DiffArtifact): DiffFileSection[] {
-  if (diff.sections?.length) {
-    return diff.sections;
-  }
-  if (!diff.lines?.length) {
-    return [];
-  }
-
-  const sections: DiffFileSection[] = [];
-  let current: DiffFileSection | null = null;
-
-  for (const line of diff.lines) {
-    const header = line.text.match(/^\+\+\+ b\/(.+)$/);
-    if (header) {
-      if (current?.lines.length) {
-        sections.push(current);
-      }
-      current = { path: header[1], add: 0, del: 0, lines: [] };
-      continue;
-    }
-    if (!current) {
-      current = { path: diff.file || "changes", add: 0, del: 0, lines: [] };
-    }
-    current.lines.push(line);
-    if (line.type === "a") current.add += 1;
-    if (line.type === "d") current.del += 1;
-  }
-  if (current?.lines.length) {
-    sections.push(current);
-  }
-  return sections;
-}
-
-function DiffLineView({ line }: { line: DiffFileSection["lines"][number] }) {
-  return (
-    <div className={`diff-line ${line.type === "a" ? "add" : line.type === "d" ? "del" : ""}`}>
-      <span style={{ width: 44, textAlign: "right", paddingRight: 12, color: "var(--txl)" }}>{line.ln}</span>
-      <span style={{ width: 15, textAlign: "center" }}>
-        {line.type === "a" ? "+" : line.type === "d" ? "−" : line.type === "h" ? "@" : " "}
-      </span>
-      <span style={{ flex: 1, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{line.text}</span>
-    </div>
-  );
-}
+import type { TicketDetail } from "../../api/client";
+import { InlineCodeDiffReview } from "../InlineCodeDiffReview";
 
 export function ArtifactView({
   tab,
@@ -62,6 +18,7 @@ export function ArtifactView({
     agent_id?: string;
     stage_key?: string;
     stderr?: string;
+    stdout?: string;
   }[];
   onOpenEditorFile?: (filePath: string) => void;
 }) {
@@ -80,45 +37,17 @@ export function ArtifactView({
       );
     }
     return (
-      <div>
-        <div className="diff-summary-bar">
-          <span>{diff.files}</span>
-          {diff.range && (
-            <span style={{ marginLeft: 12, opacity: 0.85 }}>vs {diff.range}</span>
-          )}
-          <span style={{ marginLeft: 12, color: "var(--grl)" }}>{diff.add}</span>
-          <span style={{ marginLeft: 8, color: "var(--rdl)" }}>{diff.del}</span>
-        </div>
-        {diffFileSections(diff).map((section) => (
-          <section key={section.path} className="diff-file-block">
-            <div className="diff-file-header">
-              {onOpenEditorFile ? (
-                <button
-                  type="button"
-                  className="diff-file-path diff-file-open-btn"
-                  title={`Open ${section.path} in editor`}
-                  onClick={() => onOpenEditorFile(section.path)}
-                >
-                  {section.path}
-                </button>
-              ) : (
-                <span className="diff-file-path" title={section.path}>
-                  {section.path}
-                </span>
-              )}
-              <span className="diff-file-stats">
-                <span style={{ color: "var(--grl)" }}>+{section.add}</span>
-                <span style={{ color: "var(--rdl)" }}>−{section.del}</span>
-              </span>
-            </div>
-            <div style={{ padding: "4px 0 8px" }}>
-              {section.lines.map((line, i) => (
-                <DiffLineView key={`${section.path}-${i}`} line={line} />
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
+      <InlineCodeDiffReview
+        ticketId={ticket.id}
+        diff={diff}
+        diffSummary={{
+          files: diff.files,
+          range: diff.range,
+          add: diff.add,
+          del: diff.del,
+        }}
+        onOpenEditorFile={onOpenEditorFile}
+      />
     );
   }
 

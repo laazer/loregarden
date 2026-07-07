@@ -7,7 +7,9 @@ from sqlmodel import Session
 
 from loregarden.api import (
     agents,
+    analytics,
     ci,
+    diff_review,
     editor,
     events,
     export,
@@ -66,6 +68,7 @@ app.add_middleware(
 )
 
 app.include_router(tickets.router, prefix="/api")
+app.include_router(diff_review.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
 app.include_router(editor.router, prefix="/api")
 app.include_router(system.router, prefix="/api")
@@ -83,6 +86,7 @@ app.include_router(usage.router, prefix="/api")
 app.include_router(ci.router, prefix="/api")
 app.include_router(parallel.router)
 app.include_router(queue_review.router)
+app.include_router(analytics.router)
 app.include_router(mcp.router, prefix="/mcp")
 
 

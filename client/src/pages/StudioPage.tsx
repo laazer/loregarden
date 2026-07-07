@@ -10,12 +10,12 @@ import {
   type StudioWorkflow,
   type StudioWorkflowStage,
 } from "../api/client";
+import { AppTopbarActions } from "../components/AppTopbarActions";
 import { BrandMark } from "../components/BrandMark";
 import { AgentPreviewPanel } from "../components/studio/AgentPreviewPanel";
 import { McpToolGuideSection } from "../components/studio/McpToolGuideSection";
 import { GateHandoffEditor } from "../components/studio/GateHandoffEditor";
 import { TicketStudioPanel } from "../components/studio/TicketStudioPanel";
-import { useUiStore } from "../state/uiStore";
 
 const ADAPTERS = [
   { id: "claude", label: "Claude Code" },
@@ -57,7 +57,6 @@ function emptyStage(order: number): StudioWorkflowStage {
 
 export function StudioPage() {
   const qc = useQueryClient();
-  const setAppPage = useUiStore((s) => s.setAppPage);
   const [tab, setTab] = useState<"agents" | "workflows" | "tickets">("agents");
   const [selectedAgentSlug, setSelectedAgentSlug] = useState<string | null>(null);
   const [selectedWorkflowSlug, setSelectedWorkflowSlug] = useState<string | null>(null);
@@ -317,10 +316,8 @@ export function StudioPage() {
             <div className="brand-sub">Agents, workflows, and feature scoping</div>
           </div>
         </div>
-        <div style={{ flex: 1 }} />
-        <button type="button" className="btn-secondary" onClick={() => setAppPage("dashboard")}>
-          Back to IDE
-        </button>
+        <div className="topbar-spacer" />
+        <AppTopbarActions />
       </header>
 
       <div style={{ display: "flex", gap: 0, flex: 1, minHeight: 0 }}>

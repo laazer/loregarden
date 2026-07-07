@@ -6,7 +6,8 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { getWebSocketClient } from '../services/websocket';
-import { useParallelExecution, ActiveRun, QueuedRun, ParallelStats } from './useParallelExecution';
+import { useParallelExecution } from './useParallelExecution';
+import type { ActiveRun, QueuedRun, ParallelStats } from './useParallelExecution';
 
 export interface ParallelExecutionWSStatus {
   activeRuns: ActiveRun[];

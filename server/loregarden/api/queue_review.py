@@ -1,8 +1,10 @@
 """Queue operation review system: diffs, comments, and approval workflow."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+
+from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel
 from sqlmodel import Session, select
 import json
 import difflib
@@ -14,10 +16,44 @@ from loregarden.models.domain import (
     RunOutputReview,
     Workspace,
 )
-from loregarden.db import get_session
-from loregarden.api.queue_management import emit_execution_update
+from loregarden.db.session import get_session
 
 router = APIRouter(prefix="/api/parallel", tags=["queue-review"])
+
+
+class CreateOperationRequest(BaseModel):
+    operation_type: str
+    before_state: list = []
+    after_state: list = []
+    description: str = ""
+    created_by: str = "system"
+
+
+class OperationCommentRequest(BaseModel):
+    content: str
+    line_number: Optional[int] = None
+    run_id: Optional[str] = None
+    created_by: str = "system"
+
+
+class ApproveOperationRequest(BaseModel):
+    approved_by: str = "system"
+
+
+class SubmitOperationRequest(BaseModel):
+    agent_id: str = "default-orchestrator"
+    instructions: str = ""
+    approved_by: str = "system"
+
+
+class OutputReviewRequest(BaseModel):
+    output_type: str = "stdout"
+    output_content: str = ""
+
+
+class OutputCommentRequest(BaseModel):
+    line_number: int
+    content: str
 
 
 def generate_diff(before: list, after: list) -> list[dict]:
@@ -79,11 +115,7 @@ def generate_diff(before: list, after: list) -> list[dict]:
 @router.post("/workspace/{workspace_id}/queue/operations/create")
 async def create_queue_operation(
     workspace_id: str,
-    operation_type: str,
-    before_state: list,
-    after_state: list,
-    description: str = "",
-    created_by: str = "system",
+    body: CreateOperationRequest,
     session: Session = Depends(get_session),
 ) -> dict:
     """Create a new queue operation record for review."""
@@ -95,7 +127,7 @@ async def create_queue_operation(
         raise HTTPException(status_code=404, detail="Workspace not found")
 
     # Generate diff
-    diff = generate_diff(before_state, after_state)
+    diff = generate_diff(body.before_state, body.after_state)
 
     # Extract affected run IDs
     affected_run_ids = set()
@@ -104,13 +136,13 @@ async def create_queue_operation(
 
     operation = QueueOperation(
         workspace_id=workspace_id,
-        operation_type=operation_type,
-        description=description,
-        before_state_json=json.dumps(before_state),
-        after_state_json=json.dumps(after_state),
+        operation_type=body.operation_type,
+        description=body.description,
+        before_state_json=json.dumps(body.before_state),
+        after_state_json=json.dumps(body.after_state),
         diff_json=json.dumps(diff),
         affected_run_ids=",".join(sorted(affected_run_ids)),
-        created_by=created_by,
+        created_by=body.created_by,
     )
 
     session.add(operation)
@@ -186,10 +218,7 @@ async def get_operation_diff(
 async def add_operation_comment(
     workspace_id: str,
     operation_id: str,
-    content: str,
-    line_number: Optional[int] = None,
-    run_id: Optional[str] = None,
-    created_by: str = "system",
+    body: OperationCommentRequest,
     session: Session = Depends(get_session),
 ) -> dict:
     """Add a comment to a queue operation (like GitHub PR review)."""
@@ -205,10 +234,10 @@ async def add_operation_comment(
 
     comment = QueueOperationComment(
         operation_id=operation_id,
-        line_number=line_number,
-        run_id=run_id,
-        content=content,
-        created_by=created_by,
+        line_number=body.line_number,
+        run_id=body.run_id,
+        content=body.content,
+        created_by=body.created_by,
     )
 
     session.add(comment)
@@ -229,7 +258,7 @@ async def add_operation_comment(
 async def approve_operation(
     workspace_id: str,
     operation_id: str,
-    approved_by: str = "system",
+    body: ApproveOperationRequest = Body(default_factory=ApproveOperationRequest),
     session: Session = Depends(get_session),
 ) -> dict:
     """Approve a queue operation for execution."""
@@ -244,8 +273,8 @@ async def approve_operation(
         raise HTTPException(status_code=404, detail="Operation not found")
 
     operation.approved = True
-    operation.approved_by = approved_by
-    operation.approved_at = datetime.now(datetime.timezone.utc)
+    operation.approved_by = body.approved_by
+    operation.approved_at = datetime.now(timezone.utc)
 
     session.add(operation)
     session.commit()
@@ -262,11 +291,8 @@ async def approve_operation(
 async def submit_operation_to_agent(
     workspace_id: str,
     operation_id: str,
-    agent_id: str = "default-orchestrator",
-    instructions: str = "",
-    approved_by: str = "system",
+    body: SubmitOperationRequest = Body(default_factory=SubmitOperationRequest),
     session: Session = Depends(get_session),
-    background_tasks: BackgroundTasks = None,
 ) -> dict:
     """Submit reviewed operation to agent for execution with review context."""
     operation = session.exec(
@@ -288,8 +314,8 @@ async def submit_operation_to_agent(
 
     # Mark as approved and collect context for agent
     operation.approved = True
-    operation.approved_by = approved_by
-    operation.approved_at = datetime.now(datetime.timezone.utc)
+    operation.approved_by = body.approved_by
+    operation.approved_at = datetime.now(timezone.utc)
 
     session.add(operation)
     session.commit()
@@ -312,26 +338,15 @@ async def submit_operation_to_agent(
             }
             for c in comments
         ],
-        "approved_by": approved_by,
-        "custom_instructions": instructions,
+        "approved_by": body.approved_by,
+        "custom_instructions": body.instructions,
     }
-
-    if background_tasks:
-        background_tasks.add_task(
-            emit_execution_update,
-            workspace_id,
-            {
-                "type": "operation_submitted_to_agent",
-                "operation_id": operation_id,
-                "agent_id": agent_id,
-            },
-        )
 
     return {
         "operation_id": operation.id,
-        "submitted_to_agent": agent_id,
+        "submitted_to_agent": body.agent_id,
         "review_context": review_context,
-        "submission_time": datetime.now(datetime.timezone.utc).isoformat(),
+        "submission_time": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -389,16 +404,15 @@ async def list_operations(
 async def create_output_review(
     workspace_id: str,
     run_id: str,
-    output_type: str,  # "stdout" or "stderr"
-    output_content: str,
+    body: OutputReviewRequest,
     session: Session = Depends(get_session),
 ) -> dict:
     """Create a run output review for line-by-line commenting."""
     review = RunOutputReview(
         run_id=run_id,
         workspace_id=workspace_id,
-        output_type=output_type,
-        output_content=output_content,
+        output_type=body.output_type,
+        output_content=body.output_content,
     )
 
     session.add(review)
@@ -407,8 +421,8 @@ async def create_output_review(
     return {
         "review_id": review.id,
         "run_id": run_id,
-        "output_type": output_type,
-        "line_count": len(output_content.split("\n")),
+        "output_type": body.output_type,
+        "line_count": len(body.output_content.split("\n")),
     }
 
 
@@ -417,8 +431,7 @@ async def add_output_comment(
     workspace_id: str,
     run_id: str,
     review_id: str,
-    line_number: int,
-    content: str,
+    body: OutputCommentRequest,
     session: Session = Depends(get_session),
 ) -> dict:
     """Add a line-specific comment to run output review."""
@@ -439,22 +452,22 @@ async def add_output_comment(
     # Add new comment
     comments.append(
         {
-            "line_number": line_number,
-            "content": content,
-            "created_at": datetime.now(datetime.timezone.utc).isoformat(),
+            "line_number": body.line_number,
+            "content": body.content,
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
     )
 
     review.comments_json = json.dumps(comments)
-    review.updated_at = datetime.now(datetime.timezone.utc)
+    review.updated_at = datetime.now(timezone.utc)
 
     session.add(review)
     session.commit()
 
     return {
         "review_id": review.id,
-        "line_number": line_number,
-        "content": content,
+        "line_number": body.line_number,
+        "content": body.content,
         "total_comments": len(comments),
     }
 

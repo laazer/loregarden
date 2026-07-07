@@ -4,7 +4,8 @@
  */
 
 import React from 'react';
-import { useParallelExecution, ActiveRun, QueuedRun } from '../hooks/useParallelExecution';
+import { useParallelExecution } from '../hooks/useParallelExecution';
+import type { ActiveRun, QueuedRun } from '../hooks/useParallelExecution';
 import './ParallelFeatureCards.css';
 
 export interface ParallelFeatureCardsProps {

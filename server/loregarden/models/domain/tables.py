@@ -1,25 +1,32 @@
 """SQLModel table definitions (the persisted schema)."""
 
+import json
 from datetime import datetime
+from typing import Any
 from uuid import uuid4
 
 from loregarden.models.domain.enums import (
     ApprovalKind,
     ApprovalStatus,
+    AutoFixStatus,
+    CIStatus,
     CycleStatus,
     EventType,
     OrchestrationDriver,
     OrchestrationRunStatus,
     QueueOperationType,
+    QueuePosition,
     RunStatus,
     StageStatus,
     TicketState,
     TicketStudioSessionStatus,
     WorkItemType,
+    WorktreeState,
     _str_enum_column,
     utcnow,
 )
 from sqlmodel import Field, SQLModel
+from pydantic import model_validator
 
 
 class Workspace(SQLModel, table=True):
@@ -316,6 +323,23 @@ class RunOutputReview(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class TicketDiffComment(SQLModel, table=True):
+    """Inline code review comment anchored to a line in a ticket's git diff."""
+
+    __tablename__ = "ticket_diff_comments"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    file_path: str = Field(index=True)
+    line_index: int = Field(index=True)
+    line_kind: str = Field(default="c")
+    content: str
+    resolved: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=utcnow)
+    created_by: str = ""
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 class TicketStudioSession(SQLModel, table=True):
     __tablename__ = "ticket_studio_sessions"
 
@@ -344,4 +368,157 @@ class TicketStudioMessage(SQLModel, table=True):
     session_id: str = Field(foreign_key="ticket_studio_sessions.id", index=True)
     role: str = Field(index=True)  # user | assistant | system
     content: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class CIRunResult(SQLModel, table=True):
+    __tablename__ = "ci_run_results"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    status: CIStatus = Field(
+        default=CIStatus.PENDING,
+        sa_column=_str_enum_column(CIStatus, CIStatus.PENDING, index=True),
+    )
+    provider: str = ""
+    external_run_id: str | None = None
+    logs_url: str | None = None
+    failure_summary: str | None = None
+    full_logs: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class AutoFixAttempt(SQLModel, table=True):
+    __tablename__ = "auto_fix_attempts"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    ci_run_result_id: str = Field(foreign_key="ci_run_results.id", index=True)
+    attempt_number: int = 1
+    run_id: str | None = Field(default=None, foreign_key="agent_runs.id")
+    status: AutoFixStatus = Field(
+        default=AutoFixStatus.PENDING,
+        sa_column=_str_enum_column(AutoFixStatus, AutoFixStatus.PENDING, index=True),
+    )
+    result_summary: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    completed_at: datetime | None = None
+
+
+class Worktree(SQLModel, table=True):
+    __tablename__ = "worktrees"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    agent_run_id: str = Field(foreign_key="agent_runs.id", index=True)
+    parent_branch: str = "main"
+    worktree_path: str = ""
+    state: WorktreeState = Field(
+        default=WorktreeState.ACTIVE,
+        sa_column=_str_enum_column(WorktreeState, WorktreeState.ACTIVE, index=True),
+    )
+    merge_base: str | None = None
+    has_conflicts: bool = False
+    conflict_files_json: str = "[]"
+    conflict_summary: str | None = None
+    merged_at: datetime | None = None
+
+    @property
+    def conflict_files(self) -> list[str]:
+        try:
+            return json.loads(self.conflict_files_json or "[]")
+        except json.JSONDecodeError:
+            return []
+
+    @conflict_files.setter
+    def conflict_files(self, value: list[str]) -> None:
+        self.conflict_files_json = json.dumps(value)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_conflict_files(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "conflict_files" in data:
+            data = dict(data)
+            files = data.pop("conflict_files")
+            data["conflict_files_json"] = json.dumps(files)
+        return data
+
+
+class ConflictReport(SQLModel, table=True):
+    __tablename__ = "conflict_reports"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    worktree_id: str = Field(foreign_key="worktrees.id", index=True)
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    merge_attempt_number: int = 1
+    conflict_type: str = "merge_conflict"
+    conflicting_files_json: str = "[]"
+    conflict_details: str = ""
+    resolution_attempted: bool = False
+    created_at: datetime = Field(default_factory=utcnow)
+
+    @property
+    def conflicting_files(self) -> list[str]:
+        try:
+            return json.loads(self.conflicting_files_json or "[]")
+        except json.JSONDecodeError:
+            return []
+
+    @conflicting_files.setter
+    def conflicting_files(self, value: list[str]) -> None:
+        self.conflicting_files_json = json.dumps(value)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_conflicting_files(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "conflicting_files" in data:
+            data = dict(data)
+            files = data.pop("conflicting_files")
+            data["conflicting_files_json"] = json.dumps(files)
+        return data
+
+
+class AgentSlot(SQLModel, table=True):
+    __tablename__ = "agent_slots"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    slot_number: int = 1
+    is_available: bool = True
+    current_run_id: str | None = Field(default=None, foreign_key="agent_runs.id")
+    assigned_at: datetime | None = None
+    released_at: datetime | None = None
+
+
+class QueuedRun(SQLModel, table=True):
+    __tablename__ = "queued_runs"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    run_id: str = Field(foreign_key="agent_runs.id", index=True)
+    position: int = 0
+    status: QueuePosition = Field(
+        default=QueuePosition.QUEUED,
+        sa_column=_str_enum_column(QueuePosition, QueuePosition.QUEUED, index=True),
+    )
+    retry_count: int = 0
+    max_retries: int = 3
+    estimated_start_at: datetime | None = None
+    promoted_at: datetime | None = None
+    started_at: datetime | None = None
+
+
+class QueueSnapshot(SQLModel, table=True):
+    __tablename__ = "queue_snapshots"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    name: str = ""
+    description: str = ""
+    queue_state_json: str = "[]"
+    stats_json: str = "{}"
+    tags: str = ""
+    created_by: str = ""
     created_at: datetime = Field(default_factory=utcnow)

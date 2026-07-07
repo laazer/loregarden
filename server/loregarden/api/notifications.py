@@ -9,7 +9,7 @@ from fastapi import APIRouter, Path
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
-from loregarden.core.db import get_session
+from loregarden.db.session import get_session
 from loregarden.models.domain import QueuedRun, QueuePosition
 from loregarden.websocket_events import ws
 

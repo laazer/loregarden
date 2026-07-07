@@ -2,9 +2,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import type { TicketState, WorkItemType } from "../api/client";
+import { initialAppPage, syncAppPageUrl, type AppPage } from "../lib/appNavigation";
 
 type Tab = "diff" | "logs" | "tests" | "context" | "errors" | "triage" | "pr";
-type AppPage = "dashboard" | "studio" | "editor";
 
 export type PaneId = "workspaces" | "tickets" | "workflow" | "artifacts";
 
@@ -24,6 +24,7 @@ interface UiState {
   editorWorkspace: string;
   editorContextRoot: string;
   editorFilePath: string | null;
+  queueWorkspaceSlug: string;
   setSelectedTicketId: (id: string | null) => void;
   toggleStateFilter: (state: TicketState) => void;
   clearStateFilters: () => void;
@@ -43,12 +44,13 @@ interface UiState {
   setEditorWorkspace: (slug: string) => void;
   setEditorContextRoot: (root: string) => void;
   setEditorFilePath: (path: string | null) => void;
+  setQueueWorkspaceSlug: (slug: string) => void;
   openEditorFile: (workspaceSlug: string, filePath: string, contextRoot?: string) => void;
 }
 
 type PersistedUiState = Pick<
   UiState,
-  "expandedTicketIds" | "workspace" | "typeFilters" | "stateFilters" | "paneVisibility" | "editorWorkspace" | "editorContextRoot"
+  "expandedTicketIds" | "workspace" | "typeFilters" | "stateFilters" | "paneVisibility" | "editorWorkspace" | "editorContextRoot" | "queueWorkspaceSlug"
 >;
 
 export const useUiStore = create<UiState>()(
@@ -61,7 +63,7 @@ export const useUiStore = create<UiState>()(
       expandedTicketIds: [],
       workspace: "all",
       tab: "diff",
-      appPage: "dashboard",
+      appPage: initialAppPage(),
       inboxOpen: false,
       paneVisibility: {
         workspaces: true,
@@ -72,6 +74,7 @@ export const useUiStore = create<UiState>()(
       editorWorkspace: "",
       editorContextRoot: ".",
       editorFilePath: null,
+      queueWorkspaceSlug: "",
       setSelectedTicketId: (id) => set({ selectedTicketId: id }),
       toggleStateFilter: (state) => {
         const current = get().stateFilters;
@@ -107,7 +110,10 @@ export const useUiStore = create<UiState>()(
       },
       setWorkspace: (workspace) => set({ workspace }),
       setTab: (tab) => set({ tab }),
-      setAppPage: (appPage) => set({ appPage }),
+      setAppPage: (appPage) => {
+        set({ appPage });
+        syncAppPageUrl(appPage);
+      },
       setInboxOpen: (inboxOpen) => set({ inboxOpen }),
       setPaneVisible: (pane, visible) =>
         set((state) => {
@@ -128,6 +134,7 @@ export const useUiStore = create<UiState>()(
       setEditorWorkspace: (editorWorkspace) => set({ editorWorkspace }),
       setEditorContextRoot: (editorContextRoot) => set({ editorContextRoot }),
       setEditorFilePath: (editorFilePath) => set({ editorFilePath }),
+      setQueueWorkspaceSlug: (queueWorkspaceSlug) => set({ queueWorkspaceSlug }),
       openEditorFile: (workspaceSlug, filePath, contextRoot = ".") =>
         set({
           appPage: "editor",
@@ -168,6 +175,7 @@ export const useUiStore = create<UiState>()(
         paneVisibility: s.paneVisibility,
         editorWorkspace: s.editorWorkspace,
         editorContextRoot: s.editorContextRoot,
+        queueWorkspaceSlug: s.queueWorkspaceSlug,
       }),
     },
   ),

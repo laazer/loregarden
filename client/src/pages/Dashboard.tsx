@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, API_BASE, type StageStatus, type TicketDetail, type TicketImportPreviewResponse, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
-import { ApprovalCard } from "../components/ApprovalCard";
+import { AppTopbarActions } from "../components/AppTopbarActions";
 import { BrandMark } from "../components/BrandMark";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
 import { ArtifactView } from "../components/dashboard/ArtifactView";
@@ -24,14 +24,11 @@ import { ImportTicketsConfirmModal } from "../components/ImportTicketsConfirmMod
 import { ImportTicketsModal } from "../components/ImportTicketsModal";
 import { AddWorkspaceModal, type AddWorkspaceDraft } from "../components/AddWorkspaceModal";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
-import { SettingsModal } from "../components/SettingsModal";
-import { MemorySetupModal } from "../components/MemorySetupModal";
-import { UsageModal } from "../components/UsageModal";
 import { runtimeFromWorkspace, runtimeSettingsEqual } from "../components/WorkspaceRuntimeFields";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
 import { useUiStore, type PaneId } from "../state/uiStore";
-import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { agentsAssembleLabel } from "../lib/workflowHelpers";
+import { PANE_LABELS } from "../lib/appTopbarConfig";
 import {
   buildOrchestrateTerminalCommand,
   buildStageRunTerminalCommand,
@@ -50,13 +47,6 @@ function mergeApprovals(...lists: Array<import("../api/client").Approval[] | und
   }
   return merged;
 }
-
-const PANE_LABELS: Record<PaneId, string> = {
-  workspaces: "Workspaces",
-  tickets: "Work items",
-  workflow: "Workflow",
-  artifacts: "Artifacts",
-};
 
 function PaneHideButton({
   pane,
@@ -182,7 +172,6 @@ export function Dashboard() {
     expandedTicketIds,
     workspace,
     tab,
-    inboxOpen,
     setSelectedTicketId,
     toggleStateFilter,
     clearStateFilters,
@@ -195,8 +184,6 @@ export function Dashboard() {
     expandPath,
     setWorkspace,
     setTab,
-    setAppPage,
-    setInboxOpen,
     paneVisibility,
     setPaneVisible,
     openEditorFile,
@@ -208,9 +195,12 @@ export function Dashboard() {
   const visiblePaneCount = Object.values(paneVisibility).filter(Boolean).length;
 
   const hidePane = (pane: PaneId) => setPaneVisible(pane, false);
-  const hiddenPanes = (Object.entries(paneVisibility) as [PaneId, boolean][])
-    .filter(([, visible]) => !visible)
-    .map(([pane]) => pane);
+
+  const artifactTabRefs = useRef<Partial<Record<string, HTMLButtonElement>>>({});
+
+  useEffect(() => {
+    artifactTabRefs.current[tab]?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [tab]);
 
   const wsParam = workspace === "all" ? undefined : workspace;
 
@@ -295,12 +285,6 @@ export function Dashboard() {
     },
   });
 
-  const approvals = useQuery({
-    queryKey: ["approvals"],
-    queryFn: () => api.approvals(),
-    refetchInterval: 5000,
-  });
-
   const orchestrate = useMutation({
     mutationFn: ({
       ticketId,
@@ -351,37 +335,9 @@ export function Dashboard() {
     },
   });
 
-  const resolveApproval = useMutation({
-    mutationFn: ({
-      id,
-      action,
-      answers,
-      response,
-      always_allow,
-      allow_for_ticket,
-      allow_for_stage,
-    }: {
-      id: string;
-      action: "approve" | "reject";
-      answers?: Record<string, string | string[]>;
-      response?: string;
-      always_allow?: boolean;
-      allow_for_ticket?: boolean;
-      allow_for_stage?: boolean;
-    }) => api.resolveApproval(id, { action, answers, response, always_allow, allow_for_ticket, allow_for_stage }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["approvals"] });
-      qc.invalidateQueries({ queryKey: ["ticket"] });
-    },
-  });
-
   const [stateModalOpen, setStateModalOpen] = useState(false);
   const [runConfirmStageKey, setRunConfirmStageKey] = useState<string | null>(null);
   const [assembleModalOpen, setAssembleModalOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [memoryOpen, setMemoryOpen] = useState(false);
-  const [usageOpen, setUsageOpen] = useState(false);
-  const [settingsWorkspaceSlug, setSettingsWorkspaceSlug] = useState("loregarden");
 
   const saveStateFromModal = useMutation({
     mutationFn: async ({
@@ -452,26 +408,6 @@ export function Dashboard() {
   const runtimeOptions = useQuery({
     queryKey: ["runtime-options"],
     queryFn: api.runtimeOptions,
-  });
-
-  const usage = useQuery({
-    queryKey: ["usage"],
-    queryFn: api.usage,
-    refetchInterval: usageOpen ? 60_000 : 5 * 60_000,
-    staleTime: 30_000,
-  });
-
-  const memoryConfig = useQuery({
-    queryKey: ["memory-config"],
-    queryFn: api.memoryConfig,
-    enabled: memoryOpen,
-  });
-
-  const setMemoryConfig = useMutation({
-    mutationFn: api.setMemoryConfig,
-    onSuccess: (data) => {
-      qc.setQueryData(["memory-config"], data);
-    },
   });
 
   const setRuntime = useMutation({
@@ -743,10 +679,6 @@ export function Dashboard() {
     }
   };
 
-  const openSettings = () => {
-    setSettingsWorkspaceSlug(activeWorkspaceSlug);
-    setSettingsOpen(true);
-  };
   const workspaceWorkflow = useQuery({
     queryKey: ["workspace-workflow", activeWorkspaceSlug],
     queryFn: () => api.workspaceWorkflow(activeWorkspaceSlug),
@@ -781,7 +713,6 @@ export function Dashboard() {
 
   const triagePendingCount =
     mergeApprovals(triage.data?.pending_approvals, ticketApprovals.data).length;
-  const approvalCount = approvals.data?.length ?? 0;
 
   const hasRunErrors = Boolean(
     sel?.blocking_issues ||
@@ -822,78 +753,8 @@ export function Dashboard() {
             <div className="brand-sub">Agent SDLC</div>
           </div>
         </div>
-        <div style={{ flex: 1 }} />
-        {hiddenPanes.length > 0 && (
-          <div className="pane-restore-group">
-            {hiddenPanes.map((pane) => (
-              <button
-                key={pane}
-                type="button"
-                className="btn-secondary btn-compact pane-restore-btn"
-                onClick={() => setPaneVisible(pane, true)}
-              >
-                Show {PANE_LABELS[pane]}
-              </button>
-            ))}
-          </div>
-        )}
-        <button type="button" className="btn-secondary" onClick={() => setAppPage("editor")}>
-          Editor
-        </button>
-        <button type="button" className="btn-secondary" onClick={() => setAppPage("studio")}>
-          Studios
-        </button>
-        <button type="button" className="btn-secondary" onClick={() => setMemoryOpen(true)}>
-          Memory
-        </button>
-        <button
-          type="button"
-          className={`btn-secondary usage-btn${usage.data?.near_limit && !usageOpen ? " usage-btn-warning" : ""}`}
-          onClick={() => setUsageOpen(true)}
-          aria-label={
-            usage.data?.near_limit
-              ? "Usage limits are getting close — open usage details"
-              : "Open Claude and Cursor usage"
-          }
-          style={{ display: "flex", alignItems: "center", gap: 8 }}
-        >
-          Usage
-          {usage.data?.near_limit ? (
-            <span className="usage-alert-badge" aria-hidden="true">
-              !
-            </span>
-          ) : null}
-        </button>
-        <button type="button" className="btn-secondary" onClick={openSettings}>
-          Settings
-        </button>
-        <button
-          type="button"
-          className={`btn-secondary${approvalCount > 0 && !inboxOpen ? " approvals-btn-pending" : ""}`}
-          onClick={() => setInboxOpen(true)}
-          style={{ display: "flex", alignItems: "center", gap: 8 }}
-        >
-          Approvals
-          <span
-            className="approvals-badge"
-            style={{
-              minWidth: 19,
-              height: 19,
-              padding: "0 5px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: approvalCount === 0 ? "var(--grn)" : "var(--red)",
-              color: "#fff",
-              fontSize: 11,
-              fontWeight: 600,
-              borderRadius: 10,
-              fontFamily: "var(--mono)",
-            }}
-          >
-            {approvalCount}
-          </span>
-        </button>
+        <div className="topbar-spacer" />
+        <AppTopbarActions />
       </header>
 
       <div className="main-panes">
@@ -1426,60 +1287,65 @@ export function Dashboard() {
         {showArtifacts && (
         <section className={`artifacts-pane ${showWorkflow ? "" : "pane-fill"}`.trim()}>
           <div className="tab-bar">
-            {(["diff", "errors", "triage", "logs", "tests", "context", "pr"] as const).map((t) => (
-              <button
-                key={t}
-                className={`tab-btn ${tab === t ? "active" : ""}`}
-                onClick={() => setTab(t)}
-                style={
-                  t === "errors" && hasRunErrors
-                    ? { color: "var(--rdl)" }
-                    : t === "triage" && triagePendingCount > 0
-                      ? { color: "var(--amb)" }
-                      : undefined
-                }
-              >
-                {t.charAt(0).toUpperCase() + t.slice(1)}
-                {t === "errors" && hasRunErrors && (
-                  <span
-                    style={{
-                      marginLeft: 6,
-                      minWidth: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: "var(--red)",
-                      display: "inline-block",
-                    }}
-                  />
-                )}
-                {t === "triage" && triagePendingCount > 0 && (
-                  <span className="count-pill" style={{ marginLeft: 6, fontSize: 9 }}>
-                    {triagePendingCount}
-                  </span>
-                )}
-                {t === "pr" && sel?.artifacts?.pr && (
-                  <span
-                    style={{
-                      marginLeft: 6,
-                      minWidth: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: "var(--ac2)",
-                      display: "inline-block",
-                    }}
-                  />
-                )}
-              </button>
-            ))}
-            <div style={{ flex: 1 }} />
-            <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}>
-              {tab === "triage" ? "operator channel · ticket context" : "truth layer · execution output only"}
-            </span>
-            <PaneHideButton
-              pane="artifacts"
-              onHide={() => hidePane("artifacts")}
-              disabled={visiblePaneCount <= 1}
-            />
+            <div className="tab-bar-scroll" role="tablist" aria-label="Artifact views">
+              {(["diff", "errors", "triage", "logs", "tests", "context", "pr"] as const).map((t) => (
+                <button
+                  key={t}
+                  ref={(el) => {
+                    if (el) artifactTabRefs.current[t] = el;
+                  }}
+                  role="tab"
+                  aria-selected={tab === t}
+                  className={`tab-btn ${tab === t ? "active" : ""}`}
+                  onClick={() => setTab(t)}
+                  style={
+                    t === "errors" && hasRunErrors
+                      ? { color: "var(--rdl)" }
+                      : t === "triage" && triagePendingCount > 0
+                        ? { color: "var(--amb)" }
+                        : undefined
+                  }
+                >
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                  {t === "errors" && hasRunErrors && (
+                    <span
+                      style={{
+                        marginLeft: 6,
+                        minWidth: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: "var(--red)",
+                        display: "inline-block",
+                      }}
+                    />
+                  )}
+                  {t === "triage" && triagePendingCount > 0 && (
+                    <span className="count-pill" style={{ marginLeft: 6, fontSize: 9 }}>
+                      {triagePendingCount}
+                    </span>
+                  )}
+                  {t === "pr" && sel?.artifacts?.pr && (
+                    <span
+                      style={{
+                        marginLeft: 6,
+                        minWidth: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: "var(--ac2)",
+                        display: "inline-block",
+                      }}
+                    />
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="tab-bar-actions">
+              <PaneHideButton
+                pane="artifacts"
+                onHide={() => hidePane("artifacts")}
+                disabled={visiblePaneCount <= 1}
+              />
+            </div>
           </div>
           <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
             {tab === "triage" ? (
@@ -1613,56 +1479,6 @@ export function Dashboard() {
         }}
       />
 
-      <SettingsModal
-        open={settingsOpen}
-        workspaceSlug={settingsWorkspaceSlug}
-        workspaces={workspaces.data ?? []}
-        runtimeOptions={runtimeOptions.data}
-        isSaving={setRuntime.isPending}
-        onClose={() => setSettingsOpen(false)}
-        onWorkspaceChange={setSettingsWorkspaceSlug}
-        onSave={async (slug, runtime) => {
-          await setRuntime.mutateAsync({ slug, runtime });
-        }}
-      />
-
-      <MemorySetupModal
-        open={memoryOpen}
-        data={memoryConfig.data}
-        isLoading={memoryConfig.isLoading}
-        isSaving={setMemoryConfig.isPending}
-        errorMessage={
-          setMemoryConfig.error
-            ? (() => {
-                try {
-                  const parsed = JSON.parse(setMemoryConfig.error.message) as { detail?: string };
-                  return parsed.detail ?? setMemoryConfig.error.message;
-                } catch {
-                  return setMemoryConfig.error.message;
-                }
-              })()
-            : undefined
-        }
-        onClose={() => {
-          if (setMemoryConfig.isPending) return;
-          setMemoryConfig.reset();
-          setMemoryOpen(false);
-        }}
-        onRefresh={() => void memoryConfig.refetch()}
-        onSave={async (config) => {
-          await setMemoryConfig.mutateAsync(config);
-        }}
-      />
-
-      <UsageModal
-        open={usageOpen}
-        snapshot={usage.data}
-        isLoading={usage.isFetching}
-        error={usage.error}
-        onClose={() => setUsageOpen(false)}
-        onRefresh={() => void usage.refetch()}
-      />
-
       <ConfirmRunStageModal
         open={!!runConfirmStageKey}
         ticket={sel ?? null}
@@ -1693,62 +1509,6 @@ export function Dashboard() {
         onClose={() => setAssembleModalOpen(false)}
         onConfirm={confirmAssemble}
       />
-
-      {inboxOpen && (
-        <>
-          <div className="inbox-overlay" onClick={() => setInboxOpen(false)} />
-          <aside className="inbox-panel">
-            <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--bd)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span className="pane-title">Global Approval Inbox</span>
-                <span className="count-pill">{approvals.data?.length ?? 0}</span>
-                <div style={{ flex: 1 }} />
-                <button className="btn-secondary" onClick={() => setInboxOpen(false)}>
-                  ✕
-                </button>
-              </div>
-            </div>
-            <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
-              {resolveApproval.isError && (
-                <div
-                  style={{
-                    fontSize: 11.5,
-                    color: "var(--rdl)",
-                    marginBottom: 12,
-                    padding: "8px 10px",
-                    borderRadius: 8,
-                    background: "rgba(240,96,63,.08)",
-                    border: "1px solid rgba(240,96,63,.25)",
-                  }}
-                >
-                  {formatApprovalResolveError(resolveApproval.error)}
-                </div>
-              )}
-              {approvals.data?.map((a) => (
-                <ApprovalCard
-                  key={a.id}
-                  approval={a}
-                  onApprove={(payload) =>
-                    resolveApproval.mutate({ id: a.id, action: "approve", ...payload })
-                  }
-                  onReject={() => resolveApproval.mutate({ id: a.id, action: "reject" })}
-                  onInspect={() => {
-                    setSelectedTicketId(a.ticket_id);
-                    setInboxOpen(false);
-                    setTab("diff");
-                  }}
-                  isSubmitting={resolveApproval.isPending && resolveApproval.variables?.id === a.id}
-                />
-              ))}
-              {!approvals.data?.length && (
-                <div style={{ textAlign: "center", color: "var(--txm)", padding: 40 }}>
-                  Inbox zero — nothing needs your attention
-                </div>
-              )}
-            </div>
-          </aside>
-        </>
-      )}
     </div>
   );
 }

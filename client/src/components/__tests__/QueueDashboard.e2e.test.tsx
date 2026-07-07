@@ -10,6 +10,7 @@ import * as useHook from '../../hooks/useParallelExecutionWS';
 jest.mock('../../hooks/useParallelExecutionWS');
 jest.mock('../QueueNotifications');
 jest.mock('../ParallelQueueVisualization');
+jest.mock('../QueueDiffViewer');
 jest.mock('../QueueAdvancedControls');
 jest.mock('../QueueHistoricalAnalytics');
 

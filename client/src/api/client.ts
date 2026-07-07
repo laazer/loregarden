@@ -131,10 +131,24 @@ export const api = {
         command: string;
         agent_id: string;
         stage_key: string;
-        stderr: string;
+        workspace_id?: string;
+        stdout?: string;
+        stderr?: string;
       }[]
     >(`/api/runs${q}`);
   },
+  run: (runId: string) =>
+    request<{
+      id: string;
+      run_code: string;
+      status: string;
+      command: string;
+      agent_id: string;
+      stage_key: string;
+      workspace_id: string;
+      stdout: string;
+      stderr: string;
+    }>(`/api/runs/${runId}`),
   tickets: (params?: {
     workspace?: string;
     state?: TicketState | TicketState[];

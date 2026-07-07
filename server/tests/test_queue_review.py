@@ -16,12 +16,12 @@ from loregarden.models.domain import (
 
 
 @pytest.fixture
-def workspace(session: Session):
+def workspace(db_session: Session):
     """Create a test workspace."""
-    ws = Workspace(name="test-workspace")
-    session.add(ws)
-    session.commit()
-    session.refresh(ws)
+    ws = Workspace(name="test-workspace", slug="test-workspace")
+    db_session.add(ws)
+    db_session.commit()
+    db_session.refresh(ws)
     return ws
 
 
@@ -41,7 +41,7 @@ class TestDiffGeneration:
         response = client.post(
             f"/api/parallel/workspace/{workspace.id}/queue/operations/create",
             json={
-                "operation_type": "test_add",
+                "operation_type": "bulk_reorder",
                 "before_state": before,
                 "after_state": after,
                 "description": "Added one run",
@@ -50,7 +50,7 @@ class TestDiffGeneration:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["affected_count"] == 2
+        assert data["affected_count"] == 1
 
         changes = data["changes"]
         assert len(changes) == 1
@@ -70,7 +70,7 @@ class TestDiffGeneration:
         response = client.post(
             f"/api/parallel/workspace/{workspace.id}/queue/operations/create",
             json={
-                "operation_type": "test_remove",
+                "operation_type": "bulk_reorder",
                 "before_state": before,
                 "after_state": after,
                 "description": "Removed one run",
@@ -107,7 +107,7 @@ class TestDiffGeneration:
         response = client.post(
             f"/api/parallel/workspace/{workspace.id}/queue/operations/create",
             json={
-                "operation_type": "test_modify",
+                "operation_type": "bulk_reorder",
                 "before_state": before,
                 "after_state": after,
                 "description": "Modified run state",
@@ -139,7 +139,7 @@ class TestDiffGeneration:
         response = client.post(
             f"/api/parallel/workspace/{workspace.id}/queue/operations/create",
             json={
-                "operation_type": "test_mixed",
+                "operation_type": "bulk_reorder",
                 "before_state": before,
                 "after_state": after,
                 "description": "Mixed changes",
@@ -168,7 +168,7 @@ class TestOperationComments:
         op_response = client.post(
             f"/api/parallel/workspace/{workspace.id}/queue/operations/create",
             json={
-                "operation_type": "test",
+                "operation_type": "bulk_reorder",
                 "before_state": before,
                 "after_state": after,
             },
@@ -195,7 +195,7 @@ class TestOperationComments:
         op_response = client.post(
             f"/api/parallel/workspace/{workspace.id}/queue/operations/create",
             json={
-                "operation_type": "test",
+                "operation_type": "bulk_reorder",
                 "before_state": before,
                 "after_state": after,
             },
@@ -221,7 +221,7 @@ class TestOperationComments:
         op_response = client.post(
             f"/api/parallel/workspace/{workspace.id}/queue/operations/create",
             json={
-                "operation_type": "test",
+                "operation_type": "bulk_reorder",
                 "before_state": before,
                 "after_state": after,
             },
@@ -267,7 +267,7 @@ class TestOperationApproval:
         op_response = client.post(
             f"/api/parallel/workspace/{workspace.id}/queue/operations/create",
             json={
-                "operation_type": "test",
+                "operation_type": "bulk_reorder",
                 "before_state": before,
                 "after_state": after,
             },
@@ -304,7 +304,7 @@ class TestAgentSubmission:
         op_response = client.post(
             f"/api/parallel/workspace/{workspace.id}/queue/operations/create",
             json={
-                "operation_type": "reorder",
+                "operation_type": "bulk_reorder",
                 "before_state": before,
                 "after_state": after,
                 "description": "Reordered queue",
@@ -336,7 +336,7 @@ class TestAgentSubmission:
         assert data["submitted_to_agent"] == "orchestrator-v1"
 
         review_context = data["review_context"]
-        assert review_context["operation_type"] == "reorder"
+        assert review_context["operation_type"] == "bulk_reorder"
         assert review_context["custom_instructions"] == "Verify each run before execution"
         assert len(review_context["comments"]) == 1
         assert len(review_context["diff"]) == 3  # 1 removed + 2 added
@@ -354,7 +354,7 @@ class TestOperationListing:
             client.post(
                 f"/api/parallel/workspace/{workspace.id}/queue/operations/create",
                 json={
-                    "operation_type": f"test_{i}",
+                    "operation_type": "bulk_reorder",
                     "before_state": before,
                     "after_state": after,
                 },
@@ -376,7 +376,7 @@ class TestOperationListing:
         op_response = client.post(
             f"/api/parallel/workspace/{workspace.id}/queue/operations/create",
             json={
-                "operation_type": "test",
+                "operation_type": "bulk_reorder",
                 "before_state": before,
                 "after_state": after,
             },

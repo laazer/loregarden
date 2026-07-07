@@ -72,19 +72,18 @@ export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButton
     <>
       <button
         onClick={handleOpenModal}
-        disabled={isLoading}
-        className={`btn-secondary btn-compact ${className}`}
+        className={`btn-secondary btn-compact dashboard-details-btn ${className}`}
         aria-label="View ticket details"
         type="button"
       >
-        {isLoading ? (
+        {isLoading && isModalOpen ? (
           <>
-            <span style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", border: "2px solid currentColor", borderTopColor: "transparent", animation: "spin 0.8s linear infinite" }} />
+            <span className="dashboard-details-spinner" aria-hidden="true" />
             <span>Loading...</span>
           </>
         ) : (
           <>
-            <svg style={{ width: 14, height: 14, marginRight: 4 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="dashboard-details-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span>Details</span>

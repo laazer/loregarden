@@ -130,3 +130,33 @@ class QueueOperationType(str, Enum):
 class TicketStudioSessionStatus(str, Enum):
     DRAFT = "draft"
     COMMITTED = "committed"
+
+
+class CIStatus(str, Enum):
+    PENDING = "pending"
+    PASSING = "passing"
+    FAILING = "failing"
+    PARTIAL = "partial"
+    SKIPPED = "skipped"
+
+
+class AutoFixStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class WorktreeState(str, Enum):
+    ACTIVE = "active"
+    MERGED = "merged"
+    FAILED = "failed"
+    CLEANUP = "cleanup"
+
+
+class QueuePosition(str, Enum):
+    QUEUED = "queued"
+    SCHEDULED = "scheduled"
+    PROMOTED = "promoted"
+    STARTED = "started"
+    ACTIVE = "active"

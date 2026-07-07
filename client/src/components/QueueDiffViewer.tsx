@@ -2,7 +2,8 @@
  * Side-by-side diff viewer for queue operations (before/after states)
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import type { OperationComment } from './QueueOperationReview';
 import './QueueDiffViewer.css';
 
 export interface DiffChange {
@@ -21,6 +22,10 @@ export interface QueueDiffViewerProps {
   changes: DiffChange[];
   operationType: string;
   description?: string;
+  comments?: OperationComment[];
+  onAddComment?: (content: string, runId?: string, lineNumber?: number) => void;
+  onReviewRunOutput?: (runId: string) => void;
+  isLoading?: boolean;
 }
 
 export function QueueDiffViewer({
@@ -29,7 +34,25 @@ export function QueueDiffViewer({
   changes,
   operationType,
   description,
+  comments = [],
+  onAddComment,
+  onReviewRunOutput,
+  isLoading = false,
 }: QueueDiffViewerProps) {
+  const [commentRunId, setCommentRunId] = useState<string | null>(null);
+  const [commentDraft, setCommentDraft] = useState('');
+
+  const commentsByRun = useMemo(() => {
+    return comments.reduce(
+      (acc, comment) => {
+        const key = comment.run_id || '__general__';
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(comment);
+        return acc;
+      },
+      {} as Record<string, OperationComment[]>,
+    );
+  }, [comments]);
   const stats = useMemo(() => {
     const added = changes.filter((c) => c.type === 'added').length;
     const removed = changes.filter((c) => c.type === 'removed').length;
@@ -45,6 +68,132 @@ export function QueueDiffViewer({
       modified: changes.filter((c) => c.type === 'modified'),
     };
   }, [changes]);
+
+  const submitRunComment = (runId: string) => {
+    if (!commentDraft.trim() || !onAddComment) return;
+    onAddComment(commentDraft, runId);
+    setCommentDraft('');
+    setCommentRunId(null);
+  };
+
+  const renderChangeComments = (runId: string) => {
+    const runComments = commentsByRun[runId] ?? [];
+    return (
+      <div className="diff-change-comments">
+        {runComments.map((comment) => (
+          <div key={comment.id} className="diff-change-comment">
+            <div className="diff-change-comment-meta">
+              <span>{comment.created_by}</span>
+              <span>{new Date(comment.created_at).toLocaleString()}</span>
+            </div>
+            <div className="diff-change-comment-body">{comment.content}</div>
+          </div>
+        ))}
+        {commentRunId === runId ? (
+          <div className="diff-change-comment-form">
+            <textarea
+              className="diff-change-comment-input"
+              rows={2}
+              value={commentDraft}
+              placeholder="Add a review comment…"
+              disabled={isLoading}
+              onChange={(e) => setCommentDraft(e.target.value)}
+            />
+            <div className="diff-change-comment-actions">
+              <button
+                type="button"
+                className="btn-secondary btn-compact"
+                disabled={isLoading || !commentDraft.trim()}
+                onClick={() => submitRunComment(runId)}
+              >
+                Comment
+              </button>
+              <button
+                type="button"
+                className="btn-secondary btn-compact"
+                disabled={isLoading}
+                onClick={() => {
+                  setCommentRunId(null);
+                  setCommentDraft('');
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="diff-change-comment-actions">
+            {onAddComment ? (
+              <button
+                type="button"
+                className="btn-secondary btn-compact"
+                disabled={isLoading}
+                onClick={() => setCommentRunId(runId)}
+              >
+                + Comment
+              </button>
+            ) : null}
+            {onReviewRunOutput ? (
+              <button
+                type="button"
+                className="btn-secondary btn-compact"
+                disabled={isLoading}
+                onClick={() => onReviewRunOutput(runId)}
+              >
+                Review output
+              </button>
+            ) : null}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderChangeItem = (change: DiffChange, tone: 'added' | 'removed' | 'modified') => (
+    <div key={change.run_id} className={`change-item ${tone}`}>
+      <div className="change-header">
+        <span className="run-id">{change.run_id}</span>
+        <span className="ticket-id">{change.ticket_id}</span>
+        {change.position ? <span className="position">Position {change.position}</span> : null}
+        {(commentsByRun[change.run_id]?.length ?? 0) > 0 ? (
+          <span className="diff-comment-count">💬 {commentsByRun[change.run_id].length}</span>
+        ) : null}
+      </div>
+
+      {tone === 'modified' && change.fields_changed && change.fields_changed.length > 0 ? (
+        <div className="field-changes">
+          {change.fields_changed.map((field) => {
+            const before = change.before?.[field];
+            const after = change.after?.[field];
+            return (
+              <div key={field} className="field-change">
+                <div className="field-name">{field}</div>
+                <div className="field-values">
+                  {before !== undefined ? (
+                    <div className="before-value">
+                      <span className="label">before:</span>
+                      <span className="value">{JSON.stringify(before)}</span>
+                    </div>
+                  ) : null}
+                  {after !== undefined ? (
+                    <div className="after-value">
+                      <span className="label">after:</span>
+                      <span className="value">{JSON.stringify(after)}</span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <div className="change-icon">
+        {tone === 'added' ? '+ Added' : tone === 'removed' ? '− Removed' : '~ Modified'}
+      </div>
+      {renderChangeComments(change.run_id)}
+    </div>
+  );
 
   return (
     <div className="queue-diff-viewer">
@@ -85,18 +234,7 @@ export function QueueDiffViewer({
             </div>
 
             <div className="changes-list">
-              {groupedChanges.added.map((change) => (
-                <div key={change.run_id} className="change-item added">
-                  <div className="change-header">
-                    <span className="run-id">{change.run_id}</span>
-                    <span className="ticket-id">{change.ticket_id}</span>
-                    {change.position && (
-                      <span className="position">Position {change.position}</span>
-                    )}
-                  </div>
-                  <div className="change-icon">+ Added</div>
-                </div>
-              ))}
+              {groupedChanges.added.map((change) => renderChangeItem(change, 'added'))}
             </div>
           </div>
         )}
@@ -110,18 +248,7 @@ export function QueueDiffViewer({
             </div>
 
             <div className="changes-list">
-              {groupedChanges.removed.map((change) => (
-                <div key={change.run_id} className="change-item removed">
-                  <div className="change-header">
-                    <span className="run-id">{change.run_id}</span>
-                    <span className="ticket-id">{change.ticket_id}</span>
-                    {change.position && (
-                      <span className="position">Position {change.position}</span>
-                    )}
-                  </div>
-                  <div className="change-icon">− Removed</div>
-                </div>
-              ))}
+              {groupedChanges.removed.map((change) => renderChangeItem(change, 'removed'))}
             </div>
           </div>
         )}
@@ -135,49 +262,7 @@ export function QueueDiffViewer({
             </div>
 
             <div className="changes-list">
-              {groupedChanges.modified.map((change) => (
-                <div key={change.run_id} className="change-item modified">
-                  <div className="change-header">
-                    <span className="run-id">{change.run_id}</span>
-                    <span className="ticket-id">{change.ticket_id}</span>
-                  </div>
-
-                  {change.fields_changed && change.fields_changed.length > 0 && (
-                    <div className="field-changes">
-                      {change.fields_changed.map((field) => {
-                        const before = change.before?.[field];
-                        const after = change.after?.[field];
-
-                        return (
-                          <div key={field} className="field-change">
-                            <div className="field-name">{field}</div>
-                            <div className="field-values">
-                              {before !== undefined && (
-                                <div className="before-value">
-                                  <span className="label">before:</span>
-                                  <span className="value">
-                                    {JSON.stringify(before)}
-                                  </span>
-                                </div>
-                              )}
-                              {after !== undefined && (
-                                <div className="after-value">
-                                  <span className="label">after:</span>
-                                  <span className="value">
-                                    {JSON.stringify(after)}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  <div className="change-icon">~ Modified</div>
-                </div>
-              ))}
+              {groupedChanges.modified.map((change) => renderChangeItem(change, 'modified'))}
             </div>
           </div>
         )}

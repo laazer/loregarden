@@ -3,10 +3,10 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlmodel import Session, select
 
-from loregarden.core.db import get_session
+from loregarden.db.session import get_session
 from loregarden.models.domain import QueuedRun, QueuePosition, AgentRun
 from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.websocket_events import (
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/parallel/queue", tags=["queue"])
 async def reorder_queued_run(
     run_id: str = Path(...),
     new_position: int = Query(...),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Reorder a queued run to a new position in the queue.
@@ -200,7 +200,7 @@ async def _reorder_queue_internal(
 @router.get("/{workspace_id}/info")
 async def get_queue_info(
     workspace_id: str = Path(...),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Get detailed queue information for a workspace.
@@ -255,7 +255,7 @@ async def get_queue_info(
 @router.post("/{run_id}/promote")
 async def promote_run(
     run_id: str = Path(...),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Manually promote a queued run to available slot (if any).
@@ -323,7 +323,7 @@ async def promote_run(
 @router.post("/{run_id}/pause")
 async def pause_run(
     run_id: str = Path(...),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Pause an active run, returning its slot for the next queued run.
@@ -388,7 +388,7 @@ async def pause_run(
 @router.post("/{run_id}/resume")
 async def resume_run(
     run_id: str = Path(...),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Resume a paused run.
@@ -453,7 +453,7 @@ async def resume_run(
 @router.post("/{run_id}/cancel")
 async def cancel_run(
     run_id: str = Path(...),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Cancel an active or queued run.

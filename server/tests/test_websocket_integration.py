@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, create_engine, SQLModel, select
 from sqlmodel.pool import StaticPool
 
-from loregarden.core.db import get_session
+from loregarden.db.session import get_session
 from loregarden.models.domain import Ticket, AgentRun, Worktree, WorktreeState
 from loregarden.websocket_events import init_websocket, WebSocketServer
 

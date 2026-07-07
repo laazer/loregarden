@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../api/client";
+import { AppTopbarActions } from "../components/AppTopbarActions";
 import { BrandMark } from "../components/BrandMark";
 import { CodeEditor } from "../components/editor/CodeEditor";
 import { EditorFileExplorer } from "../components/editor/EditorFileExplorer";
@@ -10,7 +11,6 @@ import { useUiStore } from "../state/uiStore";
 
 export function EditorPage() {
   const qc = useQueryClient();
-  const setAppPage = useUiStore((s) => s.setAppPage);
   const editorWorkspace = useUiStore((s) => s.editorWorkspace);
   const editorContextRoot = useUiStore((s) => s.editorContextRoot);
   const editorFilePath = useUiStore((s) => s.editorFilePath);
@@ -100,41 +100,41 @@ export function EditorPage() {
           </div>
         </div>
 
-        <label className="editor-workspace-picker">
-          <span>Workspace</span>
-          <select
-            className="btn-secondary filter-select"
-            value={workspaceSlug}
-            disabled={!workspaces.data?.length}
-            onChange={(event) => {
-              setEditorWorkspace(event.target.value);
-              setEditorContextRoot(".");
-              setEditorFilePath(null);
-            }}
-          >
-            {(workspaces.data ?? []).map((ws) => (
-              <option key={ws.slug} value={ws.slug}>
-                {ws.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="topbar-center">
+          <label className="editor-workspace-picker">
+            <span>Workspace</span>
+            <select
+              className="btn-secondary filter-select"
+              value={workspaceSlug}
+              disabled={!workspaces.data?.length}
+              onChange={(event) => {
+                setEditorWorkspace(event.target.value);
+                setEditorContextRoot(".");
+                setEditorFilePath(null);
+              }}
+            >
+              {(workspaces.data ?? []).map((ws) => (
+                <option key={ws.slug} value={ws.slug}>
+                  {ws.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <GitRefSwitcher
-          workspaceSlug={workspaceSlug}
-          refs={refs.data}
-          contextRoot={contextRoot}
-          isLoading={refs.isLoading}
-          disabled={!workspaceSlug || !activeWorkspace?.repo_exists}
-        />
+          <GitRefSwitcher
+            workspaceSlug={workspaceSlug}
+            refs={refs.data}
+            contextRoot={contextRoot}
+            isLoading={refs.isLoading}
+            disabled={!workspaceSlug || !activeWorkspace?.repo_exists}
+          />
 
-        <div style={{ flex: 1 }} />
+          {saveMessage ? <span className="editor-save-status">{saveMessage}</span> : null}
+        </div>
 
-        {saveMessage ? <span className="editor-save-status">{saveMessage}</span> : null}
+        <div className="topbar-spacer" />
 
-        <button type="button" className="btn-secondary" onClick={() => setAppPage("dashboard")}>
-          Back to IDE
-        </button>
+        <AppTopbarActions />
       </header>
 
       <div className="editor-layout">

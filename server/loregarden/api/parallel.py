@@ -3,10 +3,10 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlmodel import Session, select
 
-from loregarden.core.db import get_session
+from loregarden.db.session import get_session
 from loregarden.models.domain import (
     AgentRun,
     ConflictReport,
@@ -35,7 +35,7 @@ async def create_parallel_run(
     ticket_id: str = Path(...),
     stage_key: Optional[str] = Query(None),
     max_concurrent: int = Query(3),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Create a new run with parallel execution support.
@@ -111,7 +111,7 @@ async def create_parallel_run(
 @router.get("/status/{workspace_id}")
 async def get_parallel_status(
     workspace_id: str = Path(...),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Get parallel execution status for a workspace.
@@ -155,7 +155,7 @@ async def get_parallel_status(
 @router.post("/queue/{run_id}/cancel")
 async def cancel_queued_run(
     run_id: str = Path(...),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Cancel a queued run.
@@ -226,7 +226,7 @@ async def cancel_queued_run(
 async def check_conflicts(
     worktree_id: str = Path(...),
     target_branch: str = Query("main"),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Check for merge conflicts in a worktree.
@@ -318,7 +318,7 @@ async def merge_worktree(
     worktree_id: str = Path(...),
     target_branch: str = Query("main"),
     auto_resolve: bool = Query(False),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Merge a worktree back to target branch.
@@ -422,7 +422,7 @@ async def merge_worktree(
 @router.post("/worktree/{worktree_id}/cleanup")
 async def cleanup_worktree(
     worktree_id: str = Path(...),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Manually cleanup a worktree.
@@ -467,7 +467,7 @@ async def cleanup_worktree(
 @router.get("/worktree/{worktree_id}")
 async def get_worktree_details(
     worktree_id: str = Path(...),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Get detailed information about a worktree.
@@ -516,7 +516,7 @@ async def get_worktree_details(
 @router.get("/conflict-reports/{worktree_id}")
 async def get_conflict_reports(
     worktree_id: str = Path(...),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Get conflict reports for a worktree.
@@ -563,7 +563,7 @@ async def get_conflict_reports(
 @router.get("/active-runs/{workspace_id}")
 async def get_active_runs(
     workspace_id: str = Path(...),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Get all active (executing) runs for a workspace.
@@ -599,7 +599,7 @@ async def get_active_runs(
 @router.get("/queued-runs/{workspace_id}")
 async def get_queued_runs(
     workspace_id: str = Path(...),
-    session: Session = get_session(),
+    session: Session = Depends(get_session),
 ):
     """
     Get all queued (waiting) runs for a workspace.

@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 import json
 
 from loregarden.models.domain import QueueSnapshot, QueuedRun, QueuePosition, Workspace
-from loregarden.db import get_session
+from loregarden.db.session import get_session
 from loregarden.api.queue_management import emit_execution_update
 
 router = APIRouter(prefix="/api/parallel", tags=["queue-persistence"])

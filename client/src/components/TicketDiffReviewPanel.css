@@ -1,0 +1,79 @@
+.ticket-diff-review-panel {
+  border-top: 1px solid var(--bd);
+  background: var(--bg1);
+  padding: 14px 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ticket-diff-review-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.ticket-diff-review-title {
+  font-size: 13px;
+  color: var(--txm);
+  margin-top: 4px;
+}
+
+.ticket-diff-review-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.ticket-diff-review-tabs .active {
+  border-color: var(--ac);
+  color: var(--ac2);
+}
+
+.ticket-diff-review-error {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(240, 96, 63, 0.35);
+  background: rgba(240, 96, 63, 0.1);
+  color: var(--rdl);
+  font-size: 12px;
+}
+
+.ticket-diff-review-output {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ticket-diff-review-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.ticket-diff-review-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--txm);
+}
+
+.ticket-diff-review-output-types {
+  display: flex;
+  gap: 6px;
+}
+
+.ticket-diff-review-output-types .active {
+  border-color: var(--ac);
+  color: var(--ac2);
+}
+
+.ticket-diff-review-loading {
+  padding: 20px;
+  text-align: center;
+  color: var(--txl);
+  font-size: 12px;
+}
