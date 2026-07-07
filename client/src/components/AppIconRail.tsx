@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
-import { useUiStore } from "../state/uiStore";
+import { NavLink } from "react-router-dom";
+
+import { useAppPage } from "../lib/useAppNavigation";
 import { BrandMark } from "./BrandMark";
 
 type AppIconRailProps = {
@@ -9,31 +11,30 @@ type AppIconRailProps = {
 function NavButton({
   active,
   title,
-  onClick,
+  to,
   children,
 }: {
   active: boolean;
   title: string;
-  onClick: () => void;
+  to: string;
   children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
+    <NavLink
+      to={to}
+      end={to === "/"}
       className={`icon-rail-btn${active ? " icon-rail-btn--active" : ""}`}
       title={title}
       aria-current={active ? "page" : undefined}
-      onClick={onClick}
     >
       {active ? <span className="icon-rail-btn-bar" aria-hidden /> : null}
       {children}
-    </button>
+    </NavLink>
   );
 }
 
 export function AppIconRail({ onOpenSettings }: AppIconRailProps) {
-  const appPage = useUiStore((s) => s.appPage);
-  const setAppPage = useUiStore((s) => s.setAppPage);
+  const appPage = useAppPage();
 
   return (
     <nav className="icon-rail" aria-label="Main navigation">
@@ -44,7 +45,7 @@ export function AppIconRail({ onOpenSettings }: AppIconRailProps) {
       <NavButton
         active={appPage === "dashboard" || appPage === "editor"}
         title="Console"
-        onClick={() => setAppPage("dashboard")}
+        to="/"
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
           <rect x="3" y="4" width="18" height="16" rx="2" />
@@ -52,14 +53,14 @@ export function AppIconRail({ onOpenSettings }: AppIconRailProps) {
         </svg>
       </NavButton>
 
-      <NavButton active={appPage === "studio"} title="Studios" onClick={() => setAppPage("studio")}>
+      <NavButton active={appPage === "studio"} title="Studios" to="/studio">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
           <path d="M12 3 3 8v8l9 5 9-5V8z" />
           <path d="M3 8l9 5 9-5M12 13v8" />
         </svg>
       </NavButton>
 
-      <NavButton active={appPage === "queue"} title="Parallel Execution" onClick={() => setAppPage("queue")}>
+      <NavButton active={appPage === "queue"} title="Parallel Execution" to="/queue">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
           <rect x="3" y="4" width="5" height="16" rx="1.5" />
           <rect x="10" y="4" width="5" height="16" rx="1.5" />

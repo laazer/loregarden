@@ -1,6 +1,8 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Dashboard } from '../Dashboard';
+import { RouterBridgeSync } from '../../components/RouterBridgeSync';
 import * as apiClient from '../../api/client';
 import { useUiStore } from '../../state/uiStore';
 
@@ -49,7 +51,6 @@ describe('Dashboard - Ticket Details Button Integration', () => {
       },
     });
     useUiStore.setState({
-      selectedTicketId: null,
       stateFilters: [],
       typeFilters: [],
       search: '',
@@ -77,10 +78,16 @@ describe('Dashboard - Ticket Details Button Integration', () => {
     return screen.getByRole('button', { name: /view ticket details/i });
   };
 
-  const renderDashboard = (initialProps = {}) => {
+  const renderDashboard = (initialEntries: string[] = ['/']) => {
     return render(
       <QueryClientProvider client={queryClient}>
-        <Dashboard {...initialProps} />
+        <MemoryRouter initialEntries={initialEntries}>
+          <RouterBridgeSync />
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/tickets/:ticketId" element={<Dashboard />} />
+          </Routes>
+        </MemoryRouter>
       </QueryClientProvider>
     );
   };

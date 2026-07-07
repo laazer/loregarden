@@ -1,10 +1,9 @@
+import { useAppPage, navigateToPage } from "../lib/useAppNavigation";
 import { TOOL_OPTIONS } from "../lib/appTopbarConfig";
-import { useUiStore } from "../state/uiStore";
 import { TopbarDropdown, TopbarDropdownItem } from "./TopbarDropdown";
 
 export function AppTopbarToolMenu() {
-  const appPage = useUiStore((s) => s.appPage);
-  const setAppPage = useUiStore((s) => s.setAppPage);
+  const appPage = useAppPage();
   const activeToolLabel = TOOL_OPTIONS.find((tool) => tool.page === appPage)?.label ?? "IDE";
 
   return (
@@ -13,7 +12,7 @@ export function AppTopbarToolMenu() {
         <TopbarDropdownItem
           key={tool.page}
           active={appPage === tool.page}
-          onSelect={() => setAppPage(tool.page)}
+          onSelect={() => navigateToPage(tool.page)}
         >
           {tool.label}
         </TopbarDropdownItem>

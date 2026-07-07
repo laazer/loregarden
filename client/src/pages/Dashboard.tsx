@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, API_BASE, type StageStatus, type TicketDetail, type TicketImportPreviewResponse, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
 import { AppTopbarActions } from "../components/AppTopbarActions";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
@@ -28,6 +28,7 @@ import { AddWorkspaceModal, type AddWorkspaceDraft } from "../components/AddWork
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { runtimeFromWorkspace, runtimeSettingsEqual } from "../components/WorkspaceRuntimeFields";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
+import { navigateToTicket, useTicketIdFromRoute } from "../lib/useAppNavigation";
 import { useUiStore, type PaneId } from "../state/uiStore";
 import { agentsAssembleLabel } from "../lib/workflowHelpers";
 import { PANE_LABELS } from "../lib/appTopbarConfig";
@@ -137,15 +138,14 @@ function canRunStage(
 
 export function Dashboard() {
   const qc = useQueryClient();
+  const routeTicketId = useTicketIdFromRoute();
   const {
-    selectedTicketId,
     stateFilters,
     typeFilters,
     search,
     expandedTicketIds,
     workspace,
     tab,
-    setSelectedTicketId,
     toggleStateFilter,
     clearStateFilters,
     toggleTypeFilter,
@@ -219,7 +219,11 @@ export function Dashboard() {
     queryFn: api.workflowTemplates,
   });
 
-  const selectedId = selectedTicketId ?? flatTickets[0]?.id ?? null;
+  const selectedId = routeTicketId ?? flatTickets[0]?.id ?? null;
+
+  const selectTicket = useCallback((id: string) => {
+    navigateToTicket(id);
+  }, []);
 
   useEffect(() => {
     setRunConfirmStageKey(null);
@@ -484,7 +488,7 @@ export function Dashboard() {
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
       if (result.ticket_ids.length > 0) {
-        setSelectedTicketId(result.ticket_ids[0]);
+        navigateToTicket(result.ticket_ids[0], true);
       }
       if (result.errors.length > 0) {
         setImportPreview((current) =>
@@ -530,7 +534,7 @@ export function Dashboard() {
     onSuccess: (ticket) => {
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
-      setSelectedTicketId(ticket.id);
+      navigateToTicket(ticket.id, true);
       if (ticket.parent_ticket_id && ticketTree.data) {
         const ancestors = findAncestorIds(ticketTree.data, ticket.parent_ticket_id);
         expandPath([...ancestors, ticket.parent_ticket_id]);
@@ -944,7 +948,7 @@ export function Dashboard() {
                       nodes={ticketTree.data}
                       selectedId={selectedId}
                       expandedIds={expandedSet}
-                      onSelect={setSelectedTicketId}
+                      onSelect={selectTicket}
                       onToggle={toggleExpanded}
                       onAddChild={openCreateSubTicket}
                     />

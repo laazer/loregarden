@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api/client";
+import { navigateToTicket } from "../lib/useAppNavigation";
 import { useUiStore } from "../state/uiStore";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { IconCloseButton } from "./IconCloseButton";
@@ -10,9 +11,7 @@ export function ApprovalInboxPanel() {
   const qc = useQueryClient();
   const inboxOpen = useUiStore((s) => s.inboxOpen);
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
-  const setSelectedTicketId = useUiStore((s) => s.setSelectedTicketId);
   const setTab = useUiStore((s) => s.setTab);
-  const setAppPage = useUiStore((s) => s.setAppPage);
 
   const approvals = useQuery({
     queryKey: ["approvals"],
@@ -92,8 +91,7 @@ export function ApprovalInboxPanel() {
               }
               onReject={() => resolveApproval.mutate({ id: a.id, action: "reject" })}
               onInspect={() => {
-                setSelectedTicketId(a.ticket_id);
-                setAppPage("dashboard");
+                navigateToTicket(a.ticket_id);
                 setInboxOpen(false);
                 setTab("diff");
               }}

@@ -2,13 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useMemo, useState } from "react";
 
 import { api } from "../api/client";
+import { useAppPage } from "../lib/useAppNavigation";
 import { useUiStore } from "../state/uiStore";
 import { AppIconRail } from "./AppIconRail";
 import { SettingsModal } from "./SettingsModal";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
-  const appPage = useUiStore((s) => s.appPage);
+  const appPage = useAppPage();
   const workspace = useUiStore((s) => s.workspace);
   const editorWorkspace = useUiStore((s) => s.editorWorkspace);
   const queueWorkspaceSlug = useUiStore((s) => s.queueWorkspaceSlug);

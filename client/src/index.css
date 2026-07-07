@@ -175,6 +175,7 @@ button {
   cursor: pointer;
   background: transparent;
   color: var(--txl);
+  text-decoration: none;
 }
 
 .icon-rail-btn:hover {

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 import { api } from "../api/client";
+import { useAppPage } from "../lib/useAppNavigation";
 import { PANE_LABELS, PANE_ORDER } from "../lib/appTopbarConfig";
 import { useUiStore } from "../state/uiStore";
 import { ApprovalInboxPanel } from "./ApprovalInboxPanel";
@@ -18,7 +19,7 @@ const USAGE_BACKGROUND_REFRESH_MS = 10 * 60_000;
 
 export function AppTopbarActions() {
   const qc = useQueryClient();
-  const appPage = useUiStore((s) => s.appPage);
+  const appPage = useAppPage();
   const paneVisibility = useUiStore((s) => s.paneVisibility);
   const setPaneVisible = useUiStore((s) => s.setPaneVisible);
   const inboxOpen = useUiStore((s) => s.inboxOpen);

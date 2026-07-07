@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import type { TicketState, WorkItemType } from "../api/client";
-import { initialAppPage, syncAppPageUrl, type AppPage } from "../lib/appNavigation";
+import { navigateToPage } from "../lib/useAppNavigation";
 
 type Tab = "diff" | "logs" | "tests" | "context" | "errors" | "triage" | "pr";
 
@@ -11,21 +11,18 @@ export type PaneId = "workspaces" | "tickets" | "workflow" | "artifacts";
 export type PaneVisibility = Record<PaneId, boolean>;
 
 interface UiState {
-  selectedTicketId: string | null;
   stateFilters: TicketState[];
   typeFilters: WorkItemType[];
   search: string;
   expandedTicketIds: string[];
   workspace: string;
   tab: Tab;
-  appPage: AppPage;
   inboxOpen: boolean;
   paneVisibility: PaneVisibility;
   editorWorkspace: string;
   editorContextRoot: string;
   editorFilePath: string | null;
   queueWorkspaceSlug: string;
-  setSelectedTicketId: (id: string | null) => void;
   toggleStateFilter: (state: TicketState) => void;
   clearStateFilters: () => void;
   toggleTypeFilter: (type: WorkItemType) => void;
@@ -37,7 +34,6 @@ interface UiState {
   expandPath: (ids: string[]) => void;
   setWorkspace: (slug: string) => void;
   setTab: (tab: Tab) => void;
-  setAppPage: (page: AppPage) => void;
   setInboxOpen: (open: boolean) => void;
   setPaneVisible: (pane: PaneId, visible: boolean) => void;
   togglePane: (pane: PaneId) => void;
@@ -56,14 +52,12 @@ type PersistedUiState = Pick<
 export const useUiStore = create<UiState>()(
   persist(
     (set, get) => ({
-      selectedTicketId: null,
       stateFilters: [],
       typeFilters: [],
       search: "",
       expandedTicketIds: [],
       workspace: "all",
       tab: "diff",
-      appPage: initialAppPage(),
       inboxOpen: false,
       paneVisibility: {
         workspaces: true,
@@ -75,7 +69,6 @@ export const useUiStore = create<UiState>()(
       editorContextRoot: ".",
       editorFilePath: null,
       queueWorkspaceSlug: "",
-      setSelectedTicketId: (id) => set({ selectedTicketId: id }),
       toggleStateFilter: (state) => {
         const current = get().stateFilters;
         set({
@@ -110,10 +103,6 @@ export const useUiStore = create<UiState>()(
       },
       setWorkspace: (workspace) => set({ workspace }),
       setTab: (tab) => set({ tab }),
-      setAppPage: (appPage) => {
-        set({ appPage });
-        syncAppPageUrl(appPage);
-      },
       setInboxOpen: (inboxOpen) => set({ inboxOpen }),
       setPaneVisible: (pane, visible) =>
         set((state) => {
@@ -135,13 +124,14 @@ export const useUiStore = create<UiState>()(
       setEditorContextRoot: (editorContextRoot) => set({ editorContextRoot }),
       setEditorFilePath: (editorFilePath) => set({ editorFilePath }),
       setQueueWorkspaceSlug: (queueWorkspaceSlug) => set({ queueWorkspaceSlug }),
-      openEditorFile: (workspaceSlug, filePath, contextRoot = ".") =>
+      openEditorFile: (workspaceSlug, filePath, contextRoot = ".") => {
         set({
-          appPage: "editor",
           editorWorkspace: workspaceSlug,
           editorContextRoot: contextRoot,
           editorFilePath: filePath,
-        }),
+        });
+        navigateToPage("editor");
+      },
     }),
     {
       name: "loregarden-ui",

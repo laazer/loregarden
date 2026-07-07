@@ -1,12 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Component, type ErrorInfo, type ReactNode, useEffect } from "react";
+import { Component, type ErrorInfo, type ReactNode } from "react";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+
 import { AppLayout } from "./components/AppLayout";
+import { RouterBridgeSync } from "./components/RouterBridgeSync";
 import { Dashboard } from "./pages/Dashboard";
 import { EditorPage } from "./pages/EditorPage";
 import { QueuePage } from "./pages/QueuePage";
 import { StudioPage } from "./pages/StudioPage";
-import { pageFromPath } from "./lib/appNavigation";
-import { useUiStore } from "./state/uiStore";
+import { navigateToPage } from "./lib/useAppNavigation";
 import "./index.css";
 
 const queryClient = new QueryClient();
@@ -32,7 +34,7 @@ class PageErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
             type="button"
             className="btn-secondary"
             onClick={() => {
-              useUiStore.getState().setAppPage("dashboard");
+              navigateToPage("dashboard");
               this.setState({ error: null });
             }}
           >
@@ -46,34 +48,18 @@ class PageErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
 }
 
 function AppShell() {
-  const appPage = useUiStore((s) => s.appPage);
-
-  useEffect(() => {
-    const syncFromUrl = () => {
-      const page = pageFromPath(window.location.pathname);
-      if (useUiStore.getState().appPage !== page) {
-        useUiStore.setState({ appPage: page });
-      }
-    };
-
-    window.addEventListener("popstate", syncFromUrl);
-    return () => window.removeEventListener("popstate", syncFromUrl);
-  }, []);
-
-  const page =
-    appPage === "studio" ? (
-      <StudioPage />
-    ) : appPage === "editor" ? (
-      <EditorPage />
-    ) : appPage === "queue" ? (
-      <QueuePage />
-    ) : (
-      <Dashboard />
-    );
-
   return (
     <AppLayout>
-      <PageErrorBoundary>{page}</PageErrorBoundary>
+      <PageErrorBoundary>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/tickets/:ticketId" element={<Dashboard />} />
+          <Route path="/studio/*" element={<StudioPage />} />
+          <Route path="/editor/*" element={<EditorPage />} />
+          <Route path="/queue/*" element={<QueuePage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </PageErrorBoundary>
     </AppLayout>
   );
 }
@@ -81,7 +67,10 @@ function AppShell() {
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AppShell />
+      <BrowserRouter>
+        <RouterBridgeSync />
+        <AppShell />
+      </BrowserRouter>
     </QueryClientProvider>
   );
 }
