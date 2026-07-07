@@ -13,6 +13,7 @@ import {
 import { AppTopbarActions } from "../components/AppTopbarActions";
 import { BrandMark } from "../components/BrandMark";
 import { AgentPreviewPanel } from "../components/studio/AgentPreviewPanel";
+import { StageRouteHints } from "../components/StageRouteHints";
 import { McpToolGuideSection } from "../components/studio/McpToolGuideSection";
 import { GateHandoffEditor } from "../components/studio/GateHandoffEditor";
 import { TicketStudioPanel } from "../components/studio/TicketStudioPanel";
@@ -783,6 +784,36 @@ export function StudioPage() {
                       </select>
                     </div>
                   </div>
+
+                  {selectedWorkflow?.transitions?.length ? (
+                    <StageRouteHints
+                      stage={{
+                        key: stage.key,
+                        name: stage.name,
+                        status: "pending",
+                        order: stage.order,
+                        agent_id: stage.agent_id,
+                        skill_name: stage.skill_name,
+                        optional: stage.optional,
+                        note: "",
+                        stage_type: stage.stage_type,
+                        agents: [],
+                      }}
+                      transitions={selectedWorkflow.transitions}
+                      stages={workflowDraft.stages.map((item, stageIndex) => ({
+                        key: item.key,
+                        name: item.name,
+                        status: "pending" as const,
+                        order: item.order || stageIndex + 1,
+                        agent_id: item.agent_id,
+                        skill_name: item.skill_name,
+                        optional: item.optional,
+                        note: "",
+                        stage_type: item.stage_type,
+                        agents: [],
+                      }))}
+                    />
+                  ) : null}
 
                   {stage.stage_type === "agent" || stage.stage_type === "gate" ? (
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8 }}>

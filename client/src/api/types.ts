@@ -41,12 +41,20 @@ export interface WorkflowStageView {
   key: string;
   name: string;
   status: StageStatus;
+  order?: number;
   agent_id: string;
   skill_name: string;
   optional: boolean;
   note: string;
   stage_type: string;
   agents: { agent_id: string; skill_name: string }[];
+}
+
+export interface WorkflowTransition {
+  from: string;
+  to: string;
+  when?: string;
+  agent_id?: string;
 }
 
 export interface TicketDetail extends TicketSummary {
@@ -60,6 +68,7 @@ export interface TicketDetail extends TicketSummary {
   state_locked: boolean;
   workflow_template_slug: string;
   workflow_template_name: string;
+  workflow_transitions: WorkflowTransition[];
   stages: WorkflowStageView[];
   artifacts: {
     diff?: DiffArtifact | null;
@@ -305,7 +314,8 @@ export interface OrchestrationRunView {
 export interface WorkspaceWorkflow {
   template_slug: string;
   template_name: string;
-  stages: { key: string; name: string; agent_id: string; skill_name: string; optional: boolean }[];
+  stages: { key: string; name: string; agent_id: string; skill_name: string; optional: boolean; order?: number }[];
+  transitions: WorkflowTransition[];
 }
 
 export interface AgentQuestionOption {
@@ -433,7 +443,7 @@ export interface StudioWorkflow {
   name: string;
   description: string;
   stages: StudioWorkflowStage[];
-  transitions: { from: string; to: string }[];
+  transitions: WorkflowTransition[];
   published_template_id: string | null;
   published_template_slug: string;
   built_in?: boolean;

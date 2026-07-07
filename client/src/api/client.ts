@@ -223,6 +223,20 @@ export const api = {
       body: "{}",
     }),
   advance: (id: string) => request<TicketDetail>(`/api/tickets/${id}/advance`, { method: "POST", body: "{}" }),
+  routeWorkflow: (
+    id: string,
+    body: {
+      from_stage_key: string;
+      outcome?: "pass" | "reject";
+      next_stage_key?: string;
+      next_agent?: string;
+      blocking_issues?: string;
+    },
+  ) =>
+    request<TicketDetail>(`/api/tickets/${id}/route-workflow`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   approvals: (ticketId?: string) =>
     request<Approval[]>(
       ticketId ? `/api/inbox/approvals?ticket_id=${encodeURIComponent(ticketId)}` : "/api/inbox/approvals",

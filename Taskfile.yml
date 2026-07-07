@@ -22,3 +22,22 @@ tasks:
     deps:
       - server
       - client
+
+  self-improve:watch:
+    desc: >-
+      Poll for human-triage tickets and reload the server once agent streams
+      and other workflows have finished
+    dir: "{{.ROOT_DIR}}"
+    env:
+      LOREGARDEN_API_URL: "http://127.0.0.1:8000"
+      LOREGARDEN_WORKSPACE: "loregarden"
+    cmds:
+      - ./scripts/self-improve-restart-watch.sh
+    interactive: true
+
+  self-improve:dev:
+    desc: Start client, server, and self-improve restart watcher together
+    deps:
+      - server
+      - client
+      - self-improve:watch

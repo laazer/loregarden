@@ -31,4 +31,8 @@ fi
 
 uv sync
 
-exec uv run uvicorn loregarden.main:app --reload --host 127.0.0.1 --port 8000
+RELOAD_TRIGGER="$ROOT/server/.self-improve-restart"
+touch "$RELOAD_TRIGGER"
+
+exec uv run uvicorn loregarden.main:app --reload --host 127.0.0.1 --port 8000 \
+  --reload-include '.self-improve-restart'

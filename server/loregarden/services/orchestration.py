@@ -64,6 +64,12 @@ class OrchestrationService:
         _, stages = resolve_ticket_stages(self.session, ticket)
         return instance, stages
 
+    def _resolve_transitions(self, ticket: Ticket) -> list[dict[str, str]]:
+        template = self.get_template_for_ticket(ticket)
+        if not template:
+            return []
+        return StateMachine.parse_transitions(template.transitions_json)
+
     def ensure_workflow_instance(
         self, ticket: Ticket, *, commit: bool = True
     ) -> tuple[WorkflowInstance | None, bool]:
@@ -279,8 +285,9 @@ class OrchestrationService:
         if ticket.workflow_stage_status in (StageStatus.DONE, StageStatus.WONT_DO):
             ticket.blocking_issues = ""
 
-        next_key = StateMachine.next_stage_key(stages, current)
-        if not next_key:
+        transitions = self._resolve_transitions(ticket)
+        route = StateMachine.resolve_next_stage_key(stages, transitions, current, outcome="pass")
+        if not route:
             reconcile_workflow_state(ticket, instance, stages)
             self.session.add(ticket)
             self.session.add(instance)
@@ -294,10 +301,16 @@ class OrchestrationService:
             )
             return ticket
 
-        ticket.workflow_stage_key = next_key
-        stage_def = next(s for s in stages if s.key == next_key)
-        ticket.next_agent = stage_def.agent_id
-        reconcile_workflow_state(ticket, instance, stages)
+        from loregarden.services.workflow_routing import apply_stage_route
+
+        apply_stage_route(
+            ticket,
+            instance,
+            stages,
+            transitions,
+            from_key=current,
+            outcome="pass",
+        )
         self.session.add(ticket)
         self.session.add(instance)
         self.session.commit()
@@ -306,8 +319,46 @@ class OrchestrationService:
             EventType.STAGE_STARTED,
             workspace_id=ticket.workspace_id,
             ticket_id=ticket.id,
-            payload={"stage_key": next_key},
+            payload={"stage_key": ticket.workflow_stage_key},
         )
+        return ticket
+
+    def route_workflow_stage(
+        self,
+        ticket: Ticket,
+        *,
+        from_stage_key: str,
+        outcome: str = "reject",
+        next_stage_key: str = "",
+        next_agent: str = "",
+        blocking_issues: str = "",
+    ) -> Ticket:
+        instance, stages = self._resolve_stages(ticket)
+        if not instance or not stages:
+            raise ValueError("Ticket has no workflow instance")
+        if from_stage_key not in {stage.key for stage in stages}:
+            raise ValueError(f"Unknown stage key: {from_stage_key}")
+
+        from loregarden.services.workflow_routing import apply_stage_route
+
+        transitions = self._resolve_transitions(ticket)
+        apply_stage_route(
+            ticket,
+            instance,
+            stages,
+            transitions,
+            from_key=from_stage_key,
+            outcome=outcome,
+            next_stage_key=next_stage_key,
+            next_agent=next_agent,
+            blocking_issues=blocking_issues,
+        )
+        ticket.revision += 1
+        ticket.last_updated_by = "human"
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.commit()
+        self.session.refresh(ticket)
         return ticket
 
     def finalize_workflow(self, ticket: Ticket) -> Ticket:

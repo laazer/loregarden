@@ -141,9 +141,12 @@ def get_workspace_workflow(slug: str, session: Session = Depends(get_session)) -
         raise HTTPException(404, "Workspace not found")
     template, stages = resolve_workspace_stages(session, ws)
     if not template:
-        return {"stages": [], "template_slug": "", "template_name": ""}
+        return {"stages": [], "template_slug": "", "template_name": "", "transitions": []}
+    from loregarden.services.workflow_routing import normalize_transitions_for_api
+
     return {
         "template_slug": template.slug,
         "template_name": template.name,
         "stages": [s.model_dump() for s in stages],
+        "transitions": normalize_transitions_for_api(template.transitions_json),
     }

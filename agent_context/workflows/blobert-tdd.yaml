@@ -108,8 +108,22 @@ transitions:
     to: script_review
   - from: script_review
     to: ac_gate
+    when: pass
+  - from: script_review
+    to: implementation
+    when: reject
   - from: ac_gate
     to: playtest
+    when: pass
+  - from: ac_gate
+    to: implementation
+    when: reject
+  - from: test_design
+    to: specification
+    when: reject
+  - from: test_break
+    to: specification
+    when: reject
   - from: playtest
     to: learning
   - from: learning

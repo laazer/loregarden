@@ -30,6 +30,7 @@ export const api = {
   openPr: jest.fn(),
   startRun: jest.fn(),
   advance: jest.fn(),
+  routeWorkflow: jest.fn(),
   resolveApproval: jest.fn(),
   setWorkspaceTemplate: jest.fn(),
   setWorkspaceRuntime: jest.fn(),
