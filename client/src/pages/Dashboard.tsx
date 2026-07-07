@@ -13,14 +13,13 @@ import { AgentsAssembleModal, type AgentsAssembleOptions } from "../components/A
 import { ConfirmRunStageModal } from "../components/ConfirmRunStageModal";
 import { StageRouteHints } from "../components/StageRouteHints";
 import { StageOverflowMenu } from "../components/StageOverflowMenu";
+import { WorkflowRunOverflowMenu } from "../components/WorkflowRunOverflowMenu";
 import { WorkflowStageTimeline } from "../components/WorkflowStageTimeline";
 import {
-  currentStageRunLabel,
   isHumanGateStage,
   stageKindLabel,
   stageRunButtonLabel,
 } from "../lib/stageDisplay";
-import { CopyTerminalCommandButton } from "../components/CopyTerminalCommandButton";
 import { CreateWorkItemModal, type CreateWorkItemDraft } from "../components/CreateWorkItemModal";
 import { IconCloseButton } from "../components/IconCloseButton";
 import { ImportTicketsModal } from "../components/ImportTicketsModal";
@@ -35,7 +34,6 @@ import { PANE_LABELS } from "../lib/appTopbarConfig";
 import {
   buildOrchestrateTerminalCommand,
   buildStageRunTerminalCommand,
-  isAgentWorkflowTicket,
 } from "../lib/terminalCommands";
 
 function mergeApprovals(...lists: Array<import("../api/client").Approval[] | undefined>) {
@@ -1254,38 +1252,26 @@ export function Dashboard() {
                     orchestrate.isPending && orchestrate.variables?.ticketId === selectedId,
                   )}
                 </button>
-                {isAgentWorkflowTicket(sel) && (
-                  <CopyTerminalCommandButton
-                    command={buildOrchestrateTerminalCommand(sel, API_BASE)}
-                    title="Copy terminal command to orchestrate this ticket"
-                  />
-                )}
+                <div style={{ flex: 1 }} />
                 {(() => {
                   const cursorStage = sel.stages.find((s) => s.key === sel.workflow_stage_key);
                   const cursorRun = cursorStage ? canRunStage(sel, cursorStage) : { allowed: false, reason: "No cursor stage" };
                   const runningCursor = isStageRunning(sel.workflow_stage_key);
                   return (
-                <button
-                  className="btn-secondary"
-                  disabled={!selectedId || workflowBusy || startRun.isPending || !cursorRun.allowed}
-                  onClick={() => requestStageRun(sel.workflow_stage_key)}
-                  title={cursorRun.reason}
-                >
-                  {currentStageRunLabel(cursorStage, runningCursor)}
-                </button>
+                    <WorkflowRunOverflowMenu
+                      ticket={sel}
+                      orchestrateCommand={buildOrchestrateTerminalCommand(sel, API_BASE)}
+                      cursorStage={cursorStage}
+                      cursorRun={cursorRun}
+                      runningCursor={runningCursor}
+                      workflowBusy={workflowBusy}
+                      startRunPending={startRun.isPending}
+                      advancePending={advance.isPending}
+                      onRunCurrentStage={() => requestStageRun(sel.workflow_stage_key)}
+                      onAdvance={() => advance.mutate()}
+                    />
                   );
                 })()}
-                <button
-                  className="btn-secondary"
-                  disabled={!selectedId || advance.isPending}
-                  onClick={() => advance.mutate()}
-                >
-                  Advance stage
-                </button>
-                <div style={{ flex: 1 }} />
-                <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}>
-                  {sel.run_code || "—"}
-                </span>
               </div>
             </>
           ) : (

@@ -54,16 +54,16 @@
 }
 
 .ticket-filter-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  z-index: 50;
+  z-index: 100;
   padding: 4px;
   border: 1px solid var(--bd2);
   border-radius: 10px;
   background: var(--bg1);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.ticket-filter-menu--anchored {
+  position: fixed;
 }
 
 .ticket-filter-option {

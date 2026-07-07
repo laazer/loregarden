@@ -21,10 +21,9 @@
 }
 
 .topbar-dropdown-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  z-index: 50;
+  z-index: 100;
   min-width: 220px;
+  max-width: min(320px, calc(100vw - 16px));
   padding: 6px;
   border: 1px solid var(--bd2);
   border-radius: 10px;
@@ -32,12 +31,13 @@
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
 
-.topbar-dropdown-menu--right {
-  right: 0;
+.topbar-dropdown-menu--anchored {
+  position: fixed;
 }
 
+.topbar-dropdown-menu--right,
 .topbar-dropdown-menu--left {
-  left: 0;
+  /* Alignment handled by useAnchoredPanelPosition */
 }
 
 .topbar-dropdown-item {

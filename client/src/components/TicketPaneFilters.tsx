@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { TicketState, WorkItemType } from "../api/client";
+import { useAnchoredPanelPosition } from "../hooks/useAnchoredPanelPosition";
 import { STATE_LABELS } from "./UpdateStateModal";
 import "./TicketPaneFilters.css";
 
@@ -35,6 +36,9 @@ function FilterDropdown<T extends string>({
 }: FilterDropdownProps<T>) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const panelStyle = useAnchoredPanelPosition(open, triggerRef, panelRef, { matchWidth: true });
   const summary = summarizeSelection(selected, options, allLabel);
   const filtered = selected.length > 0;
 
@@ -63,6 +67,7 @@ function FilterDropdown<T extends string>({
   return (
     <div className="ticket-filter-dropdown" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className={`btn-secondary btn-compact ticket-filter-trigger ${filtered ? "ticket-filter-trigger-active" : ""}`}
         aria-expanded={open}
@@ -76,7 +81,13 @@ function FilterDropdown<T extends string>({
         </span>
       </button>
       {open ? (
-        <div className="ticket-filter-menu" role="listbox" aria-label={`${title} filters`}>
+        <div
+          ref={panelRef}
+          className="ticket-filter-menu ticket-filter-menu--anchored"
+          style={panelStyle ?? { position: "fixed", visibility: "hidden" }}
+          role="listbox"
+          aria-label={`${title} filters`}
+        >
           <button
             type="button"
             role="option"

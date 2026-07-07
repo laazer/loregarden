@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useAnchoredPanelPosition } from "../hooks/useAnchoredPanelPosition";
 import "./TopbarDropdown.css";
 
 const DropdownCloseContext = createContext<(() => void) | null>(null);
@@ -14,6 +15,9 @@ export function TopbarDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const panelStyle = useAnchoredPanelPosition(open, triggerRef, panelRef, { align });
 
   useEffect(() => {
     if (!open) return;
@@ -40,6 +44,7 @@ export function TopbarDropdown({
   return (
     <div className="topbar-dropdown" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="btn-secondary topbar-dropdown-trigger"
         aria-expanded={open}
@@ -53,7 +58,12 @@ export function TopbarDropdown({
       </button>
       {open ? (
         <DropdownCloseContext.Provider value={() => setOpen(false)}>
-          <div className={`topbar-dropdown-menu topbar-dropdown-menu--${align}`} role="menu">
+          <div
+            ref={panelRef}
+            className={`topbar-dropdown-menu topbar-dropdown-menu--${align} topbar-dropdown-menu--anchored`}
+            style={panelStyle ?? { position: "fixed", visibility: "hidden" }}
+            role="menu"
+          >
             {children}
           </div>
         </DropdownCloseContext.Provider>

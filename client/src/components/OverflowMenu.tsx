@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useAnchoredPanelPosition } from "../hooks/useAnchoredPanelPosition";
 import "./OverflowMenu.css";
 
 const MenuCloseContext = createContext<(() => void) | null>(null);
@@ -16,6 +17,9 @@ export function OverflowMenu({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const panelStyle = useAnchoredPanelPosition(open, triggerRef, panelRef, { align });
 
   useEffect(() => {
     if (!open) return;
@@ -42,6 +46,7 @@ export function OverflowMenu({
   return (
     <div className="overflow-menu" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="btn-secondary btn-compact overflow-menu-trigger"
         aria-label={label}
@@ -54,7 +59,13 @@ export function OverflowMenu({
       </button>
       {open ? (
         <MenuCloseContext.Provider value={() => setOpen(false)}>
-          <div className={`overflow-menu-panel overflow-menu-panel--${align}`} role="menu" aria-label={label}>
+          <div
+            ref={panelRef}
+            className={`overflow-menu-panel overflow-menu-panel--${align} overflow-menu-panel--anchored`}
+            style={panelStyle ?? { position: "fixed", visibility: "hidden" }}
+            role="menu"
+            aria-label={label}
+          >
             {children}
           </div>
         </MenuCloseContext.Provider>
