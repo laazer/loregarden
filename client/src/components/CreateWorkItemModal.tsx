@@ -1,3 +1,5 @@
+import { IconCloseButton } from "./IconCloseButton";
+
 import { useEffect, useMemo, useState } from "react";
 
 import type { TicketSummary, TicketTreeNode, WorkItemType } from "../api/client";
@@ -212,9 +214,7 @@ export function CreateWorkItemModal({
             </h2>
             <p className="modal-subtitle">{modalSubtitle}</p>
           </div>
-          <button type="button" className="btn-secondary" disabled={isSaving} onClick={onClose}>
-            ✕
-          </button>
+          <IconCloseButton disabled={isSaving} onClick={onClose} />
         </div>
 
         <div className="modal-body">

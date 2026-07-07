@@ -125,14 +125,7 @@
   cursor: not-allowed;
 }
 
-.btn.btn-primary {
-  background: #2196f3;
-  color: white;
-}
-
-.btn.btn-primary:hover:not(:disabled) {
-  background: #1976d2;
-}
+/* btn.btn-primary / btn.btn-secondary use global v2 tokens from index.css */
 
 .btn.btn-danger {
   background: #f44336;

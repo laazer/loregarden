@@ -1,3 +1,5 @@
+import { IconCloseButton } from "./IconCloseButton";
+
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
@@ -176,9 +178,7 @@ export function ImportTicketsConfirmModal({
               Review parsed fields, assign milestones, and confirm before importing.
             </p>
           </div>
-          <button type="button" className="btn-secondary" disabled={isImporting} onClick={onClose}>
-            ✕
-          </button>
+          <IconCloseButton disabled={isImporting} onClick={onClose} />
         </div>
 
         <div className="modal-body">

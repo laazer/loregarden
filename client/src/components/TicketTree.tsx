@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import type { TicketState, TicketTreeNode, WorkItemType } from "../api/client";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
+import { PrioBars } from "./PrioBars";
 
 const STATE_COLORS: Record<TicketState, string> = {
   backlog: "var(--txm)",
@@ -10,55 +11,22 @@ const STATE_COLORS: Record<TicketState, string> = {
   wont_do: "var(--amb)",
 };
 
-const TYPE_COLORS: Record<WorkItemType, string> = {
-  milestone: "var(--ac)",
-  feature: "var(--blue)",
-  capability: "var(--amb)",
-  task: "var(--txm)",
-  bug: "var(--red)",
+const STATE_LABELS: Record<TicketState, string> = {
+  backlog: "Backlog",
+  in_progress: "In Progress",
+  blocked: "Blocked",
+  done: "Done",
+  wont_do: "Won't do",
 };
 
-const TYPE_LABELS: Record<WorkItemType, string> = {
-  milestone: "MS",
-  feature: "FE",
-  capability: "CP",
-  task: "TK",
-  bug: "BG",
+const WORKFLOW_STATUS_COLORS: Record<string, string> = {
+  running: "var(--blue)",
+  awaiting: "var(--amb)",
+  blocked: "var(--red)",
+  done: "var(--grn)",
+  pending: "var(--txl)",
+  wont_do: "var(--amb)",
 };
-
-export function findAncestorIds(nodes: TicketTreeNode[], targetId: string): string[] {
-  function walk(items: TicketTreeNode[], ancestors: string[]): string[] | null {
-    for (const node of items) {
-      if (node.id === targetId) return ancestors;
-      const found = walk(node.children, [...ancestors, node.id]);
-      if (found) return found;
-    }
-    return null;
-  }
-  return walk(nodes, []) ?? [];
-}
-
-export function collectExpandableIds(nodes: TicketTreeNode[]): string[] {
-  const ids: string[] = [];
-  for (const n of nodes) {
-    if (n.children.length > 0) {
-      ids.push(n.id);
-      ids.push(...collectExpandableIds(n.children));
-    }
-  }
-  return ids;
-}
-
-interface TicketTreeProps {
-  nodes: TicketTreeNode[];
-  selectedId: string | null;
-  expandedIds: Set<string>;
-  onSelect: (id: string) => void;
-  onToggle: (id: string) => void;
-  onAddChild?: (node: TicketTreeNode) => void;
-  showExternalId?: boolean;
-  depth?: number;
-}
 
 function TreeRow({
   node,
@@ -81,10 +49,11 @@ function TreeRow({
 }) {
   const hasChildren = node.children.length > 0;
   const expanded = expandedIds.has(node.id);
-  const isWorkflowItem = true;
   const isSelected = selectedId === node.id;
-  const workflowRunning = isWorkflowItem && node.workflow_stage_status === "running";
+  const workflowRunning = node.workflow_stage_status === "running";
   const showAddChild = !!onAddChild && canHaveChildren(node.work_item_type);
+  const stateColor = STATE_COLORS[node.state];
+  const wfColor = WORKFLOW_STATUS_COLORS[node.workflow_stage_status] ?? "var(--txl)";
 
   const handleRowClick = () => {
     onSelect(node.id);
@@ -96,7 +65,7 @@ function TreeRow({
       <div
         className={`tree-row list-btn ${isSelected ? "active" : ""}`}
         style={{
-          borderLeft: `2px solid ${isWorkflowItem ? STATE_COLORS[node.state] : TYPE_COLORS[node.work_item_type]}`,
+          borderLeft: `2px solid ${stateColor}`,
         }}
         onClick={handleRowClick}
         onKeyDown={(e) => {
@@ -125,16 +94,8 @@ function TreeRow({
           ) : (
             <span className="tree-chevron-btn tree-chevron-spacer" aria-hidden />
           )}
-          <span
-            className="type-badge"
-            style={{
-              background: `${TYPE_COLORS[node.work_item_type]}22`,
-              color: TYPE_COLORS[node.work_item_type],
-            }}
-          >
-            {TYPE_LABELS[node.work_item_type]}
-          </span>
-          <span className="tree-title">
+          <PrioBars priority={node.priority} />
+          <span className="tree-card-title">
             {showExternalId ? (
               <>
                 <span className="tree-external-id">{node.external_id}</span>
@@ -172,19 +133,27 @@ function TreeRow({
             )}
           </div>
         </div>
-        {isWorkflowItem && (
-          <div className="tree-meta">
-            <span style={{ color: STATE_COLORS[node.state] }}>{node.state.replace("_", " ")}</span>
-            {node.workflow_stage_name && (
-              <>
-                <span className="tree-dot">·</span>
-                <span style={{ color: workflowRunning ? "var(--bll)" : undefined }}>
-                  {node.workflow_stage_name}
-                </span>
-              </>
-            )}
+        <div className="tree-card-meta">
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 500, color: stateColor }}>
+            <span className="tree-state-dot" style={{ background: stateColor }} />
+            {STATE_LABELS[node.state]}
+          </span>
+          {node.workspace_slug ? (
+            <>
+              <span style={{ color: "var(--bd2)" }}>·</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}>
+                {node.workspace_slug}
+              </span>
+            </>
+          ) : null}
+        </div>
+        {node.workflow_stage_name ? (
+          <div className="tree-card-workflow">
+            <span className="tree-workflow-dot-inline" style={{ background: wfColor }} />
+            <span style={{ color: wfColor, fontWeight: 500 }}>{node.workflow_stage_name}</span>
+            <span style={{ color: "var(--txl)" }}>{node.workflow_stage_status.replace("_", " ")}</span>
           </div>
-        )}
+        ) : null}
       </div>
       {hasChildren && expanded && (
         <div className="tree-children" role="group">
@@ -202,6 +171,40 @@ function TreeRow({
       )}
     </div>
   );
+}
+
+interface TicketTreeProps {
+  nodes: TicketTreeNode[];
+  selectedId: string | null;
+  expandedIds: Set<string>;
+  onSelect: (id: string) => void;
+  onToggle: (id: string) => void;
+  onAddChild?: (node: TicketTreeNode) => void;
+  showExternalId?: boolean;
+  depth?: number;
+}
+
+export function findAncestorIds(nodes: TicketTreeNode[], targetId: string): string[] {
+  function walk(items: TicketTreeNode[], ancestors: string[]): string[] | null {
+    for (const node of items) {
+      if (node.id === targetId) return ancestors;
+      const found = walk(node.children, [...ancestors, node.id]);
+      if (found) return found;
+    }
+    return null;
+  }
+  return walk(nodes, []) ?? [];
+}
+
+export function collectExpandableIds(nodes: TicketTreeNode[]): string[] {
+  const ids: string[] = [];
+  for (const n of nodes) {
+    if (n.children.length > 0) {
+      ids.push(n.id);
+      ids.push(...collectExpandableIds(n.children));
+    }
+  }
+  return ids;
 }
 
 export function TicketTree({
@@ -232,5 +235,3 @@ export function TicketTree({
     </div>
   );
 }
-
-export { TYPE_COLORS, TYPE_LABELS };

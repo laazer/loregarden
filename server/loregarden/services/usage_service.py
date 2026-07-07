@@ -8,13 +8,16 @@ import re
 import sqlite3
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 import httpx
+from loregarden.config import settings
 
 logger = logging.getLogger(__name__)
+
+USAGE_CACHE_FILENAME = "usage-cache.json"
 
 WARNING_PERCENT = 80.0
 CRITICAL_PERCENT = 90.0
@@ -79,6 +82,9 @@ class ProviderUsage:
     error: str | None = None
     meters: list[UsageMeter] = field(default_factory=list)
     breakdown: list[UsageBreakdownItem] = field(default_factory=list)
+    from_cache: bool = False
+    cached_at: str | None = None
+    rate_limited_until: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -88,6 +94,8 @@ class ProviderUsage:
             "error": self.error,
             "meters": [m.as_dict() for m in self.meters],
             "breakdown": [b.as_dict() for b in self.breakdown],
+            "from_cache": self.from_cache,
+            "cached_at": self.cached_at,
         }
 
 
@@ -380,7 +388,99 @@ def _scan_claude_logs(days_back: int = 7) -> list[UsageBreakdownItem]:
     return items[:8]
 
 
-def _fetch_claude_usage(client: httpx.Client) -> ProviderUsage:
+def _parse_iso_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _retry_after_seconds(response: httpx.Response) -> int | None:
+    raw = response.headers.get("retry-after", "").strip()
+    if not raw:
+        return None
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return None
+
+
+def _rate_limit_until(response: httpx.Response, *, default_seconds: int = 300) -> str:
+    seconds = _retry_after_seconds(response) or default_seconds
+    return (datetime.now(tz=timezone.utc) + timedelta(seconds=seconds)).isoformat()
+
+
+def _provider_label(provider: str) -> str:
+    return "Claude" if provider == "claude" else "Cursor"
+
+
+def _format_usage_http_error(provider: str, response: httpx.Response) -> str:
+    label = _provider_label(provider)
+    if response.status_code == 401:
+        return f"{label} session expired — run `claude` to re-authenticate."
+    if response.status_code == 429:
+        detail = ""
+        try:
+            body = response.json()
+            error = body.get("error") if isinstance(body, dict) else None
+            if isinstance(error, dict):
+                detail = str(error.get("message") or error.get("type") or "").strip()
+        except (json.JSONDecodeError, ValueError):
+            detail = ""
+        retry = _retry_after_seconds(response)
+        parts = [f"{label} usage API rate limited"]
+        if detail:
+            parts.append(f"({detail})")
+        if retry is not None:
+            parts.append(f"— retry in ~{retry // 60 or 1} min")
+        return " ".join(parts)
+    return f"{label} usage request failed (HTTP {response.status_code})."
+
+
+def _claude_usage_request(client: httpx.Client, access_token: str) -> httpx.Response:
+    return client.get(
+        CLAUDE_USAGE_URL,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "anthropic-beta": "oauth-2025-04-20",
+            "User-Agent": "loregarden/0.1",
+        },
+        timeout=10,
+    )
+
+
+def _rate_limit_backoff_error(provider: str, until_iso: str) -> str:
+    until = _parse_iso_timestamp(until_iso)
+    if until is None:
+        return f"{_provider_label(provider)} usage API rate limited — backing off."
+    remaining = max(0, int((until - datetime.now(tz=timezone.utc)).total_seconds()))
+    minutes = max(1, (remaining + 59) // 60)
+    return (
+        f"{_provider_label(provider)} usage API rate limited — "
+        f"backing off (~{minutes} min remaining)."
+    )
+
+
+def _active_rate_limit_until(cache_entry: dict[str, Any] | None) -> str | None:
+    if not cache_entry:
+        return None
+    until_iso = cache_entry.get("rate_limited_until")
+    if not isinstance(until_iso, str):
+        return None
+    until = _parse_iso_timestamp(until_iso)
+    if until is None or until <= datetime.now(tz=timezone.utc):
+        return None
+    return until_iso
+
+
+def _fetch_claude_usage(
+    client: httpx.Client,
+    cache_entry: dict[str, Any] | None = None,
+) -> ProviderUsage:
     oauth = _claude_oauth()
     if not oauth or not str(oauth.get("accessToken") or "").strip():
         return ProviderUsage(
@@ -408,24 +508,37 @@ def _fetch_claude_usage(client: httpx.Client) -> ProviderUsage:
         oauth = _refresh_claude_token(oauth, client)
         access_token = str(oauth.get("accessToken") or "").strip()
 
-    response = client.get(
-        CLAUDE_USAGE_URL,
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "anthropic-beta": "oauth-2025-04-20",
-            "User-Agent": "loregarden/0.1",
-        },
-        timeout=10,
-    )
-    if response.status_code >= 400:
+    backoff_until = _active_rate_limit_until(cache_entry)
+    if backoff_until:
         return ProviderUsage(
             provider="claude",
             plan=_claude_plan_label(oauth),
             logged_in=True,
-            error=f"Usage request failed (HTTP {response.status_code}).",
+            error=_rate_limit_backoff_error("claude", backoff_until),
             breakdown=_scan_claude_logs(),
+            rate_limited_until=backoff_until,
+        )
+
+    response = _claude_usage_request(client, access_token)
+    if response.status_code == 401 and str(oauth.get("refreshToken") or "").strip():
+        refreshed = _refresh_claude_token(oauth, client)
+        refreshed_token = str(refreshed.get("accessToken") or "").strip()
+        if refreshed_token and refreshed_token != access_token:
+            oauth = refreshed
+            access_token = refreshed_token
+            response = _claude_usage_request(client, access_token)
+
+    if response.status_code >= 400:
+        rate_limited_until = (
+            _rate_limit_until(response) if response.status_code == 429 else None
+        )
+        return ProviderUsage(
+            provider="claude",
+            plan=_claude_plan_label(oauth),
+            logged_in=True,
+            error=_format_usage_http_error("claude", response),
+            breakdown=_scan_claude_logs(),
+            rate_limited_until=rate_limited_until,
         )
 
     body = response.json()
@@ -584,7 +697,10 @@ def _scan_cursor_activity(days_back: int = 7) -> list[UsageBreakdownItem]:
     ][:8]
 
 
-def _fetch_cursor_usage(client: httpx.Client) -> ProviderUsage:
+def _fetch_cursor_usage(
+    client: httpx.Client,
+    cache_entry: dict[str, Any] | None = None,
+) -> ProviderUsage:
     token = _read_cursor_access_token()
     if not token:
         return ProviderUsage(
@@ -593,14 +709,30 @@ def _fetch_cursor_usage(client: httpx.Client) -> ProviderUsage:
             error="Not logged in to Cursor.",
         )
 
+    backoff_until = _active_rate_limit_until(cache_entry)
+    if backoff_until:
+        plan_name = cache_entry.get("plan") if cache_entry else None
+        return ProviderUsage(
+            provider="cursor",
+            plan=plan_name if isinstance(plan_name, str) else None,
+            logged_in=True,
+            error=_rate_limit_backoff_error("cursor", backoff_until),
+            breakdown=_scan_cursor_activity(),
+            rate_limited_until=backoff_until,
+        )
+
     usage_response = _cursor_connect_post(client, CURSOR_USAGE_URL, token)
     plan_response = _cursor_connect_post(client, CURSOR_PLAN_URL, token)
     if usage_response.status_code >= 400:
+        rate_limited_until = (
+            _rate_limit_until(usage_response) if usage_response.status_code == 429 else None
+        )
         return ProviderUsage(
             provider="cursor",
             logged_in=True,
-            error=f"Usage request failed (HTTP {usage_response.status_code}).",
+            error=_format_usage_http_error("cursor", usage_response),
             breakdown=_scan_cursor_activity(),
+            rate_limited_until=rate_limited_until,
         )
 
     usage_body = usage_response.json()
@@ -700,13 +832,173 @@ def _fetch_cursor_usage(client: httpx.Client) -> ProviderUsage:
     )
 
 
+def _usage_cache_path() -> Path:
+    return settings.repo_root / "data" / USAGE_CACHE_FILENAME
+
+
+def _read_usage_cache() -> dict[str, dict[str, Any]]:
+    path = _usage_cache_path()
+    if not path.is_file():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.debug("could not read usage cache %s: %s", path, exc)
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for key, value in raw.items():
+        if isinstance(key, str) and isinstance(value, dict):
+            out[key] = value
+    return out
+
+
+def _write_usage_cache(cache: dict[str, dict[str, Any]]) -> None:
+    path = _usage_cache_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(cache, indent=2) + "\n", encoding="utf-8")
+
+
+def _meters_from_cache(rows: Any) -> list[UsageMeter]:
+    if not isinstance(rows, list):
+        return []
+    meters: list[UsageMeter] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        meters.append(
+            UsageMeter(
+                key=str(row.get("key") or ""),
+                label=str(row.get("label") or ""),
+                used=float(row.get("used") or 0),
+                limit=float(row["limit"]) if row.get("limit") is not None else None,
+                unit=str(row.get("unit") or ""),
+                percent_used=float(row["percent_used"])
+                if row.get("percent_used") is not None
+                else None,
+                resets_at=row.get("resets_at"),
+                status=str(row.get("status") or "ok"),
+            )
+        )
+    return meters
+
+
+def _breakdown_from_cache(rows: Any) -> list[UsageBreakdownItem]:
+    if not isinstance(rows, list):
+        return []
+    items: list[UsageBreakdownItem] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        items.append(
+            UsageBreakdownItem(
+                name=str(row.get("name") or ""),
+                amount=float(row.get("amount") or 0),
+                unit=str(row.get("unit") or ""),
+                share_percent=float(row.get("share_percent") or 0),
+            )
+        )
+    return items
+
+
+def _provider_from_cache_entry(data: dict[str, Any]) -> ProviderUsage:
+    return ProviderUsage(
+        provider=str(data.get("provider") or ""),
+        plan=data.get("plan"),
+        logged_in=bool(data.get("logged_in")),
+        error=None,
+        meters=_meters_from_cache(data.get("meters")),
+        breakdown=_breakdown_from_cache(data.get("breakdown")),
+        cached_at=data.get("cached_at"),
+    )
+
+
+def _resolve_provider_with_cache(
+    provider: ProviderUsage,
+    cache: dict[str, dict[str, Any]],
+) -> tuple[ProviderUsage, dict[str, dict[str, Any]] | None]:
+    if provider.error is None:
+        cached_at = datetime.now(tz=timezone.utc).isoformat()
+        return (
+            ProviderUsage(
+                provider=provider.provider,
+                plan=provider.plan,
+                logged_in=provider.logged_in,
+                error=None,
+                meters=provider.meters,
+                breakdown=provider.breakdown,
+                from_cache=False,
+                cached_at=cached_at,
+            ),
+            {**provider.as_dict(), "cached_at": cached_at},
+        )
+
+    if not provider.logged_in:
+        return provider, None
+
+    cached_entry = cache.get(provider.provider)
+    if not cached_entry:
+        return provider, None
+
+    cached_provider = _provider_from_cache_entry(cached_entry)
+    if not cached_provider.meters:
+        return provider, None
+
+    return (
+        ProviderUsage(
+            provider=provider.provider,
+            plan=provider.plan or cached_provider.plan,
+            logged_in=provider.logged_in,
+            error=provider.error,
+            meters=cached_provider.meters,
+            breakdown=provider.breakdown or cached_provider.breakdown,
+            from_cache=True,
+            cached_at=cached_provider.cached_at,
+        ),
+        None,
+    )
+
+
+def _merge_cache_entry(
+    provider: ProviderUsage,
+    cache_entry: dict[str, dict[str, Any]] | None,
+) -> dict[str, Any]:
+    merged: dict[str, Any] = dict(cache_entry or {})
+    merged["provider"] = provider.provider
+    if provider.rate_limited_until:
+        merged["rate_limited_until"] = provider.rate_limited_until
+    elif provider.error is None:
+        merged.pop("rate_limited_until", None)
+    return merged
+
+
 def get_usage_snapshot() -> dict[str, Any]:
+    cache = _read_usage_cache()
     with httpx.Client() as client:
-        providers = [_fetch_claude_usage(client), _fetch_cursor_usage(client)]
+        providers = [
+            _fetch_claude_usage(client, cache.get("claude")),
+            _fetch_cursor_usage(client, cache.get("cursor")),
+        ]
+
+    updated_cache = dict(cache)
+    resolved_providers: list[ProviderUsage] = []
+    for provider in providers:
+        resolved, cache_entry = _resolve_provider_with_cache(provider, cache)
+        resolved_providers.append(resolved)
+        if cache_entry is not None:
+            updated_cache[provider.provider] = _merge_cache_entry(provider, cache_entry)
+        elif provider.rate_limited_until:
+            updated_cache[provider.provider] = _merge_cache_entry(
+                provider, updated_cache.get(provider.provider)
+            )
+
+    if updated_cache != cache:
+        _write_usage_cache(updated_cache)
 
     warnings: list[str] = []
     near_limit = False
-    for provider in providers:
+    for provider in resolved_providers:
         for meter in provider.meters:
             if meter.status == "warning":
                 near_limit = True
@@ -718,11 +1010,18 @@ def get_usage_snapshot() -> dict[str, Any]:
                 warnings.append(
                     f"{provider.provider.title()} {meter.label} is above {CRITICAL_PERCENT:.0f}%"
                 )
-        if provider.error and provider.logged_in:
+        if provider.from_cache and provider.cached_at:
+            cached_time = datetime.fromisoformat(
+                provider.cached_at.replace("Z", "+00:00")
+            ).strftime("%Y-%m-%d %H:%M UTC")
+            warnings.append(
+                f"{provider.provider.title()}: live usage unavailable — showing cached data from {cached_time}"
+            )
+        elif provider.error and provider.logged_in:
             warnings.append(f"{provider.provider.title()}: {provider.error}")
 
     return {
-        "providers": [provider.as_dict() for provider in providers],
+        "providers": [provider.as_dict() for provider in resolved_providers],
         "near_limit": near_limit,
         "warnings": warnings,
         "fetched_at": datetime.now(tz=timezone.utc).isoformat(),

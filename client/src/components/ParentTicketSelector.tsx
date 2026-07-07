@@ -1,3 +1,5 @@
+import { IconCloseButton } from "./IconCloseButton";
+
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
@@ -170,9 +172,7 @@ export function ParentTicketSelector({
                   Choose a {allowedLabel} to contain this {childLabel}.
                 </p>
               </div>
-              <button type="button" className="btn-secondary modal-close-btn" onClick={() => setOpen(false)}>
-                ✕
-              </button>
+              <IconCloseButton className="modal-close-btn" onClick={() => setOpen(false)} />
             </div>
 
             <div className="modal-body" style={{ gap: 12 }}>

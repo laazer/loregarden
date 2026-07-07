@@ -4,54 +4,48 @@ import { MarkdownContent } from "../chat/MarkdownContent";
 export function AgentPreviewPanel({
   preview,
   loading,
+  slug,
 }: {
   preview: StudioAgentPreview | undefined;
   loading: boolean;
+  slug?: string;
 }) {
+  const fileLabel = slug ? `${slug}.system.md` : "agent.system.md";
+
   return (
-    <aside
-      style={{
-        width: 360,
-        borderLeft: "1px solid var(--bd)",
-        background: "var(--bg0)",
-        display: "flex",
-        flexDirection: "column",
-        minHeight: 0,
-      }}
-    >
-      <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--bd)" }}>
-        <div className="modal-section-title" style={{ margin: 0 }}>
-          Agent preview
-        </div>
-        <p className="modal-hint" style={{ margin: "4px 0 0" }}>
-          Full assembled prompt (role + MCP + gates + handoffs)
-        </p>
-        {preview?.sections && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
-            {preview.sections.map((section) => (
-              <span
-                key={section}
-                style={{
-                  fontSize: 10,
-                  padding: "2px 6px",
-                  borderRadius: 3,
-                  background: "var(--bg1)",
-                  color: "var(--txl)",
-                  fontFamily: "var(--mono)",
-                }}
-              >
-                {section}
-              </span>
-            ))}
-          </div>
-        )}
+    <aside className="studio-preview studio-preview--agent">
+      <div className="studio-preview-live">
+        <span className="studio-preview-live-dot" aria-hidden />
+        <span className="studio-preview-live-label">Live assembled prompt</span>
       </div>
-      <div style={{ flex: 1, overflow: "auto", padding: 14 }}>
-        {loading && <p className="modal-hint">Updating preview…</p>}
-        {!loading && preview?.markdown && <MarkdownContent content={preview.markdown} />}
-        {!loading && !preview?.markdown && (
-          <p className="modal-hint">Select or edit an agent to see the assembled prompt.</p>
-        )}
+      <p className="studio-preview-hint">role + MCP + gates + hand-offs</p>
+      {preview?.sections && preview.sections.length > 0 && (
+        <div className="studio-preview-chips">
+          {preview.sections.map((section) => (
+            <span key={section} className="studio-preview-chip">
+              {section}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="studio-preview-terminal">
+        <div className="studio-preview-terminal-bar">
+          <span className="studio-preview-terminal-dot red" aria-hidden />
+          <span className="studio-preview-terminal-dot amber" aria-hidden />
+          <span className="studio-preview-terminal-dot green" aria-hidden />
+          <span className="studio-preview-terminal-title">{fileLabel}</span>
+        </div>
+        <div className="studio-preview-terminal-body">
+          {loading && <p className="studio-preview-hint">Updating preview…</p>}
+          {!loading && preview?.markdown && (
+            <div style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+              <MarkdownContent content={preview.markdown} />
+            </div>
+          )}
+          {!loading && !preview?.markdown && (
+            <p className="studio-preview-hint">Select or edit an agent to see the assembled prompt.</p>
+          )}
+        </div>
       </div>
     </aside>
   );

@@ -1,3 +1,5 @@
+import { IconCloseButton } from "./IconCloseButton";
+
 import { useEffect, useState } from "react";
 
 import type { RuntimeOptions, WorkspaceRuntimeSettings } from "../api/client";
@@ -49,9 +51,7 @@ export function TriageModelModal({
             </h2>
             <p className="modal-subtitle">Choose a provider, then pick a model for this ticket</p>
           </div>
-          <button type="button" className="btn-secondary" disabled={isSaving} onClick={onClose}>
-            ✕
-          </button>
+          <IconCloseButton disabled={isSaving} onClick={onClose} />
         </div>
 
         <div className="modal-body">

@@ -7,12 +7,14 @@ import { useUiStore } from "../state/uiStore";
 import { ApprovalInboxPanel } from "./ApprovalInboxPanel";
 import { AppTopbarToolMenu } from "./AppTopbarToolMenu";
 import { MemorySetupModal } from "./MemorySetupModal";
-import { SettingsModal } from "./SettingsModal";
 import {
   TopbarDropdown,
   TopbarDropdownPaneRow,
 } from "./TopbarDropdown";
 import { UsageModal } from "./UsageModal";
+
+const USAGE_AUTO_REFRESH_MS = 5 * 60_000;
+const USAGE_BACKGROUND_REFRESH_MS = 10 * 60_000;
 
 export function AppTopbarActions() {
   const qc = useQueryClient();
@@ -21,27 +23,15 @@ export function AppTopbarActions() {
   const setPaneVisible = useUiStore((s) => s.setPaneVisible);
   const inboxOpen = useUiStore((s) => s.inboxOpen);
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
-  const workspace = useUiStore((s) => s.workspace);
-  const editorWorkspace = useUiStore((s) => s.editorWorkspace);
-  const queueWorkspaceSlug = useUiStore((s) => s.queueWorkspaceSlug);
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
-  const [settingsWorkspaceSlug, setSettingsWorkspaceSlug] = useState("loregarden");
-
-  const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
-
-  const runtimeOptions = useQuery({
-    queryKey: ["runtime-options"],
-    queryFn: api.runtimeOptions,
-  });
-
   const usage = useQuery({
     queryKey: ["usage"],
     queryFn: api.usage,
-    refetchInterval: usageOpen ? 60_000 : 5 * 60_000,
-    staleTime: 30_000,
+    refetchInterval: usageOpen ? USAGE_AUTO_REFRESH_MS : USAGE_BACKGROUND_REFRESH_MS,
+    staleTime: USAGE_AUTO_REFRESH_MS,
+    refetchOnWindowFocus: false,
   });
 
   const memoryConfig = useQuery({
@@ -63,44 +53,12 @@ export function AppTopbarActions() {
     },
   });
 
-  const setRuntime = useMutation({
-    mutationFn: ({
-      slug,
-      runtime,
-    }: {
-      slug: string;
-      runtime: {
-        cli_adapter: string;
-        claude_model: string;
-        cursor_model: string;
-        lmstudio_base_url: string;
-        lmstudio_model: string;
-      };
-    }) => api.setWorkspaceRuntime(slug, runtime),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["workspaces"] });
-      qc.invalidateQueries({ queryKey: ["workspace-runtime", vars.slug] });
-    },
-  });
-
   const visiblePaneCount = Object.values(paneVisibility).filter(Boolean).length;
   const hiddenPaneCount = useMemo(
     () => Object.values(paneVisibility).filter((visible) => !visible).length,
     [paneVisibility],
   );
   const approvalCount = approvals.data?.length ?? 0;
-
-  const defaultSettingsSlug = useMemo(() => {
-    if (workspace && workspace !== "all") return workspace;
-    if (appPage === "editor" && editorWorkspace) return editorWorkspace;
-    if (appPage === "queue" && queueWorkspaceSlug) return queueWorkspaceSlug;
-    return workspaces.data?.[0]?.slug ?? "loregarden";
-  }, [workspace, appPage, editorWorkspace, queueWorkspaceSlug, workspaces.data]);
-
-  const openSettings = () => {
-    setSettingsWorkspaceSlug(defaultSettingsSlug);
-    setSettingsOpen(true);
-  };
 
   const isIde = appPage === "dashboard";
   const panesLabel =
@@ -125,11 +83,11 @@ export function AppTopbarActions() {
                 />
               ))}
             </TopbarDropdown>
-            <button type="button" className="btn-secondary" onClick={() => setMemoryOpen(true)}>
+            <button type="button" className="btn-secondary topbar-action-btn" onClick={() => setMemoryOpen(true)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
               Memory
-            </button>
-            <button type="button" className="btn-secondary" onClick={openSettings}>
-              Settings
             </button>
           </div>
         ) : null}
@@ -137,15 +95,18 @@ export function AppTopbarActions() {
           <AppTopbarToolMenu />
           <button
             type="button"
-            className={`btn-secondary usage-btn${usage.data?.near_limit && !usageOpen ? " usage-btn-warning" : ""}`}
+            className={`btn-secondary topbar-action-btn usage-btn${usage.data?.near_limit && !usageOpen ? " usage-btn-warning" : ""}`}
             onClick={() => setUsageOpen(true)}
             aria-label={
               usage.data?.near_limit
                 ? "Usage limits are getting close — open usage details"
                 : "Open Claude and Cursor usage"
             }
-            style={{ display: "flex", alignItems: "center", gap: 8 }}
           >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--aml)" strokeWidth="1.8" aria-hidden>
+              <path d="M12 9v4M12 17h.01" />
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            </svg>
             Usage
             {usage.data?.near_limit ? (
               <span className="usage-alert-badge" aria-hidden="true">
@@ -155,10 +116,13 @@ export function AppTopbarActions() {
           </button>
           <button
             type="button"
-            className={`btn-secondary${approvalCount > 0 && !inboxOpen ? " approvals-btn-pending" : ""}`}
+            className={`btn-secondary topbar-action-btn topbar-action-btn--strong${approvalCount > 0 && !inboxOpen ? " approvals-btn-pending" : ""}`}
             onClick={() => setInboxOpen(true)}
-            style={{ display: "flex", alignItems: "center", gap: 8 }}
           >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--rdl)" strokeWidth="1.9" aria-hidden>
+              <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+              <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+            </svg>
             Approvals
             <span
               className="approvals-badge"
@@ -182,19 +146,6 @@ export function AppTopbarActions() {
           </button>
         </div>
       </div>
-
-      <SettingsModal
-        open={settingsOpen}
-        workspaceSlug={settingsWorkspaceSlug}
-        workspaces={workspaces.data ?? []}
-        runtimeOptions={runtimeOptions.data}
-        isSaving={setRuntime.isPending}
-        onClose={() => setSettingsOpen(false)}
-        onWorkspaceChange={setSettingsWorkspaceSlug}
-        onSave={async (slug, runtime) => {
-          await setRuntime.mutateAsync({ slug, runtime });
-        }}
-      />
 
       <MemorySetupModal
         open={memoryOpen}

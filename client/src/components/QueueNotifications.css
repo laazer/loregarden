@@ -177,19 +177,3 @@
     background: rgba(66, 165, 245, 0.2);
   }
 }
-
-.notification-close {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  font-size: 18px;
-  opacity: 0.5;
-  transition: opacity 0.2s;
-  padding: 0;
-}
-
-.notification-close:hover {
-  opacity: 1;
-}

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { IconCloseButton } from "./IconCloseButton";
+
 import type { StageStatus, TicketDetail, TicketState } from "../api/client";
 
 export const TICKET_STATES: TicketState[] = [
@@ -177,9 +179,7 @@ export function UpdateStateModal({
             </h2>
             <p className="modal-subtitle">{ticket.title}</p>
           </div>
-          <button type="button" className="btn-secondary" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
+          <IconCloseButton onClick={onClose} />
         </div>
 
         <div className="modal-body">

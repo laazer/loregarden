@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 import { api, type Approval, type RuntimeOptions, type TicketDetail } from "../api/client";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
-import { ChatWindow } from "./chat/ChatWindow";
+import { StudioChatComposer, StudioChatMessages, StudioTriageAvatar } from "./studio/StudioChat";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { TriageComposer } from "./TriageComposer";
 
@@ -139,67 +139,31 @@ export function TriagePanel({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 340 }}>
-      <div style={{ flex: 1, overflow: "auto", padding: 16, minHeight: 0 }}>
+    <div className="triage-panel-shell">
+      <div className="triage-panel-body">
         {triage.isError && (
-          <div
-            style={{
-              fontSize: 11.5,
-              color: "var(--rdl)",
-              marginBottom: 16,
-              padding: "8px 10px",
-              borderRadius: 8,
-              background: "rgba(240,96,63,.08)",
-              border: "1px solid rgba(240,96,63,.25)",
-            }}
-          >
+          <div className="triage-panel-alert">
             Triage API unavailable — showing inbox approvals for this ticket.
             Restart the dev server if chat is missing.
           </div>
         )}
 
         {recent.length > 0 && (
-          <section style={{ marginBottom: 20 }}>
+          <section className="triage-panel-section">
             <button
               type="button"
               onClick={() => setRecentExpanded((open) => !open)}
               aria-expanded={recentExpanded}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                width: "100%",
-                padding: 0,
-                marginBottom: recentExpanded ? 10 : 0,
-                border: "none",
-                background: "transparent",
-                cursor: "pointer",
-                textAlign: "left",
-              }}
+              className="triage-panel-section-toggle"
             >
               <span className={`tree-chevron-icon ${recentExpanded ? "expanded" : ""}`} />
               <span className="state-label" style={{ marginBottom: 0 }}>
                 Recently resolved
               </span>
-              <span
-                style={{
-                  fontSize: 10,
-                  color: "var(--txl)",
-                  fontWeight: 600,
-                  letterSpacing: "0.04em",
-                }}
-              >
-                {recent.length}
-              </span>
+              <span className="triage-panel-section-count">{recent.length}</span>
             </button>
             {recentExpanded && (
-              <div
-                style={{
-                  maxHeight: 220,
-                  overflowY: "auto",
-                  paddingRight: 4,
-                }}
-              >
+              <div className="triage-panel-section-scroll">
                 {recent.map((approval) => (
                   <ResolvedApprovalSummary key={approval.id} approval={approval} />
                 ))}
@@ -208,16 +172,24 @@ export function TriagePanel({
           </section>
         )}
 
-        <ChatWindow
-          title="Triage chat"
-          messages={messages}
-          assistantLabel="Triage assistant"
-          emptyMessage="Ask about requirements, failures, or next steps. The triage assistant sees this ticket's description, workflow state, blocking issues, recent runs, and this conversation."
-          isThinking={isSending}
-          thinkingMessage="Triage assistant is thinking…"
-          autoScroll={autoScroll}
-          flex
-        />
+        <section className="triage-chat-section">
+          <div className="ticket-studio-chat-header">
+            <div>
+              <div className="ticket-studio-chat-title">Triage chat</div>
+              <div className="ticket-studio-chat-sub">
+                Ask about requirements, failures, or next steps for this ticket.
+              </div>
+            </div>
+          </div>
+          <StudioChatMessages
+            messages={messages}
+            assistantAvatar={<StudioTriageAvatar />}
+            autoScroll={autoScroll}
+            emptyMessage="Ask about requirements, failures, or next steps. The triage assistant sees this ticket's description, workflow state, blocking issues, recent runs, and this conversation."
+            isThinking={isSending}
+            thinkingMessage="Triage assistant is thinking…"
+          />
+        </section>
       </div>
 
       <PendingApprovalsSection

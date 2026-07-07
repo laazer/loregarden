@@ -21,6 +21,7 @@ export interface QueueDashboardProps {
   userId?: string;
   showAnalytics?: boolean;
   showControls?: boolean;
+  embedded?: boolean;
 }
 
 export function QueueDashboard({
@@ -29,6 +30,7 @@ export function QueueDashboard({
   userId,
   showAnalytics = true,
   showControls = true,
+  embedded = false,
 }: QueueDashboardProps) {
   const { activeRuns, queuedRuns, stats, isWebSocket } = useParallelExecutionWS(workspaceId, userId);
 
@@ -120,32 +122,34 @@ export function QueueDashboard({
       <QueueNotifications workspaceId={workspaceId} />
 
       <div className="dashboard-layout">
-        <header className="dashboard-header">
-          <div className="header-title">
-            <h1>Queue Dashboard</h1>
-            <p className="workspace-indicator">Workspace: {workspaceName ?? workspaceId}</p>
-          </div>
+        {!embedded && (
+          <header className="dashboard-header">
+            <div className="header-title">
+              <h1>Queue Dashboard</h1>
+              <p className="workspace-indicator">Workspace: {workspaceName ?? workspaceId}</p>
+            </div>
 
-          <div className="header-metrics">
-            <div className="metric-badge">
-              <span className="metric-label">Utilization</span>
-              <span className="metric-value">{dashboardMetrics.utilization}%</span>
+            <div className="header-metrics">
+              <div className="metric-badge">
+                <span className="metric-label">Utilization</span>
+                <span className="metric-value">{dashboardMetrics.utilization}%</span>
+              </div>
+              <div className="metric-badge">
+                <span className="metric-label">Active</span>
+                <span className="metric-value">
+                  {dashboardMetrics.activeCount}/{dashboardMetrics.maxConcurrent}
+                </span>
+              </div>
+              <div className="metric-badge">
+                <span className="metric-label">Queued</span>
+                <span className="metric-value">{dashboardMetrics.queuedCount}</span>
+              </div>
+              <div className={`connection-badge ${isWebSocket ? "connected" : "polling"}`}>
+                {isWebSocket ? "🟢 Real-time" : "📡 Polling"}
+              </div>
             </div>
-            <div className="metric-badge">
-              <span className="metric-label">Active</span>
-              <span className="metric-value">
-                {dashboardMetrics.activeCount}/{dashboardMetrics.maxConcurrent}
-              </span>
-            </div>
-            <div className="metric-badge">
-              <span className="metric-label">Queued</span>
-              <span className="metric-value">{dashboardMetrics.queuedCount}</span>
-            </div>
-            <div className={`connection-badge ${isWebSocket ? "connected" : "polling"}`}>
-              {isWebSocket ? "🟢 Real-time" : "📡 Polling"}
-            </div>
-          </div>
-        </header>
+          </header>
+        )}
 
         <div className="dashboard-content">
           <div className="visualization-section">
@@ -180,14 +184,14 @@ export function QueueDashboard({
                 className={`tab-btn ${activeSidebarTab === "overview" ? "active" : ""}`}
                 onClick={() => setActiveSidebarTab("overview")}
               >
-                📊 Overview
+                Overview
               </button>
               <button
                 type="button"
                 className={`tab-btn ${activeSidebarTab === "review" ? "active" : ""}`}
                 onClick={() => setActiveSidebarTab("review")}
               >
-                💬 Review
+                Review
               </button>
               {showControls ? (
                 <button
@@ -195,7 +199,7 @@ export function QueueDashboard({
                   className={`tab-btn ${activeSidebarTab === "controls" ? "active" : ""}`}
                   onClick={() => setActiveSidebarTab("controls")}
                 >
-                  ⚙️ Controls
+                  Controls
                 </button>
               ) : null}
               {showAnalytics ? (
@@ -204,7 +208,7 @@ export function QueueDashboard({
                   className={`tab-btn ${activeSidebarTab === "analytics" ? "active" : ""}`}
                   onClick={() => setActiveSidebarTab("analytics")}
                 >
-                  📈 Analytics
+                  Analytics
                 </button>
               ) : null}
             </div>

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { useUiStore } from "../state/uiStore";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
+import { IconCloseButton } from "./IconCloseButton";
 import { ApprovalCard } from "./ApprovalCard";
 
 export function ApprovalInboxPanel() {
@@ -63,9 +64,7 @@ export function ApprovalInboxPanel() {
             <span className="pane-title">Global Approval Inbox</span>
             <span className="count-pill">{approvals.data?.length ?? 0}</span>
             <div style={{ flex: 1 }} />
-            <button type="button" className="btn-secondary" onClick={() => setInboxOpen(false)}>
-              ✕
-            </button>
+            <IconCloseButton onClick={() => setInboxOpen(false)} />
           </div>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>

@@ -60,7 +60,7 @@
 }
 
 .topbar-dropdown-item.active {
-  background: rgba(125, 108, 255, 0.12);
+  background: rgba(45, 212, 167, 0.12);
   color: var(--ac2);
 }
 
@@ -138,8 +138,8 @@
 }
 
 .topbar-switch-input:checked + .topbar-switch-track {
-  background: rgba(125, 108, 255, 0.35);
-  border-color: rgba(125, 108, 255, 0.55);
+  background: rgba(45, 212, 167, 0.28);
+  border-color: rgba(45, 212, 167, 0.45);
 }
 
 .topbar-switch-input:checked + .topbar-switch-track .topbar-switch-thumb {
@@ -148,7 +148,7 @@
 }
 
 .topbar-switch-input:focus-visible + .topbar-switch-track {
-  box-shadow: 0 0 0 2px rgba(125, 108, 255, 0.35);
+  box-shadow: 0 0 0 2px rgba(45, 212, 167, 0.35);
 }
 
 .topbar-switch-input:disabled + .topbar-switch-track {

@@ -82,7 +82,7 @@ describe('QueueNotifications', () => {
       const { container } = render(<QueueNotifications workspaceId="ws-1" />);
 
       // Note: No notifications rendered by default, would need event simulation
-      const dismissButtons = container.querySelectorAll('.notification-close');
+      const dismissButtons = container.querySelectorAll('.icon-close-btn');
       expect(dismissButtons).toBeDefined();
     });
 
@@ -129,7 +129,7 @@ describe('QueueNotifications', () => {
 
     test('close button has accessible label', () => {
       const { container } = render(<QueueNotifications workspaceId="ws-1" />);
-      const closeButtons = container.querySelectorAll('.notification-close');
+      const closeButtons = container.querySelectorAll('.icon-close-btn');
 
       closeButtons.forEach((btn) => {
         expect(btn).toHaveAttribute('aria-label');

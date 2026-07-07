@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { IconCloseButton } from "./IconCloseButton";
+
 import type { RuntimeOptions, WorkspaceRuntimeSettings, WorkspaceSummary } from "../api/client";
 import {
   WorkspaceRuntimeFields,
@@ -59,9 +61,7 @@ export function SettingsModal({
             </h2>
             <p className="modal-subtitle">Default provider and model for stage agent runs</p>
           </div>
-          <button type="button" className="btn-secondary" disabled={isSaving} onClick={onClose}>
-            ✕
-          </button>
+          <IconCloseButton disabled={isSaving} onClick={onClose} />
         </div>
 
         <div className="modal-body">

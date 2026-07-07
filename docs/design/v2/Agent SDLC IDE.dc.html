@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg0:#0a0c0e; --bg1:#0f1216; --bg2:#151a20; --bg3:#1c222a; --bg4:#252d38;
+  --bd:#1f2630; --bd2:#2d3743;
+  --tx:#eef2f6; --txm:#9aa4b0; --txl:#5c6673;
+  --ac:#2dd4a7; --ac2:#5ee9c4; --onac:#05271d;
+  --blue:#4b9bff; --bll:#89c0ff;
+  --grn:#35c46a; --grl:#7ee8a0;
+  --red:#ff6a54; --rdl:#ff9d8c;
+  --amb:#e5a72c; --aml:#f5c95a;
+  --vio:#9d8cff; --vil:#c3b8ff;
+  --ui:'IBM Plex Sans',system-ui,sans-serif;
+  --dp:'Sora',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg0);color:var(--tx);font-family:var(--ui);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+a{color:var(--ac);text-decoration:none}
+a:hover{color:var(--ac2)}
+::selection{background:rgba(45,212,167,.28)}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-thumb{background:#232a34;border-radius:8px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:#313a46;background-clip:padding-box}
+::-webkit-scrollbar-corner{background:transparent}
+input,textarea,select{font-family:inherit}
+input::placeholder,textarea::placeholder{color:var(--txl)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes ring{0%{box-shadow:0 0 0 0 rgba(45,212,167,.45)}70%{box-shadow:0 0 0 5px rgba(45,212,167,0)}100%{box-shadow:0 0 0 0 rgba(45,212,167,0)}}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes slidein{from{transform:translateX(100%)}to{transform:translateX(0)}}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+@keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(14px,-10px)}}
+@keyframes sheen{0%{background-position:-140% 0}100%{background-position:240% 0}}
+@keyframes hivedash{to{stroke-dashoffset:-12}}
+@keyframes hive-fly-a{0%{left:50%;top:10%;opacity:0}12%{opacity:1}88%{opacity:1}100%{left:18%;top:44%;opacity:0}}
+@keyframes hive-fly-b{0%{left:82%;top:44%;opacity:0}12%{opacity:1}88%{opacity:1}100%{left:50%;top:78%;opacity:0}}
+@keyframes hive-fly-c{0%{left:50%;top:78%;opacity:0}12%{opacity:1}88%{opacity:1}100%{left:50%;top:10%;opacity:0}}
+</style>
+</helmet>
+
+<div style="height:100vh;display:flex;background:var(--bg0);overflow:hidden;position:relative">
+  <!-- ambient depth -->
+  <div style="position:absolute;inset:0;pointer-events:none;z-index:0;background:radial-gradient(680px 420px at 12% -6%,rgba(45,212,167,.06),transparent 60%),radial-gradient(720px 480px at 92% 108%,rgba(75,155,255,.05),transparent 60%)"></div>
+
+  <!-- ══════════ ICON RAIL ══════════ -->
+  <nav style="width:60px;flex:none;z-index:5;display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 0;border-right:1px solid var(--bd);background:linear-gradient(180deg,var(--bg1),var(--bg0))">
+    <div style="width:34px;height:34px;flex:none;border-radius:10px;background:linear-gradient(140deg,var(--ac),#12a37e);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(45,212,167,.4),inset 0 1px 0 rgba(255,255,255,.35);margin-bottom:10px">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#04140f" stroke-width="2.4"><path d="M12 3v18M5 8l7-5 7 5M5 16l7 5 7-5"></path></svg>
+    </div>
+
+    <button onClick="{{ onNavIde }}" title="Console" style="position:relative;width:42px;height:42px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:12px;cursor:pointer;background:{{ navIde.bg }};color:{{ navIde.fg }}">
+      <span style="position:absolute;left:-12px;top:11px;bottom:11px;width:3px;border-radius:0 3px 3px 0;background:{{ navIde.bar }}"></span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18M7 13l2 2-2 2M12 17h4"></path></svg>
+    </button>
+    <button onClick="{{ onNavStudios }}" title="Studios" style="position:relative;width:42px;height:42px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:12px;cursor:pointer;background:{{ navStudios.bg }};color:{{ navStudios.fg }}">
+      <span style="position:absolute;left:-12px;top:11px;bottom:11px;width:3px;border-radius:0 3px 3px 0;background:{{ navStudios.bar }}"></span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3 3 8v8l9 5 9-5V8z"></path><path d="M3 8l9 5 9-5M12 13v8"></path></svg>
+    </button>
+    <button onClick="{{ onNavQueue }}" title="Parallel Execution" style="position:relative;width:42px;height:42px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:12px;cursor:pointer;background:{{ navQueue.bg }};color:{{ navQueue.fg }}">
+      <span style="position:absolute;left:-12px;top:11px;bottom:11px;width:3px;border-radius:0 3px 3px 0;background:{{ navQueue.bar }}"></span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="4" width="5" height="16" rx="1.5"></rect><rect x="10" y="4" width="5" height="16" rx="1.5"></rect><rect x="17" y="4" width="4" height="16" rx="1.5"></rect></svg>
+    </button>
+
+    <div style="flex:1"></div>
+    <button title="Settings" style="width:38px;height:38px;flex:none;display:flex;align-items:center;justify-content:center;border:none;border-radius:11px;cursor:pointer;background:transparent;color:var(--txl)" style-hover="color:var(--txm);background:var(--bg2)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+    </button>
+    <div style="width:32px;height:32px;flex:none;border-radius:10px;background:linear-gradient(135deg,#3fb0a8,#2a7d8c);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#04110f;font-family:var(--dp)">RK</div>
+  </nav>
+
+  <!-- ══════════ SCREEN AREA ══════════ -->
+  <div style="flex:1;min-width:0;z-index:1;display:flex;flex-direction:column;min-height:0">
+
+    <!-- ─────────────────── CONSOLE / IDE ─────────────────── -->
+    <sc-if value="{{ isIde }}" hint-placeholder-val="{{ true }}">
+    <div style="flex:1;display:flex;flex-direction:column;min-height:0;animation:fade .28s ease">
+      <!-- top bar -->
+      <header style="height:54px;flex:none;display:flex;align-items:center;gap:14px;padding:0 18px;border-bottom:1px solid var(--bd);background:var(--bg1)">
+        <div style="display:flex;flex-direction:column;line-height:1.1">
+          <span style="font-family:var(--dp);font-weight:600;font-size:14.5px;letter-spacing:-.01em">loregarden</span>
+          <span style="font-size:9.5px;color:var(--txl);letter-spacing:.09em;text-transform:uppercase">Agent SDLC · Console</span>
+        </div>
+        <div style="flex:1;max-width:460px;margin-left:8px;display:flex;align-items:center;gap:9px;height:34px;padding:0 12px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px;color:var(--txl)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+          <span style="flex:1;font-size:13px;color:var(--txm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Search tickets, agents, runs…</span>
+          <span style="font-family:var(--mono);font-size:10.5px;padding:2px 6px;background:var(--bg3);border:1px solid var(--bd2);border-radius:5px;color:var(--txl)">⌘K</span>
+        </div>
+        <div style="flex:1"></div>
+        <button style="display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;background:var(--bg2);border:1px solid var(--bd);border-radius:9px;color:var(--txm);font-size:12.5px;font-weight:500;cursor:pointer" style-hover="background:var(--bg3);color:var(--tx)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>Memory</button>
+        <button style="display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;background:var(--bg2);border:1px solid var(--bd);border-radius:9px;color:var(--txm);font-size:12.5px;font-weight:500;cursor:pointer" style-hover="background:var(--bg3);color:var(--tx)">
+          <span style="position:relative;display:flex"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--aml)" stroke-width="1.8"><path d="M12 9v4M12 17h.01"></path><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path></svg></span>Usage</button>
+        <button onClick="{{ onToggleInbox }}" style="display:flex;align-items:center;gap:9px;height:34px;padding:0 12px 0 11px;background:var(--bg2);border:1px solid var(--bd2);border-radius:9px;color:var(--tx);font-size:12.5px;font-weight:500;cursor:pointer" style-hover="background:var(--bg3)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--rdl)" stroke-width="1.9"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+          Approvals
+          <span style="min-width:18px;height:18px;padding:0 5px;display:flex;align-items:center;justify-content:center;background:var(--red);color:#fff;font-size:11px;font-weight:600;border-radius:9px;font-family:var(--mono)">{{ approvalsCount }}</span>
+        </button>
+      </header>
+
+      <div style="flex:1;display:flex;min-height:0">
+        <!-- LEFT: workspaces + tickets -->
+        <aside data-screen-label="Left sidebar" style="width:314px;flex:none;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--bd);background:var(--bg1)">
+          <div data-screen-label="Workspaces" style="flex:0 0 38%;min-height:0;display:flex;flex-direction:column;border-bottom:1px solid var(--bd)">
+            <div style="padding:15px 16px 9px;display:flex;align-items:center;gap:8px">
+              <span style="font-family:var(--dp);font-weight:600;font-size:13.5px">Workspaces</span>
+              <span style="font-family:var(--mono);font-size:11px;color:var(--txl);background:var(--bg3);padding:1px 6px;border-radius:6px">{{ workspaceCount }}</span>
+            </div>
+            <div style="flex:1;overflow-y:auto;padding:2px 10px 12px;display:flex;flex-direction:column;gap:3px">
+              <sc-for list="{{ workspaces }}" as="w" hint-placeholder-count="4">
+                <button onClick="{{ w.onClick }}" style="text-align:left;font-family:var(--ui);cursor:pointer;display:flex;align-items:center;gap:11px;padding:8px 11px;border-radius:10px;border:1px solid {{ w.bd }};background:{{ w.bg }}">
+                  <span style="width:27px;height:27px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center;background:{{ w.iconBg }};color:{{ w.iconFg }};font-family:var(--dp);font-weight:600;font-size:12px">
+                    <sc-if value="{{ w.isAll }}" hint-placeholder-val="{{ true }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg></sc-if>
+                    <sc-if value="{{ w.isRepo }}" hint-placeholder-val="{{ false }}">{{ w.letter }}</sc-if>
+                  </span>
+                  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                    <span style="font-size:13px;font-weight:500;color:var(--tx)">{{ w.name }}</span>
+                    <span style="font-size:10.5px;color:var(--txl)">{{ w.meta }}</span>
+                  </div>
+                  <sc-if value="{{ w.hasBlocked }}" hint-placeholder-val="{{ false }}"><span style="width:6px;height:6px;flex:none;border-radius:50%;background:var(--red)"></span></sc-if>
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--txm);background:var(--bg3);padding:1px 6px;border-radius:6px">{{ w.count }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="flex:1;min-height:0;display:flex;flex-direction:column">
+            <div style="padding:15px 16px 10px;display:flex;flex-direction:column;gap:11px">
+              <div style="display:flex;align-items:baseline;justify-content:space-between">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="font-family:var(--dp);font-weight:600;font-size:13.5px">Work items</span>
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--txl);background:var(--bg3);padding:1px 6px;border-radius:6px">{{ ticketCount }}</span>
+                </div>
+                <span style="font-size:11px;color:var(--txl)">by priority</span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:5px">
+                <sc-for list="{{ filters }}" as="f" hint-placeholder-count="5">
+                  <button onClick="{{ f.onClick }}" style="font-family:var(--ui);font-size:11.5px;font-weight:500;padding:4px 9px;border-radius:8px;cursor:pointer;border:1px solid {{ f.bd }};background:{{ f.bg }};color:{{ f.fg }}">{{ f.label }}<span style="opacity:.6;margin-left:5px;font-family:var(--mono);font-size:10px">{{ f.count }}</span></button>
+                </sc-for>
+              </div>
+            </div>
+            <div style="flex:1;overflow-y:auto;padding:2px 10px 14px;display:flex;flex-direction:column;gap:4px">
+              <sc-for list="{{ tickets }}" as="t" hint-placeholder-count="7">
+                <button onClick="{{ t.onSelect }}" style="text-align:left;font-family:var(--ui);cursor:pointer;display:flex;flex-direction:column;gap:8px;padding:11px 12px 11px 11px;border-radius:11px;border:1px solid {{ t.bd }};border-left:2px solid {{ t.bar }};background:{{ t.bg }}">
+                  <div style="display:flex;align-items:flex-start;gap:9px">
+                    <div style="display:flex;gap:2px;align-items:flex-end;height:13px;padding-top:2px;flex:none">
+                      <span style="width:3px;height:6px;border-radius:1px;background:{{ t.pb1 }}"></span>
+                      <span style="width:3px;height:9px;border-radius:1px;background:{{ t.pb2 }}"></span>
+                      <span style="width:3px;height:12px;border-radius:1px;background:{{ t.pb3 }}"></span>
+                    </div>
+                    <span style="flex:1;font-size:13px;font-weight:500;line-height:1.35;color:var(--tx)">{{ t.title }}</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;padding-left:20px">
+                    <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:500;color:{{ t.stateColor }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ t.stateColor }}"></span>{{ t.stateLabel }}</span>
+                    <span style="color:var(--bd2)">·</span>
+                    <span style="font-family:var(--mono);font-size:10.5px;color:var(--txl)">{{ t.repo }}</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:6px;padding-left:20px;font-size:10.5px;color:var(--txm)">
+                    <span style="width:5px;height:5px;border-radius:50%;background:{{ t.wfColor }}"></span>
+                    <span style="color:{{ t.wfColor }};font-weight:500">{{ t.wfStage }}</span>
+                    <span style="color:var(--txl)">{{ t.wfStatus }}</span>
+                  </div>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+        </aside>
+
+        <!-- CENTER: workflow -->
+        <main data-screen-label="Workflow pane" style="width:430px;flex:none;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--bd);background:var(--bg0)">
+          <div style="flex:none;display:flex;align-items:center;gap:9px;padding:13px 20px;border-bottom:1px solid var(--bd);background:var(--bg1)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" stroke-width="2"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><path d="M6 8.5v7"></path><path d="M18 6H9M18 6a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18 6v6a6 6 0 0 1-6 6"></path></svg>
+            <span style="font-family:var(--dp);font-weight:600;font-size:12.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--txm)">Workflow</span>
+            <span style="font-family:var(--mono);font-size:10.5px;color:var(--txl);background:var(--bg3);border:1px solid var(--bd);padding:1px 7px;border-radius:6px">{{ sel.runId }}</span>
+            <div style="flex:1"></div>
+            <button style="display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:500;color:var(--txm);background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:5px 10px;cursor:pointer" style-hover="background:var(--bg3);color:var(--tx)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4M12 8h.01"></path></svg>Details</button>
+          </div>
+          <div style="flex:1;overflow-y:auto;animation:fade .25s ease">
+            <div style="padding:20px 22px 16px;border-bottom:1px solid var(--bd)">
+              <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:14px">
+                <div style="display:flex;gap:2.5px;align-items:flex-end;height:17px;margin-top:5px;flex:none">
+                  <span style="width:3.5px;height:8px;border-radius:1px;background:{{ sel.pb1 }}"></span>
+                  <span style="width:3.5px;height:12px;border-radius:1px;background:{{ sel.pb2 }}"></span>
+                  <span style="width:3.5px;height:16px;border-radius:1px;background:{{ sel.pb3 }}"></span>
+                </div>
+                <h1 style="margin:0;font-family:var(--dp);font-weight:600;font-size:18.5px;line-height:1.3;letter-spacing:-.015em;color:var(--tx)">{{ sel.title }}</h1>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+                <span style="display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--txm);padding:3px 9px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--txl)" stroke-width="2"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"></path></svg>{{ sel.repo }}</span>
+                <span style="display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--txm);padding:3px 9px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--txl)" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M6 9v6"></path><circle cx="18" cy="6" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>{{ sel.branch }}</span>
+                <span style="font-size:11px;color:var(--txl)">{{ sel.prioLabel }}</span>
+              </div>
+              <div style="display:flex;gap:10px">
+                <div style="flex:1;padding:11px 13px;border-radius:12px;background:var(--bg2);border:1px solid var(--bd)">
+                  <div style="font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--txl);margin-bottom:7px;font-weight:600">Ticket state · WHAT</div>
+                  <div style="display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600;color:{{ sel.stateColor }}"><span style="width:9px;height:9px;border-radius:50%;background:{{ sel.stateColor }};box-shadow:0 0 9px {{ sel.stateColor }}"></span>{{ sel.stateLabel }}</div>
+                </div>
+                <div style="flex:1;padding:11px 13px;border-radius:12px;background:var(--bg2);border:1px solid var(--bd)">
+                  <div style="font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--txl);margin-bottom:7px;font-weight:600">Workflow · HOW</div>
+                  <div style="display:flex;flex-direction:column;gap:1px">
+                    <div style="display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600;color:{{ sel.wfColor }}"><span style="width:9px;height:9px;border-radius:50%;background:{{ sel.wfColor }}"></span>{{ sel.wfStage }}</div>
+                    <span style="font-size:11px;color:var(--txm);padding-left:16px">{{ sel.wfStatus }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <sc-if value="{{ sel.hasAction }}" hint-placeholder-val="{{ true }}">
+              <div style="margin:16px 22px 4px;padding:12px 14px;border-radius:12px;background:{{ sel.actionBg }};border:1px solid {{ sel.actionBd }};display:flex;gap:11px;align-items:flex-start">
+                <span style="width:8px;height:8px;border-radius:50%;flex:none;margin-top:5px;background:{{ sel.actionColor }};animation:{{ sel.actionAnim }}"></span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:12px;font-weight:600;color:{{ sel.actionColor }};margin-bottom:3px">{{ sel.actionHead }}</div>
+                  <div style="font-size:12px;color:var(--txm);line-height:1.5">{{ sel.actionText }}</div>
+                </div>
+              </div>
+            </sc-if>
+
+            <div style="padding:20px 22px 8px">
+              <div style="font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--txl);font-weight:600;margin-bottom:16px">Workflow lifecycle</div>
+              <sc-for list="{{ stages }}" as="s" hint-placeholder-count="7">
+                <div style="display:flex;gap:13px;position:relative">
+                  <div style="position:relative;width:14px;flex:none;display:flex;justify-content:center">
+                    <div style="position:absolute;top:3px;bottom:-6px;width:2px;background:{{ s.lineColor }}"></div>
+                    <div style="position:relative;z-index:1;width:14px;height:14px;border-radius:50%;background:{{ s.dotFill }};border:2px solid {{ s.dot }};box-shadow:0 0 0 3px var(--bg0);animation:{{ s.anim }};display:flex;align-items:center;justify-content:center">
+                      <sc-if value="{{ s.isDone }}" hint-placeholder-val="{{ false }}"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="var(--onac)" stroke-width="4"><path d="M20 6 9 17l-5-5"></path></svg></sc-if>
+                    </div>
+                  </div>
+                  <div style="flex:1;min-width:0;padding-bottom:18px">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+                      <span style="font-size:13.5px;font-weight:{{ s.weight }};color:{{ s.nameColor }}">{{ s.name }}</span>
+                      <sc-if value="{{ s.optional }}" hint-placeholder-val="{{ false }}"><span style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--txl);border:1px solid var(--bd2);border-radius:5px;padding:1px 5px">optional</span></sc-if>
+                      <span style="margin-left:auto;font-size:10px;font-weight:600;letter-spacing:.02em;padding:2px 8px;border-radius:6px;background:{{ s.pillBg }};color:{{ s.pillFg }};animation:{{ s.pillAnim }}">{{ s.statusLabel }}</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+                      <sc-if value="{{ s.hasAgent }}" hint-placeholder-val="{{ true }}">
+                        <span style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;color:var(--txm)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--vil)" stroke-width="2"><rect x="4" y="8" width="16" height="12" rx="2"></rect><path d="M12 4v4M9 2h6"></path><circle cx="9" cy="14" r="1" fill="var(--vil)"></circle><circle cx="15" cy="14" r="1" fill="var(--vil)"></circle></svg>{{ s.agent }}</span>
+                      </sc-if>
+                      <sc-if value="{{ s.hasSkill }}" hint-placeholder-val="{{ false }}">
+                        <span style="font-family:var(--mono);font-size:10px;color:var(--bll);background:rgba(75,155,255,.1);border:1px solid rgba(75,155,255,.2);border-radius:5px;padding:1px 6px">{{ s.skill }}</span>
+                      </sc-if>
+                    </div>
+                    <sc-if value="{{ s.hasNote }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top:7px;font-size:11.5px;line-height:1.5;color:{{ s.noteColor }};background:var(--bg2);border:1px solid var(--bd);border-radius:9px;padding:8px 10px">{{ s.note }}</div>
+                    </sc-if>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="flex:none;border-top:1px solid var(--bd);background:var(--bg1);padding:11px 16px;display:flex;gap:8px;align-items:center">
+            <button onClick="{{ sel.onAdvance }}" style="display:flex;align-items:center;gap:7px;font-family:var(--ui);font-size:12.5px;font-weight:600;color:var(--onac);background:var(--ac);border:none;border-radius:9px;padding:9px 15px;cursor:pointer;box-shadow:0 2px 12px rgba(45,212,167,.3)" style-hover="background:var(--ac2)">Advance stage<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="m9 18 6-6-6-6"></path></svg></button>
+            <button style="display:flex;align-items:center;gap:6px;font-family:var(--ui);font-size:12.5px;font-weight:500;color:var(--txm);background:var(--bg2);border:1px solid var(--bd2);border-radius:9px;padding:9px 12px;cursor:pointer" style-hover="background:var(--bg3);color:var(--tx)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>Pause</button>
+            <button style="display:flex;align-items:center;gap:6px;font-family:var(--ui);font-size:12.5px;font-weight:500;color:var(--txm);background:var(--bg2);border:1px solid var(--bd2);border-radius:9px;padding:9px 12px;cursor:pointer" style-hover="background:var(--bg3);color:var(--tx)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path></svg>Re-run</button>
+            <div style="flex:1"></div>
+            <span style="font-family:var(--mono);font-size:10.5px;color:var(--txl)">{{ sel.wfTemplate }}</span>
+          </div>
+        </main>
+
+        <!-- RIGHT: artifacts -->
+        <section data-screen-label="Artifacts pane" style="flex:1;display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--bg0)">
+          <div style="flex:none;height:48px;display:flex;align-items:center;gap:2px;padding:0 14px;border-bottom:1px solid var(--bd);background:var(--bg1)">
+            <div style="display:flex;align-items:center;gap:7px;margin-right:14px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--grl)" stroke-width="2"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+              <span style="font-family:var(--dp);font-weight:600;font-size:12px;letter-spacing:.03em;text-transform:uppercase;color:var(--txm)">Artifacts</span>
+            </div>
+            <sc-for list="{{ tabs }}" as="tb" hint-placeholder-count="4">
+              <button onClick="{{ tb.onClick }}" style="position:relative;font-family:var(--ui);font-size:12.5px;font-weight:{{ tb.weight }};color:{{ tb.fg }};background:{{ tb.bg }};border:1px solid {{ tb.bd }};border-radius:8px;padding:6px 13px;cursor:pointer;display:flex;align-items:center;gap:7px" style-hover="color:var(--tx)">{{ tb.label }}<sc-if value="{{ tb.hasBadge }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--mono);font-size:9.5px;padding:0 5px;border-radius:8px;background:{{ tb.badgeBg }};color:{{ tb.badgeFg }}">{{ tb.badge }}</span></sc-if></button>
+            </sc-for>
+            <div style="flex:1"></div>
+            <span style="font-family:var(--mono);font-size:10.5px;color:var(--txl);letter-spacing:.02em">truth layer · execution output</span>
+          </div>
+          <div style="flex:1;overflow:auto;min-height:0;animation:fade .2s ease">
+            <sc-if value="{{ showDiff }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;align-items:center;gap:11px;padding:11px 18px;border-bottom:1px solid var(--bd);background:var(--bg1);position:sticky;top:0;z-index:2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--txm)" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>
+                <span style="font-family:var(--mono);font-size:12px;color:var(--tx)">{{ diffFile }}</span>
+                <span style="font-family:var(--mono);font-size:11px;color:var(--grl)">{{ diffAdd }}</span>
+                <span style="font-family:var(--mono);font-size:11px;color:var(--rdl)">{{ diffDel }}</span>
+                <div style="flex:1"></div>
+                <span style="font-family:var(--mono);font-size:10.5px;color:var(--txl)">{{ diffFiles }}</span>
+              </div>
+              <div style="font-family:var(--mono);font-size:12px;padding:6px 0 40px">
+                <sc-for list="{{ diffLines }}" as="d" hint-placeholder-count="12">
+                  <div style="display:flex;min-height:20px;background:{{ d.bg }};border-left:2px solid {{ d.edge }}">
+                    <span style="width:44px;flex:none;text-align:right;padding-right:12px;color:var(--txl);opacity:.65;user-select:none;line-height:20px">{{ d.ln }}</span>
+                    <span style="width:15px;flex:none;text-align:center;color:{{ d.fg }};line-height:20px">{{ d.sign }}</span>
+                    <span style="flex:1;white-space:pre;color:{{ d.fg }};line-height:20px;padding-right:16px">{{ d.text }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ showLogs }}" hint-placeholder-val="{{ false }}">
+              <div style="font-family:var(--mono);font-size:12px;padding:12px 16px 40px;line-height:1.75">
+                <sc-for list="{{ logLines }}" as="l" hint-placeholder-count="8">
+                  <div style="display:flex;gap:12px;align-items:baseline">
+                    <span style="color:var(--txl);flex:none;opacity:.7">{{ l.time }}</span>
+                    <span style="flex:none;width:44px;font-size:10px;font-weight:600;text-align:center;padding:1px 0;border-radius:4px;background:{{ l.tagBg }};color:{{ l.tagFg }}">{{ l.tag }}</span>
+                    <span style="flex:1;color:var(--txm);white-space:pre-wrap;word-break:break-word">{{ l.text }}</span>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ logLive }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;gap:12px;align-items:baseline;color:var(--bll)"><span style="color:var(--txl);opacity:.7">{{ logLiveTime }}</span><span style="width:44px;text-align:center;font-size:10px;font-weight:600;background:rgba(75,155,255,.14);color:var(--bll);border-radius:4px;padding:1px 0;animation:pulse 1.4s infinite">RUN</span><span style="flex:1">{{ logLiveText }}<span style="animation:pulse 1s steps(2) infinite">▊</span></span></div>
+                </sc-if>
+              </div>
+            </sc-if>
+            <sc-if value="{{ showTests }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:14px 16px 40px">
+                <div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:var(--bg2);border:1px solid var(--bd);border-radius:11px;margin-bottom:14px">
+                  <span style="font-family:var(--dp);font-size:13px;font-weight:600;color:{{ testSumColor }}">{{ testSummary }}</span>
+                  <div style="flex:1"></div>
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--txl)">{{ testCmd }}</span>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:3px">
+                  <sc-for list="{{ tests }}" as="tt" hint-placeholder-count="5">
+                    <div style="display:flex;flex-direction:column;gap:5px;padding:9px 12px;border-radius:10px;background:{{ tt.bg }};border:1px solid {{ tt.bd }}">
+                      <div style="display:flex;align-items:center;gap:10px">
+                        <span style="flex:none;color:{{ tt.color }}">{{ tt.icon }}</span>
+                        <span style="flex:1;font-family:var(--mono);font-size:12px;color:var(--tx)">{{ tt.name }}</span>
+                        <span style="font-family:var(--mono);font-size:11px;color:var(--txl)">{{ tt.dur }}</span>
+                      </div>
+                      <sc-if value="{{ tt.hasMsg }}" hint-placeholder-val="{{ false }}"><div style="font-family:var(--mono);font-size:11px;color:var(--rdl);padding-left:24px;line-height:1.5">{{ tt.msg }}</div></sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ showContext }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:16px 18px 40px;display:flex;flex-direction:column;gap:16px">
+                <sc-for list="{{ contextSections }}" as="cs" hint-placeholder-count="3">
+                  <div>
+                    <div style="font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--txl);font-weight:600;margin-bottom:9px">{{ cs.title }}</div>
+                    <div style="border:1px solid var(--bd);border-radius:11px;overflow:hidden">
+                      <sc-for list="{{ cs.rows }}" as="r" hint-placeholder-count="3">
+                        <div style="display:flex;gap:12px;padding:9px 13px;border-bottom:1px solid var(--bd);background:{{ r.bg }}">
+                          <span style="width:130px;flex:none;font-size:12px;color:var(--txm)">{{ r.k }}</span>
+                          <span style="flex:1;font-family:var(--mono);font-size:12px;color:var(--tx);word-break:break-word">{{ r.v }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ showHive }}" hint-placeholder-val="{{ false }}">
+              <div style="height:100%;display:flex;flex-direction:column;min-height:0">
+                <div style="flex:none;display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--bd);background:var(--bg1)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" stroke-width="1.9"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"></path></svg>
+                  <span style="font-family:var(--dp);font-weight:600;font-size:12.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--txm)">Office floor</span>
+                  <span style="display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--grl)"><span style="width:6px;height:6px;border-radius:50%;background:var(--grn);box-shadow:0 0 6px var(--grn);animation:pulse 1.6s infinite"></span>live</span>
+                  <div style="flex:1"></div>
+                  <span style="display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--txl)"><span style="width:6px;height:6px;border-radius:50%;background:var(--blue)"></span>working</span>
+                  <span style="display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--txl)"><span style="width:6px;height:6px;border-radius:50%;background:var(--grn)"></span>done</span>
+                  <span style="display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--txl)"><span style="width:6px;height:6px;border-radius:50%;background:#39424e"></span>idle</span>
+                </div>
+                <div style="flex:1;position:relative;min-height:440px;overflow:hidden;background:radial-gradient(120% 90% at 50% 0%,rgba(45,212,167,.05),transparent 55%),repeating-linear-gradient(0deg,transparent,transparent 38px,rgba(255,255,255,.018) 38px,rgba(255,255,255,.018) 39px),repeating-linear-gradient(90deg,transparent,transparent 38px,rgba(255,255,255,.018) 38px,rgba(255,255,255,.018) 39px)">
+                  <svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <sc-for list="{{ hiveLines }}" as="l" hint-placeholder-count="4">
+                      <line x1="{{ l.x1 }}" y1="{{ l.y1 }}" x2="{{ l.x2 }}" y2="{{ l.y2 }}" stroke="{{ l.color }}" stroke-width="{{ l.w }}" opacity="{{ l.op }}" stroke-dasharray="{{ l.dash }}" vector-effect="non-scaling-stroke" style="animation:{{ l.anim }}"></line>
+                    </sc-for>
+                  </svg>
+                  <div style="position:absolute;width:11px;height:8px;border-radius:2px;background:var(--ac);box-shadow:0 0 8px rgba(45,212,167,.6);transform:translate(-50%,-50%);animation:hive-fly-a 3.4s ease-in-out infinite"></div>
+                  <div style="position:absolute;width:11px;height:8px;border-radius:2px;background:var(--bll);box-shadow:0 0 8px rgba(75,155,255,.6);transform:translate(-50%,-50%);animation:hive-fly-b 4.6s ease-in-out infinite"></div>
+                  <div style="position:absolute;width:11px;height:8px;border-radius:2px;background:var(--aml);box-shadow:0 0 8px rgba(229,167,44,.5);transform:translate(-50%,-50%);animation:hive-fly-c 5.2s ease-in-out infinite"></div>
+
+                  <!-- orchestrator -->
+                  <div style="position:absolute;left:50%;top:10%;transform:translate(-50%,-50%);z-index:2;display:flex;flex-direction:column;align-items:center;gap:7px">
+                    <div style="width:52px;height:52px;border-radius:15px;background:linear-gradient(140deg,var(--ac),#12a37e);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 22px rgba(45,212,167,.45),inset 0 1px 0 rgba(255,255,255,.35);animation:{{ godAnim }}"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#04140f" stroke-width="2.2"><path d="M12 3v18M5 8l7-5 7 5M5 16l7 5 7-5"></path></svg></div>
+                    <div style="text-align:center"><div style="font-family:var(--dp);font-size:12px;font-weight:600;color:var(--tx)">Orchestrator</div><div style="font-family:var(--mono);font-size:9.5px;color:var(--txl)">routes · gates · handoffs</div></div>
+                  </div>
+
+                  <!-- desks -->
+                  <sc-for list="{{ hiveAgents }}" as="a" hint-placeholder-count="5">
+                    <div style="position:absolute;left:{{ a.x }};top:{{ a.y }};transform:translate(-50%,-50%);z-index:2;width:150px;display:flex;flex-direction:column;align-items:center;gap:8px">
+                      <div style="position:relative;width:46px;height:46px;border-radius:50%;background:{{ a.avBg }};border:2px solid {{ a.ring }};display:flex;align-items:center;justify-content:center;font-family:var(--dp);font-weight:700;font-size:14px;color:{{ a.avFg }};box-shadow:0 4px 14px rgba(0,0,0,.35);animation:{{ a.pulse }}">{{ a.init }}<span style="position:absolute;right:-1px;bottom:-1px;width:12px;height:12px;border-radius:50%;background:{{ a.color }};border:2px solid var(--bg0)"></span></div>
+                      <div style="width:100%;background:{{ a.deskBg }};border:1px solid var(--bd);border-radius:11px;padding:8px 10px;text-align:center">
+                        <div style="font-size:11.5px;font-weight:600;color:var(--tx);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.name }}</div>
+                        <div style="display:inline-flex;align-items:center;gap:5px;margin-top:4px;font-size:10px;color:{{ a.color }};font-weight:500"><span style="width:5px;height:5px;border-radius:50%;background:{{ a.color }}"></span>{{ a.status }} · {{ a.stage }}</div>
+                        <sc-if value="{{ a.showTool }}" hint-placeholder-val="{{ false }}"><div style="margin-top:6px;font-family:var(--mono);font-size:9.5px;color:var(--bll);background:rgba(75,155,255,.1);border:1px solid rgba(75,155,255,.2);border-radius:5px;padding:1px 6px;display:inline-block">▸ {{ a.skill }}</div></sc-if>
+                      </div>
+                    </div>
+                  </sc-for>
+
+                  <sc-if value="{{ hiveIdle }}" hint-placeholder-val="{{ false }}">
+                    <div style="position:absolute;left:50%;top:60%;transform:translate(-50%,-50%);text-align:center;color:var(--txl)"><div style="font-family:var(--dp);font-size:14px;color:var(--txm);margin-bottom:5px">The floor is quiet</div><div style="font-size:12px">No agents assigned yet — advance this ticket to staff the workflow.</div></div>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ showEmpty }}" hint-placeholder-val="{{ false }}">
+              <div style="height:100%;min-height:340px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--txl);padding:40px">
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--bd2)" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6M9 15h6M9 11h2"></path></svg>
+                <div style="font-family:var(--dp);font-size:14px;font-weight:500;color:var(--txm)">No artifacts yet</div>
+                <div style="font-size:12.5px;text-align:center;max-width:280px;line-height:1.6">{{ emptyText }}</div>
+              </div>
+            </sc-if>
+          </div>
+        </section>
+      </div>
+
+      <!-- TERMINAL DOCK -->
+      <sc-if value="{{ terminalOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:none;height:264px;display:flex;flex-direction:column;border-top:1px solid var(--bd2);background:var(--bg0);animation:fade .18s ease">
+          <div style="flex:none;display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--bd);background:var(--bg1)">
+            <div style="display:flex;gap:6px"><span style="width:9px;height:9px;border-radius:50%;background:var(--red)"></span><span style="width:9px;height:9px;border-radius:50%;background:var(--amb)"></span><span style="width:9px;height:9px;border-radius:50%;background:var(--grn)"></span></div>
+            <span style="font-family:var(--mono);font-size:11.5px;color:var(--txm)">▸ {{ termAgent }} — {{ termBranch }}</span>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--txl);background:var(--bg3);border:1px solid var(--bd);border-radius:5px;padding:1px 6px">pty · sandbox</span>
+            <div style="flex:1"></div>
+            <button style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--txl);cursor:pointer" style-hover="color:var(--tx)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg></button>
+            <button onClick="{{ onToggleTerminal }}" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;color:var(--txl);cursor:pointer" style-hover="color:var(--tx)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:12px 16px 16px;font-family:var(--mono);font-size:12px;line-height:1.7">
+            <div style="margin-bottom:6px"><span style="color:var(--ac2)">loregarden</span><span style="color:var(--txl)"> git:(</span><span style="color:var(--aml)">{{ termBranch }}</span><span style="color:var(--txl)">) </span><span style="color:var(--ac)">▸</span> <span style="color:var(--tx)">{{ termCmd }}</span></div>
+            <sc-for list="{{ termLogs }}" as="t" hint-placeholder-count="6">
+              <div style="display:flex;gap:10px;align-items:baseline"><span style="color:var(--txl);opacity:.6;flex:none">{{ t.time }}</span><span style="flex:none;color:{{ t.color }};font-weight:600">[{{ t.tag }}]</span><span style="flex:1;color:var(--txm);white-space:pre-wrap;word-break:break-word">{{ t.text }}</span></div>
+            </sc-for>
+            <sc-if value="{{ termHasLive }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;gap:10px;align-items:baseline;color:var(--bll)"><span style="color:var(--txl);opacity:.6">now</span><span style="font-weight:600">[RUN]</span><span style="flex:1">{{ termLive }}<span style="animation:pulse 1s steps(2) infinite">▊</span></span></div>
+            </sc-if>
+            <div style="margin-top:6px"><span style="color:var(--ac2)">loregarden</span> <span style="color:var(--ac)">▸</span> <span style="animation:pulse 1.1s steps(2) infinite;color:var(--tx)">▊</span></div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- STATUS BAR -->
+      <div style="flex:none;height:30px;display:flex;align-items:center;gap:14px;padding:0 14px;border-top:1px solid var(--bd);background:var(--bg1);font-size:11px;color:var(--txm)">
+        <span style="display:inline-flex;align-items:center;gap:6px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--txl)" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M6 9v6"></path><circle cx="18" cy="6" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>{{ sel.branch }}</span>
+        <span style="font-family:var(--mono);color:var(--txl)">{{ sel.runId }}</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;color:var(--grl)"><span style="width:6px;height:6px;border-radius:50%;background:var(--grn);box-shadow:0 0 6px var(--grn)"></span>agents online</span>
+        <div style="flex:1"></div>
+        <button onClick="{{ onToggleTerminal }}" style="display:flex;align-items:center;gap:7px;font-family:var(--ui);font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:7px;cursor:pointer;border:1px solid {{ termBtnBd }};background:{{ termBtnBg }};color:{{ termBtnFg }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 17 6-6-6-6M12 19h8"></path></svg>Terminal<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform:{{ termChevron }}"><path d="m18 15-6-6-6 6"></path></svg></button>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ─────────────────── STUDIOS ─────────────────── -->
+    <sc-if value="{{ isStudios }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;display:flex;flex-direction:column;min-height:0;animation:fade .28s ease">
+      <header style="flex:none;display:flex;align-items:flex-end;gap:18px;padding:16px 24px 0;border-bottom:1px solid var(--bd);background:var(--bg1)">
+        <div style="flex:1;min-width:0;padding-bottom:14px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:5px">
+            <span style="font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--ac);font-weight:600">Studios</span>
+            <span style="width:4px;height:4px;border-radius:50%;background:var(--txl)"></span>
+            <span style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--txl)">Agents · Workflows · Scoping</span>
+          </div>
+          <h1 style="margin:0;font-family:var(--dp);font-weight:700;font-size:24px;letter-spacing:-.02em;line-height:1.1">{{ studioMeta.label }}</h1>
+          <p style="margin:6px 0 0;font-size:13px;color:var(--txm);max-width:560px">{{ studioMeta.sub }}</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding-bottom:16px">
+          <div style="display:flex;align-items:center;gap:3px;padding:3px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px">
+            <button onClick="{{ onLayoutA }}" style="display:flex;align-items:center;gap:6px;font-family:var(--ui);font-size:11.5px;font-weight:600;padding:5px 11px;border:none;border-radius:7px;cursor:pointer;background:{{ layoutBtns.aBg }};color:{{ layoutBtns.aFg }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="3" width="6" height="18" rx="1.5"></rect><rect x="11" y="3" width="10" height="10" rx="1.5"></rect><rect x="11" y="15" width="10" height="6" rx="1.5"></rect></svg>Workbench</button>
+            <button onClick="{{ onLayoutB }}" style="display:flex;align-items:center;gap:6px;font-family:var(--ui);font-size:11.5px;font-weight:600;padding:5px 11px;border:none;border-radius:7px;cursor:pointer;background:{{ layoutBtns.bBg }};color:{{ layoutBtns.bFg }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="3" width="12" height="18" rx="1.5"></rect><rect x="17" y="3" width="4" height="18" rx="1.5"></rect></svg>Focus</button>
+          </div>
+          <button style="display:flex;align-items:center;gap:7px;height:32px;padding:0 12px;background:var(--bg2);border:1px solid var(--bd);border-radius:9px;color:var(--txm);font-size:12.5px;font-weight:500;cursor:pointer" style-hover="background:var(--bg3);color:var(--tx)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--aml)" stroke-width="1.8"><path d="M12 9v4M12 17h.01"></path><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path></svg>Usage</button>
+          <button onClick="{{ onToggleInbox }}" style="display:flex;align-items:center;gap:8px;height:32px;padding:0 11px;background:var(--bg2);border:1px solid var(--bd2);border-radius:9px;color:var(--tx);font-size:12.5px;font-weight:500;cursor:pointer" style-hover="background:var(--bg3)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--rdl)" stroke-width="1.9"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>Approvals<span style="min-width:18px;height:18px;padding:0 5px;display:flex;align-items:center;justify-content:center;background:var(--red);color:#fff;font-size:11px;font-weight:600;border-radius:9px;font-family:var(--mono)">{{ approvalsCount }}</span></button>
+        </div>
+      </header>
+
+      <!-- sub-tabs -->
+      <div style="flex:none;display:flex;align-items:center;gap:6px;padding:11px 24px;border-bottom:1px solid var(--bd);background:var(--bg0)">
+        <sc-for list="{{ studioTabs }}" as="tb" hint-placeholder-count="3">
+          <button onClick="{{ tb.onClick }}" style="font-family:var(--ui);font-size:13px;font-weight:600;padding:7px 15px;border-radius:9px;cursor:pointer;border:1px solid {{ tb.navBd }};background:{{ tb.navBg }};color:{{ tb.navFg }}" style-hover="color:var(--tx)">{{ tb.label }}</button>
+        </sc-for>
+      </div>
+
+      <div style="flex:1;min-height:0;overflow:hidden">
+
+        <!-- ========== AGENT STUDIO ========== -->
+        <sc-if value="{{ isAgentTab }}" hint-placeholder-val="{{ true }}">
+        <div style="height:100%;display:flex;min-height:0">
+          <!-- LIBRARY RAIL (Workbench) -->
+          <sc-if value="{{ layoutA }}" hint-placeholder-val="{{ true }}">
+            <div style="width:248px;flex:none;overflow-y:auto;padding:18px 14px;border-right:1px solid var(--bd);background:var(--bg1)">
+              <button onClick="{{ onNewAgent }}" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--ui);font-size:13px;font-weight:600;color:var(--onac);background:var(--ac);border:none;border-radius:10px;padding:10px;cursor:pointer;margin-bottom:18px;box-shadow:0 2px 12px rgba(45,212,167,.28)" style-hover="background:var(--ac2)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>New agent</button>
+              <div style="font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--txl);font-weight:600;margin:0 4px 10px">Built-in agents</div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <sc-for list="{{ agLibrary }}" as="a" hint-placeholder-count="8">
+                  <button onClick="{{ a.onClick }}" style="text-align:left;font-family:var(--ui);cursor:pointer;display:flex;flex-direction:column;gap:5px;padding:10px 12px;border-radius:10px;border:1px solid {{ a.bd }};background:{{ a.bg }}">
+                    <span style="font-size:12.5px;font-weight:600;color:var(--tx);line-height:1.25">{{ a.name }}</span>
+                    <div style="display:flex;align-items:center;gap:7px">
+                      <span style="font-size:9px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;color:{{ a.catColor }}">{{ a.catLabel }}</span>
+                      <span style="font-family:var(--mono);font-size:10px;color:var(--txl)">{{ a.slug }}</span>
+                    </div>
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- EDITOR -->
+          <div style="flex:1;min-width:0;overflow-y:auto;padding:24px 28px 60px">
+            <div style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:16px">
+              <!-- chip strip (Focus) -->
+              <sc-if value="{{ layoutB }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;gap:8px;overflow-x:auto;padding-bottom:6px">
+                  <button onClick="{{ onNewAgent }}" style="flex:none;display:flex;align-items:center;gap:6px;font-family:var(--ui);font-size:12px;font-weight:600;color:var(--onac);background:var(--ac);border:none;border-radius:9px;padding:7px 12px;cursor:pointer" style-hover="background:var(--ac2)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>New</button>
+                  <sc-for list="{{ agLibrary }}" as="a" hint-placeholder-count="6">
+                    <button onClick="{{ a.onClick }}" style="flex:none;font-family:var(--ui);font-size:12px;font-weight:500;padding:7px 12px;border-radius:9px;cursor:pointer;border:1px solid {{ a.bd }};background:{{ a.bg }};color:var(--tx)">{{ a.name }}</button>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+              <!-- IDENTITY -->
+              <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:15px;padding:20px 22px;box-shadow:0 1px 0 rgba(255,255,255,.02) inset">
+                <div style="display:flex;align-items:center;gap:9px;margin-bottom:16px">
+                  <span style="width:24px;height:24px;flex:none;border-radius:7px;background:rgba(45,212,167,.14);display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ac2)" stroke-width="2"><circle cx="12" cy="8" r="4"></circle><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"></path></svg></span>
+                  <span style="font-family:var(--dp);font-weight:600;font-size:14px">Identity</span>
+                </div>
+                <div style="display:flex;gap:14px;margin-bottom:14px">
+                  <div style="flex:1">
+                    <div style="font-size:11.5px;color:var(--txm);font-weight:500;margin-bottom:7px">Name</div>
+                    <input value="{{ agent.nameVal }}" onInput="{{ agent.onName }}" placeholder="e.g. Localization Reviewer" style="width:100%;height:40px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:0 13px;color:var(--tx);font-size:13.5px;outline:none" style-focus="border-color:var(--ac)">
+                  </div>
+                  <div style="flex:1">
+                    <div style="font-size:11.5px;color:var(--txm);font-weight:500;margin-bottom:7px">Slug</div>
+                    <input value="{{ agent.slugVal }}" onInput="{{ agent.onSlug }}" placeholder="{{ agent.slugPh }}" style="width:100%;height:40px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:0 13px;color:var(--tx);font-family:var(--mono);font-size:12.5px;outline:none" style-focus="border-color:var(--ac)">
+                  </div>
+                </div>
+                <div>
+                  <div style="font-size:11.5px;color:var(--txm);font-weight:500;margin-bottom:7px">Description</div>
+                  <input value="{{ agent.descVal }}" onInput="{{ agent.onDesc }}" placeholder="One line — when should the orchestrator reach for this agent?" style="width:100%;height:40px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:0 13px;color:var(--tx);font-size:13.5px;outline:none" style-focus="border-color:var(--ac)">
+                </div>
+              </div>
+
+              <!-- BEHAVIOUR -->
+              <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:15px;padding:20px 22px">
+                <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">
+                  <span style="width:24px;height:24px;flex:none;border-radius:7px;background:rgba(157,140,255,.14);display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--vil)" stroke-width="2"><path d="M12 3a3 3 0 0 0-3 3v1a3 3 0 0 0-3 3 3 3 0 0 0 1 5.8V18a3 3 0 0 0 5 2 3 3 0 0 0 5-2v-2.2A3 3 0 0 0 18 10a3 3 0 0 0-3-3V6a3 3 0 0 0-3-3z"></path></svg></span>
+                  <span style="font-family:var(--dp);font-weight:600;font-size:14px">Role instructions</span>
+                </div>
+                <p style="margin:0 0 12px;font-size:11.5px;color:var(--txl)">What this agent does, its constraints, and its output expectations. This becomes the system prompt.</p>
+                <textarea value="{{ agent.roleVal }}" onInput="{{ agent.onRole }}" placeholder="Review the staged diff against the ticket's acceptance criteria…" style="width:100%;min-height:150px;resize:vertical;background:var(--bg2);border:1px solid var(--bd);border-radius:11px;padding:13px;color:var(--tx);font-size:13px;line-height:1.6;outline:none;font-family:var(--ui)" style-focus="border-color:var(--ac)"></textarea>
+              </div>
+
+              <!-- RUNTIME -->
+              <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:15px;padding:20px 22px">
+                <div style="display:flex;align-items:center;gap:9px;margin-bottom:16px">
+                  <span style="width:24px;height:24px;flex:none;border-radius:7px;background:rgba(75,155,255,.14);display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--bll)" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9z"></path></svg></span>
+                  <span style="font-family:var(--dp);font-weight:600;font-size:14px">Runtime</span>
+                </div>
+                <div style="display:flex;gap:14px">
+                  <div style="flex:1.3">
+                    <div style="font-size:11.5px;color:var(--txm);font-weight:500;margin-bottom:7px">Provider</div>
+                    <select value="{{ agent.providerVal }}" onChange="{{ agent.onProvider }}" style="width:100%;height:40px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:0 11px;color:var(--tx);font-size:13px;outline:none;cursor:pointer" style-focus="border-color:var(--ac)">
+                      <sc-for list="{{ providerOpts }}" as="o" hint-placeholder-count="3"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                    </select>
+                  </div>
+                  <div style="flex:1">
+                    <div style="font-size:11.5px;color:var(--txm);font-weight:500;margin-bottom:7px">Default skill</div>
+                    <select value="{{ agent.skillVal }}" onChange="{{ agent.onSkill }}" style="width:100%;height:40px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:0 11px;color:var(--tx);font-family:var(--mono);font-size:12.5px;outline:none;cursor:pointer" style-focus="border-color:var(--ac)">
+                      <sc-for list="{{ skillOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                    </select>
+                  </div>
+                  <div style="flex:.8">
+                    <div style="font-size:11.5px;color:var(--txm);font-weight:500;margin-bottom:7px">Timeout (s)</div>
+                    <input value="{{ agent.timeoutVal }}" onInput="{{ agent.onTimeout }}" style="width:100%;height:40px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:0 13px;color:var(--tx);font-family:var(--mono);font-size:12.5px;outline:none" style-focus="border-color:var(--ac)">
+                  </div>
+                </div>
+              </div>
+
+              <!-- TOOLS -->
+              <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:15px;padding:20px 22px">
+                <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">
+                  <span style="width:24px;height:24px;flex:none;border-radius:7px;background:rgba(229,167,44,.14);display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--aml)" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 1 5.4-5.4l-2.6 2.6-1.4-1.4 2.6-2.6z"></path></svg></span>
+                  <span style="font-family:var(--dp);font-weight:600;font-size:14px">Loregarden MCP tools</span>
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--ac2);background:rgba(45,212,167,.1);border:1px solid rgba(45,212,167,.22);padding:1px 8px;border-radius:6px">{{ agent.toolCount }} on</span>
+                </div>
+                <p style="margin:0 0 14px;font-size:11.5px;color:var(--txl)">Enable the tools this role may call directly during a stage.</p>
+                <div style="display:flex;flex-direction:column;gap:7px">
+                  <sc-for list="{{ agTools }}" as="t" hint-placeholder-count="6">
+                    <label style="display:flex;gap:12px;align-items:flex-start;padding:11px 13px;border-radius:11px;border:1px solid var(--bd);background:var(--bg2);cursor:pointer" style-hover="border-color:var(--bd2)">
+                      <input type="checkbox" checked="{{ t.on }}" onChange="{{ t.onToggle }}" style="margin-top:2px;width:15px;height:15px;accent-color:var(--ac);flex:none;cursor:pointer">
+                      <div style="flex:1;min-width:0">
+                        <div style="font-family:var(--mono);font-size:12.5px;color:var(--tx);margin-bottom:3px">{{ t.name }}</div>
+                        <div style="font-size:11.5px;color:var(--txm);line-height:1.45">{{ t.desc }}</div>
+                      </div>
+                    </label>
+                  </sc-for>
+                </div>
+              </div>
+
+              <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:2px">
+                <button style="font-family:var(--ui);font-size:13px;font-weight:500;color:var(--txm);background:var(--bg2);border:1px solid var(--bd2);border-radius:10px;padding:10px 16px;cursor:pointer" style-hover="background:var(--bg3);color:var(--tx)">Save draft</button>
+                <button style="display:flex;align-items:center;gap:7px;font-family:var(--ui);font-size:13px;font-weight:600;color:var(--onac);background:var(--ac);border:none;border-radius:10px;padding:10px 18px;cursor:pointer;box-shadow:0 2px 12px rgba(45,212,167,.28)" style-hover="background:var(--ac2)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"></path></svg>Create agent</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- PREVIEW -->
+          <div style="width:388px;flex:none;overflow-y:auto;border-left:1px solid var(--bd);background:linear-gradient(180deg,var(--bg1),var(--bg0));padding:20px 20px 40px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+              <span style="width:6px;height:6px;border-radius:50%;background:var(--ac);box-shadow:0 0 8px var(--ac)"></span>
+              <span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--txm);font-weight:600">Live assembled prompt</span>
+            </div>
+            <p style="margin:0 0 14px;font-size:11px;color:var(--txl)">role + MCP + gates + hand-offs</p>
+            <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:16px">
+              <sc-for list="{{ agent.chips }}" as="c" hint-placeholder-count="6">
+                <span style="font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:6px;background:{{ c.bg }};color:{{ c.fg }};border:1px solid {{ c.bd }}">{{ c.label }}</span>
+              </sc-for>
+            </div>
+            <div style="background:var(--bg0);border:1px solid var(--bd2);border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.35)">
+              <div style="display:flex;align-items:center;gap:7px;padding:9px 13px;border-bottom:1px solid var(--bd);background:var(--bg2)">
+                <span style="width:9px;height:9px;border-radius:50%;background:var(--red)"></span>
+                <span style="width:9px;height:9px;border-radius:50%;background:var(--amb)"></span>
+                <span style="width:9px;height:9px;border-radius:50%;background:var(--grn)"></span>
+                <span style="flex:1;text-align:center;font-family:var(--mono);font-size:10.5px;color:var(--txl)">{{ agent.slug }}.system.md</span>
+              </div>
+              <div style="padding:18px 17px;display:flex;flex-direction:column;gap:16px">
+                <div>
+                  <div style="font-family:var(--dp);font-size:17px;font-weight:700;letter-spacing:-.01em;color:var(--tx);margin-bottom:4px">{{ agent.name }}</div>
+                  <div style="font-size:12.5px;line-height:1.55;color:var(--txm)">{{ agent.desc }}</div>
+                </div>
+                <div>
+                  <div style="font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ac2);font-weight:600;margin-bottom:6px">Agent role</div>
+                  <div style="font-size:12.5px;line-height:1.6;color:{{ agent.roleColor }}">{{ agent.role }}</div>
+                </div>
+                <div>
+                  <div style="font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ac2);font-weight:600;margin-bottom:8px">Loregarden MCP tools · {{ agent.toolCount }}</div>
+                  <sc-if value="{{ agent.noTools }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size:12px;color:var(--txl);font-style:italic">No tools enabled — this agent reasons without calling MCP.</div>
+                  </sc-if>
+                  <div style="display:flex;flex-direction:column;gap:8px">
+                    <sc-for list="{{ agent.tools }}" as="t" hint-placeholder-count="3">
+                      <div style="border-left:2px solid rgba(45,212,167,.4);padding-left:11px">
+                        <div style="font-family:var(--mono);font-size:11.5px;color:var(--ac2);margin-bottom:2px">{{ t.name }}</div>
+                        <div style="font-size:11px;line-height:1.45;color:var(--txm)">{{ t.desc }}</div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+                <div style="display:flex;gap:16px;padding-top:4px;border-top:1px solid var(--bd)">
+                  <div style="padding-top:12px"><div style="font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--txl);margin-bottom:3px">Provider</div><div style="font-size:12px;color:var(--tx)">{{ agent.provider }}</div></div>
+                  <div style="padding-top:12px"><div style="font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--txl);margin-bottom:3px">Skill</div><div style="font-family:var(--mono);font-size:12px;color:var(--tx)">{{ agent.skill }}</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ========== WORKFLOW STUDIO ========== -->
+        <sc-if value="{{ isWorkflowTab }}" hint-placeholder-val="{{ false }}">
+        <div style="height:100%;display:flex;min-height:0">
+          <sc-if value="{{ layoutA }}" hint-placeholder-val="{{ true }}">
+            <div style="width:248px;flex:none;overflow-y:auto;padding:18px 14px;border-right:1px solid var(--bd);background:var(--bg1)">
+              <button onClick="{{ onNewWf }}" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--ui);font-size:13px;font-weight:600;color:var(--onac);background:var(--ac);border:none;border-radius:10px;padding:10px;cursor:pointer;margin-bottom:18px;box-shadow:0 2px 12px rgba(45,212,167,.28)" style-hover="background:var(--ac2)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>New workflow</button>
+              <div style="font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--txl);font-weight:600;margin:0 4px 10px">Built-in workflows</div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <sc-for list="{{ wfLibrary }}" as="w" hint-placeholder-count="3">
+                  <button onClick="{{ w.onClick }}" style="text-align:left;font-family:var(--ui);cursor:pointer;display:flex;flex-direction:column;gap:4px;padding:11px 12px;border-radius:10px;border:1px solid {{ w.bd }};background:{{ w.bg }}">
+                    <span style="font-size:12.5px;font-weight:600;color:var(--tx)">{{ w.name }}</span>
+                    <span style="font-family:var(--mono);font-size:10px;color:var(--txl)">{{ w.slug }}</span>
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <div style="flex:1;min-width:0;overflow-y:auto;padding:24px 28px 60px">
+            <div style="max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:16px">
+              <sc-if value="{{ layoutB }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;gap:8px;overflow-x:auto;padding-bottom:6px">
+                  <button onClick="{{ onNewWf }}" style="flex:none;display:flex;align-items:center;gap:6px;font-family:var(--ui);font-size:12px;font-weight:600;color:var(--onac);background:var(--ac);border:none;border-radius:9px;padding:7px 12px;cursor:pointer" style-hover="background:var(--ac2)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>New</button>
+                  <sc-for list="{{ wfLibrary }}" as="w" hint-placeholder-count="3">
+                    <button onClick="{{ w.onClick }}" style="flex:none;font-family:var(--ui);font-size:12px;font-weight:500;padding:7px 12px;border-radius:9px;cursor:pointer;border:1px solid {{ w.bd }};background:{{ w.bg }};color:var(--tx)">{{ w.name }}</button>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+              <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:15px;padding:20px 22px">
+                <div style="display:flex;align-items:center;gap:9px;margin-bottom:16px">
+                  <span style="width:24px;height:24px;flex:none;border-radius:7px;background:rgba(45,212,167,.14);display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ac2)" stroke-width="2"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><path d="M6 8.5v7M18 6H9M18 6a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18 6v6a6 6 0 0 1-6 6"></path></svg></span>
+                  <span style="font-family:var(--dp);font-weight:600;font-size:14px">Workflow identity</span>
+                </div>
+                <div style="display:flex;gap:14px;margin-bottom:14px">
+                  <div style="flex:1"><div style="font-size:11.5px;color:var(--txm);font-weight:500;margin-bottom:7px">Name</div><input value="{{ wfNameVal }}" onInput="{{ onWfName }}" placeholder="e.g. Hotfix express" style="width:100%;height:40px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:0 13px;color:var(--tx);font-size:13.5px;outline:none" style-focus="border-color:var(--ac)"></div>
+                  <div style="flex:1"><div style="font-size:11.5px;color:var(--txm);font-weight:500;margin-bottom:7px">Slug</div><input value="{{ wfSlugVal }}" onInput="{{ onWfSlug }}" placeholder="{{ wfSlugPh }}" style="width:100%;height:40px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:0 13px;color:var(--tx);font-family:var(--mono);font-size:12.5px;outline:none" style-focus="border-color:var(--ac)"></div>
+                </div>
+                <div><div style="font-size:11.5px;color:var(--txm);font-weight:500;margin-bottom:7px">Description</div><input value="{{ wfDescVal }}" onInput="{{ onWfDesc }}" placeholder="Chain agents together. Add classify steps to route by language and specialty." style="width:100%;height:40px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:0 13px;color:var(--tx);font-size:13.5px;outline:none" style-focus="border-color:var(--ac)"></div>
+              </div>
+
+              <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:15px;padding:20px 22px">
+                <div style="display:flex;align-items:center;gap:9px;margin-bottom:16px">
+                  <span style="font-family:var(--dp);font-weight:600;font-size:14px">Stages</span>
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--txl);background:var(--bg3);padding:1px 7px;border-radius:6px">{{ wfStageCount }}</span>
+                  <div style="flex:1"></div>
+                  <button onClick="{{ onAddStage }}" style="display:flex;align-items:center;gap:6px;font-family:var(--ui);font-size:12px;font-weight:600;color:var(--ac2);background:rgba(45,212,167,.1);border:1px solid rgba(45,212,167,.25);border-radius:8px;padding:6px 11px;cursor:pointer" style-hover="background:rgba(45,212,167,.18)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>Add stage</button>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:12px">
+                  <sc-for list="{{ wfStages }}" as="s" hint-placeholder-count="4">
+                    <div style="border:1px solid var(--bd);border-left:3px solid {{ s.typeColor }};border-radius:12px;background:var(--bg2);padding:14px 15px">
+                      <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px">
+                        <span style="width:22px;height:22px;flex:none;border-radius:6px;background:var(--bg4);color:var(--txm);font-family:var(--mono);font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center">{{ s.num }}</span>
+                        <span style="font-family:var(--dp);font-size:13px;font-weight:600;color:var(--tx)">{{ s.label }}</span>
+                        <span style="font-size:9.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:{{ s.typeColor }}">{{ s.type }}</span>
+                        <div style="flex:1"></div>
+                        <sc-if value="{{ s.canRemove }}" hint-placeholder-val="{{ true }}"><button onClick="{{ s.onRemove }}" style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:var(--bg3);border:1px solid var(--bd);border-radius:7px;color:var(--txl);cursor:pointer" style-hover="color:var(--rdl);border-color:rgba(255,106,84,.4)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path></svg></button></sc-if>
+                      </div>
+                      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+                        <div><div style="font-size:10.5px;color:var(--txl);margin-bottom:5px">Stage key</div><input value="{{ s.key }}" onInput="{{ s.onKey }}" style="width:100%;height:34px;background:var(--bg1);border:1px solid var(--bd);border-radius:8px;padding:0 10px;color:var(--tx);font-family:var(--mono);font-size:12px;outline:none" style-focus="border-color:var(--ac)"></div>
+                        <div><div style="font-size:10.5px;color:var(--txl);margin-bottom:5px">Label</div><input value="{{ s.label }}" onInput="{{ s.onLabel }}" style="width:100%;height:34px;background:var(--bg1);border:1px solid var(--bd);border-radius:8px;padding:0 10px;color:var(--tx);font-size:12.5px;outline:none" style-focus="border-color:var(--ac)"></div>
+                        <div><div style="font-size:10.5px;color:var(--txl);margin-bottom:5px">Step type</div><select value="{{ s.type }}" onChange="{{ s.onType }}" style="width:100%;height:34px;background:var(--bg1);border:1px solid var(--bd);border-radius:8px;padding:0 8px;color:var(--tx);font-size:12.5px;outline:none;cursor:pointer" style-focus="border-color:var(--ac)"><option value="Agent">Agent</option><option value="Classify">Classify</option><option value="Gate">Gate</option><option value="Human">Human</option></select></div>
+                      </div>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+                        <div><div style="font-size:10.5px;color:var(--txl);margin-bottom:5px">Agent</div><select value="{{ s.agent }}" onChange="{{ s.onAgent }}" style="width:100%;height:34px;background:var(--bg1);border:1px solid var(--bd);border-radius:8px;padding:0 8px;color:var(--tx);font-size:12.5px;outline:none;cursor:pointer" style-focus="border-color:var(--ac)"><sc-for list="{{ wfAgentOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}">{{ o.label }}</option></sc-for></select></div>
+                        <div><div style="font-size:10.5px;color:var(--txl);margin-bottom:5px">Skill</div><select value="{{ s.skill }}" onChange="{{ s.onSkill }}" style="width:100%;height:34px;background:var(--bg1);border:1px solid var(--bd);border-radius:8px;padding:0 8px;color:var(--tx);font-family:var(--mono);font-size:12px;outline:none;cursor:pointer" style-focus="border-color:var(--ac)"><sc-for list="{{ skillOpts2 }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}">{{ o.label }}</option></sc-for></select></div>
+                      </div>
+                      <label style="display:flex;align-items:center;gap:9px;cursor:pointer;width:fit-content">
+                        <span style="position:relative;width:34px;height:19px;flex:none;border-radius:10px;background:{{ s.gateBg }};border:1px solid {{ s.gateBorder }};transition:background .15s"><span style="position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;transform:{{ s.gateDot }};transition:transform .15s"></span></span>
+                        <input type="checkbox" checked="{{ s.gate }}" onChange="{{ s.onGate }}" style="display:none">
+                        <span style="font-size:12px;color:var(--txm)">Require gate approval before leaving this stage</span>
+                      </label>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+
+              <div style="display:flex;gap:10px;justify-content:flex-end">
+                <button style="font-family:var(--ui);font-size:13px;font-weight:500;color:var(--txm);background:var(--bg2);border:1px solid var(--bd2);border-radius:10px;padding:10px 16px;cursor:pointer" style-hover="background:var(--bg3);color:var(--tx)">Save draft</button>
+                <button style="display:flex;align-items:center;gap:7px;font-family:var(--ui);font-size:13px;font-weight:600;color:var(--onac);background:var(--ac);border:none;border-radius:10px;padding:10px 18px;cursor:pointer;box-shadow:0 2px 12px rgba(45,212,167,.28)" style-hover="background:var(--ac2)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"></path></svg>Create workflow</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- PIPELINE PREVIEW -->
+          <div style="width:340px;flex:none;overflow-y:auto;border-left:1px solid var(--bd);background:linear-gradient(180deg,var(--bg1),var(--bg0));padding:20px 20px 40px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="width:6px;height:6px;border-radius:50%;background:var(--ac);box-shadow:0 0 8px var(--ac)"></span><span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--txm);font-weight:600">Pipeline preview</span></div>
+            <div style="margin:6px 0 18px"><div style="font-family:var(--dp);font-size:16px;font-weight:700;color:var(--tx)">{{ wfPreviewName }}</div><div style="font-family:var(--mono);font-size:11px;color:var(--txl)">{{ wfPreviewSlug }} · {{ wfStageCount }} stages</div></div>
+            <sc-for list="{{ wfPreviewStages }}" as="p" hint-placeholder-count="4">
+              <div style="display:flex;gap:12px;position:relative">
+                <div style="position:relative;width:30px;flex:none;display:flex;justify-content:center">
+                  <div style="position:absolute;top:6px;bottom:-8px;width:2px;background:{{ p.spine }}"></div>
+                  <div style="position:relative;z-index:1;width:30px;height:30px;border-radius:9px;background:var(--bg2);border:1.5px solid {{ p.color }};display:flex;align-items:center;justify-content:center"><span style="width:8px;height:8px;border-radius:50%;background:{{ p.color }}"></span></div>
+                </div>
+                <div style="flex:1;min-width:0;padding-bottom:16px">
+                  <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px"><span style="font-size:13px;font-weight:600;color:var(--tx)">{{ p.label }}</span><span style="font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:{{ p.color }}">{{ p.type }}</span></div>
+                  <div style="font-family:var(--mono);font-size:10.5px;color:var(--txm)">{{ p.agent }}<span style="color:var(--txl)"> · {{ p.skill }}</span></div>
+                  <sc-if value="{{ p.gate }}" hint-placeholder-val="{{ false }}"><div style="margin-top:6px;display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:var(--rdl);background:rgba(255,106,84,.1);border:1px solid rgba(255,106,84,.25);border-radius:6px;padding:2px 7px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>gate · human approval</div></sc-if>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ========== TICKET STUDIO ========== -->
+        <sc-if value="{{ isTicketTab }}" hint-placeholder-val="{{ false }}">
+        <div style="height:100%;display:flex;min-height:0">
+          <!-- sessions rail -->
+          <div style="width:248px;flex:none;overflow-y:auto;padding:18px 14px;border-right:1px solid var(--bd);background:var(--bg1)">
+            <div style="font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--txl);font-weight:600;margin:0 4px 8px">Workspace</div>
+            <div style="display:flex;align-items:center;gap:9px;padding:9px 11px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px;margin-bottom:18px">
+              <span style="width:22px;height:22px;flex:none;border-radius:6px;background:rgba(45,212,167,.16);color:var(--ac2);font-family:var(--dp);font-weight:600;font-size:11px;display:flex;align-items:center;justify-content:center">L</span>
+              <span style="flex:1;font-size:13px;color:var(--tx);font-weight:500">loregarden</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--txl)" stroke-width="2"><path d="m6 9 6 6 6-6"></path></svg>
+            </div>
+            <button style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--ui);font-size:13px;font-weight:600;color:var(--onac);background:var(--ac);border:none;border-radius:10px;padding:10px;cursor:pointer;margin-bottom:16px;box-shadow:0 2px 12px rgba(45,212,167,.28)" style-hover="background:var(--ac2)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>New scope</button>
+            <div style="font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--txl);font-weight:600;margin:0 4px 10px">Sessions</div>
+            <div style="border:1px solid var(--ac);background:rgba(45,212,167,.06);border-radius:11px;padding:12px 13px">
+              <div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:4px">Retro theme</div>
+              <div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--txm)"><span style="font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--aml);background:rgba(229,167,44,.14);padding:1px 6px;border-radius:5px">draft</span><span>6 draft tickets</span></div>
+            </div>
+          </div>
+
+          <!-- chat -->
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--bd)">
+            <div style="flex:none;padding:20px 24px 16px;border-bottom:1px solid var(--bd)">
+              <div style="display:flex;align-items:flex-start;gap:14px">
+                <div style="flex:1;min-width:0">
+                  <h2 style="margin:0 0 5px;font-family:var(--dp);font-size:19px;font-weight:700;letter-spacing:-.01em">Retro theme</h2>
+                  <p style="margin:0;font-size:12px;color:var(--txm)">Chat with the scoper to refine scope · under <span style="color:var(--tx)">Test a new milestone</span></p>
+                </div>
+                <button style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--txm);background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:7px 12px;cursor:pointer" style-hover="color:var(--rdl);border-color:rgba(255,106,84,.4)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path></svg>Delete</button>
+              </div>
+            </div>
+            <div style="flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:14px">
+              <div style="align-self:flex-end;max-width:82%;background:var(--bg3);border:1px solid var(--bd2);border-radius:14px 14px 4px 14px;padding:13px 15px;font-size:13px;line-height:1.6;color:var(--tx)">Add an N64-inspired retro theme option to loregarden's studio interface, letting users switch between modern and classic gaming aesthetics — theme selector in settings, custom pixel-art assets, cohesive retro styling across the UI, plus accessibility for lower-contrast designs.</div>
+              <div style="display:flex;gap:11px;max-width:92%">
+                <span style="width:28px;height:28px;flex:none;border-radius:8px;background:linear-gradient(140deg,var(--ac),#12a37e);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(45,212,167,.3)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#04140f" stroke-width="2.4"><path d="M12 3v18M5 8l7-5 7 5"></path></svg></span>
+                <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:14px 14px 14px 4px;padding:14px 16px">
+                  <div style="font-size:13px;line-height:1.65;color:var(--txm);margin-bottom:10px"><span style="color:var(--tx);font-weight:600">Scope rationale.</span> Structured as one feature with five capabilities: theme infrastructure, visual assets, component styling (containers · buttons · typography/forms), and accessibility. Capabilities are sequenced to enable parallel work once the theme infrastructure is in place.</div>
+                  <div style="font-size:12.5px;color:var(--ac2);font-weight:600;display:flex;align-items:center;gap:7px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>Proposed 6 draft tickets — see the draft panel.</div>
+                </div>
+              </div>
+            </div>
+            <div style="flex:none;padding:14px 20px 18px;border-top:1px solid var(--bd);background:var(--bg1)">
+              <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:13px;padding:12px 14px">
+                <textarea placeholder="Ask to refine scope, split work, or tighten acceptance criteria…" style="width:100%;min-height:44px;resize:none;background:transparent;border:none;color:var(--tx);font-size:13px;line-height:1.5;outline:none;font-family:var(--ui)"></textarea>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+                  <button style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--txm);background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:6px 10px;cursor:pointer" style-hover="color:var(--tx)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"></path><path d="M12 6v6l4 2"></path></svg>Workspace default</button>
+                  <button style="font-size:11.5px;color:var(--txm);background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:6px 10px;cursor:pointer" style-hover="color:var(--tx)">Review brief</button>
+                  <button style="font-size:11.5px;color:var(--bll);background:rgba(75,155,255,.1);border:1px solid rgba(75,155,255,.25);border-radius:8px;padding:6px 10px;cursor:pointer" style-hover="background:rgba(75,155,255,.18)">Generate tickets</button>
+                  <div style="flex:1"></div>
+                  <button style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--onac);background:var(--ac);border:none;border-radius:8px;padding:7px 14px;cursor:pointer" style-hover="background:var(--ac2)">Send<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"></path></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- draft tickets -->
+          <div style="width:400px;flex:none;overflow-y:auto;background:linear-gradient(180deg,var(--bg1),var(--bg0));padding:20px 18px 40px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+              <span style="font-family:var(--dp);font-size:14px;font-weight:600">Draft tickets</span>
+              <span style="font-family:var(--mono);font-size:11px;color:var(--ac2);background:rgba(45,212,167,.1);border:1px solid rgba(45,212,167,.22);padding:1px 8px;border-radius:6px">{{ selectedCount }} selected</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <sc-for list="{{ drafts }}" as="d" hint-placeholder-count="6">
+                <div style="border:1px solid {{ d.cardBd }};border-radius:13px;background:var(--bg2);padding:13px 14px">
+                  <div style="display:flex;align-items:flex-start;gap:11px">
+                    <button onClick="{{ d.onToggle }}" style="width:19px;height:19px;flex:none;margin-top:1px;border-radius:6px;border:1.5px solid {{ d.boxBd }};background:{{ d.boxBg }};cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--onac)" stroke-width="3.2"><path d="M20 6 9 17l-5-5"></path></svg></button>
+                    <div style="flex:1;min-width:0">
+                      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                        <span style="font-size:9px;font-weight:700;letter-spacing:.05em;color:{{ d.typeColor }};background:{{ d.typeBg }};padding:2px 7px;border-radius:5px">{{ d.type }}</span>
+                        <span style="font-family:var(--mono);font-size:10px;color:var(--txl)">{{ d.meta }}</span>
+                      </div>
+                      <div style="font-size:13.5px;font-weight:600;color:var(--tx);line-height:1.3;margin-bottom:6px">{{ d.title }}</div>
+                      <div style="font-size:11.5px;color:var(--txm);line-height:1.5">{{ d.desc }}</div>
+                    </div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+            <button style="width:100%;margin-top:14px;display:flex;align-items:center;justify-content:center;gap:8px;font-family:var(--ui);font-size:13px;font-weight:600;color:var(--onac);background:var(--ac);border:none;border-radius:11px;padding:12px;cursor:pointer;box-shadow:0 2px 14px rgba(45,212,167,.28)" style-hover="background:var(--ac2)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M12 5l7 7-7 7"></path></svg>Create {{ selectedCount }} tickets under milestone</button>
+          </div>
+        </div>
+        </sc-if>
+
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ─────────────────── QUEUE ─────────────────── -->
+    <sc-if value="{{ isQueue }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;display:flex;flex-direction:column;min-height:0;animation:fade .28s ease">
+      <header style="flex:none;display:flex;align-items:flex-end;gap:18px;padding:18px 24px 16px;border-bottom:1px solid var(--bd);background:var(--bg1)">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:5px">
+            <span style="font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--ac);font-weight:600">Parallel Execution</span>
+            <span style="width:4px;height:4px;border-radius:50%;background:var(--txl)"></span>
+            <span style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--txl)">Queue · Review · Approve</span>
+          </div>
+          <h1 style="margin:0;font-family:var(--dp);font-weight:700;font-size:24px;letter-spacing:-.02em;line-height:1.1">Queue Dashboard</h1>
+          <p style="margin:6px 0 0;font-size:13px;color:var(--txm)">Workspace: <span style="color:var(--tx)">loregarden</span></p>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <sc-for list="{{ queueMetrics }}" as="m" hint-placeholder-count="3">
+            <div style="min-width:88px;padding:8px 14px;background:var(--bg2);border:1px solid var(--bd);border-radius:11px"><div style="font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--txl);font-weight:600;margin-bottom:3px">{{ m.label }}</div><div style="font-family:var(--dp);font-size:18px;font-weight:700;color:{{ m.color }}">{{ m.value }}</div></div>
+          </sc-for>
+          <div style="display:flex;align-items:center;gap:7px;padding:9px 14px;background:rgba(53,196,106,.12);border:1px solid rgba(53,196,106,.3);border-radius:11px"><span style="width:8px;height:8px;border-radius:50%;background:var(--grn);box-shadow:0 0 8px var(--grn);animation:pulse 1.6s infinite"></span><span style="font-size:12.5px;font-weight:600;color:var(--grl)">Real-time</span></div>
+        </div>
+      </header>
+
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:22px 24px;display:flex;gap:20px">
+        <!-- main -->
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:20px">
+          <div style="background:var(--bg1);border:1px solid var(--bd);border-radius:16px;padding:22px 24px">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+              <h2 style="margin:0;font-family:var(--dp);font-size:17px;font-weight:600">Parallel Execution Queue</h2>
+              <div style="flex:1"></div>
+              <div style="display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--grl)"><span style="width:7px;height:7px;border-radius:50%;background:var(--grn);box-shadow:0 0 7px var(--grn)"></span>Connected</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:26px">
+              <sc-for list="{{ qStats }}" as="q" hint-placeholder-count="4">
+                <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:13px;padding:15px 16px">
+                  <div style="font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--txl);font-weight:600;margin-bottom:10px">{{ q.label }}</div>
+                  <div style="font-family:var(--dp);font-size:26px;font-weight:700;color:var(--tx);letter-spacing:-.01em;line-height:1">{{ q.value }}</div>
+                  <sc-if value="{{ q.hasBar }}" hint-placeholder-val="{{ true }}"><div style="margin-top:11px;height:5px;border-radius:3px;background:var(--bg4);overflow:hidden"><div style="height:100%;width:{{ q.pct }};background:linear-gradient(90deg,var(--ac),var(--ac2));border-radius:3px;transition:width .4s"></div></div></sc-if>
+                  <sc-if value="{{ q.hasSub }}" hint-placeholder-val="{{ false }}"><div style="margin-top:8px;font-size:11px;color:var(--txl)">{{ q.sub }}</div></sc-if>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+              <span style="font-family:var(--dp);font-size:14px;font-weight:600">Execution slots</span>
+              <div style="flex:1"></div>
+              <button onClick="{{ onDispatch }}" style="display:flex;align-items:center;gap:7px;font-family:var(--ui);font-size:12.5px;font-weight:600;color:var(--onac);background:var(--ac);border:none;border-radius:9px;padding:8px 14px;cursor:pointer;box-shadow:0 2px 12px rgba(45,212,167,.28)" style-hover="background:var(--ac2)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m5 3 14 9-14 9z"></path></svg>{{ dispatchLabel }}</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+              <sc-for list="{{ slots }}" as="s" hint-placeholder-count="3">
+                <div style="background:{{ s.bg }};border:1px solid {{ s.bd }};border-radius:13px;padding:15px 16px;min-height:150px;display:flex;flex-direction:column">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+                    <span style="width:8px;height:8px;border-radius:50%;background:{{ s.dot }};animation:{{ s.anim }}"></span>
+                    <span style="font-family:var(--dp);font-size:13px;font-weight:600;color:var(--tx)">Slot {{ s.n }}</span>
+                    <div style="flex:1"></div>
+                    <span style="font-size:9.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;padding:2px 8px;border-radius:6px;background:{{ s.badgeBg }};color:{{ s.badgeFg }}">{{ s.badge }}</span>
+                  </div>
+                  <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:6px">
+                    <div style="font-size:13.5px;font-weight:600;color:var(--tx)">{{ s.title }}</div>
+                    <div style="font-family:var(--mono);font-size:11px;color:var(--txm)">{{ s.sub }}</div>
+                    <sc-if value="{{ s.busy }}" hint-placeholder-val="{{ false }}"><div style="margin-top:8px;height:5px;border-radius:3px;background:rgba(75,155,255,.15);overflow:hidden"><div style="height:100%;width:{{ s.pct }};background:var(--blue);border-radius:3px"></div></div></sc-if>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <!-- side rail -->
+        <div style="width:326px;flex:none;display:flex;flex-direction:column;gap:16px">
+          <div style="flex:none;background:var(--bg1);border:1px solid var(--bd);border-radius:16px;overflow:hidden">
+            <div style="display:flex;gap:2px;padding:8px;border-bottom:1px solid var(--bd)">
+              <sc-for list="{{ queueTabs }}" as="qt" hint-placeholder-count="4">
+                <button onClick="{{ qt.onClick }}" style="flex:1;font-family:var(--ui);font-size:11.5px;font-weight:600;padding:8px 4px;border-radius:8px;cursor:pointer;border:none;border-bottom:2px solid {{ qt.bd }};background:{{ qt.bg }};color:{{ qt.fg }}">{{ qt.label }}</button>
+              </sc-for>
+            </div>
+            <div style="padding:18px">
+              <div style="font-family:var(--dp);font-size:14px;font-weight:600;margin-bottom:14px">Queue status</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+                <sc-for list="{{ qStatus }}" as="qs" hint-placeholder-count="4">
+                  <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:11px;padding:13px 14px"><div style="font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:var(--txl);font-weight:600;margin-bottom:6px">{{ qs.label }}</div><div style="font-family:var(--dp);font-size:20px;font-weight:700;color:var(--tx)">{{ qs.value }}</div></div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+          <div style="flex:1;min-height:180px;background:var(--bg1);border:1px solid var(--bd);border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--txl);padding:30px;text-align:center">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="{{ queueRunning }}" stroke-width="1.6"><path d="M13 2 3 14h9l-1 8 10-12h-9z"></path></svg>
+            <div style="font-family:var(--dp);font-size:13.5px;color:var(--txm)">{{ queueEmptyText }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+</div>
+
+<!-- ══════════ APPROVAL INBOX ══════════ -->
+<sc-if value="{{ inbox }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ onCloseInbox }}" style="position:fixed;inset:0;background:rgba(5,6,8,.62);backdrop-filter:blur(2px);z-index:40;animation:fadein .18s ease"></div>
+  <aside data-screen-label="Approval inbox" style="position:fixed;top:0;right:0;bottom:0;width:452px;max-width:94vw;z-index:41;background:var(--bg1);border-left:1px solid var(--bd2);box-shadow:-24px 0 60px rgba(0,0,0,.5);display:flex;flex-direction:column;animation:slidein .22s cubic-bezier(.4,0,.2,1)">
+    <div style="flex:none;padding:18px 20px 15px;border-bottom:1px solid var(--bd)">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--rdl)" stroke-width="1.9"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+        <span style="font-family:var(--dp);font-weight:600;font-size:15px">Global Approval Inbox</span>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--txl);background:var(--bg3);padding:1px 7px;border-radius:6px">{{ approvalsCount }}</span>
+        <div style="flex:1"></div>
+        <button onClick="{{ onCloseInbox }}" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:var(--bg2);border:1px solid var(--bd);border-radius:8px;color:var(--txm);cursor:pointer" style-hover="background:var(--bg3);color:var(--tx)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+      </div>
+      <p style="margin:0;font-size:12px;color:var(--txm);line-height:1.5">Every pending human decision across all workspaces, ordered by urgency.</p>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:14px 16px 24px;display:flex;flex-direction:column;gap:20px">
+      <sc-for list="{{ approvalGroups }}" as="g" hint-placeholder-count="3">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <span style="width:7px;height:7px;border-radius:50%;background:{{ g.color }}"></span>
+            <span style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;color:{{ g.color }}">{{ g.label }}</span>
+            <span style="font-family:var(--mono);font-size:10.5px;color:var(--txl)">{{ g.count }}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <sc-for list="{{ g.items }}" as="a" hint-placeholder-count="2">
+              <div style="border:1px solid {{ a.cardBd }};border-radius:13px;background:var(--bg2);overflow:hidden">
+                <div style="padding:12px 14px">
+                  <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px">
+                    <span style="flex:1;font-size:13px;font-weight:600;line-height:1.35;color:var(--tx)">{{ a.title }}</span>
+                    <span style="flex:none;font-size:9.5px;font-weight:600;letter-spacing:.03em;padding:2px 7px;border-radius:6px;background:{{ a.badgeBg }};color:{{ a.badgeFg }}">{{ a.level }}</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:7px;margin-bottom:9px;font-size:11px">
+                    <span style="font-family:var(--mono);color:var(--txl)">{{ a.repo }}</span>
+                    <span style="color:var(--bd2)">·</span>
+                    <span style="display:inline-flex;align-items:center;gap:5px;color:{{ a.stageColor }}"><span style="width:5px;height:5px;border-radius:50%;background:{{ a.stageColor }}"></span>{{ a.stage }}</span>
+                    <sc-if value="{{ a.hasDelta }}" hint-placeholder-val="{{ false }}"><span style="color:var(--bd2)">·</span><span style="font-family:var(--mono);color:var(--txm)">{{ a.delta }}</span></sc-if>
+                  </div>
+                  <p style="margin:0;font-size:12px;color:var(--txm);line-height:1.55">{{ a.impact }}</p>
+                </div>
+                <div style="display:flex;gap:1px;border-top:1px solid var(--bd);background:var(--bd)">
+                  <button onClick="{{ a.onApprove }}" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;font-family:var(--ui);font-size:12px;font-weight:600;color:var(--grl);background:var(--bg2);border:none;padding:10px;cursor:pointer" style-hover="background:rgba(53,196,106,.12)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"></path></svg>{{ a.approveLabel }}</button>
+                  <button onClick="{{ a.onReject }}" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;font-family:var(--ui);font-size:12px;font-weight:600;color:var(--rdl);background:var(--bg2);border:none;padding:10px;cursor:pointer" style-hover="background:rgba(255,106,84,.12)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6 6 18M6 6l12 12"></path></svg>Reject</button>
+                  <button onClick="{{ a.onInspect }}" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;font-family:var(--ui);font-size:12px;font-weight:600;color:var(--txm);background:var(--bg2);border:none;padding:10px;cursor:pointer" style-hover="background:var(--bg3);color:var(--tx)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>Inspect</button>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      <sc-if value="{{ inboxEmpty }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:60px 20px;text-align:center;color:var(--txl);display:flex;flex-direction:column;align-items:center;gap:12px">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--grn)" stroke-width="1.8"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><path d="m9 11 3 3L22 4"></path></svg>
+          <div style="font-family:var(--dp);font-size:14px;color:var(--txm)">Inbox zero — nothing needs your attention</div>
+        </div>
+      </sc-if>
+    </div>
+  </aside>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:860}}">
+class Component extends DCLogic {
+  STATE = {
+    backlog:{label:'Backlog',color:'var(--txm)'},
+    in_progress:{label:'In Progress',color:'var(--blue)'},
+    blocked:{label:'Blocked',color:'var(--red)'},
+    done:{label:'Done',color:'var(--grn)'},
+  };
+  STATUS = {
+    pending:{label:'Idle',dot:'#39424e',fill:'var(--bg0)',pillBg:'rgba(255,255,255,.04)',pillFg:'var(--txl)',line:'var(--bd)',name:'var(--txm)'},
+    running:{label:'Running',dot:'var(--blue)',fill:'var(--blue)',pillBg:'rgba(75,155,255,.15)',pillFg:'var(--bll)',line:'var(--blue)',name:'var(--tx)'},
+    blocked:{label:'Blocked',dot:'var(--red)',fill:'var(--red)',pillBg:'rgba(255,106,84,.15)',pillFg:'var(--rdl)',line:'var(--red)',name:'var(--tx)'},
+    awaiting:{label:'Awaiting',dot:'var(--amb)',fill:'var(--amb)',pillBg:'rgba(229,167,44,.16)',pillFg:'var(--aml)',line:'var(--amb)',name:'var(--tx)'},
+    done:{label:'Done',dot:'var(--grn)',fill:'var(--grn)',pillBg:'rgba(53,196,106,.14)',pillFg:'var(--grl)',line:'var(--grn)',name:'var(--txm)'},
+  };
+  PRIO = {
+    1:{label:'P1 · Urgent',bars:['var(--red)','var(--red)','var(--red)']},
+    2:{label:'P2 · High',bars:['var(--amb)','var(--amb)','var(--bd2)']},
+    3:{label:'P3 · Normal',bars:['var(--txm)','var(--bd2)','var(--bd2)']},
+  };
+
+  state = {
+    screen:'ide', tab:'hive', filter:'all', repo:'all', inbox:false, resolved:{},
+    sel:'t1', tickets:this.seed(), terminalOpen:false,
+    studioTab:'agent', studioLayout:'a',
+    // agent form
+    agName:'', agSlug:'', agDesc:'', agRole:'', agProvider:'Claude Code', agSkill:'—', agTimeout:'600',
+    agTools:{loregarden_get_ticket:true, loregarden_attach_artifact:true, loregarden_request_approval:true},
+    agSel:'backend_implementer',
+    // workflow form
+    wfName:'', wfSlug:'', wfDesc:'', wfSel:'loregarden-tdd',
+    wfStages:this.wfSeed(),
+    // ticket studio
+    scopeSel:'retro', scopeSelected:{d0:true,d1:true,d2:true,d3:true,d4:true,d5:true},
+    queueTab:'overview', queueRunning:false,
+  };
+
+  // ── seed data ──
+  seed(){
+    const S=(name,status,agent,skill,note)=>({name,status,agent:agent||'',skill:skill||'',note:note||''});
+    return [
+      {id:'t1',title:'Bootstrap vertical slice — ticket tree + workflow state',state:'in_progress',repo:'loregarden',prio:1,branch:'loregarden/m01-bootstrap',run:'run_8c41f2',tmpl:'Loregarden TDD (10 stages)',
+        flow:[S('Planning','done','planner','plan'),S('Context Gathering','done','retriever','index_repo'),S('Test Break','done','test_breaker','test_break'),S('Implementation','running','backend_implementer','apply_patch','Patching client/src/api/client.ts — 61 hunks staged across 4 files.'),S('Testing','pending','static_qa','run_tests'),S('Review Prep','pending','gatekeeper','ac_gate'),S('Awaiting Approval','pending','',''),S('Done','pending','','')],
+        art:{
+          diff:{file:'client/src/api/client.ts',add:'+368',del:'−210',files:'33 files changed',lines:[
+            ['h','','@@ -45,6 +45,7 @@ export interface TicketTreeNode {'],
+            ['c','1','  priority: number;'],
+            ['c','2','  work_item_type: WorkItemType;'],
+            ['c','3','  workflow_stage_name: string;'],
+            ['a','4','  workflow_stage_status: StageStatus;'],
+            ['c','5','  child_count: number;'],
+            ['c','6','  children: TicketTreeNode[];'],
+            ['c','7','}'],
+            ['h','','@@ -35,33 +35,32 @@ DashboardTicketDetailsButton'],
+            ['c','1','  <button'],
+            ['c','2','    onClick={handleOpenModal}'],
+            ['d','5','    className={`inline-flex items-center gap-2 px-3 py-2 bg-blue-600 …`}'],
+            ['a','6','    className={`btn-secondary btn-compact ${className}`}'],
+            ['a','7','    aria-label="View ticket details"'],
+            ['a','8','    type="button"'],
+          ]},
+          logs:[['12:04:01','INFO','loaded workflow "loregarden-tdd" · 10 stages'],['12:04:02','OK','planning complete — 5 subtasks identified'],['12:04:05','OK','context gathered — 33 files, 8 symbols indexed'],['12:04:06','OK','test_break wrote 6 failing specs'],['12:04:07','RUN','backend_implementer invoked skill apply_patch'],['12:04:18','WARN','large changeset (368 lines) — chunking into 4 passes'],['12:04:31','OK','pass 3/4 applied · 61 hunks staged']],
+          live:'applying pass 4/4 · rewriting DashboardTicketDetailsButton.tsx',
+          tests:{summary:'6 failing (expected) — awaiting implementation',color:'var(--aml)',cmd:'vitest run client',rows:[['ticket-tree.test.ts','fail','—','workflow_stage_status is undefined — not yet implemented'],['client-api.test.ts','skip','—']]},
+        }},
+      {id:'t2',title:'CI instability — flaky e2e blocks the merge queue',state:'blocked',repo:'loregarden',prio:1,branch:'loregarden/ci-flake-9d1',run:'run_5b90aa',tmpl:'Extended TDD',
+        flow:[S('Planning','done','planner','plan'),S('Context Gathering','done','retriever','index_repo'),S('Implementation','done','frontend_implementer','apply_patch'),S('Testing','blocked','static_qa','run_tests','checkout.e2e flaky — 3/50 runs fail. Cannot certify green; human must decide flaky vs. real regression.'),S('Debugging','running','architecture_reviewer','bisect','Bisecting flaky spec — run 22 of 50.'),S('Review Prep','pending','',''),S('Done','pending','','')],
+        art:{
+          logs:[['09:12:44','INFO','running suite: e2e (50× stress)'],['09:13:02','OK','auth.spec.ts passed'],['09:13:51','ERR','checkout.e2e.ts FAILED — attempt 1/3'],['09:14:29','ERR','checkout.e2e.ts FAILED — attempt 2/3'],['09:15:06','ERR','checkout.e2e.ts FAILED — attempt 3/3'],['09:15:07','WARN','flake rate 6% over 50 runs — blocking merge queue']],
+          live:'bisecting — commit 22/50 · isolating race in <ConfirmOrder/>',
+          tests:{summary:'47 passed · 1 failed · flaky',color:'var(--rdl)',cmd:'playwright test --repeat 50',rows:[['auth.spec.ts','pass','214ms'],['cart.spec.ts','pass','188ms'],['checkout.e2e.ts','fail','20 003ms','Timed out waiting for #confirm-order (attempt 3/3) — race on cart hydration'],['search.spec.ts','pass','176ms']]},
+        }},
+      {id:'t3',title:'Extract shader compilation into a background worker',state:'backlog',repo:'blobert',prio:2,branch:'—',run:'—',tmpl:'Blobert TDD',
+        flow:[S('Planning','pending','planner','plan'),S('Context Gathering','pending','retriever',''),S('Implementation','pending','gameplay_systems','apply_patch'),S('Testing','pending','static_qa','run_tests'),S('Review Prep','pending','',''),S('Done','pending','','')],
+        art:null},
+      {id:'t4',title:'Refactor auth token refresh & rotation flow',state:'in_progress',repo:'loregarden',prio:2,branch:'loregarden/token-rotation-4a2',run:'run_71dd0e',tmpl:'Extended TDD',
+        flow:[S('Planning','done','planner','plan'),S('Context Gathering','done','retriever','index_repo'),S('Implementation','done','backend_implementer','apply_patch'),S('Testing','done','static_qa','run_tests','42 passed'),S('Review Prep','done','gatekeeper','ac_gate'),S('Awaiting Approval','awaiting','—','','Human sign-off required — change touches the session security surface.'),S('Done','pending','','')],
+        art:{
+          diff:{file:'server/auth/SessionManager.ts',add:'+214',del:'−96',files:'3 files changed',lines:[['h','','@@ -58,10 +58,14 @@ export class SessionManager {'],['c','58','  async refresh(token: string) {'],['d','59','    const next = await this.api.exchange(token);'],['a','59','    const { token: next, rotateAfter } = await this.api.exchange(token);'],['a','60','    if (this.isReused(token)) { this.revokeFamily(token); throw new ReuseError(); }'],['a','61','    this.store.set(next, { rotateAfter });'],['c','63','    return next;'],['c','64','  }']]},
+          logs:[['14:31:10','INFO','loaded workflow "extended-tdd"'],['14:31:44','OK','implementation complete — 3 files'],['14:32:19','OK','42 tests passed in 4.1s'],['14:32:40','OK','review summary generated · PR draft ready'],['14:32:41','WARN','stage gated: awaiting human approval (security surface)']],
+          tests:{summary:'42 passed · 0 failed',color:'var(--grl)',cmd:'vitest run auth',rows:[['token-refresh.test','pass','88ms'],['reuse-detection.test','pass','61ms'],['rotation-schedule.test','pass','54ms']]},
+        }},
+      {id:'t5',title:'Add N64 retro design tokens to the studio theme',state:'in_progress',repo:'loregarden',prio:3,branch:'loregarden/retro-tokens-1c8',run:'run_33ab55',tmpl:'Loregarden TDD (10 stages)',
+        flow:[S('Planning','done','planner','plan'),S('Context Gathering','done','retriever','index_repo'),S('Implementation','done','frontend_implementer','apply_patch'),S('Testing','done','static_qa','run_tests','18 passed'),S('Review Prep','running','gatekeeper','summarize','Generating PR summary and capturing before/after screenshots.'),S('Awaiting Approval','pending','',''),S('Done','pending','','')],
+        art:{
+          diff:{file:'client/src/tokens/retro.css',add:'+96',del:'−4',files:'2 files changed',lines:[['h','','@@ -1,2 +1,10 @@'],['c','1',':root[data-theme="retro"] {'],['a','2','  --surface-1: #201a3a;'],['a','3','  --pixel-accent: #ffcc00;'],['a','4','  --text-hi: #f4f0ff;'],['c','6','}']]},
+          logs:[['16:02:00','OK','implementation complete'],['16:03:12','OK','18 visual tests passed'],['16:03:40','RUN','gatekeeper generating summary + screenshots']],
+          live:'capturing 12 component screenshots · 7/12',
+          tests:{summary:'18 passed · 0 failed',color:'var(--grl)',cmd:'vitest run tokens',rows:[['contrast.test','pass','41ms'],['token-parity.test','pass','33ms']]},
+        }},
+      {id:'t6',title:'Migrate save-game store SQLite → Postgres',state:'blocked',repo:'blobert',prio:1,branch:'blobert/pg-migration-0e7',run:'run_a2f118',tmpl:'Blobert TDD',
+        flow:[S('Planning','done','planner','plan'),S('Context Gathering','done','retriever','index_repo'),S('Awaiting Approval','blocked','—','','Architecture change requires human approval before implementation — plan includes a ~90s write-downtime window.'),S('Implementation','pending','backend_implementer','apply_patch'),S('Testing','pending','static_qa','run_tests'),S('Done','pending','','')],
+        art:{
+          logs:[['08:00:12','OK','planning complete — migration plan drafted'],['08:01:40','OK','context gathered — 3 services, 2 replicas'],['08:01:41','WARN','plan gated: architecture approval required'],['08:01:41','INFO','estimated downtime: 90s (write) · 0s (read)']],
+        }},
+      {id:'t7',title:'Fix memory leak in streaming asset loader',state:'done',repo:'blobert',prio:2,branch:'blobert/asset-leak-6b3',run:'run_44cd91',tmpl:'Blobert TDD',
+        flow:[S('Planning','done','planner','plan'),S('Context Gathering','done','retriever','index_repo'),S('Implementation','done','gameplay_systems','apply_patch'),S('Testing','done','static_qa','run_tests','all green'),S('Review Prep','done','gdscript_reviewer','summarize'),S('Awaiting Approval','done','human · rk',''),S('Done','done','','')],
+        art:{
+          diff:{file:'src/assets/AssetLoader.gd',add:'+38',del:'−12',files:'1 file changed',lines:[['h','','@@ -71,5 +71,7 @@ func unload(h)'],['d','71','  cache.erase(h)'],['a','71','  cache.erase(h)'],['a','72','  if gpu_buffers.has(h): gpu_buffers[h].release()'],['a','73','  gpu_buffers.erase(h)']]},
+          logs:[['Mon 11:20','OK','implementation complete'],['Mon 11:24','OK','24 tests passed · leak check clean'],['Mon 11:31','OK','approved by human · rk'],['Mon 11:31','OK','merged to main · ticket closed']],
+          tests:{summary:'24 passed · 0 failed · 0 leaks',color:'var(--grl)',cmd:'godot --test assets',rows:[['asset_loader.test','pass','63ms'],['gpu_release.test','pass','44ms'],['leak_sentinel.test','pass','512ms']]},
+        }},
+      {id:'t8',title:'Implement per-tenant rate-limiting middleware',state:'backlog',repo:'loregarden',prio:2,branch:'—',run:'—',tmpl:'Extended TDD',
+        flow:[S('Planning','pending','planner','plan'),S('Context Gathering','pending','retriever',''),S('Implementation','pending','backend_implementer','apply_patch'),S('Testing','pending','static_qa','run_tests'),S('Review Prep','pending','',''),S('Done','pending','','')],
+        art:null},
+      {id:'t9',title:'Optimize cold-start latency on the sim edge worker',state:'in_progress',repo:'blobert',prio:2,branch:'blobert/coldstart-8f0',run:'run_9e77c3',tmpl:'Blobert TDD',
+        flow:[S('Planning','done','planner','plan'),S('Context Gathering','done','retriever','index_repo'),S('Implementation','done','core_simulation','apply_patch'),S('Testing','done','static_qa','run_tests','perf regression flagged'),S('Debugging','running','architecture_reviewer','profile','Profiling cold path — flamegraph 60% captured.'),S('Review Prep','pending','',''),S('Done','pending','','')],
+        art:{
+          logs:[['13:40:00','OK','implementation complete'],['13:41:20','WARN','p95 cold-start 812ms — exceeds 600ms budget'],['13:41:45','RUN','architecture_reviewer invoked skill profile']],
+          live:'profiling cold path · flamegraph 60% · hot frame: bundleInit()',
+          tests:{summary:'30 passed · 1 perf regression',color:'var(--aml)',cmd:'bench run coldstart',rows:[['handler.test','pass','22ms'],['coldstart.bench','fail','812ms','p95 812ms exceeds 600ms budget — regression vs baseline 540ms']]},
+        }},
+    ];
+  }
+  wfSeed(){
+    return [
+      {key:'planning',label:'Planning',type:'Agent',agent:'Planner Agent',skill:'plan',gate:false},
+      {key:'context',label:'Context Gathering',type:'Agent',agent:'Backend Implementer Agent',skill:'index_repo',gate:false},
+      {key:'implementation',label:'Implementation',type:'Agent',agent:'Backend Implementer Agent',skill:'apply_patch',gate:false},
+      {key:'review',label:'Review Prep',type:'Gate',agent:'AC Gatekeeper',skill:'ac_gate',gate:true},
+    ];
+  }
+
+  BUILTIN_AGENTS=[
+    {name:'AC Gatekeeper',slug:'ac_gatekeeper',cat:'gate',desc:'Verifies acceptance criteria before a stage may advance.',role:'Review the staged diff and test results against the ticket acceptance criteria. Approve only when every AC is demonstrably met; otherwise reject with a precise, actionable reason.',tools:['loregarden_get_ticket','loregarden_request_approval']},
+    {name:'Acceptance Criteria Gatekeeper',slug:'gatekeeper',cat:'gate',desc:'Full AC audit with structured pass/fail per criterion.',role:'For each acceptance criterion, produce a verdict with supporting evidence from the diff, logs and tests. Block the workflow when any criterion is unmet.',tools:['loregarden_get_ticket','loregarden_attach_artifact','loregarden_request_approval']},
+    {name:'Architecture Reviewer',slug:'architecture_reviewer',cat:'review',desc:'Reviews structural changes, boundaries and coupling.',role:'Evaluate whether the change respects module boundaries, avoids circular dependencies and matches the documented architecture. Flag risky abstractions and downtime windows.',tools:['loregarden_get_ticket','loregarden_search_memory']},
+    {name:'Backend Implementer Agent',slug:'backend_implementer',cat:'impl',desc:'Implements server, API and data-layer changes.',role:'Implement the assigned ticket on the backend. Write the minimum change that satisfies the failing tests, keep transactions safe, and attach the diff to the run.',tools:['loregarden_get_ticket','loregarden_attach_artifact','loregarden_append_learning']},
+    {name:'Blog Post Agent',slug:'blog_post',cat:'content',desc:'Drafts release notes and changelog posts from merged work.',role:'Summarize completed tickets into a clear, human blog post. Cite the shipped changes and link the relevant tickets.',tools:['loregarden_list_tickets','loregarden_upsert_blog_post']},
+    {name:'Core Simulation Agent',slug:'core_simulation',cat:'impl',desc:'Owns deterministic simulation and tick systems.',role:'Implement and tune the core simulation loop. Preserve determinism, keep the tick budget, and add benchmarks for any hot path you touch.',tools:['loregarden_get_ticket','loregarden_attach_artifact']},
+    {name:'Engine Integration Agent',slug:'engine_integration',cat:'impl',desc:'Bridges gameplay code to the engine runtime.',role:'Wire gameplay systems into the engine. Keep the integration layer thin and typed; never leak engine types into domain code.',tools:['loregarden_get_ticket','loregarden_attach_artifact']},
+    {name:'Frontend Implementer Agent',slug:'frontend_implementer',cat:'impl',desc:'Implements UI, client state and styling.',role:'Implement the assigned UI ticket. Match the design tokens, keep components accessible, and capture before/after screenshots as artifacts.',tools:['loregarden_get_ticket','loregarden_attach_artifact']},
+    {name:'Gameplay Systems Agent',slug:'gameplay_systems',cat:'impl',desc:'Builds gameplay mechanics and rules.',role:'Implement gameplay mechanics to spec. Keep systems data-driven and covered by deterministic tests.',tools:['loregarden_get_ticket','loregarden_attach_artifact']},
+    {name:'GDScript Reviewer',slug:'gdscript_reviewer',cat:'review',desc:'Reviews GDScript for idiom, safety and perf.',role:'Review GDScript changes for idiomatic style, null-safety and per-frame cost. Suggest concrete fixes.',tools:['loregarden_get_ticket']},
+    {name:'Planner Agent',slug:'planner',cat:'plan',desc:'Decomposes a ticket into an ordered execution plan.',role:'Read the ticket and its neighbors, then produce an ordered plan of subtasks with explicit hand-offs. Never assume stale board state — always read live workflow state first.',tools:['loregarden_get_ticket','loregarden_list_tickets','loregarden_search_memory']},
+  ];
+  CAT={impl:{label:'Implementer',color:'var(--vio)'},review:{label:'Reviewer',color:'var(--amb)'},gate:{label:'Gate',color:'var(--red)'},plan:{label:'Planner',color:'var(--blue)'},content:{label:'Content',color:'var(--ac)'}};
+  TOOLS=[
+    ['loregarden_get_ticket','Read ticket workflow state, stage map, hierarchy neighbors, and the active run.'],
+    ['loregarden_list_tickets','Search and list tickets in a workspace for discovery.'],
+    ['loregarden_attach_artifact','Attach a diff, log or test report to the current run.'],
+    ['loregarden_request_approval','Open a human approval gate and block until it is resolved.'],
+    ['loregarden_memory_status','Report memory-index health for the workspace.'],
+    ['loregarden_search_memory','Semantic search across accumulated project memory.'],
+    ['loregarden_append_learning','Append a durable learning to workspace memory.'],
+    ['loregarden_upsert_memory','Create or update a memory record.'],
+    ['loregarden_upsert_blog_post','Create or update a generated blog post.'],
+    ['loregarden_create_memory_relation','Link two memory records in the knowledge graph.'],
+  ];
+  SKILLS=['—','autopilot','plan','spec','apply_patch','run_tests','summarize','index_repo','bisect','profile'];
+  PROVIDERS=['Claude Code','Claude API','GPT-5','Local model'];
+  BUILTIN_WF=[{name:'Blobert TDD',slug:'blobert-tdd'},{name:'Extended TDD',slug:'extended-tdd'},{name:'Loregarden TDD',slug:'loregarden-tdd'}];
+  STEP_TYPES=['Agent','Classify','Gate','Human'];
+  DRAFTS=[
+    {id:'d0',type:'FEATURE',title:'Retro Theme System (N64 Style)',meta:'4 AC · P2 · planner',desc:'Add theme switching to the studio, letting users select between modern and N64-inspired retro aesthetics. Includes theme selector UI, persistent preference storage, and cohesive retro styling.'},
+    {id:'d1',type:'CAPABILITY',title:'Theme Selector and Persistence',meta:'parent: feat-1 · 4 AC · P1 · spec',desc:'Build the UI component for theme selection in settings and implement persistent storage of the user theme preference.'},
+    {id:'d2',type:'CAPABILITY',title:'N64 Visual Assets and Color System',meta:'parent: feat-1 · 4 AC · P1 · spec',desc:'Create custom N64-inspired pixel-art assets and define a cohesive retro color palette for use throughout the theme.'},
+    {id:'d3',type:'CAPABILITY',title:'Retro Component Styling (Panels, Modals, Buttons)',meta:'parent: feat-1 · 4 AC · P2 · spec',desc:'Apply the N64 retro aesthetic to core UI components using pixel-art assets and the retro color palette.'},
+    {id:'d4',type:'CAPABILITY',title:'Retro Typography and Forms',meta:'parent: feat-1 · 4 AC · P2 · spec',desc:'Style typography, input fields and form elements with the retro gaming aesthetic.'},
+    {id:'d5',type:'CAPABILITY',title:'Accessibility for Retro Theme',meta:'parent: feat-1 · 4 AC · spec',desc:'Implement accessibility measures for the retro theme, addressing contrast and readability challenges of pixel-art aesthetics.'},
+  ];
+
+  // ── helpers ──
+  cur(t){const f=t.flow;let s=f.find(x=>x.status==='running')||f.find(x=>x.status==='blocked')||f.find(x=>x.status==='awaiting');if(s)return s;if(f.every(x=>x.status==='done'))return f[f.length-1];return f.find(x=>x.status==='pending')||f[0];}
+  pick(id){return this.state.tickets.find(t=>t.id===id);}
+  slugify(s){return (s||'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
+
+  componentDidMount(){ this.loadAgent('backend_implementer'); }
+  // ── nav / ide handlers ──
+  nav=(screen)=>this.setState({screen});
+  selectTicket=(id)=>this.setState({sel:id});
+  setTab=(tab)=>this.setState({tab});
+  setFilter=(filter)=>this.setState({filter});
+  setRepo=(repo)=>this.setState({repo});
+  toggleInbox=()=>this.setState(s=>({inbox:!s.inbox}));
+  toggleTerminal=()=>this.setState(s=>({terminalOpen:!s.terminalOpen}));
+  closeInbox=()=>this.setState({inbox:false});
+  resolve=(id)=>this.setState(s=>({resolved:{...s.resolved,[id]:true}}));
+  inspect=(tid)=>this.setState({screen:'ide',sel:tid,inbox:false});
+  advance=()=>this.setState(s=>({tickets:s.tickets.map(t=>{if(t.id!==s.sel)return t;const flow=t.flow.map(x=>({...x}));const i=flow.findIndex(x=>['running','awaiting','blocked'].includes(x.status));if(i>=0){flow[i].status='done';if(flow[i+1])flow[i+1].status='running';}return {...t,flow};})}));
+
+  // ── studio handlers ──
+  setStudioTab=(studioTab)=>this.setState({studioTab});
+  setStudioLayout=(studioLayout)=>this.setState({studioLayout});
+  loadAgent=(slug)=>{const a=this.BUILTIN_AGENTS.find(x=>x.slug===slug);if(!a)return;const tools={};(a.tools||[]).forEach(t=>tools[t]=true);this.setState({agSel:slug,agName:a.name,agSlug:a.slug,agDesc:a.desc,agRole:a.role,agTools:tools});};
+  newAgent=()=>this.setState({agSel:'',agName:'',agSlug:'',agDesc:'',agRole:'',agTools:{},agProvider:'Claude Code',agSkill:'—'});
+  setAg=(k,v)=>this.setState({[k]:v});
+  toggleTool=(t)=>this.setState(s=>({agTools:{...s.agTools,[t]:!s.agTools[t]}}));
+  loadWf=(slug)=>this.setState({wfSel:slug,wfName:this.BUILTIN_WF.find(w=>w.slug===slug).name});
+  newWf=()=>this.setState({wfSel:'',wfName:'',wfSlug:'',wfDesc:'',wfStages:this.wfSeed()});
+  setWf=(k,v)=>this.setState({[k]:v});
+  addStage=()=>this.setState(s=>{const n=s.wfStages.length+1;return {wfStages:[...s.wfStages,{key:'stage_'+n,label:'Stage '+n,type:'Agent',agent:'Planner Agent',skill:'autopilot',gate:false}]};});
+  removeStage=(i)=>this.setState(s=>({wfStages:s.wfStages.filter((_,j)=>j!==i)}));
+  setStage=(i,k,v)=>this.setState(s=>({wfStages:s.wfStages.map((st,j)=>j===i?{...st,[k]:v}:st)}));
+  toggleGate=(i)=>this.setState(s=>({wfStages:s.wfStages.map((st,j)=>j===i?{...st,gate:!st.gate}:st)}));
+  toggleDraft=(id)=>this.setState(s=>({scopeSelected:{...s.scopeSelected,[id]:!s.scopeSelected[id]}}));
+  setQueueTab=(queueTab)=>this.setState({queueTab});
+  dispatchRun=()=>this.setState(s=>({queueRunning:!s.queueRunning}));
+
+  approvalsData(){
+    return [
+      {key:'blocked',label:'Blocked · needs decision',color:'var(--red)',items:[
+        {id:'a_pg',tid:'t6',title:'Approve architecture change — SQLite → Postgres migration',repo:'blobert',stage:'Awaiting Approval',stageColor:'var(--red)',level:'HIGH',impact:'Rewrites the save-game store. Plan includes a ~90s write-downtime window. Implementation is blocked until approved.',approveLabel:'Approve plan'},
+        {id:'a_ci',tid:'t2',title:'Resolve CI instability — flaky vs. real regression',repo:'loregarden',stage:'Testing',stageColor:'var(--red)',level:'HIGH',impact:'checkout.e2e fails 3/50 runs and is blocking the merge queue. Decide whether to quarantine the spec or treat it as a real defect.',approveLabel:'Quarantine'},
+      ]},
+      {key:'awaiting',label:'Awaiting approval',color:'var(--amb)',items:[
+        {id:'a_auth',tid:'t4',title:'Approve auth token refresh & rotation diff',repo:'loregarden',stage:'Awaiting Approval',stageColor:'var(--amb)',level:'MEDIUM',delta:'+214 −96',impact:'Adds token-reuse detection and family revocation. Touches the session security surface — sign-off required before merge.',approveLabel:'Approve diff'},
+      ]},
+      {key:'review',label:'Reviewable · completed runs',color:'var(--grn)',items:[
+        {id:'a_leak',tid:'t7',title:'Review completed — memory leak fix in asset loader',repo:'blobert',stage:'Done',stageColor:'var(--grn)',level:'LOW',delta:'+38 −12',impact:'Releases GPU buffers on unload. 24 tests green, leak sentinel clean. Ready to close out.',approveLabel:'Close ticket'},
+      ]},
+    ];
+  }
+
+  rows(arr){return arr.map((r,i)=>({k:r[0],v:r[1],bg:i%2?'transparent':'var(--bg2)'}));}
+
+  // ── assemble agent preview ──
+  assembleAgent(){
+    const s=this.state;
+    const tools=this.TOOLS.filter(t=>s.agTools[t[0]]);
+    return {
+      name:s.agName||'Untitled agent',
+      slug:s.agSlug||this.slugify(s.agName)||'unnamed',
+      hasDesc:!!s.agDesc, desc:s.agDesc||'No description provided.',
+      hasRole:!!s.agRole, role:s.agRole||'No role instructions yet — define what this agent does, its constraints, and its output expectations.',
+      provider:s.agProvider, skill:s.agSkill==='—'?'none':s.agSkill,
+      tools, toolCount:tools.length,
+    };
+  }
+
+  renderVals(){
+    const st=this.state, T=st.tickets;
+    const on=(x,y)=>x===y;
+
+    // nav
+    const navStyle=(k)=>({bg:st.screen===k?'var(--bg3)':'transparent',fg:st.screen===k?'var(--ac2)':'var(--txl)',bar:st.screen===k?'var(--ac)':'transparent'});
+
+    // ============ IDE ============
+    const sel=this.pick(st.sel)||T[0];
+    const counts={all:T.length,in_progress:0,blocked:0,backlog:0,done:0};
+    T.forEach(t=>counts[t.state]++);
+    const fdef=[['all','All'],['in_progress','Active'],['blocked','Blocked'],['backlog','Backlog'],['done','Done']];
+    const filters=fdef.map(([k,label])=>{const a=st.filter===k;return{label,count:counts[k],onClick:()=>this.setFilter(k),bg:a?'var(--bg4)':'transparent',bd:a?'var(--bd2)':'var(--bd)',fg:a?'var(--tx)':'var(--txm)'};});
+
+    const repoOrder=['loregarden','blobert'];
+    const repoMeta={loregarden:['L','var(--ac)','rgba(45,212,167,.16)'],blobert:['B','var(--vio)','rgba(157,140,255,.16)']};
+    const wsBuild=(key)=>{const items=key==='all'?T:T.filter(t=>t.repo===key);const active=items.filter(t=>t.state==='in_progress').length;const blocked=items.filter(t=>t.state==='blocked').length;const a=st.repo===key;let meta;if(key==='all')meta='across '+repoOrder.length+' workspaces';else{const p=[];if(active)p.push(active+' active');if(blocked)p.push(blocked+' blocked');if(!p.length)p.push(items.length+' item'+(items.length!==1?'s':''));meta=p.join(' · ');}const rm=repoMeta[key]||['?','var(--txm)','var(--bg3)'];return{onClick:()=>this.setRepo(key),name:key==='all'?'All workspaces':key,meta,count:items.length,isAll:key==='all',isRepo:key!=='all',letter:rm[0],iconFg:key==='all'?'var(--txm)':rm[1],iconBg:key==='all'?'var(--bg3)':rm[2],hasBlocked:blocked>0,bg:a?'var(--bg3)':'transparent',bd:a?'var(--bd2)':'transparent'};};
+    const workspaces=['all',...repoOrder].map(wsBuild);
+
+    let list=T.filter(t=>st.filter==='all'?true:t.state===st.filter).filter(t=>st.repo==='all'?true:t.repo===st.repo);
+    const order={in_progress:0,blocked:1,backlog:2,done:3};
+    list=[...list].sort((a,b)=>a.prio-b.prio||order[a.state]-order[b.state]);
+    const tickets=list.map(t=>{const a=t.id===st.sel,sm=this.STATE[t.state],c=this.cur(t),ss=this.STATUS[c.status],pr=this.PRIO[t.prio];return{onSelect:()=>this.selectTicket(t.id),bg:a?'var(--bg3)':'transparent',bd:a?'var(--bd2)':'transparent',bar:a?sm.color:'transparent',title:t.title,repo:t.repo,stateColor:sm.color,stateLabel:sm.label,wfStage:c.name,wfStatus:ss.label,wfColor:ss.dot,pb1:pr.bars[0],pb2:pr.bars[1],pb3:pr.bars[2]};});
+
+    const sm=this.STATE[sel.state],c=this.cur(sel),cs=this.STATUS[c.status],pr=this.PRIO[sel.prio];
+    const running=['running','awaiting','blocked'].includes(c.status);
+    const selVals={title:sel.title,repo:sel.repo,branch:sel.branch,prioLabel:pr.label,runId:sel.run,wfTemplate:sel.tmpl,pb1:pr.bars[0],pb2:pr.bars[1],pb3:pr.bars[2],stateColor:sm.color,stateLabel:sm.label,wfStage:c.name,wfStatus:cs.label,wfColor:cs.dot,onAdvance:this.advance,hasAction:running,actionHead:(c.status==='running'?'Now running · '+c.name:c.status==='blocked'?'Blocked at · '+c.name:'Awaiting approval · '+c.name),actionText:c.note||(c.agent?('Agent '+c.agent+' assigned to this stage.'):'This stage is active.'),actionColor:cs.dot,actionBg:c.status==='running'?'rgba(75,155,255,.07)':c.status==='blocked'?'rgba(255,106,84,.07)':'rgba(229,167,44,.07)',actionBd:c.status==='running'?'rgba(75,155,255,.22)':c.status==='blocked'?'rgba(255,106,84,.22)':'rgba(229,167,44,.22)',actionAnim:c.status==='running'?'pulse 1.5s ease-in-out infinite':'none'};
+
+    const stages=sel.flow.map((s,i)=>{const m=this.STATUS[s.status],last=i===sel.flow.length-1,isCur=s===c;return{name:s.name,dot:m.dot,dotFill:s.status==='done'?m.dot:(['running','blocked','awaiting'].includes(s.status)?m.fill:'var(--bg0)'),lineColor:last?'transparent':(s.status==='done'?'var(--grn)':'var(--bd)'),anim:(s.status==='running')?'ring 1.8s ease-out infinite':'none',isDone:s.status==='done',statusLabel:m.label,pillBg:m.pillBg,pillFg:m.pillFg,pillAnim:(s.status==='running'||s.status==='blocked')?'pulse 1.8s ease-in-out infinite':'none',weight:isCur?'600':'500',nameColor:m.name,optional:s.name==='Debugging',hasAgent:!!s.agent,agent:s.agent,hasSkill:!!s.skill,skill:s.skill,hasNote:!!s.note,note:s.note,noteColor:s.status==='blocked'?'var(--rdl)':s.status==='awaiting'?'var(--aml)':'var(--txm)'};});
+
+    const art=sel.art;
+    const has={diff:!!(art&&art.diff),logs:!!(art&&art.logs),tests:!!(art&&art.tests)};
+    const tabDefs=[['diff','Diff'],['logs','Logs'],['tests','Tests'],['hive','Hive'],['context','Context']];
+    let tab=st.tab;
+    const tabs=tabDefs.map(([k,label])=>{const a=tab===k;let badge=null,badgeBg='',badgeFg='';if(k==='tests'&&art&&art.tests){const fail=art.tests.rows.filter(r=>r[1]==='fail').length;if(fail){badge=fail+' fail';badgeBg='rgba(255,106,84,.16)';badgeFg='var(--rdl)';}else{badge='pass';badgeBg='rgba(53,196,106,.14)';badgeFg='var(--grl)';}}return{label,onClick:()=>this.setTab(k),weight:a?'600':'500',fg:a?'var(--tx)':'var(--txm)',bg:a?'var(--bg3)':'transparent',bd:a?'var(--bd2)':'transparent',hasBadge:!!badge,badge,badgeBg,badgeFg};});
+
+    const diffMap={h:{bg:'rgba(45,212,167,.06)',fg:'var(--ac2)',edge:'rgba(45,212,167,.4)',sign:''},a:{bg:'rgba(53,196,106,.09)',fg:'var(--grl)',edge:'rgba(53,196,106,.5)',sign:'+'},d:{bg:'rgba(255,106,84,.09)',fg:'var(--rdl)',edge:'rgba(255,106,84,.5)',sign:'−'},c:{bg:'transparent',fg:'var(--txm)',edge:'transparent',sign:''}};
+    let diffLines=[],diffFile='',diffAdd='',diffDel='',diffFiles='';
+    if(has.diff){const d=art.diff;diffFile=d.file;diffAdd=d.add;diffDel=d.del;diffFiles=d.files;diffLines=d.lines.map(([tp,ln,text])=>({...diffMap[tp],ln,text}));}
+
+    const tagMap={INFO:['rgba(255,255,255,.06)','var(--txm)'],OK:['rgba(53,196,106,.14)','var(--grl)'],RUN:['rgba(75,155,255,.14)','var(--bll)'],WARN:['rgba(229,167,44,.16)','var(--aml)'],ERR:['rgba(255,106,84,.16)','var(--rdl)']};
+    let logLines=[],logLive=false,logLiveText='',logLiveTime='';
+    if(has.logs){logLines=art.logs.map(([time,tag,text])=>{const[b,f]=tagMap[tag];return{time,tag,tagBg:b,tagFg:f,text};});if(art.live){logLive=true;logLiveText=art.live;logLiveTime='now';}}
+
+    const tIcon={pass:['✓','var(--grl)','rgba(53,196,106,.06)','rgba(53,196,106,.18)'],fail:['✕','var(--rdl)','rgba(255,106,84,.07)','rgba(255,106,84,.28)'],skip:['○','var(--txl)','var(--bg2)','var(--bd)']};
+    let tests=[],testSummary='',testSumColor='',testCmd='';
+    if(has.tests){testSummary=art.tests.summary;testSumColor=art.tests.color;testCmd=art.tests.cmd;tests=art.tests.rows.map(r=>{const[ic,col,bg,bd]=tIcon[r[1]];return{icon:ic,color:col,bg,bd,name:r[0],dur:r[2],hasMsg:!!r[3],msg:r[3]||''};});}
+
+    const cA=(sel.flow.find(s=>s.agent&&!s.agent.includes('human'))||{}).agent||'planner';
+    const contextSections=[
+      {title:'Workflow definition snapshot',rows:this.rows([['template',sel.tmpl],['stages',sel.flow.length+' · linear + gates'],['transitions','explicit · no implicit'],['approval gate','human · required']])},
+      {title:'Agent configuration',rows:this.rows([['planner','claude · plan'],['implementer',cA],['model','claude-sonnet · temp 0.2'],['tools','apply_patch · run_tests · bisect · profile']])},
+      {title:'Run metadata',rows:this.rows([['run id',sel.run],['branch',sel.branch],['ticket',sel.id+' · '+sel.repo],['current stage',c.name+' · '+cs.label]])},
+    ];
+    // ── HIVE (office floor) ──
+    const POS=[[18,44],[50,40],[82,44],[18,76],[50,78],[82,76]];
+    const rank={running:5,blocked:4,awaiting:3,done:2,pending:1};
+    const agMap={};
+    sel.flow.forEach(s=>{ if(!s.agent||s.agent.indexOf('human')>=0||s.agent==='—') return; const k=s.agent; const prev=agMap[k]; if(!prev||rank[s.status]>rank[prev.status]) agMap[k]={agent:s.agent,status:s.status,stage:s.name,skill:s.skill}; });
+    const godX=50, godY=10;
+    const hiveAgents=Object.values(agMap).slice(0,6).map((a,i)=>{
+      const ss=this.STATUS[a.status]; const p=POS[i]||[50,50];
+      const words=a.agent.replace(/·.*/,'').trim().split(/[_\s]+/).filter(Boolean);
+      const init=((words[0]?words[0][0]:'')+(words[1]?words[1][0]:a.agent[1]||'')).toUpperCase();
+      const active=['running','blocked','awaiting'].includes(a.status);
+      return {name:a.agent,init,x:p[0]+'%',y:p[1]+'%',color:ss.dot,status:ss.label,stage:a.stage,skill:a.skill,hasSkill:!!a.skill&&active,
+        deskBg:active?'var(--bg3)':'var(--bg2)',ring:active?ss.dot:'var(--bd2)',
+        avBg:active?ss.dot:'var(--bg4)',avFg:active?'var(--onac)':'var(--txm)',
+        pulse:a.status==='running'?'pulse 1.7s ease-in-out infinite':'none',
+        showTool:active&&!!a.skill};
+    });
+    const hiveLines=Object.values(agMap).slice(0,6).map((a,i)=>{ const p=POS[i]||[50,50]; const active=['running','blocked','awaiting'].includes(a.status); const ss=this.STATUS[a.status];
+      return {x1:godX,y1:godY,x2:p[0],y2:p[1],color:active?ss.dot:'var(--bd2)',op:active?'0.85':'0.35',w:active?'1.6':'1',dash:active?'3 3':'0 0',anim:active?'hivedash 1s linear infinite':'none'}; });
+    const godActive=hiveAgents.some(a=>a.status==='Running'||a.status==='Blocked'||a.status==='Awaiting');
+    const hiveIdle=hiveAgents.length===0;
+
+    // ── TERMINAL ──
+    const termColor={INFO:'var(--txm)',OK:'var(--grl)',RUN:'var(--bll)',WARN:'var(--aml)',ERR:'var(--rdl)'};
+    const termLogs=(art&&art.logs?art.logs:[['—','INFO','no active run — advance this ticket to Planning to start execution']]).map(([time,tag,text])=>({time,tag,text,color:termColor[tag]||'var(--txm)'}));
+    const termLive=art&&art.live?art.live:'';
+    const termHasLive=!!termLive;
+    const termAgent=(c.agent&&c.agent!=='—'&&c.agent.indexOf('human')<0)?c.agent:'orchestrator';
+    const termBranch=sel.branch&&sel.branch!=='—'?sel.branch:'main';
+    const termCmd=(c.skill?('lg run --stage '+(c.name||'').toLowerCase().replace(/\s+/g,'-')+' --skill '+c.skill):'lg status');
+
+    const showEmpty=(tab==='diff'&&!has.diff)||(tab==='logs'&&!has.logs)||(tab==='tests'&&!has.tests);
+    const emptyText=sel.state==='backlog'?'This item is in the backlog — its workflow has not started, so no diffs, logs, or tests exist yet. Advance it to Planning to begin execution.':'This stage has not produced this artifact type yet. Check the other tabs or the current run status.';
+
+    // approvals
+    const groups=this.approvalsData();
+    const badgeMap={HIGH:['rgba(255,106,84,.16)','var(--rdl)'],MEDIUM:['rgba(229,167,44,.16)','var(--aml)'],LOW:['rgba(53,196,106,.14)','var(--grl)']};
+    const approvalGroups=[];let total=0;
+    groups.forEach(g=>{const items=g.items.filter(a=>!st.resolved[a.id]);total+=items.length;if(!items.length)return;approvalGroups.push({label:g.label,color:g.color,count:items.length,items:items.map(a=>{const[bb,bf]=badgeMap[a.level];return{title:a.title,repo:a.repo,stage:a.stage,stageColor:a.stageColor,impact:a.impact,level:a.level,badgeBg:bb,badgeFg:bf,hasDelta:!!a.delta,delta:a.delta||'',approveLabel:a.approveLabel,cardBd:a.level==='HIGH'?'rgba(255,106,84,.3)':'var(--bd)',onApprove:()=>this.resolve(a.id),onReject:()=>this.resolve(a.id),onInspect:()=>this.inspect(a.tid)};})});});
+
+    // ============ STUDIOS ============
+    const studioTabs=[['agent','Agent Studio','Design a role — instructions, MCP tools, gates & hand-offs.'],['workflow','Workflow Studio','Chain agents into a staged pipeline.'],['ticket','Ticket Studio','Scope features into ready-to-run tickets.']].map(([k,label,sub])=>({key:k,label,sub,active:st.studioTab===k,onClick:()=>this.setStudioTab(k),navBg:st.studioTab===k?'var(--bg3)':'transparent',navFg:st.studioTab===k?'var(--tx)':'var(--txm)',navBd:st.studioTab===k?'var(--bd2)':'transparent'}));
+    const studioMeta=studioTabs.find(t=>t.active)||studioTabs[0];
+    const layoutA=st.studioLayout==='a';
+    const layoutBtns={aBg:layoutA?'var(--bg4)':'transparent',aFg:layoutA?'var(--tx)':'var(--txm)',bBg:!layoutA?'var(--bg4)':'transparent',bFg:!layoutA?'var(--tx)':'var(--txm)'};
+
+    // agent library
+    const agLibrary=this.BUILTIN_AGENTS.map(a=>{const cat=this.CAT[a.cat];const active=st.agSel===a.slug;return{name:a.name,slug:a.slug,catLabel:cat.label,catColor:cat.color,active,onClick:()=>this.loadAgent(a.slug),bg:active?'var(--bg3)':'var(--bg1)',bd:active?cat.color:'var(--bd)'};});
+    const providerOpts=this.PROVIDERS.map(p=>({value:p,label:p}));
+    const skillOpts=this.SKILLS.map(sk=>({value:sk,label:sk}));
+    const agTools=this.TOOLS.map(([name,desc])=>({name,desc,on:!!st.agTools[name],onToggle:()=>this.toggleTool(name)}));
+    const preview=this.assembleAgent();
+    const previewChips=[['header',true],['role',preview.hasRole],['mcp_tools',preview.toolCount>0],['gates',true],['hand-offs',true],['permissions',true]].map(([l,active])=>({label:l,bg:active?'rgba(45,212,167,.12)':'var(--bg2)',fg:active?'var(--ac2)':'var(--txl)',bd:active?'rgba(45,212,167,.25)':'var(--bd)'}));
+    const agent={
+      name:preview.name, slug:preview.slug, hasDesc:preview.hasDesc, desc:preview.desc,
+      hasRole:preview.hasRole, role:preview.role, roleColor:preview.hasRole?'var(--tx)':'var(--txl)', provider:preview.provider, skill:preview.skill,
+      toolCount:preview.toolCount, tools:preview.tools.map(t=>({name:t[0],desc:t[1]})), noTools:preview.toolCount===0,
+      chips:previewChips,
+      nameVal:st.agName, slugVal:st.agSlug, slugPh:this.slugify(st.agName)||'auto from name', descVal:st.agDesc, roleVal:st.agRole,
+      onName:e=>this.setAg('agName',e.target.value), onSlug:e=>this.setAg('agSlug',e.target.value), onDesc:e=>this.setAg('agDesc',e.target.value), onRole:e=>this.setAg('agRole',e.target.value),
+      onProvider:e=>this.setAg('agProvider',e.target.value), onSkill:e=>this.setAg('agSkill',e.target.value), providerVal:st.agProvider, skillVal:st.agSkill,
+      timeoutVal:st.agTimeout, onTimeout:e=>this.setAg('agTimeout',e.target.value),
+    };
+
+    // workflow
+    const wfLibrary=this.BUILTIN_WF.map(w=>{const active=st.wfSel===w.slug;return{name:w.name,slug:w.slug,active,onClick:()=>this.loadWf(w.slug),bg:active?'var(--bg3)':'var(--bg1)',bd:active?'var(--ac)':'var(--bd)'};});
+    const wfStages=st.wfStages.map((s,i)=>({key:s.key,label:s.label,type:s.type,agent:s.agent,skill:s.skill,gate:s.gate,idx:i,num:i+1,
+      onKey:e=>this.setStage(i,'key',e.target.value), onLabel:e=>this.setStage(i,'label',e.target.value),
+      onType:e=>this.setStage(i,'type',e.target.value), onAgent:e=>this.setStage(i,'agent',e.target.value), onSkill:e=>this.setStage(i,'skill',e.target.value),
+      onGate:()=>this.toggleGate(i), onRemove:()=>this.removeStage(i),
+      gateBg:s.gate?'var(--ac)':'var(--bg3)', gateDot:s.gate?'translateX(15px)':'translateX(0)', gateBorder:s.gate?'var(--ac)':'var(--bd2)',
+      typeColor:s.type==='Gate'?'var(--red)':s.type==='Classify'?'var(--blue)':s.type==='Human'?'var(--amb)':'var(--vio)',
+      canRemove:st.wfStages.length>1}));
+    const wfAgentOpts=this.BUILTIN_AGENTS.map(a=>({value:a.name,label:a.name}));
+    const wfPreviewStages=st.wfStages.map((s,i)=>({label:s.label,type:s.type,agent:s.type==='Agent'||s.type==='Gate'?s.agent:s.type,skill:s.skill,gate:s.gate,last:i===st.wfStages.length-1,
+      spine:i===st.wfStages.length-1?'transparent':'var(--bd)',
+      color:s.type==='Gate'?'var(--red)':s.type==='Classify'?'var(--blue)':s.type==='Human'?'var(--amb)':'var(--vio)'}));
+
+    // ticket studio
+    const drafts=this.DRAFTS.map(d=>{const sel2=!!st.scopeSelected[d.id];const feature=d.type==='FEATURE';return{title:d.title,type:d.type,meta:d.meta,desc:d.desc,checked:sel2,onToggle:()=>this.toggleDraft(d.id),typeColor:feature?'var(--ac2)':'var(--bll)',typeBg:feature?'rgba(45,212,167,.12)':'rgba(75,155,255,.1)',cardBd:sel2?'var(--bd2)':'var(--bd)',boxBg:sel2?'var(--ac)':'transparent',boxBd:sel2?'var(--ac)':'var(--bd2)'};});
+    const selectedCount=this.DRAFTS.filter(d=>st.scopeSelected[d.id]).length;
+
+    // ============ QUEUE ============
+    const qRun=st.queueRunning;
+    const qSlots=[{n:1,busy:qRun},{n:2,busy:false},{n:3,busy:false}];
+    const slots=qSlots.map(s=>({n:s.n,busy:s.busy,
+      title:s.busy?'Bootstrap vertical slice':'Available',
+      sub:s.busy?'backend_implementer · apply_patch':'Idle · ready for dispatch',
+      badge:s.busy?'running':'available', badgeBg:s.busy?'rgba(75,155,255,.16)':'var(--bg3)', badgeFg:s.busy?'var(--bll)':'var(--txl)',
+      bd:s.busy?'rgba(75,155,255,.4)':'var(--bd)', bg:s.busy?'rgba(75,155,255,.05)':'var(--bg1)',
+      dot:s.busy?'var(--blue)':'#39424e', anim:s.busy?'pulse 1.5s ease-in-out infinite':'none', pct:s.busy?'64%':'0%'}));
+    const active=qRun?1:0;
+    const qStats=[
+      {label:'Slot usage',value:active+'/3',hasBar:true,pct:qRun?'33%':'0%',hasSub:false,sub:''},
+      {label:'Queue length',value:qRun?'2':'0',hasBar:false,hasSub:true,sub:qRun?'runs waiting':'no queue'},
+      {label:'Est. clear',value:qRun?'3m 20s':'0m 0s',hasBar:false,hasSub:true,sub:'all runs complete in'},
+      {label:'Wait time',value:qRun?'40s':'0m',hasBar:false,hasSub:true,sub:qRun?'next in line':'no queue'},
+    ];
+    const queueMetrics=[['Utilization',qRun?'33%':'0%','var(--ac2)'],['Active',active+'/3','var(--bll)'],['Queued',qRun?'2':'0','var(--txm)']].map(m=>({label:m[0],value:m[1],color:m[2]}));
+    const queueTabs=[['overview','Overview'],['review','Review'],['controls','Controls'],['analytics','Analytics']].map(([k,label])=>({key:k,label,active:st.queueTab===k,onClick:()=>this.setQueueTab(k),bg:st.queueTab===k?'var(--bg3)':'transparent',fg:st.queueTab===k?'var(--ac2)':'var(--txm)',bd:st.queueTab===k?'var(--ac)':'transparent'}));
+    const qStatus=[['Total runs',qRun?'1':'0'],['Utilization',qRun?'33%':'0%'],['Active slots',active+'/3'],['Queue depth',qRun?'2':'0']].map(m=>({label:m[0],value:m[1]}));
+
+    return {
+      screen:st.screen, isIde:st.screen==='ide', isStudios:st.screen==='studios', isQueue:st.screen==='queue',
+      onNavIde:()=>this.nav('ide'), onNavStudios:()=>this.nav('studios'), onNavQueue:()=>this.nav('queue'),
+      navIde:navStyle('ide'), navStudios:navStyle('studios'), navQueue:navStyle('queue'),
+      approvalsCount:total, onToggleInbox:this.toggleInbox, inbox:st.inbox, onCloseInbox:this.closeInbox,
+      filters, tickets, ticketCount:list.length, workspaces, workspaceCount:repoOrder.length,
+      sel:selVals, stages, tabs,
+      showDiff:tab==='diff'&&has.diff, diffFile, diffAdd, diffDel, diffFiles, diffLines,
+      showLogs:tab==='logs'&&has.logs, logLines, logLive, logLiveText, logLiveTime,
+      showTests:tab==='tests'&&has.tests, tests, testSummary, testSumColor, testCmd,
+      showContext:tab==='context', contextSections, showEmpty, emptyText,
+      showHive:tab==='hive', hiveAgents, hiveLines, godActive, hiveIdle, godAnim:godActive?'pulse 1.9s ease-in-out infinite':'none',
+      terminalOpen:st.terminalOpen, onToggleTerminal:this.toggleTerminal,
+      termLogs, termLive, termHasLive, termAgent, termBranch, termCmd,
+      termBtnBg:st.terminalOpen?'rgba(45,212,167,.12)':'transparent', termBtnFg:st.terminalOpen?'var(--ac2)':'var(--txm)', termBtnBd:st.terminalOpen?'rgba(45,212,167,.28)':'var(--bd)', termChevron:st.terminalOpen?'rotate(180deg)':'rotate(0deg)',
+      approvalGroups, inboxEmpty:approvalGroups.length===0,
+      // studios
+      studioTabs, studioMeta, layoutA, layoutB:!layoutA, layoutBtns, onLayoutA:()=>this.setStudioLayout('a'), onLayoutB:()=>this.setStudioLayout('b'),
+      isAgentTab:st.studioTab==='agent', isWorkflowTab:st.studioTab==='workflow', isTicketTab:st.studioTab==='ticket',
+      agLibrary, onNewAgent:this.newAgent, providerOpts, skillOpts, agTools, agent,
+      wfLibrary, onNewWf:this.newWf, wfStages, wfAgentOpts, skillOpts2:skillOpts, wfPreviewStages,
+      wfNameVal:st.wfName, wfSlugVal:st.wfSlug, wfSlugPh:this.slugify(st.wfName)||'auto from name', wfDescVal:st.wfDesc,
+      onWfName:e=>this.setWf('wfName',e.target.value), onWfSlug:e=>this.setWf('wfSlug',e.target.value), onWfDesc:e=>this.setWf('wfDesc',e.target.value), onAddStage:this.addStage,
+      wfPreviewName:st.wfName||'Untitled workflow', wfPreviewSlug:st.wfSlug||this.slugify(st.wfName)||'unnamed', wfStageCount:st.wfStages.length,
+      drafts, selectedCount,
+      // queue
+      slots, qStats, queueMetrics, queueTabs, qStatus, onDispatch:this.dispatchRun,
+      queueRunning:qRun?'var(--blue)':'var(--bd2)', queueEmptyText:qRun?'1 run active · 2 queued behind it':'All slots available — dispatch a run to see the queue fill.',
+      dispatchLabel:qRun?'Clear queue':'Dispatch demo run',
+    };
+  }
+}
+</script>
+</body>
+</html>

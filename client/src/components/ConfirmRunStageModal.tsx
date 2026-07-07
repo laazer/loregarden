@@ -1,3 +1,5 @@
+import { IconCloseButton } from "./IconCloseButton";
+
 import { useEffect, useState } from "react";
 
 import type { RuntimeOptions, TicketDetail, WorkflowStageView, WorkspaceRuntimeSettings } from "../api/client";
@@ -83,9 +85,7 @@ export function ConfirmRunStageModal({
             </h2>
             <p className="modal-subtitle">{ticket.title}</p>
           </div>
-          <button type="button" className="btn-secondary" disabled={busy} onClick={onClose}>
-            ✕
-          </button>
+          <IconCloseButton disabled={busy} onClick={onClose} />
         </div>
 
         <div className="modal-body">

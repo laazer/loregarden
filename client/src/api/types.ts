@@ -528,6 +528,8 @@ export interface UsageProviderSnapshot {
   error: string | null;
   meters: UsageMeter[];
   breakdown: UsageBreakdownItem[];
+  from_cache: boolean;
+  cached_at: string | null;
 }
 
 export interface UsageSnapshot {

@@ -1,3 +1,5 @@
+import { IconCloseButton } from "./IconCloseButton";
+
 import { useEffect, useState } from "react";
 
 import {
@@ -68,9 +70,7 @@ export function ImportTicketsModal({
               Select ticket files to import from the repository.
             </p>
           </div>
-          <button type="button" className="btn-secondary" disabled={isLoading} onClick={onClose}>
-            ✕
-          </button>
+          <IconCloseButton disabled={isLoading} onClick={onClose} />
         </div>
 
         <div className="modal-body">

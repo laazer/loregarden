@@ -331,34 +331,6 @@
   }
 }
 
-/* Scrollbar Styling */
-.runs-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.runs-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.runs-list::-webkit-scrollbar-thumb {
-  background: #ddd;
-  border-radius: 3px;
-}
-
-.runs-list::-webkit-scrollbar-thumb:hover {
-  background: #bbb;
-}
-
-@media (prefers-color-scheme: dark) {
-  .runs-list::-webkit-scrollbar-thumb {
-    background: #555;
-  }
-
-  .runs-list::-webkit-scrollbar-thumb:hover {
-    background: #666;
-  }
-}
-
 /* Responsive */
 @media (max-width: 768px) {
   .failed-runs-panel {

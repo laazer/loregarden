@@ -1,3 +1,5 @@
+import { IconCloseButton } from "./IconCloseButton";
+
 import type { UsageBreakdownItem, UsageMeter, UsageProviderSnapshot, UsageSnapshot } from "../api/client";
 
 interface UsageModalProps {
@@ -51,6 +53,11 @@ function ProviderSection({
           </h3>
         </div>
         {provider.error && <span className="usage-provider-error">{provider.error}</span>}
+        {provider.from_cache && provider.cached_at && (
+          <span className="usage-provider-cached">
+            Cached {new Date(provider.cached_at).toLocaleString()}
+          </span>
+        )}
       </div>
 
       {provider.meters.length > 0 ? (
@@ -79,6 +86,8 @@ function ProviderSection({
             );
           })}
         </div>
+      ) : provider.error && provider.logged_in && !provider.from_cache ? (
+        <p className="modal-hint">No cached usage data available.</p>
       ) : (
         !provider.error && <p className="modal-hint">No live usage meters returned.</p>
       )}
@@ -125,9 +134,7 @@ export function UsageModal({ open, snapshot, isLoading, error, onClose, onRefres
               {snapshot?.fetched_at ? ` · updated ${new Date(snapshot.fetched_at).toLocaleTimeString()}` : ""}
             </p>
           </div>
-          <button type="button" className="btn-secondary" disabled={isLoading} onClick={onClose}>
-            ✕
-          </button>
+          <IconCloseButton disabled={isLoading} onClick={onClose} />
         </div>
 
         <div className="modal-body usage-modal-body">

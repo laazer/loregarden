@@ -3,8 +3,8 @@ import { useEffect, useMemo } from "react";
 
 import { api } from "../api/client";
 import { AppTopbarActions } from "../components/AppTopbarActions";
-import { BrandMark } from "../components/BrandMark";
 import { QueueDashboard } from "../components/QueueDashboard";
+import { useParallelExecutionWS } from "../hooks/useParallelExecutionWS";
 import { useUiStore } from "../state/uiStore";
 
 export function QueuePage() {
@@ -31,18 +31,55 @@ export function QueuePage() {
     }
   }, [activeSlug, queueWorkspaceSlug, setQueueWorkspaceSlug]);
 
-  return (
-    <div className="app-shell queue-page">
-      <header className="topbar">
-        <div className="brand">
-          <BrandMark />
-          <div>
-            <div className="brand-title">Parallel Execution</div>
-            <div className="brand-sub">Queue, review, and approve agent runs</div>
-          </div>
-        </div>
+  const { stats, isWebSocket } = useParallelExecutionWS(
+    activeWorkspace?.id ?? "",
+    undefined,
+    30000,
+    Boolean(activeWorkspace?.id),
+  );
 
-        <div className="topbar-center">
+  const utilization = useMemo(() => {
+    if (!stats?.max_concurrent || !stats?.active_count) return 0;
+    return Math.round((stats.active_count / stats.max_concurrent) * 100);
+  }, [stats]);
+
+  return (
+    <div className="screen-view screen-view--queue">
+      <header className="page-hero-header">
+        <div className="page-hero-copy">
+          <div className="page-hero-eyebrow">
+            <span>Parallel Execution</span>
+            <span className="page-hero-eyebrow-dot" aria-hidden />
+            <span className="page-hero-eyebrow-muted">Queue · Review · Approve</span>
+          </div>
+          <h1 className="page-hero-title">Queue Dashboard</h1>
+          <p className="page-hero-sub">
+            Workspace: <span style={{ color: "var(--tx)" }}>{activeWorkspace?.name ?? "—"}</span>
+          </p>
+        </div>
+        <div className="page-hero-actions">
+          {activeWorkspace && (
+            <div className="queue-hero-metrics">
+              <div className="queue-hero-metric">
+                <div className="queue-hero-metric-label">Utilization</div>
+                <div className="queue-hero-metric-value">{utilization}%</div>
+              </div>
+              <div className="queue-hero-metric">
+                <div className="queue-hero-metric-label">Active</div>
+                <div className="queue-hero-metric-value">
+                  {stats?.active_count ?? 0}/{stats?.max_concurrent ?? 3}
+                </div>
+              </div>
+              <div className="queue-hero-metric">
+                <div className="queue-hero-metric-label">Queued</div>
+                <div className="queue-hero-metric-value">{stats?.queued_count ?? 0}</div>
+              </div>
+              <div className={`queue-live-badge${isWebSocket ? " connected" : ""}`}>
+                <span className="queue-live-badge-dot" aria-hidden />
+                {isWebSocket ? "Real-time" : "Polling"}
+              </div>
+            </div>
+          )}
           <label className="editor-workspace-picker">
             <span>Workspace</span>
             <select
@@ -58,11 +95,8 @@ export function QueuePage() {
               ))}
             </select>
           </label>
+          <AppTopbarActions />
         </div>
-
-        <div className="topbar-spacer" />
-
-        <AppTopbarActions />
       </header>
 
       <div className="queue-page-body">
@@ -70,6 +104,7 @@ export function QueuePage() {
           <QueueDashboard
             workspaceId={activeWorkspace.id}
             workspaceName={activeWorkspace.name}
+            embedded
           />
         ) : workspaces.isLoading ? (
           <div className="queue-page-empty">Loading workspaces…</div>

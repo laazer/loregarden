@@ -1,3 +1,5 @@
+import { IconCloseButton } from "./IconCloseButton";
+
 import { useEffect, useState } from "react";
 
 import type { MemoryConfigResponse, MemoryConfigSettings } from "../api/client";
@@ -149,9 +151,7 @@ export function MemorySetupModal({
               are organized per workspace under your vault.
             </p>
           </div>
-          <button type="button" className="btn-secondary" disabled={isSaving} onClick={onClose}>
-            ✕
-          </button>
+          <IconCloseButton disabled={isSaving} onClick={onClose} />
         </div>
 
         <div className="modal-body">

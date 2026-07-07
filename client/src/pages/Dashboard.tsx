@@ -2,8 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, API_BASE, type StageStatus, type TicketDetail, type TicketImportPreviewResponse, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
 import { AppTopbarActions } from "../components/AppTopbarActions";
-import { BrandMark } from "../components/BrandMark";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
+import { PrioBars } from "../components/PrioBars";
+import { TicketPaneFilters } from "../components/TicketPaneFilters";
 import { ArtifactView } from "../components/dashboard/ArtifactView";
 import { LogsPanel } from "../components/LogsPanel";
 import { TriagePanel } from "../components/TriagePanel";
@@ -12,17 +13,18 @@ import { AgentsAssembleModal, type AgentsAssembleOptions } from "../components/A
 import { ConfirmRunStageModal } from "../components/ConfirmRunStageModal";
 import { StageRouteHints } from "../components/StageRouteHints";
 import { StageOverflowMenu } from "../components/StageOverflowMenu";
+import { WorkflowStageTimeline } from "../components/WorkflowStageTimeline";
 import {
   currentStageRunLabel,
   isHumanGateStage,
-  stageAgentSubtitle,
   stageKindLabel,
   stageRunButtonLabel,
 } from "../lib/stageDisplay";
 import { CopyTerminalCommandButton } from "../components/CopyTerminalCommandButton";
 import { CreateWorkItemModal, type CreateWorkItemDraft } from "../components/CreateWorkItemModal";
-import { ImportTicketsConfirmModal } from "../components/ImportTicketsConfirmModal";
+import { IconCloseButton } from "../components/IconCloseButton";
 import { ImportTicketsModal } from "../components/ImportTicketsModal";
+import { ImportTicketsConfirmModal } from "../components/ImportTicketsConfirmModal";
 import { AddWorkspaceModal, type AddWorkspaceDraft } from "../components/AddWorkspaceModal";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { runtimeFromWorkspace, runtimeSettingsEqual } from "../components/WorkspaceRuntimeFields";
@@ -59,16 +61,13 @@ function PaneHideButton({
   disabled?: boolean;
 }) {
   return (
-    <button
-      type="button"
+    <IconCloseButton
       className="pane-hide-btn"
       title={disabled ? "At least one pane must stay visible" : `Hide ${PANE_LABELS[pane]}`}
       aria-label={`Hide ${PANE_LABELS[pane]}`}
       disabled={disabled}
       onClick={onHide}
-    >
-      ✕
-    </button>
+    />
   );
 }
 
@@ -88,22 +87,6 @@ function treeHasRunningWorkflow(nodes: TicketTreeNode[]): boolean {
   }
   return false;
 }
-
-const TYPE_FILTERS: { id: WorkItemType; label: string }[] = [
-  { id: "milestone", label: "Milestones" },
-  { id: "feature", label: "Features" },
-  { id: "capability", label: "Capabilities" },
-  { id: "task", label: "Tasks" },
-  { id: "bug", label: "Bugs" },
-];
-
-const STATE_FILTER_OPTIONS = ["all", "backlog", "in_progress", "blocked", "done", "wont_do"] as const;
-
-const PRIO_BARS: Record<number, string[]> = {
-  1: ["var(--red)", "var(--red)", "var(--red)"],
-  2: ["var(--amb)", "var(--amb)", "var(--bd2)"],
-  3: ["var(--txm)", "var(--bd2)", "var(--bd2)"],
-};
 
 function canRunStage(
   ticket: TicketDetail,
@@ -151,17 +134,6 @@ function canRunStage(
   return { allowed: true, reason: `${verb} ${stage.name}` };
 }
 
-
-function PrioBars({ priority }: { priority: number }) {
-  const bars = PRIO_BARS[priority] ?? PRIO_BARS[3];
-  return (
-    <div className="prio-bars">
-      {bars.map((c, i) => (
-        <span key={i} style={{ height: 6 + i * 3, background: c }} />
-      ))}
-    </div>
-  );
-}
 
 export function Dashboard() {
   const qc = useQueryClient();
@@ -782,15 +754,25 @@ export function Dashboard() {
   const expandedSet = useMemo(() => new Set(expandedTicketIds), [expandedTicketIds]);
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <BrandMark />
-          <div>
-            <div className="brand-title">loregarden</div>
-            <div className="brand-sub">Agent SDLC</div>
-          </div>
+    <div className="screen-view screen-view--ide">
+      <header className="topbar ide-topbar">
+        <div className="ide-topbar-brand">
+          <div className="brand-title">loregarden</div>
+          <div className="brand-sub">Agent SDLC · Console</div>
         </div>
+        <label className="topbar-search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search tickets, agents, runs…"
+            aria-label="Search tickets"
+          />
+          <kbd>⌘K</kbd>
+        </label>
         <div className="topbar-spacer" />
         <AppTopbarActions />
       </header>
@@ -822,33 +804,49 @@ export function Dashboard() {
                 </div>
             <div className="scroll-list">
               <button
-                className={`list-btn ${workspace === "all" ? "active" : ""}`}
+                type="button"
+                className={`workspace-btn list-btn ${workspace === "all" ? "active" : ""}`}
                 onClick={() => setWorkspace("all")}
-                style={{ display: "flex", alignItems: "center", gap: 11 }}
               >
-                <span style={{ fontWeight: 500, flex: 1 }}>All workspaces</span>
+                <span className="workspace-icon workspace-icon--all" aria-hidden>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                    <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                    <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                    <rect x="14" y="14" width="7" height="7" rx="1.5" />
+                  </svg>
+                </span>
+                <span className="workspace-copy">
+                  <span className="workspace-name">All workspaces</span>
+                  <span className="workspace-meta">Every repo</span>
+                </span>
                 <span className="count-pill">{flatTickets.length}</span>
               </button>
               {workspaces.data?.map((w) => (
                 <button
                   key={w.id}
-                  className={`list-btn ${workspace === w.slug ? "active" : ""}`}
+                  type="button"
+                  className={`workspace-btn list-btn ${workspace === w.slug ? "active" : ""}`}
                   onClick={() => setWorkspace(w.slug)}
-                  style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 4 }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-                    <span style={{ fontWeight: 500, flex: 1 }}>{w.name}</span>
-                    {w.blocked_count > 0 && (
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--red)" }} />
-                    )}
-                    <span className="count-pill">{w.ticket_count}</span>
-                  </div>
-                  {w.workflow_template_slug && (
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--txl)", paddingLeft: 2 }}>
-                      {w.workflow_template_slug}
-                      {!w.repo_exists && " · repo missing"}
+                  <span
+                    className="workspace-icon"
+                    style={{ background: "rgba(45,212,167,.14)", color: "var(--ac2)" }}
+                    aria-hidden
+                  >
+                    {w.name.charAt(0).toUpperCase()}
+                  </span>
+                  <span className="workspace-copy">
+                    <span className="workspace-name">{w.name}</span>
+                    <span className="workspace-meta">
+                      {w.workflow_template_slug || "No workflow"}
+                      {!w.repo_exists ? " · repo missing" : ""}
                     </span>
-                  )}
+                  </span>
+                  {w.blocked_count > 0 ? (
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--red)", flex: "none" }} />
+                  ) : null}
+                  <span className="count-pill">{w.ticket_count}</span>
                 </button>
               ))}
               {workspace !== "all" && workflowTemplates.data && (
@@ -881,10 +879,15 @@ export function Dashboard() {
             {showTickets && (
               <div className={`tickets-pane ${showWorkspaces ? "" : "pane-fill"}`.trim()}>
                 <div className="pane-header tickets-pane-header">
-                  <div className="tickets-pane-toolbar">
-                    <span className="pane-title">Work items</span>
-                    <span className="count-pill">{flatTickets.length}</span>
-                    <div className="tree-toolbar-actions">
+                  <div className="tickets-pane-title-row">
+                    <div className="tickets-pane-heading">
+                      <span className="pane-title">Work items</span>
+                      <span className="count-pill">{flatTickets.length}</span>
+                    </div>
+                    <span className="tickets-pane-sort">by priority</span>
+                  </div>
+                  <div className="tickets-pane-actions">
+                    <div className="tickets-pane-actions-group">
                       <button
                         className="btn-secondary btn-compact"
                         type="button"
@@ -911,21 +914,29 @@ export function Dashboard() {
                       >
                         Import
                       </button>
+                    </div>
+                    <div className="tickets-pane-actions-group tickets-pane-actions-group-end">
                       <button
-                        className="btn-secondary btn-compact"
+                        className="btn-secondary btn-compact btn-icon-only"
                         type="button"
                         title="Expand all branches"
+                        aria-label="Expand all branches"
                         onClick={() => expandAll(collectExpandableIds(ticketTree.data ?? []))}
                       >
-                        Expand all
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                          <path d="M12 5v14M5 12h14" />
+                        </svg>
                       </button>
                       <button
-                        className="btn-secondary btn-compact"
+                        className="btn-secondary btn-compact btn-icon-only"
                         type="button"
                         title="Collapse all branches"
+                        aria-label="Collapse all branches"
                         onClick={() => collapseAll()}
                       >
-                        Collapse all
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                          <path d="M5 12h14" />
+                        </svg>
                       </button>
                       <PaneHideButton
                         pane="tickets"
@@ -934,67 +945,16 @@ export function Dashboard() {
                       />
                     </div>
                   </div>
-              <input
-                className="ticket-search"
-                placeholder="Search title or id…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              <div className="filter-row type-filters">
-                <button
-                  className="btn-secondary btn-compact"
-                  style={{
-                    borderColor: typeFilters.length === 0 ? "var(--ac)" : undefined,
-                    color: typeFilters.length === 0 ? "var(--ac2)" : undefined,
-                  }}
-                  type="button"
-                  onClick={() => clearTypeFilters()}
-                >
-                  All types
-                </button>
-                {TYPE_FILTERS.map((f) => (
-                  <button
-                    key={f.id}
-                    className="btn-secondary btn-compact"
-                    style={{
-                      borderColor: typeFilters.includes(f.id) ? "var(--ac)" : undefined,
-                      color: typeFilters.includes(f.id) ? "var(--ac2)" : undefined,
-                    }}
-                    type="button"
-                    onClick={() => toggleTypeFilter(f.id)}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
-              <div className="state-filters">
-                {STATE_FILTER_OPTIONS.map((f) => {
-                  const active =
-                    f === "all" ? stateFilters.length === 0 : stateFilters.includes(f);
-                  return (
-                  <button
-                    key={f}
-                    className="btn-secondary btn-compact"
-                    style={{
-                      borderColor: active ? "var(--ac)" : undefined,
-                      color: active ? "var(--ac2)" : undefined,
-                    }}
-                    type="button"
-                    onClick={() => {
-                      if (f === "all") {
-                        clearStateFilters();
-                      } else {
-                        toggleStateFilter(f);
-                      }
-                    }}
-                  >
-                    {f === "all" ? "All" : STATE_LABELS[f]}{" "}
-                    <span className="filter-count">{counts[f]}</span>
-                  </button>
-                  );
-                })}
-              </div>
-            </div>
+                  <TicketPaneFilters
+                    typeFilters={typeFilters}
+                    stateFilters={stateFilters}
+                    stateCounts={counts}
+                    onToggleType={toggleTypeFilter}
+                    onToggleState={toggleStateFilter}
+                    onClearTypes={clearTypeFilters}
+                    onClearStates={clearStateFilters}
+                  />
+                </div>
                 <div className="scroll-list">
                   {ticketTree.data?.length ? (
                     <TicketTree
@@ -1017,7 +977,13 @@ export function Dashboard() {
         {showWorkflow && (
         <main className={`workflow-pane ${showArtifacts ? "" : "pane-fill"}`.trim()}>
           <div className="workflow-pane-header">
-            <span className="pane-title">Workflow</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" strokeWidth="2" aria-hidden>
+              <circle cx="6" cy="6" r="2.5" />
+              <circle cx="6" cy="18" r="2.5" />
+              <path d="M6 8.5v7" />
+              <path d="M18 6H9M18 6a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18 6v6a6 6 0 0 1-6 6" />
+            </svg>
+            <span className="pane-title workflow-pane-label">Workflow</span>
             {sel && (
               <span className="count-pill" style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {sel.external_id}
@@ -1035,7 +1001,7 @@ export function Dashboard() {
             <>
               <div style={{ flex: 1, overflowY: "auto", padding: "20px 22px" }}>
                 <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
-                  <PrioBars priority={sel.priority} />
+                  <PrioBars priority={sel.priority} size="md" />
                   <h1 style={{ margin: 0, fontFamily: "var(--dp)", fontSize: 19, fontWeight: 600 }}>
                     {sel.title}
                   </h1>
@@ -1208,26 +1174,17 @@ export function Dashboard() {
                 )}
 
                 <div style={{ marginTop: 24 }}>
-                  <div className="state-label" style={{ marginBottom: 16 }}>
+                  <div className="state-label workflow-lifecycle-label">
                     Workflow lifecycle
                   </div>
-                  {sel.stages.map((s) => {
-                    const runCheck = canRunStage(sel, s);
-                    const isRunningThis = isStageRunning(s.key);
-                    return (
-                    <div key={s.key} className="stage-row" style={{ paddingBottom: 18 }}>
-                      <div
-                        className={`stage-dot ${s.status}`}
-                        style={{ marginTop: 3 }}
-                      />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          <span style={{ fontWeight: s.status === "running" ? 600 : 400 }}>{s.name}</span>
-                          {s.optional && (
-                            <span className="count-pill" style={{ fontSize: 9 }}>
-                              optional
-                            </span>
-                          )}
+                  <WorkflowStageTimeline
+                    stages={sel.stages}
+                    currentStageKey={sel.workflow_stage_key}
+                    renderStageActions={(s) => {
+                      const runCheck = canRunStage(sel, s);
+                      const isRunningThis = isStageRunning(s.key);
+                      return (
+                        <>
                           <button
                             type="button"
                             className="btn-secondary btn-compact stage-run-btn"
@@ -1265,54 +1222,37 @@ export function Dashboard() {
                             }
                             onEditState={() => setStateModalOpen(true)}
                           />
-                          <span
-                            className="count-pill"
-                            style={{
-                              marginLeft: "auto",
-                              color:
-                                s.status === "running"
-                                  ? "var(--bll)"
-                                  : s.status === "done"
-                                    ? "var(--grl)"
-                                    : "var(--txl)",
-                            }}
-                          >
-                            {s.status}
-                          </span>
-                        </div>
+                        </>
+                      );
+                    }}
+                    renderStageExtras={(s) => (
+                      <>
                         {stageKindLabel(s) ? (
-                          <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txm)", marginTop: 5 }}>
-                            {stageKindLabel(s)}
-                          </div>
+                          <div className="workflow-stage-kind">{stageKindLabel(s)}</div>
                         ) : null}
-                        {stageAgentSubtitle(s) && (
-                          <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txm)", marginTop: 5 }}>
-                            {stageAgentSubtitle(s)}
-                          </div>
-                        )}
                         <StageRouteHints
                           stage={s}
                           transitions={sel.workflow_transitions ?? []}
                           stages={sel.stages}
                         />
-                        {s.note && (
+                        {s.note ? (
                           <div
+                            className="workflow-stage-note"
                             style={{
-                              marginTop: 7,
-                              fontSize: 11.5,
-                              padding: "8px 10px",
-                              background: "var(--bg2)",
-                              border: "1px solid var(--bd)",
-                              borderRadius: 8,
+                              color:
+                                s.status === "blocked"
+                                  ? "var(--rdl)"
+                                  : s.status === "awaiting"
+                                    ? "var(--aml)"
+                                    : "var(--txm)",
                             }}
                           >
                             {s.note}
                           </div>
-                        )}
-                      </div>
-                    </div>
-                    );
-                  })}
+                        ) : null}
+                      </>
+                    )}
+                  />
                 </div>
               </div>
               <div className="run-controls">
@@ -1467,6 +1407,32 @@ export function Dashboard() {
         </section>
         )}
       </div>
+
+      <footer className="status-bar">
+        {sel?.branch ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--txl)" strokeWidth="2" aria-hidden>
+              <circle cx="6" cy="6" r="3" />
+              <circle cx="6" cy="18" r="3" />
+              <path d="M6 9v6" />
+              <circle cx="18" cy="6" r="3" />
+              <path d="M18 9a9 9 0 0 1-9 9" />
+            </svg>
+            {sel.branch}
+          </span>
+        ) : null}
+        {sel?.run_code ? (
+          <span style={{ fontFamily: "var(--mono)", color: "var(--txl)" }}>{sel.run_code}</span>
+        ) : null}
+        <span className="status-bar-live">
+          <span className="status-bar-live-dot" />
+          agents online
+        </span>
+        <div style={{ flex: 1 }} />
+        <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}>
+          {sel?.workflow_template_slug || "truth layer · execution output"}
+        </span>
+      </footer>
 
       <UpdateStateModal
         open={stateModalOpen}

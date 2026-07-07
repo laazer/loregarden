@@ -1,4 +1,74 @@
-import type { WorkflowStageView } from "../api/client";
+import type { StageStatus, WorkflowStageView } from "../api/client";
+
+export interface StageStatusMeta {
+  label: string;
+  dot: string;
+  dotFill: string;
+  pillBg: string;
+  pillFg: string;
+  nameColor: string;
+  dotAnimation?: string;
+  pillAnimation?: string;
+}
+
+const STAGE_STATUS_META: Record<StageStatus, StageStatusMeta> = {
+  pending: {
+    label: "Idle",
+    dot: "#39424e",
+    dotFill: "var(--bg0)",
+    pillBg: "rgba(255,255,255,0.04)",
+    pillFg: "var(--txl)",
+    nameColor: "var(--txm)",
+  },
+  running: {
+    label: "Running",
+    dot: "var(--blue)",
+    dotFill: "var(--blue)",
+    pillBg: "rgba(75,155,255,0.15)",
+    pillFg: "var(--bll)",
+    nameColor: "var(--tx)",
+    dotAnimation: "workflow-ring 1.8s ease-out infinite",
+    pillAnimation: "pulse 1.8s ease-in-out infinite",
+  },
+  blocked: {
+    label: "Blocked",
+    dot: "var(--red)",
+    dotFill: "var(--red)",
+    pillBg: "rgba(255,106,84,0.15)",
+    pillFg: "var(--rdl)",
+    nameColor: "var(--tx)",
+    pillAnimation: "pulse 1.8s ease-in-out infinite",
+  },
+  awaiting: {
+    label: "Awaiting",
+    dot: "var(--amb)",
+    dotFill: "var(--amb)",
+    pillBg: "rgba(229,167,44,0.16)",
+    pillFg: "var(--aml)",
+    nameColor: "var(--tx)",
+    pillAnimation: "pulse 1.8s ease-in-out infinite",
+  },
+  done: {
+    label: "Done",
+    dot: "var(--grn)",
+    dotFill: "var(--grn)",
+    pillBg: "rgba(53,196,106,0.14)",
+    pillFg: "var(--grl)",
+    nameColor: "var(--txm)",
+  },
+  wont_do: {
+    label: "Won't do",
+    dot: "var(--amb)",
+    dotFill: "transparent",
+    pillBg: "rgba(229,167,44,0.12)",
+    pillFg: "var(--aml)",
+    nameColor: "var(--txm)",
+  },
+};
+
+export function stageStatusMeta(status: StageStatus): StageStatusMeta {
+  return STAGE_STATUS_META[status];
+}
 
 export function isDoneStage(stage: WorkflowStageView): boolean {
   return stage.key === "done";

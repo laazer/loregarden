@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as apiClient from '../api/client';
+import { IconCloseButton } from './IconCloseButton';
 
 export interface TicketDetailsSaveDraft {
   title: string;
@@ -153,9 +154,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
             )}
             <p id="modal-description" className="modal-subtitle">{asDisplayString(ticket?.external_id)}</p>
           </div>
-          <button type="button" className="btn-secondary" onClick={onClose} disabled={isSaving} aria-label="Close ticket details">
-            ✕
-          </button>
+          <IconCloseButton onClick={onClose} disabled={isSaving} aria-label="Close ticket details" />
         </div>
 
         <div className="modal-body">

@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../api/client";
 import { AppTopbarActions } from "../components/AppTopbarActions";
-import { BrandMark } from "../components/BrandMark";
 import { CodeEditor } from "../components/editor/CodeEditor";
 import { EditorFileExplorer } from "../components/editor/EditorFileExplorer";
 import { GitRefSwitcher } from "../components/editor/GitRefSwitcher";
@@ -90,17 +89,19 @@ export function EditorPage() {
   const activeWorkspace = workspaces.data?.find((ws) => ws.slug === workspaceSlug);
 
   return (
-    <div className="app-shell editor-page">
-      <header className="topbar editor-topbar">
-        <div className="brand">
-          <BrandMark />
-          <div>
-            <div className="brand-title">File Editor</div>
-            <div className="brand-sub">Browse, view, and edit workspace files</div>
+    <div className="screen-view screen-view--editor editor-page">
+      <header className="page-hero-header editor-topbar">
+        <div className="page-hero-copy">
+          <div className="page-hero-eyebrow">
+            <span>Console</span>
+            <span className="page-hero-eyebrow-dot" aria-hidden />
+            <span className="page-hero-eyebrow-muted">File Editor</span>
           </div>
+          <h1 className="page-hero-title">File Editor</h1>
+          <p className="page-hero-sub">Browse, view, and edit workspace files</p>
         </div>
 
-        <div className="topbar-center">
+        <div className="page-hero-actions">
           <label className="editor-workspace-picker">
             <span>Workspace</span>
             <select
@@ -130,11 +131,8 @@ export function EditorPage() {
           />
 
           {saveMessage ? <span className="editor-save-status">{saveMessage}</span> : null}
+          <AppTopbarActions />
         </div>
-
-        <div className="topbar-spacer" />
-
-        <AppTopbarActions />
       </header>
 
       <div className="editor-layout">

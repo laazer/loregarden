@@ -11,12 +11,12 @@ import {
   type StudioWorkflowStage,
 } from "../api/client";
 import { AppTopbarActions } from "../components/AppTopbarActions";
-import { BrandMark } from "../components/BrandMark";
 import { AgentPreviewPanel } from "../components/studio/AgentPreviewPanel";
 import { StageRouteHints } from "../components/StageRouteHints";
 import { McpToolGuideSection } from "../components/studio/McpToolGuideSection";
 import { GateHandoffEditor } from "../components/studio/GateHandoffEditor";
 import { TicketStudioPanel } from "../components/studio/TicketStudioPanel";
+import { WorkflowPreviewPanel } from "../components/studio/WorkflowPreviewPanel";
 
 const ADAPTERS = [
   { id: "claude", label: "Claude Code" },
@@ -56,9 +56,28 @@ function emptyStage(order: number): StudioWorkflowStage {
   };
 }
 
+function agentCategory(agent: StudioAgent): { label: string; className: string } {
+  if (!agent.built_in) return { label: "Custom", className: "custom" };
+  const slug = agent.slug.toLowerCase();
+  if (slug.includes("plan")) return { label: "Planning", className: "planning" };
+  if (slug.includes("review")) return { label: "Review", className: "review" };
+  if (slug.includes("implement") || slug.includes("coder") || slug.includes("backend") || slug.includes("frontend")) {
+    return { label: "Implementation", className: "implementation" };
+  }
+  if (slug.includes("test") || slug.includes("qa")) return { label: "Testing", className: "testing" };
+  return { label: "Agent", className: "default" };
+}
+
+function stageTypeClass(type: StudioWorkflowStage["stage_type"]): string {
+  if (type === "classify") return "classify";
+  if (type === "gate") return "gate";
+  return "agent";
+}
+
 export function StudioPage() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<"agents" | "workflows" | "tickets">("agents");
+  const [layoutMode, setLayoutMode] = useState<"workbench" | "focus">("workbench");
   const [selectedAgentSlug, setSelectedAgentSlug] = useState<string | null>(null);
   const [selectedWorkflowSlug, setSelectedWorkflowSlug] = useState<string | null>(null);
   const [agentDraft, setAgentDraft] = useState({ ...EMPTY_AGENT });
@@ -308,151 +327,213 @@ export function StudioPage() {
   };
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <BrandMark />
-          <div>
-            <div className="brand-title">Studios</div>
-            <div className="brand-sub">Agents, workflows, and feature scoping</div>
+    <div className="screen-view screen-view--studio">
+      <header className="page-hero-header">
+        <div className="page-hero-copy">
+          <div className="page-hero-eyebrow">
+            <span>Studios</span>
+            <span className="page-hero-eyebrow-dot" aria-hidden />
+            <span className="page-hero-eyebrow-muted">Agents · Workflows · Scoping</span>
           </div>
+          <h1 className="page-hero-title">
+            {tab === "agents" ? "Agent Studio" : tab === "workflows" ? "Workflow Studio" : "Ticket Studio"}
+          </h1>
+          <p className="page-hero-sub">
+            {tab === "agents"
+              ? "Define role instructions, MCP tools, gates, and handoff rules."
+              : tab === "workflows"
+                ? "Chain agents together with classify steps, gates, and human approvals."
+                : "Chat with the scoper to refine scope and generate draft tickets."}
+          </p>
         </div>
-        <div className="topbar-spacer" />
-        <AppTopbarActions />
-      </header>
-
-      <div style={{ display: "flex", gap: 0, flex: 1, minHeight: 0 }}>
-        <aside
-          style={{
-            width: 240,
-            borderRight: "1px solid var(--bd)",
-            background: "var(--bg1)",
-            padding: 12,
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-          }}
-        >
-          <button
-            type="button"
-            className={`list-btn ${tab === "agents" ? "active" : ""}`}
-            onClick={() => setTab("agents")}
-          >
-            Agent Studio
-          </button>
-          <button
-            type="button"
-            className={`list-btn ${tab === "workflows" ? "active" : ""}`}
-            onClick={() => setTab("workflows")}
-          >
-            Workflow Studio
-          </button>
-          <button
-            type="button"
-            className={`list-btn ${tab === "tickets" ? "active" : ""}`}
-            onClick={() => setTab("tickets")}
-          >
-            Ticket Studio
-          </button>
-        </aside>
-
-        {tab === "tickets" ? (
-          <TicketStudioPanel
-            workspaces={workspaces.data ?? []}
-            runtimeOptions={runtimeOptions.data}
-          />
-        ) : tab === "agents" ? (
-          <>
-            <aside
-              style={{
-                width: 260,
-                borderRight: "1px solid var(--bd)",
-                background: "var(--bg0)",
-                padding: 12,
-                overflow: "auto",
-              }}
-            >
-              <div className="state-label" style={{ marginBottom: 8 }}>
-                Custom agents
-              </div>
+        <div className="page-hero-actions">
+          {(tab === "agents" || tab === "workflows") && (
+            <div className="studio-layout-toggle" role="group" aria-label="Layout mode">
               <button
                 type="button"
-                className="btn-primary"
-                style={{ width: "100%", marginBottom: 10 }}
-                onClick={startNewAgent}
+                className={layoutMode === "workbench" ? "active" : ""}
+                onClick={() => setLayoutMode("workbench")}
               >
-                + New agent
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                  <rect x="3" y="3" width="6" height="18" rx="1.5" />
+                  <rect x="11" y="3" width="10" height="10" rx="1.5" />
+                  <rect x="11" y="15" width="10" height="6" rx="1.5" />
+                </svg>
+                Workbench
               </button>
-              {customAgents.map((agent) => (
-                <button
-                  key={agent.slug}
-                  type="button"
-                  className={`list-btn ${selectedAgentSlug === agent.slug ? "active" : ""}`}
-                  onClick={() => setSelectedAgentSlug(agent.slug)}
-                  style={{ marginBottom: 6, textAlign: "left" }}
-                >
-                  <div style={{ fontWeight: 600 }}>{agent.name}</div>
-                  <div style={{ fontSize: 10.5, color: "var(--txl)", fontFamily: "var(--mono)" }}>{agent.slug}</div>
-                </button>
-              ))}
+              <button
+                type="button"
+                className={layoutMode === "focus" ? "active" : ""}
+                onClick={() => setLayoutMode("focus")}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                  <rect x="3" y="3" width="12" height="18" rx="1.5" />
+                  <rect x="17" y="3" width="4" height="18" rx="1.5" />
+                </svg>
+                Focus
+              </button>
+            </div>
+          )}
+          <AppTopbarActions />
+        </div>
+      </header>
 
-              <div className="state-label" style={{ margin: "14px 0 8px" }}>
-                Built-in agents
-              </div>
-              {builtinAgents.map((agent) => (
-                <button
-                  key={agent.slug}
-                  type="button"
-                  className={`list-btn ${selectedAgentSlug === agent.slug ? "active" : ""}`}
-                  onClick={() => setSelectedAgentSlug(agent.slug)}
-                  style={{ marginBottom: 6, textAlign: "left" }}
-                >
-                  <div style={{ fontWeight: 600 }}>{agent.name}</div>
-                  <div style={{ fontSize: 10.5, color: "var(--txl)", fontFamily: "var(--mono)" }}>{agent.slug}</div>
-                </button>
-              ))}
-            </aside>
+      <div className="studio-subtabs" role="tablist" aria-label="Studio sections">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "agents"}
+          className={`studio-subtab${tab === "agents" ? " active" : ""}`}
+          onClick={() => setTab("agents")}
+        >
+          Agent Studio
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "workflows"}
+          className={`studio-subtab${tab === "workflows" ? " active" : ""}`}
+          onClick={() => setTab("workflows")}
+        >
+          Workflow Studio
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "tickets"}
+          className={`studio-subtab${tab === "tickets" ? " active" : ""}`}
+          onClick={() => setTab("tickets")}
+        >
+          Ticket Studio
+        </button>
+      </div>
 
-            <main style={{ flex: 1, overflow: "auto", padding: 20, minWidth: 0 }}>
-              <h2 style={{ margin: "0 0 6px", fontFamily: "var(--dp)" }}>
-                {isAgentReadOnly ? "Built-in agent" : selectedAgentSlug ? "Edit agent" : "Create agent"}
-              </h2>
-              <p className="modal-hint" style={{ marginTop: 0, marginBottom: 16 }}>
-                {isAgentReadOnly
-                  ? "Read-only registry agent. Duplicate to customize MCP tools, gates, and handoffs."
-                  : "Define role instructions, Loregarden MCP tool access, gate checks, and handoff rules."}
-              </p>
+      <div className="studio-body">
+        {tab === "tickets" ? (
+          <div className="studio-shell">
+            <TicketStudioPanel
+              workspaces={workspaces.data ?? []}
+              runtimeOptions={runtimeOptions.data}
+            />
+          </div>
+        ) : tab === "agents" ? (
+          <div className="studio-shell">
+            {layoutMode === "workbench" && (
+              <aside className="studio-library-rail">
+                <button type="button" className="studio-library-cta" onClick={startNewAgent}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  New agent
+                </button>
+                {customAgents.length > 0 && (
+                  <>
+                    <div className="studio-library-section-label">Custom agents</div>
+                    <div className="studio-library-list" style={{ marginBottom: 14 }}>
+                      {customAgents.map((agent) => {
+                        const cat = agentCategory(agent);
+                        return (
+                          <button
+                            key={agent.slug}
+                            type="button"
+                            className={`studio-library-item${selectedAgentSlug === agent.slug ? " active" : ""}`}
+                            onClick={() => setSelectedAgentSlug(agent.slug)}
+                          >
+                            <span className="studio-library-item-name">{agent.name}</span>
+                            <div className="studio-library-item-meta">
+                              <span className={`studio-library-item-cat ${cat.className}`}>{cat.label}</span>
+                              <span className="studio-library-item-slug">{agent.slug}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+                <div className="studio-library-section-label">Built-in agents</div>
+                <div className="studio-library-list">
+                  {builtinAgents.map((agent) => {
+                    const cat = agentCategory(agent);
+                    return (
+                      <button
+                        key={agent.slug}
+                        type="button"
+                        className={`studio-library-item${selectedAgentSlug === agent.slug ? " active" : ""}`}
+                        onClick={() => setSelectedAgentSlug(agent.slug)}
+                      >
+                        <span className="studio-library-item-name">{agent.name}</span>
+                        <div className="studio-library-item-meta">
+                          <span className={`studio-library-item-cat ${cat.className}`}>{cat.label}</span>
+                          <span className="studio-library-item-slug">{agent.slug}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </aside>
+            )}
+
+            <div className="studio-editor">
+              <div className="studio-editor-inner studio-editor-inner--agent">
+              {layoutMode === "focus" && (
+                <div className="studio-focus-chips">
+                  <button type="button" className="studio-focus-chip-new" onClick={startNewAgent}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                      <path d="M12 5v14M5 12h14" />
+                    </svg>
+                    New
+                  </button>
+                  {[...customAgents, ...builtinAgents].map((agent) => (
+                    <button
+                      key={agent.slug}
+                      type="button"
+                      className={`studio-focus-chip${selectedAgentSlug === agent.slug ? " active" : ""}`}
+                      onClick={() => setSelectedAgentSlug(agent.slug)}
+                    >
+                      {agent.name}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {isAgentReadOnly && selectedAgent && (
-                <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <button type="button" className="btn-secondary" onClick={() => duplicateAgent(selectedAgent)}>
                     Duplicate to custom
                   </button>
                   {selectedAgent.role_file && (
-                    <span style={{ fontSize: 11, color: "var(--txl)", alignSelf: "center", fontFamily: "var(--mono)" }}>
+                    <span style={{ fontSize: 11, color: "var(--txl)", fontFamily: "var(--mono)" }}>
                       {selectedAgent.role_file}
                     </span>
                   )}
                 </div>
               )}
 
-              <div className="modal-body" style={{ padding: 0, maxWidth: 860 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div className="modal-field">
-                    <div className="modal-field-label">Name</div>
+              <div className="studio-card">
+                <div className="studio-card-header">
+                  <span className="studio-card-icon teal" aria-hidden>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="8" r="4" />
+                      <path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1" />
+                    </svg>
+                  </span>
+                  <span className="studio-card-title">Identity</span>
+                </div>
+                <div className="studio-field-row">
+                  <div className="studio-field">
+                    <div className="studio-field-label">Name</div>
                     <input
-                      className="btn-secondary"
-                      style={{ width: "100%", boxSizing: "border-box" }}
+                      className="studio-input"
                       value={isAgentReadOnly ? selectedAgent?.name ?? "" : agentDraft.name}
                       readOnly={isAgentReadOnly}
+                      placeholder="e.g. Localization Reviewer"
                       onChange={(e) => setAgentDraft({ ...agentDraft, name: e.target.value })}
                     />
                   </div>
-                  <div className="modal-field">
-                    <div className="modal-field-label">Slug</div>
+                  <div className="studio-field">
+                    <div className="studio-field-label">Slug</div>
                     <input
-                      className="btn-secondary"
-                      style={{ width: "100%", boxSizing: "border-box" }}
+                      className="studio-input mono"
                       value={isAgentReadOnly ? selectedAgent?.slug ?? "" : agentDraft.slug}
                       placeholder="auto from name"
                       readOnly={isAgentReadOnly}
@@ -460,36 +541,53 @@ export function StudioPage() {
                     />
                   </div>
                 </div>
-
-                <div className="modal-field">
-                  <div className="modal-field-label">Description</div>
+                <div className="studio-field">
+                  <div className="studio-field-label">Description</div>
                   <input
-                    className="btn-secondary"
-                    style={{ width: "100%", boxSizing: "border-box" }}
+                    className="studio-input"
                     value={isAgentReadOnly ? selectedAgent?.description ?? "" : agentDraft.description}
                     readOnly={isAgentReadOnly}
+                    placeholder="One line — when should the orchestrator reach for this agent?"
                     onChange={(e) => setAgentDraft({ ...agentDraft, description: e.target.value })}
                   />
                 </div>
+              </div>
 
-                <div className="modal-field">
-                  <div className="modal-field-label">Role instructions</div>
-                  <textarea
-                    className="btn-secondary"
-                    style={{ width: "100%", minHeight: 160, boxSizing: "border-box", fontSize: 12.5 }}
-                    value={isAgentReadOnly ? selectedAgent?.role_body ?? "" : agentDraft.role_body}
-                    readOnly={isAgentReadOnly}
-                    onChange={(e) => setAgentDraft({ ...agentDraft, role_body: e.target.value })}
-                    placeholder="What this agent does, constraints, and output expectations…"
-                  />
+              <div className="studio-card">
+                <div className="studio-card-header tight">
+                  <span className="studio-card-icon violet" aria-hidden>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 3a3 3 0 0 0-3 3v1a3 3 0 0 0-3 3 3 3 0 0 0 1 5.8V18a3 3 0 0 0 5 2 3 3 0 0 0 5-2v-2.2A3 3 0 0 0 18 10a3 3 0 0 0-3-3V6a3 3 0 0 0-3-3z" />
+                    </svg>
+                  </span>
+                  <span className="studio-card-title">Role instructions</span>
                 </div>
+                <p className="studio-card-hint">
+                  What this agent does, its constraints, and its output expectations. This becomes the system prompt.
+                </p>
+                <textarea
+                  className="studio-textarea"
+                  value={isAgentReadOnly ? selectedAgent?.role_body ?? "" : agentDraft.role_body}
+                  readOnly={isAgentReadOnly}
+                  onChange={(e) => setAgentDraft({ ...agentDraft, role_body: e.target.value })}
+                  placeholder="Review the staged diff against the ticket's acceptance criteria…"
+                />
+              </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-                  <div className="modal-field">
-                    <div className="modal-field-label">Provider</div>
+              <div className="studio-card">
+                <div className="studio-card-header">
+                  <span className="studio-card-icon blue" aria-hidden>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M13 2 3 14h9l-1 8 10-12h-9z" />
+                    </svg>
+                  </span>
+                  <span className="studio-card-title">Runtime</span>
+                </div>
+                <div className="studio-field-row" style={{ marginBottom: 0 }}>
+                  <div className="studio-field" style={{ flex: 1.3 }}>
+                    <div className="studio-field-label">Provider</div>
                     <select
-                      className="btn-secondary filter-select"
-                      style={{ width: "100%" }}
+                      className="studio-select"
                       value={isAgentReadOnly ? selectedAgent?.adapter ?? "claude" : agentDraft.adapter}
                       disabled={isAgentReadOnly}
                       onChange={(e) => setAgentDraft({ ...agentDraft, adapter: e.target.value })}
@@ -501,11 +599,10 @@ export function StudioPage() {
                       ))}
                     </select>
                   </div>
-                  <div className="modal-field">
-                    <div className="modal-field-label">Default skill</div>
+                  <div className="studio-field">
+                    <div className="studio-field-label">Default skill</div>
                     <select
-                      className="btn-secondary filter-select"
-                      style={{ width: "100%" }}
+                      className="studio-select mono"
                       value={isAgentReadOnly ? selectedAgent?.default_skill ?? "" : agentDraft.default_skill}
                       disabled={isAgentReadOnly}
                       onChange={(e) => setAgentDraft({ ...agentDraft, default_skill: e.target.value })}
@@ -518,152 +615,180 @@ export function StudioPage() {
                       ))}
                     </select>
                   </div>
-                  <div className="modal-field">
-                    <div className="modal-field-label">Timeout (sec)</div>
+                  <div className="studio-field" style={{ flex: 0.8 }}>
+                    <div className="studio-field-label">Timeout (s)</div>
                     <input
                       type="number"
-                      className="btn-secondary"
-                      style={{ width: "100%", boxSizing: "border-box" }}
+                      className="studio-input mono"
                       value={isAgentReadOnly ? selectedAgent?.timeout ?? 600 : agentDraft.timeout}
                       readOnly={isAgentReadOnly}
                       onChange={(e) => setAgentDraft({ ...agentDraft, timeout: Number(e.target.value) || 600 })}
                     />
                   </div>
                 </div>
+              </div>
 
-                {!isAgentReadOnly && (
-                  <McpToolGuideSection
-                    guides={mcpGuides.data ?? []}
-                    enabled={agentDraft.mcp_enabled}
-                    selected={agentDraft.mcp_tools}
-                    onToggleEnabled={(enabled) =>
-                      setAgentDraft({
-                        ...agentDraft,
-                        mcp_enabled: enabled,
-                        mcp_tools: enabled ? studioDefaults.data?.mcp_tools ?? agentDraft.mcp_tools : [],
-                      })
-                    }
-                    onToggleTool={toggleMcpTool}
-                  />
-                )}
+              {!isAgentReadOnly ? (
+                <McpToolGuideSection
+                  variant="studio"
+                  guides={mcpGuides.data ?? []}
+                  enabled={agentDraft.mcp_enabled}
+                  selected={agentDraft.mcp_tools}
+                  onToggleEnabled={(enabled) =>
+                    setAgentDraft({
+                      ...agentDraft,
+                      mcp_enabled: enabled,
+                      mcp_tools: enabled ? studioDefaults.data?.mcp_tools ?? agentDraft.mcp_tools : [],
+                    })
+                  }
+                  onToggleTool={toggleMcpTool}
+                />
+              ) : selectedAgent?.mcp_enabled ? (
+                <div className="studio-card">
+                  <div className="studio-card-header">
+                    <span className="studio-card-title">Enabled MCP tools</span>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {selectedAgent.mcp_tools.map((tool) => (
+                      <span key={tool} className="studio-preview-chip">
+                        {tool}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
-                {isAgentReadOnly && selectedAgent?.mcp_enabled && (
-                  <section style={{ marginTop: 16 }}>
-                    <div className="modal-section-title">Enabled MCP tools</div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                      {selectedAgent.mcp_tools.map((tool) => (
-                        <span key={tool} className="state-card" style={{ padding: "4px 8px", fontFamily: "var(--mono)", fontSize: 10.5 }}>
-                          {tool}
-                        </span>
-                      ))}
-                    </div>
-                  </section>
-                )}
-
-                {!isAgentReadOnly && (
+              {!isAgentReadOnly && (
+                <div className="studio-card">
                   <GateHandoffEditor
                     gateChecks={agentDraft.gate_checks}
                     handoffChecks={agentDraft.handoff_checks}
                     onChange={(gate_checks, handoff_checks) => setAgentDraft({ ...agentDraft, gate_checks, handoff_checks })}
                   />
-                )}
+                </div>
+              )}
 
-                {!isAgentReadOnly && (
-                  <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+              {!isAgentReadOnly && (
+                <div className="studio-card-actions">
+                  {isEditingCustomAgent && (
                     <button
                       type="button"
-                      className="btn-primary"
-                      disabled={!agentDraft.name.trim() || saveAgent.isPending}
-                      onClick={() => saveAgent.mutate()}
+                      className="btn-secondary"
+                      disabled={deleteAgent.isPending}
+                      onClick={() => deleteAgent.mutate(selectedAgentSlug!)}
                     >
-                      {saveAgent.isPending ? "Saving…" : isEditingCustomAgent ? "Save agent" : "Create agent"}
+                      Delete
                     </button>
-                    {isEditingCustomAgent && (
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        disabled={deleteAgent.isPending}
-                        onClick={() => deleteAgent.mutate(selectedAgentSlug!)}
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </div>
-                )}
+                  )}
+                  <button
+                    type="button"
+                    className="btn-primary btn-cta"
+                    disabled={!agentDraft.name.trim() || saveAgent.isPending}
+                    onClick={() => saveAgent.mutate()}
+                  >
+                    {saveAgent.isPending ? "Saving…" : isEditingCustomAgent ? "Save agent" : "Create agent"}
+                  </button>
+                </div>
+              )}
               </div>
-            </main>
+            </div>
 
-            <AgentPreviewPanel preview={agentPreview.data} loading={agentPreview.isFetching} />
-          </>
+            <AgentPreviewPanel
+              preview={agentPreview.data}
+              loading={agentPreview.isFetching}
+              slug={isAgentReadOnly ? selectedAgent?.slug : agentDraft.slug || selectedAgentSlug || undefined}
+            />
+          </div>
         ) : (
-          <>
-            <aside
-              style={{
-                width: 260,
-                borderRight: "1px solid var(--bd)",
-                background: "var(--bg0)",
-                padding: 12,
-                overflow: "auto",
-              }}
-            >
-              <div className="state-label" style={{ marginBottom: 8 }}>
-                Custom workflows
-              </div>
-              <button
-                type="button"
-                className="btn-primary"
-                style={{ width: "100%", marginBottom: 10 }}
-                onClick={() => {
-                  setSelectedWorkflowSlug(null);
-                  setWorkflowDraft({ slug: "", name: "", description: "", stages: [emptyStage(1)] });
-                }}
-              >
-                + New workflow
-              </button>
-              {customWorkflows.map((workflow) => (
+          <div className="studio-shell">
+            {layoutMode === "workbench" && (
+              <aside className="studio-library-rail">
                 <button
-                  key={workflow.slug}
                   type="button"
-                  className={`list-btn ${selectedWorkflowSlug === workflow.slug ? "active" : ""}`}
-                  onClick={() => setSelectedWorkflowSlug(workflow.slug)}
-                  style={{ marginBottom: 6, textAlign: "left" }}
+                  className="studio-library-cta"
+                  onClick={() => {
+                    setSelectedWorkflowSlug(null);
+                    setWorkflowDraft({ slug: "", name: "", description: "", stages: [emptyStage(1)] });
+                  }}
                 >
-                  <div style={{ fontWeight: 600 }}>{workflow.name}</div>
-                  <div style={{ fontSize: 10.5, color: "var(--txl)", fontFamily: "var(--mono)" }}>
-                    {workflow.published_template_slug || workflow.slug}
-                  </div>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  New workflow
                 </button>
-              ))}
+                {customWorkflows.length > 0 && (
+                  <>
+                    <div className="studio-library-section-label">Custom workflows</div>
+                    <div className="studio-library-list" style={{ marginBottom: 14 }}>
+                      {customWorkflows.map((workflow) => (
+                        <button
+                          key={workflow.slug}
+                          type="button"
+                          className={`studio-library-item${selectedWorkflowSlug === workflow.slug ? " active" : ""}`}
+                          onClick={() => setSelectedWorkflowSlug(workflow.slug)}
+                        >
+                          <span className="studio-library-item-name">{workflow.name}</span>
+                          <div className="studio-library-item-meta">
+                            <span className="studio-library-item-slug">
+                              {workflow.published_template_slug || workflow.slug}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                <div className="studio-library-section-label">Built-in workflows</div>
+                <div className="studio-library-list">
+                  {builtinWorkflows.map((workflow) => (
+                    <button
+                      key={workflow.slug}
+                      type="button"
+                      className={`studio-library-item${selectedWorkflowSlug === workflow.slug ? " active" : ""}`}
+                      onClick={() => setSelectedWorkflowSlug(workflow.slug)}
+                    >
+                      <span className="studio-library-item-name">{workflow.name}</span>
+                      <div className="studio-library-item-meta">
+                        <span className="studio-library-item-slug">{workflow.slug}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </aside>
+            )}
 
-              <div className="state-label" style={{ margin: "14px 0 8px" }}>
-                Built-in workflows
-              </div>
-              {builtinWorkflows.map((workflow) => (
-                <button
-                  key={workflow.slug}
-                  type="button"
-                  className={`list-btn ${selectedWorkflowSlug === workflow.slug ? "active" : ""}`}
-                  onClick={() => setSelectedWorkflowSlug(workflow.slug)}
-                  style={{ marginBottom: 6, textAlign: "left" }}
-                >
-                  <div style={{ fontWeight: 600 }}>{workflow.name}</div>
-                  <div style={{ fontSize: 10.5, color: "var(--txl)", fontFamily: "var(--mono)" }}>{workflow.slug}</div>
-                </button>
-              ))}
-            </aside>
-
-            <main style={{ flex: 1, overflow: "auto", padding: 20 }}>
-              <h2 style={{ margin: "0 0 6px", fontFamily: "var(--dp)" }}>
-                {isWorkflowReadOnly ? "Built-in workflow" : selectedWorkflowSlug ? "Edit workflow" : "Create workflow"}
-              </h2>
-              <p className="modal-hint" style={{ marginTop: 0, marginBottom: 16 }}>
-                {isWorkflowReadOnly
-                  ? "Read-only template. Duplicate to customize stages, classify routes, and gates."
-                  : "Chain agents together. Add classify steps to route by language and specialty."}
-              </p>
+            <div className="studio-editor">
+              <div className="studio-editor-inner studio-editor-inner--workflow">
+              {layoutMode === "focus" && (
+                <div className="studio-focus-chips">
+                  <button
+                    type="button"
+                    className="studio-focus-chip-new"
+                    onClick={() => {
+                      setSelectedWorkflowSlug(null);
+                      setWorkflowDraft({ slug: "", name: "", description: "", stages: [emptyStage(1)] });
+                    }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                      <path d="M12 5v14M5 12h14" />
+                    </svg>
+                    New
+                  </button>
+                  {[...customWorkflows, ...builtinWorkflows].map((workflow) => (
+                    <button
+                      key={workflow.slug}
+                      type="button"
+                      className={`studio-focus-chip${selectedWorkflowSlug === workflow.slug ? " active" : ""}`}
+                      onClick={() => setSelectedWorkflowSlug(workflow.slug)}
+                    >
+                      {workflow.name}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {isWorkflowReadOnly && selectedWorkflow && (
-                <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center" }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <button type="button" className="btn-secondary" onClick={() => duplicateWorkflow(selectedWorkflow)}>
                     Duplicate to custom
                   </button>
@@ -675,331 +800,363 @@ export function StudioPage() {
                 </div>
               )}
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, maxWidth: 860 }}>
-                <div className="modal-field">
-                  <div className="modal-field-label">Name</div>
-                  <input
-                    className="btn-secondary"
-                    style={{ width: "100%", boxSizing: "border-box" }}
-                    value={workflowDraft.name}
-                    readOnly={isWorkflowReadOnly}
-                    onChange={(e) => setWorkflowDraft({ ...workflowDraft, name: e.target.value })}
-                  />
+              <div className="studio-card">
+                <div className="studio-card-header">
+                  <span className="studio-card-icon teal" aria-hidden>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="6" cy="6" r="2.5" />
+                      <circle cx="6" cy="18" r="2.5" />
+                      <path d="M6 8.5v7M18 6H9M18 6a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18 6v6a6 6 0 0 1-6 6" />
+                    </svg>
+                  </span>
+                  <span className="studio-card-title">Workflow identity</span>
                 </div>
-                <div className="modal-field">
-                  <div className="modal-field-label">Slug</div>
-                  <input
-                    className="btn-secondary"
-                    style={{ width: "100%", boxSizing: "border-box" }}
-                    value={workflowDraft.slug}
-                    placeholder="auto from name"
-                    readOnly={isWorkflowReadOnly}
-                    onChange={(e) => setWorkflowDraft({ ...workflowDraft, slug: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div className="modal-field" style={{ maxWidth: 860 }}>
-                <div className="modal-field-label">Description</div>
-                <input
-                  className="btn-secondary"
-                  style={{ width: "100%", boxSizing: "border-box" }}
-                  value={workflowDraft.description}
-                  readOnly={isWorkflowReadOnly}
-                  onChange={(e) => setWorkflowDraft({ ...workflowDraft, description: e.target.value })}
-                />
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "16px 0 10px" }}>
-                <div className="modal-section-title" style={{ margin: 0 }}>
-                  Stages
-                </div>
-                {!isWorkflowReadOnly && (
-                  <button
-                    type="button"
-                    className="btn-secondary btn-compact"
-                    onClick={() =>
-                      setWorkflowDraft((draft) => ({
-                        ...draft,
-                        stages: [...draft.stages, emptyStage(draft.stages.length + 1)],
-                      }))
-                    }
-                  >
-                    + Add stage
-                  </button>
-                )}
-              </div>
-
-              {workflowDraft.stages.map((stage, index) => (
-                <div key={`${stage.key}-${index}`} className="state-card" style={{ marginBottom: 12, maxWidth: 920 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-                    <div className="modal-field">
-                      <div className="modal-field-label">Stage key</div>
-                      <input
-                        className="btn-secondary"
-                        style={{ width: "100%", boxSizing: "border-box" }}
-                        value={stage.key}
-                        readOnly={isWorkflowReadOnly}
-                        onChange={(e) => updateStage(index, { key: e.target.value })}
-                      />
-                    </div>
-                    <div className="modal-field">
-                      <div className="modal-field-label">Label</div>
-                      <input
-                        className="btn-secondary"
-                        style={{ width: "100%", boxSizing: "border-box" }}
-                        value={stage.name}
-                        readOnly={isWorkflowReadOnly}
-                        onChange={(e) => updateStage(index, { name: e.target.value })}
-                      />
-                    </div>
-                    <div className="modal-field">
-                      <div className="modal-field-label">Step type</div>
-                      <select
-                        className="btn-secondary filter-select"
-                        style={{ width: "100%" }}
-                        value={stage.stage_type}
-                        disabled={isWorkflowReadOnly}
-                        onChange={(e) =>
-                          updateStage(index, {
-                            stage_type: e.target.value as StudioWorkflowStage["stage_type"],
-                            classify_routes:
-                              e.target.value === "classify" && stage.classify_routes.length === 0
-                                ? [
-                                    {
-                                      languages: ["python"],
-                                      specialties: ["backend"],
-                                      agent_id: "backend_implementer",
-                                      skill_name: "apply_patch",
-                                      default: true,
-                                    },
-                                  ]
-                                : stage.classify_routes,
-                          })
-                        }
-                      >
-                        <option value="agent">Agent</option>
-                        <option value="classify">Classify & route</option>
-                        <option value="gate">Gate / review</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {selectedWorkflow?.transitions?.length ? (
-                    <StageRouteHints
-                      stage={{
-                        key: stage.key,
-                        name: stage.name,
-                        status: "pending",
-                        order: stage.order,
-                        agent_id: stage.agent_id,
-                        skill_name: stage.skill_name,
-                        optional: stage.optional,
-                        note: "",
-                        stage_type: stage.stage_type,
-                        agents: [],
-                      }}
-                      transitions={selectedWorkflow.transitions}
-                      stages={workflowDraft.stages.map((item, stageIndex) => ({
-                        key: item.key,
-                        name: item.name,
-                        status: "pending" as const,
-                        order: item.order || stageIndex + 1,
-                        agent_id: item.agent_id,
-                        skill_name: item.skill_name,
-                        optional: item.optional,
-                        note: "",
-                        stage_type: item.stage_type,
-                        agents: [],
-                      }))}
+                <div className="studio-field-row">
+                  <div className="studio-field">
+                    <div className="studio-field-label">Name</div>
+                    <input
+                      className="studio-input"
+                      value={workflowDraft.name}
+                      readOnly={isWorkflowReadOnly}
+                      placeholder="e.g. Hotfix express"
+                      onChange={(e) => setWorkflowDraft({ ...workflowDraft, name: e.target.value })}
                     />
-                  ) : null}
+                  </div>
+                  <div className="studio-field">
+                    <div className="studio-field-label">Slug</div>
+                    <input
+                      className="studio-input mono"
+                      value={workflowDraft.slug}
+                      placeholder="auto from name"
+                      readOnly={isWorkflowReadOnly}
+                      onChange={(e) => setWorkflowDraft({ ...workflowDraft, slug: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="studio-field">
+                  <div className="studio-field-label">Description</div>
+                  <input
+                    className="studio-input"
+                    value={workflowDraft.description}
+                    readOnly={isWorkflowReadOnly}
+                    placeholder="Chain agents together. Add classify steps to route by language and specialty."
+                    onChange={(e) => setWorkflowDraft({ ...workflowDraft, description: e.target.value })}
+                  />
+                </div>
+              </div>
 
-                  {stage.stage_type === "agent" || stage.stage_type === "gate" ? (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8 }}>
-                      <div className="modal-field">
-                        <div className="modal-field-label">Agent</div>
-                        <select
-                          className="btn-secondary filter-select"
-                          style={{ width: "100%" }}
-                          value={stage.agent_id}
-                          disabled={isWorkflowReadOnly}
-                          onChange={(e) => updateStage(index, { agent_id: e.target.value })}
-                        >
-                          {agentOptions.map((opt) => (
-                            <option key={opt.id} value={opt.id}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="modal-field">
-                        <div className="modal-field-label">Skill</div>
-                        <select
-                          className="btn-secondary filter-select"
-                          style={{ width: "100%" }}
-                          value={stage.skill_name}
-                          disabled={isWorkflowReadOnly}
-                          onChange={(e) => updateStage(index, { skill_name: e.target.value })}
-                        >
-                          {(skills.data ?? []).map((skill) => (
-                            <option key={skill} value={skill}>
-                              {skill}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ marginTop: 10 }}>
-                      <div className="state-label" style={{ marginBottom: 8 }}>
-                        Classification routes
-                      </div>
-                      {stage.classify_routes.map((route, routeIndex) => (
-                        <div key={routeIndex} style={{ borderTop: "1px solid var(--bd)", paddingTop: 10, marginTop: 10 }}>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                            <div className="modal-field">
-                              <div className="modal-field-label">Languages</div>
-                              <select
-                                multiple
-                                className="btn-secondary filter-select"
-                                style={{ width: "100%", minHeight: 72 }}
-                                value={route.languages}
-                                disabled={isWorkflowReadOnly}
-                                onChange={(e) =>
-                                  updateRoute(
-                                    index,
-                                    routeIndex,
-                                    { languages: Array.from(e.target.selectedOptions, (opt) => opt.value) },
-                                  )
-                                }
-                              >
-                                {LANGUAGE_OPTIONS.map((lang) => (
-                                  <option key={lang} value={lang}>
-                                    {lang}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <div className="modal-field">
-                              <div className="modal-field-label">Specialties</div>
-                              <select
-                                multiple
-                                className="btn-secondary filter-select"
-                                style={{ width: "100%", minHeight: 72 }}
-                                value={route.specialties}
-                                disabled={isWorkflowReadOnly}
-                                onChange={(e) =>
-                                  updateRoute(
-                                    index,
-                                    routeIndex,
-                                    { specialties: Array.from(e.target.selectedOptions, (opt) => opt.value) },
-                                  )
-                                }
-                              >
-                                {SPECIALTY_OPTIONS.map((spec) => (
-                                  <option key={spec} value={spec}>
-                                    {spec}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
+              <div className="studio-card">
+                <div className="studio-card-header">
+                  <span className="studio-card-title">Stages</span>
+                  <span className="studio-stage-count">{workflowDraft.stages.length}</span>
+                  <div style={{ flex: 1 }} />
+                  {!isWorkflowReadOnly && (
+                    <button
+                      type="button"
+                      className="studio-add-stage-btn"
+                      onClick={() =>
+                        setWorkflowDraft((draft) => ({
+                          ...draft,
+                          stages: [...draft.stages, emptyStage(draft.stages.length + 1)],
+                        }))
+                      }
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                      Add stage
+                    </button>
+                  )}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {workflowDraft.stages.map((stage, index) => {
+                    const typeClass = stageTypeClass(stage.stage_type);
+                    const typeLabel =
+                      stage.stage_type === "classify" ? "Classify" : stage.stage_type === "gate" ? "Gate" : "Agent";
+                    return (
+                      <div key={`${stage.key}-${index}`} className={`studio-stage-card ${typeClass}`}>
+                        <div className="studio-stage-header">
+                          <span className="studio-stage-num">{index + 1}</span>
+                          <span style={{ fontFamily: "var(--dp)", fontSize: 13, fontWeight: 600, color: "var(--tx)" }}>
+                            {stage.name || `Stage ${index + 1}`}
+                          </span>
+                          <span className={`studio-stage-type-badge ${typeClass}`}>{typeLabel}</span>
+                          <div style={{ flex: 1 }} />
+                          {!isWorkflowReadOnly && workflowDraft.stages.length > 1 && (
+                            <button
+                              type="button"
+                              className="studio-stage-remove"
+                              aria-label={`Remove stage ${index + 1}`}
+                              onClick={() =>
+                                setWorkflowDraft((draft) => ({
+                                  ...draft,
+                                  stages: draft.stages.filter((_, idx) => idx !== index),
+                                }))
+                              }
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                        <div className="studio-stage-fields">
+                          <div>
+                            <div className="studio-stage-field-label">Stage key</div>
+                            <input
+                              className="studio-stage-input mono"
+                              value={stage.key}
+                              readOnly={isWorkflowReadOnly}
+                              onChange={(e) => updateStage(index, { key: e.target.value })}
+                            />
                           </div>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, marginTop: 8 }}>
+                          <div>
+                            <div className="studio-stage-field-label">Label</div>
+                            <input
+                              className="studio-stage-input"
+                              value={stage.name}
+                              readOnly={isWorkflowReadOnly}
+                              onChange={(e) => updateStage(index, { name: e.target.value })}
+                            />
+                          </div>
+                          <div>
+                            <div className="studio-stage-field-label">Step type</div>
                             <select
-                              className="btn-secondary filter-select"
-                              value={route.agent_id}
+                              className="studio-stage-select"
+                              value={stage.stage_type}
                               disabled={isWorkflowReadOnly}
-                              onChange={(e) => updateRoute(index, routeIndex, { agent_id: e.target.value })}
+                              onChange={(e) =>
+                                updateStage(index, {
+                                  stage_type: e.target.value as StudioWorkflowStage["stage_type"],
+                                  classify_routes:
+                                    e.target.value === "classify" && stage.classify_routes.length === 0
+                                      ? [
+                                          {
+                                            languages: ["python"],
+                                            specialties: ["backend"],
+                                            agent_id: "backend_implementer",
+                                            skill_name: "apply_patch",
+                                            default: true,
+                                          },
+                                        ]
+                                      : stage.classify_routes,
+                                })
+                              }
                             >
-                              {agentOptions.map((opt) => (
-                                <option key={opt.id} value={opt.id}>
-                                  {opt.label}
-                                </option>
-                              ))}
+                              <option value="agent">Agent</option>
+                              <option value="classify">Classify & route</option>
+                              <option value="gate">Gate / review</option>
                             </select>
-                            <select
-                              className="btn-secondary filter-select"
-                              value={route.skill_name}
-                              disabled={isWorkflowReadOnly}
-                              onChange={(e) => updateRoute(index, routeIndex, { skill_name: e.target.value })}
-                            >
-                              {(skills.data ?? []).map((skill) => (
-                                <option key={skill} value={skill}>
-                                  {skill}
-                                </option>
-                              ))}
-                            </select>
-                            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
-                              <input
-                                type="checkbox"
-                                checked={route.default}
-                                disabled={isWorkflowReadOnly}
-                                onChange={(e) => updateRoute(index, routeIndex, { default: e.target.checked })}
-                              />
-                              Default
-                            </label>
                           </div>
                         </div>
-                      ))}
-                      {!isWorkflowReadOnly && (
-                        <button
-                          type="button"
-                          className="btn-secondary btn-compact"
-                          style={{ marginTop: 8 }}
-                          onClick={() =>
-                            updateStage(index, {
-                              classify_routes: [
-                                ...stage.classify_routes,
-                                {
-                                  languages: [],
-                                  specialties: [],
-                                  agent_id: "backend_implementer",
-                                  skill_name: "apply_patch",
-                                  default: false,
-                                },
-                              ],
-                            })
-                          }
-                        >
-                          + Add route
-                        </button>
-                      )}
-                    </div>
-                  )}
 
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 11.5 }}>
-                    <input
-                      type="checkbox"
-                      checked={stage.gate_required}
-                      disabled={isWorkflowReadOnly}
-                      onChange={(e) => updateStage(index, { gate_required: e.target.checked })}
-                    />
-                    Require gate approval before leaving this stage
-                  </label>
+                        {selectedWorkflow?.transitions?.length ? (
+                          <StageRouteHints
+                            stage={{
+                              key: stage.key,
+                              name: stage.name,
+                              status: "pending",
+                              order: stage.order,
+                              agent_id: stage.agent_id,
+                              skill_name: stage.skill_name,
+                              optional: stage.optional,
+                              note: "",
+                              stage_type: stage.stage_type,
+                              agents: [],
+                            }}
+                            transitions={selectedWorkflow.transitions}
+                            stages={workflowDraft.stages.map((item, stageIndex) => ({
+                              key: item.key,
+                              name: item.name,
+                              status: "pending" as const,
+                              order: item.order || stageIndex + 1,
+                              agent_id: item.agent_id,
+                              skill_name: item.skill_name,
+                              optional: item.optional,
+                              note: "",
+                              stage_type: item.stage_type,
+                              agents: [],
+                            }))}
+                          />
+                        ) : null}
+
+                        {stage.stage_type === "agent" || stage.stage_type === "gate" ? (
+                          <div className="studio-stage-fields two-col">
+                            <div>
+                              <div className="studio-stage-field-label">Agent</div>
+                              <select
+                                className="studio-stage-select"
+                                value={stage.agent_id}
+                                disabled={isWorkflowReadOnly}
+                                onChange={(e) => updateStage(index, { agent_id: e.target.value })}
+                              >
+                                {agentOptions.map((opt) => (
+                                  <option key={opt.id} value={opt.id}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <div className="studio-stage-field-label">Skill</div>
+                              <select
+                                className="studio-stage-select mono"
+                                value={stage.skill_name}
+                                disabled={isWorkflowReadOnly}
+                                onChange={(e) => updateStage(index, { skill_name: e.target.value })}
+                              >
+                                {(skills.data ?? []).map((skill) => (
+                                  <option key={skill} value={skill}>
+                                    {skill}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ marginTop: 4 }}>
+                            <div className="studio-stage-field-label" style={{ marginBottom: 8 }}>
+                              Classification routes
+                            </div>
+                            {stage.classify_routes.map((route, routeIndex) => (
+                              <div
+                                key={routeIndex}
+                                style={{ borderTop: "1px solid var(--bd)", paddingTop: 10, marginTop: 10 }}
+                              >
+                                <div className="studio-stage-fields two-col">
+                                  <div>
+                                    <div className="studio-stage-field-label">Languages</div>
+                                    <select
+                                      multiple
+                                      className="studio-stage-select"
+                                      style={{ minHeight: 72, height: "auto" }}
+                                      value={route.languages}
+                                      disabled={isWorkflowReadOnly}
+                                      onChange={(e) =>
+                                        updateRoute(index, routeIndex, {
+                                          languages: Array.from(e.target.selectedOptions, (opt) => opt.value),
+                                        })
+                                      }
+                                    >
+                                      {LANGUAGE_OPTIONS.map((lang) => (
+                                        <option key={lang} value={lang}>
+                                          {lang}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <div className="studio-stage-field-label">Specialties</div>
+                                    <select
+                                      multiple
+                                      className="studio-stage-select"
+                                      style={{ minHeight: 72, height: "auto" }}
+                                      value={route.specialties}
+                                      disabled={isWorkflowReadOnly}
+                                      onChange={(e) =>
+                                        updateRoute(index, routeIndex, {
+                                          specialties: Array.from(e.target.selectedOptions, (opt) => opt.value),
+                                        })
+                                      }
+                                    >
+                                      {SPECIALTY_OPTIONS.map((spec) => (
+                                        <option key={spec} value={spec}>
+                                          {spec}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "1fr 1fr auto",
+                                    gap: 10,
+                                    marginTop: 8,
+                                  }}
+                                >
+                                  <select
+                                    className="studio-stage-select"
+                                    value={route.agent_id}
+                                    disabled={isWorkflowReadOnly}
+                                    onChange={(e) => updateRoute(index, routeIndex, { agent_id: e.target.value })}
+                                  >
+                                    {agentOptions.map((opt) => (
+                                      <option key={opt.id} value={opt.id}>
+                                        {opt.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <select
+                                    className="studio-stage-select mono"
+                                    value={route.skill_name}
+                                    disabled={isWorkflowReadOnly}
+                                    onChange={(e) => updateRoute(index, routeIndex, { skill_name: e.target.value })}
+                                  >
+                                    {(skills.data ?? []).map((skill) => (
+                                      <option key={skill} value={skill}>
+                                        {skill}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={route.default}
+                                      disabled={isWorkflowReadOnly}
+                                      onChange={(e) => updateRoute(index, routeIndex, { default: e.target.checked })}
+                                    />
+                                    Default
+                                  </label>
+                                </div>
+                              </div>
+                            ))}
+                            {!isWorkflowReadOnly && (
+                              <button
+                                type="button"
+                                className="studio-add-stage-btn"
+                                style={{ marginTop: 8 }}
+                                onClick={() =>
+                                  updateStage(index, {
+                                    classify_routes: [
+                                      ...stage.classify_routes,
+                                      {
+                                        languages: [],
+                                        specialties: [],
+                                        agent_id: "backend_implementer",
+                                        skill_name: "apply_patch",
+                                        default: false,
+                                      },
+                                    ],
+                                  })
+                                }
+                              >
+                                + Add route
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        <label style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 10, fontSize: 12, color: "var(--txm)", cursor: "pointer", width: "fit-content" }}>
+                          <input
+                            type="checkbox"
+                            checked={stage.gate_required}
+                            disabled={isWorkflowReadOnly}
+                            onChange={(e) => updateStage(index, { gate_required: e.target.checked })}
+                            style={{ accentColor: "var(--ac)" }}
+                          />
+                          Require gate approval before leaving this stage
+                        </label>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
+              </div>
 
               {!isWorkflowReadOnly && (
-                <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    disabled={!workflowDraft.name.trim() || saveWorkflow.isPending}
-                    onClick={() => saveWorkflow.mutate()}
-                  >
-                    {saveWorkflow.isPending ? "Saving…" : selectedWorkflowSlug ? "Save workflow" : "Create workflow"}
-                  </button>
-                  {selectedWorkflowSlug && !isWorkflowReadOnly && (
+                <div className="studio-card-actions">
+                  {selectedWorkflowSlug && (
                     <>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        disabled={publishWorkflow.isPending}
-                        onClick={() => publishWorkflow.mutate(selectedWorkflowSlug)}
-                      >
-                        {publishWorkflow.isPending ? "Publishing…" : "Publish to templates"}
-                      </button>
                       <button
                         type="button"
                         className="btn-secondary"
@@ -1008,12 +1165,36 @@ export function StudioPage() {
                       >
                         Delete
                       </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        disabled={publishWorkflow.isPending}
+                        onClick={() => publishWorkflow.mutate(selectedWorkflowSlug)}
+                      >
+                        {publishWorkflow.isPending ? "Publishing…" : "Publish to templates"}
+                      </button>
                     </>
                   )}
+                  <button
+                    type="button"
+                    className="btn-primary btn-cta"
+                    disabled={!workflowDraft.name.trim() || saveWorkflow.isPending}
+                    onClick={() => saveWorkflow.mutate()}
+                  >
+                    {saveWorkflow.isPending ? "Saving…" : selectedWorkflowSlug ? "Save workflow" : "Create workflow"}
+                  </button>
                 </div>
               )}
-            </main>
-          </>
+              </div>
+            </div>
+
+            <WorkflowPreviewPanel
+              name={workflowDraft.name}
+              slug={workflowDraft.slug}
+              stages={workflowDraft.stages}
+              agentLabel={(agentId) => agentOptions.find((opt) => opt.id === agentId)?.label ?? agentId}
+            />
+          </div>
         )}
       </div>
     </div>

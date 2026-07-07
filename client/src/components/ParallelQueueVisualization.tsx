@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import { IconCloseButton } from './IconCloseButton';
 import { useParallelExecutionWS } from '../hooks/useParallelExecutionWS';
 import './ParallelQueueVisualization.css';
 
@@ -171,9 +172,9 @@ export function ParallelQueueVisualization({
         <h2>Parallel Execution Queue</h2>
         <div className="connection-indicator">
           {isWebSocket ? (
-            <span className="ws-indicator connected">🟢 Real-time</span>
+            <span className="ws-indicator connected">Connected</span>
           ) : (
-            <span className="ws-indicator polling">📡 Polling</span>
+            <span className="ws-indicator polling">Polling</span>
           )}
           {connectionState && (
             <span className="connection-state">{connectionState}</span>
@@ -280,13 +281,10 @@ export function ParallelQueueVisualization({
         <div className="queue-error-notification">
           <span className="error-icon">⚠️</span>
           <span className="error-message">{reorderError}</span>
-          <button
-            className="error-close"
+          <IconCloseButton
             onClick={() => setReorderError(null)}
             aria-label="Dismiss error"
-          >
-            ✕
-          </button>
+          />
         </div>
       )}
 

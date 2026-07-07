@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { IconCloseButton } from './IconCloseButton';
 import './QueueNotifications.css';
 
 export interface NotificationEvent {
@@ -184,13 +185,10 @@ export function QueueNotifications({ workspaceId }: QueueNotificationsProps) {
             </button>
           )}
 
-          <button
-            className="notification-close"
+          <IconCloseButton
             onClick={() => removeNotification(notif.id)}
             aria-label="Dismiss notification"
-          >
-            ✕
-          </button>
+          />
         </div>
       ))}
     </div>

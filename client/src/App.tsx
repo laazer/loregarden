@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Component, type ErrorInfo, type ReactNode, useEffect } from "react";
+import { AppLayout } from "./components/AppLayout";
 import { Dashboard } from "./pages/Dashboard";
 import { EditorPage } from "./pages/EditorPage";
 import { QueuePage } from "./pages/QueuePage";
@@ -70,7 +71,11 @@ function AppShell() {
       <Dashboard />
     );
 
-  return <PageErrorBoundary>{page}</PageErrorBoundary>;
+  return (
+    <AppLayout>
+      <PageErrorBoundary>{page}</PageErrorBoundary>
+    </AppLayout>
+  );
 }
 
 export function App() {

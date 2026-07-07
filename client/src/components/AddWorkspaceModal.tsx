@@ -1,3 +1,5 @@
+import { IconCloseButton } from "./IconCloseButton";
+
 import { useEffect, useState } from "react";
 import type { WorkflowTemplateSummary } from "../api/client";
 import { slugify } from "../lib/slugify";
@@ -92,9 +94,7 @@ export function AddWorkspaceModal({
             </h2>
             <p className="modal-subtitle">Register a repo and workflow template for a new project</p>
           </div>
-          <button type="button" className="btn-secondary" disabled={isSaving} onClick={onClose}>
-            ✕
-          </button>
+          <IconCloseButton disabled={isSaving} onClick={onClose} />
         </div>
 
         <div className="modal-body">

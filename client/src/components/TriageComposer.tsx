@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { api, type RuntimeOptions, type WorkspaceRuntimeSettings } from "../api/client";
-import { ChatComposer } from "./chat/ChatComposer";
+import { StudioChatComposer } from "./studio/StudioChat";
 import { TriageModelModal } from "./TriageModelModal";
 import { runtimeSummaryLabel } from "./WorkspaceRuntimeFields";
 
@@ -134,7 +134,7 @@ export function TriageComposer({
 
   return (
     <>
-      <ChatComposer
+      <StudioChatComposer
         value={draft}
         onChange={setDraft}
         onSubmit={submitChat}
@@ -143,14 +143,18 @@ export function TriageComposer({
         sendLabel="Ask triage"
         optionsRow={optionsRow}
         error={composerError}
-        actions={
+        toolbar={
           <button
             type="button"
-            className="btn-secondary"
+            className="ticket-studio-composer-action"
             disabled={!runtimeOptions || triage.isLoading}
             onClick={() => setModelModalOpen(true)}
             title="Triage model settings"
           >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 6v6l4 2" />
+            </svg>
             Model · {modelLabel}
           </button>
         }

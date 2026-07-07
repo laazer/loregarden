@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { IconCloseButton } from "../IconCloseButton";
+
 import type { StudioAgent, TicketStudioDraftItem } from "../../api/client";
 import {
   formatAcceptanceCriteriaText,
@@ -131,9 +133,7 @@ export function TicketStudioDraftModal({
               {draft.ref}
             </p>
           </div>
-          <button type="button" className="btn-secondary modal-close-btn" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
+          <IconCloseButton className="modal-close-btn" onClick={onClose} />
         </div>
 
         <div className="modal-body">
