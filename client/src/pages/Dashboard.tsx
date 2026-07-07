@@ -8,7 +8,7 @@ import { TicketPaneFilters } from "../components/TicketPaneFilters";
 import { ArtifactView } from "../components/dashboard/ArtifactView";
 import { LogsPanel } from "../components/LogsPanel";
 import { TriagePanel } from "../components/TriagePanel";
-import { collectExpandableIds, findAncestorIds, TicketTree } from "../components/TicketTree";
+import { findAncestorIds, TicketTree } from "../components/TicketTree";
 import { AgentsAssembleModal, type AgentsAssembleOptions } from "../components/AgentsAssembleModal";
 import { ConfirmRunStageModal } from "../components/ConfirmRunStageModal";
 import { StageRouteHints } from "../components/StageRouteHints";
@@ -55,14 +55,16 @@ function PaneHideButton({
   pane,
   onHide,
   disabled,
+  className,
 }: {
   pane: PaneId;
   onHide: () => void;
   disabled?: boolean;
+  className?: string;
 }) {
   return (
     <IconCloseButton
-      className="pane-hide-btn"
+      className={`pane-hide-btn${className ? ` ${className}` : ""}`}
       title={disabled ? "At least one pane must stay visible" : `Hide ${PANE_LABELS[pane]}`}
       aria-label={`Hide ${PANE_LABELS[pane]}`}
       disabled={disabled}
@@ -152,8 +154,6 @@ export function Dashboard() {
     clearTypeFilters,
     setSearch,
     toggleExpanded,
-    expandAll,
-    collapseAll,
     expandPath,
     setWorkspace,
     setTab,
@@ -878,6 +878,12 @@ export function Dashboard() {
 
             {showTickets && (
               <div className={`tickets-pane ${showWorkspaces ? "" : "pane-fill"}`.trim()}>
+                <PaneHideButton
+                  className="pane-hide-btn pane-hide-btn--corner"
+                  pane="tickets"
+                  onHide={() => hidePane("tickets")}
+                  disabled={visiblePaneCount <= 1}
+                />
                 <div className="pane-header tickets-pane-header">
                   <div className="tickets-pane-title-row">
                     <div className="tickets-pane-heading">
@@ -887,9 +893,9 @@ export function Dashboard() {
                     <span className="tickets-pane-sort">by priority</span>
                   </div>
                   <div className="tickets-pane-actions">
-                    <div className="tickets-pane-actions-group">
+                    <div className="tickets-pane-primary-actions">
                       <button
-                        className="btn-secondary btn-compact"
+                        className="btn-secondary btn-compact btn-icon-label"
                         type="button"
                         title={
                           defaultCreateWorkspaceSlug
@@ -899,10 +905,13 @@ export function Dashboard() {
                         disabled={!defaultCreateWorkspaceSlug}
                         onClick={openCreateWorkItem}
                       >
-                        + New
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                          <path d="M12 5v14M5 12h14" />
+                        </svg>
+                        New
                       </button>
                       <button
-                        className="btn-secondary btn-compact"
+                        className="btn-secondary btn-compact btn-icon-label"
                         type="button"
                         title={
                           defaultCreateWorkspaceSlug
@@ -912,37 +921,13 @@ export function Dashboard() {
                         disabled={!defaultCreateWorkspaceSlug || previewTicketImport.isPending}
                         onClick={openImportTickets}
                       >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                          <path d="M12 3v12" />
+                          <path d="m8 11 4 4 4-4" />
+                          <path d="M5 21h14" />
+                        </svg>
                         Import
                       </button>
-                    </div>
-                    <div className="tickets-pane-actions-group tickets-pane-actions-group-end">
-                      <button
-                        className="btn-secondary btn-compact btn-icon-only"
-                        type="button"
-                        title="Expand all branches"
-                        aria-label="Expand all branches"
-                        onClick={() => expandAll(collectExpandableIds(ticketTree.data ?? []))}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                          <path d="M12 5v14M5 12h14" />
-                        </svg>
-                      </button>
-                      <button
-                        className="btn-secondary btn-compact btn-icon-only"
-                        type="button"
-                        title="Collapse all branches"
-                        aria-label="Collapse all branches"
-                        onClick={() => collapseAll()}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                          <path d="M5 12h14" />
-                        </svg>
-                      </button>
-                      <PaneHideButton
-                        pane="tickets"
-                        onHide={() => hidePane("tickets")}
-                        disabled={visiblePaneCount <= 1}
-                      />
                     </div>
                   </div>
                   <TicketPaneFilters

@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import type { TicketState, TicketTreeNode, WorkItemType } from "../api/client";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
+import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import { PrioBars } from "./PrioBars";
 
 const STATE_COLORS: Record<TicketState, string> = {
@@ -89,7 +90,7 @@ function TreeRow({
                 onToggle(node.id);
               }}
             >
-              <span className={`tree-chevron-icon ${expanded ? "expanded" : ""}`} />
+              <TreeExpandChevron expanded={expanded} />
             </button>
           ) : (
             <span className="tree-chevron-btn tree-chevron-spacer" aria-hidden />
