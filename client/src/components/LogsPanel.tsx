@@ -1,12 +1,40 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { api, type Approval, type RuntimeOptions, type TicketDetail, type TriageMessage } from "../api/client";
+import { api, type Approval, type LogLine, type RuntimeOptions, type TicketDetail, type TriageMessage } from "../api/client";
+import { logTagVariant } from "../lib/logLineStyle";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { formatLogExcerpt } from "../utils/logExcerpt";
 import { ChatMessageBubble } from "./chat/ChatMessageBubble";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { TriageComposer } from "./TriageComposer";
+import "./LogsPanel.css";
+
+function LogLineRow({ line }: { line: LogLine }) {
+  const variant = logTagVariant(line.tag);
+  return (
+    <div className="log-line">
+      <span className="log-line__time">{line.time}</span>
+      <span className={`log-line__tag log-line__tag--${variant}`}>{line.tag}</span>
+      <span className="log-line__text">{line.text}</span>
+    </div>
+  );
+}
+
+function LiveLogLine({ text }: { text: string }) {
+  return (
+    <div className="log-line log-line--live">
+      <span className="log-line__time">now</span>
+      <span className="log-line__tag log-line__tag--run log-line__tag--live">RUN</span>
+      <span className="log-line__text">
+        {text}
+        <span className="log-line__cursor" aria-hidden>
+          ▊
+        </span>
+      </span>
+    </div>
+  );
+}
 
 function mergeApprovals(...lists: Array<Approval[] | undefined>): Approval[] {
   const seen = new Set<string>();
@@ -101,27 +129,17 @@ export function LogsPanel({
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 340 }}>
       <div ref={logScrollRef} style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
-        <div style={{ fontFamily: "var(--mono)", fontSize: 12, padding: 16, lineHeight: 1.75 }}>
+        <div className="log-feed">
           {lines.length === 0 && !live ? (
-            <div style={{ color: "var(--txm)", fontFamily: "inherit", fontSize: 12 }}>
+            <div className="log-feed-empty">
               No log lines yet. Start a stage run or ask triage about failures below.
             </div>
           ) : (
             <>
-              {lines.map((l, i) => (
-                <div key={i} style={{ display: "flex", gap: 12 }}>
-                  <span style={{ color: "var(--txl)" }}>{l.time}</span>
-                  <span style={{ width: 44, textAlign: "center", fontSize: 10, fontWeight: 600 }}>
-                    {l.tag}
-                  </span>
-                  <span style={{ color: "var(--txm)", whiteSpace: "pre-wrap" }}>{l.text}</span>
-                </div>
+              {lines.map((line, index) => (
+                <LogLineRow key={`${line.time}-${line.tag}-${index}`} line={line} />
               ))}
-              {live && (
-                <div style={{ color: "var(--bll)", marginTop: 8, whiteSpace: "pre-wrap" }}>
-                  {live} ▊
-                </div>
-              )}
+              {live ? <LiveLogLine text={live} /> : null}
             </>
           )}
         </div>

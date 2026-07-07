@@ -4,7 +4,7 @@ import { persist } from "zustand/middleware";
 import type { TicketState, WorkItemType } from "../api/client";
 import { navigateToPage } from "../lib/useAppNavigation";
 
-type Tab = "diff" | "logs" | "tests" | "context" | "errors" | "triage" | "pr";
+type Tab = "diff" | "logs" | "tests" | "hive" | "context" | "errors" | "triage" | "pr";
 
 export type PaneId = "workspaces" | "tickets" | "workflow" | "artifacts";
 

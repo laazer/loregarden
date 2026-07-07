@@ -1,0 +1,352 @@
+.hive-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.hive-panel__header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--bd);
+  background: var(--bg1);
+}
+
+.hive-panel__title {
+  font-family: var(--dp);
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--txm);
+}
+
+.hive-panel__live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--grl);
+}
+
+.hive-panel__live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--grn);
+  box-shadow: 0 0 6px var(--grn);
+  animation: pulse 1.6s infinite;
+}
+
+.hive-panel__legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--txl);
+}
+
+.hive-panel__legend-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.hive-panel__legend-dot--working {
+  background: var(--blue);
+}
+
+.hive-panel__legend-dot--done {
+  background: var(--grn);
+}
+
+.hive-panel__legend-dot--idle {
+  background: #39424e;
+}
+
+.hive-panel__spacer {
+  flex: 1;
+}
+
+.hive-panel__floor {
+  flex: 1;
+  position: relative;
+  min-height: 440px;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(45, 212, 167, 0.05), transparent 55%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 38px,
+      rgba(255, 255, 255, 0.018) 38px,
+      rgba(255, 255, 255, 0.018) 39px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 38px,
+      rgba(255, 255, 255, 0.018) 38px,
+      rgba(255, 255, 255, 0.018) 39px
+    );
+}
+
+.hive-panel__lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.hive-panel__line {
+  vector-effect: non-scaling-stroke;
+}
+
+.hive-panel__line--animated {
+  animation: hivedash 1s linear infinite;
+}
+
+.hive-panel__flyer {
+  position: absolute;
+  width: 11px;
+  height: 8px;
+  border-radius: 2px;
+  transform: translate(-50%, -50%);
+}
+
+.hive-panel__flyer--a {
+  background: var(--ac);
+  box-shadow: 0 0 8px rgba(45, 212, 167, 0.6);
+  animation: hive-fly-a 3.4s ease-in-out infinite;
+}
+
+.hive-panel__flyer--b {
+  background: var(--bll);
+  box-shadow: 0 0 8px rgba(75, 155, 255, 0.6);
+  animation: hive-fly-b 4.6s ease-in-out infinite;
+}
+
+.hive-panel__flyer--c {
+  background: var(--aml);
+  box-shadow: 0 0 8px rgba(229, 167, 44, 0.5);
+  animation: hive-fly-c 5.2s ease-in-out infinite;
+}
+
+.hive-panel__orchestrator {
+  position: absolute;
+  left: 50%;
+  top: 10%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+
+.hive-panel__orchestrator-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 15px;
+  background: linear-gradient(140deg, var(--ac), #12a37e);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    0 6px 22px rgba(45, 212, 167, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.hive-panel__orchestrator-icon--active {
+  animation: pulse 1.9s ease-in-out infinite;
+}
+
+.hive-panel__orchestrator-copy {
+  text-align: center;
+}
+
+.hive-panel__orchestrator-name {
+  font-family: var(--dp);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.hive-panel__orchestrator-sub {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--txl);
+}
+
+.hive-panel__desk {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  width: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.hive-panel__avatar {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 2px solid var(--bd2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--dp);
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.hive-panel__avatar--pulse {
+  animation: pulse 1.7s ease-in-out infinite;
+}
+
+.hive-panel__avatar-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--bg0);
+}
+
+.hive-panel__desk-card {
+  width: 100%;
+  background: var(--bg2);
+  border: 1px solid var(--bd);
+  border-radius: 11px;
+  padding: 8px 10px;
+  text-align: center;
+}
+
+.hive-panel__desk-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--tx);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hive-panel__desk-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.hive-panel__desk-status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.hive-panel__desk-skill {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--bll);
+  background: rgba(75, 155, 255, 0.1);
+  border: 1px solid rgba(75, 155, 255, 0.2);
+  border-radius: 5px;
+  padding: 1px 6px;
+  display: inline-block;
+}
+
+.hive-panel__idle {
+  position: absolute;
+  left: 50%;
+  top: 60%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: var(--txl);
+}
+
+.hive-panel__idle-title {
+  font-family: var(--dp);
+  font-size: 14px;
+  color: var(--txm);
+  margin-bottom: 5px;
+}
+
+.hive-panel__idle-copy {
+  font-size: 12px;
+}
+
+@keyframes hivedash {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+
+@keyframes hive-fly-a {
+  0% {
+    left: 50%;
+    top: 10%;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    left: 18%;
+    top: 44%;
+    opacity: 0;
+  }
+}
+
+@keyframes hive-fly-b {
+  0% {
+    left: 82%;
+    top: 44%;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    left: 50%;
+    top: 78%;
+    opacity: 0;
+  }
+}
+
+@keyframes hive-fly-c {
+  0% {
+    left: 50%;
+    top: 78%;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    left: 50%;
+    top: 10%;
+    opacity: 0;
+  }
+}

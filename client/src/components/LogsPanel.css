@@ -1,0 +1,82 @@
+.log-feed {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 12px 16px 40px;
+  line-height: 1.75;
+}
+
+.log-feed-empty {
+  color: var(--txm);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.log-line {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.log-line__time {
+  flex: none;
+  color: var(--txl);
+  opacity: 0.7;
+}
+
+.log-line__tag {
+  flex: none;
+  width: 44px;
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+  padding: 1px 0;
+  border-radius: 4px;
+}
+
+.log-line__tag--info {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--txm);
+}
+
+.log-line__tag--ok {
+  background: rgba(53, 196, 106, 0.14);
+  color: var(--grl);
+}
+
+.log-line__tag--run {
+  background: rgba(75, 155, 255, 0.14);
+  color: var(--bll);
+}
+
+.log-line__tag--warn {
+  background: rgba(229, 167, 44, 0.16);
+  color: var(--aml);
+}
+
+.log-line__tag--err {
+  background: rgba(255, 106, 84, 0.16);
+  color: var(--rdl);
+}
+
+.log-line__text {
+  flex: 1;
+  color: var(--txm);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-line--live {
+  color: var(--bll);
+}
+
+.log-line--live .log-line__text {
+  color: inherit;
+}
+
+.log-line__tag--live {
+  animation: pulse 1.4s infinite;
+}
+
+.log-line__cursor {
+  animation: pulse 1s steps(2) infinite;
+}

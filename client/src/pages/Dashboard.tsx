@@ -7,6 +7,7 @@ import { PrioBars } from "../components/PrioBars";
 import { TicketPaneFilters } from "../components/TicketPaneFilters";
 import { ArtifactView } from "../components/dashboard/ArtifactView";
 import { LogsPanel } from "../components/LogsPanel";
+import { HiveSimulationPanel } from "../components/dashboard/HiveSimulationPanel";
 import { TriagePanel } from "../components/TriagePanel";
 import { findAncestorIds, TicketTree } from "../components/TicketTree";
 import { AgentsAssembleModal, type AgentsAssembleOptions } from "../components/AgentsAssembleModal";
@@ -1288,7 +1289,7 @@ export function Dashboard() {
         <section className={`artifacts-pane ${showWorkflow ? "" : "pane-fill"}`.trim()}>
           <div className="tab-bar">
             <div className="tab-bar-scroll" role="tablist" aria-label="Artifact views">
-              {(["diff", "errors", "triage", "logs", "tests", "context", "pr"] as const).map((t) => (
+              {(["diff", "errors", "triage", "logs", "tests", "hive", "context", "pr"] as const).map((t) => (
                 <button
                   key={t}
                   ref={(el) => {
@@ -1368,6 +1369,8 @@ export function Dashboard() {
                   qc.invalidateQueries({ queryKey: ["runs", selectedId] });
                 }}
               />
+            ) : tab === "hive" && sel ? (
+              <HiveSimulationPanel ticket={sel} />
             ) : (
               <ArtifactView
                 tab={tab}
