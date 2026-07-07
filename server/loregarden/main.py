@@ -16,6 +16,7 @@ from loregarden.api import (
     memory,
     orchestration,
     parallel,
+    queue_review,
     runs,
     studio,
     system,
@@ -79,6 +80,7 @@ app.include_router(memory.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
 app.include_router(ci.router, prefix="/api")
 app.include_router(parallel.router)
+app.include_router(queue_review.router)
 app.include_router(mcp.router, prefix="/mcp")
 
 
