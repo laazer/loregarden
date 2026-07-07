@@ -7,6 +7,8 @@ data/loregarden.db-*
 *.db-wal
 *.db-shm
 server/.venv/
+server/.self-improve-restart
+.loregarden/
 client/node_modules/
 client/dist/
 

@@ -1,0 +1,97 @@
+"""Apply workflow transition plans to tickets (forward advance and upstream rework)."""
+
+from __future__ import annotations
+
+from loregarden.core.state_machine import StageRoutePlan, StateMachine
+from loregarden.models.domain import (
+    OrchestrationRun,
+    StageStatus,
+    Ticket,
+    WorkflowInstance,
+    WorkflowStageDef,
+)
+from loregarden.services.studio_service import resolve_stage_execution
+from loregarden.services.workflow_state import (
+    parse_stage_map,
+    reconcile_workflow_state,
+    serialize_stage_map,
+    set_stage_status,
+)
+
+
+def apply_stage_route(
+    ticket: Ticket,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    transitions: list[dict[str, str]],
+    *,
+    from_key: str,
+    outcome: str = "pass",
+    next_stage_key: str = "",
+    next_agent: str = "",
+    blocking_issues: str = "",
+    orch_run: OrchestrationRun | None = None,
+) -> StageRoutePlan:
+    plan = StateMachine.resolve_next_stage_key(
+        stages,
+        transitions,
+        from_key,
+        outcome=outcome,
+        explicit_to=next_stage_key,
+    )
+    if not plan:
+        raise ValueError(f"No workflow route defined from stage '{from_key}' with outcome '{outcome}'")
+
+    stage_map = parse_stage_map(instance, stages)
+    if plan.upstream or outcome == "reject":
+        stage_map = StateMachine.reset_upstream_stages(
+            stage_map,
+            stages,
+            from_key=from_key,
+            to_key=plan.to_key,
+        )
+        instance.stages_json = serialize_stage_map(stage_map, stages)
+        ticket.workflow_stage_key = plan.to_key
+        ticket.workflow_stage_status = StageStatus.PENDING
+        if blocking_issues:
+            ticket.blocking_issues = blocking_issues[:2000]
+        else:
+            ticket.blocking_issues = ""
+        ticket.next_status = "Proceed"
+    else:
+        set_stage_status(ticket, instance, stages, from_key, StageStatus.DONE)
+        ticket.workflow_stage_key = plan.to_key
+        ticket.blocking_issues = ""
+        ticket.next_status = "Proceed"
+
+    target_stage = next((stage for stage in stages if stage.key == plan.to_key), None)
+    chosen_agent = (next_agent or plan.transition_agent_id or "").strip()
+    if not chosen_agent and target_stage:
+        chosen_agent, _ = resolve_stage_execution(ticket, target_stage)
+    if chosen_agent:
+        ticket.next_agent = chosen_agent
+    elif target_stage and target_stage.agent_id:
+        ticket.next_agent = target_stage.agent_id
+
+    reconcile_workflow_state(ticket, instance, stages, persist=False)
+    if orch_run is not None:
+        orch_run.current_stage_key = plan.to_key
+    return plan
+
+
+def normalize_transitions_for_api(transitions_json: str) -> list[dict[str, str]]:
+    """Normalize template transitions for API/UI (handles YAML `when` and legacy `on` quirks)."""
+    items = StateMachine.parse_transitions(transitions_json)
+    normalized: list[dict[str, str]] = []
+    for item in items:
+        when = StateMachine._transition_when(item)
+        entry = {
+            "from": item.get("from", ""),
+            "to": item.get("to", ""),
+            "when": when or "default",
+        }
+        agent_id = item.get("agent_id", "")
+        if agent_id:
+            entry["agent_id"] = agent_id
+        normalized.append(entry)
+    return normalized

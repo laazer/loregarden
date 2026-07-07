@@ -122,6 +122,9 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
         "skill_name": ("skillName",),
         "content_json": ("contentJson", "content"),
         "next_agent": ("nextAgent",),
+        "next_stage_key": ("nextStageKey", "route_to_stage"),
+        "blocking_issues": ("blockingIssues",),
+        "outcome": ("routeOutcome",),
     }
     for canonical, aliases in alias_map.items():
         if canonical in args:
@@ -195,6 +198,9 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             payload["agent_id"] = _coerce_optional_string(args.get("agent_id"))
         if name == "loregarden_complete_stage":
             payload["next_agent"] = _coerce_optional_string(args.get("next_agent"))
+            payload["next_stage_key"] = _coerce_optional_string(args.get("next_stage_key"))
+            payload["outcome"] = _coerce_optional_string(args.get("outcome")) or "pass"
+            payload["blocking_issues"] = _coerce_optional_string(args.get("blocking_issues"))
         if name == "loregarden_skip_stage":
             payload["reason"] = _coerce_optional_string(args.get("reason"))
         if name == "loregarden_request_approval":
@@ -457,12 +463,18 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "loregarden_complete_stage",
-        "description": "Mark a stage done and advance the workflow cursor.",
+        "description": (
+            "Mark a stage complete and advance the workflow cursor. "
+            "Use outcome=reject with next_stage_key to route back to an upstream agent."
+        ),
         "inputSchema": _tool_schema(
             properties={
                 "run_id": _string_prop("Orchestration run UUID."),
                 "stage_key": _string_prop("Workflow stage key."),
                 "next_agent": _string_prop("Optional next agent hint."),
+                "next_stage_key": _string_prop("Optional explicit target stage (for upstream rework)."),
+                "outcome": _enum_string_prop("Stage outcome.", ["pass", "reject"]),
+                "blocking_issues": _string_prop("Optional rework notes when routing upstream."),
             },
             required=["run_id", "stage_key"],
         ),
@@ -795,6 +807,9 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
             ticket,
             stage_key=arguments["stage_key"],
             next_agent=arguments.get("next_agent", ""),
+            next_stage_key=arguments.get("next_stage_key", ""),
+            outcome=arguments.get("outcome", "pass"),
+            blocking_issues=arguments.get("blocking_issues", ""),
         )
         session.refresh(ticket)
         return json.dumps(

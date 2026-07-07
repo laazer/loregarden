@@ -10,9 +10,10 @@ import { TriagePanel } from "../components/TriagePanel";
 import { collectExpandableIds, findAncestorIds, TicketTree } from "../components/TicketTree";
 import { AgentsAssembleModal, type AgentsAssembleOptions } from "../components/AgentsAssembleModal";
 import { ConfirmRunStageModal } from "../components/ConfirmRunStageModal";
+import { StageRouteHints } from "../components/StageRouteHints";
+import { StageOverflowMenu } from "../components/StageOverflowMenu";
 import {
   currentStageRunLabel,
-  isAgentStage,
   isHumanGateStage,
   stageAgentSubtitle,
   stageKindLabel,
@@ -334,6 +335,43 @@ export function Dashboard() {
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
     },
   });
+
+  const invalidateTicketQueries = () => {
+    qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
+    qc.invalidateQueries({ queryKey: ["tickets"] });
+    qc.invalidateQueries({ queryKey: ["ticket-tree"] });
+  };
+
+  const routeWorkflow = useMutation({
+    mutationFn: (body: {
+      from_stage_key: string;
+      next_stage_key: string;
+      next_agent?: string;
+      blocking_issues?: string;
+    }) => api.routeWorkflow(selectedId!, body),
+    onSuccess: invalidateTicketQueries,
+  });
+
+  const patchStageWorkflow = useMutation({
+    mutationFn: (body: Parameters<typeof api.updateTicket>[1]) => api.updateTicket(selectedId!, body),
+    onSuccess: invalidateTicketQueries,
+  });
+
+  const copyTerminalCommand = async (command: string) => {
+    if (!command.trim()) return;
+    try {
+      await navigator.clipboard.writeText(command);
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = command;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+  };
 
   const [stateModalOpen, setStateModalOpen] = useState(false);
   const [runConfirmStageKey, setRunConfirmStageKey] = useState<string | null>(null);
@@ -1110,8 +1148,29 @@ export function Dashboard() {
                     <div style={{ fontSize: 11, color: "var(--txm)", marginTop: 4 }}>
                       {sel.workflow_stage_status.replace("_", " ")}
                     </div>
+                    {sel.next_agent?.trim() && (
+                      <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txm)", marginTop: 6 }}>
+                        next agent · {sel.next_agent}
+                      </div>
+                    )}
                   </div>
                 </div>
+                {sel.blocking_issues?.trim() && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      padding: "10px 12px",
+                      borderRadius: 11,
+                      background: "rgba(199,125,45,.08)",
+                      border: "1px solid rgba(199,125,45,.28)",
+                      fontSize: 12,
+                      color: "var(--orl, #c77d2d)",
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>Rework required</div>
+                    <div style={{ whiteSpace: "pre-wrap" }}>{sel.blocking_issues}</div>
+                  </div>
+                )}
                 <button
                   type="button"
                   className="btn-secondary"
@@ -1178,13 +1237,34 @@ export function Dashboard() {
                           >
                             {stageRunButtonLabel(s, isRunningThis)}
                           </button>
-                          {isAgentWorkflowTicket(sel) && isAgentStage(s) && (
-                            <CopyTerminalCommandButton
-                              className="btn-secondary btn-compact stage-run-btn"
-                              command={buildStageRunTerminalCommand(sel, s, API_BASE)}
-                              title={`Copy terminal command to run ${s.name}`}
-                            />
-                          )}
+                          <StageOverflowMenu
+                            ticket={sel}
+                            stage={s}
+                            runCheck={runCheck}
+                            isRunning={isRunningThis}
+                            workflowBusy={workflowBusy || routeWorkflow.isPending || patchStageWorkflow.isPending}
+                            onRun={requestStageRun}
+                            onCopyTerminal={() =>
+                              void copyTerminalCommand(buildStageRunTerminalCommand(sel, s, API_BASE))
+                            }
+                            onSetCursor={(stageKey) =>
+                              patchStageWorkflow.mutate({
+                                workflow_stage_key: stageKey,
+                                workflow_stage_status: "pending",
+                              })
+                            }
+                            onRouteUpstream={(fromStageKey, toStageKey, nextAgent) =>
+                              routeWorkflow.mutate({
+                                from_stage_key: fromStageKey,
+                                next_stage_key: toStageKey,
+                                next_agent: nextAgent,
+                              })
+                            }
+                            onStageStatus={(stageKey, status) =>
+                              patchStageWorkflow.mutate({ stage_key: stageKey, stage_status: status })
+                            }
+                            onEditState={() => setStateModalOpen(true)}
+                          />
                           <span
                             className="count-pill"
                             style={{
@@ -1210,6 +1290,11 @@ export function Dashboard() {
                             {stageAgentSubtitle(s)}
                           </div>
                         )}
+                        <StageRouteHints
+                          stage={s}
+                          transitions={sel.workflow_transitions ?? []}
+                          stages={sel.stages}
+                        />
                         {s.note && (
                           <div
                             style={{

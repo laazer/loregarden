@@ -27,6 +27,7 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.studio_service import is_agentless_stage
+from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map
 from sqlmodel import Session, select
 
@@ -192,7 +193,13 @@ class BuiltinOrchestrator:
                     self.session.refresh(orch_run)
                     return orch_run
 
-                next_key = StateMachine.next_stage_key(stages, target_key)
+                next_route = StateMachine.resolve_next_stage_key(
+                    stages,
+                    self.orch._resolve_transitions(ticket),
+                    target_key,
+                    outcome="pass",
+                )
+                next_key = next_route.to_key if next_route else None
                 if next_key:
                     gate_block = self._run_stage_gates(
                         ticket,
@@ -363,6 +370,29 @@ class BuiltinOrchestrator:
 
         if failures:
             message = "; ".join(failures)
+            transitions = self.orch._resolve_transitions(ticket)
+            reject_route = StateMachine.resolve_transition_target(transitions, stage_key, "reject")
+            if reject_route:
+                instance, stages = self.orch._resolve_stages(ticket)
+                if instance and stages:
+                    to_key, transition_agent = reject_route
+                    apply_stage_route(
+                        ticket,
+                        instance,
+                        stages,
+                        transitions,
+                        from_key=stage_key,
+                        outcome="reject",
+                        next_stage_key=to_key,
+                        next_agent=transition_agent or ticket.next_agent,
+                        blocking_issues=message[:2000],
+                    )
+                    self.session.add(ticket)
+                    self.session.add(instance)
+                    self.session.commit()
+                    self.session.refresh(ticket)
+                    return True, message
+
             self.orch.finalize_stage(
                 ticket,
                 stage_key,

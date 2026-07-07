@@ -23,6 +23,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
+from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session, select
 
@@ -188,29 +189,38 @@ class OrchestrationCallbackService:
         *,
         stage_key: str,
         next_agent: str = "",
+        next_stage_key: str = "",
+        outcome: str = "pass",
+        blocking_issues: str = "",
         advance: bool = True,
     ) -> Ticket:
         instance, stages = self.orch._resolve_stages(ticket)
         if not instance or not stages:
             raise ValueError("Ticket has no workflow instance")
 
-        set_stage_status(ticket, instance, stages, stage_key, StageStatus.DONE)
         ticket.revision += 1
         ticket.last_updated_by = "orchestrator"
-        if next_agent:
-            ticket.next_agent = next_agent
-            ticket.next_status = "Proceed"
-        ticket.blocking_issues = ""
 
         if advance:
-            next_key = StateMachine.next_stage_key(stages, stage_key)
-            if next_key:
-                ticket.workflow_stage_key = next_key
-                stage_def = next(s for s in stages if s.key == next_key)
-                ticket.next_agent = next_agent or stage_def.agent_id
-                orch_run.current_stage_key = next_key
-            else:
-                orch_run.current_stage_key = stage_key
+            transitions = self.orch._resolve_transitions(ticket)
+            apply_stage_route(
+                ticket,
+                instance,
+                stages,
+                transitions,
+                from_key=stage_key,
+                outcome=outcome,
+                next_stage_key=next_stage_key,
+                next_agent=next_agent,
+                blocking_issues=blocking_issues,
+                orch_run=orch_run,
+            )
+        else:
+            set_stage_status(ticket, instance, stages, stage_key, StageStatus.DONE)
+            if next_agent:
+                ticket.next_agent = next_agent
+                ticket.next_status = "Proceed"
+            ticket.blocking_issues = blocking_issues[:2000] if blocking_issues else ""
 
         self.session.add(ticket)
         self.session.add(instance)
@@ -222,7 +232,12 @@ class OrchestrationCallbackService:
             EventType.STAGE_COMPLETED,
             workspace_id=ticket.workspace_id,
             ticket_id=ticket.id,
-            payload={"stage_key": stage_key, "orchestration_run_id": orch_run.id},
+            payload={
+                "stage_key": stage_key,
+                "orchestration_run_id": orch_run.id,
+                "outcome": outcome,
+                "workflow_stage_key": ticket.workflow_stage_key,
+            },
         )
         self.orch.reconcile_ticket(ticket)
         self.session.refresh(ticket)

@@ -27,6 +27,7 @@ Use `"type": "stdio"` or `"type": "http"` in MCP config — never bare `url` alo
 | Start top-level autopilot / external orchestration | `loregarden_start_orchestration` |
 | Mark a stage running before sub-agent work (orchestrator only) | `loregarden_start_stage` |
 | Stage succeeded — advance workflow cursor (orchestrator only) | `loregarden_complete_stage` |
+| Route back to upstream agent after gate/review failure | `loregarden_complete_stage` with `outcome: reject`, `next_stage_key`, and `next_agent` |
 | Skip optional stage | `loregarden_skip_stage` |
 | Unrecoverable failure | `loregarden_block_ticket` |
 | Human sign-off needed | `loregarden_request_approval` |
@@ -70,6 +71,7 @@ The top-level orchestrator (autopilot skill or external MCP driver) **must** dri
 
 - `loregarden_start_stage` before each sub-agent
 - `loregarden_complete_stage` / `loregarden_skip_stage` / `loregarden_block_ticket` after gates
+- To route **back to an upstream agent** (Blobert-style rework), call `loregarden_complete_stage` with `outcome: "reject"`, `next_stage_key` (e.g. `implementation`), and `next_agent` — workflow templates may also declare `when: reject` transitions
 - Never advance Stage in markdown while Loregarden SQLite is authoritative
 
 ## Identifiers

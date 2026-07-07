@@ -182,6 +182,10 @@ def callback_complete_stage(
             ticket,
             stage_key=body.stage_key,
             next_agent=body.next_agent,
+            next_stage_key=body.next_stage_key,
+            outcome=body.outcome,
+            blocking_issues=body.blocking_issues,
+            advance=body.advance,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

@@ -5,6 +5,7 @@ from loregarden.db.session import get_session
 from loregarden.models.domain import (
     AdvanceStageRequest,
     Artifact,
+    RouteWorkflowRequest,
     RunStatus,
     StageStatus,
     StartOrchestrationRequest,
@@ -23,6 +24,7 @@ from loregarden.models.domain import (
     TriageMessageCreate,
     UpdateTicketRequest,
     WorkItemType,
+    WorkflowTransitionView,
     Workspace,
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
@@ -398,6 +400,11 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
     session.refresh(ticket)
     summary = _ticket_summary(session, ticket)
     template = orch.get_template_for_ticket(ticket)
+    from loregarden.services.workflow_routing import normalize_transitions_for_api
+
+    transitions = (
+        normalize_transitions_for_api(template.transitions_json) if template else []
+    )
     return TicketDetail(
         **summary.model_dump(),
         description=ticket.description,
@@ -409,6 +416,9 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         state_locked=ticket.state_locked,
         workflow_template_slug=template.slug if template else "",
         workflow_template_name=template.name if template else "",
+        workflow_transitions=[
+            WorkflowTransitionView.model_validate(item) for item in transitions
+        ],
         artifacts=_artifacts_grouped(session, ticket),
     )
 
@@ -511,4 +521,28 @@ def advance_stage(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     session.refresh(ticket)
+    return get_ticket(ticket_id, session)
+
+
+@router.post("/{ticket_id}/route-workflow", response_model=TicketDetail)
+def route_workflow_stage(
+    ticket_id: str,
+    body: RouteWorkflowRequest,
+    session: Session = Depends(get_session),
+) -> TicketDetail:
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    orch = OrchestrationService(session)
+    try:
+        orch.route_workflow_stage(
+            ticket,
+            from_stage_key=body.from_stage_key,
+            outcome=body.outcome,
+            next_stage_key=body.next_stage_key,
+            next_agent=body.next_agent,
+            blocking_issues=body.blocking_issues,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return get_ticket(ticket_id, session)

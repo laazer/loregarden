@@ -33,7 +33,7 @@ export function stageKindLabel(stage: WorkflowStageView): string | null {
   if (isHumanGateStage(stage)) return "human approval gate";
   if (isParallelStage(stage)) return "parallel review";
   if (isClassifyStage(stage)) return "routes via ticket next_agent";
-  if (isGateStage(stage)) return "acceptance criteria gate";
+  if (isGateStage(stage)) return "acceptance criteria gate · can route upstream on reject";
   return null;
 }
 

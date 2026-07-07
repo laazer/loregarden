@@ -14,6 +14,8 @@ from loregarden.models.domain.enums import (
 )
 from sqlmodel import Field, SQLModel
 
+from pydantic import ConfigDict
+
 # --- API DTOs ---
 
 
@@ -55,6 +57,15 @@ class WorkflowStageView(SQLModel):
     note: str = ""
     stage_type: str = "agent"
     agents: list[ParallelAgentSpec] = Field(default_factory=list)
+
+
+class WorkflowTransitionView(SQLModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    from_stage: str = Field(validation_alias="from", serialization_alias="from")
+    to: str
+    when: str = "default"
+    agent_id: str = ""
 
 
 class TicketSummary(SQLModel):
@@ -101,6 +112,7 @@ class TicketDetail(TicketSummary):
     state_locked: bool = False
     workflow_template_slug: str = ""
     workflow_template_name: str = ""
+    workflow_transitions: list[WorkflowTransitionView] = Field(default_factory=list)
     artifacts: dict[str, Any]
 
 
@@ -182,7 +194,10 @@ class StartOrchestrationRequest(SQLModel):
 class CompleteStageRequest(SQLModel):
     stage_key: str
     next_agent: str = ""
+    next_stage_key: str = ""
+    outcome: str = "pass"  # pass | reject
     blocking_issues: str = ""
+    advance: bool = True
 
 
 class StartStageRequest(SQLModel):
@@ -244,6 +259,14 @@ class OrchestrationProfileView(SQLModel):
 class AdvanceStageRequest(SQLModel):
     # backend decides transition; optional hint only for logging
     reason: str = ""
+
+
+class RouteWorkflowRequest(SQLModel):
+    from_stage_key: str
+    outcome: str = "reject"
+    next_stage_key: str = ""
+    next_agent: str = ""
+    blocking_issues: str = ""
 
 
 class UpdateTicketRequest(SQLModel):

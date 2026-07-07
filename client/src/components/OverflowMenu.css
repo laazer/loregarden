@@ -1,0 +1,71 @@
+.overflow-menu {
+  position: relative;
+  flex: none;
+}
+
+.overflow-menu-trigger {
+  min-width: 28px;
+  padding-inline: 8px;
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+}
+
+.overflow-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 60;
+  min-width: 220px;
+  max-width: 320px;
+  padding: 6px;
+  border: 1px solid var(--bd2);
+  border-radius: 10px;
+  background: var(--bg1);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.overflow-menu-panel--right {
+  right: 0;
+}
+
+.overflow-menu-panel--left {
+  left: 0;
+}
+
+.overflow-menu-section {
+  padding: 6px 10px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.overflow-menu-item {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--tx);
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.overflow-menu-item:hover:not(:disabled) {
+  background: var(--bg2);
+}
+
+.overflow-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.overflow-menu-item--danger {
+  color: var(--rdl, #f0603f);
+}

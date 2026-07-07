@@ -71,7 +71,15 @@ transitions:
     to: testing
   - from: testing
     to: review
+    when: pass
+  - from: testing
+    to: implementation
+    when: reject
   - from: review
     to: approval
+    when: pass
+  - from: review
+    to: implementation
+    when: reject
   - from: approval
     to: done
