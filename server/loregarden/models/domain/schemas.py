@@ -426,9 +426,20 @@ class StudioMcpToolGuide(SQLModel):
     stage_agent: bool = True
 
 
+class StudioAgentPreviewProfile(SQLModel):
+    description: str = ""
+    model: str = ""
+    provider: str = ""
+    default_skill: str = ""
+    timeout: int = 0
+    always_apply: bool | None = None
+
+
 class StudioAgentPreview(SQLModel):
+    name: str = ""
     markdown: str
     sections: list[str]
+    profile: StudioAgentPreviewProfile = Field(default_factory=StudioAgentPreviewProfile)
 
 
 class StudioAgentPreviewRequest(SQLModel):
@@ -488,6 +499,27 @@ class StudioWorkflowView(SQLModel):
     read_only: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+class StudioGenerateRequest(SQLModel):
+    description: str
+
+
+class StudioGeneratedAgent(SQLModel):
+    name: str
+    slug: str = ""
+    description: str = ""
+    role_body: str = ""
+    adapter: str = "claude"
+    default_skill: str = ""
+    mcp_tools: list[str] = Field(default_factory=list)
+
+
+class StudioGeneratedWorkflow(SQLModel):
+    name: str
+    slug: str = ""
+    description: str = ""
+    stages: list[StudioWorkflowStage] = Field(default_factory=list)
 
 
 class TicketStudioDraftItem(SQLModel):

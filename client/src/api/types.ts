@@ -406,15 +406,43 @@ export interface StudioMcpToolGuide {
   stage_agent: boolean;
 }
 
+export interface StudioAgentPreviewProfile {
+  description: string;
+  model: string;
+  provider: string;
+  default_skill: string;
+  timeout: number;
+  always_apply: boolean | null;
+}
+
 export interface StudioAgentPreview {
+  name: string;
   markdown: string;
   sections: string[];
+  profile: StudioAgentPreviewProfile;
 }
 
 export interface StudioDefaults {
   mcp_tools: string[];
   gate_checks: StudioGateCheck[];
   handoff_checks: StudioHandoffCheck[];
+}
+
+export interface StudioGeneratedAgent {
+  name: string;
+  slug: string;
+  description: string;
+  role_body: string;
+  adapter: string;
+  default_skill: string;
+  mcp_tools: string[];
+}
+
+export interface StudioGeneratedWorkflow {
+  name: string;
+  slug: string;
+  description: string;
+  stages: StudioWorkflowStage[];
 }
 
 export interface ClassifyRoute {

@@ -1,6 +1,62 @@
 from fastapi.testclient import TestClient
 from loregarden.models.domain import ClassifyRoute, Ticket, WorkflowStageDef
-from loregarden.services.studio_service import resolve_classify_route
+from loregarden.services.studio_service import (
+    parse_agent_generate_payload,
+    parse_markdown_frontmatter,
+    parse_workflow_generate_payload,
+    resolve_classify_route,
+    strip_markdown_frontmatter,
+)
+
+AGENT_GENERATE_STUB = """Draft agent:
+
+```json
+{
+  "name": "Localization Reviewer",
+  "slug": "localization-reviewer",
+  "description": "Reviews localized copy against acceptance criteria",
+  "role_body": "Review staged diffs for i18n regressions and missing strings.",
+  "adapter": "claude",
+  "default_skill": "review",
+  "mcp_tools": ["loregarden_get_ticket", "loregarden_attach_artifact", "unknown_tool"]
+}
+```
+"""
+
+WORKFLOW_GENERATE_STUB = """Draft workflow:
+
+```json
+{
+  "name": "Hotfix Express",
+  "slug": "hotfix-express",
+  "description": "Fast plan-implement-review loop",
+  "stages": [
+    {
+      "key": "plan",
+      "name": "Plan",
+      "stage_type": "agent",
+      "agent_id": "planner",
+      "skill_name": "plan",
+      "optional": false,
+      "order": 1,
+      "gate_required": false,
+      "classify_routes": []
+    },
+    {
+      "key": "review",
+      "name": "Review",
+      "stage_type": "gate",
+      "agent_id": "gatekeeper",
+      "skill_name": "ac_gate",
+      "optional": false,
+      "order": 2,
+      "gate_required": true,
+      "classify_routes": []
+    }
+  ]
+}
+```
+"""
 
 
 def test_studio_agent_crud(client: TestClient):
@@ -199,6 +255,59 @@ def test_studio_defaults(client: TestClient):
     assert len(body["handoff_checks"]) >= 1
 
 
+def test_parse_markdown_frontmatter():
+    raw = """---
+description: Acceptance Criteria Gatekeeper
+model: claude-3.7-sonnet
+globs: []
+alwaysApply: false
+---
+You are the gatekeeper.
+"""
+    parsed = parse_markdown_frontmatter(raw)
+    assert parsed["description"] == "Acceptance Criteria Gatekeeper"
+    assert parsed["model"] == "claude-3.7-sonnet"
+    assert parsed["alwaysApply"] == "false"
+
+
+def test_strip_markdown_frontmatter():
+    raw = """---
+description: Acceptance Criteria Gatekeeper
+model: claude-3.7-sonnet
+globs: []
+alwaysApply: false
+---
+You are the gatekeeper.
+"""
+    stripped = strip_markdown_frontmatter(raw)
+    assert "description:" not in stripped
+    assert "alwaysApply:" not in stripped
+    assert stripped.startswith("You are the gatekeeper.")
+
+
+def test_studio_agent_preview_strips_frontmatter(client: TestClient):
+    res = client.post(
+        "/api/studio/agents/preview",
+        json={
+            "name": "Gatekeeper",
+            "description": "Gate",
+            "role_body": (
+                "---\n"
+                "description: Hidden metadata\n"
+                "model: claude-3.7-sonnet\n"
+                "---\n"
+                "You are the gatekeeper."
+            ),
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert "Hidden metadata" not in body["markdown"]
+    assert "You are the gatekeeper." in body["markdown"]
+    assert body["profile"]["description"] == "Hidden metadata"
+    assert body["profile"]["model"] == "claude-3.7-sonnet"
+
+
 def test_studio_agent_preview(client: TestClient):
     res = client.post(
         "/api/studio/agents/preview",
@@ -213,7 +322,9 @@ def test_studio_agent_preview(client: TestClient):
     )
     assert res.status_code == 200
     body = res.json()
-    assert "Preview Bot" in body["markdown"]
+    assert body["name"] == "Preview Bot"
+    assert body["profile"]["description"] == "Test preview"
+    assert body["profile"]["provider"] == "claude"
     assert "loregarden_get_ticket" in body["markdown"]
     assert "memory_protocol_v1.md" in body["markdown"]
     assert "Finish cleanly." in body["markdown"]
@@ -242,3 +353,54 @@ def test_builtin_agent_has_role_body(client: TestClient):
     assert body["read_only"] is True
     assert len(body["role_body"]) > 20
     assert "memory_protocol_v1.md" in body["role_body"]
+
+
+def test_parse_agent_generate_payload_filters_unknown_tools():
+    generated = parse_agent_generate_payload(AGENT_GENERATE_STUB)
+    assert generated is not None
+    assert generated.name == "Localization Reviewer"
+    assert generated.slug == "localization-reviewer"
+    assert "loregarden_get_ticket" in generated.mcp_tools
+    assert "unknown_tool" not in generated.mcp_tools
+
+
+def test_parse_workflow_generate_payload():
+    generated = parse_workflow_generate_payload(
+        WORKFLOW_GENERATE_STUB,
+        agent_ids=["planner", "gatekeeper", "backend_implementer"],
+        skills=["plan", "ac_gate", "apply_patch"],
+    )
+    assert generated is not None
+    assert generated.name == "Hotfix Express"
+    assert len(generated.stages) == 2
+    assert generated.stages[0].agent_id == "planner"
+    assert generated.stages[1].stage_type == "gate"
+
+
+def test_studio_generate_agent_endpoint(client: TestClient, monkeypatch):
+    monkeypatch.setenv("LOREGARDEN_STUDIO_GENERATE_STUB_RESPONSE", AGENT_GENERATE_STUB)
+    res = client.post(
+        "/api/studio/agents/generate",
+        json={"description": "An agent that reviews localization changes"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["name"] == "Localization Reviewer"
+    assert body["role_body"].startswith("Review staged diffs")
+
+
+def test_studio_generate_workflow_endpoint(client: TestClient, monkeypatch):
+    monkeypatch.setenv("LOREGARDEN_STUDIO_GENERATE_STUB_RESPONSE", WORKFLOW_GENERATE_STUB)
+    res = client.post(
+        "/api/studio/workflows/generate",
+        json={"description": "A quick hotfix workflow with review gate"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["slug"] == "hotfix-express"
+    assert len(body["stages"]) == 2
+
+
+def test_studio_generate_requires_description(client: TestClient):
+    res = client.post("/api/studio/agents/generate", json={"description": "   "})
+    assert res.status_code == 400

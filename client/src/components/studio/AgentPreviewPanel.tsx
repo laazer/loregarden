@@ -1,5 +1,8 @@
+import { useState } from "react";
+
 import type { StudioAgentPreview } from "../../api/client";
-import { MarkdownContent } from "../chat/MarkdownContent";
+import { AgentPreviewContent } from "./AgentPreviewContent";
+import { AgentPreviewModal } from "./AgentPreviewModal";
 
 export function AgentPreviewPanel({
   preview,
@@ -10,43 +13,40 @@ export function AgentPreviewPanel({
   loading: boolean;
   slug?: string;
 }) {
-  const fileLabel = slug ? `${slug}.system.md` : "agent.system.md";
+  const [modalOpen, setModalOpen] = useState(false);
+  const canExpand = Boolean(preview?.markdown);
 
   return (
-    <aside className="studio-preview studio-preview--agent">
-      <div className="studio-preview-live">
-        <span className="studio-preview-live-dot" aria-hidden />
-        <span className="studio-preview-live-label">Live assembled prompt</span>
-      </div>
-      <p className="studio-preview-hint">role + MCP + gates + hand-offs</p>
-      {preview?.sections && preview.sections.length > 0 && (
-        <div className="studio-preview-chips">
-          {preview.sections.map((section) => (
-            <span key={section} className="studio-preview-chip">
-              {section}
-            </span>
-          ))}
+    <>
+      <aside className="studio-preview studio-preview--agent">
+        <div className="studio-preview-header">
+          <div className="studio-preview-live">
+            <span className="studio-preview-live-dot" aria-hidden />
+            <span className="studio-preview-live-label">Live assembled prompt</span>
+          </div>
+          <button
+            type="button"
+            className="studio-preview-expand-btn"
+            disabled={!canExpand}
+            onClick={() => setModalOpen(true)}
+            title={canExpand ? "Open full preview" : "Add agent details to preview"}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+            </svg>
+            Expand
+          </button>
         </div>
-      )}
-      <div className="studio-preview-terminal">
-        <div className="studio-preview-terminal-bar">
-          <span className="studio-preview-terminal-dot red" aria-hidden />
-          <span className="studio-preview-terminal-dot amber" aria-hidden />
-          <span className="studio-preview-terminal-dot green" aria-hidden />
-          <span className="studio-preview-terminal-title">{fileLabel}</span>
-        </div>
-        <div className="studio-preview-terminal-body">
-          {loading && <p className="studio-preview-hint">Updating preview…</p>}
-          {!loading && preview?.markdown && (
-            <div style={{ fontSize: 12.5, lineHeight: 1.6 }}>
-              <MarkdownContent content={preview.markdown} />
-            </div>
-          )}
-          {!loading && !preview?.markdown && (
-            <p className="studio-preview-hint">Select or edit an agent to see the assembled prompt.</p>
-          )}
-        </div>
-      </div>
-    </aside>
+        <AgentPreviewContent preview={preview} loading={loading} slug={slug} compact />
+      </aside>
+
+      <AgentPreviewModal
+        open={modalOpen}
+        preview={preview}
+        loading={loading}
+        slug={slug}
+        onClose={() => setModalOpen(false)}
+      />
+    </>
   );
 }

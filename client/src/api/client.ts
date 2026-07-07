@@ -44,6 +44,8 @@ import type {
   StudioMcpToolGuide,
   StudioAgentPreview,
   StudioDefaults,
+  StudioGeneratedAgent,
+  StudioGeneratedWorkflow,
   StudioWorkflowStage,
   StudioWorkflow,
   CreateTicketRequest,
@@ -279,6 +281,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  generateStudioAgent: (description: string) =>
+    request<StudioGeneratedAgent>("/api/studio/agents/generate", {
+      method: "POST",
+      body: JSON.stringify({ description }),
+    }),
   studioAgents: () => request<StudioAgent[]>("/api/studio/agents"),
   studioAgent: (slug: string) => request<StudioAgent>(`/api/studio/agents/${slug}`),
   createStudioAgent: (body: Partial<StudioAgent> & { slug: string; name: string }) =>
@@ -288,6 +295,11 @@ export const api = {
   deleteStudioAgent: (slug: string) =>
     request<{ ok: boolean }>(`/api/studio/agents/${slug}`, { method: "DELETE" }),
   studioWorkflows: () => request<StudioWorkflow[]>("/api/studio/workflows"),
+  generateStudioWorkflow: (description: string) =>
+    request<StudioGeneratedWorkflow>("/api/studio/workflows/generate", {
+      method: "POST",
+      body: JSON.stringify({ description }),
+    }),
   studioWorkflow: (slug: string) => request<StudioWorkflow>(`/api/studio/workflows/${slug}`),
   createStudioWorkflow: (body: {
     slug: string;

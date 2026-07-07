@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavLink } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   api,
@@ -16,6 +16,7 @@ import { AgentPreviewPanel } from "../components/studio/AgentPreviewPanel";
 import { StageRouteHints } from "../components/StageRouteHints";
 import { McpToolGuideSection } from "../components/studio/McpToolGuideSection";
 import { GateHandoffEditor } from "../components/studio/GateHandoffEditor";
+import { StudioDescribeBar } from "../components/studio/StudioDescribeBar";
 import { TicketStudioPanel } from "../components/studio/TicketStudioPanel";
 import { WorkflowPreviewPanel } from "../components/studio/WorkflowPreviewPanel";
 import { navigateToStudio, navigateToStudioAgent, navigateToStudioAgentNew, navigateToStudioWorkflow, navigateToStudioWorkflowNew, useStudioResourceFromRoute, useStudioSectionFromRoute } from "../lib/useAppNavigation";
@@ -91,8 +92,12 @@ export function StudioPage() {
     tab === "workflows" && studioResourceId && !isStudioNewResource(studioResourceId)
       ? studioResourceId
       : null;
+  const isCreatingAgent = tab === "agents" && !selectedAgentSlug;
+  const isCreatingWorkflow = tab === "workflows" && !selectedWorkflowSlug;
   const [layoutMode, setLayoutMode] = useState<"workbench" | "focus">("workbench");
   const [agentDraft, setAgentDraft] = useState({ ...EMPTY_AGENT });
+  const [agentDescribePrompt, setAgentDescribePrompt] = useState("");
+  const [workflowDescribePrompt, setWorkflowDescribePrompt] = useState("");
   const [workflowDraft, setWorkflowDraft] = useState<{
     slug: string;
     name: string;
@@ -140,6 +145,10 @@ export function StudioPage() {
   const agentOptions = useMemo(() => (agents.data ?? []).map((a) => ({ id: a.slug, label: a.name })), [agents.data]);
 
   const [previewPayload, setPreviewPayload] = useState<Partial<StudioAgent> & { name: string } | null>(null);
+  const prevIsNewAgentRef = useRef(false);
+  const prevIsNewWorkflowRef = useRef(false);
+  const skipAgentDraftResetRef = useRef(false);
+  const skipWorkflowDraftResetRef = useRef(false);
 
   useEffect(() => {
     const source = isAgentReadOnly && selectedAgent
@@ -201,6 +210,35 @@ export function StudioPage() {
       qc.invalidateQueries({ queryKey: ["studio-agents"] });
       navigateToStudio("agents", true);
       setAgentDraft({ ...EMPTY_AGENT });
+    },
+  });
+
+  const generateAgentDraft = useMutation({
+    mutationFn: () => api.generateStudioAgent(agentDescribePrompt),
+    onSuccess: (generated) => {
+      setAgentDraft((draft) => ({
+        ...draft,
+        slug: generated.slug || draft.slug,
+        name: generated.name,
+        description: generated.description,
+        role_body: generated.role_body,
+        adapter: generated.adapter || draft.adapter,
+        default_skill: generated.default_skill || draft.default_skill,
+        mcp_tools: generated.mcp_tools.length ? generated.mcp_tools : draft.mcp_tools,
+        mcp_enabled: generated.mcp_tools.length ? true : draft.mcp_enabled,
+      }));
+    },
+  });
+
+  const generateWorkflowDraft = useMutation({
+    mutationFn: () => api.generateStudioWorkflow(workflowDescribePrompt),
+    onSuccess: (generated) => {
+      setWorkflowDraft({
+        slug: generated.slug,
+        name: generated.name,
+        description: generated.description,
+        stages: generated.stages.length ? generated.stages : [emptyStage(1)],
+      });
     },
   });
 
@@ -272,7 +310,13 @@ export function StudioPage() {
   }, [selectedWorkflowSlug, workflows.data]);
 
   useEffect(() => {
-    if (!isNewAgent) return;
+    const enteredNew = isNewAgent && !prevIsNewAgentRef.current;
+    prevIsNewAgentRef.current = isNewAgent;
+    if (!enteredNew) return;
+    if (skipAgentDraftResetRef.current) {
+      skipAgentDraftResetRef.current = false;
+      return;
+    }
     const defaults = studioDefaults.data;
     setAgentDraft({
       ...EMPTY_AGENT,
@@ -280,12 +324,32 @@ export function StudioPage() {
       handoff_checks: defaults?.handoff_checks ?? [],
       gate_checks: defaults?.gate_checks ?? [],
     });
+    setAgentDescribePrompt("");
   }, [isNewAgent, studioDefaults.data]);
 
   useEffect(() => {
-    if (!isNewWorkflow) return;
+    const enteredNew = isNewWorkflow && !prevIsNewWorkflowRef.current;
+    prevIsNewWorkflowRef.current = isNewWorkflow;
+    if (!enteredNew) return;
+    if (skipWorkflowDraftResetRef.current) {
+      skipWorkflowDraftResetRef.current = false;
+      return;
+    }
     setWorkflowDraft({ slug: "", name: "", description: "", stages: [emptyStage(1)] });
+    setWorkflowDescribePrompt("");
   }, [isNewWorkflow]);
+
+  useEffect(() => {
+    if (tab === "agents" && studioResourceId === null) {
+      navigateToStudioAgentNew(true);
+    }
+  }, [tab, studioResourceId]);
+
+  useEffect(() => {
+    if (tab === "workflows" && studioResourceId === null) {
+      navigateToStudioWorkflowNew(true);
+    }
+  }, [tab, studioResourceId]);
 
   useEffect(() => {
     if (tab !== "agents" || !selectedAgentSlug || !agents.data) return;
@@ -306,6 +370,7 @@ export function StudioPage() {
   };
 
   const duplicateAgent = (agent: StudioAgent) => {
+    skipAgentDraftResetRef.current = true;
     navigateToStudioAgentNew();
     setAgentDraft({
       slug: `${agent.slug}-copy`,
@@ -323,6 +388,7 @@ export function StudioPage() {
   };
 
   const duplicateWorkflow = (workflow: StudioWorkflow) => {
+    skipWorkflowDraftResetRef.current = true;
     navigateToStudioWorkflowNew();
     setWorkflowDraft({
       slug: `${workflow.slug}-copy`,
@@ -536,6 +602,18 @@ export function StudioPage() {
                     </span>
                   )}
                 </div>
+              )}
+
+              {isCreatingAgent && (
+                <StudioDescribeBar
+                  value={agentDescribePrompt}
+                  onChange={setAgentDescribePrompt}
+                  onGenerate={() => generateAgentDraft.mutate()}
+                  placeholder="Describe the agent you want — role, constraints, when to use it…"
+                  generateLabel="Generate agent"
+                  pending={generateAgentDraft.isPending}
+                  error={generateAgentDraft.isError ? (generateAgentDraft.error as Error).message : null}
+                />
               )}
 
               <div className="studio-card">
@@ -821,6 +899,18 @@ export function StudioPage() {
                     </span>
                   )}
                 </div>
+              )}
+
+              {isCreatingWorkflow && (
+                <StudioDescribeBar
+                  value={workflowDescribePrompt}
+                  onChange={setWorkflowDescribePrompt}
+                  onGenerate={() => generateWorkflowDraft.mutate()}
+                  placeholder="Describe the workflow you want — stages, agents, gates, routing…"
+                  generateLabel="Generate workflow"
+                  pending={generateWorkflowDraft.isPending}
+                  error={generateWorkflowDraft.isError ? (generateWorkflowDraft.error as Error).message : null}
+                />
               )}
 
               <div className="studio-card">

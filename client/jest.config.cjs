@@ -28,5 +28,6 @@ module.exports = {
   moduleNameMapper: {
     "\\.(css|less|scss|sass)$": "<rootDir>/src/test/styleMock.ts",
     "^react-markdown$": "<rootDir>/src/test/reactMarkdownMock.tsx",
+    "^remark-gfm$": "<rootDir>/src/test/remarkGfmMock.ts",
   },
 };

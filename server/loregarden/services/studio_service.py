@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 
+from loregarden.agents.cli_adapters import build_triage_invocation
 from loregarden.agents.registry import AGENTS
+from loregarden.agents.registry import get_agent
 from loregarden.agents.registry import list_agents as list_builtin_agents
 from loregarden.config import settings
 from loregarden.models.domain import (
@@ -14,10 +20,13 @@ from loregarden.models.domain import (
     StudioAgent,
     StudioAgentCreate,
     StudioAgentPreview,
+    StudioAgentPreviewProfile,
     StudioAgentPreviewRequest,
     StudioAgentUpdate,
     StudioAgentView,
     StudioGateCheck,
+    StudioGeneratedAgent,
+    StudioGeneratedWorkflow,
     StudioHandoffCheck,
     StudioMcpToolGuide,
     StudioWorkflow,
@@ -28,8 +37,13 @@ from loregarden.models.domain import (
     Ticket,
     WorkflowStageDef,
     WorkflowTemplate,
+    Workspace,
 )
+from loregarden.services.cli_output import extract_triage_reply
+from loregarden.services.ticket_studio_service import extract_json_block
 from loregarden.services.workflow_service import WorkflowService
+from loregarden.skills.registry import list_skills
+from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
 
@@ -59,6 +73,42 @@ STUDIO_ROLE_PREAMBLE = """**Loregarden MCP:** Use MCP tools per `agent_context/a
 
 **Memory protocol:** Read `agent_context/agents/common_assets/memory_protocol_v1.md` — use MCP for memory, learnings, and blog posts (Obsidian + SQLite graph); always pass `workspace_slug`; never write vault or SQLite files directly.
 """
+
+STUDIO_GENERATE_AGENT_ID = "planner"
+MAX_STUDIO_GENERATE_CHARS = 4000
+
+AGENT_GENERATE_JSON_SCHEMA = """```json
+{
+  "name": "Localization Reviewer",
+  "slug": "localization-reviewer",
+  "description": "One line — when the orchestrator should reach for this agent",
+  "role_body": "Detailed role instructions, constraints, and output expectations",
+  "adapter": "claude",
+  "default_skill": "review",
+  "mcp_tools": ["loregarden_get_ticket", "loregarden_attach_artifact"]
+}
+```"""
+
+WORKFLOW_GENERATE_JSON_SCHEMA = """```json
+{
+  "name": "Quick Review",
+  "slug": "quick-review",
+  "description": "Plan then review with optional gate",
+  "stages": [
+    {
+      "key": "plan",
+      "name": "Plan",
+      "stage_type": "agent",
+      "agent_id": "planner",
+      "skill_name": "plan",
+      "optional": false,
+      "order": 1,
+      "gate_required": false,
+      "classify_routes": []
+    }
+  ]
+}
+```"""
 
 
 def _merge_tool_lists(*groups: list[str]) -> list[str]:
@@ -242,6 +292,50 @@ MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
 def _slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return slug or "agent"
+
+
+_FRONTMATTER_RE = re.compile(r"^---\s*\n.*?\n---\s*(?:\n|$)", re.DOTALL)
+
+
+def parse_markdown_frontmatter(text: str) -> dict[str, str]:
+    body = (text or "").lstrip("\ufeff")
+    if not body.startswith("---"):
+        return {}
+    match = _FRONTMATTER_RE.match(body)
+    if not match:
+        return {}
+    block = match.group(0)
+    inner = block.strip().removeprefix("---").removesuffix("---").strip()
+    result: dict[str, str] = {}
+    for line in inner.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or ":" not in stripped:
+            continue
+        key, _, value = stripped.partition(":")
+        result[key.strip()] = value.strip()
+    return result
+
+
+def _frontmatter_bool(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"true", "yes", "1"}:
+        return True
+    if normalized in {"false", "no", "0"}:
+        return False
+    return None
+
+
+def strip_markdown_frontmatter(text: str) -> str:
+    """Remove YAML frontmatter — `---` fences break markdown preview (setext headings)."""
+    body = (text or "").lstrip("\ufeff")
+    if not body.startswith("---"):
+        return text
+    match = _FRONTMATTER_RE.match(body)
+    if not match:
+        return text
+    return body[match.end() :].lstrip("\n")
 
 
 def _parse_json_list(raw: str, model_cls):
@@ -454,14 +548,20 @@ def _preview_agent_cfg(body: StudioAgentPreviewRequest) -> dict:
 
 def preview_agent_markdown(body: StudioAgentPreviewRequest) -> StudioAgentPreview:
     cfg = _preview_agent_cfg(body)
+    role_frontmatter = parse_markdown_frontmatter(body.role_body)
+    role_body = _ensure_studio_role_preamble(strip_markdown_frontmatter(body.role_body)).strip()
+    metadata = StudioAgentPreviewProfile(
+        description=role_frontmatter.get("description") or body.description.strip(),
+        model=role_frontmatter.get("model") or "",
+        provider=body.adapter or "claude",
+        default_skill=body.default_skill or "",
+        timeout=body.timeout,
+        always_apply=_frontmatter_bool(role_frontmatter.get("alwaysApply")),
+    )
     section_names: list[str] = ["header", "role"]
     parts = [
-        f"# Agent: {body.name}",
-        "",
-        body.description.strip() or "_No description provided._",
-        "",
         "## Agent Role",
-        body.role_body.strip() or "_No role instructions yet._",
+        role_body or "_No role instructions yet._",
     ]
     studio_sections = build_studio_prompt_sections(cfg)
     if studio_sections:
@@ -470,12 +570,12 @@ def preview_agent_markdown(body: StudioAgentPreviewRequest) -> StudioAgentPrevie
     mcp_doc_path = settings.agent_context_dir / "agents/common_assets/loregarden_mcp_v1.md"
     if body.mcp_enabled and mcp_doc_path.is_file():
         section_names.append("mcp_module")
-        mcp_doc = mcp_doc_path.read_text(encoding="utf-8")[:8000]
+        mcp_doc = strip_markdown_frontmatter(mcp_doc_path.read_text(encoding="utf-8"))[:8000]
         parts.extend(["", "## Loregarden MCP module (excerpt)", mcp_doc])
     memory_doc_path = settings.agent_context_dir / "agents/common_assets/memory_protocol_v1.md"
     if body.mcp_enabled and memory_doc_path.is_file():
         section_names.append("memory_protocol_module")
-        memory_doc = memory_doc_path.read_text(encoding="utf-8")[:8000]
+        memory_doc = strip_markdown_frontmatter(memory_doc_path.read_text(encoding="utf-8"))[:8000]
         parts.extend(["", "## Memory protocol module (excerpt)", memory_doc])
     parts.extend(
         [
@@ -486,7 +586,12 @@ def preview_agent_markdown(body: StudioAgentPreviewRequest) -> StudioAgentPrevie
         ]
     )
     section_names.append("permissions")
-    return StudioAgentPreview(markdown="\n".join(parts), sections=section_names)
+    return StudioAgentPreview(
+        name=body.name.strip(),
+        markdown="\n".join(parts),
+        sections=section_names,
+        profile=metadata,
+    )
 
 
 def resolve_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
@@ -588,6 +693,296 @@ def is_agentless_stage(stage: WorkflowStageDef) -> bool:
     return not (stage.agent_id or "").strip()
 
 
+def _default_studio_workspace(session: Session) -> Workspace:
+    workspace = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+    if not workspace:
+        workspace = session.exec(select(Workspace).order_by(Workspace.slug)).first()
+    if not workspace:
+        raise ValueError("No workspace available for studio generation")
+    return workspace
+
+
+def resolve_studio_generate_timeout(agent: dict) -> int:
+    env = os.environ.get("LOREGARDEN_STUDIO_GENERATE_TIMEOUT")
+    if env:
+        return max(30, int(env))
+    return int(agent.get("timeout", settings.triage_timeout_seconds))
+
+
+def _available_agent_ids(session: Session) -> list[str]:
+    custom = [agent.slug for agent in session.exec(select(StudioAgent)).all()]
+    builtin = [item["id"] for item in list_builtin_agents()]
+    seen: set[str] = set()
+    out: list[str] = []
+    for slug in [*custom, *builtin]:
+        if slug not in seen:
+            seen.add(slug)
+            out.append(slug)
+    return sorted(out, key=str.lower)
+
+
+def _available_skills() -> list[str]:
+    return list_skills()
+
+
+def build_agent_generate_prompt(
+    description: str,
+    *,
+    agent_ids: list[str],
+    skills: list[str],
+    mcp_tools: list[str],
+) -> str:
+    trimmed = (description or "").strip()[:MAX_STUDIO_GENERATE_CHARS]
+    return "\n".join(
+        [
+            "# Loregarden Agent Studio",
+            "You help operators draft custom Loregarden agents.",
+            "Respond with a single fenced JSON block only — no markdown tables or prose outside the block.",
+            "",
+            "## Operator description",
+            trimmed or "—",
+            "",
+            "## Available agent slugs (for reference only — do not reuse built-in slugs for new agents)",
+            ", ".join(agent_ids[:40]),
+            "",
+            "## Available skills",
+            ", ".join(skills) or "—",
+            "",
+            "## Available MCP tools",
+            ", ".join(mcp_tools[:40]),
+            "",
+            "## Task",
+            "Draft a custom agent definition from the operator description.",
+            "Choose adapter from: claude, cursor, lmstudio, local.",
+            "Pick MCP tools appropriate to the role; prefer loregarden_get_ticket for stage agents.",
+            "Write concrete role_body instructions with constraints and expected outputs.",
+            "Do not include the Loregarden MCP/memory preamble — the studio adds that automatically.",
+            AGENT_GENERATE_JSON_SCHEMA,
+        ]
+    )
+
+
+def build_workflow_generate_prompt(
+    description: str,
+    *,
+    agent_ids: list[str],
+    skills: list[str],
+) -> str:
+    trimmed = (description or "").strip()[:MAX_STUDIO_GENERATE_CHARS]
+    return "\n".join(
+        [
+            "# Loregarden Workflow Studio",
+            "You help operators draft custom Loregarden workflow pipelines.",
+            "Respond with a single fenced JSON block only — no markdown tables or prose outside the block.",
+            "",
+            "## Operator description",
+            trimmed or "—",
+            "",
+            "## Available agent slugs",
+            ", ".join(agent_ids[:40]),
+            "",
+            "## Available skills",
+            ", ".join(skills) or "—",
+            "",
+            "## Task",
+            "Draft a workflow with ordered stages from the operator description.",
+            "Use stage_type agent | classify | gate.",
+            "For classify stages include classify_routes with languages, specialties, agent_id, skill_name, default.",
+            "Use unique stage keys and sequential order values starting at 1.",
+            "Prefer existing built-in agents (planner, spec, backend_implementer, gatekeeper, etc.) when they fit.",
+            WORKFLOW_GENERATE_JSON_SCHEMA,
+        ]
+    )
+
+
+def invoke_studio_generate_model(session: Session, prompt: str) -> str:
+    stub = os.environ.get("LOREGARDEN_STUDIO_GENERATE_STUB_RESPONSE")
+    if stub is not None:
+        return stub
+
+    workspace = _default_studio_workspace(session)
+    repo_root = resolve_workspace_root(workspace)
+    if not repo_root.is_dir():
+        raise ValueError(f"Workspace repo path does not exist: {repo_root}")
+
+    agent = get_agent(STUDIO_GENERATE_AGENT_ID)
+    if not agent:
+        raise ValueError(f"Unknown studio generate agent: {STUDIO_GENERATE_AGENT_ID}")
+
+    with tempfile.TemporaryDirectory(prefix="loregarden-studio-generate-") as tmp:
+        prompt_file = Path(tmp) / "prompt.md"
+        prompt_file.write_text(prompt, encoding="utf-8")
+        invocation = build_triage_invocation(
+            agent_id=STUDIO_GENERATE_AGENT_ID,
+            adapter=agent.get("adapter", "claude"),
+            prompt=prompt,
+            prompt_file=prompt_file,
+            skill_name="",
+            workspace_root=repo_root,
+            workspace=workspace,
+        )
+        timeout = resolve_studio_generate_timeout(agent)
+        proc = subprocess.Popen(
+            invocation.argv,
+            cwd=invocation.cwd or str(repo_root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE if invocation.stdin_prompt else None,
+            bufsize=0,
+        )
+        if invocation.stdin_prompt and proc.stdin:
+            proc.stdin.write(invocation.stdin_prompt.encode("utf-8"))
+            proc.stdin.close()
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            raise TimeoutError(f"Studio generate assistant timed out after {timeout}s") from None
+
+        if proc.returncode != 0:
+            detail = stderr.decode("utf-8", errors="replace").strip() or stdout.decode(
+                "utf-8", errors="replace"
+            ).strip()
+            raise RuntimeError(detail or f"Studio generate CLI exited with code {proc.returncode}")
+
+        reply = extract_triage_reply(stdout.decode("utf-8", errors="replace"))
+        if not reply:
+            raise RuntimeError("Studio generate assistant returned an empty response")
+        return reply[:12000]
+
+
+def parse_agent_generate_payload(text: str) -> StudioGeneratedAgent | None:
+    payload = extract_json_block(text)
+    if not payload:
+        return None
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return None
+    slug = _slugify(str(payload.get("slug") or name))
+    adapter = str(payload.get("adapter") or "claude").strip().lower()
+    if adapter not in {"claude", "cursor", "lmstudio", "local"}:
+        adapter = "claude"
+    tools_raw = payload.get("mcp_tools") or []
+    mcp_tools = [str(item).strip() for item in tools_raw if str(item).strip()]
+    known_tools = set(_tool_names())
+    mcp_tools = [tool for tool in mcp_tools if tool in known_tools]
+    return StudioGeneratedAgent(
+        name=name,
+        slug=slug,
+        description=str(payload.get("description") or "").strip(),
+        role_body=str(payload.get("role_body") or "").strip(),
+        adapter=adapter,
+        default_skill=str(payload.get("default_skill") or "").strip(),
+        mcp_tools=mcp_tools,
+    )
+
+
+def _normalize_generated_stage(raw: dict, *, order: int, agent_ids: set[str], skills: set[str]) -> StudioWorkflowStage | None:
+    key = _slugify(str(raw.get("key") or f"stage_{order}"))
+    name = str(raw.get("name") or key.replace("-", " ").title()).strip()
+    stage_type = str(raw.get("stage_type") or "agent").strip().lower()
+    if stage_type not in {"agent", "classify", "gate"}:
+        stage_type = "agent"
+    agent_id = str(raw.get("agent_id") or "").strip()
+    skill_name = str(raw.get("skill_name") or "").strip()
+    if stage_type == "gate" and not agent_id:
+        agent_id = "gatekeeper"
+        skill_name = skill_name or "ac_gate"
+    if stage_type == "agent" and agent_id and agent_id not in agent_ids:
+        agent_id = "planner" if "planner" in agent_ids else next(iter(agent_ids), "planner")
+    if skill_name and skill_name not in skills:
+        skill_name = ""
+    routes: list[ClassifyRoute] = []
+    for route_raw in raw.get("classify_routes") or []:
+        if not isinstance(route_raw, dict):
+            continue
+        route_agent = str(route_raw.get("agent_id") or "").strip()
+        if route_agent and route_agent not in agent_ids:
+            route_agent = "backend_implementer" if "backend_implementer" in agent_ids else agent_id
+        route_skill = str(route_raw.get("skill_name") or "").strip()
+        if route_skill and route_skill not in skills:
+            route_skill = "apply_patch" if "apply_patch" in skills else route_skill
+        routes.append(
+            ClassifyRoute(
+                languages=[str(item).strip() for item in (route_raw.get("languages") or []) if str(item).strip()],
+                specialties=[str(item).strip() for item in (route_raw.get("specialties") or []) if str(item).strip()],
+                agent_id=route_agent or "backend_implementer",
+                skill_name=route_skill,
+                default=bool(route_raw.get("default")),
+            )
+        )
+    if stage_type == "classify" and not routes:
+        routes = [
+            ClassifyRoute(
+                languages=["python"],
+                specialties=["backend"],
+                agent_id="backend_implementer" if "backend_implementer" in agent_ids else agent_id or "planner",
+                skill_name="apply_patch" if "apply_patch" in skills else skill_name,
+                default=True,
+            )
+        ]
+    return StudioWorkflowStage(
+        key=key,
+        name=name,
+        stage_type=stage_type,
+        agent_id=agent_id,
+        skill_name=skill_name,
+        optional=bool(raw.get("optional")),
+        order=order,
+        gate_required=bool(raw.get("gate_required")),
+        classify_routes=routes,
+    )
+
+
+def parse_workflow_generate_payload(
+    text: str,
+    *,
+    agent_ids: list[str],
+    skills: list[str],
+) -> StudioGeneratedWorkflow | None:
+    payload = extract_json_block(text)
+    if not payload:
+        return None
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return None
+    slug = _slugify(str(payload.get("slug") or name))
+    agent_id_set = set(agent_ids)
+    skill_set = set(skills)
+    stages: list[StudioWorkflowStage] = []
+    for index, raw in enumerate(payload.get("stages") or [], start=1):
+        if not isinstance(raw, dict):
+            continue
+        stage = _normalize_generated_stage(
+            raw,
+            order=index,
+            agent_ids=agent_id_set,
+            skills=skill_set,
+        )
+        if stage:
+            stages.append(stage)
+    if not stages:
+        stages = [
+            StudioWorkflowStage(
+                key="plan",
+                name="Plan",
+                stage_type="agent",
+                agent_id="planner" if "planner" in agent_id_set else agent_ids[0],
+                skill_name="plan" if "plan" in skill_set else "",
+                optional=False,
+                order=1,
+                gate_required=False,
+                classify_routes=[],
+            )
+        ]
+    return StudioGeneratedWorkflow(
+        name=name,
+        slug=slug,
+        description=str(payload.get("description") or "").strip(),
+        stages=stages,
+    )
+
+
 def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
     if stage.stage_type == "classify":
         return resolve_classify_route(ticket, stage)
@@ -633,6 +1028,37 @@ class StudioService:
 
     def preview_agent(self, body: StudioAgentPreviewRequest) -> StudioAgentPreview:
         return preview_agent_markdown(body)
+
+    def generate_agent(self, description: str) -> StudioGeneratedAgent:
+        trimmed = (description or "").strip()
+        if not trimmed:
+            raise ValueError("Description is required")
+        prompt = build_agent_generate_prompt(
+            trimmed,
+            agent_ids=_available_agent_ids(self.session),
+            skills=_available_skills(),
+            mcp_tools=_tool_names(),
+        )
+        reply = invoke_studio_generate_model(self.session, prompt)
+        generated = parse_agent_generate_payload(reply)
+        if not generated:
+            raise ValueError("Could not parse agent draft from assistant response")
+        if generated.slug in AGENTS:
+            generated.slug = _slugify(f"{generated.slug}-custom")
+        return generated
+
+    def generate_workflow(self, description: str) -> StudioGeneratedWorkflow:
+        trimmed = (description or "").strip()
+        if not trimmed:
+            raise ValueError("Description is required")
+        agent_ids = _available_agent_ids(self.session)
+        skills = _available_skills()
+        prompt = build_workflow_generate_prompt(trimmed, agent_ids=agent_ids, skills=skills)
+        reply = invoke_studio_generate_model(self.session, prompt)
+        generated = parse_workflow_generate_payload(reply, agent_ids=agent_ids, skills=skills)
+        if not generated:
+            raise ValueError("Could not parse workflow draft from assistant response")
+        return generated
 
     def list_agents(self, *, include_builtin: bool = True) -> list[StudioAgentView]:
         custom = [

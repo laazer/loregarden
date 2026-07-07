@@ -4,6 +4,7 @@ from loregarden.models.domain import (
     StudioAgentCreate,
     StudioAgentPreviewRequest,
     StudioAgentUpdate,
+    StudioGenerateRequest,
     StudioWorkflowCreate,
     StudioWorkflowUpdate,
 )
@@ -33,6 +34,20 @@ def preview_studio_agent(
     body: StudioAgentPreviewRequest, session: Session = Depends(get_session)
 ) -> dict:
     return StudioService(session).preview_agent(body).model_dump()
+
+
+@router.post("/agents/generate")
+def generate_studio_agent(
+    body: StudioGenerateRequest, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        return StudioService(session).generate_agent(body.description).model_dump()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.get("/agents")
@@ -80,6 +95,20 @@ def delete_studio_agent(slug: str, session: Session = Depends(get_session)) -> d
 @router.get("/workflows")
 def list_studio_workflows(session: Session = Depends(get_session)) -> list[dict]:
     return [item.model_dump() for item in StudioService(session).list_workflows()]
+
+
+@router.post("/workflows/generate")
+def generate_studio_workflow(
+    body: StudioGenerateRequest, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        return StudioService(session).generate_workflow(body.description).model_dump()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.get("/workflows/{slug}")

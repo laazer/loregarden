@@ -30,6 +30,19 @@ describe("chatUtils", () => {
     expect(normalizeChatMarkdown("line one\nline two")).toBe("line one  \nline two");
     expect(normalizeChatMarkdown("para one\n\npara two")).toBe("para one\n\npara two");
   });
+
+  it("preserves markdown table rows without hard-break conversion", () => {
+    const table = [
+      "| Situation | Tool |",
+      "|-----------|------|",
+      "| Read ticket | `loregarden_get_ticket` |",
+    ].join("\n");
+
+    expect(normalizeChatMarkdown(`Intro line\n\n${table}`)).toBe(`Intro line\n\n${table}`);
+    expect(normalizeChatMarkdown(`Before\n${table}\nAfter`)).toBe(
+      `Before\n\n${table}\n\nAfter`,
+    );
+  });
 });
 
 describe("ChatMessageBubble", () => {
