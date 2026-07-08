@@ -1,4 +1,4 @@
-import { StudioChatComposer, StudioChatMessages, StudioScoperAvatar } from "./StudioChat";
+import { StudioChatComposer, StudioChatMessages } from "./StudioChat";
 
 export function TicketStudioChatMessages({
   messages,
@@ -17,7 +17,8 @@ export function TicketStudioChatMessages({
       emptyMessage={emptyMessage}
       isThinking={isThinking}
       thinkingMessage={thinkingMessage}
-      assistantAvatar={<StudioScoperAvatar />}
+      thinkingActivity="thinking"
+      assistantLabel="Scoper"
     />
   );
 }

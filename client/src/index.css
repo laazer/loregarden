@@ -1601,26 +1601,8 @@ button {
   max-width: 92%;
 }
 
-.ticket-studio-scoper-avatar,
-.studio-assistant-avatar {
-  width: 28px;
-  height: 28px;
-  flex: none;
-  border-radius: 8px;
-  display: flex;
+.ticket-studio-thinking-row {
   align-items: center;
-  justify-content: center;
-}
-
-.ticket-studio-scoper-avatar,
-.studio-assistant-avatar--scoper {
-  background: linear-gradient(140deg, var(--ac), #12a37e);
-  box-shadow: 0 2px 8px rgba(45, 212, 167, 0.3);
-}
-
-.studio-assistant-avatar--triage {
-  background: linear-gradient(140deg, #8b7dff, #5b6dff);
-  box-shadow: 0 2px 8px rgba(139, 125, 255, 0.28);
 }
 
 .studio-chat-composer-options {
@@ -1897,6 +1879,7 @@ button {
   margin: 0;
   font-size: 12px;
   color: var(--ac2);
+  align-self: center;
 }
 
 .ticket-studio-clarify-card {

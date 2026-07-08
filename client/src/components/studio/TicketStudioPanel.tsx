@@ -16,6 +16,7 @@ import {
   navigateToStudioTicketSessionNew,
   useStudioResourceFromRoute,
 } from "../../lib/useAppNavigation";
+import { BaxterAvatar } from "../chat/BaxterAvatar";
 import { ParentTicketSelector } from "../ParentTicketSelector";
 import { workItemTypeLabel } from "../../lib/workItemHierarchy";
 import { runtimeSummaryLabel } from "../WorkspaceRuntimeFields";
@@ -535,11 +536,7 @@ export function TicketStudioPanel({
               <div className="ticket-studio-chat-body">
                 {selectedSession.summary && (
                   <div className="ticket-studio-msg-row">
-                    <span className="ticket-studio-scoper-avatar" aria-hidden>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#04140f" strokeWidth="2.4">
-                        <path d="M12 3v18M5 8l7-5 7 5" />
-                      </svg>
-                    </span>
+                    <BaxterAvatar state="idle" label="Scoper" />
                     <div className="ticket-studio-msg ticket-studio-msg-assistant">
                       <div className="ticket-studio-msg-body">{selectedSession.summary}</div>
                     </div>

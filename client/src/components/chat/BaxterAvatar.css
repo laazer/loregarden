@@ -1,0 +1,130 @@
+/* 4×4 Baxter spritesheet (720×784) — 180×196 tiles, no gutters.
+   Pixel-based positioning so small avatars land on exact tile bounds. */
+
+.baxter-avatar {
+  --baxter-w: 48px;
+  --baxter-h: calc(var(--baxter-w) * 196 / 180);
+  width: var(--baxter-w);
+  height: var(--baxter-h);
+  flex: none;
+  display: block;
+  border-radius: 10px;
+  overflow: hidden;
+  background-color: #1b325e;
+  background-image: var(--baxter-sheet);
+  background-repeat: no-repeat;
+  background-size: calc(var(--baxter-w) * 4) calc(var(--baxter-h) * 4);
+  background-position: 0 0;
+  box-shadow: 0 2px 8px rgba(16, 23, 49, 0.45);
+  image-rendering: auto;
+}
+
+.baxter-avatar--idle {
+  background-position: 0 0;
+}
+
+.baxter-avatar--thinking {
+  animation: baxter-thinking 1.2s steps(1) infinite;
+}
+
+.baxter-avatar--typing {
+  animation: baxter-typing 0.7s steps(1) infinite;
+}
+
+.baxter-avatar--responding {
+  animation: baxter-responding 0.55s steps(1) infinite;
+}
+
+.baxter-avatar--idle:hover,
+.baxter-avatar--idle:focus-visible {
+  animation: baxter-hover 0.55s steps(1) infinite;
+}
+
+/* Row 1: subtle head look (thinking) */
+@keyframes baxter-thinking {
+  0%,
+  100% {
+    background-position: 0 0;
+  }
+  25% {
+    background-position: calc(var(--baxter-w) * -1) 0;
+  }
+  50% {
+    background-position: calc(var(--baxter-w) * -2) 0;
+  }
+  75% {
+    background-position: calc(var(--baxter-w) * -3) 0;
+  }
+}
+
+/* Row 2: walk-in-place (typing / busy) */
+@keyframes baxter-typing {
+  0%,
+  100% {
+    background-position: 0 calc(var(--baxter-h) * -1);
+  }
+  25% {
+    background-position: calc(var(--baxter-w) * -1) calc(var(--baxter-h) * -1);
+  }
+  50% {
+    background-position: calc(var(--baxter-w) * -2) calc(var(--baxter-h) * -1);
+  }
+  75% {
+    background-position: calc(var(--baxter-w) * -3) calc(var(--baxter-h) * -1);
+  }
+}
+
+/* Row 3 tiles 3–4: happy open-mouth wag (responding) */
+@keyframes baxter-responding {
+  0%,
+  100% {
+    background-position: calc(var(--baxter-w) * -2) calc(var(--baxter-h) * -2);
+  }
+  50% {
+    background-position: calc(var(--baxter-w) * -3) calc(var(--baxter-h) * -2);
+  }
+}
+
+/* Row 4: front-facing tail wag (hover) */
+@keyframes baxter-hover {
+  0%,
+  100% {
+    background-position: 0 calc(var(--baxter-h) * -3);
+  }
+  25% {
+    background-position: calc(var(--baxter-w) * -1) calc(var(--baxter-h) * -3);
+  }
+  50% {
+    background-position: calc(var(--baxter-w) * -2) calc(var(--baxter-h) * -3);
+  }
+  75% {
+    background-position: calc(var(--baxter-w) * -3) calc(var(--baxter-h) * -3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .baxter-avatar--thinking,
+  .baxter-avatar--typing,
+  .baxter-avatar--responding,
+  .baxter-avatar--idle:hover,
+  .baxter-avatar--idle:focus-visible {
+    animation: none;
+  }
+
+  .baxter-avatar--thinking {
+    background-position: calc(var(--baxter-w) * -2) 0;
+  }
+
+  .baxter-avatar--typing {
+    background-position: calc(var(--baxter-w) * -1) calc(var(--baxter-h) * -1);
+  }
+
+  .baxter-avatar--responding {
+    background-position: calc(var(--baxter-w) * -3) calc(var(--baxter-h) * -2);
+  }
+
+  .baxter-avatar--idle:hover,
+  .baxter-avatar--idle:focus-visible {
+    background-position: calc(var(--baxter-w) * -2) calc(var(--baxter-h) * -3);
+  }
+}

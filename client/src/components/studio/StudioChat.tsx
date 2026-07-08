@@ -1,29 +1,48 @@
 import type { ReactNode } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { BaxterAvatar, type BaxterAvatarState } from "../chat/BaxterAvatar";
 import { MarkdownContent } from "../chat/MarkdownContent";
 import { chatMessageBody, isUserChatRole, type ChatMessageView } from "../chat/chatUtils";
 
-export function StudioScoperAvatar() {
-  return (
-    <span className="studio-assistant-avatar studio-assistant-avatar--scoper" aria-hidden>
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#04140f" strokeWidth="2.4">
-        <path d="M12 3v18M5 8l7-5 7 5" />
-      </svg>
-    </span>
-  );
+export type StudioAssistantActivity = "thinking" | "typing";
+
+export function StudioScoperAvatar({ state = "idle" }: { state?: BaxterAvatarState }) {
+  return <BaxterAvatar state={state} label="Scoper" />;
 }
 
-export function StudioTriageAvatar() {
-  return (
-    <span className="studio-assistant-avatar studio-assistant-avatar--triage" aria-hidden>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0f1530" strokeWidth="2.2">
-        <path d="M12 3a7 7 0 0 1 7 7v2h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h1v-2a7 7 0 0 1 7-7z" />
-        <circle cx="9" cy="13" r="1" fill="#0f1530" />
-        <circle cx="15" cy="13" r="1" fill="#0f1530" />
-      </svg>
-    </span>
-  );
+export function StudioTriageAvatar({ state = "idle" }: { state?: BaxterAvatarState }) {
+  return <BaxterAvatar state={state} label="Triage assistant" />;
+}
+
+function latestAssistantMessageId(messages: ChatMessageView[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (!isUserChatRole(messages[i].role)) return messages[i].id;
+  }
+  return null;
+}
+
+function useRespondingFlash(messages: ChatMessageView[], isBusy: boolean): boolean {
+  const latestId = latestAssistantMessageId(messages);
+  const previousIdRef = useRef<string | null>(latestId);
+  const [flash, setFlash] = useState(false);
+
+  useEffect(() => {
+    const previousId = previousIdRef.current;
+    previousIdRef.current = latestId;
+
+    if (isBusy || !latestId || latestId === previousId) return;
+
+    setFlash(true);
+    const timer = window.setTimeout(() => setFlash(false), 1600);
+    return () => window.clearTimeout(timer);
+  }, [isBusy, latestId]);
+
+  useEffect(() => {
+    if (isBusy) setFlash(false);
+  }, [isBusy]);
+
+  return flash && !isBusy;
 }
 
 export function StudioChatMessages({
@@ -31,7 +50,8 @@ export function StudioChatMessages({
   emptyMessage,
   isThinking,
   thinkingMessage = "Assistant is thinking…",
-  assistantAvatar = <StudioScoperAvatar />,
+  thinkingActivity = "thinking",
+  assistantLabel = "Assistant",
   autoScroll = true,
   className,
 }: {
@@ -39,16 +59,23 @@ export function StudioChatMessages({
   emptyMessage?: string;
   isThinking?: boolean;
   thinkingMessage?: string;
-  assistantAvatar?: ReactNode;
+  /** Which busy animation to play while waiting for the assistant. */
+  thinkingActivity?: StudioAssistantActivity;
+  assistantLabel?: string;
   autoScroll?: boolean;
   className?: string;
 }) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const responding = useRespondingFlash(messages, Boolean(isThinking));
+  const latestAssistantId = latestAssistantMessageId(messages);
 
   useEffect(() => {
     if (!autoScroll) return;
     bottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
   }, [autoScroll, messages.length, isThinking]);
+
+  const busyState: BaxterAvatarState = thinkingActivity === "typing" ? "typing" : "thinking";
+  const activeState: BaxterAvatarState = isThinking ? busyState : responding ? "responding" : "idle";
 
   if (messages.length === 0 && !isThinking) {
     return (
@@ -73,16 +100,23 @@ export function StudioChatMessages({
           );
         }
 
+        const state =
+          !isThinking && message.id === latestAssistantId ? activeState : "idle";
         return (
           <div key={message.id} className="ticket-studio-msg-row">
-            {assistantAvatar}
+            <BaxterAvatar state={state} label={assistantLabel} />
             <div className="ticket-studio-msg ticket-studio-msg-assistant">
               <MarkdownContent content={body} className="ticket-studio-msg-body" />
             </div>
           </div>
         );
       })}
-      {isThinking ? <p className="ticket-studio-thinking">{thinkingMessage}</p> : null}
+      {isThinking ? (
+        <div className="ticket-studio-msg-row ticket-studio-thinking-row">
+          <BaxterAvatar state={busyState} label={assistantLabel} />
+          <p className="ticket-studio-thinking">{thinkingMessage}</p>
+        </div>
+      ) : null}
       <div ref={bottomRef} />
     </div>
   );

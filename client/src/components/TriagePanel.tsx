@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 import { api, type Approval, type RuntimeOptions, type TicketDetail } from "../api/client";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
-import { StudioChatComposer, StudioChatMessages, StudioTriageAvatar } from "./studio/StudioChat";
+import { StudioChatMessages } from "./studio/StudioChat";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { TriageComposer } from "./TriageComposer";
@@ -184,7 +184,8 @@ export function TriagePanel({
           </div>
           <StudioChatMessages
             messages={messages}
-            assistantAvatar={<StudioTriageAvatar />}
+            assistantLabel="Triage assistant"
+            thinkingActivity="typing"
             autoScroll={autoScroll}
             emptyMessage="Ask about requirements, failures, or next steps. The triage assistant sees this ticket's description, workflow state, blocking issues, recent runs, and this conversation."
             isThinking={isSending}
