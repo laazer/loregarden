@@ -1,0 +1,26 @@
+{
+  "skin": "netplace",
+  "floor": "netplace/floor.png",
+  "agents": {
+    "worker": "netplace/agents/worker.png",
+    "planner": "netplace/agents/planner.png",
+    "implementer": "netplace/agents/implementer.png",
+    "tester": "netplace/agents/tester.png",
+    "reviewer": "netplace/agents/reviewer.png"
+  },
+  "stations": {
+    "planner_hq": "netplace/stations/planner_hq.png",
+    "research": "netplace/stations/research.png",
+    "coding": "netplace/stations/coding.png",
+    "testing": "netplace/stations/testing.png",
+    "deploy": "netplace/stations/deploy.png"
+  },
+  "artifacts": {
+    "context": "netplace/artifacts/context.png",
+    "diff": "netplace/artifacts/diff.png"
+  },
+  "events": {
+    "waiting": "netplace/events/waiting.png",
+    "error": "netplace/events/error.png"
+  }
+}

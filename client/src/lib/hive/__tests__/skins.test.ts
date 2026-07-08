@@ -1,10 +1,10 @@
 import { mapAgentToRole } from "../roleMap";
-import { DEFAULT_HIVE_SKIN, HIVE_SKIN_IDS, HIVE_SKINS, isHiveSkinId } from "../skins";
+import { DEFAULT_HIVE_SKIN, HIVE_ENABLED_SKIN_IDS, HIVE_SKIN_IDS, HIVE_SKINS, isHiveSkinId, normalizeHiveSkinId, resolveHiveSkinId, skinLabel } from "../skins";
 
 describe("hive skins", () => {
   it("includes four skins with complete semantic labels", () => {
-    expect(HIVE_SKIN_IDS).toEqual(["warcraft", "dunder_mifflin", "cyberpunk", "starcraft"]);
-    expect(DEFAULT_HIVE_SKIN).toBe("dunder_mifflin");
+    expect(HIVE_SKIN_IDS).toEqual(["runeplace", "officeplace", "netplace", "starplace"]);
+    expect(DEFAULT_HIVE_SKIN).toBe("officeplace");
 
     for (const id of HIVE_SKIN_IDS) {
       const skin = HIVE_SKINS[id];
@@ -23,8 +23,31 @@ describe("hive skins", () => {
   });
 
   it("validates skin ids", () => {
-    expect(isHiveSkinId("warcraft")).toBe(true);
+    expect(isHiveSkinId("runeplace")).toBe(true);
     expect(isHiveSkinId("nope")).toBe(false);
+  });
+
+  it("maps legacy skin ids to renamed ids", () => {
+    expect(normalizeHiveSkinId("dunder_mifflin")).toBe("officeplace");
+    expect(normalizeHiveSkinId("warcraft")).toBe("runeplace");
+    expect(normalizeHiveSkinId("cyberpunk")).toBe("netplace");
+    expect(normalizeHiveSkinId("starcraft")).toBe("starplace");
+    expect(normalizeHiveSkinId("officespace")).toBe("officeplace");
+    expect(normalizeHiveSkinId("runespace")).toBe("runeplace");
+    expect(normalizeHiveSkinId("netspace")).toBe("netplace");
+    expect(normalizeHiveSkinId("unknown")).toBeNull();
+  });
+
+  it("resolves legacy skin ids for labels", () => {
+    expect(skinLabel("officespace", "planner_hq")).toBe("Regional Manager");
+    expect(skinLabel("dunder_mifflin", "waiting")).toBe("Coffee Machine");
+    expect(resolveHiveSkinId("officespace")).toBe("officeplace");
+  });
+
+  it("clamps disabled skins to the default", () => {
+    expect(resolveHiveSkinId("runeplace")).toBe("officeplace");
+    expect(resolveHiveSkinId("netplace")).toBe("officeplace");
+    expect(HIVE_ENABLED_SKIN_IDS).toEqual(["officeplace"]);
   });
 });
 

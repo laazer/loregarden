@@ -56,6 +56,8 @@ function TreeRow({
   const stateColor = STATE_COLORS[node.state];
   const wfColor = WORKFLOW_STATUS_COLORS[node.workflow_stage_status] ?? "var(--txl)";
 
+  const showTrail = workflowRunning || showAddChild || hasChildren;
+
   const handleRowClick = () => {
     onSelect(node.id);
     if (hasChildren) onToggle(node.id);
@@ -79,34 +81,34 @@ function TreeRow({
         aria-expanded={hasChildren ? expanded : undefined}
         tabIndex={0}
       >
-        <div className="tree-row-main">
-          {hasChildren ? (
-            <button
-              type="button"
-              className="tree-chevron-btn"
-              aria-label={expanded ? "Collapse" : "Expand"}
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggle(node.id);
-              }}
-            >
-              <TreeExpandChevron expanded={expanded} />
-            </button>
+        {hasChildren ? (
+          <button
+            type="button"
+            className="tree-chevron-btn"
+            aria-label={expanded ? "Collapse" : "Expand"}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle(node.id);
+            }}
+          >
+            <TreeExpandChevron expanded={expanded} />
+          </button>
+        ) : (
+          <span className="tree-chevron-btn tree-chevron-spacer" aria-hidden />
+        )}
+        <PrioBars priority={node.priority} />
+        <div className={`tree-card-title${showTrail ? "" : " tree-card-title--full"}`}>
+          {showExternalId ? (
+            <>
+              <span className="tree-external-id">{node.external_id}</span>
+              <span className="tree-title-sep"> · </span>
+              {node.title}
+            </>
           ) : (
-            <span className="tree-chevron-btn tree-chevron-spacer" aria-hidden />
+            node.title
           )}
-          <PrioBars priority={node.priority} />
-          <span className="tree-card-title">
-            {showExternalId ? (
-              <>
-                <span className="tree-external-id">{node.external_id}</span>
-                <span className="tree-title-sep"> · </span>
-                {node.title}
-              </>
-            ) : (
-              node.title
-            )}
-          </span>
+        </div>
+        {showTrail ? (
           <div className="tree-row-trail">
             {workflowRunning && (
               <span
@@ -133,7 +135,7 @@ function TreeRow({
               <span className="count-pill tree-child-count">{node.child_count}</span>
             )}
           </div>
-        </div>
+        ) : null}
         <div className="tree-card-meta">
           <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 500, color: stateColor }}>
             <span className="tree-state-dot" style={{ background: stateColor }} />

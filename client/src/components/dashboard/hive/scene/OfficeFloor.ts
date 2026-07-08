@@ -33,10 +33,10 @@ function placeholderTextures(): HiveSkinTextures {
 }
 
 const SKIN_FLOOR_COLORS: Record<HiveSkinId, { a: number; b: number; path: number }> = {
-  warcraft: { a: 0x3d5c2e, b: 0x2f4624, path: 0x8b7355 },
-  dunder_mifflin: { a: 0xc9b896, b: 0xb8a682, path: 0x8a8f98 },
-  cyberpunk: { a: 0x1a1028, b: 0x120c1c, path: 0x3a2658 },
-  starcraft: { a: 0x2a2e28, b: 0x1e221c, path: 0x4a5240 },
+  runeplace: { a: 0x3d5c2e, b: 0x2f4624, path: 0x8b7355 },
+  officeplace: { a: 0xc9b896, b: 0xb8a682, path: 0x8a8f98 },
+  netplace: { a: 0x1a1028, b: 0x120c1c, path: 0x3a2658 },
+  starplace: { a: 0x2a2e28, b: 0x1e221c, path: 0x4a5240 },
 };
 
 export class OfficeFloor {
@@ -284,7 +284,7 @@ export async function createHiveApplication(host: HTMLElement): Promise<{
   app.ticker.autoStart = false;
   app.ticker.stop();
   const floor = new OfficeFloor();
-  floor.mountPlaceholderFloor("dunder_mifflin");
+  floor.mountPlaceholderFloor("officeplace");
   app.stage.addChild(floor.root);
   return { app, floor };
 }

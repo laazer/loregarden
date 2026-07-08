@@ -1,5 +1,6 @@
 import type { StageStatus, WorkflowStageView } from "../../api/client";
 import { stageStatusMeta } from "../stageDisplay";
+import { getHiveLayout, type HiveLayout } from "./layouts";
 import { mapAgentToRole, type HiveCastVariant } from "./roleMap";
 import {
   HIVE_SKINS,
@@ -8,6 +9,7 @@ import {
   type HiveEventKind,
   type HiveSkinId,
   type HiveStationId,
+  resolveHiveSkinId,
   skinLabel,
 } from "./skins";
 
@@ -20,30 +22,18 @@ const STATUS_RANK: Record<StageStatus, number> = {
   wont_do: 0,
 };
 
-/** Fixed world positions in tile units (16px tiles). Map is 40×28 tiles. */
+/** Default world positions in tile units (16px tiles). Map is 40×28 tiles. */
 export const HIVE_MAP = {
   tileSize: 16,
   width: 40,
   height: 28,
 } as const;
 
-export const STATION_POSITIONS: Record<HiveStationId, { x: number; y: number }> = {
-  planner_hq: { x: 20, y: 3 },
-  research: { x: 6, y: 10 },
-  coding: { x: 20, y: 12 },
-  testing: { x: 34, y: 10 },
-  deploy: { x: 20, y: 22 },
-};
+export const STATION_POSITIONS = getHiveLayout("officeplace").stationPositions;
 
-export const WAITING_POSITION = { x: 8, y: 20 };
-export const DESK_ROW = [
-  { x: 10, y: 16 },
-  { x: 14, y: 16 },
-  { x: 18, y: 16 },
-  { x: 22, y: 16 },
-  { x: 26, y: 16 },
-  { x: 30, y: 16 },
-] as const;
+export const WAITING_POSITION = getHiveLayout("officeplace").waitingPosition;
+
+export const DESK_ROW = getHiveLayout("officeplace").deskRow;
 
 export type HiveAgentMotion =
   | "idle"
@@ -101,6 +91,7 @@ export interface HiveWorldEvent {
 export interface HiveWorldModel {
   skin: HiveSkinId;
   floorTitle: string;
+  layout: HiveLayout;
   agents: HiveAgentState[];
   stations: HiveStationState[];
   flights: HiveArtifactFlight[];
@@ -112,7 +103,7 @@ export interface HiveWorldModel {
 }
 
 export interface BuildHiveWorldOptions {
-  skin: HiveSkinId;
+  skin: HiveSkinId | string;
   hasErrorArtifact?: boolean;
   /** Previous agent status snapshot for flight detection: agentId → status */
   previousStatuses?: Record<string, StageStatus>;
@@ -149,15 +140,16 @@ function targetForAgent(
   status: StageStatus,
   station: HiveStationId,
   desk: { x: number; y: number },
+  layout: HiveLayout,
 ): { x: number; y: number } {
   if (status === "running") {
-    return { ...STATION_POSITIONS[station] };
+    return { ...layout.stationPositions[station] };
   }
   if (status === "awaiting" || status === "blocked") {
-    return { ...WAITING_POSITION };
+    return { ...layout.waitingPosition };
   }
   if (status === "done") {
-    return { ...STATION_POSITIONS.planner_hq };
+    return { ...layout.stationPositions.planner_hq };
   }
   return { ...desk };
 }
@@ -166,7 +158,9 @@ export function buildHiveWorld(
   stages: WorkflowStageView[],
   options: BuildHiveWorldOptions,
 ): HiveWorldModel {
-  const { skin, hasErrorArtifact = false, previousStatuses = {} } = options;
+  const skin = resolveHiveSkinId(options.skin);
+  const { hasErrorArtifact = false, previousStatuses = {} } = options;
+  const layout = getHiveLayout(skin);
   const agentMap = new Map<
     string,
     { agentId: string; status: StageStatus; stage: string; skill: string }
@@ -187,19 +181,19 @@ export function buildHiveWorld(
     }
   }
 
-  const entries = [...agentMap.values()].slice(0, DESK_ROW.length);
+  const entries = [...agentMap.values()].slice(0, layout.deskRow.length);
   const occupation = new Map<HiveStationId, string[]>();
 
   const agents: HiveAgentState[] = entries.map((entry, index) => {
     const role = mapAgentToRole(entry.agentId);
-    const desk = DESK_ROW[index] ?? DESK_ROW[0];
+    const desk = layout.deskRow[index] ?? layout.deskRow[0];
     const meta = stageStatusMeta(entry.status);
     const active =
       entry.status === "running" ||
       entry.status === "blocked" ||
       entry.status === "awaiting";
     const motion = motionForStatus(entry.status);
-    const target = targetForAgent(entry.status, role.station, desk);
+    const target = targetForAgent(entry.status, role.station, desk, layout);
 
     if (entry.status === "running") {
       const list = occupation.get(role.station) ?? [];
@@ -227,7 +221,7 @@ export function buildHiveWorld(
   });
 
   const stations: HiveStationState[] = HIVE_STATION_IDS.map((id) => {
-    const pos = STATION_POSITIONS[id];
+    const pos = layout.stationPositions[id];
     const occupiedBy = occupation.get(id) ?? [];
     return {
       id,
@@ -249,8 +243,8 @@ export function buildHiveWorld(
         id: `${agent.id}-ctx-${agent.status}`,
         kind: "context",
         label: skinLabel(skin, "context"),
-        from: { ...STATION_POSITIONS.planner_hq },
-        to: { ...STATION_POSITIONS[agent.station] },
+        from: { ...layout.stationPositions.planner_hq },
+        to: { ...layout.stationPositions[agent.station] },
         triggerKey: `${agent.id}:pending->running`,
       });
     }
@@ -260,8 +254,8 @@ export function buildHiveWorld(
         id: `${agent.id}-diff-${agent.status}`,
         kind: "diff",
         label: skinLabel(skin, "diff"),
-        from: { ...STATION_POSITIONS[agent.station] },
-        to: { ...STATION_POSITIONS.planner_hq },
+        from: { ...layout.stationPositions[agent.station] },
+        to: { ...layout.stationPositions.planner_hq },
         triggerKey: `${agent.id}:running->${agent.status}`,
       });
     }
@@ -277,7 +271,7 @@ export function buildHiveWorld(
     events.push({
       kind: "waiting",
       label: skinLabel(skin, "waiting"),
-      at: { ...WAITING_POSITION },
+      at: { ...layout.waitingPosition },
     });
   }
 
@@ -287,7 +281,7 @@ export function buildHiveWorld(
     events.push({
       kind: "error",
       label: skinLabel(skin, "error"),
-      at: { ...STATION_POSITIONS[errorStation] },
+      at: { ...layout.stationPositions[errorStation] },
       stationId: errorStation,
     });
   }
@@ -297,6 +291,7 @@ export function buildHiveWorld(
   return {
     skin,
     floorTitle: HIVE_SKINS[skin].floorTitle,
+    layout,
     agents,
     stations,
     flights,
@@ -304,8 +299,8 @@ export function buildHiveWorld(
     orchestratorActive,
     orchestratorLabel: skinLabel(skin, "planner_hq"),
     waitingProp: {
-      x: WAITING_POSITION.x,
-      y: WAITING_POSITION.y,
+      x: layout.waitingPosition.x,
+      y: layout.waitingPosition.y,
       label: skinLabel(skin, "waiting"),
       visible: hasWaiting,
     },

@@ -96,12 +96,188 @@
   font-size: 11px;
 }
 
+.hive-panel__skin-value {
+  font-size: 11px;
+  color: var(--tx);
+}
+
+.hive-panel__replay {
+  background: var(--bg2);
+  color: var(--tx);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-family: var(--dp);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.hive-panel__replay:hover:not(:disabled) {
+  border-color: var(--ac);
+  color: var(--ac);
+}
+
+.hive-panel__replay:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.hive-panel__speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  background: var(--bg2);
+}
+
+.hive-panel__speed-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tx);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.hive-panel__speed-btn:hover:not(:disabled) {
+  background: var(--bg3);
+  color: var(--ac);
+}
+
+.hive-panel__speed-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.hive-panel__speed-label {
+  min-width: 30px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--txm);
+}
+
+.hive-panel__live--replay {
+  color: var(--aml);
+}
+
+.hive-panel__live--replay .hive-panel__live-dot {
+  background: var(--amb);
+  box-shadow: 0 0 6px var(--amb);
+}
+
 .hive-panel__floor {
   flex: 1;
   position: relative;
   min-height: 440px;
   overflow: hidden;
   background: var(--bg0);
+}
+
+/* ── The Officeplace warm office palette (munder-difflin tokens) ── */
+
+.hive-panel--officeplace {
+  --hive-ink: #2a241c;
+  --hive-ink-muted: #5c5348;
+  --hive-paper: #f7f0e4;
+  --hive-paper-muted: #ebe2d2;
+  --hive-paper-edge: #d4c5ad;
+  --hive-paper-shadow: rgba(42, 36, 28, 0.22);
+  --hive-accent: #5a7ea8;
+  --hive-accent-soft: #8aa8c8;
+  --hive-accent-glow: rgba(90, 126, 168, 0.5);
+  --hive-warn: #b87828;
+  --hive-success: #5a8f52;
+  --hive-danger: #b4463c;
+  --hive-floor-bg: #c8b99e;
+}
+
+.hive-panel--officeplace .hive-panel__header {
+  background: linear-gradient(180deg, #f3ead8 0%, #ebe0cc 100%);
+  border-bottom-color: #d4c5ad;
+}
+
+.hive-panel--officeplace .hive-panel__title {
+  color: #3d3428;
+}
+
+.hive-panel--officeplace .hive-panel__live {
+  color: #5a8f52;
+}
+
+.hive-panel--officeplace .hive-panel__live-dot {
+  background: #5a8f52;
+  box-shadow: 0 0 6px rgba(90, 143, 82, 0.55);
+}
+
+.hive-panel--officeplace .hive-panel__live--replay {
+  color: #9a6830;
+}
+
+.hive-panel--officeplace .hive-panel__live--replay .hive-panel__live-dot {
+  background: #c47a2a;
+  box-shadow: 0 0 6px rgba(196, 122, 42, 0.55);
+}
+
+.hive-panel--officeplace .hive-panel__legend {
+  color: #6b5f50;
+}
+
+.hive-panel--officeplace .hive-panel__legend-dot--working {
+  background: #5a7ea8;
+}
+
+.hive-panel--officeplace .hive-panel__legend-dot--done {
+  background: #5a8f52;
+}
+
+.hive-panel--officeplace .hive-panel__legend-dot--idle {
+  background: #a8998e;
+}
+
+.hive-panel--officeplace .hive-panel__skin,
+.hive-panel--officeplace .hive-panel__skin-label {
+  color: #6b5f50;
+}
+
+.hive-panel--officeplace .hive-panel__skin-select,
+.hive-panel--officeplace .hive-panel__replay,
+.hive-panel--officeplace .hive-panel__speed {
+  background: #f7f0e4;
+  border-color: #d4c5ad;
+  color: #3d3428;
+}
+
+.hive-panel--officeplace .hive-panel__replay:hover:not(:disabled),
+.hive-panel--officeplace .hive-panel__speed-btn:hover:not(:disabled) {
+  border-color: #5a7ea8;
+  color: #3d5f82;
+  background: #ebe2d2;
+}
+
+.hive-panel--officeplace .hive-panel__speed-label {
+  color: #5c5348;
+}
+
+.hive-panel--officeplace .hive-panel__floor {
+  background: var(--hive-floor-bg);
+}
+
+.hive-panel--officeplace .hive-panel__idle-title {
+  color: #3d3428;
+}
+
+.hive-panel--officeplace .hive-panel__header svg {
+  stroke: #5a7ea8;
 }
 
 .hive-panel__idle {
@@ -133,6 +309,8 @@
   inset: 0;
   overflow: hidden;
   image-rendering: pixelated;
+  --hive-agent-ms: 850ms;
+  --hive-flyer-ms: 1050ms;
   background:
     radial-gradient(120% 90% at 50% 0%, rgba(45, 212, 167, 0.06), transparent 55%),
     repeating-linear-gradient(
@@ -152,49 +330,202 @@
     #141a14;
 }
 
-.hive-css--warcraft {
+.hive-css--has-floor {
+  /* Display ~1.5–2× native asset size (32px agents, 48px stations) — not sheet slice size */
+  --hive-hq-sprite: 64px;
+  --hive-station-sprite: 56px;
+  --hive-agent-sprite: 48px;
+  --hive-prop-sprite: 40px;
+  background-color: #2f4624;
+  background-image:
+    linear-gradient(rgba(8, 12, 16, 0.06), rgba(8, 12, 16, 0.14)),
+    var(--hive-floor-url);
+  background-size: auto, 64px 64px;
+  background-repeat: no-repeat, repeat;
+  background-position: center, 0 0;
+}
+
+.hive-css--scenery {
+  --hive-hq-sprite: 40px;
+  --hive-station-sprite: 36px;
+  --hive-agent-sprite: 44px;
+  --hive-prop-sprite: 32px;
+  background-color: #c8b99e;
+  background-image: var(--hive-scenery-url);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  background-position: center;
+  image-rendering: pixelated;
+}
+
+.hive-css--officeplace {
+  --hive-ink: #2a241c;
+  --hive-ink-muted: #5c5348;
+  --hive-paper: #f7f0e4;
+  --hive-paper-muted: #ebe2d2;
+  --hive-paper-edge: #d4c5ad;
+  --hive-paper-shadow: rgba(42, 36, 28, 0.22);
+  --hive-accent: #5a7ea8;
+  --hive-accent-soft: #8aa8c8;
+  --hive-accent-glow: rgba(90, 126, 168, 0.5);
+  --hive-warn: #b87828;
+  --hive-success: #5a8f52;
+  --hive-danger: #b4463c;
+  --hive-floor-bg: #c8b99e;
+}
+
+.hive-css--officeplace.hive-css--scenery {
+  background-color: var(--hive-floor-bg);
+  background-image:
+    radial-gradient(ellipse 90% 80% at 50% 45%, transparent 55%, rgba(42, 36, 28, 0.1) 100%),
+    var(--hive-scenery-url);
+}
+
+.hive-css--officeplace.hive-css--has-floor {
+  background-color: #d8ccb6;
+  background-image:
+    linear-gradient(rgba(247, 240, 228, 0.12), rgba(42, 36, 28, 0.06)),
+    var(--hive-floor-url);
+}
+
+.hive-css--runeplace {
   background-color: #2f4624;
 }
 
-.hive-css--dunder_mifflin {
-  background-color: #1c1a16;
-}
-
-.hive-css--cyberpunk {
+.hive-css--netplace {
   background-color: #120c1c;
 }
 
-.hive-css--starcraft {
+.hive-css--starplace {
   background-color: #1e221c;
 }
 
 .hive-css__god,
 .hive-css__station,
-.hive-css__waiting,
+.hive-css__waiting {
+  position: absolute;
+  transform: translate(-50%, calc(var(--hive-station-sprite, 48px) * -1));
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.hive-css__god {
+  z-index: 3;
+  transform: translate(-50%, calc(var(--hive-hq-sprite, 48px) * -1));
+}
+
+.hive-css__waiting {
+  z-index: 2;
+  transform: translate(-50%, calc(var(--hive-prop-sprite, 32px) * -1));
+}
+
 .hive-css__agent {
   position: absolute;
-  transform: translate(-50%, -50%);
-  z-index: 2;
+  transform: translate(-50%, calc(var(--hive-agent-sprite, 32px) * -1));
+  z-index: 5;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
   pointer-events: none;
+  width: 148px;
+  transition: left var(--hive-agent-ms) linear, top var(--hive-agent-ms) linear;
+}
+
+.hive-css__agent--pathing {
+  transition: none;
+}
+
+.hive-css__agent--walking .hive-css__agent-avatar {
+  animation: hive-bob 0.45s ease-in-out infinite alternate;
+}
+
+@keyframes hive-bob {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-2px);
+  }
 }
 
 .hive-css__god-icon,
 .hive-css__station-sprite,
 .hive-css__waiting-sprite,
-.hive-css__agent-avatar {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
-  border: 2px solid var(--bd2);
-  background: var(--bg3);
-  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
+.hive-css__agent-avatar,
+.hive-css__event-badge {
+  display: block;
+  flex: none;
+  object-fit: contain;
+  object-position: bottom center;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background: transparent;
+  border: none;
+}
+
+.hive-css--has-floor .hive-css__god-icon,
+.hive-css--has-floor .hive-css__station-sprite,
+.hive-css--has-floor .hive-css__waiting-sprite,
+.hive-css--has-floor .hive-css__agent-avatar {
+  filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.45));
+}
+
+.hive-css--officeplace .hive-css__god-icon,
+.hive-css--officeplace .hive-css__station-sprite,
+.hive-css--officeplace .hive-css__waiting-sprite,
+.hive-css--officeplace .hive-css__agent-avatar {
+  filter: drop-shadow(0 2px 0 rgba(42, 36, 28, 0.35));
+}
+
+.hive-css--officeplace .hive-css__agent--working .hive-css__agent-avatar,
+.hive-css--officeplace .hive-css__agent--pulse .hive-css__agent-avatar {
+  filter: drop-shadow(0 2px 0 rgba(42, 36, 28, 0.35))
+    drop-shadow(0 0 6px rgba(184, 120, 40, 0.45));
+}
+
+.hive-css__god-icon,
+.hive-css__station-sprite {
+  width: var(--hive-station-sprite, 48px);
+  height: var(--hive-station-sprite, 48px);
 }
 
 .hive-css__god-icon {
+  width: var(--hive-hq-sprite, 48px);
+  height: var(--hive-hq-sprite, 48px);
+}
+
+.hive-css__waiting-sprite,
+.hive-css__agent-avatar {
+  width: var(--hive-agent-sprite, 32px);
+  height: var(--hive-agent-sprite, 32px);
+}
+
+.hive-css__waiting-sprite {
+  width: var(--hive-prop-sprite, 32px);
+  height: var(--hive-prop-sprite, 32px);
+}
+
+.hive-css__event-badge {
+  width: 20px;
+  height: 20px;
+  box-shadow: none;
+}
+
+.hive-css__god-icon:not(img),
+.hive-css__station-sprite:not(img),
+.hive-css__waiting-sprite:not(img),
+.hive-css__agent-avatar:not(img) {
+  border-radius: 8px;
+  border: 2px solid var(--bd2);
+  background: var(--bg3);
+}
+
+.hive-css__god-icon:not(img) {
   background: linear-gradient(140deg, var(--ac), #12a37e);
   border-color: transparent;
 }
@@ -206,43 +537,191 @@
 .hive-css__god-label,
 .hive-css__station-label,
 .hive-css__waiting-label {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--txm);
+  margin-bottom: 2px;
+}
+
+.hive-css__nameplate {
+  position: relative;
+  z-index: 2;
+  font-family: var(--dp);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #f3f6fa;
   text-align: center;
-  max-width: 110px;
+  max-width: 132px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: rgba(6, 10, 14, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(0, 0, 0, 0.35);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
+  backdrop-filter: blur(4px);
+}
+
+.hive-css--officeplace .hive-css__nameplate {
+  color: var(--hive-ink);
+  background: rgba(247, 240, 228, 0.95);
+  border: 1px solid var(--hive-paper-edge);
+  box-shadow: 0 2px 8px var(--hive-paper-shadow);
+  text-shadow: none;
+  backdrop-filter: none;
+}
+
+.hive-css--officeplace .hive-css__nameplate--muted {
+  color: var(--hive-ink-muted);
+  background: rgba(247, 240, 228, 0.72);
+  border-color: rgba(212, 197, 173, 0.85);
+  box-shadow: 0 1px 4px rgba(42, 36, 28, 0.12);
+}
+
+.hive-css--has-floor .hive-css__nameplate {
+  font-size: 12px;
+  max-width: 140px;
+}
+
+.hive-css--scenery .hive-css__nameplate {
+  font-size: 11px;
+  max-width: 128px;
+}
+
+.hive-css__nameplate--muted {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(220, 228, 236, 0.82);
+  background: rgba(6, 10, 14, 0.55);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+}
+
+.hive-css__zone {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.hive-css__station-marker,
+.hive-css__god-marker {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ac);
+  box-shadow: 0 0 8px rgba(45, 212, 167, 0.65);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+}
+
+.hive-css--officeplace .hive-css__station-marker,
+.hive-css--officeplace .hive-css__god-marker {
+  border-color: rgba(247, 240, 228, 0.9);
+}
+
+.hive-css__station--marker .hive-css__station-marker {
+  background: rgba(180, 190, 200, 0.85);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.45);
+}
+
+.hive-css--officeplace .hive-css__station--marker .hive-css__station-marker {
+  background: #a8998e;
+  box-shadow: 0 0 3px rgba(42, 36, 28, 0.25);
+}
+
+.hive-css__station--active.hive-css__station--marker .hive-css__station-marker {
+  background: var(--ac);
+  box-shadow: 0 0 10px rgba(45, 212, 167, 0.75);
+}
+
+.hive-css--officeplace .hive-css__station--active.hive-css__station--marker .hive-css__station-marker {
+  background: var(--hive-accent);
+  box-shadow: 0 0 8px var(--hive-accent-glow);
+}
+
+.hive-css__station--error.hive-css__station--marker .hive-css__station-marker {
+  background: var(--rdl);
+  box-shadow: 0 0 10px rgba(255, 106, 84, 0.75);
+}
+
+.hive-css--officeplace .hive-css__station--error.hive-css__station--marker .hive-css__station-marker {
+  background: var(--hive-danger);
+  box-shadow: 0 0 8px rgba(180, 70, 60, 0.55);
+}
+
+.hive-css__god-marker {
+  width: 12px;
+  height: 12px;
+  background: var(--amb);
+  box-shadow: 0 0 10px rgba(255, 196, 80, 0.7);
+}
+
+.hive-css--officeplace .hive-css__god-marker {
+  background: #c47a2a;
+  box-shadow: 0 0 8px rgba(196, 122, 42, 0.55);
+}
+
+.hive-css__station--active .hive-css__station-label.hive-css__nameplate {
+  border-color: rgba(45, 212, 167, 0.45);
+  box-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(45, 212, 167, 0.25);
+}
+
+.hive-css--officeplace .hive-css__station--active .hive-css__station-label.hive-css__nameplate {
+  border-color: var(--hive-accent-soft);
+  box-shadow:
+    0 2px 8px var(--hive-paper-shadow),
+    0 0 0 1px rgba(90, 126, 168, 0.35);
+  color: #2e4058;
+}
+
+.hive-css__station--error .hive-css__station-label.hive-css__nameplate {
+  border-color: rgba(255, 106, 84, 0.5);
+  color: #ffd8d0;
+}
+
+.hive-css--officeplace .hive-css__station--error .hive-css__station-label.hive-css__nameplate {
+  border-color: rgba(180, 70, 60, 0.55);
+  color: #7a2e28;
+  background: #f5e4e2;
 }
 
 .hive-css__station--active .hive-css__station-sprite {
-  border-color: var(--ac);
-  box-shadow: 0 0 0 2px rgba(45, 212, 167, 0.25), 4px 4px 0 rgba(0, 0, 0, 0.35);
+  filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.45))
+    drop-shadow(0 0 6px rgba(45, 212, 167, 0.55));
 }
 
 .hive-css__station--error .hive-css__station-sprite {
-  border-color: var(--red);
-  background: rgba(255, 106, 84, 0.25);
+  filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.45))
+    drop-shadow(0 0 6px rgba(255, 106, 84, 0.65));
 }
 
 .hive-css__station-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(40, 8, 6, 0.88);
+  border: 1px solid rgba(255, 106, 84, 0.35);
   font-size: 9px;
-  color: var(--rdl);
+  color: #ffc4ba;
   font-family: var(--mono);
+  font-weight: 600;
 }
 
-.hive-css__waiting-sprite {
-  background: rgba(229, 167, 44, 0.25);
-  border-color: var(--amb);
+.hive-css--officeplace .hive-css__station-error {
+  background: #f5e4e2;
+  border-color: rgba(180, 70, 60, 0.45);
+  color: #7a2e28;
 }
 
-.hive-css__agent {
-  transition: left 0.85s linear, top 0.85s linear;
-  width: 140px;
-}
 
-.hive-css__agent-avatar {
+.hive-css__agent-avatar:not(img) {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -250,10 +729,6 @@
   font-family: var(--dp);
   font-size: 11px;
   font-weight: 700;
-  color: var(--onac);
-  background: currentColor;
-  border-color: currentColor;
-  mix-blend-mode: normal;
   color: #04140f;
   background: var(--blue);
 }
@@ -263,11 +738,11 @@
   animation: pulse 1.7s ease-in-out infinite;
 }
 
-.hive-css__agent--waiting .hive-css__agent-avatar {
+.hive-css__agent--waiting .hive-css__agent-avatar:not(img) {
   background: var(--amb);
 }
 
-.hive-css__agent--success .hive-css__agent-avatar {
+.hive-css__agent--success .hive-css__agent-avatar:not(img) {
   background: var(--grn);
 }
 
@@ -276,27 +751,84 @@
 }
 
 .hive-css__agent-card {
+  position: relative;
+  z-index: 2;
   width: 100%;
-  background: var(--bg2);
-  border: 1px solid var(--bd);
+  max-width: 136px;
+  background: rgba(6, 10, 14, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 8px;
-  padding: 6px 8px;
+  padding: 6px 9px;
   text-align: center;
+  box-shadow:
+    0 3px 12px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(4px);
+}
+
+.hive-css--officeplace .hive-css__agent-card {
+  background: rgba(247, 240, 228, 0.96);
+  border: 1px solid var(--hive-paper-edge);
+  box-shadow: 0 2px 10px var(--hive-paper-shadow);
+  backdrop-filter: none;
+}
+
+.hive-css--has-floor .hive-css__agent-card {
+  max-width: 128px;
+  padding: 5px 8px;
 }
 
 .hive-css__agent-name {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--tx);
+  font-size: 12px;
+  font-weight: 700;
+  color: #f3f6fa;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.hive-css--officeplace .hive-css__agent-name {
+  color: var(--hive-ink);
+  text-shadow: none;
+}
+
+.hive-css--has-floor .hive-css__agent-name {
+  font-size: 11.5px;
 }
 
 .hive-css__agent-status {
   margin-top: 3px;
   font-size: 10px;
-  color: currentColor;
+  font-weight: 500;
+  color: rgba(230, 236, 244, 0.92);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.85);
+}
+
+.hive-css--officeplace .hive-css__agent-status {
+  color: var(--hive-ink-muted);
+  text-shadow: none;
+}
+
+.hive-css--officeplace .hive-css__agent--working .hive-css__agent-status {
+  color: #6b5020;
+}
+
+.hive-css--officeplace .hive-css__agent--waiting .hive-css__agent-status,
+.hive-css--officeplace .hive-css__agent--pulse.hive-css__agent--waiting .hive-css__agent-status {
+  color: #8a5c18;
+}
+
+.hive-css--officeplace .hive-css__agent--success .hive-css__agent-status {
+  color: #3d6b38;
+}
+
+.hive-css--officeplace .hive-css__agent--ghost .hive-css__agent-status {
+  color: #a8998e;
+}
+
+.hive-css--has-floor .hive-css__agent-status {
+  font-size: 9.5px;
 }
 
 .hive-css__agent-skill {
@@ -306,29 +838,67 @@
   color: var(--bll);
 }
 
+.hive-css--officeplace .hive-css__agent-skill {
+  color: #4a6a8a;
+}
+
 .hive-css__flyers {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 4;
+  z-index: 6;
 }
 
 .hive-css__flyer {
   position: absolute;
-  width: 12px;
-  height: 10px;
+  width: 16px;
+  height: 16px;
   border-radius: 2px;
   transform: translate(-50%, -50%);
-  transition: left 1.05s ease-in-out, top 1.05s ease-in-out, opacity 1.05s ease-in-out;
+  transition:
+    left var(--hive-flyer-ms) ease-in-out,
+    top var(--hive-flyer-ms) ease-in-out,
+    opacity var(--hive-flyer-ms) ease-in-out;
   opacity: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.hive-css__flyer--context {
+.hive-css__flyer-img {
+  width: 20px;
+  height: 20px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  object-fit: contain;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.25));
+}
+
+.hive-css--has-floor .hive-css__flyer-img {
+  width: 28px;
+  height: 28px;
+}
+
+.hive-css__flyer--context:not(:has(img)) {
   background: var(--ac);
   box-shadow: 0 0 8px rgba(45, 212, 167, 0.6);
 }
 
-.hive-css__flyer--diff {
+.hive-css--officeplace .hive-css__flyer--context:not(:has(img)) {
+  background: var(--hive-accent);
+  box-shadow: 0 0 8px var(--hive-accent-glow);
+}
+
+.hive-css__flyer--diff:not(:has(img)) {
   background: var(--bll);
   box-shadow: 0 0 8px rgba(75, 155, 255, 0.6);
+}
+
+.hive-css--officeplace .hive-css__flyer--diff:not(:has(img)) {
+  background: #8a6a48;
+  box-shadow: 0 0 8px rgba(138, 106, 72, 0.5);
+}
+
+.hive-css--officeplace .hive-css__flyer-img {
+  filter: drop-shadow(0 1px 2px rgba(42, 36, 28, 0.35));
 }

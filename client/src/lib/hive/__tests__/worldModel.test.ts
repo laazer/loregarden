@@ -1,5 +1,5 @@
 import type { WorkflowStageView } from "../../../api/client";
-import { agentStatusSnapshot, buildHiveWorld, STATION_POSITIONS } from "../worldModel";
+import { agentStatusSnapshot, buildHiveWorld } from "../worldModel";
 
 const stage = (
   overrides: Partial<WorkflowStageView> & Pick<WorkflowStageView, "key" | "name" | "agent_id">,
@@ -33,11 +33,11 @@ describe("buildHiveWorld", () => {
           stage_type: "gate",
         }),
       ],
-      { skin: "dunder_mifflin" },
+      { skin: "officeplace" },
     );
 
     expect(model.idle).toBe(false);
-    expect(model.floorTitle).toBe("Dunder Mifflin floor");
+    expect(model.floorTitle).toBe("Officeplace floor");
     expect(model.orchestratorLabel).toBe("Regional Manager");
     expect(model.agents).toHaveLength(2);
     expect(model.stations).toHaveLength(5);
@@ -45,7 +45,7 @@ describe("buildHiveWorld", () => {
     const coder = model.agents.find((a) => a.id === "backend_implementer");
     expect(coder?.station).toBe("coding");
     expect(coder?.motion).toBe("working");
-    expect(coder?.target).toEqual(STATION_POSITIONS.coding);
+    expect(coder?.target).toEqual({ x: 12, y: 13 });
     expect(coder?.showTool).toBe(true);
 
     const codingStation = model.stations.find((s) => s.id === "coding");
@@ -57,11 +57,11 @@ describe("buildHiveWorld", () => {
   it("returns idle when no agent stages exist", () => {
     const model = buildHiveWorld(
       [stage({ key: "gate", name: "Gate", agent_id: "human_review", status: "awaiting", stage_type: "gate" })],
-      { skin: "warcraft" },
+      { skin: "runeplace" },
     );
     expect(model.idle).toBe(true);
     expect(model.agents).toHaveLength(0);
-    expect(model.floorTitle).toBe("Battleground");
+    expect(model.floorTitle).toBe("Officeplace floor");
   });
 
   it("emits waiting and error events", () => {
@@ -75,13 +75,13 @@ describe("buildHiveWorld", () => {
           skill_name: "apply_patch",
         }),
       ],
-      { skin: "cyberpunk", hasErrorArtifact: true },
+      { skin: "netplace", hasErrorArtifact: true },
     );
 
     expect(model.waitingProp.visible).toBe(true);
-    expect(model.waitingProp.label).toBe("Smoking");
+    expect(model.waitingProp.label).toBe("Coffee Machine");
     expect(model.events.some((e) => e.kind === "waiting")).toBe(true);
-    expect(model.events.some((e) => e.kind === "error" && e.label === "System Crash")).toBe(true);
+    expect(model.events.some((e) => e.kind === "error" && e.label === "HR Meeting")).toBe(true);
   });
 
   it("emits context/diff flights on status transitions", () => {
@@ -96,12 +96,12 @@ describe("buildHiveWorld", () => {
     ];
 
     const first = buildHiveWorld(stages, {
-      skin: "starcraft",
+      skin: "starplace",
       previousStatuses: { backend_implementer: "pending" },
     });
     expect(first.flights).toHaveLength(1);
     expect(first.flights[0]?.kind).toBe("context");
-    expect(first.flights[0]?.label).toBe("Data Crystal");
+    expect(first.flights[0]?.label).toBe("Binder");
 
     const second = buildHiveWorld(
       [
@@ -114,10 +114,10 @@ describe("buildHiveWorld", () => {
         }),
       ],
       {
-        skin: "starcraft",
+        skin: "starplace",
         previousStatuses: agentStatusSnapshot(first.agents),
       },
     );
-    expect(second.flights.some((f) => f.kind === "diff" && f.label === "Hologram")).toBe(true);
+    expect(second.flights.some((f) => f.kind === "diff" && f.label === "Stack of Papers")).toBe(true);
   });
 });

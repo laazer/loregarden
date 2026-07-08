@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "client" / "src" / "assets" / "hive"
 
-SKINS = ("warcraft", "dunder_mifflin", "cyberpunk", "starcraft")
+SKINS = ("runeplace", "officeplace", "netplace", "starplace")
 CASTS = ("worker", "planner", "implementer", "tester", "reviewer")
 STATIONS = ("planner_hq", "research", "coding", "testing", "deploy")
 ARTIFACTS = ("context", "diff")
@@ -29,7 +29,7 @@ EVENTS = ("waiting", "error")
 
 # RGB palettes per skin (bg key color 255,0,255 is transparent)
 PALETTES = {
-    "warcraft": {
+    "runeplace": {
         "bg": (34, 48, 28),
         "ink": (20, 16, 12),
         "a": (196, 160, 64),
@@ -38,7 +38,7 @@ PALETTES = {
         "d": (240, 220, 160),
         "accent": (80, 160, 220),
     },
-    "dunder_mifflin": {
+    "officeplace": {
         "bg": (200, 184, 150),
         "ink": (40, 36, 32),
         "a": (90, 130, 170),
@@ -47,7 +47,7 @@ PALETTES = {
         "d": (70, 70, 70),
         "accent": (240, 200, 80),
     },
-    "cyberpunk": {
+    "netplace": {
         "bg": (18, 10, 28),
         "ink": (240, 80, 200),
         "a": (40, 220, 255),
@@ -56,7 +56,7 @@ PALETTES = {
         "d": (255, 230, 80),
         "accent": (60, 255, 180),
     },
-    "starcraft": {
+    "starplace": {
         "bg": (28, 32, 26),
         "ink": (10, 12, 10),
         "a": (80, 120, 200),
@@ -214,10 +214,10 @@ def draw_floor(skin: str) -> list[list[tuple[int, int, int, int]]]:
 
 
 PROMPTS = {
-    "warcraft": "1990s Warcraft fantasy RTS pixel art sprite, clean 32x32 game asset, limited palette, hard edges, transparent background, no text",
-    "dunder_mifflin": "retro office sitcom pixel art sprite, The Office vibe, muted pastel, clean 32x32 game asset, hard edges, transparent background, no text",
-    "cyberpunk": "Cyberpunk Edgerunners neon pixel art sprite, magenta cyan high contrast, clean 32x32 game asset, hard edges, transparent background, no text",
-    "starcraft": "StarCraft Brood War Terran pixel art sprite, sci-fi mechanical, clean 32x32 game asset, hard edges, transparent background, no text",
+    "runeplace": "1990s fantasy RTS pixel art sprite, clean 32x32 game asset, limited palette, hard edges, transparent background, no text",
+    "officeplace": "retro office sitcom pixel art sprite, muted pastel, clean 32x32 game asset, hard edges, transparent background, no text",
+    "netplace": "neon cyberpunk pixel art sprite, magenta cyan high contrast, clean 32x32 game asset, hard edges, transparent background, no text",
+    "starplace": "sci-fi RTS Terran pixel art sprite, mechanical, clean 32x32 game asset, hard edges, transparent background, no text",
 }
 
 
@@ -385,7 +385,7 @@ def main() -> None:
     attribution = OUT / "ATTRIBUTION.md"
     attribution.write_text(
         "# Hive skin assets\n\n"
-        "Pixel sprites for LoreGarden Hive skins (Warcraft, Dunder Mifflin, Cyberpunk, StarCraft).\n"
+        "Pixel sprites for LoreGarden Hive skins (The Runeplace, The Officeplace, The Netplace, The Starplace).\n"
         "Generated for this project via `scripts/hive/generate_sprites.py` "
         "(procedural baseline; optional Gemini Nano Banana regeneration).\n"
         "Not copied from munder-difflin.\n"

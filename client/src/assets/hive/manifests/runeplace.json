@@ -1,0 +1,26 @@
+{
+  "skin": "runeplace",
+  "floor": "runeplace/floor.png",
+  "agents": {
+    "worker": "runeplace/agents/worker.png",
+    "planner": "runeplace/agents/planner.png",
+    "implementer": "runeplace/agents/implementer.png",
+    "tester": "runeplace/agents/tester.png",
+    "reviewer": "runeplace/agents/reviewer.png"
+  },
+  "stations": {
+    "planner_hq": "runeplace/stations/planner_hq.png",
+    "research": "runeplace/stations/research.png",
+    "coding": "runeplace/stations/coding.png",
+    "testing": "runeplace/stations/testing.png",
+    "deploy": "runeplace/stations/deploy.png"
+  },
+  "artifacts": {
+    "context": "runeplace/artifacts/context.png",
+    "diff": "runeplace/artifacts/diff.png"
+  },
+  "events": {
+    "waiting": "runeplace/events/waiting.png",
+    "error": "runeplace/events/error.png"
+  }
+}

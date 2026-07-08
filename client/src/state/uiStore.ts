@@ -2,7 +2,14 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import type { TicketState, WorkItemType } from "../api/client";
-import { DEFAULT_HIVE_SKIN, isHiveSkinId, type HiveSkinId } from "../lib/hive/skins";
+import {
+  clampHiveSpeedIndex,
+  DEFAULT_HIVE_SPEED_MULTIPLIER,
+  HIVE_SPEED_MULTIPLIERS,
+  hiveSpeedIndexFor,
+  type HiveSpeedMultiplier,
+} from "../lib/hive/speed";
+import { DEFAULT_HIVE_SKIN, normalizeHiveSkinId, resolveHiveSkinId, type HiveSkinId } from "../lib/hive/skins";
 import { navigateToPage } from "../lib/useAppNavigation";
 
 export type PaneId = "workspaces" | "tickets" | "workflow" | "artifacts";
@@ -22,6 +29,7 @@ interface UiState {
   editorFilePath: string | null;
   queueWorkspaceSlug: string;
   hiveSkin: HiveSkinId;
+  hiveSpeedIndex: number;
   toggleStateFilter: (state: TicketState) => void;
   clearStateFilters: () => void;
   toggleTypeFilter: (type: WorkItemType) => void;
@@ -39,7 +47,9 @@ interface UiState {
   setEditorContextRoot: (root: string) => void;
   setEditorFilePath: (path: string | null) => void;
   setQueueWorkspaceSlug: (slug: string) => void;
-  setHiveSkin: (skin: HiveSkinId) => void;
+  setHiveSkin: (skin: HiveSkinId | string) => void;
+  setHiveSpeedIndex: (index: number) => void;
+  stepHiveSpeed: (delta: -1 | 1) => void;
   openEditorFile: (workspaceSlug: string, filePath: string, contextRoot?: string) => void;
 }
 
@@ -54,6 +64,7 @@ type PersistedUiState = Pick<
   | "editorContextRoot"
   | "queueWorkspaceSlug"
   | "hiveSkin"
+  | "hiveSpeedIndex"
 >;
 
 export const useUiStore = create<UiState>()(
@@ -76,6 +87,7 @@ export const useUiStore = create<UiState>()(
       editorFilePath: null,
       queueWorkspaceSlug: "",
       hiveSkin: DEFAULT_HIVE_SKIN,
+      hiveSpeedIndex: hiveSpeedIndexFor(DEFAULT_HIVE_SPEED_MULTIPLIER),
       toggleStateFilter: (state) => {
         const current = get().stateFilters;
         set({
@@ -130,7 +142,13 @@ export const useUiStore = create<UiState>()(
       setEditorContextRoot: (editorContextRoot) => set({ editorContextRoot }),
       setEditorFilePath: (editorFilePath) => set({ editorFilePath }),
       setQueueWorkspaceSlug: (queueWorkspaceSlug) => set({ queueWorkspaceSlug }),
-      setHiveSkin: (hiveSkin) => set({ hiveSkin: isHiveSkinId(hiveSkin) ? hiveSkin : DEFAULT_HIVE_SKIN }),
+      setHiveSkin: (hiveSkin) => set({ hiveSkin: resolveHiveSkinId(hiveSkin) }),
+      setHiveSpeedIndex: (hiveSpeedIndex) =>
+        set({ hiveSpeedIndex: clampHiveSpeedIndex(hiveSpeedIndex) }),
+      stepHiveSpeed: (delta) =>
+        set((state) => ({
+          hiveSpeedIndex: clampHiveSpeedIndex(state.hiveSpeedIndex + delta),
+        })),
       openEditorFile: (workspaceSlug, filePath, contextRoot = ".") => {
         set({
           editorWorkspace: workspaceSlug,
@@ -142,7 +160,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "loregarden-ui",
-      version: 2,
+      version: 6,
       migrate: (persistedState, version) => {
         const state = { ...(persistedState as Record<string, unknown>) };
         if (version < 1) {
@@ -162,12 +180,29 @@ export const useUiStore = create<UiState>()(
           }
           delete state.filter;
         }
-        if (version < 2) {
+        if (version < 6) {
           const skin = state.hiveSkin;
           state.hiveSkin =
-            typeof skin === "string" && isHiveSkinId(skin) ? skin : DEFAULT_HIVE_SKIN;
+            typeof skin === "string" ? resolveHiveSkinId(skin) : DEFAULT_HIVE_SKIN;
+        }
+        if (version < 5) {
+          const skin = state.hiveSkin;
+          state.hiveSkin =
+            typeof skin === "string" ? (normalizeHiveSkinId(skin) ?? DEFAULT_HIVE_SKIN) : DEFAULT_HIVE_SKIN;
+        }
+        if (version < 4) {
+          const skin = state.hiveSkin;
+          state.hiveSkin =
+            typeof skin === "string" ? (normalizeHiveSkinId(skin) ?? DEFAULT_HIVE_SKIN) : DEFAULT_HIVE_SKIN;
+        }
+        if (version < 3) {
+          state.hiveSpeedIndex = hiveSpeedIndexFor(DEFAULT_HIVE_SPEED_MULTIPLIER);
         }
         return state as PersistedUiState;
+      },
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        state.hiveSkin = resolveHiveSkinId(state.hiveSkin);
       },
       partialize: (s) => ({
         expandedTicketIds: s.expandedTicketIds,
@@ -179,6 +214,7 @@ export const useUiStore = create<UiState>()(
         editorContextRoot: s.editorContextRoot,
         queueWorkspaceSlug: s.queueWorkspaceSlug,
         hiveSkin: s.hiveSkin,
+        hiveSpeedIndex: s.hiveSpeedIndex,
       }),
     },
   ),

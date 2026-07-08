@@ -1,0 +1,26 @@
+{
+  "skin": "starplace",
+  "floor": "starplace/floor.png",
+  "agents": {
+    "worker": "starplace/agents/worker.png",
+    "planner": "starplace/agents/planner.png",
+    "implementer": "starplace/agents/implementer.png",
+    "tester": "starplace/agents/tester.png",
+    "reviewer": "starplace/agents/reviewer.png"
+  },
+  "stations": {
+    "planner_hq": "starplace/stations/planner_hq.png",
+    "research": "starplace/stations/research.png",
+    "coding": "starplace/stations/coding.png",
+    "testing": "starplace/stations/testing.png",
+    "deploy": "starplace/stations/deploy.png"
+  },
+  "artifacts": {
+    "context": "starplace/artifacts/context.png",
+    "diff": "starplace/artifacts/diff.png"
+  },
+  "events": {
+    "waiting": "starplace/events/waiting.png",
+    "error": "starplace/events/error.png"
+  }
+}

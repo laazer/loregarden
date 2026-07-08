@@ -1,0 +1,26 @@
+{
+  "skin": "officeplace",
+  "floor": "officeplace/floor.png",
+  "agents": {
+    "worker": "officeplace/agents/worker.png",
+    "planner": "officeplace/agents/planner.png",
+    "implementer": "officeplace/agents/implementer.png",
+    "tester": "officeplace/agents/tester.png",
+    "reviewer": "officeplace/agents/reviewer.png"
+  },
+  "stations": {
+    "planner_hq": "officeplace/stations/planner_hq.png",
+    "research": "officeplace/stations/research.png",
+    "coding": "officeplace/stations/coding.png",
+    "testing": "officeplace/stations/testing.png",
+    "deploy": "officeplace/stations/deploy.png"
+  },
+  "artifacts": {
+    "context": "officeplace/artifacts/context.png",
+    "diff": "officeplace/artifacts/diff.png"
+  },
+  "events": {
+    "waiting": "officeplace/events/waiting.png",
+    "error": "officeplace/events/error.png"
+  }
+}

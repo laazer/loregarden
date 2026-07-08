@@ -27,7 +27,7 @@ describe("buildHiveWorld (legacy hiveSimulation entry)", () => {
         }),
         stage({ key: "gate", name: "Gate", agent_id: "human_gatekeeper", status: "awaiting", stage_type: "gate" }),
       ],
-      { skin: "dunder_mifflin" },
+      { skin: "officeplace" },
     );
 
     expect(model.idle).toBe(false);
@@ -41,7 +41,7 @@ describe("buildHiveWorld (legacy hiveSimulation entry)", () => {
   it("returns idle when no agent stages exist", () => {
     const model = buildHiveWorld(
       [stage({ key: "gate", name: "Gate", agent_id: "human_review", status: "awaiting", stage_type: "gate" })],
-      { skin: "dunder_mifflin" },
+      { skin: "officeplace" },
     );
 
     expect(model.idle).toBe(true);
