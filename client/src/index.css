@@ -2422,38 +2422,50 @@ button {
 }
 
 .tree-node {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  display: block;
   width: 100%;
   min-width: 0;
 }
 
 .tree-row {
-  display: grid;
-  grid-template-columns: 20px auto minmax(0, 1fr);
-  grid-template-rows: auto auto auto;
-  column-gap: 9px;
-  row-gap: 8px;
-  align-items: start;
-  align-self: stretch;
+  display: block;
   width: 100%;
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
-  padding: 11px 12px 11px calc(11px + var(--tree-depth, 0) * 16px);
+  padding: 11px 12px;
   cursor: pointer;
   text-align: left;
   border-radius: 11px;
 }
 
-.tree-children {
+.tree-row-head {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 8px;
+}
+
+.tree-row-head--no-chevron {
+  padding-left: 8px;
+}
+
+.tree-children {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   margin-left: 8px;
   padding-left: 10px;
   border-left: 1px solid var(--bd2);
+}
+
+.tree-children > .ticket-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .ticket-tree {
@@ -2471,11 +2483,9 @@ button {
 }
 
 .tree-chevron-btn {
-  grid-column: 1;
-  grid-row: 1;
   width: 20px;
   height: 20px;
-  flex-shrink: 0;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2799,12 +2809,11 @@ button {
 }
 
 .tree-row.list-btn {
-  padding: 11px 12px 11px calc(11px + var(--tree-depth, 0) * 16px);
+  padding: 11px 12px;
 }
 
 .tree-card-title {
-  grid-column: 3 / -1;
-  grid-row: 1;
+  flex: 1 1 0%;
   min-width: 0;
   font-size: 13px;
   font-weight: 500;
@@ -2813,13 +2822,13 @@ button {
 }
 
 .tree-card-meta {
-  grid-column: 1 / -1;
-  grid-row: 2;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+  width: 100%;
   min-width: 0;
+  margin-bottom: 8px;
   font-size: 11px;
 }
 
@@ -2833,12 +2842,11 @@ button {
 }
 
 .tree-card-workflow {
-  grid-column: 1 / -1;
-  grid-row: 3;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+  width: 100%;
   min-width: 0;
   font-size: 10.5px;
   color: var(--txm);
@@ -2856,11 +2864,6 @@ button {
   height: 5px;
   border-radius: 50%;
   flex: none;
-}
-
-.tree-chevron-spacer {
-  visibility: hidden;
-  pointer-events: none;
 }
 
 .type-badge {
@@ -4042,8 +4045,6 @@ button {
 }
 
 .prio-bars {
-  grid-column: 2;
-  grid-row: 1;
   display: flex;
   gap: 2px;
   align-items: flex-end;

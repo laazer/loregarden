@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import type { TicketState, TicketTreeNode, WorkItemType } from "../api/client";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
@@ -64,7 +63,7 @@ function TreeRow({
   };
 
   return (
-    <div className="tree-node" style={{ "--tree-depth": depth } as CSSProperties}>
+    <div className="tree-node">
       <div
         className={`tree-row list-btn ${isSelected ? "active" : ""}`}
         style={{
@@ -81,32 +80,32 @@ function TreeRow({
         aria-expanded={hasChildren ? expanded : undefined}
         tabIndex={0}
       >
-        {hasChildren ? (
-          <button
-            type="button"
-            className="tree-chevron-btn"
-            aria-label={expanded ? "Collapse" : "Expand"}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggle(node.id);
-            }}
-          >
-            <TreeExpandChevron expanded={expanded} />
-          </button>
-        ) : (
-          <span className="tree-chevron-btn tree-chevron-spacer" aria-hidden />
-        )}
-        <PrioBars priority={node.priority} />
-        <div className="tree-card-title">
-          {showExternalId ? (
-            <>
-              <span className="tree-external-id">{node.external_id}</span>
-              <span className="tree-title-sep"> · </span>
-              {node.title}
-            </>
-          ) : (
-            node.title
-          )}
+        <div className={`tree-row-head${hasChildren ? "" : " tree-row-head--no-chevron"}`}>
+          {hasChildren ? (
+            <button
+              type="button"
+              className="tree-chevron-btn"
+              aria-label={expanded ? "Collapse" : "Expand"}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle(node.id);
+              }}
+            >
+              <TreeExpandChevron expanded={expanded} />
+            </button>
+          ) : null}
+          <PrioBars priority={node.priority} />
+          <div className="tree-card-title">
+            {showExternalId ? (
+              <>
+                <span className="tree-external-id">{node.external_id}</span>
+                <span className="tree-title-sep"> · </span>
+                {node.title}
+              </>
+            ) : (
+              node.title
+            )}
+          </div>
         </div>
         <div className="tree-card-meta">
           <div className="tree-card-meta-main">

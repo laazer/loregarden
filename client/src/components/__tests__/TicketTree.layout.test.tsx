@@ -39,7 +39,9 @@ describe("TicketTree layout structure", () => {
 
     const title = screen.getByText("Wire CLI agent runner for stage execution");
     expect(title).toHaveClass("tree-card-title");
-    expect(title.parentElement).toBe(row);
+    const head = container.querySelector(".tree-row-head");
+    expect(head?.parentElement).toBe(row);
+    expect(head?.querySelector(".tree-card-title")).toBe(title);
 
     const meta = container.querySelector(".tree-card-meta");
     const workflow = container.querySelector(".tree-card-workflow");
@@ -48,9 +50,11 @@ describe("TicketTree layout structure", () => {
     expect(meta?.querySelector(".tree-card-meta-main")).not.toBeNull();
     expect(container.querySelector(".tree-card-body")).toBeNull();
     expect(container.querySelector(".tree-row-main")).toBeNull();
+    expect(container.querySelector(".tree-row-head")).toHaveClass("tree-row-head--no-chevron");
+    expect(container.querySelector(".tree-chevron-btn")).toBeNull();
   });
 
-  it("renders trail actions inside the meta row when present", () => {
+  it("renders a chevron only for nodes with children", () => {
     const { container } = render(
       <TicketTree
         nodes={[makeNode({ work_item_type: "feature", child_count: 2, children: [makeNode({ id: "c1" })] })]}
@@ -63,7 +67,9 @@ describe("TicketTree layout structure", () => {
     );
 
     const meta = container.querySelector(".tree-card-meta");
+    expect(container.querySelector(".tree-row-head")).not.toHaveClass("tree-row-head--no-chevron");
     expect(meta?.querySelector(".tree-row-trail")).not.toBeNull();
     expect(meta?.querySelector(".tree-card-meta-main")).not.toBeNull();
+    expect(container.querySelector(".tree-chevron-btn")).not.toBeNull();
   });
 });
