@@ -1,18 +1,13 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import type { TicketDetail } from "../../api/client";
-import { buildHiveSimulation } from "../../lib/hiveSimulation";
+import { DEFAULT_HIVE_SKIN, HIVE_SKIN_IDS, HIVE_SKINS, type HiveSkinId } from "../../lib/hive/skins";
+import { agentStatusSnapshot, buildHiveWorld } from "../../lib/hive/worldModel";
+import { useUiStore } from "../../state/uiStore";
+import { HiveCssFloor } from "./hive/HiveCssFloor";
 import "./HiveSimulationPanel.css";
 
-function OrchestratorIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#04140f" strokeWidth="2.2">
-      <path d="M12 3v18M5 8l7-5 7 5M5 16l7 5 7-5" />
-    </svg>
-  );
-}
-
-function OfficeIcon() {
+function FloorIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" strokeWidth="1.9">
       <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" />
@@ -20,19 +15,55 @@ function OfficeIcon() {
   );
 }
 
+/**
+ * Hive tab panel.
+ * Intentionally CSS-only (no Pixi) so the Dashboard critical path cannot hang
+ * on WebGL init. Pixi scene code remains under hive/scene for a later opt-in.
+ */
 export function HiveSimulationPanel({ ticket }: { ticket: TicketDetail }) {
-  const model = useMemo(() => buildHiveSimulation(ticket.stages ?? []), [ticket.stages]);
+  const hiveSkin = useUiStore((s) => s.hiveSkin);
+  const setHiveSkin = useUiStore((s) => s.setHiveSkin);
+  const prevStatusesRef = useRef<Record<string, import("../../api/client").StageStatus>>({});
+
+  const model = useMemo(
+    () =>
+      buildHiveWorld(ticket.stages ?? [], {
+        skin: hiveSkin || DEFAULT_HIVE_SKIN,
+        hasErrorArtifact: Boolean(ticket.artifacts?.error || ticket.blocking_issues),
+        previousStatuses: prevStatusesRef.current,
+      }),
+    [ticket.stages, ticket.artifacts?.error, ticket.blocking_issues, hiveSkin],
+  );
+
+  useEffect(() => {
+    prevStatusesRef.current = agentStatusSnapshot(model.agents);
+  }, [model.agents]);
 
   return (
     <div className="hive-panel">
       <div className="hive-panel__header">
-        <OfficeIcon />
-        <span className="hive-panel__title">Office floor</span>
+        <FloorIcon />
+        <span className="hive-panel__title">{model.floorTitle}</span>
         <span className="hive-panel__live">
           <span className="hive-panel__live-dot" aria-hidden />
           live
         </span>
         <div className="hive-panel__spacer" />
+        <label className="hive-panel__skin">
+          <span className="hive-panel__skin-label">Skin</span>
+          <select
+            className="hive-panel__skin-select"
+            value={hiveSkin || DEFAULT_HIVE_SKIN}
+            onChange={(e) => setHiveSkin(e.target.value as HiveSkinId)}
+            aria-label="Hive simulation skin"
+          >
+            {HIVE_SKIN_IDS.map((id) => (
+              <option key={id} value={id}>
+                {HIVE_SKINS[id].label}
+              </option>
+            ))}
+          </select>
+        </label>
         <span className="hive-panel__legend">
           <span className="hive-panel__legend-dot hive-panel__legend-dot--working" aria-hidden />
           working
@@ -48,71 +79,7 @@ export function HiveSimulationPanel({ ticket }: { ticket: TicketDetail }) {
       </div>
 
       <div className="hive-panel__floor">
-        <svg className="hive-panel__lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-          {model.lines.map((line, index) => (
-            <line
-              key={`${line.x2}-${line.y2}-${index}`}
-              className={line.animated ? "hive-panel__line hive-panel__line--animated" : "hive-panel__line"}
-              x1={line.x1}
-              y1={line.y1}
-              x2={line.x2}
-              y2={line.y2}
-              stroke={line.color}
-              strokeWidth={line.width}
-              opacity={line.opacity}
-              strokeDasharray={line.dashed ? "3 3" : undefined}
-            />
-          ))}
-        </svg>
-
-        <div className="hive-panel__flyer hive-panel__flyer--a" aria-hidden />
-        <div className="hive-panel__flyer hive-panel__flyer--b" aria-hidden />
-        <div className="hive-panel__flyer hive-panel__flyer--c" aria-hidden />
-
-        <div className="hive-panel__orchestrator">
-          <div
-            className={`hive-panel__orchestrator-icon${
-              model.orchestratorActive ? " hive-panel__orchestrator-icon--active" : ""
-            }`}
-          >
-            <OrchestratorIcon />
-          </div>
-          <div className="hive-panel__orchestrator-copy">
-            <div className="hive-panel__orchestrator-name">Orchestrator</div>
-            <div className="hive-panel__orchestrator-sub">routes · gates · handoffs</div>
-          </div>
-        </div>
-
-        {model.agents.map((agent) => (
-          <div
-            key={agent.id}
-            className="hive-panel__desk"
-            style={{ left: agent.x, top: agent.y }}
-          >
-            <div
-              className={`hive-panel__avatar${agent.pulsing ? " hive-panel__avatar--pulse" : ""}`}
-              style={{
-                background: agent.avBg,
-                borderColor: agent.ring,
-                color: agent.avFg,
-              }}
-            >
-              {agent.init}
-              <span className="hive-panel__avatar-dot" style={{ background: agent.color }} aria-hidden />
-            </div>
-            <div className="hive-panel__desk-card" style={{ background: agent.deskBg }}>
-              <div className="hive-panel__desk-name">{agent.name}</div>
-              <div className="hive-panel__desk-status" style={{ color: agent.color }}>
-                <span className="hive-panel__desk-status-dot" style={{ background: agent.color }} aria-hidden />
-                {agent.status} · {agent.stage}
-              </div>
-              {agent.showTool ? (
-                <div className="hive-panel__desk-skill">▸ {agent.skill}</div>
-              ) : null}
-            </div>
-          </div>
-        ))}
-
+        <HiveCssFloor model={model} />
         {model.idle ? (
           <div className="hive-panel__idle">
             <div className="hive-panel__idle-title">The floor is quiet</div>

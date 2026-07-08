@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import type { TicketState, WorkItemType } from "../api/client";
+import { DEFAULT_HIVE_SKIN, isHiveSkinId, type HiveSkinId } from "../lib/hive/skins";
 import { navigateToPage } from "../lib/useAppNavigation";
 
 export type PaneId = "workspaces" | "tickets" | "workflow" | "artifacts";
@@ -20,6 +21,7 @@ interface UiState {
   editorContextRoot: string;
   editorFilePath: string | null;
   queueWorkspaceSlug: string;
+  hiveSkin: HiveSkinId;
   toggleStateFilter: (state: TicketState) => void;
   clearStateFilters: () => void;
   toggleTypeFilter: (type: WorkItemType) => void;
@@ -37,12 +39,21 @@ interface UiState {
   setEditorContextRoot: (root: string) => void;
   setEditorFilePath: (path: string | null) => void;
   setQueueWorkspaceSlug: (slug: string) => void;
+  setHiveSkin: (skin: HiveSkinId) => void;
   openEditorFile: (workspaceSlug: string, filePath: string, contextRoot?: string) => void;
 }
 
 type PersistedUiState = Pick<
   UiState,
-  "expandedTicketIds" | "workspace" | "typeFilters" | "stateFilters" | "paneVisibility" | "editorWorkspace" | "editorContextRoot" | "queueWorkspaceSlug"
+  | "expandedTicketIds"
+  | "workspace"
+  | "typeFilters"
+  | "stateFilters"
+  | "paneVisibility"
+  | "editorWorkspace"
+  | "editorContextRoot"
+  | "queueWorkspaceSlug"
+  | "hiveSkin"
 >;
 
 export const useUiStore = create<UiState>()(
@@ -64,6 +75,7 @@ export const useUiStore = create<UiState>()(
       editorContextRoot: ".",
       editorFilePath: null,
       queueWorkspaceSlug: "",
+      hiveSkin: DEFAULT_HIVE_SKIN,
       toggleStateFilter: (state) => {
         const current = get().stateFilters;
         set({
@@ -118,6 +130,7 @@ export const useUiStore = create<UiState>()(
       setEditorContextRoot: (editorContextRoot) => set({ editorContextRoot }),
       setEditorFilePath: (editorFilePath) => set({ editorFilePath }),
       setQueueWorkspaceSlug: (queueWorkspaceSlug) => set({ queueWorkspaceSlug }),
+      setHiveSkin: (hiveSkin) => set({ hiveSkin: isHiveSkinId(hiveSkin) ? hiveSkin : DEFAULT_HIVE_SKIN }),
       openEditorFile: (workspaceSlug, filePath, contextRoot = ".") => {
         set({
           editorWorkspace: workspaceSlug,
@@ -129,7 +142,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "loregarden-ui",
-      version: 1,
+      version: 2,
       migrate: (persistedState, version) => {
         const state = { ...(persistedState as Record<string, unknown>) };
         if (version < 1) {
@@ -149,6 +162,11 @@ export const useUiStore = create<UiState>()(
           }
           delete state.filter;
         }
+        if (version < 2) {
+          const skin = state.hiveSkin;
+          state.hiveSkin =
+            typeof skin === "string" && isHiveSkinId(skin) ? skin : DEFAULT_HIVE_SKIN;
+        }
         return state as PersistedUiState;
       },
       partialize: (s) => ({
@@ -160,6 +178,7 @@ export const useUiStore = create<UiState>()(
         editorWorkspace: s.editorWorkspace,
         editorContextRoot: s.editorContextRoot,
         queueWorkspaceSlug: s.queueWorkspaceSlug,
+        hiveSkin: s.hiveSkin,
       }),
     },
   ),

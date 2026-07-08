@@ -1,0 +1,26 @@
+{
+  "skin": "cyberpunk",
+  "floor": "cyberpunk/floor.png",
+  "agents": {
+    "worker": "cyberpunk/agents/worker.png",
+    "planner": "cyberpunk/agents/planner.png",
+    "implementer": "cyberpunk/agents/implementer.png",
+    "tester": "cyberpunk/agents/tester.png",
+    "reviewer": "cyberpunk/agents/reviewer.png"
+  },
+  "stations": {
+    "planner_hq": "cyberpunk/stations/planner_hq.png",
+    "research": "cyberpunk/stations/research.png",
+    "coding": "cyberpunk/stations/coding.png",
+    "testing": "cyberpunk/stations/testing.png",
+    "deploy": "cyberpunk/stations/deploy.png"
+  },
+  "artifacts": {
+    "context": "cyberpunk/artifacts/context.png",
+    "diff": "cyberpunk/artifacts/diff.png"
+  },
+  "events": {
+    "waiting": "cyberpunk/events/waiting.png",
+    "error": "cyberpunk/events/error.png"
+  }
+}

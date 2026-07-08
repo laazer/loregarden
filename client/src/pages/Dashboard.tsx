@@ -7,8 +7,8 @@ import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetai
 import { PrioBars } from "../components/PrioBars";
 import { TicketPaneFilters } from "../components/TicketPaneFilters";
 import { ArtifactView } from "../components/dashboard/ArtifactView";
-import { LogsPanel } from "../components/LogsPanel";
 import { HiveSimulationPanel } from "../components/dashboard/HiveSimulationPanel";
+import { LogsPanel } from "../components/LogsPanel";
 import { TriagePanel } from "../components/TriagePanel";
 import { findAncestorIds, TicketTree } from "../components/TicketTree";
 import { AgentsAssembleModal, type AgentsAssembleOptions } from "../components/AgentsAssembleModal";

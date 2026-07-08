@@ -13,6 +13,7 @@
   padding: 11px 18px;
   border-bottom: 1px solid var(--bd);
   background: var(--bg1);
+  flex-wrap: wrap;
 }
 
 .hive-panel__title {
@@ -71,201 +72,36 @@
   flex: 1;
 }
 
+.hive-panel__skin {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--txl);
+}
+
+.hive-panel__skin-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-family: var(--dp);
+  font-size: 10px;
+}
+
+.hive-panel__skin-select {
+  background: var(--bg2);
+  color: var(--tx);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
 .hive-panel__floor {
   flex: 1;
   position: relative;
   min-height: 440px;
   overflow: hidden;
-  background:
-    radial-gradient(120% 90% at 50% 0%, rgba(45, 212, 167, 0.05), transparent 55%),
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 38px,
-      rgba(255, 255, 255, 0.018) 38px,
-      rgba(255, 255, 255, 0.018) 39px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      transparent,
-      transparent 38px,
-      rgba(255, 255, 255, 0.018) 38px,
-      rgba(255, 255, 255, 0.018) 39px
-    );
-}
-
-.hive-panel__lines {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
-.hive-panel__line {
-  vector-effect: non-scaling-stroke;
-}
-
-.hive-panel__line--animated {
-  animation: hivedash 1s linear infinite;
-}
-
-.hive-panel__flyer {
-  position: absolute;
-  width: 11px;
-  height: 8px;
-  border-radius: 2px;
-  transform: translate(-50%, -50%);
-}
-
-.hive-panel__flyer--a {
-  background: var(--ac);
-  box-shadow: 0 0 8px rgba(45, 212, 167, 0.6);
-  animation: hive-fly-a 3.4s ease-in-out infinite;
-}
-
-.hive-panel__flyer--b {
-  background: var(--bll);
-  box-shadow: 0 0 8px rgba(75, 155, 255, 0.6);
-  animation: hive-fly-b 4.6s ease-in-out infinite;
-}
-
-.hive-panel__flyer--c {
-  background: var(--aml);
-  box-shadow: 0 0 8px rgba(229, 167, 44, 0.5);
-  animation: hive-fly-c 5.2s ease-in-out infinite;
-}
-
-.hive-panel__orchestrator {
-  position: absolute;
-  left: 50%;
-  top: 10%;
-  transform: translate(-50%, -50%);
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 7px;
-}
-
-.hive-panel__orchestrator-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: 15px;
-  background: linear-gradient(140deg, var(--ac), #12a37e);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow:
-    0 6px 22px rgba(45, 212, 167, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.35);
-}
-
-.hive-panel__orchestrator-icon--active {
-  animation: pulse 1.9s ease-in-out infinite;
-}
-
-.hive-panel__orchestrator-copy {
-  text-align: center;
-}
-
-.hive-panel__orchestrator-name {
-  font-family: var(--dp);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--tx);
-}
-
-.hive-panel__orchestrator-sub {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  color: var(--txl);
-}
-
-.hive-panel__desk {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  z-index: 2;
-  width: 150px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.hive-panel__avatar {
-  position: relative;
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  border: 2px solid var(--bd2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--dp);
-  font-weight: 700;
-  font-size: 14px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-}
-
-.hive-panel__avatar--pulse {
-  animation: pulse 1.7s ease-in-out infinite;
-}
-
-.hive-panel__avatar-dot {
-  position: absolute;
-  right: -1px;
-  bottom: -1px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid var(--bg0);
-}
-
-.hive-panel__desk-card {
-  width: 100%;
-  background: var(--bg2);
-  border: 1px solid var(--bd);
-  border-radius: 11px;
-  padding: 8px 10px;
-  text-align: center;
-}
-
-.hive-panel__desk-name {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--tx);
-  line-height: 1.25;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.hive-panel__desk-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 4px;
-  font-size: 10px;
-  font-weight: 500;
-}
-
-.hive-panel__desk-status-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-}
-
-.hive-panel__desk-skill {
-  margin-top: 6px;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  color: var(--bll);
-  background: rgba(75, 155, 255, 0.1);
-  border: 1px solid rgba(75, 155, 255, 0.2);
-  border-radius: 5px;
-  padding: 1px 6px;
-  display: inline-block;
+  background: var(--bg0);
 }
 
 .hive-panel__idle {
@@ -275,6 +111,8 @@
   transform: translate(-50%, -50%);
   text-align: center;
   color: var(--txl);
+  pointer-events: none;
+  z-index: 3;
 }
 
 .hive-panel__idle-title {
@@ -288,65 +126,209 @@
   font-size: 12px;
 }
 
-@keyframes hivedash {
-  to {
-    stroke-dashoffset: -12;
-  }
+/* ── CSS floor (no Pixi) ── */
+
+.hive-css {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  image-rendering: pixelated;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(45, 212, 167, 0.06), transparent 55%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 22px,
+      rgba(255, 255, 255, 0.03) 22px,
+      rgba(255, 255, 255, 0.03) 23px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 22px,
+      rgba(255, 255, 255, 0.03) 22px,
+      rgba(255, 255, 255, 0.03) 23px
+    ),
+    #141a14;
 }
 
-@keyframes hive-fly-a {
-  0% {
-    left: 50%;
-    top: 10%;
-    opacity: 0;
-  }
-  12% {
-    opacity: 1;
-  }
-  88% {
-    opacity: 1;
-  }
-  100% {
-    left: 18%;
-    top: 44%;
-    opacity: 0;
-  }
+.hive-css--warcraft {
+  background-color: #2f4624;
 }
 
-@keyframes hive-fly-b {
-  0% {
-    left: 82%;
-    top: 44%;
-    opacity: 0;
-  }
-  12% {
-    opacity: 1;
-  }
-  88% {
-    opacity: 1;
-  }
-  100% {
-    left: 50%;
-    top: 78%;
-    opacity: 0;
-  }
+.hive-css--dunder_mifflin {
+  background-color: #1c1a16;
 }
 
-@keyframes hive-fly-c {
-  0% {
-    left: 50%;
-    top: 78%;
-    opacity: 0;
-  }
-  12% {
-    opacity: 1;
-  }
-  88% {
-    opacity: 1;
-  }
-  100% {
-    left: 50%;
-    top: 10%;
-    opacity: 0;
-  }
+.hive-css--cyberpunk {
+  background-color: #120c1c;
+}
+
+.hive-css--starcraft {
+  background-color: #1e221c;
+}
+
+.hive-css__god,
+.hive-css__station,
+.hive-css__waiting,
+.hive-css__agent {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.hive-css__god-icon,
+.hive-css__station-sprite,
+.hive-css__waiting-sprite,
+.hive-css__agent-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  border: 2px solid var(--bd2);
+  background: var(--bg3);
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
+}
+
+.hive-css__god-icon {
+  background: linear-gradient(140deg, var(--ac), #12a37e);
+  border-color: transparent;
+}
+
+.hive-css__god--active .hive-css__god-icon {
+  animation: pulse 1.9s ease-in-out infinite;
+}
+
+.hive-css__god-label,
+.hive-css__station-label,
+.hive-css__waiting-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--txm);
+  text-align: center;
+  max-width: 110px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hive-css__station--active .hive-css__station-sprite {
+  border-color: var(--ac);
+  box-shadow: 0 0 0 2px rgba(45, 212, 167, 0.25), 4px 4px 0 rgba(0, 0, 0, 0.35);
+}
+
+.hive-css__station--error .hive-css__station-sprite {
+  border-color: var(--red);
+  background: rgba(255, 106, 84, 0.25);
+}
+
+.hive-css__station-error {
+  font-size: 9px;
+  color: var(--rdl);
+  font-family: var(--mono);
+}
+
+.hive-css__waiting-sprite {
+  background: rgba(229, 167, 44, 0.25);
+  border-color: var(--amb);
+}
+
+.hive-css__agent {
+  transition: left 0.85s linear, top 0.85s linear;
+  width: 140px;
+}
+
+.hive-css__agent-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-family: var(--dp);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--onac);
+  background: currentColor;
+  border-color: currentColor;
+  mix-blend-mode: normal;
+  color: #04140f;
+  background: var(--blue);
+}
+
+.hive-css__agent--working .hive-css__agent-avatar,
+.hive-css__agent--pulse .hive-css__agent-avatar {
+  animation: pulse 1.7s ease-in-out infinite;
+}
+
+.hive-css__agent--waiting .hive-css__agent-avatar {
+  background: var(--amb);
+}
+
+.hive-css__agent--success .hive-css__agent-avatar {
+  background: var(--grn);
+}
+
+.hive-css__agent--ghost {
+  opacity: 0.35;
+}
+
+.hive-css__agent-card {
+  width: 100%;
+  background: var(--bg2);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 6px 8px;
+  text-align: center;
+}
+
+.hive-css__agent-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tx);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hive-css__agent-status {
+  margin-top: 3px;
+  font-size: 10px;
+  color: currentColor;
+}
+
+.hive-css__agent-skill {
+  margin-top: 5px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--bll);
+}
+
+.hive-css__flyers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.hive-css__flyer {
+  position: absolute;
+  width: 12px;
+  height: 10px;
+  border-radius: 2px;
+  transform: translate(-50%, -50%);
+  transition: left 1.05s ease-in-out, top 1.05s ease-in-out, opacity 1.05s ease-in-out;
+  opacity: 1;
+}
+
+.hive-css__flyer--context {
+  background: var(--ac);
+  box-shadow: 0 0 8px rgba(45, 212, 167, 0.6);
+}
+
+.hive-css__flyer--diff {
+  background: var(--bll);
+  box-shadow: 0 0 8px rgba(75, 155, 255, 0.6);
 }

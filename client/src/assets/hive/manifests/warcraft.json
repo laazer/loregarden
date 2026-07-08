@@ -1,0 +1,26 @@
+{
+  "skin": "warcraft",
+  "floor": "warcraft/floor.png",
+  "agents": {
+    "worker": "warcraft/agents/worker.png",
+    "planner": "warcraft/agents/planner.png",
+    "implementer": "warcraft/agents/implementer.png",
+    "tester": "warcraft/agents/tester.png",
+    "reviewer": "warcraft/agents/reviewer.png"
+  },
+  "stations": {
+    "planner_hq": "warcraft/stations/planner_hq.png",
+    "research": "warcraft/stations/research.png",
+    "coding": "warcraft/stations/coding.png",
+    "testing": "warcraft/stations/testing.png",
+    "deploy": "warcraft/stations/deploy.png"
+  },
+  "artifacts": {
+    "context": "warcraft/artifacts/context.png",
+    "diff": "warcraft/artifacts/diff.png"
+  },
+  "events": {
+    "waiting": "warcraft/events/waiting.png",
+    "error": "warcraft/events/error.png"
+  }
+}

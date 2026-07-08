@@ -23,12 +23,13 @@ module.exports = {
       },
     ],
   },
-  moduleFileExtensions: ["ts", "tsx", "js", "jsx"],
+  moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json"],
   testMatch: ["<rootDir>/src/**/__tests__/**/*.(test|spec).(ts|tsx)"],
   moduleNameMapper: {
     "\\.(css|less|scss|sass)$": "<rootDir>/src/test/styleMock.ts",
     "\\.(png|jpg|jpeg|gif|webp|svg)$": "<rootDir>/src/test/fileMock.ts",
     "^react-markdown$": "<rootDir>/src/test/reactMarkdownMock.tsx",
     "^remark-gfm$": "<rootDir>/src/test/remarkGfmMock.ts",
+    "^pixi\\.js$": "<rootDir>/src/test/pixiMock.ts",
   },
 };

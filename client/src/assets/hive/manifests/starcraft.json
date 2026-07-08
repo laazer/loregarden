@@ -1,0 +1,26 @@
+{
+  "skin": "starcraft",
+  "floor": "starcraft/floor.png",
+  "agents": {
+    "worker": "starcraft/agents/worker.png",
+    "planner": "starcraft/agents/planner.png",
+    "implementer": "starcraft/agents/implementer.png",
+    "tester": "starcraft/agents/tester.png",
+    "reviewer": "starcraft/agents/reviewer.png"
+  },
+  "stations": {
+    "planner_hq": "starcraft/stations/planner_hq.png",
+    "research": "starcraft/stations/research.png",
+    "coding": "starcraft/stations/coding.png",
+    "testing": "starcraft/stations/testing.png",
+    "deploy": "starcraft/stations/deploy.png"
+  },
+  "artifacts": {
+    "context": "starcraft/artifacts/context.png",
+    "diff": "starcraft/artifacts/diff.png"
+  },
+  "events": {
+    "waiting": "starcraft/events/waiting.png",
+    "error": "starcraft/events/error.png"
+  }
+}
