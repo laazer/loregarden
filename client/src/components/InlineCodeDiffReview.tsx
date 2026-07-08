@@ -9,9 +9,17 @@ import {
   submitTicketDiffReviewToAgent,
   type TicketDiffComment,
 } from "../lib/diffReviewApi";
+import {
+  addBranchDiffComment,
+  listBranchDiffComments,
+  submitBranchDiffReviewToAgent,
+  type BranchDiffComment,
+} from "../lib/branchTriageApi";
+import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import "./InlineCodeDiffReview.css";
 
 type DiffViewMode = "unified" | "split";
+type DiffReviewComment = TicketDiffComment | BranchDiffComment;
 
 type LineRef = { line: DiffLine; lineIndex: number };
 
@@ -138,7 +146,7 @@ function ReviewableDiffLine({
   filePath: string;
   lineRef: LineRef | null;
   pane: "old" | "new";
-  commentsByAnchor: Map<string, TicketDiffComment[]>;
+  commentsByAnchor: Map<string, DiffReviewComment[]>;
   activeAnchor: string | null;
   draft: string;
   isLoading: boolean;
@@ -246,7 +254,7 @@ function UnifiedDiffFile({
   onSubmitComment,
 }: {
   section: DiffFileSection;
-  commentsByAnchor: Map<string, TicketDiffComment[]>;
+  commentsByAnchor: Map<string, DiffReviewComment[]>;
   activeAnchor: string | null;
   draft: string;
   isLoading: boolean;
@@ -354,7 +362,7 @@ function SplitDiffFile({
   onSubmitComment,
 }: {
   section: DiffFileSection;
-  commentsByAnchor: Map<string, TicketDiffComment[]>;
+  commentsByAnchor: Map<string, DiffReviewComment[]>;
   activeAnchor: string | null;
   draft: string;
   isLoading: boolean;
@@ -424,11 +432,15 @@ function SplitDiffFile({
 
 export function InlineCodeDiffReview({
   ticketId,
+  branchReview,
   diff,
   diffSummary,
   onOpenEditorFile,
+  lazyLoadFiles = false,
+  onLoadFile,
 }: {
-  ticketId: string;
+  ticketId?: string;
+  branchReview?: { workspaceSlug: string; branch: string };
   diff: DiffArtifact;
   diffSummary?: {
     files: string;
@@ -437,11 +449,29 @@ export function InlineCodeDiffReview({
     del: string;
   };
   onOpenEditorFile?: (filePath: string) => void;
+  lazyLoadFiles?: boolean;
+  onLoadFile?: (filePath: string) => Promise<DiffFileSection | null>;
 }) {
   const sections = useMemo(() => diffFileSections(diff), [diff]);
+  const fileRows = useMemo(
+    () =>
+      diff.file_entries?.length
+        ? diff.file_entries
+        : sections.map((section) => ({
+            path: section.path,
+            add: section.add,
+            del: section.del,
+          })),
+    [diff.file_entries, sections],
+  );
+  const sectionPathsKey = useMemo(() => fileRows.map((row) => row.path).join("\0"), [fileRows]);
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<DiffViewMode>("unified");
-  const [comments, setComments] = useState<TicketDiffComment[]>([]);
+  const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(() => new Set());
+  const [expandedFile, setExpandedFile] = useState<string | null>(null);
+  const [loadedSections, setLoadedSections] = useState<Map<string, DiffFileSection>>(() => new Map());
+  const [loadingFile, setLoadingFile] = useState<string | null>(null);
+  const [comments, setComments] = useState<DiffReviewComment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeAnchor, setActiveAnchor] = useState<string | null>(null);
@@ -451,7 +481,7 @@ export function InlineCodeDiffReview({
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
 
   const commentsByAnchor = useMemo(() => {
-    const map = new Map<string, TicketDiffComment[]>();
+    const map = new Map<string, DiffReviewComment[]>();
     for (const comment of comments) {
       const key = diffCommentAnchor(comment.file_path, comment.line_index);
       const bucket = map.get(key) ?? [];
@@ -466,14 +496,103 @@ export function InlineCodeDiffReview({
     [comments],
   );
 
-  const refreshComments = useCallback(async () => {
-    setError(null);
-    const data = await listTicketDiffComments(ticketId);
-    setComments(data.comments ?? []);
-  }, [ticketId]);
+  const branchWorkspaceSlug = branchReview?.workspaceSlug;
+  const branchName = branchReview?.branch;
 
   useEffect(() => {
-    if (sections.length === 0) {
+    setCollapsedFiles(new Set());
+    setExpandedFile(null);
+    setLoadedSections(new Map());
+    setLoadingFile(null);
+  }, [sectionPathsKey]);
+
+  const toggleFileCollapsed = (path: string) => {
+    if (lazyLoadFiles && onLoadFile) {
+      if (expandedFile === path) {
+        setExpandedFile(null);
+        setLoadedSections(new Map());
+        return;
+      }
+      setExpandedFile(path);
+      setLoadedSections(new Map());
+      setLoadingFile(path);
+      void onLoadFile(path)
+        .then((section) => {
+          if (section) {
+            setLoadedSections(new Map([[path, section]]));
+          }
+        })
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : "Failed to load file diff");
+        })
+        .finally(() => {
+          setLoadingFile((current) => (current === path ? null : current));
+        });
+      return;
+    }
+
+    setCollapsedFiles((current) => {
+      const next = new Set(current);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  };
+
+  const collapseAllFiles = () => {
+    if (lazyLoadFiles) {
+      setExpandedFile(null);
+      setLoadedSections(new Map());
+      return;
+    }
+    setCollapsedFiles(new Set(fileRows.map((row) => row.path)));
+  };
+
+  const expandAllFiles = () => {
+    if (lazyLoadFiles) {
+      return;
+    }
+    setCollapsedFiles(new Set());
+  };
+
+  const collapsedCount = lazyLoadFiles
+    ? fileRows.length - (expandedFile ? 1 : 0)
+    : collapsedFiles.size;
+
+  const resolveSection = (path: string): DiffFileSection | null => {
+    if (lazyLoadFiles) {
+      if (expandedFile !== path) return null;
+      return loadedSections.get(path) ?? null;
+    }
+    if (collapsedFiles.has(path)) return null;
+    return sections.find((section) => section.path === path) ?? null;
+  };
+
+  const isFileCollapsed = (path: string) => {
+    if (lazyLoadFiles) return expandedFile !== path;
+    return collapsedFiles.has(path);
+  };
+
+  const refreshComments = useCallback(async () => {
+    setError(null);
+    if (branchWorkspaceSlug && branchName) {
+      const data = await listBranchDiffComments(branchWorkspaceSlug, branchName);
+      setComments(data.comments ?? []);
+      return;
+    }
+    if (!ticketId) {
+      setComments([]);
+      return;
+    }
+    const data = await listTicketDiffComments(ticketId);
+    setComments(data.comments ?? []);
+  }, [branchWorkspaceSlug, branchName, ticketId]);
+
+  useEffect(() => {
+    if (sections.length === 0 && ticketId) {
       void queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
     }
   }, [sections.length, queryClient, ticketId]);
@@ -493,12 +612,21 @@ export function InlineCodeDiffReview({
     setIsLoading(true);
     setError(null);
     try {
-      await addTicketDiffComment(ticketId, {
-        file_path: filePath,
-        line_index: lineIndex,
-        line_kind: lineKind,
-        content: draft.trim(),
-      });
+      if (branchWorkspaceSlug && branchName) {
+        await addBranchDiffComment(branchWorkspaceSlug, branchName, {
+          file_path: filePath,
+          line_index: lineIndex,
+          line_kind: lineKind,
+          content: draft.trim(),
+        });
+      } else if (ticketId) {
+        await addTicketDiffComment(ticketId, {
+          file_path: filePath,
+          line_index: lineIndex,
+          line_kind: lineKind,
+          content: draft.trim(),
+        });
+      }
       setDraft("");
       setActiveAnchor(null);
       await refreshComments();
@@ -514,9 +642,16 @@ export function InlineCodeDiffReview({
     setError(null);
     setSubmitMessage(null);
     try {
-      const result = await submitTicketDiffReviewToAgent(ticketId, {
-        instructions: submitInstructions,
-      });
+      const result =
+        branchWorkspaceSlug && branchName
+          ? await submitBranchDiffReviewToAgent(branchWorkspaceSlug, branchName, {
+              instructions: submitInstructions,
+            })
+          : ticketId
+            ? await submitTicketDiffReviewToAgent(ticketId, {
+                instructions: submitInstructions,
+              })
+            : { submitted_comments: 0 };
       setSubmitMessage(
         `Submitted ${result.submitted_comments} inline comment${
           result.submitted_comments === 1 ? "" : "s"
@@ -588,6 +723,28 @@ export function InlineCodeDiffReview({
               Unified
             </button>
           </div>
+          {fileRows.length > 1 ? (
+            <div className="inline-code-diff-file-toggle">
+              <button
+                type="button"
+                className="btn-secondary btn-compact"
+                disabled={lazyLoadFiles ? !expandedFile : collapsedCount === fileRows.length}
+                onClick={collapseAllFiles}
+              >
+                Collapse all
+              </button>
+              {!lazyLoadFiles ? (
+                <button
+                  type="button"
+                  className="btn-secondary btn-compact"
+                  disabled={collapsedCount === 0}
+                  onClick={expandAllFiles}
+                >
+                  Expand all
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           <span className="inline-code-diff-count">
             {unresolvedCount} open comment{unresolvedCount === 1 ? "" : "s"}
           </span>
@@ -637,43 +794,82 @@ export function InlineCodeDiffReview({
         </div>
       ) : null}
 
-      {sections.length === 0 ? (
+      {fileRows.length === 0 ? (
         <div className="inline-code-diff-empty">
           Diff summary is available but line content did not load. Re-open this tab or run the ticket again to refresh
           the git diff.
         </div>
       ) : null}
 
-      {sections.map((section) => (
-        <section key={section.path} className="diff-file-block">
+      {lazyLoadFiles ? (
+        <div className="inline-code-diff-lazy-hint">
+          Expand a file to load its diff. Only one file is kept loaded at a time.
+        </div>
+      ) : null}
+
+      {fileRows.map((row) => {
+        const isCollapsed = isFileCollapsed(row.path);
+        const section = resolveSection(row.path);
+        const isLoadingFile = loadingFile === row.path;
+        return (
+        <section
+          key={row.path}
+          className={`diff-file-block${isCollapsed ? " diff-file-block--collapsed" : ""}`}
+        >
           <div className="diff-file-header">
+            <button
+              type="button"
+              className="diff-file-collapse-btn"
+              aria-expanded={!isCollapsed}
+              aria-label={isCollapsed ? `Expand ${row.path}` : `Collapse ${row.path}`}
+              onClick={() => toggleFileCollapsed(row.path)}
+            >
+              <TreeExpandChevron expanded={!isCollapsed} />
+            </button>
             {onOpenEditorFile ? (
               <button
                 type="button"
                 className="diff-file-path diff-file-open-btn"
-                title={`Open ${section.path} in editor`}
-                onClick={() => onOpenEditorFile(section.path)}
+                title={`Open ${row.path} in editor`}
+                onClick={() => onOpenEditorFile(row.path)}
               >
-                {section.path}
+                {row.path}
               </button>
             ) : (
-              <span className="diff-file-path" title={section.path}>
-                {section.path}
-              </span>
+              <button
+                type="button"
+                className="diff-file-path diff-file-path-toggle"
+                title={row.path}
+                onClick={() => toggleFileCollapsed(row.path)}
+              >
+                {row.path}
+              </button>
             )}
             <span className="diff-file-stats">
-              <span style={{ color: "var(--grl)" }}>+{section.add}</span>
-              <span style={{ color: "var(--rdl)" }}>−{section.del}</span>
+              <span style={{ color: "var(--grl)" }}>+{row.add}</span>
+              <span style={{ color: "var(--rdl)" }}>−{row.del}</span>
+              {section?.truncated ? (
+                <span className="diff-file-truncated-pill" title="Line view truncated; counts are from git">
+                  truncated view
+                </span>
+              ) : null}
             </span>
           </div>
 
-          {viewMode === "split" ? (
-            <SplitDiffFile section={section} {...sharedFileProps} />
-          ) : (
-            <UnifiedDiffFile section={section} {...sharedFileProps} />
-          )}
+          {isLoadingFile ? (
+            <div className="branch-triage-empty diff-file-loading">Loading {row.path}…</div>
+          ) : null}
+
+          {!isCollapsed && section && !isLoadingFile ? (
+            viewMode === "split" ? (
+              <SplitDiffFile section={section} {...sharedFileProps} />
+            ) : (
+              <UnifiedDiffFile section={section} {...sharedFileProps} />
+            )
+          ) : null}
         </section>
-      ))}
+        );
+      })}
     </div>
   );
 }

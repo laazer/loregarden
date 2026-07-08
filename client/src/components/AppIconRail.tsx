@@ -68,6 +68,16 @@ export function AppIconRail({ onOpenSettings }: AppIconRailProps) {
         </svg>
       </NavButton>
 
+      <NavButton active={appPage === "branch-triage"} title="Branch Triage" to="/branch-triage">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+          <circle cx="6" cy="6" r="3" />
+          <circle cx="6" cy="18" r="3" />
+          <path d="M6 9v6" />
+          <circle cx="18" cy="6" r="3" />
+          <path d="M18 9a9 9 0 0 1-9 9" />
+        </svg>
+      </NavButton>
+
       <div className="icon-rail-spacer" />
 
       <button type="button" className="icon-rail-settings" title="Settings" onClick={onOpenSettings}>

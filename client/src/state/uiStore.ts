@@ -28,6 +28,7 @@ interface UiState {
   editorContextRoot: string;
   editorFilePath: string | null;
   queueWorkspaceSlug: string;
+  branchTriageWorkspaceSlug: string;
   hiveSkin: HiveSkinId;
   hiveSpeedIndex: number;
   toggleStateFilter: (state: TicketState) => void;
@@ -47,6 +48,7 @@ interface UiState {
   setEditorContextRoot: (root: string) => void;
   setEditorFilePath: (path: string | null) => void;
   setQueueWorkspaceSlug: (slug: string) => void;
+  setBranchTriageWorkspaceSlug: (slug: string) => void;
   setHiveSkin: (skin: HiveSkinId | string) => void;
   setHiveSpeedIndex: (index: number) => void;
   stepHiveSpeed: (delta: -1 | 1) => void;
@@ -63,6 +65,7 @@ type PersistedUiState = Pick<
   | "editorWorkspace"
   | "editorContextRoot"
   | "queueWorkspaceSlug"
+  | "branchTriageWorkspaceSlug"
   | "hiveSkin"
   | "hiveSpeedIndex"
 >;
@@ -86,6 +89,7 @@ export const useUiStore = create<UiState>()(
       editorContextRoot: ".",
       editorFilePath: null,
       queueWorkspaceSlug: "",
+      branchTriageWorkspaceSlug: "",
       hiveSkin: DEFAULT_HIVE_SKIN,
       hiveSpeedIndex: hiveSpeedIndexFor(DEFAULT_HIVE_SPEED_MULTIPLIER),
       toggleStateFilter: (state) => {
@@ -142,6 +146,8 @@ export const useUiStore = create<UiState>()(
       setEditorContextRoot: (editorContextRoot) => set({ editorContextRoot }),
       setEditorFilePath: (editorFilePath) => set({ editorFilePath }),
       setQueueWorkspaceSlug: (queueWorkspaceSlug) => set({ queueWorkspaceSlug }),
+      setBranchTriageWorkspaceSlug: (branchTriageWorkspaceSlug) =>
+        set({ branchTriageWorkspaceSlug }),
       setHiveSkin: (hiveSkin) => set({ hiveSkin: resolveHiveSkinId(hiveSkin) }),
       setHiveSpeedIndex: (hiveSpeedIndex) =>
         set({ hiveSpeedIndex: clampHiveSpeedIndex(hiveSpeedIndex) }),
@@ -160,9 +166,12 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "loregarden-ui",
-      version: 6,
+      version: 7,
       migrate: (persistedState, version) => {
         const state = { ...(persistedState as Record<string, unknown>) };
+        if (version < 7 && typeof state.branchTriageWorkspaceSlug !== "string") {
+          state.branchTriageWorkspaceSlug = "";
+        }
         if (version < 1) {
           const legacyTypeFilter = state.typeFilter;
           if (typeof legacyTypeFilter === "string" && legacyTypeFilter !== "all") {
@@ -213,6 +222,7 @@ export const useUiStore = create<UiState>()(
         editorWorkspace: s.editorWorkspace,
         editorContextRoot: s.editorContextRoot,
         queueWorkspaceSlug: s.queueWorkspaceSlug,
+        branchTriageWorkspaceSlug: s.branchTriageWorkspaceSlug,
         hiveSkin: s.hiveSkin,
         hiveSpeedIndex: s.hiveSpeedIndex,
       }),

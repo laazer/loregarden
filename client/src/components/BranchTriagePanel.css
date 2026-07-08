@@ -1,0 +1,302 @@
+.branch-triage-page-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 18px 18px;
+}
+
+.branch-triage-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 0 14px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.branch-triage-tab {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--txm);
+  cursor: pointer;
+}
+
+.branch-triage-tab.active {
+  background: var(--bg3);
+  border-color: var(--bd2);
+  color: var(--tx);
+}
+
+.branch-triage-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 16px;
+  padding-top: 16px;
+}
+
+.branch-triage-list {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.branch-triage-card {
+  text-align: left;
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  background: var(--bg1);
+  padding: 12px 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.branch-triage-card.selected {
+  border-color: var(--ac);
+  background: rgba(45, 212, 167, 0.06);
+}
+
+.branch-triage-card-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.branch-triage-card-name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--tx);
+  word-break: break-all;
+}
+
+.branch-triage-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--bd2);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.branch-triage-tag-current {
+  color: var(--grl, #35c46a);
+  border-color: rgba(53, 196, 106, 0.35);
+  background: rgba(53, 196, 106, 0.1);
+}
+
+.branch-triage-tag-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.branch-triage-summary-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.branch-triage-summary-title h2 {
+  margin: 0;
+}
+
+.branch-triage-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--txl);
+}
+
+.branch-triage-issue {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--bd2);
+}
+
+.branch-triage-issue.high {
+  color: var(--rdl);
+  border-color: rgba(255, 106, 84, 0.35);
+  background: rgba(255, 106, 84, 0.08);
+}
+
+.branch-triage-issue.medium {
+  color: var(--aml);
+  border-color: rgba(229, 167, 44, 0.35);
+  background: rgba(229, 167, 44, 0.08);
+}
+
+.branch-triage-issue.low {
+  color: var(--txm);
+}
+
+.branch-triage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.branch-triage-main {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  background: var(--bg0);
+}
+
+.branch-triage-empty {
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--txl);
+}
+
+.branch-triage-summary {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--bd);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.branch-triage-summary h2 {
+  margin: 0;
+  font-size: 15px;
+  font-family: var(--mono);
+}
+
+.branch-triage-summary-title h2 {
+  font-size: 15px;
+}
+
+.branch-triage-delete-error {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 106, 84, 0.35);
+  background: rgba(255, 106, 84, 0.08);
+  color: var(--rdl);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.branch-triage-delete-notice {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(90, 200, 140, 0.35);
+  background: rgba(90, 200, 140, 0.08);
+  color: var(--tx);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.branch-delete-confirm-modal .branch-delete-confirm-worktrees {
+  margin-top: 12px;
+}
+
+.branch-delete-confirm-path-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.branch-delete-confirm-path-list li {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--bd);
+  background: var(--bg2);
+  overflow-x: auto;
+}
+
+.branch-delete-confirm-path-list code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--tx);
+  word-break: break-all;
+}
+
+.branch-delete-confirm-submit {
+  background: var(--rdl, #ff6a54);
+  border-color: transparent;
+}
+
+.branch-delete-confirm-submit:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.branch-triage-diff-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.branch-triage-diff-summary {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.branch-triage-diff-summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.branch-triage-diff-compare-label {
+  font-size: 11px;
+  color: var(--txm);
+}
+
+.branch-triage-diff-compare-trigger {
+  font-size: 12px;
+  color: var(--tx);
+}
+
+.branch-triage-diff-panel .inline-code-diff-review {
+  flex: 1;
+  min-height: 0;
+}
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.branch-triage-chat-panel .triage-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.branch-triage-chat-panel .triage-chat-section {
+  min-height: 200px;
+}
+
+@media (max-width: 960px) {
+  .branch-triage-layout {
+    grid-template-columns: 1fr;
+  }
+}

@@ -41,7 +41,7 @@ export function GitRefSwitcher({
       <label className="git-ref-switcher-label">
         <span>Branch</span>
         <select
-          className="btn-secondary filter-select git-ref-select"
+          className="btn-secondary page-hero-field-select git-ref-select"
           value={refs?.current_branch ?? ""}
           disabled={busy || !refs?.branches.length}
           onChange={(event) => {
@@ -63,7 +63,7 @@ export function GitRefSwitcher({
       <label className="git-ref-switcher-label">
         <span>Worktree</span>
         <select
-          className="btn-secondary filter-select git-ref-select"
+          className="btn-secondary page-hero-field-select git-ref-select"
           value={refs?.context_path ?? ""}
           disabled={busy || !refs?.worktrees.length}
           onChange={(event) => {

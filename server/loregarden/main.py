@@ -8,6 +8,7 @@ from sqlmodel import Session
 from loregarden.api import (
     agents,
     analytics,
+    branch_triage,
     ci,
     diff_review,
     editor,
@@ -71,6 +72,7 @@ app.include_router(tickets.router, prefix="/api")
 app.include_router(diff_review.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
 app.include_router(editor.router, prefix="/api")
+app.include_router(branch_triage.router, prefix="/api")
 app.include_router(system.router, prefix="/api")
 app.include_router(inbox.router, prefix="/api")
 app.include_router(events.router, prefix="/api")

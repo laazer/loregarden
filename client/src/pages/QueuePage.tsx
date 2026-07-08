@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 
 import { api } from "../api/client";
-import { AppTopbarActions } from "../components/AppTopbarActions";
+import { PageHeroAppToolbar } from "../components/PageHeroAppToolbar";
 import { QueueDashboard } from "../components/QueueDashboard";
 import { useParallelExecutionWS } from "../hooks/useParallelExecutionWS";
 import { useUiStore } from "../state/uiStore";
@@ -81,9 +81,9 @@ export function QueuePage() {
             </div>
           )}
           <label className="editor-workspace-picker">
-            <span>Workspace</span>
+            <span className="page-hero-field-label">Workspace</span>
             <select
-              className="btn-secondary filter-select"
+              className="btn-secondary page-hero-field-select"
               value={activeSlug}
               disabled={!workspaces.data?.length}
               onChange={(event) => setQueueWorkspaceSlug(event.target.value)}
@@ -95,7 +95,7 @@ export function QueuePage() {
               ))}
             </select>
           </label>
-          <AppTopbarActions />
+          <PageHeroAppToolbar />
         </div>
       </header>
 

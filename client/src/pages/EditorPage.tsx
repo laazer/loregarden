@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../api/client";
-import { AppTopbarActions } from "../components/AppTopbarActions";
+import { PageHeroAppToolbar } from "../components/PageHeroAppToolbar";
 import { CodeEditor } from "../components/editor/CodeEditor";
 import { EditorFileExplorer } from "../components/editor/EditorFileExplorer";
 import { GitRefSwitcher } from "../components/editor/GitRefSwitcher";
@@ -103,9 +103,9 @@ export function EditorPage() {
 
         <div className="page-hero-actions">
           <label className="editor-workspace-picker">
-            <span>Workspace</span>
+            <span className="page-hero-field-label">Workspace</span>
             <select
-              className="btn-secondary filter-select"
+              className="btn-secondary page-hero-field-select"
               value={workspaceSlug}
               disabled={!workspaces.data?.length}
               onChange={(event) => {
@@ -131,7 +131,7 @@ export function EditorPage() {
           />
 
           {saveMessage ? <span className="editor-save-status">{saveMessage}</span> : null}
-          <AppTopbarActions />
+          <PageHeroAppToolbar />
         </div>
       </header>
 

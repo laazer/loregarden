@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,8 @@ from sqlmodel import Session, select
 
 MAX_DIFF_LINES = 400
 MAX_DIFF_LINE_CHARS = 500
+MAX_UNTRACKED_FILE_BYTES = 512_000
+MAX_UNTRACKED_FILES = 20
 
 _artifact_upsert_lock = threading.Lock()
 
@@ -38,6 +41,499 @@ def _git_base_ref(cwd: Path) -> str | None:
         return "HEAD~1"
     return None
 
+
+@dataclass(frozen=True)
+class BranchDiffContext:
+    git_cwd: Path
+    branch: str
+    base: str
+    range_label: str
+    stat_args: list[str]
+    patch_args: list[str]
+    mode: str
+
+
+def _parse_numstat(text: str) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for line in (text or "").splitlines():
+        parts = line.split("\t")
+        if len(parts) != 3:
+            continue
+        add_raw, del_raw, path = parts
+        path = path.strip()
+        if not path:
+            continue
+        if add_raw == "-" or del_raw == "-":
+            entries.append({"path": path, "add": 0, "del": 0, "binary": True})
+        else:
+            entries.append({"path": path, "add": int(add_raw), "del": int(del_raw), "binary": False})
+    return entries
+
+
+def _manifest_from_entries(
+    entries: list[dict[str, Any]],
+    *,
+    branch: str,
+    base: str,
+    range_label: str,
+) -> dict[str, Any]:
+    total_add = sum(int(item.get("add") or 0) for item in entries)
+    total_del = sum(int(item.get("del") or 0) for item in entries)
+    file_count = len(entries)
+    summary = (
+        f"{file_count} file{'s' if file_count != 1 else ''} changed, "
+        f"{total_add} insertion{'s' if total_add != 1 else ''}(+), "
+        f"{total_del} deletion{'s' if total_del != 1 else ''}(-)"
+    )
+    return {
+        "file": entries[0]["path"] if entries else "changes",
+        "add": f"+{total_add}",
+        "del": f"−{total_del}",
+        "files": summary,
+        "range": range_label,
+        "branch": branch,
+        "base": base,
+        "file_entries": [
+            {"path": item["path"], "add": int(item.get("add") or 0), "del": int(item.get("del") or 0)}
+            for item in entries
+        ],
+        "sections": [],
+    }
+
+
+def _current_branch(repo_root: Path) -> str:
+    proc = _git(repo_root, "branch", "--show-current")
+    if proc.returncode != 0:
+        return ""
+    return (proc.stdout or "").strip()
+
+
+def _branch_checkout_root(repo_root: Path, branch: str) -> Path | None:
+    from loregarden.services.file_editor import _parse_worktrees
+
+    if _current_branch(repo_root) == branch:
+        return repo_root
+    for item in _parse_worktrees(repo_root):
+        if item.get("branch") == branch:
+            path = (item.get("path") or "").strip()
+            if path:
+                return Path(path)
+    return None
+
+
+def _resolve_upstream_ref(repo_root: Path, branch: str) -> str | None:
+    proc = _git(repo_root, "rev-parse", "--abbrev-ref", "--verify", f"{branch}@{{upstream}}")
+    if proc.returncode == 0:
+        upstream = (proc.stdout or "").strip()
+        if upstream and upstream != "HEAD":
+            return upstream
+    for prefix in ("origin", "upstream"):
+        candidate = f"{prefix}/{branch}"
+        if _git(repo_root, "rev-parse", "--verify", candidate).returncode == 0:
+            return candidate
+    return None
+
+
+def _branch_diff_context(
+    workspace: Workspace,
+    branch: str,
+    *,
+    base: str | None = None,
+    mode: str = "base",
+) -> BranchDiffContext | None:
+    repo_root = resolve_workspace_root(workspace)
+    if not (repo_root / ".git").exists():
+        return None
+
+    branch = branch.strip()
+    if not branch:
+        return None
+
+    allowed = {"base", "remote", "unstaged", "uncommitted"}
+    if mode not in allowed:
+        return None
+
+    if _git(repo_root, "rev-parse", "--verify", branch).returncode != 0:
+        return None
+
+    if mode in {"unstaged", "uncommitted"}:
+        git_cwd = _branch_checkout_root(repo_root, branch)
+        if not git_cwd or _current_branch(git_cwd) != branch:
+            return None
+        if mode == "unstaged":
+            return BranchDiffContext(
+                git_cwd=git_cwd,
+                branch=branch,
+                base="working tree",
+                range_label="unstaged changes",
+                stat_args=[],
+                patch_args=[],
+                mode=mode,
+            )
+        return BranchDiffContext(
+            git_cwd=git_cwd,
+            branch=branch,
+            base="HEAD",
+            range_label="uncommitted changes",
+            stat_args=["HEAD"],
+            patch_args=["HEAD"],
+            mode=mode,
+        )
+
+    if mode == "remote":
+        upstream = _resolve_upstream_ref(repo_root, branch)
+        if not upstream:
+            return None
+        diff_spec = f"{upstream}..{branch}"
+        return BranchDiffContext(
+            git_cwd=repo_root,
+            branch=branch,
+            base=upstream,
+            range_label=diff_spec,
+            stat_args=[diff_spec],
+            patch_args=[diff_spec],
+            mode=mode,
+        )
+
+    base_ref = base.strip() if base else None
+    if not base_ref:
+        base_ref = _git_base_ref(repo_root)
+    if not base_ref:
+        return None
+
+    diff_spec = f"{base_ref}...{branch}"
+    return BranchDiffContext(
+        git_cwd=repo_root,
+        branch=branch,
+        base=base_ref,
+        range_label=diff_spec,
+        stat_args=[diff_spec],
+        patch_args=[diff_spec],
+        mode=mode,
+    )
+
+
+def _untracked_manifest_entries(cwd: Path) -> list[dict[str, Any]]:
+    proc = _git(cwd, "ls-files", "--others", "--exclude-standard")
+    entries: list[dict[str, Any]] = []
+    for raw_path in (proc.stdout or "").splitlines():
+        path = raw_path.strip()
+        if not path or len(entries) >= MAX_UNTRACKED_FILES:
+            continue
+        full_path = cwd / path
+        if not full_path.is_file():
+            continue
+        try:
+            size = full_path.stat().st_size
+        except OSError:
+            continue
+        if size > MAX_UNTRACKED_FILE_BYTES:
+            entries.append({"path": path, "add": 1, "del": 0})
+            continue
+        try:
+            text = full_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        line_count = len(text.splitlines()) or (1 if text else 0)
+        entries.append({"path": path, "add": line_count, "del": 0})
+    return entries
+
+
+def _manifest_entries_for_context(ctx: BranchDiffContext) -> list[dict[str, Any]]:
+    numstat = _git(ctx.git_cwd, "diff", "--numstat", *ctx.stat_args)
+    entries = _parse_numstat(numstat.stdout or "") if numstat.returncode == 0 else []
+    if ctx.mode in {"unstaged", "uncommitted"}:
+        tracked_paths = {item["path"] for item in entries}
+        for item in _untracked_manifest_entries(ctx.git_cwd):
+            if item["path"] not in tracked_paths:
+                entries.append(item)
+    return entries
+
+
+def branch_diff_manifest(
+    workspace: Workspace,
+    branch: str,
+    *,
+    base: str | None = None,
+    mode: str = "base",
+) -> dict[str, Any] | None:
+    ctx = _branch_diff_context(workspace, branch, base=base, mode=mode)
+    if not ctx:
+        return None
+    entries = _manifest_entries_for_context(ctx)
+    if not entries:
+        return None
+    return _manifest_from_entries(
+        entries,
+        branch=branch,
+        base=ctx.base,
+        range_label=ctx.range_label,
+    )
+
+
+def capture_branch_file_diff(
+    workspace: Workspace,
+    branch: str,
+    file_path: str,
+    *,
+    base: str | None = None,
+    mode: str = "base",
+) -> dict[str, Any] | None:
+    ctx = _branch_diff_context(workspace, branch, base=base, mode=mode)
+    if not ctx:
+        return None
+
+    file_path = file_path.strip()
+    if not file_path:
+        return None
+
+    entries = _manifest_entries_for_context(ctx)
+    entry_map = {item["path"]: item for item in entries}
+    if file_path not in entry_map:
+        return None
+
+    counts = entry_map[file_path]
+    stat_override = {file_path: (int(counts.get("add") or 0), int(counts.get("del") or 0))}
+
+    patch = _git(ctx.git_cwd, "diff", *ctx.patch_args, "--", file_path)
+    sections: list[dict[str, Any]] = []
+    if patch.returncode == 0 and (patch.stdout or "").strip():
+        sections = _parse_unified_diff(patch.stdout or "", stat_overrides=stat_override)
+
+    if not sections and ctx.mode in {"unstaged", "uncommitted"}:
+        sections = _untracked_diff_sections(ctx.git_cwd, only_path=file_path)
+        if sections:
+            section = sections[0]
+            section["add"] = stat_override[file_path][0]
+            section["del"] = stat_override[file_path][1]
+
+    if not sections:
+        return None
+
+    section = sections[0]
+    return {
+        "file": file_path,
+        "add": f"+{section.get('add', 0)}",
+        "del": f"−{section.get('del', 0)}",
+        "files": file_path,
+        "range": ctx.range_label,
+        "branch": branch,
+        "base": ctx.base,
+        "sections": [section],
+    }
+
+
+def capture_branch_diff(
+    workspace: Workspace,
+    branch: str,
+    *,
+    base: str | None = None,
+    mode: str = "base",
+) -> dict[str, Any] | None:
+    """Return full diff artifact (all files). Prefer branch_diff_manifest + capture_branch_file_diff."""
+    manifest = branch_diff_manifest(workspace, branch, base=base, mode=mode)
+    if not manifest:
+        return None
+    sections: list[dict[str, Any]] = []
+    for entry in manifest.get("file_entries") or []:
+        file_diff = capture_branch_file_diff(
+            workspace,
+            branch,
+            entry["path"],
+            base=base,
+            mode=mode,
+        )
+        if file_diff and file_diff.get("sections"):
+            sections.extend(file_diff["sections"])
+    if not sections:
+        return None
+    result = dict(manifest)
+    result["sections"] = sections
+    return result
+
+
+def _capture_worktree_diff(cwd: Path, *, branch: str, mode: str) -> dict[str, Any] | None:
+    if mode == "unstaged":
+        range_label = "unstaged changes"
+        base = "working tree"
+        stat_args: list[str] = []
+        patch_args: list[str] = []
+    else:
+        range_label = "uncommitted changes"
+        base = "HEAD"
+        stat_args = ["HEAD"]
+        patch_args = ["HEAD"]
+
+    artifact = _artifact_from_git_diff(
+        cwd,
+        branch=branch,
+        base=base,
+        range_label=range_label,
+        stat_args=stat_args,
+        patch_args=patch_args,
+    )
+    untracked = _untracked_diff_sections(cwd)
+    if artifact is None and not untracked:
+        return None
+    if artifact is None:
+        return _artifact_from_sections(
+            branch=branch,
+            base=base,
+            range_label=range_label,
+            sections=untracked,
+        )
+    if untracked:
+        sections = list(artifact.get("sections") or []) + untracked
+        return _artifact_from_sections(
+            branch=branch,
+            base=base,
+            range_label=range_label,
+            sections=sections,
+        )
+    return artifact
+
+
+def _untracked_diff_sections(cwd: Path, *, only_path: str | None = None) -> list[dict[str, Any]]:
+    proc = _git(cwd, "ls-files", "--others", "--exclude-standard")
+    sections: list[dict[str, Any]] = []
+    total_lines = 0
+
+    for raw_path in (proc.stdout or "").splitlines():
+        path = raw_path.strip()
+        if not path or len(sections) >= MAX_UNTRACKED_FILES:
+            continue
+        if only_path and path != only_path:
+            continue
+        full_path = cwd / path
+        if not full_path.is_file():
+            continue
+        try:
+            size = full_path.stat().st_size
+        except OSError:
+            continue
+        if size > MAX_UNTRACKED_FILE_BYTES:
+            sections.append(
+                {
+                    "path": path,
+                    "add": 1,
+                    "del": 0,
+                    "lines": [
+                        {
+                            "type": "c",
+                            "ln": "",
+                            "text": f"… file omitted ({size:,} bytes exceeds review limit) …",
+                        }
+                    ],
+                }
+            )
+            total_lines += 1
+            continue
+
+        try:
+            text = full_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+
+        lines: list[dict[str, str]] = []
+        truncated = False
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if total_lines >= MAX_DIFF_LINES:
+                truncated = True
+                break
+            lines.append(
+                {
+                    "type": "a",
+                    "ln": str(line_no),
+                    "text": line[:MAX_DIFF_LINE_CHARS],
+                }
+            )
+            total_lines += 1
+
+        if truncated:
+            lines.append({"type": "c", "ln": "", "text": "… diff truncated …"})
+
+        if not lines:
+            continue
+
+        sections.append(
+            {
+                "path": path,
+                "add": len(lines),
+                "del": 0,
+                "lines": lines,
+            }
+        )
+
+    return sections
+
+
+def _artifact_from_sections(
+    *,
+    branch: str,
+    base: str,
+    range_label: str,
+    sections: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if not sections:
+        return None
+    add = sum(int(section.get("add") or 0) for section in sections)
+    delete = sum(int(section.get("del") or 0) for section in sections)
+    primary_file = sections[0]["path"]
+    file_count = len(sections)
+    summary = f"{file_count} file{'s' if file_count != 1 else ''} changed, {add} insertions(+), {delete} deletions(-)"
+    return {
+        "file": primary_file,
+        "add": f"+{add}",
+        "del": f"−{delete}",
+        "files": summary,
+        "range": range_label,
+        "branch": branch,
+        "base": base,
+        "sections": sections,
+    }
+
+
+def _artifact_from_git_diff(
+    cwd: Path,
+    *,
+    branch: str,
+    base: str,
+    range_label: str,
+    stat_args: list[str],
+    patch_args: list[str],
+) -> dict[str, Any] | None:
+    stat = _git(cwd, "diff", "--stat", *stat_args)
+    if stat.returncode != 0 or not stat.stdout.strip():
+        return None
+
+    numstat = _git(cwd, "diff", "--numstat", *stat_args)
+    stat_map = {
+        item["path"]: (int(item.get("add") or 0), int(item.get("del") or 0))
+        for item in _parse_numstat(numstat.stdout or "")
+    }
+
+    stat_lines = [line for line in stat.stdout.splitlines() if line.strip()]
+    summary = stat_lines[-1] if stat_lines else ""
+    primary_file = stat_lines[0].split("|", 1)[0].strip() if stat_lines else "changes"
+
+    add_match = re.search(r"(\d+)\s+insertion", summary)
+    del_match = re.search(r"(\d+)\s+deletion", summary)
+    add = f"+{add_match.group(1)}" if add_match else "+0"
+    delete = f"−{del_match.group(1)}" if del_match else "−0"
+
+    patch = _git(cwd, "diff", *patch_args)
+    sections = _parse_unified_diff(patch.stdout or "", stat_overrides=stat_map)
+
+    return {
+        "file": primary_file,
+        "add": add,
+        "del": delete,
+        "files": summary,
+        "range": range_label,
+        "branch": branch,
+        "base": base,
+        "sections": sections,
+    }
 
 def capture_git_diff(workspace: Workspace) -> dict[str, Any] | None:
     """Return diff artifact payload from the workspace git checkout."""
@@ -85,7 +581,11 @@ def _path_from_diff_git(line: str) -> str:
     return line.removeprefix("diff --git ").strip()
 
 
-def _parse_unified_diff(text: str) -> list[dict[str, Any]]:
+def _parse_unified_diff(
+    text: str,
+    *,
+    stat_overrides: dict[str, tuple[int, int]] | None = None,
+) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
     total_lines = 0
@@ -93,12 +593,18 @@ def _parse_unified_diff(text: str) -> list[dict[str, Any]]:
     def finalize() -> None:
         nonlocal current
         if current and current.get("lines"):
+            path = current["path"]
+            add = int(current.get("add") or 0)
+            delete = int(current.get("del") or 0)
+            if stat_overrides and path in stat_overrides:
+                add, delete = stat_overrides[path]
             sections.append(
                 {
-                    "path": current["path"],
-                    "add": current["add"],
-                    "del": current["del"],
+                    "path": path,
+                    "add": add,
+                    "del": delete,
                     "lines": current["lines"],
+                    "truncated": bool(current.get("_truncated")),
                 }
             )
         current = None

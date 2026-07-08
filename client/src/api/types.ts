@@ -101,11 +101,18 @@ export interface DiffLine {
   text: string;
 }
 
+export interface DiffFileEntry {
+  path: string;
+  add: number;
+  del: number;
+}
+
 export interface DiffFileSection {
   path: string;
   add: number;
   del: number;
   lines: DiffLine[];
+  truncated?: boolean;
 }
 
 export interface DiffArtifact {
@@ -114,6 +121,7 @@ export interface DiffArtifact {
   del: string;
   files: string;
   range?: string;
+  file_entries?: DiffFileEntry[];
   sections?: DiffFileSection[];
   /** @deprecated legacy flat diff — use sections */
   lines?: DiffLine[];

@@ -13,6 +13,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const workspace = useUiStore((s) => s.workspace);
   const editorWorkspace = useUiStore((s) => s.editorWorkspace);
   const queueWorkspaceSlug = useUiStore((s) => s.queueWorkspaceSlug);
+  const branchTriageWorkspaceSlug = useUiStore((s) => s.branchTriageWorkspaceSlug);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsWorkspaceSlug, setSettingsWorkspaceSlug] = useState("loregarden");
@@ -47,8 +48,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
     if (workspace && workspace !== "all") return workspace;
     if (appPage === "editor" && editorWorkspace) return editorWorkspace;
     if (appPage === "queue" && queueWorkspaceSlug) return queueWorkspaceSlug;
+    if (appPage === "branch-triage" && branchTriageWorkspaceSlug) return branchTriageWorkspaceSlug;
     return workspaces.data?.[0]?.slug ?? "loregarden";
-  }, [workspace, appPage, editorWorkspace, queueWorkspaceSlug, workspaces.data]);
+  }, [workspace, appPage, editorWorkspace, queueWorkspaceSlug, branchTriageWorkspaceSlug, workspaces.data]);
 
   const openSettings = () => {
     setSettingsWorkspaceSlug(defaultSettingsSlug);

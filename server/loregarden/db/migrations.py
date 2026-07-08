@@ -286,6 +286,69 @@ def _m_ticket_diff_comments(conn: Connection) -> None:
     )
 
 
+def _m_branch_diff_comments(conn: Connection) -> None:
+    if _table_exists(conn, "branch_diff_comments"):
+        return
+    conn.execute(
+        text(
+            """
+            CREATE TABLE branch_diff_comments (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                branch TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                line_index INTEGER NOT NULL,
+                line_kind TEXT NOT NULL DEFAULT 'c',
+                content TEXT NOT NULL,
+                resolved INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                created_by TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+            )
+            """
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE INDEX ix_branch_diff_comments_workspace_branch "
+            "ON branch_diff_comments (workspace_id, branch)"
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE INDEX ix_branch_diff_comments_anchor "
+            "ON branch_diff_comments (workspace_id, branch, file_path, line_index)"
+        )
+    )
+
+
+def _m_branch_triage_messages(conn: Connection) -> None:
+    if _table_exists(conn, "branch_triage_messages"):
+        return
+    conn.execute(
+        text(
+            """
+            CREATE TABLE branch_triage_messages (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                branch TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+            )
+            """
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE INDEX ix_branch_triage_messages_workspace_branch "
+            "ON branch_triage_messages (workspace_id, branch)"
+        )
+    )
+
+
 # Ordered registry. Append new migrations here with the next id; never reorder or
 # rewrite an id that may already be recorded in a deployed database.
 MIGRATIONS: list[tuple[str, Migration]] = [
@@ -298,6 +361,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0007_triage_messages_table", _m_triage_messages_table),
     ("0008_ticket_studio_tables", _m_ticket_studio_tables),
     ("0009_ticket_diff_comments", _m_ticket_diff_comments),
+    ("0010_branch_diff_comments", _m_branch_diff_comments),
+    ("0011_branch_triage_messages", _m_branch_triage_messages),
 ]
 
 

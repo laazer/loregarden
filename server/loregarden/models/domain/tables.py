@@ -340,6 +340,37 @@ class TicketDiffComment(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class BranchDiffComment(SQLModel, table=True):
+    """Inline code review comment anchored to a line in a branch diff."""
+
+    __tablename__ = "branch_diff_comments"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    branch: str = Field(index=True)
+    file_path: str = Field(index=True)
+    line_index: int = Field(index=True)
+    line_kind: str = Field(default="c")
+    content: str
+    resolved: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=utcnow)
+    created_by: str = ""
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class BranchTriageMessage(SQLModel, table=True):
+    """Triage chat message scoped to a workspace git branch."""
+
+    __tablename__ = "branch_triage_messages"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    branch: str = Field(index=True)
+    role: str = Field(index=True)  # user | assistant | system
+    content: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class TicketStudioSession(SQLModel, table=True):
     __tablename__ = "ticket_studio_sessions"
 

@@ -752,10 +752,13 @@ export function Dashboard() {
     if (lastAutoTabTicketId.current === sel.id) return;
     lastAutoTabTicketId.current = sel.id;
 
+    // Respect explicit artifact tabs in the URL (e.g. /tickets/:id/triage).
+    if (artifactTab !== "diff") return;
+
     if (sel.blocking_issues || sel.artifacts?.error) {
       navigateToTicketTab(sel.id, "errors", true);
     }
-  }, [sel?.id, sel?.blocking_issues, sel?.artifacts?.error]);
+  }, [sel?.id, sel?.blocking_issues, sel?.artifacts?.error, artifactTab]);
 
   const counts = flatTickets.reduce(
     (acc, t) => {

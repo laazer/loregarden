@@ -1,25 +1,35 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { AppLayout } from "./components/AppLayout";
 import { RouterBridgeSync } from "./components/RouterBridgeSync";
 import { StudioSectionRedirect } from "./components/StudioSectionRedirect";
 import { TicketTabRedirect } from "./components/TicketTabRedirect";
+import { BranchTriagePage } from "./pages/BranchTriagePage";
 import { Dashboard } from "./pages/Dashboard";
 import { EditorPage } from "./pages/EditorPage";
 import { QueuePage } from "./pages/QueuePage";
 import { StudioPage } from "./pages/StudioPage";
-import { navigateToPage } from "./lib/useAppNavigation";
+import { navigateToPage, pageFromPath } from "./lib/useAppNavigation";
 import "./index.css";
 
 const queryClient = new QueryClient();
 
-class PageErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+class PageErrorBoundary extends Component<
+  { children: ReactNode; resetKey: string },
+  { error: Error | null }
+> {
   state = { error: null as Error | null };
 
   static getDerivedStateFromError(error: Error) {
     return { error };
+  }
+
+  componentDidUpdate(prevProps: { resetKey: string }) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: null });
+    }
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
@@ -50,9 +60,12 @@ class PageErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
 }
 
 function AppShell() {
+  const location = useLocation();
+  const errorBoundaryKey = pageFromPath(location.pathname);
+
   return (
     <AppLayout>
-      <PageErrorBoundary>
+      <PageErrorBoundary resetKey={errorBoundaryKey}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/tickets/:ticketId" element={<TicketTabRedirect />} />
@@ -62,6 +75,8 @@ function AppShell() {
           <Route path="/studio/:studioSection/*" element={<StudioPage />} />
           <Route path="/editor/*" element={<EditorPage />} />
           <Route path="/queue/*" element={<QueuePage />} />
+          <Route path="/branch-triage" element={<BranchTriagePage />} />
+          <Route path="/branch-triage/*" element={<BranchTriagePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </PageErrorBoundary>

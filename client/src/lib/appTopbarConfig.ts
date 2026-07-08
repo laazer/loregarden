@@ -11,6 +11,7 @@ export const PANE_LABELS: Record<PaneId, string> = {
 export const TOOL_OPTIONS: { page: AppPage; label: string }[] = [
   { page: "dashboard", label: "IDE" },
   { page: "editor", label: "Editor" },
+  { page: "branch-triage", label: "Branch Triage" },
   { page: "queue", label: "Parallel Execution" },
   { page: "studio", label: "Studios" },
 ];
