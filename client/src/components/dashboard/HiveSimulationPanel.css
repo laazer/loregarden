@@ -245,6 +245,11 @@
 }
 
 .hive-panel--officeplace .hive-panel__skin,
+.hive-panel--officeplace .hive-panel__skin-label,
+.hive-panel--officeplace .hive-panel__skin-value {
+  color: #3d3428;
+}
+
 .hive-panel--officeplace .hive-panel__skin-label {
   color: #6b5f50;
 }

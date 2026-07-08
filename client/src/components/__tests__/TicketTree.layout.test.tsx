@@ -39,18 +39,18 @@ describe("TicketTree layout structure", () => {
 
     const title = screen.getByText("Wire CLI agent runner for stage execution");
     expect(title).toHaveClass("tree-card-title");
-    expect(title).toHaveClass("tree-card-title--full");
     expect(title.parentElement).toBe(row);
 
     const meta = container.querySelector(".tree-card-meta");
     const workflow = container.querySelector(".tree-card-workflow");
     expect(meta?.parentElement).toBe(row);
     expect(workflow?.parentElement).toBe(row);
+    expect(meta?.querySelector(".tree-card-meta-main")).not.toBeNull();
     expect(container.querySelector(".tree-card-body")).toBeNull();
     expect(container.querySelector(".tree-row-main")).toBeNull();
   });
 
-  it("keeps a trail column when the card has child actions", () => {
+  it("renders trail actions inside the meta row when present", () => {
     const { container } = render(
       <TicketTree
         nodes={[makeNode({ work_item_type: "feature", child_count: 2, children: [makeNode({ id: "c1" })] })]}
@@ -62,8 +62,8 @@ describe("TicketTree layout structure", () => {
       />,
     );
 
-    const title = container.querySelector(".tree-card-title");
-    expect(title).not.toHaveClass("tree-card-title--full");
-    expect(container.querySelector(".tree-row-trail")).not.toBeNull();
+    const meta = container.querySelector(".tree-card-meta");
+    expect(meta?.querySelector(".tree-row-trail")).not.toBeNull();
+    expect(meta?.querySelector(".tree-card-meta-main")).not.toBeNull();
   });
 });

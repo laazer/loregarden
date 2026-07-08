@@ -97,7 +97,7 @@ function TreeRow({
           <span className="tree-chevron-btn tree-chevron-spacer" aria-hidden />
         )}
         <PrioBars priority={node.priority} />
-        <div className={`tree-card-title${showTrail ? "" : " tree-card-title--full"}`}>
+        <div className="tree-card-title">
           {showExternalId ? (
             <>
               <span className="tree-external-id">{node.external_id}</span>
@@ -108,46 +108,48 @@ function TreeRow({
             node.title
           )}
         </div>
-        {showTrail ? (
-          <div className="tree-row-trail">
-            {workflowRunning && (
-              <span
-                className="tree-workflow-dot running"
-                title="Workflow running"
-                aria-label="Workflow running"
-              />
-            )}
-            {showAddChild && (
-              <button
-                type="button"
-                className="tree-add-child-btn"
-                title={addChildActionLabel(node.work_item_type)}
-                aria-label={addChildActionLabel(node.work_item_type)}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAddChild?.(node);
-                }}
-              >
-                +
-              </button>
-            )}
-            {hasChildren && (
-              <span className="count-pill tree-child-count">{node.child_count}</span>
-            )}
-          </div>
-        ) : null}
         <div className="tree-card-meta">
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 500, color: stateColor }}>
-            <span className="tree-state-dot" style={{ background: stateColor }} />
-            {STATE_LABELS[node.state]}
-          </span>
-          {node.workspace_slug ? (
-            <>
-              <span style={{ color: "var(--bd2)" }}>·</span>
-              <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}>
-                {node.workspace_slug}
-              </span>
-            </>
+          <div className="tree-card-meta-main">
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 500, color: stateColor }}>
+              <span className="tree-state-dot" style={{ background: stateColor }} />
+              {STATE_LABELS[node.state]}
+            </span>
+            {node.workspace_slug ? (
+              <>
+                <span style={{ color: "var(--bd2)" }}>·</span>
+                <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}>
+                  {node.workspace_slug}
+                </span>
+              </>
+            ) : null}
+          </div>
+          {showTrail ? (
+            <div className="tree-row-trail">
+              {workflowRunning && (
+                <span
+                  className="tree-workflow-dot running"
+                  title="Workflow running"
+                  aria-label="Workflow running"
+                />
+              )}
+              {showAddChild && (
+                <button
+                  type="button"
+                  className="tree-add-child-btn"
+                  title={addChildActionLabel(node.work_item_type)}
+                  aria-label={addChildActionLabel(node.work_item_type)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAddChild?.(node);
+                  }}
+                >
+                  +
+                </button>
+              )}
+              {hasChildren && (
+                <span className="count-pill tree-child-count">{node.child_count}</span>
+              )}
+            </div>
           ) : null}
         </div>
         {node.workflow_stage_name ? (

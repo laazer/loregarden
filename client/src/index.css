@@ -2431,7 +2431,7 @@ button {
 
 .tree-row {
   display: grid;
-  grid-template-columns: 20px auto minmax(0, 1fr) auto;
+  grid-template-columns: 20px auto minmax(0, 1fr);
   grid-template-rows: auto auto auto;
   column-gap: 9px;
   row-gap: 8px;
@@ -2497,12 +2497,11 @@ button {
 }
 
 .tree-row-trail {
-  grid-column: 4;
-  grid-row: 1;
   display: flex;
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .tree-add-child-btn {
@@ -2804,7 +2803,7 @@ button {
 }
 
 .tree-card-title {
-  grid-column: 3;
+  grid-column: 3 / -1;
   grid-row: 1;
   min-width: 0;
   font-size: 13px;
@@ -2813,19 +2812,24 @@ button {
   text-align: left;
 }
 
-.tree-card-title--full {
-  grid-column: 3 / -1;
-}
-
 .tree-card-meta {
   grid-column: 1 / -1;
   grid-row: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.tree-card-meta-main {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
-  font-size: 11px;
+  flex: 1;
 }
 
 .tree-card-workflow {
