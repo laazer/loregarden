@@ -102,7 +102,7 @@ describe('useWorktreeConflictsWS', () => {
       },
     ];
 
-    let conflictDetectedHandler: ((data: any) => void) | null = null;
+    let conflictDetectedHandler: ((data: any) => void) | undefined;
     mockWebSocketClient.on.mockImplementation((event: string, handler: any) => {
       if (event === 'conflict_detected') {
         conflictDetectedHandler = handler;
@@ -135,8 +135,8 @@ describe('useWorktreeConflictsWS', () => {
   });
 
   test('clears conflicts when conflict_resolved event received', async () => {
-    let detectedHandler: ((data: any) => void) | null = null;
-    let resolvedHandler: ((data: any) => void) | null = null;
+    let detectedHandler: ((data: any) => void) | undefined;
+    let resolvedHandler: ((data: any) => void) | undefined;
 
     mockWebSocketClient.on.mockImplementation((event: string, handler: any) => {
       if (event === 'conflict_detected') {
@@ -209,7 +209,7 @@ describe('useWorktreeConflictsWS', () => {
   test('respects fallback timeout', async () => {
     jest.useFakeTimers();
 
-    let stateChangeHandler: ((data: any) => void) | null = null;
+    let stateChangeHandler: ((data: any) => void) | undefined;
     mockWebSocketClient.on.mockImplementation((event: string, handler: any) => {
       if (event === 'websocket:state_change') {
         stateChangeHandler = handler;
@@ -279,7 +279,7 @@ describe('useWorktreeConflictsWS', () => {
   });
 
   test('updates details object from conflict_detected event', async () => {
-    let conflictDetectedHandler: ((data: any) => void) | null = null;
+    let conflictDetectedHandler: ((data: any) => void) | undefined;
     mockWebSocketClient.on.mockImplementation((event: string, handler: any) => {
       if (event === 'conflict_detected') {
         conflictDetectedHandler = handler;
@@ -315,7 +315,7 @@ describe('useWorktreeConflictsWS', () => {
   });
 
   test('handles server errors', async () => {
-    let errorHandler: ((data: any) => void) | null = null;
+    let errorHandler: ((data: any) => void) | undefined;
     mockWebSocketClient.on.mockImplementation((event: string, handler: any) => {
       if (event === 'websocket:server_error') {
         errorHandler = handler;

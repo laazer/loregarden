@@ -47,7 +47,7 @@ describe('useWorktreeConflictsWS Integration', () => {
   describe('WebSocket Connection', () => {
     test('joins worktree when enabled', async () => {
       renderHook(() =>
-        useWorktreeConflictsWS('wt-1', { enabled: true })
+        useWorktreeConflictsWS('wt-1', undefined, undefined, true)
       );
 
       await waitFor(() => {
@@ -57,7 +57,7 @@ describe('useWorktreeConflictsWS Integration', () => {
 
     test('does not join worktree when disabled', async () => {
       renderHook(() =>
-        useWorktreeConflictsWS('wt-1', { enabled: false })
+        useWorktreeConflictsWS('wt-1', undefined, undefined, false)
       );
 
       await waitFor(() => {
@@ -67,7 +67,7 @@ describe('useWorktreeConflictsWS Integration', () => {
 
     test('leaves worktree on unmount', async () => {
       const { unmount } = renderHook(() =>
-        useWorktreeConflictsWS('wt-1', { enabled: true })
+        useWorktreeConflictsWS('wt-1', undefined, undefined, true)
       );
 
       await waitFor(() => {
@@ -81,7 +81,7 @@ describe('useWorktreeConflictsWS Integration', () => {
 
     test('re-joins when enabled changes from false to true', async () => {
       const { rerender } = renderHook(
-        ({ enabled }) => useWorktreeConflictsWS('wt-1', { enabled }),
+        ({ enabled }) => useWorktreeConflictsWS('wt-1', undefined, undefined, enabled),
         { initialProps: { enabled: false } }
       );
 
@@ -98,7 +98,7 @@ describe('useWorktreeConflictsWS Integration', () => {
   describe('Conflict Detection Events', () => {
     test('registers conflict_detected event listener', async () => {
       renderHook(() =>
-        useWorktreeConflictsWS('wt-1', { enabled: true })
+        useWorktreeConflictsWS('wt-1', undefined, undefined, true)
       );
 
       await waitFor(() => {
@@ -119,7 +119,7 @@ describe('useWorktreeConflictsWS Integration', () => {
       });
 
       const { result } = renderHook(() =>
-        useWorktreeConflictsWS('wt-1', { enabled: true })
+        useWorktreeConflictsWS('wt-1', undefined, undefined, true)
       );
 
       const mockConflictData = {
@@ -159,7 +159,7 @@ describe('useWorktreeConflictsWS Integration', () => {
   describe('Conflict Resolution Events', () => {
     test('registers conflict_resolved event listener', async () => {
       renderHook(() =>
-        useWorktreeConflictsWS('wt-1', { enabled: true })
+        useWorktreeConflictsWS('wt-1', undefined, undefined, true)
       );
 
       await waitFor(() => {
@@ -183,7 +183,7 @@ describe('useWorktreeConflictsWS Integration', () => {
       });
 
       const { result } = renderHook(() =>
-        useWorktreeConflictsWS('wt-1', { enabled: true })
+        useWorktreeConflictsWS('wt-1', undefined, undefined, true)
       );
 
       // First, detect conflicts
@@ -218,7 +218,7 @@ describe('useWorktreeConflictsWS Integration', () => {
       mockWebSocketClient.getState.mockReturnValue('connected');
 
       const { result } = renderHook(() =>
-        useWorktreeConflictsWS('wt-1', { enabled: true })
+        useWorktreeConflictsWS('wt-1', undefined, undefined, true)
       );
 
       await waitFor(() => {
@@ -230,7 +230,7 @@ describe('useWorktreeConflictsWS Integration', () => {
       mockWebSocketClient.getState.mockReturnValue('connecting');
 
       const { result } = renderHook(() =>
-        useWorktreeConflictsWS('wt-1', { enabled: true })
+        useWorktreeConflictsWS('wt-1', undefined, undefined, true)
       );
 
       // Simulate timeout (30 seconds)
@@ -249,7 +249,7 @@ describe('useWorktreeConflictsWS Integration', () => {
       mockWebSocketClient.getState.mockReturnValue('connected');
 
       const { result } = renderHook(() =>
-        useWorktreeConflictsWS('wt-1', { enabled: true })
+        useWorktreeConflictsWS('wt-1', undefined, undefined, true)
       );
 
       await waitFor(() => {
@@ -269,7 +269,7 @@ describe('useWorktreeConflictsWS Integration', () => {
       });
 
       const { result } = renderHook(() =>
-        useWorktreeConflictsWS('wt-1', { enabled: true })
+        useWorktreeConflictsWS('wt-1', undefined, undefined, true)
       );
 
       const mockData = {
@@ -309,7 +309,7 @@ describe('useWorktreeConflictsWS Integration', () => {
 
       await waitFor(() => {
         expect(result.current.conflicts).toHaveLength(2);
-        expect(result.current.conflicts[0].file).toBe('src/auth.ts');
+        expect(result.current.conflicts[0].path).toBe('src/auth.ts');
         expect(result.current.preview?.severity).toBe('high');
       });
     });
@@ -325,8 +325,8 @@ describe('useWorktreeConflictsWS Integration', () => {
         }
       });
 
-      const { result } = renderHook(() =>
-        useWorktreeConflictsWS('wt-1', { enabled: true })
+      renderHook(() =>
+        useWorktreeConflictsWS('wt-1', undefined, undefined, true)
       );
 
       await waitFor(() => {

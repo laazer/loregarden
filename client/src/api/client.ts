@@ -57,6 +57,7 @@ import type {
   TicketStudioDraftItem,
   TicketStudioSession,
   UsageSnapshot,
+  CIStatusResponse,
 } from "./types";
 
 
@@ -409,5 +410,15 @@ export const api = {
     request<{ path: string; saved: boolean; size: number }>(`/api/workspaces/${slug}/editor/file`, {
       method: "PUT",
       body: JSON.stringify(body),
+    }),
+  ciStatus: (ticketId: string) => request<CIStatusResponse>(`/api/ci/status/${ticketId}`),
+  triggerAutoFix: (ticketId: string) =>
+    request<{ status: string; attempt_id?: string; attempt_number?: number; message?: string }>(
+      `/api/ci/trigger-auto-fix/${ticketId}`,
+      { method: "POST" },
+    ),
+  skipCICheck: (ticketId: string) =>
+    request<{ status: string; message: string }>(`/api/ci/manual-override/${ticketId}`, {
+      method: "POST",
     }),
 };

@@ -1,4 +1,4 @@
-import type { TicketState, TicketTreeNode, WorkItemType } from "../api/client";
+import type { TicketState, TicketTreeNode } from "../api/client";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import { PrioBars } from "./PrioBars";

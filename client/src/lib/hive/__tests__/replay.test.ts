@@ -1,4 +1,4 @@
-import type { WorkflowStageView } from "../../api/client";
+import type { WorkflowStageView } from "../../../api/types";
 import { buildHiveReplayFrames } from "../replay";
 
 const stage = (

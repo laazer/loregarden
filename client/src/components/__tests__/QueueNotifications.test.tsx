@@ -3,7 +3,7 @@
  * Covers notification display, auto-dismiss, SSE events, and styling
  */
 
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import { QueueNotifications } from '../QueueNotifications';
 
 describe('QueueNotifications', () => {
@@ -67,7 +67,7 @@ describe('QueueNotifications', () => {
     test('persists if duration is 0', () => {
       jest.useFakeTimers();
 
-      const { container } = render(<QueueNotifications workspaceId="ws-1" />);
+      render(<QueueNotifications workspaceId="ws-1" />);
 
       // Advance time beyond typical timeout
       jest.advanceTimersByTime(10000);

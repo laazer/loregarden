@@ -13,7 +13,7 @@ import { BranchTriageCurrentTag } from "./BranchTriageCurrentTag";
 import { InlineCodeDiffReview } from "./InlineCodeDiffReview";
 import "./BranchTriagePanel.css";
 
-function defaultDiffMode(entry: BranchTriageEntry | undefined, baseBranch: string): BranchDiffMode {
+function defaultDiffMode(entry: BranchTriageEntry | undefined, _baseBranch: string): BranchDiffMode {
   const options = entry?.diff_options ?? [];
   if (options.length) return options[0].mode;
   return "base";

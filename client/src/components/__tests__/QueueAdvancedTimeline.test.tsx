@@ -3,13 +3,9 @@
  * Validates Gantt-style timeline visualization for queue progression
  */
 
-import React from 'react';
 import { render, screen } from '@testing-library/react';
-import {
-  QueueAdvancedTimeline,
-  TimelineRun,
-  QueueAdvancedTimelineProps,
-} from '../QueueAdvancedTimeline';
+import { QueueAdvancedTimeline } from '../QueueAdvancedTimeline';
+import type { TimelineRun } from '../QueueAdvancedTimeline';
 
 describe('QueueAdvancedTimeline', () => {
   const mockActiveRun: TimelineRun = {

@@ -24,7 +24,6 @@ interface TicketRun {
 
 export function TicketDiffReviewPanel({
   workspaceId,
-  ticketId,
   runs,
 }: {
   workspaceId: string;

@@ -3,7 +3,7 @@
  * Shows time-based progression of active and queued runs
  */
 
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import './QueueAdvancedTimeline.css';
 
 export interface TimelineRun {
@@ -26,7 +26,6 @@ export interface QueueAdvancedTimelineProps {
 export function QueueAdvancedTimeline({
   activeRuns = [],
   queuedRuns = [],
-  currentTime = new Date(),
   timeScale = 'minutes',
 }: QueueAdvancedTimelineProps) {
   // Calculate timeline metrics
@@ -131,7 +130,7 @@ export function QueueAdvancedTimeline({
             <div className="timeline-section active-section">
               <div className="section-label">Active Runs</div>
 
-              {activeRuns.map((run, index) => (
+              {activeRuns.map((run) => (
                 <div key={run.run_id} className="timeline-row active-row">
                   <div className="row-label">
                     <span className="slot-badge">Slot {run.slot_number}</span>
@@ -194,7 +193,6 @@ export function QueueAdvancedTimeline({
                 // Calculate when this run will start
                 const startTimeSeconds =
                   timelineMetrics.activeTime + index * 300;
-                const endTimeSeconds = startTimeSeconds + 300;
 
                 return (
                   <div key={run.run_id} className="timeline-row queued-row">

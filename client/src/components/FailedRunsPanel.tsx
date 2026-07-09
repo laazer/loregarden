@@ -2,8 +2,8 @@
  * Panel showing failed runs with retry and skip options
  */
 
-import React, { useMemo } from 'react';
-import { RunRetryIndicator, RetryInfo } from './RunRetryIndicator';
+import { useMemo } from 'react';
+import { RunRetryIndicator } from './RunRetryIndicator';
 import './FailedRunsPanel.css';
 
 export interface FailedRun {

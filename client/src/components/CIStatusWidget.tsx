@@ -55,7 +55,6 @@ export function CIStatusWidget({ ticketId, compact = false }: CIStatusWidgetProp
         <CILogsPanel
           ciStatus={ciStatus}
           autoFixHistory={autoFixHistory}
-          ticketId={ticketId}
           onAutoFix={triggerManualAutoFix}
           onSkip={skipCICheck}
           isFixing={isFixing}
@@ -69,7 +68,6 @@ export function CIStatusWidget({ ticketId, compact = false }: CIStatusWidgetProp
 interface CILogsPanelProps {
   ciStatus: CIRunResult;
   autoFixHistory: AutoFixAttempt[];
-  ticketId: string;
   onAutoFix: () => Promise<void>;
   onSkip: () => Promise<void>;
   isFixing: boolean;
@@ -82,7 +80,6 @@ interface CILogsPanelProps {
 function CILogsPanel({
   ciStatus,
   autoFixHistory,
-  ticketId,
   onAutoFix,
   onSkip,
   isFixing,

@@ -14,6 +14,7 @@ describe('QueueAdvancedControls', () => {
       slot_number: 1,
       elapsed_seconds: 60,
       status: 'running',
+      agent_id: 'agent-1',
     },
   ];
 
@@ -22,15 +23,19 @@ describe('QueueAdvancedControls', () => {
       run_id: 'run-2',
       ticket_id: 'feature-124',
       position: 1,
+      estimated_start_at: new Date(Date.now() + 300_000).toISOString(),
       wait_seconds: 300,
       status: 'queued',
+      agent_id: 'agent-2',
     },
     {
       run_id: 'run-3',
       ticket_id: 'feature-125',
       position: 2,
+      estimated_start_at: new Date(Date.now() + 600_000).toISOString(),
       wait_seconds: 600,
       status: 'queued',
+      agent_id: 'agent-3',
     },
   ];
 
@@ -198,7 +203,7 @@ describe('QueueAdvancedControls', () => {
 
     test('disables actions while processing', async () => {
       const mockOnRunControl = jest.fn(
-        () => new Promise((resolve) => setTimeout(resolve, 100))
+        () => new Promise<void>((resolve) => setTimeout(resolve, 100))
       );
 
       render(

@@ -3,7 +3,7 @@
  * Shows active slots, queued runs, and estimated completion times.
  */
 
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { IconCloseButton } from './IconCloseButton';
 import { useParallelExecutionWS } from '../hooks/useParallelExecutionWS';
 import './ParallelQueueVisualization.css';
@@ -42,7 +42,7 @@ export function ParallelQueueVisualization({
 
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [hoverPosition, setHoverPosition] = useState<number | null>(null);
-  const [isReordering, setIsReordering] = useState(false);
+  const [, setIsReordering] = useState(false);
   const [reorderError, setReorderError] = useState<string | null>(null);
 
   // Compute slot views
@@ -82,7 +82,7 @@ export function ParallelQueueVisualization({
   }, [activeRuns, stats?.max_concurrent]);
 
   // Compute queue item views
-  const queueItems = useMemo(() => {
+  const queueItems = useMemo<QueueItemView[]>(() => {
     return (queuedRuns || []).map((run, index) => ({
       runId: run.run_id,
       ticketId: run.ticket_id,

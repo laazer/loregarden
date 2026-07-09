@@ -1,4 +1,4 @@
-import type { TicketDetail, WorkflowStageView } from "../api/types";
+import type { TicketDetail, WorkflowStageView } from "../../api/types";
 import { buildStageMenuActions } from "../workflowStageActions";
 
 function ticket(overrides: Partial<TicketDetail> = {}): TicketDetail {

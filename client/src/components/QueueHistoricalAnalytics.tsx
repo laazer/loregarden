@@ -3,7 +3,7 @@
  * Tracks run duration, success rates, and performance trends over time
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import './QueueHistoricalAnalytics.css';
 
 export interface RunMetrics {

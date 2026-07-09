@@ -2,7 +2,7 @@
  * Toolbar for bulk queue operations (select, cancel, pause, reorder multiple)
  */
 
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import './BulkSelectToolbar.css';
 
 export interface BulkSelectToolbarProps {

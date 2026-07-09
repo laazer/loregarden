@@ -3,24 +3,11 @@
  * Pause/resume runs, cancel queued runs, manual slot management
  */
 
-import React, { useState } from 'react';
+import { useState } from 'react';
+import type { ActiveRun, QueuedRun } from '../hooks/useParallelExecution';
 import './QueueAdvancedControls.css';
 
-export interface QueuedRun {
-  run_id: string;
-  ticket_id: string;
-  position: number;
-  wait_seconds: number;
-  status: string;
-}
-
-export interface ActiveRun {
-  run_id: string;
-  ticket_id: string;
-  slot_number: number;
-  elapsed_seconds: number;
-  status: string;
-}
+export type { ActiveRun, QueuedRun };
 
 export interface QueueAdvancedControlsProps {
   workspaceId: string;
@@ -30,7 +17,6 @@ export interface QueueAdvancedControlsProps {
 }
 
 export function QueueAdvancedControls({
-  workspaceId,
   activeRuns = [],
   queuedRuns = [],
   onRunControl,
