@@ -94,6 +94,29 @@ settings.agent_context_dir = settings.repo_root / settings.agent_context_dir
 settings.project_board_dir = settings.repo_root / settings.project_board_dir
 settings.workflow_templates_dir = settings.repo_root / settings.workflow_templates_dir
 
+
+def _prime_claude_oauth_token_env() -> None:
+    """Make a cached `claude setup-token` token visible to every subprocess this
+    process spawns (Baxter, CLI adapters) — not just this process's own HTTP
+    calls — regardless of how the backend was launched. dev-server.sh exports
+    this itself, but the Tauri desktop app spawns `python -m loregarden`
+    directly and never runs that script, so it needs priming here instead.
+    """
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip():
+        return
+    token_path = settings.repo_root / "data" / ".claude-oauth-token"
+    if not token_path.is_file():
+        return
+    try:
+        token = token_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return
+    if token and token.isascii() and not any(ch.isspace() for ch in token):
+        os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = token
+
+
+_prime_claude_oauth_token_env()
+
 from loregarden.services.memory_config import load_local_memory_config_into_settings  # noqa: E402
 
 load_local_memory_config_into_settings()

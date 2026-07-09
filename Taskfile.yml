@@ -10,6 +10,27 @@ tasks:
       - ./scripts/dev-server.sh
     interactive: true
 
+  claude:setup-token:
+    desc: >-
+      Generate a long-lived Claude OAuth token so the Usage modal works around
+      the macOS Keychain restriction (one-time; token is valid ~1 year)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - |
+        set -euo pipefail
+        echo "Running 'claude setup-token' — complete the OAuth flow in your browser."
+        echo "It will print a token at the end; copy it (just the token, nothing else)."
+        echo
+        claude setup-token
+        echo
+        printf 'Paste the token here: '
+        read -r CLAUDE_OAUTH_TOKEN
+        mkdir -p data
+        printf '%s' "$CLAUDE_OAUTH_TOKEN" > data/.claude-oauth-token
+        chmod 600 data/.claude-oauth-token
+        echo "Saved to data/.claude-oauth-token — the server loads it automatically from now on."
+    interactive: true
+
   client:
     desc: Start React IDE dev server (http://localhost:5173)
     dir: "{{.ROOT_DIR}}"

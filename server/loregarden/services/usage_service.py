@@ -159,6 +159,44 @@ def _read_claude_credentials_file() -> dict[str, Any] | None:
         return None
 
 
+def claude_oauth_token_file_path() -> Path:
+    """Where a `claude setup-token` long-lived token can be cached locally.
+
+    Loaded automatically on every run, so once saved here the token survives
+    server restarts without needing to be exported into the shell each time.
+    Gitignored via the repo-root ``data/`` rule.
+    """
+    return settings.repo_root / "data" / ".claude-oauth-token"
+
+
+def _read_claude_oauth_token_file() -> str | None:
+    path = claude_oauth_token_file_path()
+    if not path.is_file():
+        return None
+    try:
+        token = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        logger.debug("could not read claude oauth token file %s: %s", path, exc)
+        return None
+    if not token:
+        return None
+    # A bearer token is a single ASCII run with no embedded whitespace. If the
+    # file instead holds captured terminal output (e.g. `claude setup-token`'s
+    # interactive UI redirected wholesale into the file — spinner frames,
+    # prompts, line breaks), using it as-is crashes the HTTP client when it
+    # tries to encode the Authorization header. Treat anything that doesn't
+    # look like a bare token as absent rather than letting it blow up the request.
+    if not token.isascii() or any(ch.isspace() for ch in token):
+        logger.warning(
+            "claude oauth token file %s doesn't look like a bare token "
+            "(non-ASCII or whitespace found) — ignoring it. Regenerate with "
+            "`claude setup-token`, copying only the printed token into the file.",
+            path,
+        )
+        return None
+    return token
+
+
 def _read_claude_keychain_credentials() -> dict[str, Any] | None:
     if platform.system() != "Darwin":
         return None
@@ -178,8 +216,34 @@ def _read_claude_keychain_credentials() -> dict[str, Any] | None:
         return None
 
 
+def _claude_keychain_item_exists() -> bool:
+    """Check whether the Keychain item exists, without reading its value.
+
+    Deliberately omits ``-w`` (or ``-g``) so the credential itself is never
+    captured — this only inspects the item's presence via the exit code.
+    """
+    if platform.system() != "Darwin":
+        return False
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", "Claude Code-credentials"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.debug("could not check claude keychain item existence: %s", exc)
+        return False
+
+
 def _claude_oauth() -> dict[str, Any] | None:
-    env_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip()
+    env_token = (
+        os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip()
+        or _read_claude_oauth_token_file()
+        or ""
+    )
     file_data = _read_claude_credentials_file()
     keychain_data = _read_claude_keychain_credentials()
     for data in (keychain_data, file_data):
@@ -191,6 +255,24 @@ def _claude_oauth() -> dict[str, Any] | None:
     if env_token:
         return {"accessToken": env_token}
     return None
+
+
+def _claude_login_diagnosis() -> str:
+    """Error message for the no-usable-oauth case.
+
+    A missing credentials file plus a present-but-unreadable Keychain item
+    means the user is actually logged in but the backend process was denied
+    read access. macOS Keychain ACLs require GUI interaction to release a
+    password's value to a process by default; a backgrounded process like
+    this server gets a silent denial instead of a prompt
+    (https://github.com/anthropics/claude-code/issues/9403,
+    https://github.com/anthropics/claude-code/issues/44089). Re-running
+    `claude` won't fix that — the documented workaround is a long-lived
+    token (https://code.claude.com/docs/en/authentication#generate-a-long-lived-token).
+    """
+    if _claude_keychain_item_exists():
+        return "Keychain unreadable by this process (not a login issue) — run `task claude:setup-token`."
+    return "Not logged in. Run `claude` to authenticate."
 
 
 def _claude_plan_label(oauth: dict[str, Any]) -> str | None:
@@ -416,10 +498,27 @@ def _provider_label(provider: str) -> str:
     return "Claude" if provider == "claude" else "Cursor"
 
 
-def _format_usage_http_error(provider: str, response: httpx.Response) -> str:
+def _format_usage_http_error(
+    provider: str, response: httpx.Response, *, has_refresh_token: bool = True
+) -> str:
     label = _provider_label(provider)
     if response.status_code == 401:
+        if provider == "claude" and not has_refresh_token:
+            # A bare access token (CLAUDE_CODE_OAUTH_TOKEN / cached token file)
+            # has no refresh token, so it can't silently renew — and re-running
+            # `claude` to log in again does nothing for it, since it's a
+            # separate credential from the interactive session's OAuth login.
+            return "Cached token rejected or expired — run `task claude:setup-token` to refresh it."
         return f"{label} session expired — run `claude` to re-authenticate."
+    if response.status_code == 403:
+        if provider == "claude" and not has_refresh_token:
+            # `claude setup-token` tokens are documented as scoped to inference
+            # only — that's enough for Baxter/CLI-adapter calls but apparently
+            # not for this usage-limits endpoint, which needs the broader scopes
+            # (user:profile etc.) that only an interactive `/login` session gets.
+            # Regenerating the token won't change its scope, so don't suggest that.
+            return "This token is scoped to inference only — can't read live usage limits (HTTP 403)."
+        return f"{label} usage request failed (HTTP {response.status_code})."
     if response.status_code == 429:
         detail = ""
         try:
@@ -486,7 +585,7 @@ def _fetch_claude_usage(
         return ProviderUsage(
             provider="claude",
             logged_in=False,
-            error="Not logged in. Run `claude` to authenticate.",
+            error=_claude_login_diagnosis(),
         )
 
     scopes = oauth.get("scopes")
@@ -536,7 +635,9 @@ def _fetch_claude_usage(
             provider="claude",
             plan=_claude_plan_label(oauth),
             logged_in=True,
-            error=_format_usage_http_error("claude", response),
+            error=_format_usage_http_error(
+                "claude", response, has_refresh_token=bool(str(oauth.get("refreshToken") or "").strip())
+            ),
             breakdown=_scan_claude_logs(),
             rate_limited_until=rate_limited_until,
         )
