@@ -11,7 +11,7 @@ Loregarden is an Agent SDLC IDE — a local control plane for orchestrating mult
 | **Agent runtime** | CLI adapters (local, Claude, Cursor, LM Studio) | Executes pipeline stages with permission bridging |
 | **Workflow config** | YAML + markdown in `agent_context/` | Agent prompts, pipeline stages, orchestration profiles |
 
-Tickets are authoritative in the database (`data/loregarden.db`). Markdown under `project_board/` is an agent-facing mirror for handoffs and `/autopilot` workflows.
+Tickets are authoritative in the database (`data/loregarden.db`).
 
 ## Prerequisites
 
@@ -53,14 +53,6 @@ Health check: `curl http://127.0.0.1:8000/health`
 cd client && npm test
 ```
 
-### Export project board
-
-Sync tickets from SQLite to markdown:
-
-```bash
-./scripts/export_project_board.sh
-```
-
 ### MCP server
 
 Loregarden embeds MCP at `POST /mcp` on the main API server. For stdio-based MCP clients, use the proxy script:
@@ -88,7 +80,6 @@ loregarden/
 ├── client/            # React IDE shell
 ├── server/            # FastAPI control plane (loregarden package)
 ├── src-tauri/         # Desktop app shell (Rust) — see docs/tauri.md
-├── project_board/     # Milestone tickets and checkpoint index
 ├── scripts/           # Dev, test, and utility scripts
 ├── docs/design/       # UI design references
 └── data/              # SQLite database (gitignored)
