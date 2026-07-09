@@ -29,6 +29,7 @@ interface WorkflowRunOverflowMenuProps {
   advancePending: boolean;
   onRunCurrentStage: () => void;
   onAdvance: () => void;
+  onDelete: () => void;
 }
 
 export function WorkflowRunOverflowMenu({
@@ -42,6 +43,7 @@ export function WorkflowRunOverflowMenu({
   advancePending,
   onRunCurrentStage,
   onAdvance,
+  onDelete,
 }: WorkflowRunOverflowMenuProps) {
   const currentStageLabel = currentStageRunLabel(cursorStage, runningCursor);
 
@@ -76,6 +78,10 @@ export function WorkflowRunOverflowMenu({
           <div className="overflow-menu-meta">{ticket.run_code}</div>
         </>
       ) : null}
+      <OverflowMenuSection title="Danger zone" />
+      <OverflowMenuItem danger onSelect={onDelete}>
+        Delete ticket
+      </OverflowMenuItem>
     </OverflowMenu>
   );
 }

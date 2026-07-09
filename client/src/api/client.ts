@@ -205,6 +205,8 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  deleteTicket: (id: string) =>
+    request<{ ok: boolean }>(`/api/tickets/${id}`, { method: "DELETE" }),
   orchestrationProfile: (slug: string) =>
     request<OrchestrationProfileView>(`/api/orchestration/workspaces/${slug}/profile`),
   startRun: (id: string, options?: { stage_key?: string }) =>

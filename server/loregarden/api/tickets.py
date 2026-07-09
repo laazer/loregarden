@@ -441,6 +441,17 @@ def update_ticket(
     return get_ticket(ticket_id, session)
 
 
+@router.delete("/{ticket_id}")
+def delete_ticket(ticket_id: str, session: Session = Depends(get_session)) -> dict:
+    try:
+        TicketService(session).delete_ticket(ticket_id)
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 404 if message == "Ticket not found" else 400
+        raise HTTPException(status_code, message) from exc
+    return {"ok": True}
+
+
 @router.post("/{ticket_id}/orchestrate", response_model=TicketDetail)
 def orchestrate_ticket(
     ticket_id: str,

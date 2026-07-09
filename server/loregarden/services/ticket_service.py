@@ -10,19 +10,47 @@ from datetime import datetime, timezone
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import (
     WORKFLOW_WORK_ITEM_TYPES,
+    AgentRun,
+    Approval,
+    Artifact,
+    AutoFixAttempt,
+    CIRunResult,
+    ConflictReport,
+    DomainEvent,
     EventType,
+    OrchestrationRun,
+    QueuedRun,
+    RunOutputReview,
     StageStatus,
     Ticket,
+    TicketDiffComment,
     TicketState,
+    TicketStudioSession,
+    TriageMessage,
     WorkflowInstance,
     WorkItemType,
     Workspace,
 )
-from loregarden.services.hierarchy_service import validate_parent_child
+from loregarden.services.hierarchy_service import child_count, validate_parent_child
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.workflow_service import resolve_workspace_stages
 from loregarden.services.workflow_state import initial_stages_json
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
+
+# Tables owning a direct `ticket_id` column, deleted (in this order) when a ticket is removed.
+_TICKET_OWNED_TABLES = (
+    QueuedRun,
+    ConflictReport,
+    TicketDiffComment,
+    DomainEvent,
+    TriageMessage,
+    Approval,
+    Artifact,
+    AgentRun,
+    OrchestrationRun,
+    CIRunResult,
+    WorkflowInstance,
+)
 
 
 def _slugify(text: str) -> str:
@@ -185,3 +213,43 @@ class TicketService:
         ticket_id = ticket.id
         self.session.commit()
         return self.session.get(Ticket, ticket_id) or ticket
+
+    def delete_ticket(self, ticket_id: str) -> None:
+        ticket = self.session.get(Ticket, ticket_id)
+        if not ticket:
+            raise ValueError("Ticket not found")
+        if child_count(self.session, ticket_id) > 0:
+            raise ValueError("Delete or reassign child work items before deleting this ticket")
+
+        agent_run_ids = self.session.exec(
+            select(AgentRun.id).where(AgentRun.ticket_id == ticket_id)
+        ).all()
+        if agent_run_ids:
+            for review in self.session.exec(
+                select(RunOutputReview).where(col(RunOutputReview.run_id).in_(agent_run_ids))
+            ).all():
+                self.session.delete(review)
+
+        ci_run_result_ids = self.session.exec(
+            select(CIRunResult.id).where(CIRunResult.ticket_id == ticket_id)
+        ).all()
+        if ci_run_result_ids:
+            for attempt in self.session.exec(
+                select(AutoFixAttempt).where(
+                    col(AutoFixAttempt.ci_run_result_id).in_(ci_run_result_ids)
+                )
+            ).all():
+                self.session.delete(attempt)
+
+        for studio_session in self.session.exec(
+            select(TicketStudioSession).where(TicketStudioSession.parent_ticket_id == ticket_id)
+        ).all():
+            studio_session.parent_ticket_id = None
+            self.session.add(studio_session)
+
+        for model in _TICKET_OWNED_TABLES:
+            for row in self.session.exec(select(model).where(model.ticket_id == ticket_id)).all():
+                self.session.delete(row)
+
+        self.session.delete(ticket)
+        self.session.commit()

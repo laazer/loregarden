@@ -27,10 +27,11 @@ import { IconCloseButton } from "../components/IconCloseButton";
 import { ImportTicketsModal } from "../components/ImportTicketsModal";
 import { ImportTicketsConfirmModal } from "../components/ImportTicketsConfirmModal";
 import { AddWorkspaceModal, type AddWorkspaceDraft } from "../components/AddWorkspaceModal";
+import { DeleteTicketConfirmModal } from "../components/DeleteTicketConfirmModal";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { runtimeFromWorkspace, runtimeSettingsEqual } from "../components/WorkspaceRuntimeFields";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
-import { navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
+import { navigateToPage, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
 import { isArtifactTab } from "../lib/appNavigation";
 import { useUiStore, type PaneId } from "../state/uiStore";
 import { agentsAssembleLabel } from "../lib/workflowHelpers";
@@ -51,6 +52,15 @@ function mergeApprovals(...lists: Array<import("../api/client").Approval[] | und
     }
   }
   return merged;
+}
+
+function formatDeleteTicketError(error: Error): string {
+  try {
+    const parsed = JSON.parse(error.message) as { detail?: string };
+    return parsed.detail ?? error.message;
+  } catch {
+    return error.message || "Failed to delete ticket";
+  }
 }
 
 function PaneHideButton({
@@ -344,6 +354,19 @@ export function Dashboard() {
     onSuccess: invalidateTicketQueries,
   });
 
+  const deleteTicket = useMutation({
+    mutationFn: (ticketId: string) => api.deleteTicket(ticketId),
+    onSuccess: (_result, ticketId) => {
+      qc.removeQueries({ queryKey: ["ticket", ticketId] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+      qc.invalidateQueries({ queryKey: ["ticket-tree"] });
+      setDeleteTicketTarget(null);
+      if (selectedId === ticketId) {
+        navigateToPage("dashboard", true);
+      }
+    },
+  });
+
   const copyTerminalCommand = async (command: string) => {
     if (!command.trim()) return;
     try {
@@ -363,6 +386,7 @@ export function Dashboard() {
   const [stateModalOpen, setStateModalOpen] = useState(false);
   const [runConfirmStageKey, setRunConfirmStageKey] = useState<string | null>(null);
   const [assembleModalOpen, setAssembleModalOpen] = useState(false);
+  const [deleteTicketTarget, setDeleteTicketTarget] = useState<TicketDetail | null>(null);
 
   const saveStateFromModal = useMutation({
     mutationFn: async ({
@@ -1289,6 +1313,7 @@ export function Dashboard() {
                       advancePending={advance.isPending}
                       onRunCurrentStage={() => requestStageRun(sel.workflow_stage_key)}
                       onAdvance={() => advance.mutate()}
+                      onDelete={() => setDeleteTicketTarget(sel)}
                     />
                   );
                 })()}
@@ -1552,6 +1577,23 @@ export function Dashboard() {
         isSavingRuntime={setRuntime.isPending}
         onClose={() => setAssembleModalOpen(false)}
         onConfirm={confirmAssemble}
+      />
+
+      <DeleteTicketConfirmModal
+        open={!!deleteTicketTarget}
+        ticket={deleteTicketTarget}
+        isDeleting={deleteTicket.isPending}
+        error={
+          deleteTicket.error instanceof Error
+            ? formatDeleteTicketError(deleteTicket.error)
+            : null
+        }
+        onClose={() => {
+          if (deleteTicket.isPending) return;
+          setDeleteTicketTarget(null);
+          deleteTicket.reset();
+        }}
+        onConfirm={() => deleteTicketTarget && deleteTicket.mutate(deleteTicketTarget.id)}
       />
     </div>
   );
