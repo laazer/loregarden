@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { api, type RuntimeOptions, type WorkspaceRuntimeSettings } from "../api/client";
+import { TRIAGE_AGENT_NAME } from "../lib/triageAgent";
 import { StudioChatComposer } from "./studio/StudioChat";
 import { TriageModelModal } from "./TriageModelModal";
 import { runtimeSummaryLabel } from "./WorkspaceRuntimeFields";
@@ -17,7 +18,7 @@ const DEFAULT_RUNTIME: WorkspaceRuntimeSettings = {
 export function TriageComposer({
   ticketId,
   runtimeOptions,
-  placeholder = "Message the triage assistant about this ticket…",
+  placeholder = `Message ${TRIAGE_AGENT_NAME} about this ticket…`,
   attachLogContext,
   showAttachLogsToggle = false,
   attachLogsDefault = true,
@@ -140,7 +141,7 @@ export function TriageComposer({
         onSubmit={submitChat}
         placeholder={placeholder}
         isSending={sendMessage.isPending}
-        sendLabel="Ask triage"
+        sendLabel={`Ask ${TRIAGE_AGENT_NAME}`}
         optionsRow={optionsRow}
         error={composerError}
         toolbar={

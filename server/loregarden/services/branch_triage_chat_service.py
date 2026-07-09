@@ -17,6 +17,7 @@ from loregarden.services.branch_triage_service import branch_triage_snapshot
 from loregarden.services.cli_output import extract_triage_reply
 from loregarden.services.triage_service import (
     TRIAGE_AGENT_ID,
+    TRIAGE_AGENT_NAME,
     apply_triage_runtime_overrides,
     get_triage_runtime,
     resolve_triage_timeout,
@@ -115,7 +116,7 @@ def send_branch_triage_message(
     try:
         reply = invoke_branch_triage_model(session, workspace, branch, text)
     except Exception as exc:
-        reply = f"Triage assistant unavailable: {exc}"
+        reply = f"{TRIAGE_AGENT_NAME} unavailable: {exc}"
 
     assistant_message = BranchTriageMessage(
         workspace_id=workspace.id,
@@ -154,7 +155,7 @@ def build_branch_triage_prompt(
 ) -> str:
     sections = [
         "# Loregarden branch triage",
-        "You are the operator's triage assistant for cleaning up git branches.",
+        "You are Baxter, the operator's triage assistant for cleaning up git branches.",
         "You run in the workspace repository with shell and git access — execute commands when asked.",
         "When the operator requests git work (commit, push, checkout, merge, rebase, delete, etc.), run it and report exact outcomes.",
         "Use safe defaults: avoid force-push or branch deletion unless the operator clearly asks; confirm when intent is ambiguous.",
@@ -196,7 +197,7 @@ def build_branch_triage_prompt(
     if history:
         sections.extend(["", "## Branch triage conversation so far"])
         for msg in history[-MAX_BRANCH_TRIAGE_HISTORY:]:
-            speaker = "Operator" if msg.role == "user" else "Triage assistant"
+            speaker = "Operator" if msg.role == "user" else TRIAGE_AGENT_NAME
             body = msg.content
             if len(body) > MAX_BRANCH_TRIAGE_MESSAGE_CHARS:
                 body = body[:MAX_BRANCH_TRIAGE_MESSAGE_CHARS] + "…"
@@ -268,7 +269,7 @@ def invoke_branch_triage_model(
             stdout, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             proc.kill()
-            raise TimeoutError(f"Triage assistant timed out after {timeout}s") from None
+            raise TimeoutError(f"{TRIAGE_AGENT_NAME} timed out after {timeout}s") from None
 
         if proc.returncode != 0:
             detail = (
@@ -279,5 +280,5 @@ def invoke_branch_triage_model(
 
         reply = extract_triage_reply(stdout.decode("utf-8", errors="replace"))
         if not reply:
-            raise RuntimeError("Triage assistant returned an empty response")
+            raise RuntimeError(f"{TRIAGE_AGENT_NAME} returned an empty response")
         return reply[:8000]

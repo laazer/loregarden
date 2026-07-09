@@ -5,6 +5,7 @@ import { api, type Approval, type LogLine, type RuntimeOptions, type TicketDetai
 import { logTagVariant } from "../lib/logLineStyle";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { formatLogExcerpt } from "../utils/logExcerpt";
+import { TRIAGE_AGENT_NAME } from "../lib/triageAgent";
 import { ChatMessageBubble } from "./chat/ChatMessageBubble";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { TriageComposer } from "./TriageComposer";
@@ -132,7 +133,7 @@ export function LogsPanel({
         <div className="log-feed">
           {lines.length === 0 && !live ? (
             <div className="log-feed-empty">
-              No log lines yet. Start a stage run or ask triage about failures below.
+              No log lines yet. Start a stage run or ask {TRIAGE_AGENT_NAME} about failures below.
             </div>
           ) : (
             <>
@@ -163,7 +164,7 @@ export function LogsPanel({
             </button>
             {showTriageReplies &&
               recentReplies.map((msg) => (
-                <ChatMessageBubble key={msg.id} message={msg} assistantLabel="Triage assistant" />
+                <ChatMessageBubble key={msg.id} message={msg} assistantLabel={TRIAGE_AGENT_NAME} />
               ))}
           </section>
         )}
@@ -183,7 +184,7 @@ export function LogsPanel({
       <TriageComposer
         ticketId={ticket.id}
         runtimeOptions={runtimeOptions}
-        placeholder="Ask triage about these logs, failures, or next steps…"
+        placeholder={`Ask ${TRIAGE_AGENT_NAME} about these logs, failures, or next steps…`}
         attachLogContext={logContext}
         showAttachLogsToggle
         attachLogsDefault

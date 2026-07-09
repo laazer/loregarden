@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { api, type Approval, type RuntimeOptions, type TicketDetail } from "../api/client";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
+import { TRIAGE_AGENT_NAME } from "../lib/triageAgent";
 import { StudioChatMessages } from "./studio/StudioChat";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
@@ -184,12 +185,12 @@ export function TriagePanel({
           </div>
           <StudioChatMessages
             messages={messages}
-            assistantLabel="Triage assistant"
+            assistantLabel={TRIAGE_AGENT_NAME}
             thinkingActivity="typing"
             autoScroll={autoScroll}
-            emptyMessage="Ask about requirements, failures, or next steps. The triage assistant sees this ticket's description, workflow state, blocking issues, recent runs, and this conversation."
+            emptyMessage={`Ask about requirements, failures, or next steps. ${TRIAGE_AGENT_NAME} sees this ticket's description, workflow state, blocking issues, recent runs, and this conversation.`}
             isThinking={isSending}
-            thinkingMessage="Triage assistant is thinking…"
+            thinkingMessage={`${TRIAGE_AGENT_NAME} is thinking…`}
           />
         </section>
       </div>

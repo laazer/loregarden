@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import { api, type RuntimeOptions, type WorkspaceRuntimeSettings } from "../api/client";
 import { ticketPath } from "../lib/appNavigation";
+import { TRIAGE_AGENT_NAME } from "../lib/triageAgent";
 import {
   fetchBranchChat,
   sendBranchChatMessage,
@@ -198,12 +199,12 @@ export function BranchTriageChatPanel({
           </div>
           <StudioChatMessages
             messages={messages}
-            assistantLabel="Triage assistant"
+            assistantLabel={TRIAGE_AGENT_NAME}
             thinkingActivity="typing"
             autoScroll={autoScroll}
-            emptyMessage="Ask the assistant to commit, push, merge, or clean up this branch. It runs git in your workspace and reports results."
+            emptyMessage={`Ask ${TRIAGE_AGENT_NAME} to commit, push, merge, or clean up this branch. ${TRIAGE_AGENT_NAME} runs git in your workspace and reports results.`}
             isThinking={isSending || chat.isLoading}
-            thinkingMessage="Triage assistant is working…"
+            thinkingMessage={`${TRIAGE_AGENT_NAME} is working…`}
           />
         </section>
       </div>
@@ -214,7 +215,7 @@ export function BranchTriageChatPanel({
         onSubmit={submitChat}
         placeholder="Ask about this branch's state, risks, or cleanup plan…"
         isSending={sendMessage.isPending}
-        sendLabel="Ask triage"
+        sendLabel={`Ask ${TRIAGE_AGENT_NAME}`}
         error={composerError}
         optionsRow={
           <div className="studio-chat-composer-options-inline">

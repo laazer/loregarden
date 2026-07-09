@@ -1,5 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 
+import { TRIAGE_AGENT_NAME } from "../../../lib/triageAgent";
 import { BaxterAvatar } from "../BaxterAvatar";
 import { StudioChatMessages } from "../../studio/StudioChat";
 
@@ -52,11 +53,11 @@ describe("StudioChatMessages Baxter wiring", () => {
         messages={[{ id: "a1", role: "assistant", content: "Earlier reply" }]}
         isThinking
         thinkingActivity="typing"
-        assistantLabel="Triage assistant"
+        assistantLabel={TRIAGE_AGENT_NAME}
       />,
     );
 
-    const avatars = screen.getAllByRole("img", { name: "Triage assistant" });
+    const avatars = screen.getAllByRole("img", { name: TRIAGE_AGENT_NAME });
     expect(avatars.some((el) => el.getAttribute("data-baxter-state") === "typing")).toBe(true);
   });
 

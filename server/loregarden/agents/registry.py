@@ -116,7 +116,7 @@ AGENTS: dict[str, dict] = {
         "timeout": 600,
     },
     "triage": {
-        "name": "Triage Assistant",
+        "name": "Baxter",
         "role_file": "agents/misc_agents/research_librarian_v1.md",
         "adapter": "claude",
         "timeout": 300,

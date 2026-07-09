@@ -31,6 +31,7 @@ from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
 
 TRIAGE_AGENT_ID = "triage"
+TRIAGE_AGENT_NAME = "Baxter"
 MAX_TRIAGE_HISTORY_MESSAGES = 12
 MAX_TRIAGE_MESSAGE_CHARS = 2000
 MAX_TRIAGE_DESCRIPTION_CHARS = 4000
@@ -158,7 +159,7 @@ def send_triage_message(session: Session, ticket: Ticket, content: str) -> dict:
     try:
         reply = invoke_triage_model(session, ticket, text)
     except Exception as exc:
-        reply = f"Triage assistant unavailable: {exc}"
+        reply = f"{TRIAGE_AGENT_NAME} unavailable: {exc}"
 
     assistant_message = TriageMessage(ticket_id=ticket.id, role="assistant", content=reply)
     session.add(assistant_message)
@@ -232,7 +233,7 @@ def invoke_triage_model(session: Session, ticket: Ticket, latest_user_message: s
             stdout, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             proc.kill()
-            raise TimeoutError(f"Triage assistant timed out after {timeout}s") from None
+            raise TimeoutError(f"{TRIAGE_AGENT_NAME} timed out after {timeout}s") from None
 
         if proc.returncode != 0:
             detail = (
@@ -243,7 +244,7 @@ def invoke_triage_model(session: Session, ticket: Ticket, latest_user_message: s
 
         reply = extract_triage_reply(stdout.decode("utf-8", errors="replace"))
         if not reply:
-            raise RuntimeError("Triage assistant returned an empty response")
+            raise RuntimeError(f"{TRIAGE_AGENT_NAME} returned an empty response")
         return reply[:8000]
 
 
@@ -266,7 +267,7 @@ def build_triage_prompt(
 
     sections = [
         "# Loregarden ticket triage",
-        "You are the operator's triage assistant for this work item.",
+        "You are Baxter, the operator's triage assistant for this work item.",
         "Help clarify requirements, interpret agent output, suggest next workflow steps, and answer questions.",
         "You are advisory only in this channel — do not claim to have executed tools or changed the repo.",
         "",
@@ -306,7 +307,7 @@ def build_triage_prompt(
     if history:
         sections.extend(["", "## Triage conversation so far"])
         for msg in history[-MAX_TRIAGE_HISTORY_MESSAGES:]:
-            speaker = "Operator" if msg.role == "user" else "Triage assistant"
+            speaker = "Operator" if msg.role == "user" else TRIAGE_AGENT_NAME
             content = msg.content
             if len(content) > MAX_TRIAGE_MESSAGE_CHARS:
                 content = content[:MAX_TRIAGE_MESSAGE_CHARS] + "…"

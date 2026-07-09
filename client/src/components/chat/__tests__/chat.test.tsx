@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 
+import { TRIAGE_AGENT_NAME } from "../../../lib/triageAgent";
 import { ChatMessageBubble } from "../ChatMessageBubble";
 import { ChatWindow } from "../ChatWindow";
 import { chatMessageBody, chatRoleLabel, formatChatTime, normalizeChatMarkdown } from "../chatUtils";
@@ -68,12 +69,12 @@ describe("ChatMessageBubble", () => {
           content: "Hi there",
           created_at: "2026-07-06T20:16:00.000Z",
         }}
-        assistantLabel="Triage assistant"
+        assistantLabel={TRIAGE_AGENT_NAME}
       />,
     );
 
     expect(screen.getByText("Hi there").closest(".chat-message-assistant")).toBeInTheDocument();
-    expect(screen.getByText(/Triage assistant/)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(TRIAGE_AGENT_NAME))).toBeInTheDocument();
   });
 
   it("renders markdown formatting in bubbles", () => {
