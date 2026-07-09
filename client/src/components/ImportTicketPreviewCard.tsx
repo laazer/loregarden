@@ -27,6 +27,7 @@ interface ImportTicketPreviewCardProps {
   onChange: (ticket: TicketImportItem) => void;
   onQuickCreateMilestone: (title: string, ticketIndex: number) => void;
   onQuickCreateCapability: (title: string, featureKey: string, ticketIndex: number) => void;
+  onQuickCreateFeature: (title: string, milestoneKey: string, ticketIndex: number) => void;
   disabled?: boolean;
 }
 
@@ -98,6 +99,7 @@ export function ImportTicketPreviewCard({
   onChange,
   onQuickCreateMilestone,
   onQuickCreateCapability,
+  onQuickCreateFeature,
   disabled = false,
 }: ImportTicketPreviewCardProps) {
   const parentOptions = buildImportParentOptions(ticket, existingTickets, batchTickets);
@@ -106,6 +108,7 @@ export function ImportTicketPreviewCard({
   const missingParent = needsParent && !importTicketHasParent(ticket);
   const allowedParentTypes = importParentTypes(ticket.work_item_type);
   const canQuickCreateCapability = allowedParentTypes.includes("capability");
+  const canQuickCreateFeature = allowedParentTypes.includes("feature");
   const milestoneValue = selectedMilestoneId(ticket, milestoneOptions);
   const parentValue = selectedParentKey(ticket);
   const missingTitle = !ticket.title.trim();
@@ -247,6 +250,15 @@ export function ImportTicketPreviewCard({
                   }
                 />
               )}
+              {canQuickCreateFeature && (
+                <FeatureQuickCreate
+                  disabled={disabled}
+                  milestoneOptions={milestoneOptions}
+                  onSubmit={(title, milestoneKey) =>
+                    onQuickCreateFeature(title, milestoneKey, index)
+                  }
+                />
+              )}
             </div>
             {missingParent && (
               <p className="modal-hint" style={{ margin: "4px 0 0", color: "var(--amb)" }}>
@@ -330,6 +342,56 @@ function CapabilityQuickCreate({
                 value={option.id ? `id:${option.id}` : `ext:${option.external_id}`}
               >
                 {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      }
+    />
+  );
+}
+
+function FeatureQuickCreate({
+  disabled,
+  milestoneOptions,
+  onSubmit,
+}: {
+  disabled?: boolean;
+  milestoneOptions: ImportMilestoneOption[];
+  onSubmit: (title: string, milestoneKey: string) => void;
+}) {
+  const [milestoneKey, setMilestoneKey] = useState("");
+
+  return (
+    <ImportQuickCreate
+      label="+ Feature"
+      placeholder="New feature title"
+      actionLabel="Add"
+      disabled={disabled}
+      extraRequired={!milestoneKey}
+      onSubmit={(title) => onSubmit(title, milestoneKey)}
+      extra={
+        <div style={{ marginTop: 6 }}>
+          <div className="import-preview-field-label">Under milestone</div>
+          <select
+            className="btn-secondary filter-select"
+            style={{ width: "100%", fontSize: 12 }}
+            value={milestoneKey}
+            disabled={disabled}
+            onChange={(event) => setMilestoneKey(event.target.value)}
+          >
+            <option value="">
+              {milestoneOptions.length === 0
+                ? "No milestones available — create or import a milestone first"
+                : "Select milestone…"}
+            </option>
+            {milestoneOptions.map((option) => (
+              <option
+                key={`feat-milestone-${option.source}-${option.external_id}`}
+                value={option.external_id}
+              >
+                {option.external_id} · {option.title}
+                {optionSourceLabel(option.source)}
               </option>
             ))}
           </select>

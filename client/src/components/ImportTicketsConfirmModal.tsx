@@ -160,6 +160,38 @@ export function ImportTicketsConfirmModal({
     });
   };
 
+  const handleQuickCreateFeature = (
+    title: string,
+    milestoneKey: string,
+    ticketIndex: number,
+  ) => {
+    setDraftTickets((current) => {
+      const milestoneOpts = buildImportMilestoneOptions(workspaceTickets.data ?? [], current);
+      const milestone = milestoneOpts.find((option) => option.external_id === milestoneKey);
+      if (!milestone) return current;
+
+      const item = buildQuickImportItem({
+        work_item_type: "feature",
+        title,
+        existingExternalIds: collectImportExternalIds(workspaceTickets.data ?? [], current),
+        parent_ticket_id: milestone.id,
+        parent_external_id: milestone.id ? "" : milestone.external_id,
+        milestone: milestone.milestone,
+      });
+      const next = [...current, item];
+      return next.map((ticket, index) =>
+        index === ticketIndex
+          ? applyParentToTicket(ticket, {
+              id: null,
+              external_id: item.external_id ?? "",
+              label: `${item.external_id} · ${item.title} (new)`,
+              source: "quick",
+            })
+          : ticket,
+      );
+    });
+  };
+
   return (
     <>
       <div className="modal-overlay" onClick={isImporting ? undefined : onClose} role="presentation" />
@@ -319,6 +351,7 @@ export function ImportTicketsConfirmModal({
                       onChange={(updated) => updateTicket(index, updated)}
                       onQuickCreateMilestone={handleQuickCreateMilestone}
                       onQuickCreateCapability={handleQuickCreateCapability}
+                      onQuickCreateFeature={handleQuickCreateFeature}
                     />
                   );
                 })}
