@@ -2,7 +2,7 @@
  * Shows retry status and information for failed runs
  */
 
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import './RunRetryIndicator.css';
 
 export interface RetryInfo {

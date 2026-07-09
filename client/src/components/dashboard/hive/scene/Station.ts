@@ -16,7 +16,7 @@ export class StationView extends Container {
   readonly stationId: string;
   private sprite: Sprite;
   private glow: Graphics;
-  private label: Text;
+  private nameLabel: Text;
   private overlay: Sprite | null = null;
 
   constructor(
@@ -38,15 +38,15 @@ export class StationView extends Container {
     this.sprite.height = HIVE_MAP.tileSize * 3;
     this.addChild(this.sprite);
 
-    this.label = new Text({ text: station.label, style: LABEL_STYLE });
-    this.label.anchor.set(0.5, 0);
-    this.label.y = HIVE_MAP.tileSize * 0.9;
-    this.addChild(this.label);
+    this.nameLabel = new Text({ text: station.label, style: LABEL_STYLE });
+    this.nameLabel.anchor.set(0.5, 0);
+    this.nameLabel.y = HIVE_MAP.tileSize * 0.9;
+    this.addChild(this.nameLabel);
   }
 
   sync(station: HiveStationState, textures: HiveSkinTextures, errorOverlay: boolean): void {
     this.sprite.texture = textures.station[station.id];
-    this.label.text = station.label;
+    this.nameLabel.text = station.label;
 
     this.glow.clear();
     if (station.active) {

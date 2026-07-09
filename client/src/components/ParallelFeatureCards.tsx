@@ -3,7 +3,6 @@
  * Displays real-time execution slots, queue positions, and statistics.
  */
 
-import React from 'react';
 import { useParallelExecution } from '../hooks/useParallelExecution';
 import type { ActiveRun, QueuedRun } from '../hooks/useParallelExecution';
 import './ParallelFeatureCards.css';
@@ -15,7 +14,6 @@ export interface ParallelFeatureCardsProps {
 
 export function ParallelFeatureCards({
   workspaceId,
-  compact = false,
 }: ParallelFeatureCardsProps) {
   const { activeRuns, queuedRuns, stats, loading, error } = useParallelExecution(
     workspaceId,

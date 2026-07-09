@@ -3,8 +3,9 @@
  * Shows conflict details, severity, and resolution suggestions.
  */
 
-import React, { useState } from 'react';
-import { useWorktreeConflicts, ConflictFile } from '../hooks/useWorktreeConflicts';
+import { useState } from 'react';
+import { useWorktreeConflicts } from '../hooks/useWorktreeConflicts';
+import type { ConflictFile } from '../hooks/useWorktreeConflicts';
 import './WorktreeConflictWarning.css';
 
 export interface WorktreeConflictWarningProps {
@@ -17,12 +18,11 @@ export interface WorktreeConflictWarningProps {
 
 export function WorktreeConflictWarning({
   worktreeId,
-  runId,
   onResolve,
   onAbort,
   compact = false,
 }: WorktreeConflictWarningProps) {
-  const { conflicts, preview, details, hasConflicts, loading, error } =
+  const { conflicts, preview, hasConflicts, loading, error } =
     useWorktreeConflicts(worktreeId, 3000, true);
   const [expandedFile, setExpandedFile] = useState<string | null>(null);
 

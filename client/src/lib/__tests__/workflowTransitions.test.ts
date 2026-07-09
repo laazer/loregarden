@@ -1,5 +1,5 @@
 import { stageRouteHints, stageRouteLabel } from "../workflowTransitions";
-import type { WorkflowStageView, WorkflowTransition } from "../api/types";
+import type { WorkflowStageView, WorkflowTransition } from "../../api/types";
 
 function stage(stageKey: string, name: string, order: number): WorkflowStageView {
   return {

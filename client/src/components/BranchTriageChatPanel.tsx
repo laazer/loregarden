@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { api, type RuntimeOptions, type WorkspaceRuntimeSettings } from "../api/client";
+import { api, type WorkspaceRuntimeSettings } from "../api/client";
 import { ticketPath } from "../lib/appNavigation";
 import { TRIAGE_AGENT_NAME } from "../lib/triageAgent";
 import {

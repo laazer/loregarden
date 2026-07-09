@@ -26,8 +26,7 @@ export function useCIStatus(ticketId: string): CIStatusData {
       setLoading(true);
       setError(null);
 
-      const response = await api.get(`/ci/status/${ticketId}`);
-      const { ci_status, auto_fix_history } = response.data;
+      const { ci_status, auto_fix_history } = await api.ciStatus(ticketId);
 
       setCIStatus(ci_status);
       setAutoFixHistory(auto_fix_history || []);
@@ -73,10 +72,10 @@ export function useAutoFix(ticketId: string) {
     try {
       setIsFixing(true);
       setFixError(null);
-      await api.post(`/ci/trigger-auto-fix/${ticketId}`);
+      await api.triggerAutoFix(ticketId);
       // Poll will pick up the new attempt
-    } catch (err: any) {
-      const message = err?.response?.data?.detail || "Failed to trigger auto-fix";
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to trigger auto-fix";
       setFixError(message);
       console.error("Error triggering auto-fix:", err);
     } finally {
@@ -88,9 +87,9 @@ export function useAutoFix(ticketId: string) {
     try {
       setIsFixing(true);
       setFixError(null);
-      await api.post(`/ci/manual-override/${ticketId}`);
-    } catch (err: any) {
-      const message = err?.response?.data?.detail || "Failed to skip CI check";
+      await api.skipCICheck(ticketId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to skip CI check";
       setFixError(message);
       console.error("Error skipping CI check:", err);
     } finally {

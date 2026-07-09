@@ -3,7 +3,7 @@
  * Inline comments, threads, and approval workflow
  */
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import './QueueOperationReview.css';
 
 export interface OperationComment {

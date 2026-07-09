@@ -3,7 +3,7 @@
  * Displays toast-style alerts for queue events (run complete, promoted, error)
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { IconCloseButton } from './IconCloseButton';
 import './QueueNotifications.css';
 

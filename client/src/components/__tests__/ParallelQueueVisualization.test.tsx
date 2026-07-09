@@ -3,7 +3,7 @@
  * Covers slot display, queue items, drag-to-reorder, and real-time updates
  */
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { ParallelQueueVisualization } from '../ParallelQueueVisualization';
 import * as useHook from '../../hooks/useParallelExecutionWS';
 

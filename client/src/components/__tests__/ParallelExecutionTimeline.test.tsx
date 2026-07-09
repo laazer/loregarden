@@ -2,7 +2,6 @@
  * Unit tests for ParallelExecutionTimeline component.
  */
 
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { ParallelExecutionTimeline } from '../ParallelExecutionTimeline';
 
@@ -250,7 +249,7 @@ describe('ParallelExecutionTimeline', () => {
       error: null,
     });
 
-    const { container } = render(
+    render(
       <ParallelExecutionTimeline workspaceId="workspace-1" />
     );
 
@@ -268,7 +267,7 @@ describe('ParallelExecutionTimeline', () => {
       error: null,
     });
 
-    const { container } = render(
+    render(
       <ParallelExecutionTimeline workspaceId="workspace-1" />
     );
 
@@ -359,7 +358,7 @@ describe('ParallelExecutionTimeline', () => {
       error: null,
     });
 
-    const { container } = render(
+    render(
       <ParallelExecutionTimeline workspaceId="workspace-1" />
     );
 

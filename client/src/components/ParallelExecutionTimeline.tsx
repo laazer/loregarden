@@ -3,7 +3,7 @@
  * Shows execution slots, queue wait times, and agent run durations.
  */
 
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { useParallelExecution } from '../hooks/useParallelExecution';
 import type { ActiveRun, QueuedRun } from '../hooks/useParallelExecution';
 import './ParallelExecutionTimeline.css';
@@ -48,7 +48,6 @@ export function ParallelExecutionTimeline({
     // Add queued runs (show as waiting)
     queuedRuns.forEach((run, index) => {
       if (slotTimelines.has(index + 1)) {
-        const waitSeconds = Math.ceil(run.wait_seconds);
         slotTimelines.get(index + 1)!.push({
           type: 'queued',
           run_id: run.run_id,
