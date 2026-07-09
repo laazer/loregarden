@@ -9,7 +9,6 @@ import { useParallelExecutionWS } from '../../hooks/useParallelExecutionWS';
 import * as websocketService from '../../services/websocket';
 
 jest.mock('../../services/websocket');
-jest.mock('../../hooks/useParallelExecutionWS');
 
 describe('ParallelQueueVisualization Integration: Drag-to-Reorder', () => {
   let mockWebSocketClient: any;
@@ -114,7 +113,7 @@ describe('ParallelQueueVisualization Integration: Drag-to-Reorder', () => {
 
       if (eventHandler) {
         act(() => {
-          eventHandler!(reorderedState);
+          eventHandler!({ data: reorderedState });
         });
       }
 
@@ -143,9 +142,13 @@ describe('ParallelQueueVisualization Integration: Drag-to-Reorder', () => {
         { run_id: 'run-4', ticket_id: 'ticket-4', position: 2, wait_seconds: 450, estimated_start_at: new Date(Date.now() + 450000).toISOString() },
       ];
 
+      await waitFor(() => {
+        expect(eventHandler).toBeDefined();
+      });
+
       if (eventHandler) {
         act(() => {
-          eventHandler!({ queuedRuns: initialQueue, activeRuns: [], stats: {} });
+          eventHandler!({ data: { queuedRuns: initialQueue, activeRuns: [], stats: {} } });
         });
       }
 
@@ -161,7 +164,7 @@ describe('ParallelQueueVisualization Integration: Drag-to-Reorder', () => {
 
       if (eventHandler) {
         act(() => {
-          eventHandler!({ queuedRuns: reorderedQueue, activeRuns: [], stats: {} });
+          eventHandler!({ data: { queuedRuns: reorderedQueue, activeRuns: [], stats: {} } });
         });
       }
 
@@ -283,9 +286,13 @@ describe('ParallelQueueVisualization Integration: Drag-to-Reorder', () => {
         stats: { active_count: 0, queued_count: 3 },
       };
 
+      await waitFor(() => {
+        expect(eventHandler).toBeDefined();
+      });
+
       if (eventHandler) {
         act(() => {
-          eventHandler!(finalState);
+          eventHandler!({ data: finalState });
         });
       }
 
@@ -318,9 +325,13 @@ describe('ParallelQueueVisualization Integration: Drag-to-Reorder', () => {
         stats: { active_count: 1, queued_count: 2 },
       };
 
+      await waitFor(() => {
+        expect(eventHandler).toBeDefined();
+      });
+
       if (eventHandler) {
         act(() => {
-          eventHandler!(initialState);
+          eventHandler!({ data: initialState });
         });
       }
 
@@ -333,7 +344,7 @@ describe('ParallelQueueVisualization Integration: Drag-to-Reorder', () => {
 
       if (eventHandler) {
         act(() => {
-          eventHandler!(finalState);
+          eventHandler!({ data: finalState });
         });
       }
 
@@ -372,9 +383,13 @@ describe('ParallelQueueVisualization Integration: Drag-to-Reorder', () => {
         stats: { active_count: 0, queued_count: 3 },
       };
 
+      await waitFor(() => {
+        expect(eventHandler).toBeDefined();
+      });
+
       if (eventHandler) {
         act(() => {
-          eventHandler!(finalState);
+          eventHandler!({ data: finalState });
         });
       }
 
@@ -424,9 +439,13 @@ describe('ParallelQueueVisualization Integration: Drag-to-Reorder', () => {
         stats: { active_count: 0, queued_count: 2 },
       };
 
+      await waitFor(() => {
+        expect(eventHandler).toBeDefined();
+      });
+
       if (eventHandler) {
         act(() => {
-          eventHandler!(reorderedState);
+          eventHandler!({ data: reorderedState });
         });
       }
 
@@ -456,8 +475,35 @@ describe('ParallelQueueVisualization Integration: Drag-to-Reorder', () => {
       // - Esc to cancel
       // For now, drag-to-reorder is the primary interaction
 
+      let eventHandler: Function | null = null;
+
+      mockWebSocketClient.on.mockImplementation((event: string, handler: Function) => {
+        if (event === 'execution_update') {
+          eventHandler = handler;
+        }
+      });
+
       render(<ParallelQueueVisualization workspaceId="ws-1" />);
-      const queueItems = screen.getAllByTestId(/queue-item-/);
+
+      await waitFor(() => {
+        expect(eventHandler).toBeDefined();
+      });
+
+      if (eventHandler) {
+        act(() => {
+          eventHandler!({
+            data: {
+              activeRuns: [],
+              queuedRuns: [
+                { run_id: 'run-3', ticket_id: 'ticket-3', position: 1, wait_seconds: 150 },
+              ],
+              stats: { active_count: 0, queued_count: 1 },
+            },
+          });
+        });
+      }
+
+      const queueItems = await screen.findAllByTestId(/queue-item-/);
       expect(queueItems.length).toBeGreaterThan(0);
     });
 
@@ -467,7 +513,7 @@ describe('ParallelQueueVisualization Integration: Drag-to-Reorder', () => {
       render(<ParallelQueueVisualization workspaceId="ws-1" />);
 
       // Verify semantic structure exists
-      expect(screen.getByText('Queue')).toBeInTheDocument();
+      expect(screen.getByText('Parallel Execution Queue')).toBeInTheDocument();
       // Items should have accessible labels
     });
   });
