@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { api, type RuntimeOptions, type WorkspaceRuntimeSettings } from "../api/client";
@@ -7,6 +7,7 @@ import { ticketPath } from "../lib/appNavigation";
 import {
   fetchBranchChat,
   sendBranchChatMessage,
+  type BranchTriageChatSnapshot,
   type BranchTriageEntry,
 } from "../lib/branchTriageApi";
 import { StudioChatComposer, StudioChatMessages } from "./studio/StudioChat";
@@ -43,8 +44,13 @@ export function BranchTriageChatPanel({
     queryFn: api.runtimeOptions,
   });
 
+  const chatQueryKey = useMemo(
+    () => ["branch-triage-chat", workspaceSlug, branch] as const,
+    [workspaceSlug, branch],
+  );
+
   const chat = useQuery({
-    queryKey: ["branch-triage-chat", workspaceSlug, branch],
+    queryKey: chatQueryKey,
     queryFn: () => fetchBranchChat(workspaceSlug, branch),
     enabled: Boolean(workspaceSlug && branch),
   });
@@ -74,10 +80,46 @@ export function BranchTriageChatPanel({
 
   const sendMessage = useMutation({
     mutationFn: (content: string) => sendBranchChatMessage(workspaceSlug, branch, content),
-    onMutate: () => setIsSending(true),
-    onSuccess: () => {
+    onMutate: async (content) => {
+      setIsSending(true);
+      await qc.cancelQueries({ queryKey: chatQueryKey });
+      const previous = qc.getQueryData<BranchTriageChatSnapshot>(chatQueryKey);
+      const optimisticMessage = {
+        id: `pending-${Date.now()}`,
+        role: "user",
+        content,
+        created_at: new Date().toISOString(),
+      };
+      qc.setQueryData<BranchTriageChatSnapshot>(chatQueryKey, (current) => {
+        if (current) {
+          return { ...current, messages: [...current.messages, optimisticMessage] };
+        }
+        return {
+          workspace_id: "",
+          branch,
+          linked_ticket_id: null,
+          linked_ticket_external_id: null,
+          messages: [optimisticMessage],
+          runtime: DEFAULT_RUNTIME,
+        };
+      });
+      return { previous };
+    },
+    onError: (_error, _content, context) => {
+      if (context?.previous) {
+        qc.setQueryData(chatQueryKey, context.previous);
+      }
+    },
+    onSuccess: (data) => {
       setDraft("");
-      qc.invalidateQueries({ queryKey: ["branch-triage-chat", workspaceSlug, branch] });
+      qc.setQueryData<BranchTriageChatSnapshot>(chatQueryKey, (current) => {
+        if (!current) return current;
+        const base = current.messages.filter((message) => !message.id.startsWith("pending-"));
+        return {
+          ...current,
+          messages: [...base, data.user_message, data.assistant_message],
+        };
+      });
       qc.invalidateQueries({ queryKey: ["branch-triage", workspaceSlug] });
     },
     onSettled: () => setIsSending(false),

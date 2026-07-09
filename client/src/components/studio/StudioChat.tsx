@@ -81,7 +81,7 @@ export function StudioChatMessages({
     return (
       <div className={["ticket-studio-messages", className].filter(Boolean).join(" ")}>
         <p className="ticket-studio-messages-empty">{emptyMessage ?? "No messages yet."}</p>
-        <div ref={bottomRef} />
+        <div ref={bottomRef} className="ticket-studio-messages-tail" aria-hidden />
       </div>
     );
   }
@@ -117,7 +117,7 @@ export function StudioChatMessages({
           <p className="ticket-studio-thinking">{thinkingMessage}</p>
         </div>
       ) : null}
-      <div ref={bottomRef} />
+      <div ref={bottomRef} className="ticket-studio-messages-tail" aria-hidden />
     </div>
   );
 }

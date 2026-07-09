@@ -193,7 +193,14 @@ export async function fetchBranchChat(
   return branchTriageRequest(branchQueryPath(slug, branch, "/chat"));
 }
 
-export async function sendBranchChatMessage(slug: string, branch: string, content: string) {
+export async function sendBranchChatMessage(
+  slug: string,
+  branch: string,
+  content: string,
+): Promise<{
+  user_message: BranchTriageChatMessage;
+  assistant_message: BranchTriageChatMessage;
+}> {
   return branchTriageRequest(branchQueryPath(slug, branch, "/chat/messages"), {
     method: "POST",
     body: JSON.stringify({ content }),
