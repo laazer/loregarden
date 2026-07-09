@@ -78,6 +78,7 @@ export function BranchTriageChatPanel({
     onSuccess: () => {
       setDraft("");
       qc.invalidateQueries({ queryKey: ["branch-triage-chat", workspaceSlug, branch] });
+      qc.invalidateQueries({ queryKey: ["branch-triage", workspaceSlug] });
     },
     onSettled: () => setIsSending(false),
   });
@@ -91,6 +92,11 @@ export function BranchTriageChatPanel({
     if (!text || sendMessage.isPending) return;
     setDraft("");
     sendMessage.mutate(text);
+  };
+
+  const sendQuickMessage = (content: string) => {
+    if (sendMessage.isPending || chat.isLoading) return;
+    sendMessage.mutate(content);
   };
 
   const modelLabel = runtimeSummaryLabel(savedRuntime, runtimeOptions.data);
@@ -144,7 +150,7 @@ export function BranchTriageChatPanel({
             <div>
               <div className="ticket-studio-chat-title">Branch triage chat</div>
               <div className="ticket-studio-chat-sub">
-                Ask about merge/rebase/delete, weird branch state, or cleanup next steps.
+                Run git cleanup directly — commit, push, checkout, merge, delete, and more.
               </div>
             </div>
           </div>
@@ -153,9 +159,9 @@ export function BranchTriageChatPanel({
             assistantLabel="Triage assistant"
             thinkingActivity="typing"
             autoScroll={autoScroll}
-            emptyMessage="Ask how to clean up this branch. The assistant sees branch health signals, linked work items, and this conversation."
+            emptyMessage="Ask the assistant to commit, push, merge, or clean up this branch. It runs git in your workspace and reports results."
             isThinking={isSending || chat.isLoading}
-            thinkingMessage="Triage assistant is thinking…"
+            thinkingMessage="Triage assistant is working…"
           />
         </section>
       </div>
@@ -169,14 +175,24 @@ export function BranchTriageChatPanel({
         sendLabel="Ask triage"
         error={composerError}
         optionsRow={
-          <label className="chat-composer-option">
-            <input
-              type="checkbox"
-              checked={autoScroll}
-              onChange={(event) => setAutoScroll(event.target.checked)}
-            />
-            Auto-scroll
-          </label>
+          <div className="studio-chat-composer-options-inline">
+            <label className="chat-composer-option">
+              <input
+                type="checkbox"
+                checked={autoScroll}
+                onChange={(event) => setAutoScroll(event.target.checked)}
+              />
+              Auto-scroll
+            </label>
+            <button
+              type="button"
+              className="btn-secondary btn-compact chat-composer-quick-action"
+              disabled={sendMessage.isPending || chat.isLoading}
+              onClick={() => sendQuickMessage("commit and push")}
+            >
+              {sendMessage.isPending ? "Sending…" : "Commit & push"}
+            </button>
+          </div>
         }
         toolbar={
           <button

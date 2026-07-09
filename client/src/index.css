@@ -1663,6 +1663,17 @@ button {
   color: var(--txm);
 }
 
+.studio-chat-composer-options-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.chat-composer-quick-action {
+  font-size: 11.5px;
+}
+
 .studio-chat-composer-error {
   margin-top: 8px;
   font-size: 11.5px;

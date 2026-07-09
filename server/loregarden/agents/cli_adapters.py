@@ -31,6 +31,12 @@ DEFAULT_TRIAGE_USER_PROMPT = (
 )
 
 
+DEFAULT_BRANCH_TRIAGE_USER_PROMPT = (
+    "Execute the operator's request in the workspace repository. "
+    "Run git and shell commands when needed, then report what you did and relevant output."
+)
+
+
 @dataclass(frozen=True)
 class CliInvocation:
     argv: list[str]
@@ -344,6 +350,7 @@ def build_triage_invocation(
     skill_name: str,
     workspace_root: Path,
     workspace=None,
+    user_prompt: str | None = None,
 ) -> CliInvocation:
     """One-shot, non-interactive CLI for the triage chat channel.
 
@@ -362,7 +369,9 @@ def build_triage_invocation(
 
     selected = resolve_effective_adapter(agent_adapter=adapter, workspace=workspace)
     cursor_model = resolve_cursor_model(workspace)
-    triage_user_prompt = os.environ.get("LOREGARDEN_TRIAGE_USER_PROMPT", DEFAULT_TRIAGE_USER_PROMPT)
+    triage_user_prompt = user_prompt or os.environ.get(
+        "LOREGARDEN_TRIAGE_USER_PROMPT", DEFAULT_TRIAGE_USER_PROMPT
+    )
 
     if selected == "local":
         return _local_invocation(

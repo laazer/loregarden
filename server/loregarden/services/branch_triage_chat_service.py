@@ -7,7 +7,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from loregarden.agents.cli_adapters import build_triage_invocation
+from loregarden.agents.cli_adapters import (
+    DEFAULT_BRANCH_TRIAGE_USER_PROMPT,
+    build_triage_invocation,
+)
 from loregarden.agents.registry import get_agent
 from loregarden.models.domain import BranchTriageMessage, Ticket, Workspace, WorkspaceRuntimeSettings
 from loregarden.services.branch_triage_service import branch_triage_snapshot
@@ -152,8 +155,9 @@ def build_branch_triage_prompt(
     sections = [
         "# Loregarden branch triage",
         "You are the operator's triage assistant for cleaning up git branches.",
-        "Help interpret branch health signals, suggest merge/delete/rebase/checkout steps, and answer questions.",
-        "You are advisory only — do not claim to have run git commands or changed the repo.",
+        "You run in the workspace repository with shell and git access — execute commands when asked.",
+        "When the operator requests git work (commit, push, checkout, merge, rebase, delete, etc.), run it and report exact outcomes.",
+        "Use safe defaults: avoid force-push or branch deletion unless the operator clearly asks; confirm when intent is ambiguous.",
         "",
         f"Workspace: {workspace.name} ({workspace.slug})",
         f"Branch: {branch}",
@@ -244,6 +248,9 @@ def invoke_branch_triage_model(
             skill_name="",
             workspace_root=repo_root,
             workspace=effective_workspace,
+            user_prompt=os.environ.get(
+                "LOREGARDEN_BRANCH_TRIAGE_USER_PROMPT", DEFAULT_BRANCH_TRIAGE_USER_PROMPT
+            ),
         )
         timeout = resolve_triage_timeout(agent)
         proc = subprocess.Popen(
