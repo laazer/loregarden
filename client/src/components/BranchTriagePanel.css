@@ -284,7 +284,6 @@
 .branch-triage-chat-panel {
   display: flex;
   flex-direction: column;
-  min-height: 0;
 }
 
 .branch-triage-chat-panel .triage-panel-body {

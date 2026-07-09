@@ -1,0 +1,11 @@
+{
+  "backend": {
+    "host": "127.0.0.1",
+    "port": 8000,
+    "startupTimeoutSecs": 45,
+    "pollIntervalMs": 200,
+    "shutdownGraceSecs": 5,
+    "logLevel": "info",
+    "sidecarName": "loregarden-backend"
+  }
+}

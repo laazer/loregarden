@@ -18,6 +18,7 @@ Tickets are authoritative in the database (`data/loregarden.db`). Markdown under
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager)
 - Node.js 20+ and npm
 - Python 3.10+
+- [Rust](https://www.rust-lang.org/tools/install) — only needed for the desktop app (`npm run tauri:dev` / `npm run tauri:build`), not for the browser dev flow below
 
 ## Quick start
 
@@ -68,6 +69,17 @@ Loregarden embeds MCP at `POST /mcp` on the main API server. For stdio-based MCP
 ./scripts/mcp-server.sh
 ```
 
+## Desktop app
+
+Loregarden also ships as a native desktop app via [Tauri](https://tauri.app) — a thin shell around the exact same React frontend and FastAPI backend described above; nothing in `client/` or `server/` changes to support it.
+
+```bash
+npm install                 # once, installs @tauri-apps/cli at the repo root
+npm run tauri:dev           # starts FastAPI + Vite + opens the desktop window
+```
+
+`npm run tauri:build` produces a distributable installer (Python is bundled in, so end users don't need `uv`/Python installed). See [docs/tauri.md](docs/tauri.md) for how backend lifecycle management, configuration, and native capabilities are wired up.
+
 ## Project layout
 
 ```
@@ -75,6 +87,7 @@ loregarden/
 ├── agent_context/     # Agent prompts, workflows, orchestration profiles
 ├── client/            # React IDE shell
 ├── server/            # FastAPI control plane (loregarden package)
+├── src-tauri/         # Desktop app shell (Rust) — see docs/tauri.md
 ├── project_board/     # Milestone tickets and checkpoint index
 ├── scripts/           # Dev, test, and utility scripts
 ├── docs/design/       # UI design references

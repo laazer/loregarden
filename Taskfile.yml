@@ -23,6 +23,19 @@ tasks:
       - server
       - client
 
+  tauri:dev:
+    desc: Launch the desktop app in dev mode (starts Vite + FastAPI automatically)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - npm run tauri:dev
+    interactive: true
+
+  tauri:build:
+    desc: Build the packaged desktop app (backend sidecar + bundled installer)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - npm run tauri:build
+
   self-improve:watch:
     desc: >-
       Poll for human-triage tickets and reload the server once agent streams

@@ -1,0 +1,16 @@
+{
+  "name": "loregarden-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Tauri desktop host for the Loregarden React + FastAPI app. The actual frontend (client/) and backend (server/) are unmodified — see src-tauri/ and docs/tauri.md.",
+  "scripts": {
+    "tauri": "tauri",
+    "pretauri:dev": "bash ./scripts/ensure-backend-placeholder.sh",
+    "tauri:dev": "tauri dev",
+    "build:backend": "bash ./scripts/build-backend.sh",
+    "tauri:build": "npm run build:backend && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

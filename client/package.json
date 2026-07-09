@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:vite-only": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "jest",
@@ -13,6 +14,11 @@
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-clipboard-manager": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-notification": "^2",
+    "@tauri-apps/plugin-opener": "^2",
     "@tanstack/react-query": "^5.101.2",
     "monaco-editor": "^0.55.1",
     "pixi.js": "^8.19.0",

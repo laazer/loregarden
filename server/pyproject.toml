@@ -29,6 +29,11 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "ruff>=0.9.0",
 ]
+# Only pulled in by scripts/build-backend.sh when packaging the desktop
+# sidecar — not part of the default dev sync, so `uv run`/tests stay fast.
+build = [
+    "pyinstaller>=6.11.0",
+]
 
 [tool.uv]
 default-groups = ["dev"]
