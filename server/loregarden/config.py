@@ -42,7 +42,17 @@ class Settings(BaseSettings):
     permission_approval_timeout_seconds: float = 3600.0
     triage_timeout_seconds: int = 300
     mcp_url: str = "http://127.0.0.1:8000/mcp"
-    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    # Vite dev server origins, plus Tauri's fixed webview origins for the
+    # packaged desktop app (tauri://localhost on macOS/Linux, the
+    # http(s)://tauri.localhost variants on Windows) — none of these are
+    # user-configurable, so it's safe to always allow them.
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+    ]
     # Optional shared-secret bearer token. When set, all /api and /mcp requests
     # must present it (Authorization: Bearer <token> or X-Loregarden-Token).
     # Empty (default) keeps the zero-config local dev flow with auth disabled.
