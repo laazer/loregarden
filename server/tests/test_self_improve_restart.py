@@ -26,24 +26,24 @@ def _ticket_id_by_external_id(client: TestClient, external_id: str) -> str:
     raise AssertionError(f"ticket not found: {external_id}")
 
 
-def _ticket_at_human_gate(session: Session, ticket_id: str) -> Ticket:
-    ticket = session.get(Ticket, ticket_id)
+def _ticket_at_human_gate(db_session: Session, ticket_id: str) -> Ticket:
+    ticket = db_session.get(Ticket, ticket_id)
     assert ticket is not None
-    instance = session.exec(
+    instance = db_session.exec(
         select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)
     ).first()
     assert instance is not None
-    ws = session.get(Workspace, ticket.workspace_id)
+    ws = db_session.get(Workspace, ticket.workspace_id)
     assert ws is not None
-    _, stages = resolve_workspace_stages(session, ws)
+    _, stages = resolve_workspace_stages(db_session, ws)
     ticket.state = TicketState.IN_PROGRESS
     ticket.workflow_stage_key = "approval"
     ticket.revision = 3
     set_stage_status(ticket, instance, stages, "approval", StageStatus.AWAITING)
-    session.add(ticket)
-    session.add(instance)
-    session.commit()
-    session.refresh(ticket)
+    db_session.add(ticket)
+    db_session.add(instance)
+    db_session.commit()
+    db_session.refresh(ticket)
     return ticket
 
 

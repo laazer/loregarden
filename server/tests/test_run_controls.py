@@ -11,11 +11,11 @@ from loregarden.models.domain import QueuedRun, QueuePosition, Workspace
 class TestPauseRun:
     """Test pause run endpoint."""
 
-    async def test_pause_active_run(self, session: Session):
+    async def test_pause_active_run(self, db_session: Session):
         """Pause an active run."""
         ws = Workspace(id="ws-1", name="Test")
-        session.add(ws)
-        session.commit()
+        db_session.add(ws)
+        db_session.commit()
 
         run = QueuedRun(
             run_id="run-1",
@@ -23,25 +23,25 @@ class TestPauseRun:
             workspace_id="ws-1",
             status=QueuePosition.ACTIVE,
         )
-        session.add(run)
-        session.commit()
+        db_session.add(run)
+        db_session.commit()
 
         # Simulate pause
         run.status = "paused"
-        session.add(run)
-        session.commit()
+        db_session.add(run)
+        db_session.commit()
 
-        updated = session.exec(
+        updated = db_session.exec(
             select(QueuedRun).where(QueuedRun.run_id == "run-1")
         ).first()
 
         assert updated.status == "paused"
 
-    async def test_pause_non_active_run_fails(self, session: Session):
+    async def test_pause_non_active_run_fails(self, db_session: Session):
         """Cannot pause non-active run."""
         ws = Workspace(id="ws-2", name="Test")
-        session.add(ws)
-        session.commit()
+        db_session.add(ws)
+        db_session.commit()
 
         run = QueuedRun(
             run_id="run-2",
@@ -49,13 +49,13 @@ class TestPauseRun:
             workspace_id="ws-2",
             status=QueuePosition.QUEUED,
         )
-        session.add(run)
-        session.commit()
+        db_session.add(run)
+        db_session.commit()
 
         # Attempting to pause queued run should fail
         assert run.status != QueuePosition.ACTIVE
 
-    async def test_pause_emits_update_event(self, session: Session):
+    async def test_pause_emits_update_event(self, db_session: Session):
         """Pause emits execution_update event."""
         # Should emit with updated queue state
         with patch(
@@ -64,7 +64,7 @@ class TestPauseRun:
             # After pause, should emit
             pass
 
-    async def test_pause_non_existent_run(self, session: Session):
+    async def test_pause_non_existent_run(self, db_session: Session):
         """Pause non-existent run returns 404."""
         # Should return HTTPException with 404
         assert True
@@ -74,11 +74,11 @@ class TestPauseRun:
 class TestResumeRun:
     """Test resume run endpoint."""
 
-    async def test_resume_paused_run(self, session: Session):
+    async def test_resume_paused_run(self, db_session: Session):
         """Resume a paused run."""
         ws = Workspace(id="ws-3", name="Test")
-        session.add(ws)
-        session.commit()
+        db_session.add(ws)
+        db_session.commit()
 
         run = QueuedRun(
             run_id="run-3",
@@ -86,25 +86,25 @@ class TestResumeRun:
             workspace_id="ws-3",
             status="paused",
         )
-        session.add(run)
-        session.commit()
+        db_session.add(run)
+        db_session.commit()
 
         # Simulate resume
         run.status = QueuePosition.ACTIVE
-        session.add(run)
-        session.commit()
+        db_session.add(run)
+        db_session.commit()
 
-        updated = session.exec(
+        updated = db_session.exec(
             select(QueuedRun).where(QueuedRun.run_id == "run-3")
         ).first()
 
         assert updated.status == QueuePosition.ACTIVE
 
-    async def test_resume_non_paused_run_fails(self, session: Session):
+    async def test_resume_non_paused_run_fails(self, db_session: Session):
         """Cannot resume non-paused run."""
         ws = Workspace(id="ws-4", name="Test")
-        session.add(ws)
-        session.commit()
+        db_session.add(ws)
+        db_session.commit()
 
         run = QueuedRun(
             run_id="run-4",
@@ -112,17 +112,17 @@ class TestResumeRun:
             workspace_id="ws-4",
             status=QueuePosition.ACTIVE,
         )
-        session.add(run)
-        session.commit()
+        db_session.add(run)
+        db_session.commit()
 
         # Already active, cannot resume
         assert run.status != "paused"
 
-    async def test_resume_emits_update_event(self, session: Session):
+    async def test_resume_emits_update_event(self, db_session: Session):
         """Resume emits execution_update event."""
         assert True
 
-    async def test_resume_non_existent_run(self, session: Session):
+    async def test_resume_non_existent_run(self, db_session: Session):
         """Resume non-existent run returns 404."""
         assert True
 
@@ -131,11 +131,11 @@ class TestResumeRun:
 class TestCancelRun:
     """Test cancel run endpoint."""
 
-    async def test_cancel_queued_run(self, session: Session):
+    async def test_cancel_queued_run(self, db_session: Session):
         """Cancel a queued run."""
         ws = Workspace(id="ws-5", name="Test")
-        session.add(ws)
-        session.commit()
+        db_session.add(ws)
+        db_session.commit()
 
         run = QueuedRun(
             run_id="run-5",
@@ -144,25 +144,25 @@ class TestCancelRun:
             position=1,
             status=QueuePosition.QUEUED,
         )
-        session.add(run)
-        session.commit()
+        db_session.add(run)
+        db_session.commit()
 
         # Simulate cancel
         run.status = "cancelled"
-        session.add(run)
-        session.commit()
+        db_session.add(run)
+        db_session.commit()
 
-        updated = session.exec(
+        updated = db_session.exec(
             select(QueuedRun).where(QueuedRun.run_id == "run-5")
         ).first()
 
         assert updated.status == "cancelled"
 
-    async def test_cancel_active_run_promotes_next(self, session: Session):
+    async def test_cancel_active_run_promotes_next(self, db_session: Session):
         """Cancelling active run promotes next from queue."""
         ws = Workspace(id="ws-6", name="Test")
-        session.add(ws)
-        session.commit()
+        db_session.add(ws)
+        db_session.commit()
 
         # Active run
         active = QueuedRun(
@@ -180,30 +180,30 @@ class TestCancelRun:
             status=QueuePosition.QUEUED,
         )
 
-        session.add_all([active, queued])
-        session.commit()
+        db_session.add_all([active, queued])
+        db_session.commit()
 
         # Cancel active run should trigger promotion
         active.status = "cancelled"
-        session.add(active)
-        session.commit()
+        db_session.add(active)
+        db_session.commit()
 
         # Queued run should be promoted (would happen in promote_from_queue)
         assert True
 
-    async def test_cancel_emits_update_event(self, session: Session):
+    async def test_cancel_emits_update_event(self, db_session: Session):
         """Cancel emits execution_update event."""
         assert True
 
-    async def test_cancel_non_existent_run(self, session: Session):
+    async def test_cancel_non_existent_run(self, db_session: Session):
         """Cancel non-existent run returns 404."""
         assert True
 
-    async def test_cancel_already_cancelled_run(self, session: Session):
+    async def test_cancel_already_cancelled_run(self, db_session: Session):
         """Cancelling already-cancelled run is safe."""
         ws = Workspace(id="ws-7", name="Test")
-        session.add(ws)
-        session.commit()
+        db_session.add(ws)
+        db_session.commit()
 
         run = QueuedRun(
             run_id="run-8",
@@ -211,8 +211,8 @@ class TestCancelRun:
             workspace_id="ws-7",
             status="cancelled",
         )
-        session.add(run)
-        session.commit()
+        db_session.add(run)
+        db_session.commit()
 
         # Already cancelled, should be idempotent
         assert run.status == "cancelled"
@@ -222,12 +222,12 @@ class TestCancelRun:
 class TestRunControlErrors:
     """Test error handling in run controls."""
 
-    async def test_database_error_handled(self, session: Session):
+    async def test_database_error_handled(self, db_session: Session):
         """Handle database errors gracefully."""
         # Should return 500 error
         assert True
 
-    async def test_event_emit_failure_non_blocking(self, session: Session):
+    async def test_event_emit_failure_non_blocking(self, db_session: Session):
         """Event emit failure doesn't block operation."""
         # Run should still be paused/resumed/cancelled even if emit fails
         assert True
@@ -237,12 +237,12 @@ class TestRunControlErrors:
 class TestRunControlConcurrency:
     """Test concurrent run control operations."""
 
-    async def test_concurrent_pause_resume(self, session: Session):
+    async def test_concurrent_pause_resume(self, db_session: Session):
         """Pause and resume same run concurrently."""
         # Should handle correctly
         assert True
 
-    async def test_concurrent_cancel_operations(self, session: Session):
+    async def test_concurrent_cancel_operations(self, db_session: Session):
         """Multiple cancellations simultaneously."""
         # Should be idempotent
         assert True
