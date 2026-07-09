@@ -39,14 +39,6 @@ describe('ParallelQueueVisualization Integration: Drag-to-Reorder', () => {
 
   describe('Complete Reorder Flow', () => {
     test('reorder API called when queue item dropped', async () => {
-      const initialState = {
-        queuedRuns: [
-          { run_id: 'run-3', ticket_id: 'ticket-3', position: 1, wait_seconds: 0 },
-          { run_id: 'run-4', ticket_id: 'ticket-4', position: 2, wait_seconds: 300 },
-          { run_id: 'run-5', ticket_id: 'ticket-5', position: 3, wait_seconds: 600 },
-        ],
-      };
-
       // Simulate API call that would be made on drop
       const apiCall = async (runId: string, newPosition: number) => {
         // This mimics: POST /api/parallel/queue/run-4/reorder?new_position=1
@@ -67,12 +59,6 @@ describe('ParallelQueueVisualization Integration: Drag-to-Reorder', () => {
     });
 
     test('backend reorders database correctly', async () => {
-      const beforeReorder = {
-        'run-3': 1,
-        'run-4': 2,
-        'run-5': 3,
-      };
-
       // Simulate backend reordering logic:
       // Moving run-4 from pos 2 to pos 1
       // Runs between old and new move up: run-3 (pos 1) moves to pos 2
@@ -174,12 +160,6 @@ describe('ParallelQueueVisualization Integration: Drag-to-Reorder', () => {
 
   describe('Estimated Time Updates', () => {
     test('estimated start times recalculated after reorder', async () => {
-      const beforeReorder = {
-        'run-3': { position: 1, wait: 0 },
-        'run-4': { position: 2, wait: 300 },
-        'run-5': { position: 3, wait: 600 },
-      };
-
       // Simulate recalculation: when run-4 moves to position 1
       // - Each previous run gets 300s added to their wait
       const afterReorder = {
@@ -344,13 +324,6 @@ describe('ParallelQueueVisualization Integration: Drag-to-Reorder', () => {
     });
 
     test('rapid successive reorders', async () => {
-      // Simulate rapid API calls
-      const reorders = [
-        { runId: 'run-4', newPos: 1 },
-        { runId: 'run-5', newPos: 2 },
-        { runId: 'run-3', newPos: 3 },
-      ];
-
       let eventHandler: Function | null = null;
 
       mockWebSocketClient.on.mockImplementation((event: string, handler: Function) => {

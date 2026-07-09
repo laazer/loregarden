@@ -2,8 +2,7 @@
  * Unit tests for ParallelFeatureCards component.
  */
 
-import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { ParallelFeatureCards } from '../ParallelFeatureCards';
 
 // Mock the useParallelExecution hook

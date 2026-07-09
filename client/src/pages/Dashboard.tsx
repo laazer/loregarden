@@ -501,7 +501,7 @@ export function Dashboard() {
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
       if (result.ticket_ids.length > 0) {
-        navigateToTicket(result.ticket_ids[0], true);
+        navigateToTicket(result.ticket_ids[0], { replace: true });
       }
       if (result.errors.length > 0) {
         setImportPreview((current) =>
@@ -547,7 +547,7 @@ export function Dashboard() {
     onSuccess: (ticket) => {
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
-      navigateToTicket(ticket.id, true);
+      navigateToTicket(ticket.id, { replace: true });
       if (ticket.parent_ticket_id && ticketTree.data) {
         const ancestors = findAncestorIds(ticketTree.data, ticket.parent_ticket_id);
         expandPath([...ancestors, ticket.parent_ticket_id]);

@@ -6,8 +6,8 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { getWebSocketClient } from '../services/websocket';
-import {
-  useWorktreeConflicts,
+import { useWorktreeConflicts } from './useWorktreeConflicts';
+import type {
   ConflictFile,
   ConflictPreview,
   WorktreeConflictDetails,
@@ -101,7 +101,7 @@ export function useWorktreeConflictsWS(
           }
         };
 
-        const handleConflictResolved = (data: any) => {
+        const handleConflictResolved = () => {
           if (!isMounted) return;
 
           // Clear conflicts

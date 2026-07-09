@@ -30,8 +30,10 @@ class WebSocketClient {
   private maxDelay = 30000; // 30 seconds
   private eventHandlers: Map<string, Set<(data: any) => void>> = new Map();
   private subscriptions: Set<string> = new Set();
+  private serverUrl: string;
 
-  constructor(private serverUrl: string = '') {
+  constructor(serverUrl: string = '') {
+    this.serverUrl = serverUrl;
     // Use window.location.origin for browser environment
     if (!serverUrl && typeof window !== 'undefined') {
       this.serverUrl = window.location.origin;
@@ -130,7 +132,7 @@ class WebSocketClient {
     return {
       state: this.connectionState,
       connected: this.isConnected(),
-      reconnecting: this.socket?.reconnecting === true,
+      reconnecting: this.connectionState === 'connecting' && this.reconnectAttempts > 0,
       error: this.connectionState === 'error' ? 'Connection failed' : undefined,
       lastUpdate: new Date().toISOString(),
     };

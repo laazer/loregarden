@@ -3,8 +3,7 @@
  * Tests ParallelFeatureCards, ParallelExecutionTimeline, and WorktreeConflictWarning.
  */
 
-import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { ParallelFeatureCards } from '../ParallelFeatureCards';
 import { ParallelExecutionTimeline } from '../ParallelExecutionTimeline';
 import { WorktreeConflictWarning } from '../WorktreeConflictWarning';
@@ -214,8 +213,6 @@ describe('Parallel Execution Integration Tests', () => {
 
   describe('Concurrent Component Updates', () => {
     test('timeline and cards stay in sync during active run updates', async () => {
-      const onResolveMock = jest.fn();
-
       mockUseParallelExecution.mockReturnValue({
         activeRuns: [mockActiveRuns[0]],
         queuedRuns: mockQueuedRuns,
@@ -245,7 +242,10 @@ describe('Parallel Execution Integration Tests', () => {
 
       // Simulate run completion - promote from queue
       mockUseParallelExecution.mockReturnValue({
-        activeRuns: [...mockActiveRuns.slice(0, 1), { ...mockQueuedRuns[0], slot_number: 2 }],
+        activeRuns: [
+          ...mockActiveRuns.slice(0, 1),
+          { ...mockQueuedRuns[0], slot_number: 2, elapsed_seconds: 0, status: 'running' },
+        ],
         queuedRuns: [],
         stats: { ...mockStats, active_count: 2, available_slots: 1, queued_count: 0 },
         loading: false,

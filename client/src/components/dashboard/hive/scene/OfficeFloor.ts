@@ -116,11 +116,11 @@ export class OfficeFloor {
     for (const agent of model.agents) {
       let view = this.characters.get(agent.id);
       if (!view) {
-        view = new CharacterView(agent, textures);
+        view = new CharacterView(agent, textures, model.layout.walkGrid);
         this.characters.set(agent.id, view);
         this.characterLayer.addChild(view);
       }
-      view.sync(agent, textures);
+      view.sync(agent, textures, model.layout.walkGrid);
     }
 
     this.flyers.spawn(model.flights, textures);

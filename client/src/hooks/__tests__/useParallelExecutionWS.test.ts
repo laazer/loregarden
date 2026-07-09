@@ -98,7 +98,7 @@ describe('useParallelExecutionWS', () => {
     ];
 
     // Set up event handler to be called
-    let executionUpdateHandler: ((data: any) => void) | null = null;
+    let executionUpdateHandler: ((data: any) => void) | undefined;
     mockWebSocketClient.on.mockImplementation((event: string, handler: any) => {
       if (event === 'execution_update') {
         executionUpdateHandler = handler;
@@ -131,7 +131,7 @@ describe('useParallelExecutionWS', () => {
   });
 
   test('handles WebSocket connection state changes', async () => {
-    let stateChangeHandler: ((data: any) => void) | null = null;
+    let stateChangeHandler: ((data: any) => void) | undefined;
     mockWebSocketClient.on.mockImplementation((event: string, handler: any) => {
       if (event === 'websocket:state_change') {
         stateChangeHandler = handler;
@@ -150,7 +150,7 @@ describe('useParallelExecutionWS', () => {
   });
 
   test('handles WebSocket errors', async () => {
-    let errorHandler: ((data: any) => void) | null = null;
+    let errorHandler: ((data: any) => void) | undefined;
     mockWebSocketClient.on.mockImplementation((event: string, handler: any) => {
       if (event === 'websocket:server_error') {
         errorHandler = handler;
@@ -185,7 +185,7 @@ describe('useParallelExecutionWS', () => {
 
     mockWebSocketClient.connect.mockResolvedValueOnce(undefined);
 
-    let stateChangeHandler: ((data: any) => void) | null = null;
+    let stateChangeHandler: ((data: any) => void) | undefined;
     mockWebSocketClient.on.mockImplementation((event: string, handler: any) => {
       if (event === 'websocket:state_change') {
         stateChangeHandler = handler;
@@ -259,7 +259,7 @@ describe('useParallelExecutionWS', () => {
   });
 
   test('maintains stats from WebSocket updates', async () => {
-    let executionUpdateHandler: ((data: any) => void) | null = null;
+    let executionUpdateHandler: ((data: any) => void) | undefined;
     mockWebSocketClient.on.mockImplementation((event: string, handler: any) => {
       if (event === 'execution_update') {
         executionUpdateHandler = handler;
@@ -293,7 +293,7 @@ describe('useParallelExecutionWS', () => {
   });
 
   test('handles empty execution_update data gracefully', async () => {
-    let executionUpdateHandler: ((data: any) => void) | null = null;
+    let executionUpdateHandler: ((data: any) => void) | undefined;
     mockWebSocketClient.on.mockImplementation((event: string, handler: any) => {
       if (event === 'execution_update') {
         executionUpdateHandler = handler;

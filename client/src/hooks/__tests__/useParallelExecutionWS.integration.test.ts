@@ -320,7 +320,7 @@ describe('useParallelExecutionWS Integration', () => {
         }
       });
 
-      const { result } = renderHook(() => useParallelExecutionWS('ws-1'));
+      renderHook(() => useParallelExecutionWS('ws-1'));
 
       await waitFor(() => {
         expect(eventHandler).toBeDefined();

@@ -2,7 +2,7 @@
  * Side-by-side diff viewer for queue operations (before/after states)
  */
 
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { OperationComment } from './QueueOperationReview';
 import './QueueDiffViewer.css';
 

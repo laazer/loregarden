@@ -2,7 +2,7 @@
  * Queue snapshot manager: save, restore, and replay queue states
  */
 
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import './QueueSnapshotManager.css';
 
 export interface Snapshot {
@@ -26,7 +26,6 @@ export interface QueueSnapshotManagerProps {
 }
 
 export function QueueSnapshotManager({
-  workspaceId,
   snapshots = [],
   onSave,
   onRestore,

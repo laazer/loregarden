@@ -3,7 +3,7 @@
  * Allows commenting on specific lines of run stdout/stderr
  */
 
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import './RunOutputReview.css';
 
 export interface OutputLine {

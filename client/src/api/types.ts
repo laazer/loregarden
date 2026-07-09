@@ -68,7 +68,7 @@ export interface TicketDetail extends TicketSummary {
   state_locked: boolean;
   workflow_template_slug: string;
   workflow_template_name: string;
-  workflow_transitions: WorkflowTransition[];
+  workflow_transitions?: WorkflowTransition[];
   stages: WorkflowStageView[];
   artifacts: {
     diff?: DiffArtifact | null;
@@ -272,6 +272,7 @@ export interface MemoryConfigSettings {
   obsidian_vault_dir: string;
   obsidian_memory_subdir: string;
   obsidian_learnings_subdir: string;
+  obsidian_blogposts_subdir: string;
   memory_sqlite_url: string;
   database_url: string;
 }
@@ -282,8 +283,12 @@ export interface MemoryStatus {
   obsidian_vault: string | null;
   obsidian_memory_dir: string | null;
   obsidian_learnings_dir: string | null;
+  obsidian_blogposts_dir: string | null;
   memory_sqlite_path: string | null;
   memory_sqlite_in_icloud: boolean;
+  memory_graph_tables: string[];
+  memory_graph_node_types: string[];
+  memory_graph_excludes: string[];
   database_path: string;
 }
 
@@ -618,4 +623,37 @@ export interface TicketStudioCommitResult {
   session_id: string;
   created_ticket_ids: string[];
   created_count: number;
+}
+
+export type CIStatusValue = "pending" | "passing" | "failing" | "partial" | "skipped";
+export type AutoFixStatusValue = "pending" | "running" | "succeeded" | "failed";
+
+export interface CIRunResult {
+  id: string;
+  workspace_id: string;
+  ticket_id: string;
+  status: CIStatusValue;
+  provider: string;
+  external_run_id: string | null;
+  logs_url: string | null;
+  failure_summary: string | null;
+  full_logs: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutoFixAttempt {
+  id: string;
+  ci_run_result_id: string;
+  attempt_number: number;
+  run_id: string | null;
+  status: AutoFixStatusValue;
+  result_summary: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface CIStatusResponse {
+  ci_status: CIRunResult | null;
+  auto_fix_history: AutoFixAttempt[];
 }

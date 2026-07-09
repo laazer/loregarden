@@ -5,9 +5,7 @@ import type { TicketState, WorkItemType } from "../api/client";
 import {
   clampHiveSpeedIndex,
   DEFAULT_HIVE_SPEED_MULTIPLIER,
-  HIVE_SPEED_MULTIPLIERS,
   hiveSpeedIndexFor,
-  type HiveSpeedMultiplier,
 } from "../lib/hive/speed";
 import { DEFAULT_HIVE_SKIN, normalizeHiveSkinId, resolveHiveSkinId, type HiveSkinId } from "../lib/hive/skins";
 import { navigateToPage } from "../lib/useAppNavigation";

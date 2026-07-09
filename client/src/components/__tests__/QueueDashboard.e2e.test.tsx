@@ -3,7 +3,7 @@
  * Tests integration of all components with real WebSocket connections and API calls
  */
 
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { QueueDashboard } from '../QueueDashboard';
 import * as useHook from '../../hooks/useParallelExecutionWS';
 
