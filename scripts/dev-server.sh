@@ -14,6 +14,25 @@ export LOREGARDEN_REPO_ROOT="$ROOT"
 #   LOREGARDEN_LMSTUDIO_STREAM=1 — stream tokens to run logs
 #   LOREGARDEN_MCP_URL=http://127.0.0.1:8000/mcp
 #
+# Claude usage modal (and Baxter, which shells out to `claude` directly) show
+# "not logged in" even when `claude` is logged in interactively? macOS Keychain
+# requires GUI interaction to release a credential's value to a background
+# process, so this server — and even a backgrounded `claude` subprocess itself —
+# gets silently denied, no prompt. See https://code.claude.com/docs/en/authentication.
+# One-time fix: `task claude:setup-token` (saves the printed token to
+# data/.claude-oauth-token, chmod 600 — don't pipe `claude setup-token` straight
+# to a file yourself, its interactive UI gets captured too, not just the token).
+# Exporting it below as a real env var means both this server's own usage-API
+# calls AND every `claude` subprocess it spawns (Baxter, CLI adapters) pick it
+# up automatically — it's item #5 in Claude Code's own auth precedence order.
+# Note: this token is scoped to inference only, so it fixes Baxter but the
+# Usage modal's live rate-limit numbers may still show HTTP 403 — see
+# usage_service.py's _format_usage_http_error for why.
+CLAUDE_OAUTH_TOKEN_FILE="$ROOT/data/.claude-oauth-token"
+if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" && -s "$CLAUDE_OAUTH_TOKEN_FILE" ]]; then
+  export CLAUDE_CODE_OAUTH_TOKEN="$(<"$CLAUDE_OAUTH_TOKEN_FILE")"
+fi
+#
 # iCloud + Obsidian memory (optional):
 #   LOREGARDEN_DATABASE_URL=sqlite:///$HOME/Library/Mobile Documents/com~apple~CloudDocs/Loregarden/loregarden.db
 #   LOREGARDEN_OBSIDIAN_VAULT_DIR=$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyVault

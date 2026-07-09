@@ -51,6 +51,62 @@ def test_usage_snapshot_never_leaks_access_token(monkeypatch):
     assert claude["logged_in"] is True
 
 
+def test_claude_oauth_reads_cached_token_file_when_no_env_var(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr(usage_service, "_read_claude_credentials_file", lambda: None)
+    monkeypatch.setattr(usage_service, "_read_claude_keychain_credentials", lambda: None)
+    monkeypatch.setattr(usage_service, "_read_claude_oauth_token_file", lambda: "cached-token")
+
+    oauth = usage_service._claude_oauth()
+
+    assert oauth == {"accessToken": "cached-token"}
+
+
+def test_claude_oauth_token_file_persists_across_restarts(tmp_path, monkeypatch):
+    """The whole point of the cache file is that it survives without re-exporting env vars."""
+    token_path = tmp_path / "data" / ".claude-oauth-token"
+    token_path.parent.mkdir(parents=True)
+    token_path.write_text("  saved-token  \n", encoding="utf-8")
+    monkeypatch.setattr(usage_service, "claude_oauth_token_file_path", lambda: token_path)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr(usage_service, "_read_claude_credentials_file", lambda: None)
+    monkeypatch.setattr(usage_service, "_read_claude_keychain_credentials", lambda: None)
+
+    oauth = usage_service._claude_oauth()
+
+    assert oauth == {"accessToken": "saved-token"}
+
+
+def test_claude_oauth_ignores_cached_file_holding_captured_terminal_output(tmp_path, monkeypatch):
+    """`claude setup-token`'s interactive UI (spinners, prompts) can end up in the
+    file if piped in naively — that must be treated as absent, not fed to httpx as
+    a bearer token (which previously crashed with UnicodeEncodeError on the
+    non-ASCII spinner glyphs)."""
+    token_path = tmp_path / "data" / ".claude-oauth-token"
+    token_path.parent.mkdir(parents=True)
+    token_path.write_text("Setting up token\n✳ working …\nsome-token-fragment\n", encoding="utf-8")
+    monkeypatch.setattr(usage_service, "claude_oauth_token_file_path", lambda: token_path)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr(usage_service, "_read_claude_credentials_file", lambda: None)
+    monkeypatch.setattr(usage_service, "_read_claude_keychain_credentials", lambda: None)
+
+    oauth = usage_service._claude_oauth()
+
+    assert oauth is None
+
+
+def test_claude_login_diagnosis_points_at_setup_token(monkeypatch):
+    """Kept short — it renders in a 240px-wide UI slot next to the provider
+    title (see .usage-provider-error in client/src/index.css), not a full
+    details panel."""
+    monkeypatch.setattr(usage_service, "_claude_keychain_item_exists", lambda: True)
+
+    message = usage_service._claude_login_diagnosis()
+
+    assert "claude:setup-token" in message
+    assert len(message) < 100
+
+
 def test_usage_endpoint_returns_snapshot(client: TestClient):
     snapshot = {
         "providers": [
@@ -265,6 +321,64 @@ def test_format_usage_http_error_for_claude_unauthorized():
     assert message == "Claude session expired — run `claude` to re-authenticate."
 
 
+def test_format_usage_http_error_for_claude_unauthorized_without_refresh_token():
+    """A bare cached/env token can't be silently refreshed, so re-running `claude`
+    (which only touches the interactive keychain session) wouldn't fix it — the
+    message must point at regenerating the cached token instead."""
+    response = httpx.Response(
+        401,
+        request=httpx.Request("GET", usage_service.CLAUDE_USAGE_URL),
+    )
+    message = usage_service._format_usage_http_error("claude", response, has_refresh_token=False)
+    assert "claude:setup-token" in message
+    assert "run `claude` to re-authenticate" not in message
+    assert len(message) < 100
+
+
+def test_format_usage_http_error_for_claude_forbidden_without_refresh_token_explains_scope():
+    """A `claude setup-token` credential is scoped to inference only — a 403 here
+    is an inherent scope limitation, not something regenerating the token fixes,
+    so the message must not suggest that."""
+    response = httpx.Response(
+        403,
+        request=httpx.Request("GET", usage_service.CLAUDE_USAGE_URL),
+    )
+    message = usage_service._format_usage_http_error("claude", response, has_refresh_token=False)
+    assert "scoped to inference only" in message
+    assert "regenerate" not in message.lower()
+    assert len(message) < 100
+
+
+def test_format_usage_http_error_for_claude_forbidden_with_refresh_token_is_generic():
+    """A full interactive-login credential getting a 403 is not the known scope
+    limitation, so it should fall back to the generic HTTP-status message."""
+    response = httpx.Response(
+        403,
+        request=httpx.Request("GET", usage_service.CLAUDE_USAGE_URL),
+    )
+    message = usage_service._format_usage_http_error("claude", response, has_refresh_token=True)
+    assert message == "Claude usage request failed (HTTP 403)."
+
+
+def test_fetch_claude_usage_points_at_cached_token_regen_on_401_without_refresh(monkeypatch):
+    monkeypatch.setattr(usage_service, "_claude_oauth", lambda: {"accessToken": "cached-token"})
+    monkeypatch.setattr(
+        usage_service,
+        "_claude_usage_request",
+        lambda client, access_token: httpx.Response(
+            401, request=httpx.Request("GET", usage_service.CLAUDE_USAGE_URL)
+        ),
+    )
+    monkeypatch.setattr(usage_service, "_scan_claude_logs", lambda: [])
+
+    with httpx.Client() as client:
+        result = usage_service._fetch_claude_usage(client)
+
+    assert result.logged_in is True
+    assert "claude:setup-token" in result.error
+    assert "run `claude` to re-authenticate" not in result.error
+
+
 def test_fetch_claude_usage_retries_after_unauthorized(monkeypatch):
     oauth = {
         "accessToken": "stale-token",
@@ -305,6 +419,31 @@ def test_fetch_claude_usage_retries_after_unauthorized(monkeypatch):
     assert result.error is None
     assert result.logged_in is True
     assert result.meters
+
+
+def test_fetch_claude_usage_reports_plain_not_logged_in_when_keychain_item_absent(monkeypatch):
+    monkeypatch.setattr(usage_service, "_claude_oauth", lambda: None)
+    monkeypatch.setattr(usage_service, "_claude_keychain_item_exists", lambda: False)
+
+    with httpx.Client() as client:
+        result = usage_service._fetch_claude_usage(client)
+
+    assert result.logged_in is False
+    assert result.error == "Not logged in. Run `claude` to authenticate."
+
+
+def test_fetch_claude_usage_reports_keychain_access_issue_when_item_unreadable(monkeypatch):
+    monkeypatch.setattr(usage_service, "_claude_oauth", lambda: None)
+    monkeypatch.setattr(usage_service, "_claude_keychain_item_exists", lambda: True)
+
+    with httpx.Client() as client:
+        result = usage_service._fetch_claude_usage(client)
+
+    assert result.logged_in is False
+    assert "Keychain unreadable" in result.error
+    assert "claude:setup-token" in result.error
+    assert "re-authenticate" not in result.error
+    assert len(result.error) < 100
 
 
 def test_usage_rate_limit_backoff_skips_live_fetch(tmp_path, monkeypatch):
