@@ -2,7 +2,7 @@
 Title: Enable self-tracking via agent_context + project_board bootstrap
 Project: loregarden
 Created By: loregarden-export
-Created On: 2026-07-10T20:06:11.760941
+Created On: 2026-07-10T21:47:14.396749
 
 ---
 
@@ -61,4 +61,4 @@ backend_implementer
 Proceed
 
 ## Reason
-Exported from SQLite at 2026-07-10T20:06:12.117847+00:00
+Exported from SQLite at 2026-07-10T21:47:14.806287+00:00
