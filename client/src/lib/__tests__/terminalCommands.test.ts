@@ -2,9 +2,20 @@ import type { TicketDetail, WorkflowStageView } from "../../api/client";
 import {
   buildOrchestrateTerminalCommand,
   buildStageRunTerminalCommand,
+  buildStageTerminalHandoffCommand,
   isAgentWorkflowTicket,
 } from "../terminalCommands";
 import { isAgentStage } from "../stageDisplay";
+
+// terminalCommands.ts imports the real `api` object (not just types) so it can call
+// buildTerminalHandoffCommand. Mock it here rather than let Jest load the real client.ts,
+// which reads import.meta.env — a syntax this project's swc+CJS Jest transform can't parse.
+jest.mock("../../api/client", () => ({
+  api: { buildTerminalHandoffCommand: jest.fn() },
+}));
+import { api } from "../../api/client";
+
+const mockBuildTerminalHandoffCommand = api.buildTerminalHandoffCommand as jest.Mock;
 
 function baseTicket(overrides: Partial<TicketDetail> = {}): TicketDetail {
   return {
@@ -83,5 +94,37 @@ describe("terminalCommands", () => {
     expect(cmd).toContain('# Loregarden: run stage "Specification" (spec)');
     expect(cmd).toContain("curl -sS -X POST 'http://127.0.0.1:8000/api/tickets/ticket-uuid-1/start'");
     expect(cmd).toContain(`-d '${JSON.stringify({ manual: true, stage_key: "spec" })}'`);
+  });
+
+  describe("buildStageTerminalHandoffCommand", () => {
+    afterEach(() => {
+      mockBuildTerminalHandoffCommand.mockReset();
+    });
+
+    it("fetches the handoff command and prepends the run header", async () => {
+      mockBuildTerminalHandoffCommand.mockResolvedValueOnce({
+        run_id: "run-1",
+        adapter: "claude",
+        command: "claude --add-dir . --append-system-prompt-file \"$f\"",
+      });
+
+      const cmd = await buildStageTerminalHandoffCommand(
+        baseTicket(),
+        baseStage({ key: "spec", name: "Specification" }),
+      );
+
+      expect(mockBuildTerminalHandoffCommand).toHaveBeenCalledWith("ticket-uuid-1", "spec");
+      expect(cmd).toContain('# Loregarden: run stage "Specification" (spec)');
+      expect(cmd).toContain("via terminal claude agent");
+      expect(cmd).toContain('claude --add-dir . --append-system-prompt-file "$f"');
+    });
+
+    it("propagates failures from the backend", async () => {
+      mockBuildTerminalHandoffCommand.mockRejectedValueOnce(new Error("This stage does not run a CLI agent"));
+
+      await expect(buildStageTerminalHandoffCommand(baseTicket(), baseStage())).rejects.toThrow(
+        "This stage does not run a CLI agent",
+      );
+    });
   });
 });

@@ -1,6 +1,7 @@
 import json
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from loregarden.agents.cli_adapters import render_terminal_handoff_command
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     AdvanceStageRequest,
@@ -517,6 +518,38 @@ def start_run(
         schedule_agent_run(run.id)
     session.refresh(ticket)
     return get_ticket(ticket_id, session)
+
+
+@router.post("/{ticket_id}/terminal_handoff_command")
+def build_terminal_handoff_command(
+    ticket_id: str,
+    body: StartRunRequest,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Prepare a stage run for a human to execute in their own terminal.
+
+    Creates the same AgentRun/workflow-running state as POST /start, but returns a
+    ready-to-paste CLI command instead of spawning the agent as a child of this process —
+    so the run survives an app server restart.
+    """
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    run_svc = RunService(session)
+    try:
+        run = run_svc.start_stage_execution(
+            ticket, stage_key=body.stage_key, auto_approve=body.auto_approve
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not run:
+        raise HTTPException(400, "This stage does not run a CLI agent")
+    try:
+        invocation, cleanup_path = run_svc.executor.prepare_terminal_handoff(run, ticket)
+        command = render_terminal_handoff_command(invocation, cleanup_path=cleanup_path)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"run_id": run.id, "adapter": invocation.adapter, "command": command}
 
 
 @router.post("/{ticket_id}/advance", response_model=TicketDetail)

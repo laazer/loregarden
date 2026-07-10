@@ -5,7 +5,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from loregarden.agents.cli_adapters import resolve_cli_invocation
+from loregarden.agents.cli_adapters import (
+    CliInvocation,
+    resolve_cli_invocation,
+    resolve_terminal_handoff_invocation,
+)
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.mcp_context import (
     build_mcp_run_context,
@@ -167,6 +171,57 @@ class CliAgentExecutor:
                     stderr=f"Failed to spawn agent CLI: {exc}",
                     advance_workflow=advance_workflow,
                 )
+
+    def prepare_terminal_handoff(self, run: AgentRun, ticket: Ticket) -> tuple[CliInvocation, Path | None]:
+        """Build a self-contained CLI invocation for this stage without spawning it.
+
+        Used to hand a stage off to a human's own terminal instead of the app's subprocess
+        supervision, which dies if the app server restarts mid-run. The system prompt is
+        written to a real file on disk (not inlined into the returned command) since a full
+        stage prompt can run tens of KB — pasting that much text directly into a terminal can
+        overwhelm some terminals' paste handling. Returns the prompt file's containing
+        directory as a cleanup path when one was written, else None.
+        """
+        agent = get_agent(run.agent_id)
+        if not agent:
+            raise ValueError(f"Unknown agent: {run.agent_id}")
+
+        workspace = self.session.get(Workspace, ticket.workspace_id)
+        if not workspace:
+            raise ValueError(f"Unknown workspace for ticket: {ticket.id}")
+
+        repo_root = resolve_workspace_root(workspace)
+        agent_context_dir = resolve_agent_context_dir(workspace)
+        if not repo_root.is_dir():
+            raise ValueError(f"Workspace repo path does not exist: {repo_root}")
+
+        from loregarden.services.git_branch import ensure_ticket_branch
+
+        ensure_ticket_branch(repo_root, ticket)
+
+        prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace)
+        prompt_dir = Path(tempfile.mkdtemp(prefix="loregarden-handoff-"))
+        prompt_file = prompt_dir / "prompt.md"
+        invocation = resolve_terminal_handoff_invocation(
+            agent_id=run.agent_id,
+            adapter=agent.get("adapter", "local"),
+            prompt=prompt,
+            prompt_file=prompt_file,
+            skill_name=run.skill_name,
+            workspace_root=repo_root,
+            workspace=workspace,
+        )
+        cleanup_path: Path | None = None
+        if invocation.use_prompt_file:
+            prompt_file.write_text(prompt, encoding="utf-8")
+            cleanup_path = prompt_dir
+        else:
+            prompt_dir.rmdir()
+
+        run.command = f"[terminal-handoff] {' '.join(invocation.argv)}"
+        self.session.add(run)
+        self.session.commit()
+        return invocation, cleanup_path
 
     def _run_print_mode(
         self,

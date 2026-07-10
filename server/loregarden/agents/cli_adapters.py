@@ -176,6 +176,131 @@ def build_interactive_invocation(
     raise ValueError(f"Interactive invocation unsupported for adapter: {adapter}")
 
 
+def _claude_terminal_handoff_invocation(
+    *,
+    prompt_file: Path,
+    workspace_root: Path,
+    claude_model: str = "",
+) -> CliInvocation:
+    """A normal interactive `claude` session, seeded with the stage's system prompt.
+
+    Unlike `build_interactive_invocation`, this does not use `--permission-prompt-tool
+    stdio` — that protocol expects the Loregarden app's own PermissionBridgeRunner on the
+    other end of stdin/stdout. Here a human owns the terminal directly, so Claude Code's
+    normal interactive permission prompting applies.
+    """
+    cwd = str(workspace_root)
+    argv = [
+        _bin("claude", "LOREGARDEN_CLAUDE_BIN"),
+        "--add-dir",
+        cwd,
+        "--append-system-prompt-file",
+        str(prompt_file),
+        # A trailing positional prompt is submitted as the session's first message even in
+        # interactive mode — without it, claude opens an empty REPL and waits for the human
+        # to type something instead of starting on the stage immediately. This must come
+        # before --model/--mcp-config below: claude's arg parser mis-resolves --mcp-config's
+        # value to whichever bare positional comes *last* in argv, so a positional dropped in
+        # after --mcp-config gets mistaken for its value (matches _claude_print_invocation's
+        # ordering, which places its prompt positional before the flag block for this reason).
+        os.environ.get("LOREGARDEN_CLAUDE_USER_PROMPT", DEFAULT_CLAUDE_USER_PROMPT),
+    ]
+    _append_model_flag(argv, claude_model)
+    append_mcp_cli_args(argv, adapter="claude")
+    return CliInvocation(
+        argv=argv,
+        interactive=True,
+        adapter="claude",
+        cwd=cwd,
+        use_prompt_file=True,
+    )
+
+
+def resolve_terminal_handoff_invocation(
+    *,
+    agent_id: str,
+    adapter: str,
+    prompt: str,
+    prompt_file: Path,
+    skill_name: str,
+    workspace_root: Path,
+    workspace=None,
+) -> CliInvocation:
+    """Resolve a CLI invocation meant to be copied and run in a human's own terminal.
+
+    Deliberately ignores the app's print-mode/permission-bridge branching in
+    `resolve_cli_invocation` — those assume the Loregarden process supervises the
+    subprocess. A terminal handoff has no such supervisor, so claude gets a plain
+    interactive session and cursor gets its self-contained print-mode invocation
+    (cursor has no interactive mode attested in this codebase to build against).
+    """
+    override = _env_command_override(
+        agent_id=agent_id,
+        prompt=prompt,
+        prompt_file=prompt_file,
+        skill_name=skill_name,
+        workspace_root=workspace_root,
+    )
+    if override is not None:
+        return override
+
+    selected = resolve_effective_adapter(agent_adapter=adapter, workspace=workspace)
+
+    if selected == "claude":
+        return _claude_terminal_handoff_invocation(
+            prompt_file=prompt_file,
+            workspace_root=workspace_root,
+            claude_model=resolve_claude_model(workspace),
+        )
+
+    if selected == "cursor":
+        return _cursor_print_invocation(
+            prompt=prompt,
+            workspace_root=workspace_root,
+            cursor_model=resolve_cursor_model(workspace),
+        )
+
+    raise ValueError(
+        f"Terminal handoff only supports claude/cursor CLIs (workspace resolves to '{selected}')"
+    )
+
+
+def _claude_oauth_env_prefix() -> str:
+    """`CLAUDE_CODE_OAUTH_TOKEN=... ` prefix when a cached `claude setup-token` token exists.
+
+    dev-server.sh / config.py prime this same token into the backend's own process env so
+    every subprocess *this server* spawns picks it up — see `4fe6525` ("Fix misleading 'not
+    logged in' Claude auth errors"). A terminal-handoff command runs in the human's own shell,
+    a separate process tree the backend never touches, so it needs the same token applied
+    explicitly. Without it, whichever `claude` binary happens to resolve first on the user's
+    PATH must already be logged in on its own — which may be a different install/session than
+    the one they normally use (e.g. a standalone CLI binary vs. a desktop-app-managed one).
+    Reads the token file at paste-time (`$(cat ...)`) rather than inlining the token value
+    itself, so a copied command never carries the raw secret and always uses the current token.
+    """
+    from loregarden.services.usage_service import claude_oauth_token_file_path
+
+    token_path = claude_oauth_token_file_path()
+    if not token_path.is_file():
+        return ""
+    return f'CLAUDE_CODE_OAUTH_TOKEN="$(cat {shlex.quote(str(token_path))})" '
+
+
+def render_terminal_handoff_command(invocation: CliInvocation, *, cleanup_path: Path | None = None) -> str:
+    """Render an invocation as a short, paste-ready shell command.
+
+    The system prompt is written to disk ahead of time (see
+    CliAgentExecutor.prepare_terminal_handoff) and referenced by path, rather than inlined
+    via heredoc — a full stage prompt can run tens of KB, and pasting that much text
+    directly into a terminal can overwhelm some terminals' paste handling.
+    """
+    prefix = _claude_oauth_env_prefix() if invocation.adapter == "claude" else ""
+    command = prefix + " ".join(shlex.quote(token) for token in invocation.argv)
+    if cleanup_path is not None:
+        command += f" ; rm -rf {shlex.quote(str(cleanup_path))}"
+    return command
+
+
 def _claude_print_invocation(
     *,
     prompt_file: Path,

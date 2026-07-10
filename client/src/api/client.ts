@@ -218,6 +218,14 @@ export const api = {
         auto_approve: options?.auto_approve,
       }),
     }),
+  buildTerminalHandoffCommand: (id: string, stageKey: string) =>
+    request<{ run_id: string; adapter: string; command: string }>(
+      `/api/tickets/${id}/terminal_handoff_command`,
+      {
+        method: "POST",
+        body: JSON.stringify({ stage_key: stageKey }),
+      },
+    ),
   orchestrate: (
     id: string,
     body?: { max_stages?: number; stop_at_stage_key?: string; auto_approve?: boolean },
