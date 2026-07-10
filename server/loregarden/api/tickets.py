@@ -323,6 +323,7 @@ def preview_ticket_import(
     return svc.preview(
         workspace_slug=body.workspace_slug,
         files=[(file.name, file.content) for file in body.files],
+        mode=body.mode or "smart",
     )
 
 

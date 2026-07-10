@@ -389,6 +389,8 @@ class TicketStudioSession(SQLModel, table=True):
     clarifying_questions_json: str = "[]"
     clarifying_answers_json: str = "[]"
     runtime_json: str = "{}"
+    is_preview: bool = Field(default=False)
+    imported_tickets_json: str = "[]"
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

@@ -248,6 +248,7 @@ def _session_view(
         messages = list_studio_messages(session, session_row.id)
     questions = json.loads(session_row.clarifying_questions_json or "[]")
     answers = _load_clarifying_answers(session_row)
+    imported_tickets = json.loads(session_row.imported_tickets_json or "[]")
     return TicketStudioSessionView(
         id=session_row.id,
         workspace_slug=workspace.slug if workspace else "",
@@ -263,6 +264,8 @@ def _session_view(
         draft=_load_draft(session_row),
         messages=[_message_view(msg) for msg in messages],
         runtime=get_studio_runtime(session_row).model_dump(),
+        is_preview=session_row.is_preview,
+        imported_tickets=imported_tickets,
         created_at=session_row.created_at,
         updated_at=session_row.updated_at,
     )
@@ -619,11 +622,14 @@ class TicketStudioService:
                 raise ValueError("Parent ticket not found in workspace")
 
         now = datetime.now(timezone.utc)
+        imported_tickets_json = json.dumps(body.imported_tickets) if body.imported_tickets else "[]"
         row = TicketStudioSession(
             workspace_id=ws.id,
             title=title,
             brief=body.brief.strip(),
             parent_ticket_id=body.parent_ticket_id,
+            is_preview=body.is_preview,
+            imported_tickets_json=imported_tickets_json,
             created_at=now,
             updated_at=now,
         )
@@ -887,6 +893,7 @@ class TicketStudioService:
             created_ids.append(created.id)
 
         row.status = TicketStudioSessionStatus.COMMITTED
+        row.is_preview = False
         row.updated_at = datetime.now(timezone.utc)
         self.session.add(row)
         self.session.commit()

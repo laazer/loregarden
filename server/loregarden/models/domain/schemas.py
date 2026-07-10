@@ -334,6 +334,8 @@ class TicketImportPreviewResponse(SQLModel):
     by_type: dict[str, int]
     formats: list[str]
     show_preview: bool
+    mode: str = "regular"
+    studio_context: dict[str, Any] | None = None
 
 
 class TicketImportRequest(SQLModel):
@@ -540,6 +542,8 @@ class TicketStudioSessionCreate(SQLModel):
     title: str
     brief: str = ""
     parent_ticket_id: str | None = None
+    is_preview: bool = False
+    imported_tickets: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class TicketStudioSessionUpdate(SQLModel):
@@ -575,6 +579,8 @@ class TicketStudioSessionView(SQLModel):
     draft: list[TicketStudioDraftItem] = Field(default_factory=list)
     messages: list[dict[str, Any]] = Field(default_factory=list)
     runtime: dict[str, str] = Field(default_factory=dict)
+    is_preview: bool = False
+    imported_tickets: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

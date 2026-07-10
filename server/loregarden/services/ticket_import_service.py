@@ -39,6 +39,7 @@ class TicketImportService:
         *,
         workspace_slug: str,
         files: list[tuple[str, str]],
+        mode: str = "smart",
     ) -> TicketImportPreviewResponse:
         ws = self.session.exec(select(Workspace).where(Workspace.slug == workspace_slug)).first()
         if not ws:
@@ -50,6 +51,8 @@ class TicketImportService:
                 by_type={},
                 formats=[],
                 show_preview=False,
+                mode=mode,
+                studio_context={"imported_tickets": []} if mode == "smart" else None,
             )
 
         parsed = parse_import_files(files)
@@ -57,6 +60,9 @@ class TicketImportService:
             parsed.tickets,
             workspace_slug=workspace_slug,
         )
+        studio_context = None
+        if mode == "smart":
+            studio_context = {"imported_tickets": [item.model_dump() for item in tickets]}
         return TicketImportPreviewResponse(
             tickets=tickets,
             errors=parsed.errors,
@@ -65,6 +71,8 @@ class TicketImportService:
             by_type=by_type,
             formats=formats,
             show_preview=should_show_import_preview(total=len(tickets), formats=formats),
+            mode=mode,
+            studio_context=studio_context,
         )
 
     def import_tickets(
