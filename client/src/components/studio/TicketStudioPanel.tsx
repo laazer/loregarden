@@ -2,14 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 function useSafeQueryClient() {
-  let qc: ReturnType<typeof useQueryClient> | null = null;
   try {
-    qc = useQueryClient();
+    return useQueryClient();
   } catch (e) {
-    // QueryClientProvider not available - return null
-    qc = null;
+    // QueryClientProvider not available
+    return null;
   }
-  return qc;
 }
 
 import {
@@ -99,18 +97,19 @@ export function TicketStudioPanel({
   const sessions = useQuery({
     queryKey: ["ticket-studio-sessions", workspaceSlug],
     queryFn: () => api.ticketStudioSessions(workspaceSlug),
-    enabled: !!workspaceSlug,
+    enabled: !!workspaceSlug && !!qc,
   });
 
   const sessionById = useQuery({
     queryKey: ["ticket-studio-session", selectedSessionId],
     queryFn: () => api.ticketStudioSession(selectedSessionId!),
-    enabled: Boolean(selectedSessionId),
+    enabled: Boolean(selectedSessionId) && !!qc,
   });
 
   const studioAgents = useQuery({
     queryKey: ["studio-agents"],
     queryFn: api.studioAgents,
+    enabled: !!qc,
   });
 
   const selectedSession = useMemo(() => {
