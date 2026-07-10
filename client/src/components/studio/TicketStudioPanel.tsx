@@ -63,8 +63,10 @@ export interface TicketStudioPanelProps {
   workspaceSlug?: string;
   onClose?: () => void;
   isPreview?: boolean;
+  isReadOnly?: boolean;
   importedTickets?: ImportedTicket[];
   onPreviewChange?: (isPreview: boolean) => void;
+  showPreviewBadge?: boolean;
 }
 
 export function TicketStudioPanel({
@@ -73,8 +75,10 @@ export function TicketStudioPanel({
   workspaceSlug: propsWorkspaceSlug,
   onClose,
   isPreview: propsIsPreview = false,
+  isReadOnly: propsIsReadOnly = false,
   importedTickets: propsImportedTickets = [],
   onPreviewChange,
+  showPreviewBadge = true,
 }: TicketStudioPanelProps = {}) {
   const qc = useSafeQueryClient();
   const routeSessionId = useStudioResourceFromRoute();
@@ -291,7 +295,7 @@ export function TicketStudioPanel({
     },
   });
 
-  const isReadOnly = selectedSession?.status === "committed";
+  const isReadOnly = propsIsReadOnly || selectedSession?.status === "committed";
   const selectedCount = localDraft.filter((item) => item.selected).length;
   const runtime = selectedSession?.runtime ?? DEFAULT_RUNTIME;
   const modelLabel = runtimeSummaryLabel(runtime, runtimeOptions);
@@ -323,8 +327,8 @@ export function TicketStudioPanel({
     <aside className="ticket-studio-drafts">
       <div className="ticket-studio-drafts-header">
         <span className="ticket-studio-drafts-title">Draft tickets</span>
-        {isPreview && (
-          <span style={{
+        {isPreview && showPreviewBadge && (
+          <span data-testid="preview-badge preview-state-indicator" style={{
             display: "inline-flex",
             alignItems: "center",
             gap: 4,
