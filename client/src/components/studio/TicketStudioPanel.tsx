@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   api,
+  type ImportedTicket,
   type RuntimeOptions,
   type TicketStudioDraftItem,
   type TicketStudioSession,
@@ -47,19 +48,31 @@ function emptySessionDraft(): { title: string; brief: string; parent_ticket_id: 
   return { title: "", brief: "", parent_ticket_id: "" };
 }
 
+export interface TicketStudioPanelProps {
+  workspaces?: WorkspaceSummary[];
+  runtimeOptions?: RuntimeOptions;
+  workspaceSlug?: string;
+  onClose?: () => void;
+  isPreview?: boolean;
+  importedTickets?: ImportedTicket[];
+  onPreviewChange?: (isPreview: boolean) => void;
+}
+
 export function TicketStudioPanel({
-  workspaces,
+  workspaces = [],
   runtimeOptions,
-}: {
-  workspaces: WorkspaceSummary[];
-  runtimeOptions: RuntimeOptions | undefined;
-}) {
+  workspaceSlug: propsWorkspaceSlug,
+  onClose,
+  isPreview: propsIsPreview = false,
+  importedTickets: propsImportedTickets = [],
+  onPreviewChange,
+}: TicketStudioPanelProps = {}) {
   const qc = useQueryClient();
   const routeSessionId = useStudioResourceFromRoute();
   const isNewSession = isStudioNewResource(routeSessionId);
   const selectedSessionId =
     routeSessionId && !isStudioNewResource(routeSessionId) ? routeSessionId : null;
-  const [workspaceSlug, setWorkspaceSlug] = useState(workspaces[0]?.slug ?? "loregarden");
+  const [workspaceSlug, setWorkspaceSlug] = useState(propsWorkspaceSlug ?? workspaces[0]?.slug ?? "loregarden");
   const [newDraft, setNewDraft] = useState(emptySessionDraft);
   const [chatDraft, setChatDraft] = useState("");
   const [modelModalOpen, setModelModalOpen] = useState(false);
@@ -67,6 +80,10 @@ export function TicketStudioPanel({
   const [draftDirty, setDraftDirty] = useState(false);
   const [answerDraft, setAnswerDraft] = useState<string[]>([]);
   const [expandedDraftIndex, setExpandedDraftIndex] = useState<number | null>(null);
+  const [isPreview, setIsPreview] = useState(propsIsPreview);
+  const [importedTickets, setImportedTickets] = useState<ImportedTicket[]>(propsImportedTickets);
+  const [previewConfirmed, setPreviewConfirmed] = useState(false);
+  const [hasTestDraft] = useState(() => propsImportedTickets.length > 0);
 
   const sessions = useQuery({
     queryKey: ["ticket-studio-sessions", workspaceSlug],
@@ -117,13 +134,27 @@ export function TicketStudioPanel({
       setLocalDraft([]);
       setDraftDirty(false);
       setAnswerDraft([]);
+      // Only reset preview state if it wasn't provided as a prop
+      if (!propsIsPreview) {
+        setIsPreview(false);
+      }
+      if (propsImportedTickets.length === 0) {
+        setImportedTickets([]);
+      }
+      setPreviewConfirmed(false);
       return;
     }
     setLocalDraft(selectedSession.draft);
     setDraftDirty(false);
     setAnswerDraft(selectedSession.clarifying_answers);
     setExpandedDraftIndex(null);
-  }, [selectedSession?.id, selectedSession?.draft, selectedSession?.updated_at, selectedSession?.clarifying_answers]);
+    setIsPreview(selectedSession.is_preview ?? false);
+    setImportedTickets(selectedSession.imported_tickets ?? []);
+    setPreviewConfirmed(false);
+    if (onPreviewChange) {
+      onPreviewChange(selectedSession.is_preview ?? false);
+    }
+  }, [selectedSession?.id, selectedSession?.draft, selectedSession?.updated_at, selectedSession?.clarifying_answers, selectedSession?.is_preview, selectedSession?.imported_tickets, onPreviewChange, propsIsPreview, propsImportedTickets]);
 
   const requestClarifications = useMutation({
     mutationFn: () => api.requestTicketStudioClarifications(selectedSessionId!),
@@ -264,6 +295,22 @@ export function TicketStudioPanel({
     <aside className="ticket-studio-drafts">
       <div className="ticket-studio-drafts-header">
         <span className="ticket-studio-drafts-title">Draft tickets</span>
+        {isPreview && (
+          <span style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            padding: "2px 8px",
+            backgroundColor: "var(--warnBg)",
+            color: "var(--warn)",
+            borderRadius: 3,
+            fontSize: 11,
+            fontWeight: 500,
+            marginLeft: 8,
+          }}>
+            Preview
+          </span>
+        )}
         {selectedSession && (
           <span className="ticket-studio-selected-badge">{selectedCount} selected</span>
         )}
@@ -279,6 +326,37 @@ export function TicketStudioPanel({
           </button>
         )}
       </div>
+
+      {importedTickets && importedTickets.length > 0 && (
+        <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--bdl)" }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--txm)", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            Imported Tickets
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {importedTickets.map((ticket) => (
+              <div
+                key={ticket.external_id}
+                style={{
+                  padding: 10,
+                  backgroundColor: "var(--bgSecondary)",
+                  borderRadius: 4,
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ fontWeight: 500, marginBottom: 2 }}>
+                  {ticket.title}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--txm)", display: "flex", gap: 8 }}>
+                  <span className={`ticket-draft-type ${ticket.work_item_type}`}>
+                    {workItemTypeLabel(ticket.work_item_type)}
+                  </span>
+                  {ticket.priority && <span>P{ticket.priority}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {!selectedSession ? (
         <p className="studio-preview-hint">Start a scoping session to generate draft tickets.</p>
@@ -342,20 +420,39 @@ export function TicketStudioPanel({
         </div>
       )}
 
-      {selectedSession && !isReadOnly && localDraft.length > 0 && (
+      {(selectedSession || isPreview) && !isReadOnly && (localDraft.length > 0 || isPreview) && (
         <button
           type="button"
           className="studio-library-cta ticket-studio-commit-btn"
-          disabled={selectedCount === 0 || commitSession.isPending || draftDirty}
-          onClick={() => commitSession.mutate()}
-          title={draftDirty ? "Save draft edits before committing" : undefined}
+          disabled={
+            commitSession.isPending ||
+            draftDirty ||
+            (isPreview && !previewConfirmed) ||
+            (selectedSession && selectedCount === 0)
+          }
+          onClick={() => {
+            if (isPreview && !previewConfirmed) {
+              setPreviewConfirmed(true);
+            } else {
+              commitSession.mutate();
+            }
+          }}
+          title={
+            draftDirty
+              ? "Save draft edits before committing"
+              : isPreview && !previewConfirmed
+                ? "Confirm preview before finalizing"
+                : undefined
+          }
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
             <path d="M5 12h14M12 5l7 7-7 7" />
           </svg>
           {commitSession.isPending
             ? "Creating tickets…"
-            : `Create ${selectedCount} ticket${selectedCount === 1 ? "" : "s"} under milestone`}
+            : isPreview && !previewConfirmed
+              ? `Confirm to finalize`
+              : `Create ${selectedCount || importedTickets.length} ticket${(selectedCount || importedTickets.length) === 1 ? "" : "s"} under milestone`}
         </button>
       )}
       {commitSession.isError && (
@@ -641,10 +738,10 @@ export function TicketStudioPanel({
         allItems={localDraft}
         agentOptions={studioAgents.data ?? []}
         isOpen={expandedDraftIndex != null}
-        readOnly={isReadOnly}
+        readOnly={isReadOnly || isPreview}
         onClose={() => setExpandedDraftIndex(null)}
         onSave={
-          isReadOnly
+          isReadOnly || isPreview
             ? undefined
             : (updated) => {
                 if (expandedDraftIndex == null) return;
@@ -663,6 +760,78 @@ export function TicketStudioPanel({
           await saveRuntime.mutateAsync(next);
         }}
       />
+
+      {isPreview && previewConfirmed && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000,
+        }}>
+          <div style={{
+            backgroundColor: "var(--bgSurface)",
+            borderRadius: 8,
+            padding: 24,
+            maxWidth: 400,
+            boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
+          }}>
+            <h3 style={{ margin: "0 0 8px 0", fontSize: 16, fontWeight: 600 }}>
+              Finalize imported tickets?
+            </h3>
+            <p style={{ margin: "0 0 16px 0", fontSize: 13.5, color: "var(--txm)" }}>
+              This will create {selectedCount || importedTickets.length} work item{(selectedCount || importedTickets.length) === 1 ? "" : "s"} in your workspace. This action cannot be undone.
+            </p>
+            {importedTickets && importedTickets.length > 0 && (
+              <div style={{
+                backgroundColor: "var(--bgSecondary)",
+                borderRadius: 4,
+                padding: 12,
+                marginBottom: 16,
+                fontSize: 12,
+              }}>
+                <div style={{ fontWeight: 500, marginBottom: 6 }}>
+                  {importedTickets.length} imported {importedTickets.length === 1 ? "ticket" : "tickets"}
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 16, color: "var(--txm)" }}>
+                  {importedTickets.slice(0, 3).map((t) => (
+                    <li key={t.external_id} style={{ marginBottom: 2 }}>
+                      {t.title}
+                    </li>
+                  ))}
+                  {importedTickets.length > 3 && (
+                    <li style={{ marginBottom: 2 }}>
+                      and {importedTickets.length - 3} more
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setPreviewConfirmed(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => commitSession.mutate()}
+                disabled={commitSession.isPending}
+              >
+                {commitSession.isPending ? "Creating…" : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

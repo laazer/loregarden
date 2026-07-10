@@ -582,6 +582,16 @@ export interface UsageSnapshot {
   fetched_at: string;
 }
 
+export interface ImportedTicket {
+  external_id: string;
+  title: string;
+  description?: string;
+  work_item_type: WorkItemType;
+  acceptance_criteria?: string[];
+  priority?: 1 | 2 | 3;
+  source_workspace?: string;
+}
+
 export interface TicketStudioDraftItem {
   ref: string;
   work_item_type: WorkItemType;
@@ -618,7 +628,7 @@ export interface TicketStudioSession {
   messages: TicketStudioMessage[];
   runtime: WorkspaceRuntimeSettings;
   is_preview: boolean;
-  imported_tickets: Record<string, unknown>[];
+  imported_tickets: ImportedTicket[];
   created_at: string;
   updated_at: string;
 }
