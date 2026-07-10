@@ -1,11 +1,13 @@
+import subprocess
 import threading
 
 import pytest
 from fastapi.testclient import TestClient
 from loregarden.db.session import get_session
 from loregarden.main import app
+from loregarden.models.domain import Workspace
 from loregarden.services.seed import seed_database
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 
 # Every module that binds the DB engine at import time via
@@ -86,8 +88,39 @@ def isolated_db_fixture(tmp_path, monkeypatch):
     return engine
 
 
+def _isolate_seeded_workspace_repo(session: Session, tmp_path) -> None:
+    """Repoint the seeded "loregarden" workspace at a throwaway git repo.
+
+    Orchestration/CLI-executor code paths run real `git checkout -B` against
+    a workspace's resolved repo root. Left pointed at repo_path="." (which
+    resolves against the real settings.repo_root), tests that orchestrate the
+    seeded workspace's tickets would check out branches in the actual project
+    working directory. Profile/doc loading falls back to settings.repo_root
+    directly and is unaffected by this repo_path change.
+    """
+    repo = tmp_path / "loregarden-seeded-repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True, capture_output=True)
+    (repo / "README.md").write_text("# test\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+
+    ws = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+    if ws:
+        ws.repo_path = str(repo)
+        session.add(ws)
+        session.commit()
+
+
 @pytest.fixture(name="client")
-def client_fixture(isolated_db):
+def client_fixture(isolated_db, tmp_path):
     def override_session():
         with Session(isolated_db) as session:
             yield session
@@ -95,6 +128,7 @@ def client_fixture(isolated_db):
     app.dependency_overrides[get_session] = override_session
     with Session(isolated_db) as session:
         seed_database(session)
+        _isolate_seeded_workspace_repo(session, tmp_path)
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()

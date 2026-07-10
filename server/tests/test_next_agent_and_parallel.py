@@ -96,7 +96,11 @@ def test_resolve_stage_execution_honors_next_agent_on_implementation():
     assert skill == "apply_patch"
 
 
-def test_parallel_stage_runs_all_agents(client: TestClient, db_session: Session):
+def test_parallel_stage_runs_all_agents(client: TestClient, db_session: Session, tmp_path):
+    import subprocess
+
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+
     template = WorkflowTemplate(
         slug="test-parallel-review",
         name="Parallel Review Test",
@@ -123,8 +127,10 @@ def test_parallel_stage_runs_all_agents(client: TestClient, db_session: Session)
     db_session.commit()
     db_session.refresh(template)
 
-    ws = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
-    assert ws is not None
+    ws = Workspace(slug="parallel-test-ws", name="Parallel Test", repo_path=str(tmp_path))
+    db_session.add(ws)
+    db_session.commit()
+    db_session.refresh(ws)
 
     ticket = Ticket(
         external_id="parallel-review-test",
