@@ -585,4 +585,26 @@ class TicketStudioCommitResult(SQLModel):
     created_count: int
 
 
+class HierarchyWorkItem(SQLModel):
+    external_id: str
+    title: str
+    work_item_type: WorkItemType
+    description: str = ""
+    acceptance_criteria: list[str] = Field(default_factory=list)
+    priority: int = 3
+    parent_ticket_id: str | None = None
+    children: list["HierarchyWorkItem"] = Field(default_factory=list)
+
+
+class FinalizeHierarchyRequest(SQLModel):
+    workspace_slug: str
+    hierarchy: list[HierarchyWorkItem]
+
+
+class FinalizeHierarchyResponse(SQLModel):
+    created_ids: list[str]
+    total_created: int
+
+
+HierarchyWorkItem.model_rebuild()
 TicketTreeNode.model_rebuild()
