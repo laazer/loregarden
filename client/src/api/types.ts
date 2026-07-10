@@ -534,6 +534,8 @@ export interface TicketImportPreviewResponse {
   by_type: Record<string, number>;
   formats: string[];
   show_preview: boolean;
+  mode?: string;
+  studio_context?: Record<string, unknown> | null;
 }
 
 export interface TicketImportResult {
@@ -615,6 +617,8 @@ export interface TicketStudioSession {
   draft: TicketStudioDraftItem[];
   messages: TicketStudioMessage[];
   runtime: WorkspaceRuntimeSettings;
+  is_preview: boolean;
+  imported_tickets: Record<string, unknown>[];
   created_at: string;
   updated_at: string;
 }
