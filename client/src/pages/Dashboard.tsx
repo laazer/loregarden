@@ -11,6 +11,7 @@ import { HiveSimulationPanel } from "../components/dashboard/HiveSimulationPanel
 import { LogsPanel } from "../components/LogsPanel";
 import { TriagePanel } from "../components/TriagePanel";
 import { findAncestorIds, TicketTree } from "../components/TicketTree";
+import { findTicketTreeNode } from "../lib/parentTicketTree";
 import { AgentsAssembleModal, type AgentsAssembleOptions } from "../components/AgentsAssembleModal";
 import { ConfirmRunStageModal } from "../components/ConfirmRunStageModal";
 import { StageRouteHints } from "../components/StageRouteHints";
@@ -311,7 +312,11 @@ export function Dashboard() {
   });
 
   const startRun = useMutation({
-    mutationFn: (stageKey?: string) => api.startRun(selectedId!, stageKey ? { stage_key: stageKey } : undefined),
+    mutationFn: (vars?: { stageKey?: string; autoApprove?: boolean }) =>
+      api.startRun(selectedId!, {
+        stage_key: vars?.stageKey,
+        auto_approve: vars?.autoApprove,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
@@ -583,6 +588,10 @@ export function Dashboard() {
 
   const sel = detail.data;
   const runConfirmStage = sel?.stages.find((s) => s.key === runConfirmStageKey) ?? null;
+  const selChildren = useMemo(
+    () => (selectedId && ticketTree.data ? (findTicketTreeNode(ticketTree.data, selectedId)?.children ?? []) : []),
+    [ticketTree.data, selectedId],
+  );
 
   const activeWorkspaceSlug =
     workspace === "all" ? (sel?.workspace_slug ?? workspaces.data?.[0]?.slug ?? "loregarden") : workspace;
@@ -695,13 +704,13 @@ export function Dashboard() {
   };
 
   const requestStageRun = (stageKey: string) => setRunConfirmStageKey(stageKey);
-  const confirmStageRun = async (runtime: typeof activeWorkspaceRuntime) => {
+  const confirmStageRun = async (runtime: typeof activeWorkspaceRuntime, autoApprove: boolean) => {
     if (!runConfirmStageKey) return;
     try {
       if (!runtimeSettingsEqual(runtime, activeWorkspaceRuntime)) {
         await setRuntime.mutateAsync({ slug: activeWorkspaceSlug, runtime });
       }
-      await startRun.mutateAsync(runConfirmStageKey);
+      await startRun.mutateAsync({ stageKey: runConfirmStageKey, autoApprove });
     } catch {
       // Modal stays open; mutation error state clears on retry.
     }
@@ -740,7 +749,7 @@ export function Dashboard() {
     (sel?.workflow_stage_status === "running" && startRun.isPending);
   const isStageRunning = (stageKey: string) =>
     (sel?.workflow_stage_key === stageKey && workflowBusy) ||
-    (startRun.isPending && startRun.variables === stageKey);
+    (startRun.isPending && startRun.variables?.stageKey === stageKey);
 
   const triage = useQuery({
     queryKey: ["triage", selectedId],
@@ -1047,6 +1056,31 @@ export function Dashboard() {
                     </button>
                   )}
                 </div>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ marginBottom: 16 }}
+                  onClick={() => setStateModalOpen(true)}
+                >
+                  Update state…
+                </button>
+                {sel.child_count > 0 ? (
+                  <div>
+                    <div className="state-label workflow-lifecycle-label" style={{ marginBottom: 6 }}>
+                      Child tickets
+                    </div>
+                    <TicketTree
+                      nodes={selChildren}
+                      selectedId={selectedId}
+                      expandedIds={expandedSet}
+                      onSelect={selectTicket}
+                      onToggle={toggleExpanded}
+                      onAddChild={openCreateSubTicket}
+                      showExternalId
+                    />
+                  </div>
+                ) : (
+                <>
                 {workflowTemplates.data && workflowTemplates.data.length > 0 && (
                   <div style={{ marginBottom: 16 }}>
                     <div className="state-label" style={{ marginBottom: 6 }}>
@@ -1164,14 +1198,6 @@ export function Dashboard() {
                     <div style={{ whiteSpace: "pre-wrap" }}>{sel.blocking_issues}</div>
                   </div>
                 )}
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  style={{ marginTop: 10 }}
-                  onClick={() => setStateModalOpen(true)}
-                >
-                  Update state…
-                </button>
 
                 {hasRunErrors && (
                   <div
@@ -1281,7 +1307,10 @@ export function Dashboard() {
                     )}
                   />
                 </div>
+                </>
+                )}
               </div>
+              {sel.child_count === 0 && (
               <div className="run-controls">
                 <button
                   className="btn-primary"
@@ -1318,6 +1347,7 @@ export function Dashboard() {
                   );
                 })()}
               </div>
+              )}
             </>
           ) : (
             <div style={{ padding: 40, color: "var(--txl)" }}>Select a ticket</div>

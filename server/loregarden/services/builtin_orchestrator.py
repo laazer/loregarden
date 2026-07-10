@@ -28,7 +28,7 @@ from loregarden.services.orchestration_callbacks import OrchestrationCallbackSer
 from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.studio_service import is_agentless_stage
 from loregarden.services.workflow_routing import apply_stage_route
-from loregarden.services.workflow_state import parse_stage_map
+from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session, select
 
 
@@ -78,6 +78,10 @@ class BuiltinOrchestrator:
                 instance, stages = self.orch._resolve_stages(ticket)
                 if not instance or not stages:
                     break
+
+                if self._recover_interrupted_stage(ticket, instance, stages):
+                    self.session.refresh(ticket)
+                    instance, stages = self.orch._resolve_stages(ticket)
 
                 stage_map = parse_stage_map(instance, stages)
                 target_key = self._next_executable_stage(ticket, stages, stage_map)
@@ -137,6 +141,7 @@ class BuiltinOrchestrator:
                         orch_run,
                         stage_def,
                         target_key,
+                        auto_approve=auto_approve,
                     )
                     stages_run += 1
                     if not ok:
@@ -153,6 +158,7 @@ class BuiltinOrchestrator:
                         ticket,
                         stage_key=target_key,
                         orchestration_run_id=orch_run.id,
+                        auto_approve=auto_approve,
                     )
                     completed = self.executor.execute(agent_run, ticket)
                     self.session.refresh(ticket)
@@ -287,6 +293,8 @@ class BuiltinOrchestrator:
         orch_run: OrchestrationRun,
         stage_def: WorkflowStageDef,
         stage_key: str,
+        *,
+        auto_approve: bool = False,
     ) -> tuple[bool, str]:
         specs = stage_def.parallel_agents
         if not specs:
@@ -322,6 +330,7 @@ class BuiltinOrchestrator:
                 orchestration_run_id=orch_run.id,
                 agent_id=spec.agent_id,
                 skill_name=spec.skill_name or stage_def.skill_name,
+                auto_approve=auto_approve,
             )
             runs.append(run)
 
@@ -405,6 +414,35 @@ class BuiltinOrchestrator:
         self.orch.finalize_stage(ticket, stage_key, status=StageStatus.DONE)
         self.session.refresh(ticket)
         return True, ""
+
+    def _recover_interrupted_stage(self, ticket: Ticket, instance, stages) -> bool:
+        """Clear a stage blocked only by a server restart, not a genuine failure.
+
+        fail_interrupted_runs() marks an orphaned AgentRun FAILED and its stage
+        BLOCKED with INTERRUPTED_RUN_MESSAGE, without touching ticket.state — unlike
+        block_ticket(), which real agent/test failures go through and which does set
+        ticket.state to BLOCKED (and is excluded by the loop's state check above this
+        method's call site). _next_executable_stage() otherwise refuses to touch any
+        BLOCKED stage, so without this, Continue Run would silently no-op forever on
+        a stage that only needs a retry, per that message's own guidance.
+        """
+        from loregarden.services.run_service import INTERRUPTED_RUN_MESSAGE
+
+        cursor_key = ticket.workflow_stage_key
+        if not cursor_key:
+            return False
+        stage_map = parse_stage_map(instance, stages)
+        if stage_map.get(cursor_key) != StageStatus.BLOCKED:
+            return False
+        if ticket.blocking_issues != INTERRUPTED_RUN_MESSAGE:
+            return False
+
+        set_stage_status(ticket, instance, stages, cursor_key, StageStatus.PENDING)
+        ticket.blocking_issues = ""
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.commit()
+        return True
 
     def _next_executable_stage(self, ticket: Ticket, stages, stage_map) -> str | None:
         ordered = sorted(stages, key=lambda s: s.order)

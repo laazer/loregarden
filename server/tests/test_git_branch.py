@@ -1,6 +1,7 @@
 """Git branch helpers."""
 
 import subprocess
+from pathlib import Path
 
 import pytest
 from loregarden.models.domain import Ticket, WorkItemType
@@ -10,6 +11,24 @@ from loregarden.services.git_branch import (
     resolve_ticket_branch,
     validate_branch_name,
 )
+
+
+def _init_repo(path: Path) -> None:
+    subprocess.run(
+        ["git", "init", "-b", "main"], cwd=path, check=True, capture_output=True, text=True
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"], cwd=path, check=True, capture_output=True
+    )
+    (path / "README.md").write_text("# test\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True)
 
 
 def test_default_ticket_branch():
@@ -35,12 +54,12 @@ def test_validate_branch_name_rejects_invalid():
         validate_branch_name("bad branch name")
 
 
-def test_ensure_ticket_branch_creates_branch():
-    from loregarden.config import settings
-
-    repo_root = settings.repo_root
-    if not (repo_root / ".git").exists():
-        pytest.skip("repo root is not a git repository")
+def test_ensure_ticket_branch_creates_branch(tmp_path, monkeypatch):
+    repo_root = tmp_path / "loregarden"
+    repo_root.mkdir()
+    _init_repo(repo_root)
+    monkeypatch.setenv("LOREGARDEN_REPO_ROOT", str(repo_root))
+    monkeypatch.setattr("loregarden.config.settings.repo_root", repo_root.resolve())
 
     ticket = Ticket(
         external_id="99-test-branch-checkout",

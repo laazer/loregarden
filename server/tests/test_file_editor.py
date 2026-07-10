@@ -109,6 +109,11 @@ def test_editor_api_round_trip(client, editor_repo, db_session):
         __import__("sqlmodel").select(Workspace).where(Workspace.slug == "loregarden")
     ).first()
     assert ws is not None
+    # The client fixture repoints the seeded workspace at its own throwaway repo;
+    # restore the relative repo_path so it resolves against editor_repo instead.
+    ws.repo_path = "."
+    db_session.add(ws)
+    db_session.commit()
 
     browse = client.get(f"/api/workspaces/{ws.slug}/editor/browse")
     assert browse.status_code == 200

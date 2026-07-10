@@ -209,10 +209,14 @@ export const api = {
     request<{ ok: boolean }>(`/api/tickets/${id}`, { method: "DELETE" }),
   orchestrationProfile: (slug: string) =>
     request<OrchestrationProfileView>(`/api/orchestration/workspaces/${slug}/profile`),
-  startRun: (id: string, options?: { stage_key?: string }) =>
+  startRun: (id: string, options?: { stage_key?: string; auto_approve?: boolean }) =>
     request<TicketDetail>(`/api/tickets/${id}/start`, {
       method: "POST",
-      body: JSON.stringify({ manual: true, stage_key: options?.stage_key }),
+      body: JSON.stringify({
+        manual: true,
+        stage_key: options?.stage_key,
+        auto_approve: options?.auto_approve,
+      }),
     }),
   orchestrate: (
     id: string,

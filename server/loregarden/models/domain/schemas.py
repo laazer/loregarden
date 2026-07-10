@@ -182,6 +182,7 @@ class EventView(SQLModel):
 class StartRunRequest(SQLModel):
     stage_key: str | None = None
     manual: bool = False
+    auto_approve: bool = False
 
 
 class StartOrchestrationRequest(SQLModel):

@@ -373,8 +373,12 @@ def build_studio_prompt(
                 SCOPE_JSON_SCHEMA,
                 "",
                 "Rules:",
+                "- Size the hierarchy to the brief: a small, self-contained change should be a single",
+                "  task or bug ticket. Do not add feature/capability layers just to fill the hierarchy.",
+                "- Only use feature → capabilities → tasks for work that genuinely has multiple",
+                "  independent slices; scoped-under-an-existing-parent work should stay as flat as the",
+                "  parent's hierarchy allows.",
                 "- Use unique `ref` values and `parent_ref` pointers (null for roots).",
-                "- Prefer feature → capabilities → tasks unless scoped under an existing parent.",
                 "- Each ticket needs testable acceptance_criteria.",
                 "- Keep tasks small enough for one agent run.",
             ]
@@ -466,6 +470,40 @@ def invoke_ticket_studio_model(
         return reply[:12000]
 
 
+def _ensure_root_milestone(
+    session_row: TicketStudioSession, items: list[TicketStudioDraftItem]
+) -> list[TicketStudioDraftItem]:
+    """Surface the parentless-root milestone requirement in the draft itself.
+
+    TicketService.create_ticket rejects a parentless feature/capability/task/bug
+    (only milestones may be root). When the session has no parent ticket and the
+    model proposed a non-milestone root, add an explicit milestone draft item so
+    the operator sees and can edit it, rather than one appearing invisibly at commit.
+    """
+    if session_row.parent_ticket_id:
+        return items
+    roots = [item for item in items if not item.parent_ref]
+    non_milestone_roots = [item for item in roots if item.work_item_type != WorkItemType.MILESTONE]
+    if not non_milestone_roots:
+        return items
+
+    existing_refs = {item.ref for item in items}
+    milestone_ref = "milestone-root"
+    while milestone_ref in existing_refs:
+        milestone_ref += "-1"
+
+    milestone_item = TicketStudioDraftItem(
+        ref=milestone_ref,
+        work_item_type=WorkItemType.MILESTONE,
+        parent_ref=None,
+        title=session_row.title or "Untitled scope",
+        description=session_row.brief,
+    )
+    for item in non_milestone_roots:
+        item.parent_ref = milestone_ref
+    return [milestone_item, *items]
+
+
 def _apply_scope_to_session(
     session_row: TicketStudioSession,
     reply: str,
@@ -484,6 +522,7 @@ def _apply_scope_to_session(
             [existing[index] if index < len(existing) else "" for index in range(len(questions))]
         )
     if items and apply_tickets:
+        items = _ensure_root_milestone(session_row, items)
         session_row.draft_json = json.dumps([item.model_dump(mode="json") for item in items])
         session_row.clarifying_questions_json = "[]"
         session_row.clarifying_answers_json = "[]"
@@ -806,6 +845,7 @@ class TicketStudioService:
         ticket_svc = TicketService(self.session)
         ref_to_id: dict[str, str] = {}
         created_ids: list[str] = []
+        synthetic_milestone_id: str | None = None
 
         for item in _topo_sort_items(draft):
             parent_id: str | None
@@ -813,8 +853,23 @@ class TicketStudioService:
                 parent_id = ref_to_id.get(item.parent_ref)
                 if not parent_id:
                     raise ValueError(f"Unresolved parent_ref for {item.ref}")
-            else:
+            elif row.parent_ticket_id:
                 parent_id = row.parent_ticket_id
+            elif item.work_item_type == WorkItemType.MILESTONE:
+                parent_id = None
+            else:
+                # Root item has no session parent and isn't itself a milestone —
+                # synthesize one so it has a legal parent (only milestones may be parentless).
+                if not synthetic_milestone_id:
+                    milestone = ticket_svc.create_ticket(
+                        workspace_slug=workspace.slug,
+                        title=row.title or "Untitled scope",
+                        work_item_type=WorkItemType.MILESTONE,
+                        description=row.brief,
+                    )
+                    synthetic_milestone_id = milestone.id
+                    created_ids.append(milestone.id)
+                parent_id = synthetic_milestone_id
 
             created = ticket_svc.create_ticket(
                 workspace_slug=workspace.slug,

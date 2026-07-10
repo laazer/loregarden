@@ -495,6 +495,7 @@ class OrchestrationService:
         orchestration_run_id: str | None = None,
         agent_id: str | None = None,
         skill_name: str | None = None,
+        auto_approve: bool = False,
     ) -> AgentRun:
         template = self.get_template_for_ticket(ticket)
         if not template:
@@ -563,6 +564,7 @@ class OrchestrationService:
             skill_name=chosen_skill,
             stage_key=target_key,
             status=RunStatus.RUNNING,
+            auto_approve=auto_approve,
             started_at=datetime.now(timezone.utc),
         )
         self.session.add(run)

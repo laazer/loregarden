@@ -508,7 +508,9 @@ def start_run(
         )
     run_svc = RunService(session)
     try:
-        run = run_svc.start_stage_execution(ticket, stage_key=body.stage_key)
+        run = run_svc.start_stage_execution(
+            ticket, stage_key=body.stage_key, auto_approve=body.auto_approve
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     if run:

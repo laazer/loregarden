@@ -178,6 +178,11 @@ def test_delete_branch_blocked_by_worktree(triage_workspace, triage_repo, tmp_pa
 def test_branch_diff_endpoint(client: TestClient, triage_repo, db_session: Session):
     ws = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
     assert ws is not None
+    # The client fixture repoints the seeded workspace at its own throwaway repo;
+    # restore the relative repo_path so it resolves against triage_repo instead.
+    ws.repo_path = "."
+    db_session.add(ws)
+    db_session.commit()
 
     res = client.get(
         f"/api/workspaces/{ws.slug}/branch-triage/diff",

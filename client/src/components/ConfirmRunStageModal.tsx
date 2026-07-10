@@ -26,7 +26,7 @@ interface ConfirmRunStageModalProps {
   isSavingRuntime: boolean;
   isOpeningPr?: boolean;
   onClose: () => void;
-  onConfirm: (runtime: WorkspaceRuntimeSettings) => void | Promise<void>;
+  onConfirm: (runtime: WorkspaceRuntimeSettings, autoApprove: boolean) => void | Promise<void>;
   onOpenPr?: () => void;
 }
 
@@ -45,10 +45,12 @@ export function ConfirmRunStageModal({
   onOpenPr,
 }: ConfirmRunStageModalProps) {
   const [draftRuntime, setDraftRuntime] = useState(workspaceRuntime);
+  const [autoApprove, setAutoApprove] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setDraftRuntime(workspaceRuntime);
+    setAutoApprove(false);
   }, [open, workspaceRuntime, stage?.key]);
 
   if (!open || !ticket || !stage) return null;
@@ -60,9 +62,10 @@ export function ConfirmRunStageModal({
   const classifyStage = isClassifyStage(stage);
   const busy = isRunning || isSavingRuntime || isOpeningPr;
   const runtimeDirty = !runtimeSettingsEqual(draftRuntime, workspaceRuntime);
+  const showAutoApprove = !humanGate && !doneStage;
 
   const handleConfirm = () => {
-    void onConfirm(draftRuntime);
+    void onConfirm(draftRuntime, autoApprove);
   };
 
   return (
@@ -165,6 +168,28 @@ export function ConfirmRunStageModal({
                 </p>
               )}
             </div>
+          )}
+
+          {showAutoApprove && (
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: 13,
+                color: "var(--txm)",
+                cursor: "pointer",
+                marginTop: 12,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={autoApprove}
+                disabled={busy}
+                onChange={(e) => setAutoApprove(e.target.checked)}
+              />
+              Auto-approve CLI tool permissions during this run
+            </label>
           )}
         </div>
 
