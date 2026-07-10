@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from loregarden.services.ticket_studio_service import (
@@ -199,6 +201,71 @@ def test_ticket_studio_scope_surfaces_root_milestone_in_draft(client: TestClient
     milestone = tickets[feature["parent_ticket_id"]]
     assert milestone["work_item_type"] == "milestone"
     assert milestone["title"] == "Ticket Studio feature"
+
+
+def test_ticket_studio_scope_survives_large_json_payload(client: TestClient, monkeypatch):
+    from loregarden.agents.cli_adapters import _local_invocation
+    from loregarden.services import ticket_studio_service
+
+    tickets = [
+        {
+            "ref": f"task-{i}",
+            "work_item_type": "task",
+            "parent_ref": None,
+            "title": f"Task {i}: migrate subsystem component {i}",
+            "description": "Detailed migration steps and constraints. " * 20,
+            "acceptance_criteria": [f"Criterion {j} for task {i}" for j in range(5)],
+            "priority": 2,
+            "suggested_agent": "backend_implementer",
+        }
+        for i in range(60)
+    ]
+    payload = {
+        "summary": "Large decomposition covering many independent migration tasks",
+        "clarifying_questions": [],
+        "tickets": tickets,
+    }
+    large_reply = "Here is the scoped breakdown:\n\n```json\n" + json.dumps(payload) + "\n```\n"
+    # Sanity check the fixture actually exceeds the old blanket truncation cap.
+    assert len(large_reply) > 12000
+
+    class FakeProc:
+        returncode = 0
+
+        def communicate(self, timeout=None):
+            return (large_reply.encode("utf-8"), b"")
+
+        def kill(self):
+            return None
+
+    def fake_resolve(**kwargs):
+        return _local_invocation(
+            agent_id=kwargs["agent_id"],
+            skill_name=kwargs["skill_name"],
+            prompt_file=kwargs["prompt_file"],
+        )
+
+    monkeypatch.setattr(ticket_studio_service, "build_triage_invocation", fake_resolve)
+    monkeypatch.setattr(ticket_studio_service.subprocess, "Popen", lambda *args, **kwargs: FakeProc())
+    monkeypatch.delenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", raising=False)
+
+    create = client.post(
+        "/api/ticket-studio/sessions",
+        json={
+            "workspace_slug": "loregarden",
+            "title": "Large scope",
+            "brief": "Decompose a big migration into many independent tasks.",
+        },
+    )
+    assert create.status_code == 200
+    session_id = create.json()["id"]
+
+    scope = client.post(f"/api/ticket-studio/sessions/{session_id}/scope")
+    assert scope.status_code == 200, scope.text
+    draft = scope.json()["draft"]
+    # 60 model-proposed tasks + 1 milestone synthesized as their legal root parent.
+    assert len(draft) == 61
+    assert sum(1 for item in draft if item["work_item_type"] == "task") == 60
 
 
 def test_ticket_studio_clarify_then_scope(client: TestClient, monkeypatch):

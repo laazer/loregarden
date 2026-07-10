@@ -8,6 +8,7 @@ import anthropic
 from loregarden.models.domain import WorkItemType
 from loregarden.models.domain.enums import VALID_HIERARCHY
 from loregarden.models.domain.schemas import HierarchyWorkItem
+from loregarden.services.proposal_validator import ProposalValidator, ProposalValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,8 @@ class DecompositionService:
             Empty list if decomposition fails.
 
         Raises:
-            ValueError: If hierarchy validation fails.
+            ValueError: If hierarchy validation or normalization fails.
+            ProposalValidationError: If proposal doesn't conform to structure constraints.
         """
         if not ticket_content:
             return []
@@ -57,16 +59,19 @@ class DecompositionService:
             response_text = response.content[0].text
             hierarchy = self._parse_response(response_text)
 
-            for item in hierarchy:
-                self._validate_item(item)
+            # Validate and normalize proposal using comprehensive validator
+            validated_hierarchy = ProposalValidator.validate_all(hierarchy)
 
-            return hierarchy
+            return validated_hierarchy
 
         except anthropic.APIError as e:
             logger.error(f"Claude API error: {e}")
             raise
         except (json.JSONDecodeError, ValueError) as e:
             logger.error(f"Parsing error: {e}")
+            raise
+        except ProposalValidationError as e:
+            logger.error(f"Proposal validation error: {e}")
             raise
 
     def _build_prompt(self, ticket_content: dict) -> str:

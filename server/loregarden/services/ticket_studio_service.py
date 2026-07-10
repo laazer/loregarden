@@ -467,7 +467,10 @@ def invoke_ticket_studio_model(
         reply = extract_triage_reply(stdout.decode("utf-8", errors="replace"))
         if not reply:
             raise RuntimeError("Ticket studio assistant returned an empty response")
-        return reply[:12000]
+        # "clarify"/"scope" replies carry a JSON block whose size scales with ticket count;
+        # truncating those mid-JSON breaks parsing, so only guard against runaway output.
+        cap = 12000 if mode == "chat" else 200_000
+        return reply[:cap]
 
 
 def _ensure_root_milestone(

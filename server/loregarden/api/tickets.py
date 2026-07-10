@@ -621,6 +621,7 @@ def finalize_hierarchy(
 ) -> FinalizeHierarchyResponse:
     """Create all work items in hierarchy atomically, with parent-child validation."""
     from loregarden.services.hierarchy_service import validate_parent_child
+    from loregarden.services.proposal_validator import ProposalValidator, ProposalValidationError
 
     ws = session.exec(select(Workspace).where(Workspace.slug == body.workspace_slug)).first()
     if not ws:
@@ -632,6 +633,12 @@ def finalize_hierarchy(
     created_ids: list[str] = []
 
     try:
+        # Validate and normalize proposal using comprehensive validator
+        try:
+            validated_hierarchy = ProposalValidator.validate_all(body.hierarchy)
+        except ProposalValidationError as e:
+            raise HTTPException(400, f"Proposal validation failed: {e}")
+
         def collect_all_items(items: list) -> list:
             """Collect all items in parent-first order."""
             result = []
@@ -641,7 +648,7 @@ def finalize_hierarchy(
                     result.extend(collect_all_items(item.children))
             return result
 
-        all_items = collect_all_items(body.hierarchy)
+        all_items = collect_all_items(validated_hierarchy)
 
         external_ids_in_hierarchy = set()
         for item in all_items:
@@ -713,7 +720,7 @@ def finalize_hierarchy(
             for child_item in item.children:
                 create_item_recursive(child_item, parent_id=ticket_id)
 
-        for item in body.hierarchy:
+        for item in validated_hierarchy:
             create_item_recursive(item, parent_id=None)
 
         session.commit()
