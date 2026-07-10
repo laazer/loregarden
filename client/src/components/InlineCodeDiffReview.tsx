@@ -438,6 +438,8 @@ export function InlineCodeDiffReview({
   onOpenEditorFile,
   lazyLoadFiles = false,
   onLoadFile,
+  onCommitPush,
+  isCommittingPush = false,
 }: {
   ticketId?: string;
   branchReview?: { workspaceSlug: string; branch: string };
@@ -451,6 +453,8 @@ export function InlineCodeDiffReview({
   onOpenEditorFile?: (filePath: string) => void;
   lazyLoadFiles?: boolean;
   onLoadFile?: (filePath: string) => Promise<DiffFileSection | null>;
+  onCommitPush?: () => void;
+  isCommittingPush?: boolean;
 }) {
   const sections = useMemo(() => diffFileSections(diff), [diff]);
   const fileRows = useMemo(
@@ -748,6 +752,16 @@ export function InlineCodeDiffReview({
           <span className="inline-code-diff-count">
             {unresolvedCount} open comment{unresolvedCount === 1 ? "" : "s"}
           </span>
+          {onCommitPush && (
+            <button
+              type="button"
+              className="btn-secondary btn-compact"
+              disabled={isCommittingPush}
+              onClick={onCommitPush}
+            >
+              {isCommittingPush ? "Committing…" : "Commit & push"}
+            </button>
+          )}
           <button
             type="button"
             className="btn-secondary btn-compact"

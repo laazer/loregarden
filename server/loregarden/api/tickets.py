@@ -6,6 +6,8 @@ from loregarden.db.session import get_session
 from loregarden.models.domain import (
     AdvanceStageRequest,
     Artifact,
+    FinalizeHierarchyRequest,
+    FinalizeHierarchyResponse,
     RouteWorkflowRequest,
     RunStatus,
     StageStatus,
@@ -493,6 +495,25 @@ def open_ticket_pr(ticket_id: str, session: Session = Depends(get_session)) -> T
     return get_ticket(ticket_id, session)
 
 
+@router.post("/{ticket_id}/commit-push", response_model=TicketDetail)
+def commit_push_ticket(ticket_id: str, session: Session = Depends(get_session)) -> TicketDetail:
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    from loregarden.services.git_commit_push_service import (
+        NothingToCommitError,
+        commit_and_push_ticket_branch,
+    )
+
+    try:
+        commit_and_push_ticket_branch(session, ticket)
+    except NothingToCommitError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return get_ticket(ticket_id, session)
+
+
 @router.post("/{ticket_id}/start", response_model=TicketDetail)
 def start_run(
     ticket_id: str,
@@ -592,3 +613,114 @@ def route_workflow_stage(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return get_ticket(ticket_id, session)
+
+
+@router.post("/finalize-hierarchy", response_model=FinalizeHierarchyResponse, status_code=201)
+def finalize_hierarchy(
+    body: FinalizeHierarchyRequest, session: Session = Depends(get_session)
+) -> FinalizeHierarchyResponse:
+    """Create all work items in hierarchy atomically, with parent-child validation."""
+    from loregarden.services.hierarchy_service import validate_parent_child
+
+    ws = session.exec(select(Workspace).where(Workspace.slug == body.workspace_slug)).first()
+    if not ws:
+        raise HTTPException(400, f"Workspace not found: {body.workspace_slug}")
+
+    if not body.hierarchy:
+        return FinalizeHierarchyResponse(created_ids=[], total_created=0)
+
+    created_ids: list[str] = []
+
+    try:
+        def collect_all_items(items: list) -> list:
+            """Collect all items in parent-first order."""
+            result = []
+            for item in items:
+                result.append(item)
+                if item.children:
+                    result.extend(collect_all_items(item.children))
+            return result
+
+        all_items = collect_all_items(body.hierarchy)
+
+        external_ids_in_hierarchy = set()
+        for item in all_items:
+            ext_id = item.external_id.strip()
+            if ext_id in external_ids_in_hierarchy:
+                raise ValueError(f"Duplicate external_id in hierarchy: {ext_id}")
+            external_ids_in_hierarchy.add(ext_id)
+
+        existing_ids = {
+            t.external_id
+            for t in session.exec(select(Ticket).where(Ticket.workspace_id == ws.id)).all()
+        }
+
+        for ext_id in external_ids_in_hierarchy:
+            if ext_id in existing_ids:
+                raise ValueError(f"external_id already exists in workspace: {ext_id}")
+
+        id_mapping = {}
+
+        def create_item_recursive(item, parent_id: str | None = None):
+            """Create item and all children recursively, tracking IDs in creation order."""
+            title = item.title.strip()
+            if not title:
+                raise ValueError("Title is required")
+
+            if item.priority < 1 or item.priority > 3:
+                raise ValueError(f"Invalid priority {item.priority}: must be in [1, 3]")
+
+            if item.work_item_type == WorkItemType.MILESTONE:
+                if item.parent_ticket_id:
+                    raise ValueError("Milestones cannot have a parent")
+                parent_id = None
+            elif parent_id:
+                parent = session.get(Ticket, parent_id)
+                if not parent:
+                    raise ValueError(f"Parent not found: {parent_id}")
+                validate_parent_child(parent.work_item_type, item.work_item_type)
+            else:
+                if item.work_item_type not in (WorkItemType.MILESTONE, WorkItemType.FEATURE, WorkItemType.CAPABILITY):
+                    raise ValueError(
+                        f"{item.work_item_type.value} cannot be a root item"
+                    )
+
+            ext_id = item.external_id.strip()
+            if not ext_id:
+                raise ValueError("external_id is required")
+
+            new_ticket = Ticket(
+                external_id=ext_id,
+                workspace_id=ws.id,
+                title=title,
+                description=item.description.strip() if item.description else "",
+                state=TicketState.BACKLOG,
+                priority=item.priority,
+                work_item_type=item.work_item_type,
+                parent_ticket_id=parent_id,
+                acceptance_criteria_json=json.dumps(
+                    [line.strip() for line in (item.acceptance_criteria or []) if line.strip()]
+                ),
+                last_updated_by="system",
+            )
+            session.add(new_ticket)
+            session.flush()
+
+            ticket_id = new_ticket.id
+            created_ids.append(ticket_id)
+            id_mapping[ext_id] = ticket_id
+
+            for child_item in item.children:
+                create_item_recursive(child_item, parent_id=ticket_id)
+
+        for item in body.hierarchy:
+            create_item_recursive(item, parent_id=None)
+
+        session.commit()
+
+    except (ValueError, Exception) as e:
+        session.rollback()
+        error_msg = str(e)
+        raise HTTPException(400, error_msg) from e
+
+    return FinalizeHierarchyResponse(created_ids=created_ids, total_created=len(created_ids))
