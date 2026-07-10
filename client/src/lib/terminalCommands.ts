@@ -1,4 +1,4 @@
-import type { TicketDetail, WorkflowStageView } from "../api/client";
+import { api, type TicketDetail, type WorkflowStageView } from "../api/client";
 
 export function isAgentWorkflowTicket(ticket: TicketDetail): boolean {
   return Boolean(ticket.workflow_template_slug?.trim());
@@ -33,5 +33,22 @@ export function buildStageRunTerminalCommand(
     `curl -sS -X POST '${base}/api/tickets/${ticket.id}/start' \\`,
     `  -H 'Content-Type: application/json' \\`,
     `  -d '${body}'`,
+  ].join("\n");
+}
+
+/**
+ * Like buildStageRunTerminalCommand, but the copied text launches the actual configured
+ * coding agent (Claude Code or Cursor) directly in the user's own terminal instead of
+ * hitting POST /start — so the run survives the app's dev server restarting mid-run.
+ */
+export async function buildStageTerminalHandoffCommand(
+  ticket: TicketDetail,
+  stage: WorkflowStageView,
+): Promise<string> {
+  const title = ticket.title.replace(/"/g, '\\"');
+  const { adapter, command } = await api.buildTerminalHandoffCommand(ticket.id, stage.key);
+  return [
+    `# Loregarden: run stage "${stage.name}" (${stage.key}) for ${ticket.external_id} — ${title} — via terminal ${adapter} agent`,
+    command,
   ].join("\n");
 }

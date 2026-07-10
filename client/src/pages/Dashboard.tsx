@@ -39,7 +39,7 @@ import { agentsAssembleLabel } from "../lib/workflowHelpers";
 import { PANE_LABELS } from "../lib/appTopbarConfig";
 import {
   buildOrchestrateTerminalCommand,
-  buildStageRunTerminalCommand,
+  buildStageTerminalHandoffCommand,
 } from "../lib/terminalCommands";
 
 function mergeApprovals(...lists: Array<import("../api/client").Approval[] | undefined>) {
@@ -1255,7 +1255,13 @@ export function Dashboard() {
                             workflowBusy={workflowBusy || routeWorkflow.isPending || patchStageWorkflow.isPending}
                             onRun={requestStageRun}
                             onCopyTerminal={() =>
-                              void copyTerminalCommand(buildStageRunTerminalCommand(sel, s, API_BASE))
+                              void buildStageTerminalHandoffCommand(sel, s)
+                                .then(copyTerminalCommand)
+                                .catch((err) =>
+                                  window.alert(
+                                    err instanceof Error ? err.message : "Failed to build terminal command",
+                                  ),
+                                )
                             }
                             onSetCursor={(stageKey) =>
                               patchStageWorkflow.mutate({

@@ -12,9 +12,8 @@ from loregarden.models.domain.enums import (
     TicketStudioSessionStatus,
     WorkItemType,
 )
-from sqlmodel import Field, SQLModel
-
 from pydantic import ConfigDict
+from sqlmodel import Field, SQLModel
 
 # --- API DTOs ---
 
@@ -319,6 +318,7 @@ class TicketImportItem(SQLModel):
 class TicketImportPreviewRequest(SQLModel):
     workspace_slug: str
     files: list[TicketImportFile]
+    mode: str = "smart"  # "smart" or "regular"
 
 
 class TicketImportPreviewPathsRequest(SQLModel):
