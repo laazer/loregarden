@@ -123,6 +123,8 @@ GIT / VCS
 
 **Feature branch (Planner mandate):** The **Planner** names one **feature branch** per ticket in the plan (see `agent_context/agents/readme.md`). Implementation work is committed on that branch until the **merge into `master`** milestone runs, unless the ticket defers merge.
 
+**Sync before starting a new ticket:** Before the Planner names or the orchestrator checks out a feature branch for a new ticket, fetch and pull the latest default branch (`git fetch origin && git checkout master && git pull`) so the new branch starts from current remote state — this matters most right after a prior ticket's PR has merged. If the pull surfaces conflicts, resolve them on the default branch **before** branching; do not carry conflicts onto the new feature branch.
+
 **Orchestrator discipline:** After the Planner’s branch name is known, the **orchestrator** checks out that branch from up-to-date **`master`** (or the repo default branch) **before** Spec, test, or implementation edits. Ticket-driven code and tests must not accumulate **only** on **`master`** in lieu of that branch. If branching is impossible without losing work, log a checkpoint (scoped log + index pointer per `AGENTS.md` / autopilot **Hard rules — checkpoint audit trail**) and **stop** rather than bypassing this rule.
 
 **Handoff commit:** When you finish your work and update the ticket (WORKFLOW STATE + NEXT ACTION) to pass the ticket to the next agent, you MUST commit all changes (code, tests, ticket file, and any other modified files) before completing your turn. Use a commit message that references the ticket (e.g. `<ticket_id>: <short description>`).
