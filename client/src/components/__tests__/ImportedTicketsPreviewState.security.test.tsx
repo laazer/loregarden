@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import type { TicketStudioPanelProps } from "../studio/TicketStudioPanel";
 import { TicketStudioPanel } from "../studio/TicketStudioPanel";
@@ -69,6 +70,13 @@ const XSS_PAYLOADS = [
 ];
 
 function renderWithSecurity(overrides: SecurityTestProps = {}) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+
   const props: TicketStudioPanelProps = {
     workspaceSlug: "loregarden",
     onClose: jest.fn(),
@@ -79,12 +87,14 @@ function renderWithSecurity(overrides: SecurityTestProps = {}) {
   };
 
   const utils = render(
-    <MemoryRouter>
-      <TicketStudioPanel {...props} />
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <TicketStudioPanel {...props} />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 
-  return { ...utils, props };
+  return { ...utils, props, queryClient };
 }
 
 beforeEach(() => {
