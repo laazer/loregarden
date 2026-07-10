@@ -8,6 +8,7 @@ import {
 } from "../lib/branchTriageApi";
 import { ticketPath } from "../lib/appNavigation";
 import { useNavigate } from "react-router-dom";
+import { BranchCheckoutConfirmModal } from "./BranchCheckoutConfirmModal";
 import { BranchDeleteConfirmModal } from "./BranchDeleteConfirmModal";
 import { BranchTriageCurrentTag } from "./BranchTriageCurrentTag";
 import "./BranchTriagePanel.css";
@@ -41,10 +42,12 @@ export function BranchTriageList({
   const navigate = useNavigate();
   const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
   const [branchPendingDelete, setBranchPendingDelete] = useState<BranchTriageEntry | null>(null);
+  const [branchPendingCheckout, setBranchPendingCheckout] = useState<BranchTriageEntry | null>(null);
 
   const checkout = useMutation({
     mutationFn: (branch: string) => checkoutBranchTriage(workspaceSlug, branch),
     onSuccess: () => {
+      setBranchPendingCheckout(null);
       qc.invalidateQueries({ queryKey: ["branch-triage", workspaceSlug] });
     },
   });
@@ -92,6 +95,22 @@ export function BranchTriageList({
 
   return (
     <div className="branch-triage-list">
+      <BranchCheckoutConfirmModal
+        open={branchPendingCheckout !== null}
+        branch={branchPendingCheckout}
+        currentBranch={sorted.find((item) => item.is_current) ?? null}
+        isCheckingOut={checkout.isPending}
+        error={
+          branchPendingCheckout && checkout.error instanceof Error ? checkout.error.message : null
+        }
+        onClose={() => {
+          if (!checkout.isPending) setBranchPendingCheckout(null);
+        }}
+        onConfirm={() => {
+          if (!branchPendingCheckout) return;
+          checkout.mutate(branchPendingCheckout.name);
+        }}
+      />
       <BranchDeleteConfirmModal
         open={branchPendingDelete !== null}
         branch={branchPendingDelete}
@@ -170,7 +189,8 @@ export function BranchTriageList({
               disabled={checkout.isPending}
               onClick={(event) => {
                 event.stopPropagation();
-                checkout.mutate(branch.name);
+                checkout.reset();
+                setBranchPendingCheckout(branch);
               }}
             >
               Checkout

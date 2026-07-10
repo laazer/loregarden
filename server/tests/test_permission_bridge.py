@@ -550,6 +550,134 @@ def test_permission_bridge_auto_approves_mcp_get_ticket(tmp_path):
         }
 
 
+def test_permission_bridge_auto_approves_via_agent_run_flag(tmp_path):
+    """A manually-started single-stage run (no orchestration_run_id) still auto-approves
+    when AgentRun.auto_approve is set directly, not just when it belongs to an
+    OrchestrationRun with auto_approve=True."""
+    from loregarden.agents.cli_adapters import build_interactive_invocation
+    from loregarden.models.domain import AgentRun, Approval, RunStatus, Ticket
+    from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        run = AgentRun(
+            run_code="run_manual_auto",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            orchestration_run_id=None,
+            agent_id="static_qa",
+            stage_key="testing",
+            status=RunStatus.RUNNING,
+            auto_approve=True,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        workspace = tmp_path / "repo"
+        workspace.mkdir()
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("qa", encoding="utf-8")
+        invocation = build_interactive_invocation(
+            adapter="claude",
+            prompt_file=prompt_file,
+            workspace_root=workspace,
+        )
+
+        permission_line = json.dumps(
+            {
+                "type": "control_request",
+                "request_id": "perm_manual_1",
+                "request": {
+                    "subtype": "can_use_tool",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "npm test"},
+                },
+            }
+        )
+        result_line = json.dumps({"type": "result", "session_id": "sess_manual", "subtype": "success"})
+
+        class FakeStdout:
+            def __init__(self, lines):
+                self.lines = list(lines)
+                self._closed = False
+
+            def readline(self):
+                if self.lines:
+                    return self.lines.pop(0) + "\n"
+                self._closed = True
+                return ""
+
+        class FakeStdin:
+            def __init__(self):
+                self.writes: list[str] = []
+
+            def write(self, data):
+                self.writes.append(data.decode("utf-8") if isinstance(data, bytes) else data)
+
+            def flush(self):
+                return None
+
+        class FakeProc:
+            returncode = 0
+
+            def __init__(self):
+                self.stdout = FakeStdout([permission_line, result_line])
+                self.stdin = FakeStdin()
+
+            def poll(self):
+                return 0 if self.stdout._closed else None
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                self.returncode = 1
+
+        captured_proc: FakeProc | None = None
+
+        def fake_spawn(*args, **kwargs):
+            nonlocal captured_proc
+            captured_proc = FakeProc()
+            return captured_proc
+
+        bridge = PermissionBridgeRunner(session)
+        result = bridge.run(
+            run_id=run.id,
+            ticket=ticket,
+            invocation=invocation,
+            prompt="qa",
+            timeout_seconds=30,
+            spawn_process=fake_spawn,
+        )
+
+        assert result.status == RunStatus.SUCCEEDED
+        assert session.exec(select(Approval).where(Approval.run_id == run.id)).first() is None
+        assert captured_proc is not None
+        control_writes = []
+        for raw in captured_proc.stdin.writes:
+            for line in raw.splitlines():
+                if line.strip().startswith("{"):
+                    control_writes.append(json.loads(line))
+        allow_response = next(
+            item for item in control_writes if item.get("type") == "control_response"
+        )
+        assert allow_response["response"]["response"]["updatedInput"] == {
+            "command": "npm test",
+        }
+
+
 def test_permission_bridge_finishes_on_result_when_process_stays_alive(tmp_path):
     from loregarden.agents.cli_adapters import build_interactive_invocation
     from loregarden.models.domain import AgentRun, RunStatus, Ticket

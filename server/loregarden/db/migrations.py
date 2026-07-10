@@ -145,6 +145,14 @@ def _m_agent_run_orchestration_id(conn: Connection) -> None:
     )
 
 
+def _m_agent_run_auto_approve(conn: Connection) -> None:
+    _add_columns_if_missing(
+        conn,
+        "agent_runs",
+        {"auto_approve": "ALTER TABLE agent_runs ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 0"},
+    )
+
+
 def _m_orchestration_run_columns(conn: Connection) -> None:
     _add_columns_if_missing(
         conn,
@@ -363,6 +371,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0009_ticket_diff_comments", _m_ticket_diff_comments),
     ("0010_branch_diff_comments", _m_branch_diff_comments),
     ("0011_branch_triage_messages", _m_branch_triage_messages),
+    ("0012_agent_run_auto_approve", _m_agent_run_auto_approve),
 ]
 
 

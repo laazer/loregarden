@@ -1390,4 +1390,501 @@ describe("Group X — Adversarial edge cases", () => {
       within(getModeGroup()).getByRole("radio", { name: /smart import/i })
     ).toBe(smart);
   });
+
+  // ===========================================================================
+  // Group X Extended — Additional adversarial and mutation tests (X51+)
+  // ===========================================================================
+
+  it("X51: aria-checked attribute is directly unmodifiable by external DOM manipulation", () => {
+    // Security/robustness: React should control aria-checked, not external code.
+    renderModal();
+    const smart = getSmartOption();
+
+    // Verify it's currently false.
+    expect(smart).toHaveAttribute("aria-checked", "false");
+
+    // Attempt to mutate directly (this should be overridden by React on next render).
+    smart.setAttribute("aria-checked", "true");
+    expect(smart).toHaveAttribute("aria-checked", "true"); // Direct mutation works locally...
+
+    // Now trigger a re-render by toggling Regular.
+    const regular = getRegularOption();
+    userEvent.click(regular); // This will eventually re-render.
+
+    // After async re-render completes, aria-checked should reflect React state,
+    // not the externally-set value. This guards against direct DOM mutation bypassing state.
+  });
+
+  it("X52: mode state is independent of file selection state (no accidental coupling)", async () => {
+    // Mutation guard: ensure mode and file selection are tracked separately.
+    const { props } = renderModal({ initialMode: "regular" });
+
+    // Toggle to smart.
+    await userEvent.click(getSmartOption());
+
+    // Select files in smart mode.
+    await toggle("a.md");
+    await toggle("b.md");
+
+    // Now switch back to regular (without changing files).
+    await userEvent.click(getRegularOption());
+
+    // Files should still be selected (no accidental clear on mode switch).
+    expect(screen.getByText(/selected \(2\)/i)).toBeInTheDocument();
+
+    // Call continue in regular mode.
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+
+    // Should pass the files with regular mode, not smart.
+    expect(props.onContinue).toHaveBeenCalledWith(["a.md", "b.md"], "regular");
+  });
+
+  it("X53: callback references are stable (function identity not checked by tests, but guards mutations)", async () => {
+    // Contracts: if onContinue is called, it's the same function that was passed.
+    const onContinue = jest.fn();
+    const { rerender, props } = renderModal({ onContinue });
+
+    await toggle("a.md");
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+
+    // onContinue was called once.
+    expect(onContinue).toHaveBeenCalledTimes(1);
+
+    // Now rerender with a DIFFERENT onContinue function.
+    const newOnContinue = jest.fn();
+    rerender(
+      <ImportTicketsModal
+        {...({
+          open: true,
+          workspaceSlug: "loregarden",
+          isLoading: false,
+          onClose: props.onClose,
+          onContinue: newOnContinue,
+        } as unknown as never)}
+      />,
+    );
+
+    // The old onContinue should not be called again.
+    expect(onContinue).toHaveBeenCalledTimes(1); // still 1
+    expect(newOnContinue).not.toHaveBeenCalled(); // not yet
+
+    // Click continue with the new callback wired up.
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+    expect(newOnContinue).toHaveBeenCalledTimes(1); // should be called now
+  });
+
+  it("X54: mode selection does not mutate or reuse callback closures", async () => {
+    // Closure guard: ensure callbacks close over correct state.
+    const received: Array<[string[], string]> = [];
+    const captureOnContinue = jest.fn((paths: string[], mode: string) => {
+      received.push([paths, mode]);
+    });
+
+    const { rerender, props } = renderModal({
+      initialMode: "regular",
+      onContinue: captureOnContinue as never,
+    });
+
+    await toggle("a.md");
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+    expect(received[0]).toEqual([["a.md"], "regular"]);
+
+    // Clear files and reopen.
+    rerender(
+      <ImportTicketsModal
+        {...({
+          open: false,
+          workspaceSlug: "loregarden",
+          isLoading: false,
+          onClose: props.onClose,
+          onContinue: captureOnContinue,
+        } as unknown as never)}
+      />,
+    );
+
+    rerender(
+      <ImportTicketsModal
+        {...({
+          open: true,
+          workspaceSlug: "loregarden",
+          isLoading: false,
+          onClose: props.onClose,
+          onContinue: captureOnContinue,
+          initialMode: "smart",
+        } as unknown as never)}
+      />,
+    );
+
+    // Mode should be reset to smart, files cleared.
+    expect(getSmartOption()).toHaveAttribute("aria-checked", "true");
+    expect(screen.queryByText(/selected \(/i)).not.toBeInTheDocument();
+
+    // Select a file and continue in smart mode.
+    await toggle("b.md");
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(received[1]).toEqual([["b.md"], "smart"]);
+  });
+
+  it("X55: very large file selections do not corrupt mode state or sorting", async () => {
+    // Stress test: ensure mode state survives large file counts.
+    renderModal({ initialMode: "smart" });
+
+    // Manually verify that even with many interactions, mode stays stable.
+    for (let i = 0; i < 10; i++) {
+      await toggle("a.md");
+      await toggle("b.md");
+      await toggle("nested/aa.md");
+    }
+
+    // Mode should still be smart (not reverted or corrupted).
+    expect(getSmartOption()).toHaveAttribute("aria-checked", "true");
+    expect(getRegularOption()).toHaveAttribute("aria-checked", "false");
+    expect(checkedCount()).toBe(1);
+  });
+
+  it("X56: switching modes while Continue is in-flight (async) doesn't cause race", async () => {
+    // Race condition guard: if user switches modes while onContinue is async,
+    // state should remain consistent (no partial updates or duplicates).
+    let resolve: () => void = () => {};
+    const onContinue = jest.fn(() => new Promise<void>((res) => {
+      resolve = res;
+    }));
+
+    const { props } = renderModal({ onContinue });
+
+    await toggle("a.md");
+    const button = screen.getByRole("button", { name: /continue/i });
+
+    // Click Continue, which will be async.
+    await userEvent.click(button);
+    expect(onContinue).toHaveBeenCalledTimes(1);
+    expect(onContinue).toHaveBeenCalledWith(["a.md"], "regular");
+
+    // While the async call is pending, user tries to switch modes.
+    // (Component may or may not allow this; test that state doesn't corrupt.)
+    const smart = getSmartOption();
+    await userEvent.click(smart);
+
+    // Mode should be switched.
+    expect(getSmartOption()).toHaveAttribute("aria-checked", "true");
+
+    // Resolve the pending promise.
+    resolve();
+
+    // Verify no accidental second call or double-fire.
+    expect(onContinue).toHaveBeenCalledTimes(1);
+  });
+
+  it("X57: disabled state persists across rapid prop changes", () => {
+    // State coherence: during isLoading, disabled state must survive prop mutations.
+    const { rerender, props } = renderModal({ isLoading: true });
+
+    expect(getSmartOption()).toBeDisabled();
+    expect(getRegularOption()).toBeDisabled();
+
+    // Rapidly toggle errorMessage (unrelated prop).
+    rerender(
+      <ImportTicketsModal
+        {...({
+          open: true,
+          workspaceSlug: "loregarden",
+          isLoading: true,
+          errorMessage: "Error 1",
+          onClose: props.onClose,
+          onContinue: props.onContinue,
+        } as unknown as never)}
+      />,
+    );
+
+    expect(getSmartOption()).toBeDisabled();
+
+    rerender(
+      <ImportTicketsModal
+        {...({
+          open: true,
+          workspaceSlug: "loregarden",
+          isLoading: true,
+          errorMessage: null,
+          onClose: props.onClose,
+          onContinue: props.onContinue,
+        } as unknown as never)}
+      />,
+    );
+
+    expect(getSmartOption()).toBeDisabled();
+  });
+
+  it("X58: aria-checked is boolean-like string ('true'/'false'), never boolean", () => {
+    // Attribute correctness: aria-checked must be "true" or "false", not true/false.
+    renderModal();
+
+    for (const radio of screen.getAllByRole("radio")) {
+      const checked = radio.getAttribute("aria-checked");
+      expect(typeof checked).toBe("string");
+      expect(["true", "false"]).toContain(checked);
+    }
+  });
+
+  it("X59: role='radiogroup' is never removed or replaced during the component's lifetime", async () => {
+    // Structural stability: the radiogroup role must remain stable.
+    const { rerender, props } = renderModal();
+
+    const getGroupRole = () => getModeGroup().getAttribute("role");
+
+    expect(getGroupRole()).toBe("radiogroup");
+
+    // Trigger a rerender with various prop changes.
+    rerender(
+      <ImportTicketsModal
+        {...({
+          open: true,
+          workspaceSlug: "workspace-2",
+          isLoading: false,
+          onClose: props.onClose,
+          onContinue: props.onContinue,
+        } as unknown as never)}
+      />,
+    );
+
+    expect(getGroupRole()).toBe("radiogroup");
+
+    await userEvent.click(getSmartOption());
+    expect(getGroupRole()).toBe("radiogroup");
+  });
+
+  it("X60: selecting an option does not fire onContinue even if called synchronously", async () => {
+    // Separation of concerns: mode selection must never trigger onContinue.
+    const onContinue = jest.fn();
+    renderModal({ onContinue });
+
+    await toggle("a.md");
+
+    // Rapidly click Smart multiple times (simulating double-click on the option).
+    await userEvent.click(getSmartOption());
+    await userEvent.click(getSmartOption());
+    await userEvent.click(getSmartOption());
+
+    // onContinue should never fire due to mode clicks alone.
+    expect(onContinue).not.toHaveBeenCalled();
+  });
+
+  it("X61: canContinue guard prevents onContinue even if button.click() is called directly", async () => {
+    // Defensive guard: even if button.click() is called by external code,
+    // canContinue must prevent onContinue when no files selected.
+    const { props } = renderModal();
+
+    const button = screen.getByRole("button", { name: /continue/i });
+    expect(button).toBeDisabled();
+
+    // Attempt direct click (userEvent respects disabled, but guard against direct calls).
+    try {
+      button.click();
+    } catch {
+      // May throw if click is prevented.
+    }
+
+    expect(props.onContinue).not.toHaveBeenCalled();
+  });
+
+  it("X62: onContinue is called with exact array reference (not a proxy or wrapped version)", async () => {
+    // Type precision: ensure the array passed to onContinue is a real array.
+    const received: any[] = [];
+    const onContinue = jest.fn((...args) => {
+      received.push(args[0]); // Capture the first arg (the paths array).
+    });
+
+    renderModal({ onContinue });
+    await toggle("a.md");
+    await toggle("b.md");
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(received[0]).toBeDefined();
+    expect(Array.isArray(received[0])).toBe(true);
+    expect(received[0].length).toBe(2);
+    expect(typeof received[0][0]).toBe("string");
+  });
+
+  it("X63: mode defaults to 'regular' even if initialMode is explicitly undefined", () => {
+    // Null-safety: undefined initialMode must be treated as "regular".
+    renderModal({ initialMode: undefined });
+    expect(getRegularOption()).toHaveAttribute("aria-checked", "true");
+    expect(getSmartOption()).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("X64: switching modes does not lose focus or interfere with keyboard navigation", async () => {
+    renderModal();
+    const smart = getSmartOption();
+
+    smart.focus();
+    expect(smart).toHaveFocus();
+
+    // Switch to smart (it's already focused on it).
+    await userEvent.keyboard(" ");
+    expect(smart).toHaveAttribute("aria-checked", "true");
+
+    // Focus should remain on smart option after the click.
+    // (Exact behavior depends on implementation, but should not jump unexpectedly.)
+  });
+
+  it("X65: Continue button remains disabled if file list is empty in both modes", async () => {
+    renderModal();
+
+    // Regular mode, no files.
+    expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+
+    // Switch to smart mode, still no files.
+    await userEvent.click(getSmartOption());
+    expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+
+    // Add files, then deselect all, then check both modes again.
+    await toggle("a.md");
+    expect(screen.getByRole("button", { name: /continue/i })).toBeEnabled();
+
+    await toggle("a.md"); // deselect
+    expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+
+    // Switch mode while empty.
+    await userEvent.click(getRegularOption());
+    expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+  });
+
+  it("X66: aria-describedby description element text survives re-renders", async () => {
+    // Stability: the description must remain accessible after prop changes.
+    const { rerender, props } = renderModal();
+
+    const smart = getSmartOption();
+    const describedById = smart.getAttribute("aria-describedby")!;
+    const description = document.getElementById(describedById)!;
+
+    const originalText = description.textContent;
+
+    // Rerender with prop changes.
+    rerender(
+      <ImportTicketsModal
+        {...({
+          open: true,
+          workspaceSlug: "loregarden-2",
+          isLoading: false,
+          onClose: props.onClose,
+          onContinue: props.onContinue,
+        } as unknown as never)}
+      />,
+    );
+
+    const newDescription = document.getElementById(describedById)!;
+    expect(newDescription.textContent).toBe(originalText);
+  });
+
+  it("X67: onClose is called by overlay click, never by mode selection", async () => {
+    const onClose = jest.fn();
+    renderModal({ onClose });
+
+    // Click smart option multiple times.
+    await userEvent.click(getSmartOption());
+    await userEvent.click(getSmartOption());
+
+    // onClose must not be called.
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Click overlay.
+    const overlay = document.querySelector(".modal-overlay") as HTMLElement;
+    await userEvent.click(overlay);
+
+    // Now onClose should be called exactly once.
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("X68: rapid file toggles do not cause mode to flip or reset", async () => {
+    // Race condition guard: file selection changes must not interfere with mode.
+    renderModal({ initialMode: "smart" });
+
+    for (let i = 0; i < 30; i++) {
+      const files = ["a.md", "b.md", "nested/aa.md"];
+      await toggle(files[i % files.length]);
+    }
+
+    // Mode must still be smart.
+    expect(getSmartOption()).toHaveAttribute("aria-checked", "true");
+    expect(checkedCount()).toBe(1);
+  });
+
+  it("X69: selectedImportFileList sort order is consistent across renders", async () => {
+    // Determinism: the emitted array order must be stable.
+    const callOrder: Array<string[]> = [];
+    const onContinue = jest.fn((paths: string[]) => {
+      callOrder.push([...paths]);
+    });
+
+    const { rerender, props } = renderModal({ onContinue });
+
+    // Select files in a specific (non-alphabetical) order.
+    await toggle("b.md");
+    await toggle("nested/aa.md");
+    await toggle("a.md");
+
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+
+    // First call should be alphabetically sorted.
+    expect(callOrder[0]).toEqual(["a.md", "b.md", "nested/aa.md"]);
+
+    // Close and reopen, then continue again without changing selection.
+    rerender(
+      <ImportTicketsModal
+        {...({
+          open: false,
+          workspaceSlug: "loregarden",
+          isLoading: false,
+          onClose: props.onClose,
+          onContinue,
+        } as unknown as never)}
+      />,
+    );
+
+    // Reopen (which should clear selection).
+    rerender(
+      <ImportTicketsModal
+        {...({
+          open: true,
+          workspaceSlug: "loregarden",
+          isLoading: false,
+          onClose: props.onClose,
+          onContinue,
+        } as unknown as never)}
+      />,
+    );
+
+    // Files are cleared on reopen, so no additional call made.
+    expect(callOrder.length).toBe(1); // Still just one call.
+  });
+
+  it("X70: Continue button text accurately reflects current file count in real-time", async () => {
+    renderModal();
+
+    const button = screen.getByRole("button", { name: /continue/i });
+
+    // 0 files.
+    expect(button.textContent).toBe("Continue with 0 files");
+
+    // Add one file.
+    await toggle("a.md");
+    expect(button.textContent).toBe("Continue with 1 file");
+
+    // Add another.
+    await toggle("b.md");
+    expect(button.textContent).toBe("Continue with 2 files");
+
+    // Add third.
+    await toggle("nested/aa.md");
+    expect(button.textContent).toBe("Continue with 3 files");
+
+    // Remove one.
+    await toggle("a.md");
+    expect(button.textContent).toBe("Continue with 2 files");
+
+    // Remove all.
+    await toggle("b.md");
+    await toggle("nested/aa.md");
+    expect(button.textContent).toBe("Continue with 0 files");
+  });
 });

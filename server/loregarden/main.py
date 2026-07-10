@@ -32,7 +32,10 @@ from loregarden.api import (
 from loregarden.config import settings
 from loregarden.core.auth import TokenAuthMiddleware
 from loregarden.db.session import engine, init_db
-from loregarden.services.run_service import fail_interrupted_runs
+from loregarden.services.run_service import (
+    fail_interrupted_orchestration_runs,
+    fail_interrupted_runs,
+)
 from loregarden.services.seed import seed_database
 
 logger = logging.getLogger(__name__)
@@ -50,6 +53,7 @@ async def lifespan(app: FastAPI):
     with Session(engine) as session:
         seed_database(session)
         fail_interrupted_runs(session)
+        fail_interrupted_orchestration_runs(session)
     yield
 
 

@@ -343,13 +343,7 @@ class PermissionBridgeRunner:
         workspace = self.session.get(Workspace, ticket.workspace_id)
         workspace_slug = workspace.slug if workspace else ""
         run = self.session.get(AgentRun, run_id)
-        auto_approve = False
-        if run and run.orchestration_run_id:
-            from loregarden.models.domain import OrchestrationRun
-
-            orch_run = self.session.get(OrchestrationRun, run.orchestration_run_id)
-            if orch_run and orch_run.auto_approve:
-                auto_approve = True
+        auto_approve = bool(run and run.auto_approve)
 
         def resolve_poll(approval_id: str) -> ApprovalResolution | None:
             if custom_wait and approval_id not in custom_wait_seen:

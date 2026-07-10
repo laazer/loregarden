@@ -166,6 +166,7 @@ class AgentRun(SQLModel, table=True):
     command: str = ""
     stdout: str = ""
     stderr: str = ""
+    auto_approve: bool = Field(default=False)
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)

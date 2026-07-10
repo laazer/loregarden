@@ -161,6 +161,46 @@ def test_ticket_studio_scope_and_commit(client: TestClient, monkeypatch):
     assert dup_commit.status_code == 400
 
 
+def test_ticket_studio_scope_surfaces_root_milestone_in_draft(client: TestClient, monkeypatch):
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", SCOPE_STUB)
+
+    create = client.post(
+        "/api/ticket-studio/sessions",
+        json={
+            "workspace_slug": "loregarden",
+            "title": "Ticket Studio feature",
+            "brief": "Scope the ticket studio MVP.",
+        },
+    )
+    assert create.status_code == 200
+    session_id = create.json()["id"]
+
+    scope = client.post(f"/api/ticket-studio/sessions/{session_id}/scope")
+    assert scope.status_code == 200, scope.text
+    draft = scope.json()["draft"]
+    # 3 model-proposed tickets + 1 milestone synthesized to give the root feature a legal parent
+    assert len(draft) == 4
+    milestone_item = next(item for item in draft if item["work_item_type"] == "milestone")
+    assert milestone_item["title"] == "Ticket Studio feature"
+    feature_item = next(item for item in draft if item["title"] == "Ticket Studio")
+    assert feature_item["parent_ref"] == milestone_item["ref"]
+
+    commit = client.post(f"/api/ticket-studio/sessions/{session_id}/commit")
+    assert commit.status_code == 200, commit.text
+    result = commit.json()
+    # 3 draft tickets + 1 synthesized milestone parent for the root feature
+    assert result["created_count"] == 4
+    assert len(result["created_ticket_ids"]) == 4
+
+    tickets = {
+        t["id"]: t for t in client.get("/api/tickets?workspace=loregarden&search=Ticket+Studio").json()
+    }
+    feature = next(t for t in tickets.values() if t["title"] == "Ticket Studio" and t["work_item_type"] == "feature")
+    milestone = tickets[feature["parent_ticket_id"]]
+    assert milestone["work_item_type"] == "milestone"
+    assert milestone["title"] == "Ticket Studio feature"
+
+
 def test_ticket_studio_clarify_then_scope(client: TestClient, monkeypatch):
     monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", CLARIFY_STUB)
 
@@ -194,7 +234,8 @@ def test_ticket_studio_clarify_then_scope(client: TestClient, monkeypatch):
     monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", SCOPE_STUB)
     scope = client.post(f"/api/ticket-studio/sessions/{session_id}/scope")
     assert scope.status_code == 200, scope.text
-    assert len(scope.json()["draft"]) == 3
+    # 3 model-proposed tickets + 1 milestone synthesized for the parentless root feature
+    assert len(scope.json()["draft"]) == 4
 
 
 def test_ticket_studio_chat_applies_scope_from_stub(client: TestClient, monkeypatch):
