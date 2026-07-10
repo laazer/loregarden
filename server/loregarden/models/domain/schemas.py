@@ -327,6 +327,8 @@ class TicketImportPreviewPathsRequest(SQLModel):
 
 
 class TicketImportPreviewResponse(SQLModel):
+    model_config = ConfigDict(exclude_none=True)
+
     tickets: list[TicketImportItem]
     errors: list[str]
     warnings: list[str]

@@ -107,6 +107,14 @@ def request_ticket_studio_clarifications(session_id: str, session: Session = Dep
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/sessions/{session_id}/clarifications")
+def request_ticket_studio_clarifications_alt(session_id: str, session: Session = Depends(get_session)) -> dict:
+    try:
+        return TicketStudioService(session).request_clarifications(session_id).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.patch("/sessions/{session_id}/clarifications")
 def save_ticket_studio_clarifications(
     session_id: str,

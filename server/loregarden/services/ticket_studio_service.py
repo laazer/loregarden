@@ -623,13 +623,32 @@ class TicketStudioService:
 
         now = datetime.now(timezone.utc)
         imported_tickets_json = json.dumps(body.imported_tickets) if body.imported_tickets else "[]"
+        is_preview = body.is_preview or bool(body.imported_tickets)
+
+        draft_items = []
+        if body.imported_tickets:
+            for idx, ticket in enumerate(body.imported_tickets):
+                draft_items.append(
+                    TicketStudioDraftItem(
+                        ref=ticket.get("external_id", f"imported-{idx}"),
+                        work_item_type=ticket.get("work_item_type", WorkItemType.TASK),
+                        parent_ref=ticket.get("parent_external_id"),
+                        title=ticket.get("title", "Imported ticket"),
+                        description=ticket.get("description", ""),
+                        acceptance_criteria=ticket.get("acceptance_criteria", []),
+                        priority=ticket.get("priority", 3),
+                        selected=True,
+                    )
+                )
+
         row = TicketStudioSession(
             workspace_id=ws.id,
             title=title,
             brief=body.brief.strip(),
             parent_ticket_id=body.parent_ticket_id,
-            is_preview=body.is_preview,
+            is_preview=is_preview,
             imported_tickets_json=imported_tickets_json,
+            draft_json=json.dumps([item.model_dump(mode="json") for item in draft_items]) if draft_items else "[]",
             created_at=now,
             updated_at=now,
         )

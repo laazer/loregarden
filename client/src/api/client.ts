@@ -1,4 +1,12 @@
-export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
+const getAPIBase = (): string => {
+  try {
+    return (globalThis as any).import?.meta?.env?.VITE_API_BASE ?? "http://127.0.0.1:8000";
+  } catch {
+    return "http://127.0.0.1:8000";
+  }
+};
+
+export const API_BASE = getAPIBase();
 
 export class ApiError extends Error {
   status: number;

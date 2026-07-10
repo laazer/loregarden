@@ -43,37 +43,41 @@ class TicketImportService:
     ) -> TicketImportPreviewResponse:
         ws = self.session.exec(select(Workspace).where(Workspace.slug == workspace_slug)).first()
         if not ws:
-            return TicketImportPreviewResponse(
-                tickets=[],
-                errors=[f"Workspace not found: {workspace_slug}"],
-                warnings=[],
-                total=0,
-                by_type={},
-                formats=[],
-                show_preview=False,
-                mode=mode,
-                studio_context={"imported_tickets": []} if mode == "smart" else None,
-            )
+            error_response_data = {
+                "tickets": [],
+                "errors": [f"Workspace not found: {workspace_slug}"],
+                "warnings": [],
+                "total": 0,
+                "by_type": {},
+                "formats": [],
+                "show_preview": False,
+                "mode": mode,
+            }
+            if mode == "smart":
+                error_response_data["studio_context"] = {"imported_tickets": []}
+            return TicketImportPreviewResponse(**error_response_data)
 
         parsed = parse_import_files(files)
         tickets, by_type, formats, preview_warnings = enrich_import_preview(
             parsed.tickets,
             workspace_slug=workspace_slug,
         )
-        studio_context = None
+
+        response_data = {
+            "tickets": tickets,
+            "errors": parsed.errors,
+            "warnings": [*parsed.warnings, *preview_warnings],
+            "total": len(tickets),
+            "by_type": by_type,
+            "formats": formats,
+            "show_preview": should_show_import_preview(total=len(tickets), formats=formats),
+            "mode": mode,
+        }
+
         if mode == "smart":
-            studio_context = {"imported_tickets": [item.model_dump() for item in tickets]}
-        return TicketImportPreviewResponse(
-            tickets=tickets,
-            errors=parsed.errors,
-            warnings=[*parsed.warnings, *preview_warnings],
-            total=len(tickets),
-            by_type=by_type,
-            formats=formats,
-            show_preview=should_show_import_preview(total=len(tickets), formats=formats),
-            mode=mode,
-            studio_context=studio_context,
-        )
+            response_data["studio_context"] = {"imported_tickets": [item.model_dump() for item in tickets]}
+
+        return TicketImportPreviewResponse(**response_data)
 
     def import_tickets(
         self,

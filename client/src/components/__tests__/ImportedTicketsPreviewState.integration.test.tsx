@@ -436,7 +436,7 @@ describe("INT-PREVIEW-5: Real User Interaction Flows", () => {
     // Button should still be disabled
     expect(finalizeBtn).toHaveAttribute("disabled");
   });
-}
+});
 
 // ===========================================================================
 // INT-PREVIEW-6: ERROR HANDLING & RECOVERY (Mock-Resistant)
