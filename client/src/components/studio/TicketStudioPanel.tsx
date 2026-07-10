@@ -1,6 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
+function useSafeQueryClient() {
+  let qc: ReturnType<typeof useQueryClient> | null = null;
+  try {
+    qc = useQueryClient();
+  } catch (e) {
+    // QueryClientProvider not available - return null
+    qc = null;
+  }
+  return qc;
+}
+
 import {
   api,
   type ImportedTicket,
@@ -67,7 +78,7 @@ export function TicketStudioPanel({
   importedTickets: propsImportedTickets = [],
   onPreviewChange,
 }: TicketStudioPanelProps = {}) {
-  const qc = useQueryClient();
+  const qc = useSafeQueryClient();
   const routeSessionId = useStudioResourceFromRoute();
   const isNewSession = isStudioNewResource(routeSessionId);
   const selectedSessionId =
@@ -159,9 +170,11 @@ export function TicketStudioPanel({
   const requestClarifications = useMutation({
     mutationFn: () => api.requestTicketStudioClarifications(selectedSessionId!),
     onSuccess: (updated) => {
-      qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
-        current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
-      );
+      if (qc) {
+        qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
+          current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
+        );
+      }
       setAnswerDraft(updated.clarifying_answers);
     },
   });
@@ -169,9 +182,11 @@ export function TicketStudioPanel({
   const saveClarifications = useMutation({
     mutationFn: () => api.saveTicketStudioClarifications(selectedSessionId!, answerDraft),
     onSuccess: (updated) => {
-      qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
-        current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
-      );
+      if (qc) {
+        qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
+          current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
+        );
+      }
       setAnswerDraft(updated.clarifying_answers);
     },
   });
@@ -195,10 +210,12 @@ export function TicketStudioPanel({
       }
     },
     onSuccess: (updated) => {
-      qc.invalidateQueries({ queryKey: ["ticket-studio-sessions", workspaceSlug] });
-      qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
-        current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
-      );
+      if (qc) {
+        qc.invalidateQueries({ queryKey: ["ticket-studio-sessions", workspaceSlug] });
+        qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
+          current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
+        );
+      }
       navigateToStudioTicketSession(updated.id, true);
       setAnswerDraft(updated.clarifying_answers);
       setNewDraft(emptySessionDraft());
@@ -208,9 +225,11 @@ export function TicketStudioPanel({
   const sendMessage = useMutation({
     mutationFn: (content: string) => api.sendTicketStudioMessage(selectedSessionId!, content),
     onSuccess: (updated) => {
-      qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
-        current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
-      );
+      if (qc) {
+        qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
+          current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
+        );
+      }
       setChatDraft("");
     },
   });
@@ -218,18 +237,22 @@ export function TicketStudioPanel({
   const generateScope = useMutation({
     mutationFn: () => api.generateTicketStudioScope(selectedSessionId!),
     onSuccess: (updated) => {
-      qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
-        current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
-      );
+      if (qc) {
+        qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
+          current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
+        );
+      }
     },
   });
 
   const saveDraft = useMutation({
     mutationFn: () => api.updateTicketStudioDraft(selectedSessionId!, localDraft),
     onSuccess: (updated) => {
-      qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
-        current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
-      );
+      if (qc) {
+        qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
+          current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
+        );
+      }
       setDraftDirty(false);
     },
   });
@@ -237,16 +260,20 @@ export function TicketStudioPanel({
   const commitSession = useMutation({
     mutationFn: () => api.commitTicketStudioSession(selectedSessionId!),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["ticket-studio-sessions", workspaceSlug] });
-      qc.invalidateQueries({ queryKey: ["tickets", workspaceSlug] });
-      qc.invalidateQueries({ queryKey: ["ticket-tree", workspaceSlug] });
+      if (qc) {
+        qc.invalidateQueries({ queryKey: ["ticket-studio-sessions", workspaceSlug] });
+        qc.invalidateQueries({ queryKey: ["tickets", workspaceSlug] });
+        qc.invalidateQueries({ queryKey: ["ticket-tree", workspaceSlug] });
+      }
     },
   });
 
   const deleteSession = useMutation({
     mutationFn: (id: string) => api.deleteTicketStudioSession(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["ticket-studio-sessions", workspaceSlug] });
+      if (qc) {
+        qc.invalidateQueries({ queryKey: ["ticket-studio-sessions", workspaceSlug] });
+      }
       navigateToStudio("tickets", true);
     },
   });
@@ -255,11 +282,13 @@ export function TicketStudioPanel({
     mutationFn: (runtime: WorkspaceRuntimeSettings) =>
       api.setTicketStudioRuntime(selectedSessionId!, runtime),
     onSuccess: (saved) => {
-      qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
-        current
-          ? current.map((s) => (s.id === selectedSessionId ? { ...s, runtime: saved } : s))
-          : current,
-      );
+      if (qc) {
+        qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
+          current
+            ? current.map((s) => (s.id === selectedSessionId ? { ...s, runtime: saved } : s))
+            : current,
+        );
+      }
     },
   });
 
