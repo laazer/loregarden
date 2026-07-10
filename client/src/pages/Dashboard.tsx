@@ -309,6 +309,10 @@ export function Dashboard() {
       navigateToTicketTab(ticketId, "pr");
       setRunConfirmStageKey(null);
     },
+    onError: (err: unknown) => {
+      window.alert(err instanceof Error ? err.message : "Failed to open pull request");
+      setRunConfirmStageKey(null);
+    },
   });
 
   const startRun = useMutation({
@@ -1455,6 +1459,8 @@ export function Dashboard() {
                 onOpenEditorFile={(filePath) =>
                   openEditorFile(sel?.workspace_slug ?? activeWorkspaceSlug, filePath)
                 }
+                onOpenPr={selectedId ? () => openPr.mutate(selectedId) : undefined}
+                isOpeningPr={openPr.isPending}
               />
             )}
           </div>

@@ -83,6 +83,10 @@ export interface TicketDetail extends TicketSummary {
       title: string;
       branch: string;
       body: string;
+      created?: boolean;
+      merged?: boolean;
+      needs_triage?: boolean;
+      reason?: string | null;
     } | null;
   };
 }

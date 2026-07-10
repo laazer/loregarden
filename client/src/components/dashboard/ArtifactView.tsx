@@ -7,6 +7,8 @@ export function ArtifactView({
   ticket,
   runs = [],
   onOpenEditorFile,
+  onOpenPr,
+  isOpeningPr = false,
 }: {
   tab: string;
   ticket?: TicketDetail;
@@ -21,6 +23,8 @@ export function ArtifactView({
     stdout?: string;
   }[];
   onOpenEditorFile?: (filePath: string) => void;
+  onOpenPr?: () => void;
+  isOpeningPr?: boolean;
 }) {
   if (!ticket) {
     return <div style={{ padding: 40, color: "var(--txl)", textAlign: "center" }}>No ticket selected</div>;
@@ -167,7 +171,14 @@ export function ArtifactView({
     if (!pr) {
       return (
         <EmptyArtifacts label="No pull request opened">
-          Open a PR from the approval step when human sign-off is required.
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
+            <div>Open a PR for this ticket's branch — pushes it if needed and tries to squash-merge automatically.</div>
+            {onOpenPr && (
+              <button type="button" className="btn-primary" disabled={isOpeningPr} onClick={onOpenPr}>
+                {isOpeningPr ? "Opening PR…" : "Open PR"}
+              </button>
+            )}
+          </div>
         </EmptyArtifacts>
       );
     }
@@ -189,6 +200,45 @@ export function ArtifactView({
           >
             {pr.url}
           </a>
+          {pr.merged ? (
+            <div style={{ marginTop: 12, color: "var(--ok, #3ba55c)", fontSize: 13, fontWeight: 600 }}>
+              ✓ Squash-merged
+            </div>
+          ) : pr.needs_triage ? (
+            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ color: "var(--warn, #d9822b)", fontSize: 13, fontWeight: 600 }}>
+                Needs triage — couldn't merge automatically
+              </div>
+              {pr.reason && (
+                <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--txm)" }}>{pr.reason}</div>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <a href="/branch-triage" style={{ color: "var(--ac2)", fontSize: 13 }}>
+                  Open Branch Triage →
+                </a>
+                {onOpenPr && (
+                  <button type="button" className="btn-secondary btn-compact" disabled={isOpeningPr} onClick={onOpenPr}>
+                    {isOpeningPr ? "Retrying…" : "Retry merge"}
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            // pr.merged / pr.needs_triage both unset — either a PR opened before this status
+            // tracking existed, or one whose merge attempt hasn't run yet. onOpenPr re-syncs it
+            // (and will squash-merge for real if GitHub reports it mergeable, same as opening a
+            // fresh PR) — say so plainly rather than leaving this as a silent no-op button.
+            onOpenPr && (
+              <div style={{ marginTop: 12 }}>
+                <button type="button" className="btn-secondary btn-compact" disabled={isOpeningPr} onClick={onOpenPr}>
+                  {isOpeningPr ? "Checking…" : "Check merge status"}
+                </button>
+                <div style={{ marginTop: 6, fontSize: 11, color: "var(--txm)" }}>
+                  Attempts a squash-merge automatically if GitHub reports this PR is mergeable.
+                </div>
+              </div>
+            )
+          )}
         </div>
         {pr.body && (
           <pre
