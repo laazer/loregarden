@@ -7,6 +7,8 @@ export function ArtifactView({
   ticket,
   runs = [],
   onOpenEditorFile,
+  onOpenPr,
+  isOpeningPr = false,
 }: {
   tab: string;
   ticket?: TicketDetail;
@@ -21,6 +23,8 @@ export function ArtifactView({
     stdout?: string;
   }[];
   onOpenEditorFile?: (filePath: string) => void;
+  onOpenPr?: () => void;
+  isOpeningPr?: boolean;
 }) {
   if (!ticket) {
     return <div style={{ padding: 40, color: "var(--txl)", textAlign: "center" }}>No ticket selected</div>;
@@ -168,6 +172,13 @@ export function ArtifactView({
       return (
         <EmptyArtifacts label="No pull request opened">
           Open a PR from the approval step when human sign-off is required.
+          {onOpenPr && (
+            <div style={{ marginTop: 16 }}>
+              <button type="button" className="btn-secondary" disabled={isOpeningPr} onClick={onOpenPr}>
+                {isOpeningPr ? "Opening PR…" : "Open PR"}
+              </button>
+            </div>
+          )}
         </EmptyArtifacts>
       );
     }

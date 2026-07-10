@@ -1455,6 +1455,8 @@ export function Dashboard() {
                 onOpenEditorFile={(filePath) =>
                   openEditorFile(sel?.workspace_slug ?? activeWorkspaceSlug, filePath)
                 }
+                onOpenPr={selectedId ? () => openPr.mutate(selectedId) : undefined}
+                isOpeningPr={openPr.isPending}
               />
             )}
           </div>
