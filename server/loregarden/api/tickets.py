@@ -495,6 +495,25 @@ def open_ticket_pr(ticket_id: str, session: Session = Depends(get_session)) -> T
     return get_ticket(ticket_id, session)
 
 
+@router.post("/{ticket_id}/commit-push", response_model=TicketDetail)
+def commit_push_ticket(ticket_id: str, session: Session = Depends(get_session)) -> TicketDetail:
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    from loregarden.services.git_commit_push_service import (
+        NothingToCommitError,
+        commit_and_push_ticket_branch,
+    )
+
+    try:
+        commit_and_push_ticket_branch(session, ticket)
+    except NothingToCommitError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return get_ticket(ticket_id, session)
+
+
 @router.post("/{ticket_id}/start", response_model=TicketDetail)
 def start_run(
     ticket_id: str,

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
-import { api, API_BASE, type StageStatus, type TicketDetail, type TicketImportPreviewResponse, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
+import { useNavigate, useParams } from "react-router-dom";
+import { ApiError, api, API_BASE, type StageStatus, type TicketDetail, type TicketImportPreviewResponse, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
 import { AppTopbarActions } from "../components/AppTopbarActions";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
 import { PrioBars } from "../components/PrioBars";
@@ -152,6 +152,7 @@ function canRunStage(
 
 export function Dashboard() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const routeTicketId = useTicketIdFromRoute();
   const { artifactTab: rawArtifactTab } = useParams<{ artifactTab?: string }>();
   const artifactTab = useArtifactTabFromRoute();
@@ -172,6 +173,7 @@ export function Dashboard() {
     paneVisibility,
     setPaneVisible,
     openEditorFile,
+    setBranchTriageWorkspaceSlug,
   } = useUiStore();
 
   const { workspaces: showWorkspaces, tickets: showTickets, workflow: showWorkflow, artifacts: showArtifacts } =
@@ -308,6 +310,20 @@ export function Dashboard() {
       qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
       navigateToTicketTab(ticketId, "pr");
       setRunConfirmStageKey(null);
+    },
+  });
+
+  const commitPush = useMutation({
+    mutationFn: (ticketId: string) => api.commitPush(ticketId),
+    onSuccess: (_data, ticketId) => {
+      qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
+      qc.invalidateQueries({ queryKey: ["ticket-tree"] });
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        setBranchTriageWorkspaceSlug(sel?.workspace_slug ?? activeWorkspaceSlug);
+        navigate("/branch-triage");
+      }
     },
   });
 
@@ -1383,7 +1399,7 @@ export function Dashboard() {
                         : undefined
                   }
                 >
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                  {t === "pr" ? "PR" : t.charAt(0).toUpperCase() + t.slice(1)}
                   {t === "errors" && hasRunErrors && (
                     <span
                       style={{
@@ -1457,6 +1473,8 @@ export function Dashboard() {
                 }
                 onOpenPr={selectedId ? () => openPr.mutate(selectedId) : undefined}
                 isOpeningPr={openPr.isPending}
+                onCommitPush={selectedId ? () => commitPush.mutate(selectedId) : undefined}
+                isCommittingPush={commitPush.isPending}
               />
             )}
           </div>

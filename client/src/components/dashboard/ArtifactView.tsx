@@ -9,6 +9,8 @@ export function ArtifactView({
   onOpenEditorFile,
   onOpenPr,
   isOpeningPr = false,
+  onCommitPush,
+  isCommittingPush = false,
 }: {
   tab: string;
   ticket?: TicketDetail;
@@ -25,6 +27,8 @@ export function ArtifactView({
   onOpenEditorFile?: (filePath: string) => void;
   onOpenPr?: () => void;
   isOpeningPr?: boolean;
+  onCommitPush?: () => void;
+  isCommittingPush?: boolean;
 }) {
   if (!ticket) {
     return <div style={{ padding: 40, color: "var(--txl)", textAlign: "center" }}>No ticket selected</div>;
@@ -51,6 +55,8 @@ export function ArtifactView({
           del: diff.del,
         }}
         onOpenEditorFile={onOpenEditorFile}
+        onCommitPush={onCommitPush}
+        isCommittingPush={isCommittingPush}
       />
     );
   }
@@ -172,11 +178,18 @@ export function ArtifactView({
       return (
         <EmptyArtifacts label="No pull request opened">
           Open a PR from the approval step when human sign-off is required.
-          {onOpenPr && (
-            <div style={{ marginTop: 16 }}>
-              <button type="button" className="btn-secondary" disabled={isOpeningPr} onClick={onOpenPr}>
-                {isOpeningPr ? "Opening PR…" : "Open PR"}
-              </button>
+          {(onCommitPush || onOpenPr) && (
+            <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "center" }}>
+              {onCommitPush && (
+                <button type="button" className="btn-secondary" disabled={isCommittingPush} onClick={onCommitPush}>
+                  {isCommittingPush ? "Committing…" : "Commit & push"}
+                </button>
+              )}
+              {onOpenPr && (
+                <button type="button" className="btn-secondary" disabled={isOpeningPr} onClick={onOpenPr}>
+                  {isOpeningPr ? "Opening PR…" : "Open PR"}
+                </button>
+              )}
             </div>
           )}
         </EmptyArtifacts>

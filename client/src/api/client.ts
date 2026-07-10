@@ -1,5 +1,15 @@
 export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...init?.headers },
@@ -7,7 +17,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || res.statusText);
+    let message = text || res.statusText;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed.detail === "string") message = parsed.detail;
+    } catch {
+      // response wasn't JSON — fall back to raw text
+    }
+    throw new ApiError(res.status, message);
   }
   return res.json() as Promise<T>;
 }
@@ -236,6 +253,11 @@ export const api = {
     }),
   openPr: (id: string) =>
     request<TicketDetail>(`/api/tickets/${id}/open-pr`, {
+      method: "POST",
+      body: "{}",
+    }),
+  commitPush: (id: string) =>
+    request<TicketDetail>(`/api/tickets/${id}/commit-push`, {
       method: "POST",
       body: "{}",
     }),
