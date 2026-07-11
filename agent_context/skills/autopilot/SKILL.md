@@ -102,7 +102,7 @@ Skip this step entirely if the input mode is backlog, milestone, or single ticke
 
 2. **Choose a destination folder.** Use `project_board/inbox/in_progress/` as the default holding area for ad-hoc description-driven tickets. Create the folder if it does not exist (also create `project_board/inbox/backlog/` and `project_board/inbox/done/` for consistency).
 
-3. **Write the ticket file** at `project_board/inbox/in_progress/<slug>.md` using the ticket template (`agent_context/agents/common_assets/ticket_template_v2.md`). Populate it with:
+3. **Write the ticket file** at `project_board/inbox/in_progress/<slug>.md` using the ticket template (`agent_context/agents/common_assets/ticket_template_v1.md`). Populate it with:
    - **Title:** first sentence or full description (truncated to ~80 chars)
    - **Description:** the full description text as given, verbatim, plus any clarifying context you can infer from the codebase
    - **Acceptance Criteria:** derive 3–5 concrete, testable criteria from the description; mark any that are inferred with `(inferred)`
