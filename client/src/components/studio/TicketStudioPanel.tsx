@@ -328,7 +328,7 @@ export function TicketStudioPanel({
       <div className="ticket-studio-drafts-header">
         <span className="ticket-studio-drafts-title">Draft tickets</span>
         {isPreview && showPreviewBadge && (
-          <span data-testid="preview-badge preview-state-indicator" style={{
+          <span data-testid="preview-state-indicator" className="preview-badge" style={{
             display: "inline-flex",
             alignItems: "center",
             gap: 4,
