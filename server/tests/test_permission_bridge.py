@@ -638,7 +638,9 @@ def test_permission_bridge_auto_approves_via_agent_run_flag(tmp_path):
                 },
             }
         )
-        result_line = json.dumps({"type": "result", "session_id": "sess_manual", "subtype": "success"})
+        result_line = json.dumps(
+            {"type": "result", "session_id": "sess_manual", "subtype": "success"}
+        )
 
         captured_proc: _FakeProc | None = None
 

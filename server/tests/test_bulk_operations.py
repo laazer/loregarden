@@ -34,9 +34,7 @@ class TestBulkCancelRuns:
 
         # Simulate bulk cancel
         for run_id in run_ids:
-            run = db_session.exec(
-                select(QueuedRun).where(QueuedRun.run_id == run_id)
-            ).first()
+            run = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == run_id)).first()
             run.status = QueuePosition.QUEUED
             db_session.add(run)
 
@@ -44,9 +42,7 @@ class TestBulkCancelRuns:
 
         # Verify all cancelled
         for run_id in run_ids:
-            run = db_session.exec(
-                select(QueuedRun).where(QueuedRun.run_id == run_id)
-            ).first()
+            run = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == run_id)).first()
             assert run is not None
 
     async def test_cancel_nonexistent_run(self, db_session: Session):
@@ -56,9 +52,7 @@ class TestBulkCancelRuns:
         db_session.commit()
 
         # Try to cancel non-existent run
-        run = db_session.exec(
-            select(QueuedRun).where(QueuedRun.run_id == "non-existent")
-        ).first()
+        run = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "non-existent")).first()
 
         assert run is None
 
@@ -84,9 +78,7 @@ class TestBulkCancelRuns:
         failed = 0
 
         for run_id in run_ids:
-            r = db_session.exec(
-                select(QueuedRun).where(QueuedRun.run_id == run_id)
-            ).first()
+            r = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == run_id)).first()
 
             if r:
                 r.status = QueuePosition.QUEUED
@@ -127,20 +119,14 @@ class TestBulkPauseRuns:
 
         # Pause all
         for run in runs:
-            r = db_session.exec(
-                select(QueuedRun).where(QueuedRun.run_id == run.run_id)
-            ).first()
+            r = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == run.run_id)).first()
             r.status = "paused"
             db_session.add(r)
 
         db_session.commit()
 
         # Verify paused
-        paused = db_session.exec(
-            select(QueuedRun).where(
-                QueuedRun.workspace_id == "ws-4"
-            )
-        ).all()
+        paused = db_session.exec(select(QueuedRun).where(QueuedRun.workspace_id == "ws-4")).all()
 
         assert all(r.status == "paused" for r in paused)
 
@@ -169,9 +155,7 @@ class TestBulkPauseRuns:
 
         # Try to pause both
         for run_id in ["run-active", "run-queued"]:
-            run = db_session.exec(
-                select(QueuedRun).where(QueuedRun.run_id == run_id)
-            ).first()
+            run = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == run_id)).first()
 
             if run.status == QueuePosition.STARTED:
                 run.status = "paused"
@@ -217,9 +201,7 @@ class TestBulkReorderRuns:
         new_order = ["run-3", "run-2", "run-1"]
 
         for new_pos, run_id in enumerate(new_order, 1):
-            run = db_session.exec(
-                select(QueuedRun).where(QueuedRun.run_id == run_id)
-            ).first()
+            run = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == run_id)).first()
             run.position = new_pos
             db_session.add(run)
 
@@ -227,9 +209,7 @@ class TestBulkReorderRuns:
 
         # Verify new positions
         for new_pos, run_id in enumerate(new_order, 1):
-            run = db_session.exec(
-                select(QueuedRun).where(QueuedRun.run_id == run_id)
-            ).first()
+            run = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == run_id)).first()
             assert run.position == new_pos
 
     async def test_reorder_partial_queue(self, db_session: Session):
@@ -255,21 +235,15 @@ class TestBulkReorderRuns:
         partial_order = ["run-4", "run-2"]
 
         for new_pos, run_id in enumerate(partial_order, 1):
-            run = db_session.exec(
-                select(QueuedRun).where(QueuedRun.run_id == run_id)
-            ).first()
+            run = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == run_id)).first()
             run.position = new_pos
             db_session.add(run)
 
         db_session.commit()
 
         # Verify partial reorder
-        run2 = db_session.exec(
-            select(QueuedRun).where(QueuedRun.run_id == "run-2")
-        ).first()
-        run4 = db_session.exec(
-            select(QueuedRun).where(QueuedRun.run_id == "run-4")
-        ).first()
+        run2 = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-2")).first()
+        run4 = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-4")).first()
 
         assert run4.position == 1
         assert run2.position == 2
@@ -303,9 +277,7 @@ class TestRetryLogic:
         db_session.add(run)
         db_session.commit()
 
-        updated = db_session.exec(
-            select(QueuedRun).where(QueuedRun.run_id == "run-1")
-        ).first()
+        updated = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-1")).first()
 
         assert updated.retry_count == 1
         assert updated.status == QueuePosition.QUEUED
@@ -330,19 +302,15 @@ class TestRetryLogic:
 
         # Simulate retries and check backoff
         for attempt in range(3):
-            run = db_session.exec(
-                select(QueuedRun).where(QueuedRun.run_id == "run-1")
-            ).first()
+            run = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-1")).first()
 
-            backoff_seconds = 2 ** run.retry_count
-            expected_backoff = 2 ** attempt
+            backoff_seconds = 2**run.retry_count
+            expected_backoff = 2**attempt
 
             assert backoff_seconds == expected_backoff
 
             run.retry_count += 1
-            run.estimated_start_at = datetime.now(timezone.utc) + timedelta(
-                seconds=backoff_seconds
-            )
+            run.estimated_start_at = datetime.now(timezone.utc) + timedelta(seconds=backoff_seconds)
             db_session.add(run)
             db_session.commit()
 
@@ -364,9 +332,7 @@ class TestRetryLogic:
         db_session.add(run)
         db_session.commit()
 
-        updated = db_session.exec(
-            select(QueuedRun).where(QueuedRun.run_id == "run-1")
-        ).first()
+        updated = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-1")).first()
 
         assert updated.retry_count >= updated.max_retries
 
@@ -390,9 +356,7 @@ class TestRetryLogic:
         db_session.commit()
 
         # Simulate retry
-        run = db_session.exec(
-            select(QueuedRun).where(QueuedRun.run_id == "run-1")
-        ).first()
+        run = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-1")).first()
 
         run.retry_count += 1
         run.failure_reason = ""
@@ -400,9 +364,7 @@ class TestRetryLogic:
         db_session.add(run)
         db_session.commit()
 
-        updated = db_session.exec(
-            select(QueuedRun).where(QueuedRun.run_id == "run-1")
-        ).first()
+        updated = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-1")).first()
 
         assert updated.failure_reason == ""
         assert updated.retry_count == 1
@@ -427,9 +389,7 @@ class TestRetryLogic:
         db_session.add(run)
         db_session.commit()
 
-        updated = db_session.exec(
-            select(QueuedRun).where(QueuedRun.run_id == "run-1")
-        ).first()
+        updated = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-1")).first()
 
         assert updated.last_failed_at is not None
         assert (updated.last_failed_at - now).total_seconds() < 1
@@ -464,8 +424,7 @@ class TestRetryAllFailed:
         # Simulate retry all failed
         failed = db_session.exec(
             select(QueuedRun).where(
-                (QueuedRun.workspace_id == "ws-13")
-                & (QueuedRun.status == "failed")
+                (QueuedRun.workspace_id == "ws-13") & (QueuedRun.status == "failed")
             )
         ).all()
 
@@ -477,9 +436,7 @@ class TestRetryAllFailed:
         db_session.commit()
 
         # Verify all retried
-        retried = db_session.exec(
-            select(QueuedRun).where(QueuedRun.workspace_id == "ws-13")
-        ).all()
+        retried = db_session.exec(select(QueuedRun).where(QueuedRun.workspace_id == "ws-13")).all()
 
         assert all(r.retry_count > 0 for r in retried)
         assert all(r.status == QueuePosition.QUEUED for r in retried)
@@ -515,8 +472,7 @@ class TestRetryAllFailed:
         # Retry all
         failed = db_session.exec(
             select(QueuedRun).where(
-                (QueuedRun.workspace_id == "ws-14")
-                & (QueuedRun.status == "failed")
+                (QueuedRun.workspace_id == "ws-14") & (QueuedRun.status == "failed")
             )
         ).all()
 
@@ -565,8 +521,7 @@ class TestSkipFailedRuns:
         # Skip all
         failed = db_session.exec(
             select(QueuedRun).where(
-                (QueuedRun.workspace_id == "ws-15")
-                & (QueuedRun.status == "failed")
+                (QueuedRun.workspace_id == "ws-15") & (QueuedRun.status == "failed")
             )
         ).all()
 
@@ -579,8 +534,7 @@ class TestSkipFailedRuns:
         # Verify all skipped
         skipped = db_session.exec(
             select(QueuedRun).where(
-                (QueuedRun.workspace_id == "ws-15")
-                & (QueuedRun.status == "skipped")
+                (QueuedRun.workspace_id == "ws-15") & (QueuedRun.status == "skipped")
             )
         ).all()
 
@@ -620,9 +574,7 @@ class TestBulkOperationErrors:
         successful = 0
 
         for run_id in run_ids:
-            r = db_session.exec(
-                select(QueuedRun).where(QueuedRun.run_id == run_id)
-            ).first()
+            r = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == run_id)).first()
 
             if r:
                 successful += 1

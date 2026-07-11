@@ -58,8 +58,7 @@ async def reorder_queued_run(
 
         # Validate new position
         queue_stmt = select(QueuedRun).where(
-            (QueuedRun.workspace_id == workspace_id)
-            & (QueuedRun.status == QueuePosition.QUEUED)
+            (QueuedRun.workspace_id == workspace_id) & (QueuedRun.status == QueuePosition.QUEUED)
         )
         queued_runs = session.exec(queue_stmt).all()
         queue_length = len(queued_runs)
@@ -126,15 +125,13 @@ async def reorder_queued_run(
 
         # Emit error event
         try:
-            queued_run = session.exec(
-                select(QueuedRun).where(QueuedRun.run_id == run_id)
-            ).first()
+            queued_run = session.exec(select(QueuedRun).where(QueuedRun.run_id == run_id)).first()
             if queued_run:
                 emit_error(
-                    target_room=f'workspace:{queued_run.workspace_id}',
-                    message=f'Failed to reorder run: {str(e)}',
-                    code='QUEUE_REORDER_ERROR',
-                    context={'run_id': run_id, 'new_position': new_position}
+                    target_room=f"workspace:{queued_run.workspace_id}",
+                    message=f"Failed to reorder run: {str(e)}",
+                    code="QUEUE_REORDER_ERROR",
+                    context={"run_id": run_id, "new_position": new_position},
                 )
         except Exception as emit_err:
             logger.warning(f"Failed to emit error: {emit_err}")
@@ -160,10 +157,13 @@ async def _reorder_queue_internal(
         new_position: Target position
     """
     # Get all queued runs ordered by position
-    stmt = select(QueuedRun).where(
-        (QueuedRun.workspace_id == workspace_id)
-        & (QueuedRun.status == QueuePosition.QUEUED)
-    ).order_by(QueuedRun.position)
+    stmt = (
+        select(QueuedRun)
+        .where(
+            (QueuedRun.workspace_id == workspace_id) & (QueuedRun.status == QueuePosition.QUEUED)
+        )
+        .order_by(QueuedRun.position)
+    )
 
     queued_runs = session.exec(stmt).all()
     queue_dict = {qr.run_id: qr for qr in queued_runs}
@@ -190,8 +190,7 @@ async def _reorder_queue_internal(
     session.commit()
 
     logger.debug(
-        f"Queue reordered in {workspace_id}: "
-        f"run {run_id} from pos {old_position} to {new_position}"
+        f"Queue reordered in {workspace_id}: run {run_id} from pos {old_position} to {new_position}"
     )
 
 
@@ -302,15 +301,13 @@ async def promote_run(
         logger.error(f"Error promoting run: {e}", exc_info=True)
 
         try:
-            queued_run = session.exec(
-                select(QueuedRun).where(QueuedRun.run_id == run_id)
-            ).first()
+            queued_run = session.exec(select(QueuedRun).where(QueuedRun.run_id == run_id)).first()
             if queued_run:
                 emit_error(
-                    target_room=f'workspace:{queued_run.workspace_id}',
-                    message=f'Failed to promote run: {str(e)}',
-                    code='QUEUE_PROMOTION_ERROR',
-                    context={'run_id': run_id}
+                    target_room=f"workspace:{queued_run.workspace_id}",
+                    message=f"Failed to promote run: {str(e)}",
+                    code="QUEUE_PROMOTION_ERROR",
+                    context={"run_id": run_id},
                 )
         except Exception as emit_err:
             logger.warning(f"Failed to emit error: {emit_err}")

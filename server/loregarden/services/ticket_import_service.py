@@ -75,7 +75,9 @@ class TicketImportService:
         }
 
         if mode == "smart":
-            response_data["studio_context"] = {"imported_tickets": [item.model_dump() for item in tickets]}
+            response_data["studio_context"] = {
+                "imported_tickets": [item.model_dump() for item in tickets]
+            }
 
         return TicketImportPreviewResponse(**response_data)
 

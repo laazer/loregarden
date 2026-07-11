@@ -13,6 +13,7 @@ router = APIRouter(prefix="/api/parallel", tags=["bulk-operations"])
 
 class BulkOperationRequest:
     """Request for bulk queue operations."""
+
     operation: str  # "cancel", "pause", "resume", "retry"
     run_ids: list[str]
     filters: dict | None = None  # Optional: filter by status, position range, etc
@@ -20,6 +21,7 @@ class BulkOperationRequest:
 
 class BulkOperationResponse:
     """Response from bulk operation."""
+
     operation: str
     total_requested: int
     successful: int
@@ -43,15 +45,12 @@ async def bulk_cancel_runs(
         try:
             run = session.exec(
                 select(QueuedRun).where(
-                    (QueuedRun.run_id == run_id)
-                    & (QueuedRun.workspace_id == workspace_id)
+                    (QueuedRun.run_id == run_id) & (QueuedRun.workspace_id == workspace_id)
                 )
             ).first()
 
             if not run:
-                results.append(
-                    {"run_id": run_id, "status": "error", "message": "Run not found"}
-                )
+                results.append({"run_id": run_id, "status": "error", "message": "Run not found"})
                 failed += 1
                 continue
 
@@ -71,9 +70,7 @@ async def bulk_cancel_runs(
                 )
 
         except Exception as e:
-            results.append(
-                {"run_id": run_id, "status": "error", "message": str(e)}
-            )
+            results.append({"run_id": run_id, "status": "error", "message": str(e)})
             failed += 1
             session.rollback()
 
@@ -134,9 +131,7 @@ async def bulk_pause_runs(
                 )
 
         except Exception as e:
-            results.append(
-                {"run_id": run_id, "status": "error", "message": str(e)}
-            )
+            results.append({"run_id": run_id, "status": "error", "message": str(e)})
             failed += 1
             session.rollback()
 
@@ -165,8 +160,7 @@ async def bulk_reorder_runs(
         # Fetch all runs to reorder
         runs = session.exec(
             select(QueuedRun).where(
-                (QueuedRun.workspace_id == workspace_id)
-                & (QueuedRun.run_id.in_(run_order))
+                (QueuedRun.workspace_id == workspace_id) & (QueuedRun.run_id.in_(run_order))
             )
         ).all()
 
@@ -239,8 +233,7 @@ async def retry_failed_run(
     """Retry a failed run with exponential backoff."""
     run = session.exec(
         select(QueuedRun).where(
-            (QueuedRun.run_id == run_id)
-            & (QueuedRun.workspace_id == workspace_id)
+            (QueuedRun.run_id == run_id) & (QueuedRun.workspace_id == workspace_id)
         )
     ).first()
 
@@ -254,11 +247,9 @@ async def retry_failed_run(
         )
 
     # Calculate exponential backoff: 2^retry_count seconds
-    backoff_seconds = 2 ** run.retry_count
+    backoff_seconds = 2**run.retry_count
     run.retry_count += 1
-    run.estimated_start_at = datetime.now(timezone.utc) + timedelta(
-        seconds=backoff_seconds
-    )
+    run.estimated_start_at = datetime.now(timezone.utc) + timedelta(seconds=backoff_seconds)
     run.failure_reason = ""  # Clear previous failure reason
     run.status = QueuePosition.QUEUED  # Reset to queued
 
@@ -296,8 +287,7 @@ async def retry_all_failed_runs(
     """Retry all failed runs in workspace (with retry count < max_retries)."""
     failed_runs = session.exec(
         select(QueuedRun).where(
-            (QueuedRun.workspace_id == workspace_id)
-            & (QueuedRun.status == "failed")
+            (QueuedRun.workspace_id == workspace_id) & (QueuedRun.status == "failed")
         )
     ).all()
 
@@ -313,11 +303,9 @@ async def retry_all_failed_runs(
             )
             continue
 
-        backoff_seconds = 2 ** run.retry_count
+        backoff_seconds = 2**run.retry_count
         run.retry_count += 1
-        run.estimated_start_at = datetime.now(timezone.utc) + timedelta(
-            seconds=backoff_seconds
-        )
+        run.estimated_start_at = datetime.now(timezone.utc) + timedelta(seconds=backoff_seconds)
         run.failure_reason = ""
         run.status = QueuePosition.QUEUED
 
@@ -350,8 +338,7 @@ async def get_failed_runs(
     """Get all failed runs with retry information."""
     failed_runs = session.exec(
         select(QueuedRun).where(
-            (QueuedRun.workspace_id == workspace_id)
-            & (QueuedRun.status == "failed")
+            (QueuedRun.workspace_id == workspace_id) & (QueuedRun.status == "failed")
         )
     ).all()
 
@@ -362,9 +349,7 @@ async def get_failed_runs(
             "retry_count": run.retry_count,
             "max_retries": run.max_retries,
             "failure_reason": run.failure_reason,
-            "last_failed_at": run.last_failed_at.isoformat()
-            if run.last_failed_at
-            else None,
+            "last_failed_at": run.last_failed_at.isoformat() if run.last_failed_at else None,
             "can_retry": run.retry_count < run.max_retries,
         }
         for run in failed_runs
@@ -380,8 +365,7 @@ async def skip_all_failed_runs(
     """Skip all failed runs and continue queue."""
     failed_runs = session.exec(
         select(QueuedRun).where(
-            (QueuedRun.workspace_id == workspace_id)
-            & (QueuedRun.status == "failed")
+            (QueuedRun.workspace_id == workspace_id) & (QueuedRun.status == "failed")
         )
     ).all()
 

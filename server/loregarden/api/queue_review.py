@@ -99,8 +99,7 @@ def generate_diff(before: list, after: list) -> list[dict]:
                         "before": before_run,
                         "after": after_run,
                         "fields_changed": [
-                            k for k in before_run.keys()
-                            if before_run.get(k) != after_run.get(k)
+                            k for k in before_run.keys() if before_run.get(k) != after_run.get(k)
                         ],
                     }
                 )
@@ -115,9 +114,7 @@ async def create_queue_operation(
     session: Session = Depends(get_session),
 ) -> dict:
     """Create a new queue operation record for review."""
-    ws = session.exec(
-        select(Workspace).where(Workspace.id == workspace_id)
-    ).first()
+    ws = session.exec(select(Workspace).where(Workspace.id == workspace_id)).first()
 
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
@@ -161,8 +158,7 @@ async def get_operation_diff(
     """Get the diff view for a queue operation."""
     operation = session.exec(
         select(QueueOperation).where(
-            (QueueOperation.id == operation_id)
-            & (QueueOperation.workspace_id == workspace_id)
+            (QueueOperation.id == operation_id) & (QueueOperation.workspace_id == workspace_id)
         )
     ).first()
 
@@ -175,9 +171,7 @@ async def get_operation_diff(
 
     # Get comments for this operation
     comments = session.exec(
-        select(QueueOperationComment).where(
-            QueueOperationComment.operation_id == operation_id
-        )
+        select(QueueOperationComment).where(QueueOperationComment.operation_id == operation_id)
     ).all()
 
     return {
@@ -189,7 +183,9 @@ async def get_operation_diff(
         "before_state": before_state,
         "after_state": after_state,
         "diff": diff,
-        "affected_run_ids": operation.affected_run_ids.split(",") if operation.affected_run_ids else [],
+        "affected_run_ids": operation.affected_run_ids.split(",")
+        if operation.affected_run_ids
+        else [],
         "comments": [
             {
                 "id": c.id,
@@ -204,9 +200,7 @@ async def get_operation_diff(
         ],
         "approved": operation.approved,
         "approved_by": operation.approved_by,
-        "approved_at": operation.approved_at.isoformat()
-        if operation.approved_at
-        else None,
+        "approved_at": operation.approved_at.isoformat() if operation.approved_at else None,
     }
 
 
@@ -220,8 +214,7 @@ async def add_operation_comment(
     """Add a comment to a queue operation (like GitHub PR review)."""
     operation = session.exec(
         select(QueueOperation).where(
-            (QueueOperation.id == operation_id)
-            & (QueueOperation.workspace_id == workspace_id)
+            (QueueOperation.id == operation_id) & (QueueOperation.workspace_id == workspace_id)
         )
     ).first()
 
@@ -260,8 +253,7 @@ async def approve_operation(
     """Approve a queue operation for execution."""
     operation = session.exec(
         select(QueueOperation).where(
-            (QueueOperation.id == operation_id)
-            & (QueueOperation.workspace_id == workspace_id)
+            (QueueOperation.id == operation_id) & (QueueOperation.workspace_id == workspace_id)
         )
     ).first()
 
@@ -293,8 +285,7 @@ async def submit_operation_to_agent(
     """Submit reviewed operation to agent for execution with review context."""
     operation = session.exec(
         select(QueueOperation).where(
-            (QueueOperation.id == operation_id)
-            & (QueueOperation.workspace_id == workspace_id)
+            (QueueOperation.id == operation_id) & (QueueOperation.workspace_id == workspace_id)
         )
     ).first()
 
@@ -303,9 +294,7 @@ async def submit_operation_to_agent(
 
     # Get all comments for context
     comments = session.exec(
-        select(QueueOperationComment).where(
-            QueueOperationComment.operation_id == operation_id
-        )
+        select(QueueOperationComment).where(QueueOperationComment.operation_id == operation_id)
     ).all()
 
     # Mark as approved and collect context for agent
@@ -356,9 +345,7 @@ async def list_operations(
     session: Session = Depends(get_session),
 ) -> dict:
     """List queue operations with optional filtering."""
-    query = select(QueueOperation).where(
-        QueueOperation.workspace_id == workspace_id
-    )
+    query = select(QueueOperation).where(QueueOperation.workspace_id == workspace_id)
 
     if approved_only:
         query = query.where(QueueOperation.approved == True)
@@ -367,9 +354,7 @@ async def list_operations(
         query = query.where(QueueOperation.executed == True)
 
     operations = session.exec(
-        query.order_by(QueueOperation.created_at.desc())
-        .offset(offset)
-        .limit(limit)
+        query.order_by(QueueOperation.created_at.desc()).offset(offset).limit(limit)
     ).all()
 
     total = session.exec(

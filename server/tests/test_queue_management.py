@@ -20,9 +20,27 @@ class TestQueueReordering:
         db_session.commit()
 
         # Create queued runs: run-1 pos 1, run-2 pos 2, run-3 pos 3
-        run1 = QueuedRun(run_id="run-1", ticket_id="ticket-1", workspace_id="ws-1", position=1, status=QueuePosition.QUEUED)
-        run2 = QueuedRun(run_id="run-2", ticket_id="ticket-2", workspace_id="ws-1", position=2, status=QueuePosition.QUEUED)
-        run3 = QueuedRun(run_id="run-3", ticket_id="ticket-3", workspace_id="ws-1", position=3, status=QueuePosition.QUEUED)
+        run1 = QueuedRun(
+            run_id="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-1",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
+        run2 = QueuedRun(
+            run_id="run-2",
+            ticket_id="ticket-2",
+            workspace_id="ws-1",
+            position=2,
+            status=QueuePosition.QUEUED,
+        )
+        run3 = QueuedRun(
+            run_id="run-3",
+            ticket_id="ticket-3",
+            workspace_id="ws-1",
+            position=3,
+            status=QueuePosition.QUEUED,
+        )
         db_session.add_all([run1, run2, run3])
         db_session.commit()
 
@@ -45,9 +63,27 @@ class TestQueueReordering:
         db_session.commit()
 
         # Create queued runs: run-1 pos 1, run-2 pos 2, run-3 pos 3
-        run1 = QueuedRun(run_id="run-1", ticket_id="ticket-1", workspace_id="ws-2", position=1, status=QueuePosition.QUEUED)
-        run2 = QueuedRun(run_id="run-2", ticket_id="ticket-2", workspace_id="ws-2", position=2, status=QueuePosition.QUEUED)
-        run3 = QueuedRun(run_id="run-3", ticket_id="ticket-3", workspace_id="ws-2", position=3, status=QueuePosition.QUEUED)
+        run1 = QueuedRun(
+            run_id="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-2",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
+        run2 = QueuedRun(
+            run_id="run-2",
+            ticket_id="ticket-2",
+            workspace_id="ws-2",
+            position=2,
+            status=QueuePosition.QUEUED,
+        )
+        run3 = QueuedRun(
+            run_id="run-3",
+            ticket_id="ticket-3",
+            workspace_id="ws-2",
+            position=3,
+            status=QueuePosition.QUEUED,
+        )
         db_session.add_all([run1, run2, run3])
         db_session.commit()
 
@@ -71,13 +107,20 @@ class TestQueueReordering:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(run_id="run-1", ticket_id="ticket-1", workspace_id="ws-3", position=1, status=QueuePosition.QUEUED)
+        run1 = QueuedRun(
+            run_id="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-3",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
         db_session.add(run1)
         db_session.commit()
 
         # Try to move to position 5 (queue length is 1)
         with pytest.raises(HTTPException) as exc_info:
             from loregarden.api.queue_management import reorder_queued_run
+
             await reorder_queued_run("run-1", 5, db_session)
 
         assert exc_info.value.status_code == 400
@@ -91,12 +134,19 @@ class TestQueueReordering:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(run_id="run-1", ticket_id="ticket-1", workspace_id="ws-4", position=1, status=QueuePosition.QUEUED)
+        run1 = QueuedRun(
+            run_id="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-4",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
         db_session.add(run1)
         db_session.commit()
 
         with pytest.raises(HTTPException) as exc_info:
             from loregarden.api.queue_management import reorder_queued_run
+
             await reorder_queued_run("run-1", 0, db_session)
 
         assert exc_info.value.status_code == 400
@@ -107,6 +157,7 @@ class TestQueueReordering:
 
         with pytest.raises(HTTPException) as exc_info:
             from loregarden.api.queue_management import reorder_queued_run
+
             await reorder_queued_run("non-existent", 1, db_session)
 
         assert exc_info.value.status_code == 404
@@ -120,12 +171,19 @@ class TestQueueReordering:
         db_session.commit()
 
         # Create an active run instead of queued
-        run1 = QueuedRun(run_id="run-1", ticket_id="ticket-1", workspace_id="ws-5", position=1, status=QueuePosition.ACTIVE)
+        run1 = QueuedRun(
+            run_id="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-5",
+            position=1,
+            status=QueuePosition.ACTIVE,
+        )
         db_session.add(run1)
         db_session.commit()
 
         with pytest.raises(HTTPException) as exc_info:
             from loregarden.api.queue_management import reorder_queued_run
+
             await reorder_queued_run("run-1", 1, db_session)
 
         assert exc_info.value.status_code == 400
@@ -139,7 +197,13 @@ class TestQueueReordering:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(run_id="run-1", ticket_id="ticket-1", workspace_id="ws-6", position=1, status=QueuePosition.QUEUED)
+        run1 = QueuedRun(
+            run_id="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-6",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
         db_session.add(run1)
         db_session.commit()
 
@@ -156,12 +220,24 @@ class TestQueueReordering:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(run_id="run-1", ticket_id="ticket-1", workspace_id="ws-7", position=1, status=QueuePosition.QUEUED)
-        run2 = QueuedRun(run_id="run-2", ticket_id="ticket-2", workspace_id="ws-7", position=2, status=QueuePosition.QUEUED)
+        run1 = QueuedRun(
+            run_id="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-7",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
+        run2 = QueuedRun(
+            run_id="run-2",
+            ticket_id="ticket-2",
+            workspace_id="ws-7",
+            position=2,
+            status=QueuePosition.QUEUED,
+        )
         db_session.add_all([run1, run2])
         db_session.commit()
 
-        with patch('loregarden.api.queue_management.emit_execution_update') as mock_emit:
+        with patch("loregarden.api.queue_management.emit_execution_update") as mock_emit:
             result = await reorder_queued_run("run-2", 1, db_session)
 
             assert result["status"] == "reordered"
@@ -179,12 +255,36 @@ class TestQueueReordering:
         db_session.commit()
 
         # Create runs in workspace 1
-        run1_ws1 = QueuedRun(run_id="run-1-ws1", ticket_id="ticket-1", workspace_id="ws-8", position=1, status=QueuePosition.QUEUED)
-        run2_ws1 = QueuedRun(run_id="run-2-ws1", ticket_id="ticket-2", workspace_id="ws-8", position=2, status=QueuePosition.QUEUED)
+        run1_ws1 = QueuedRun(
+            run_id="run-1-ws1",
+            ticket_id="ticket-1",
+            workspace_id="ws-8",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
+        run2_ws1 = QueuedRun(
+            run_id="run-2-ws1",
+            ticket_id="ticket-2",
+            workspace_id="ws-8",
+            position=2,
+            status=QueuePosition.QUEUED,
+        )
 
         # Create runs in workspace 2
-        run1_ws2 = QueuedRun(run_id="run-1-ws2", ticket_id="ticket-3", workspace_id="ws-9", position=1, status=QueuePosition.QUEUED)
-        run2_ws2 = QueuedRun(run_id="run-2-ws2", ticket_id="ticket-4", workspace_id="ws-9", position=2, status=QueuePosition.QUEUED)
+        run1_ws2 = QueuedRun(
+            run_id="run-1-ws2",
+            ticket_id="ticket-3",
+            workspace_id="ws-9",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
+        run2_ws2 = QueuedRun(
+            run_id="run-2-ws2",
+            ticket_id="ticket-4",
+            workspace_id="ws-9",
+            position=2,
+            status=QueuePosition.QUEUED,
+        )
 
         db_session.add_all([run1_ws1, run2_ws1, run1_ws2, run2_ws2])
         db_session.commit()
@@ -193,8 +293,12 @@ class TestQueueReordering:
         await _reorder_queue_internal(db_session, "ws-8", "run-2-ws1", 2, 1)
 
         # Verify workspace 2 unchanged
-        updated_run1_ws2 = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-1-ws2")).first()
-        updated_run2_ws2 = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-2-ws2")).first()
+        updated_run1_ws2 = db_session.exec(
+            select(QueuedRun).where(QueuedRun.run_id == "run-1-ws2")
+        ).first()
+        updated_run2_ws2 = db_session.exec(
+            select(QueuedRun).where(QueuedRun.run_id == "run-2-ws2")
+        ).first()
 
         assert updated_run1_ws2.position == 1
         assert updated_run2_ws2.position == 2
@@ -212,8 +316,20 @@ class TestQueueInfo:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(run_id="run-1", ticket_id="ticket-1", workspace_id="ws-10", position=1, status=QueuePosition.QUEUED)
-        run2 = QueuedRun(run_id="run-2", ticket_id="ticket-2", workspace_id="ws-10", position=2, status=QueuePosition.QUEUED)
+        run1 = QueuedRun(
+            run_id="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-10",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
+        run2 = QueuedRun(
+            run_id="run-2",
+            ticket_id="ticket-2",
+            workspace_id="ws-10",
+            position=2,
+            status=QueuePosition.QUEUED,
+        )
         db_session.add_all([run1, run2])
         db_session.commit()
 
@@ -248,7 +364,13 @@ class TestQueueInfo:
 
         # Create 3 queued runs (300s each = 900s)
         for i in range(1, 4):
-            run = QueuedRun(run_id=f"run-{i}", ticket_id=f"ticket-{i}", workspace_id="ws-12", position=i, status=QueuePosition.QUEUED)
+            run = QueuedRun(
+                run_id=f"run-{i}",
+                ticket_id=f"ticket-{i}",
+                workspace_id="ws-12",
+                position=i,
+                status=QueuePosition.QUEUED,
+            )
             db_session.add(run)
         db_session.commit()
 
@@ -280,14 +402,22 @@ class TestQueuePromotion:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(run_id="run-1", ticket_id="ticket-1", workspace_id="ws-13", position=1, status=QueuePosition.QUEUED)
+        run1 = QueuedRun(
+            run_id="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-13",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
         db_session.add(run1)
         db_session.commit()
 
-        with patch('loregarden.api.queue_management.ParallelQueueService') as mock_service:
+        with patch("loregarden.api.queue_management.ParallelQueueService") as mock_service:
             mock_instance = MagicMock()
             mock_service.return_value = mock_instance
-            mock_instance.promote_from_queue = AsyncMock(return_value={"run_id": "run-1", "slot_number": 1})
+            mock_instance.promote_from_queue = AsyncMock(
+                return_value={"run_id": "run-1", "slot_number": 1}
+            )
 
             result = await promote_run("run-1", db_session)
 
@@ -302,11 +432,17 @@ class TestQueuePromotion:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(run_id="run-1", ticket_id="ticket-1", workspace_id="ws-14", position=1, status=QueuePosition.QUEUED)
+        run1 = QueuedRun(
+            run_id="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-14",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
         db_session.add(run1)
         db_session.commit()
 
-        with patch('loregarden.api.queue_management.ParallelQueueService') as mock_service:
+        with patch("loregarden.api.queue_management.ParallelQueueService") as mock_service:
             mock_instance = MagicMock()
             mock_service.return_value = mock_instance
             mock_instance.promote_from_queue = AsyncMock(return_value=None)
@@ -321,6 +457,7 @@ class TestQueuePromotion:
 
         with pytest.raises(HTTPException) as exc_info:
             from loregarden.api.queue_management import promote_run
+
             await promote_run("non-existent", db_session)
 
         assert exc_info.value.status_code == 404
@@ -333,11 +470,17 @@ class TestQueuePromotion:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(run_id="run-1", ticket_id="ticket-1", workspace_id="ws-15", position=1, status=QueuePosition.ACTIVE)
+        run1 = QueuedRun(
+            run_id="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-15",
+            position=1,
+            status=QueuePosition.ACTIVE,
+        )
         db_session.add(run1)
         db_session.commit()
 
-        with patch('loregarden.api.queue_management.ParallelQueueService') as mock_service:
+        with patch("loregarden.api.queue_management.ParallelQueueService") as mock_service:
             mock_instance = MagicMock()
             mock_service.return_value = mock_instance
             mock_instance.promote_from_queue = AsyncMock(return_value=None)
@@ -359,12 +502,24 @@ class TestQueueErrorHandling:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(run_id="run-1", ticket_id="ticket-1", workspace_id="ws-16", position=1, status=QueuePosition.QUEUED)
-        run2 = QueuedRun(run_id="run-2", ticket_id="ticket-2", workspace_id="ws-16", position=2, status=QueuePosition.QUEUED)
+        run1 = QueuedRun(
+            run_id="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-16",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
+        run2 = QueuedRun(
+            run_id="run-2",
+            ticket_id="ticket-2",
+            workspace_id="ws-16",
+            position=2,
+            status=QueuePosition.QUEUED,
+        )
         db_session.add_all([run1, run2])
         db_session.commit()
 
-        with patch('loregarden.api.queue_management.emit_execution_update') as mock_emit:
+        with patch("loregarden.api.queue_management.emit_execution_update") as mock_emit:
             mock_emit.side_effect = Exception("WebSocket unavailable")
 
             # Should still return success even if emit fails
@@ -382,7 +537,13 @@ class TestQueueErrorHandling:
         db_session.commit()
 
         # Create runs then delete one mid-operation (simulated by returning gracefully)
-        run1 = QueuedRun(run_id="run-1", ticket_id="ticket-1", workspace_id="ws-17", position=1, status=QueuePosition.QUEUED)
+        run1 = QueuedRun(
+            run_id="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-17",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
         db_session.add(run1)
         db_session.commit()
 
@@ -406,7 +567,13 @@ class TestQueueConcurrency:
 
         # Create queue
         for i in range(1, 4):
-            run = QueuedRun(run_id=f"run-{i}", ticket_id=f"ticket-{i}", workspace_id="ws-18", position=i, status=QueuePosition.QUEUED)
+            run = QueuedRun(
+                run_id=f"run-{i}",
+                ticket_id=f"ticket-{i}",
+                workspace_id="ws-18",
+                position=i,
+                status=QueuePosition.QUEUED,
+            )
             db_session.add(run)
         db_session.commit()
 
@@ -419,7 +586,9 @@ class TestQueueConcurrency:
         await reorder_task("run-3", 3, 1)
 
         # Verify final state is consistent
-        all_runs = db_session.exec(select(QueuedRun).where(QueuedRun.workspace_id == "ws-18").order_by(QueuedRun.position)).all()
+        all_runs = db_session.exec(
+            select(QueuedRun).where(QueuedRun.workspace_id == "ws-18").order_by(QueuedRun.position)
+        ).all()
         positions = [run.position for run in all_runs]
 
         # Should have consistent positions 1, 2, 3
@@ -435,7 +604,13 @@ class TestQueueConcurrency:
         # Create runs in both workspaces
         for ws_id in ["ws-19", "ws-20"]:
             for i in range(1, 3):
-                run = QueuedRun(run_id=f"run-{i}-{ws_id}", ticket_id=f"ticket-{i}", workspace_id=ws_id, position=i, status=QueuePosition.QUEUED)
+                run = QueuedRun(
+                    run_id=f"run-{i}-{ws_id}",
+                    ticket_id=f"ticket-{i}",
+                    workspace_id=ws_id,
+                    position=i,
+                    status=QueuePosition.QUEUED,
+                )
                 db_session.add(run)
         db_session.commit()
 
@@ -444,8 +619,12 @@ class TestQueueConcurrency:
         await _reorder_queue_internal(db_session, "ws-20", "run-2-ws-20", 2, 1)
 
         # Verify each workspace is correctly reordered independently
-        runs_ws1 = db_session.exec(select(QueuedRun).where(QueuedRun.workspace_id == "ws-19").order_by(QueuedRun.position)).all()
-        runs_ws2 = db_session.exec(select(QueuedRun).where(QueuedRun.workspace_id == "ws-20").order_by(QueuedRun.position)).all()
+        runs_ws1 = db_session.exec(
+            select(QueuedRun).where(QueuedRun.workspace_id == "ws-19").order_by(QueuedRun.position)
+        ).all()
+        runs_ws2 = db_session.exec(
+            select(QueuedRun).where(QueuedRun.workspace_id == "ws-20").order_by(QueuedRun.position)
+        ).all()
 
         assert runs_ws1[0].run_id == "run-2-ws-19"
         assert runs_ws2[0].run_id == "run-2-ws-20"
@@ -462,9 +641,27 @@ class TestQueueIntegration:
         db_session.commit()
 
         # Create queue: run-1 active, run-2 queued, run-3 queued
-        run1 = QueuedRun(run_id="run-1", ticket_id="ticket-1", workspace_id="ws-21", position=None, status=QueuePosition.ACTIVE)
-        run2 = QueuedRun(run_id="run-2", ticket_id="ticket-2", workspace_id="ws-21", position=1, status=QueuePosition.QUEUED)
-        run3 = QueuedRun(run_id="run-3", ticket_id="ticket-3", workspace_id="ws-21", position=2, status=QueuePosition.QUEUED)
+        run1 = QueuedRun(
+            run_id="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-21",
+            position=None,
+            status=QueuePosition.ACTIVE,
+        )
+        run2 = QueuedRun(
+            run_id="run-2",
+            ticket_id="ticket-2",
+            workspace_id="ws-21",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
+        run3 = QueuedRun(
+            run_id="run-3",
+            ticket_id="ticket-3",
+            workspace_id="ws-21",
+            position=2,
+            status=QueuePosition.QUEUED,
+        )
         db_session.add_all([run1, run2, run3])
         db_session.commit()
 
@@ -486,12 +683,24 @@ class TestQueueIntegration:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(run_id="run-1", ticket_id="ticket-1", workspace_id="ws-22", position=1, status=QueuePosition.QUEUED)
-        run2 = QueuedRun(run_id="run-2", ticket_id="ticket-2", workspace_id="ws-22", position=2, status=QueuePosition.QUEUED)
+        run1 = QueuedRun(
+            run_id="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-22",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
+        run2 = QueuedRun(
+            run_id="run-2",
+            ticket_id="ticket-2",
+            workspace_id="ws-22",
+            position=2,
+            status=QueuePosition.QUEUED,
+        )
         db_session.add_all([run1, run2])
         db_session.commit()
 
-        with patch('loregarden.api.queue_management.emit_execution_update') as mock_emit:
+        with patch("loregarden.api.queue_management.emit_execution_update") as mock_emit:
             result = await reorder_queued_run("run-2", 1, db_session)
 
             assert result["status"] == "reordered"

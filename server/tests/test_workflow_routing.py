@@ -201,7 +201,9 @@ def test_apply_stage_route_ignores_next_agent_hint_on_pass():
     from loregarden.models.domain import WorkflowStageDef
 
     stages = [
-        WorkflowStageDef(key="implement", name="Implement", agent_id="frontend_implementer", order=1),
+        WorkflowStageDef(
+            key="implement", name="Implement", agent_id="frontend_implementer", order=1
+        ),
         WorkflowStageDef(key="review", name="Review", agent_id="architecture_reviewer", order=2),
     ]
     transitions = [{"from": "implement", "to": "review", "when": "pass"}]
@@ -241,7 +243,9 @@ def test_apply_stage_route_honors_next_agent_hint_on_reject():
     from loregarden.models.domain import WorkflowStageDef
 
     stages = [
-        WorkflowStageDef(key="implement", name="Implement", agent_id="frontend_implementer", order=1),
+        WorkflowStageDef(
+            key="implement", name="Implement", agent_id="frontend_implementer", order=1
+        ),
         WorkflowStageDef(key="review", name="Review", agent_id="architecture_reviewer", order=2),
     ]
     transitions = [{"from": "review", "to": "implement", "when": "reject"}]

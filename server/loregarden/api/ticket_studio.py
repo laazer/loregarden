@@ -19,7 +19,10 @@ def list_ticket_studio_sessions(
     workspace: str | None = None,
     session: Session = Depends(get_session),
 ) -> list[dict]:
-    return [item.model_dump(mode="json") for item in TicketStudioService(session).list_sessions(workspace_slug=workspace)]
+    return [
+        item.model_dump(mode="json")
+        for item in TicketStudioService(session).list_sessions(workspace_slug=workspace)
+    ]
 
 
 @router.post("/sessions")
@@ -81,7 +84,11 @@ def update_ticket_studio_draft(
     session: Session = Depends(get_session),
 ) -> dict:
     try:
-        return TicketStudioService(session).update_draft(session_id, body.items).model_dump(mode="json")
+        return (
+            TicketStudioService(session)
+            .update_draft(session_id, body.items)
+            .model_dump(mode="json")
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -93,23 +100,35 @@ def send_ticket_studio_message(
     session: Session = Depends(get_session),
 ) -> dict:
     try:
-        return TicketStudioService(session).send_message(session_id, body.content).model_dump(mode="json")
+        return (
+            TicketStudioService(session)
+            .send_message(session_id, body.content)
+            .model_dump(mode="json")
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/sessions/{session_id}/clarify")
-def request_ticket_studio_clarifications(session_id: str, session: Session = Depends(get_session)) -> dict:
+def request_ticket_studio_clarifications(
+    session_id: str, session: Session = Depends(get_session)
+) -> dict:
     try:
-        return TicketStudioService(session).request_clarifications(session_id).model_dump(mode="json")
+        return (
+            TicketStudioService(session).request_clarifications(session_id).model_dump(mode="json")
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/sessions/{session_id}/clarifications")
-def request_ticket_studio_clarifications_alt(session_id: str, session: Session = Depends(get_session)) -> dict:
+def request_ticket_studio_clarifications_alt(
+    session_id: str, session: Session = Depends(get_session)
+) -> dict:
     try:
-        return TicketStudioService(session).request_clarifications(session_id).model_dump(mode="json")
+        return (
+            TicketStudioService(session).request_clarifications(session_id).model_dump(mode="json")
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -121,7 +140,11 @@ def save_ticket_studio_clarifications(
     session: Session = Depends(get_session),
 ) -> dict:
     try:
-        return TicketStudioService(session).save_clarifications(session_id, body.answers).model_dump(mode="json")
+        return (
+            TicketStudioService(session)
+            .save_clarifications(session_id, body.answers)
+            .model_dump(mode="json")
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -110,9 +110,7 @@ class CIService:
             self.session.add(ci_result)
             self.session.commit()
 
-            logger.info(
-                f"Processed GitHub Actions CI result: {ticket_id} -> {ci_status.value}"
-            )
+            logger.info(f"Processed GitHub Actions CI result: {ticket_id} -> {ci_status.value}")
 
             # Trigger auto-fix if failing
             if ci_status == CIStatus.FAILING:
@@ -171,8 +169,10 @@ class CIService:
 
     async def get_latest_ci_status(self, ticket_id: str) -> CIRunResult | None:
         """Fetch latest CI result for a ticket."""
-        stmt = select(CIRunResult).where(CIRunResult.ticket_id == ticket_id).order_by(
-            CIRunResult.created_at.desc()
+        stmt = (
+            select(CIRunResult)
+            .where(CIRunResult.ticket_id == ticket_id)
+            .order_by(CIRunResult.created_at.desc())
         )
         return self.session.exec(stmt).first()
 
@@ -193,9 +193,7 @@ class CIService:
         """
         try:
             # Get existing attempts
-            stmt = select(AutoFixAttempt).where(
-                AutoFixAttempt.ci_run_result_id == ci_result.id
-            )
+            stmt = select(AutoFixAttempt).where(AutoFixAttempt.ci_run_result_id == ci_result.id)
             existing_attempts = self.session.exec(stmt).all()
 
             # Check if at max attempts
@@ -303,9 +301,7 @@ class CIService:
             return []
 
         # Get all attempts for this CI run
-        stmt = select(AutoFixAttempt).where(
-            AutoFixAttempt.ci_run_result_id == ci_result.id
-        )
+        stmt = select(AutoFixAttempt).where(AutoFixAttempt.ci_run_result_id == ci_result.id)
         return self.session.exec(stmt).all()
 
     async def skip_ci_check(self, ticket_id: str) -> None:
@@ -350,9 +346,7 @@ class CIService:
         if "FAILED" in logs or "failed" in logs:
             error_type = "test_failure"
             # Extract failing test names (pytest format: FAILED path/to/test.py::TestClass::test_name)
-            test_matches = re.findall(
-                r"FAILED\s+([^\s]+(?:::[^\s]+)?)", logs, re.IGNORECASE
-            )
+            test_matches = re.findall(r"FAILED\s+([^\s]+(?:::[^\s]+)?)", logs, re.IGNORECASE)
             failing_tests = test_matches[:5]  # Limit to first 5
 
         # Look for lint errors

@@ -172,7 +172,9 @@ class CliAgentExecutor:
                     advance_workflow=advance_workflow,
                 )
 
-    def prepare_terminal_handoff(self, run: AgentRun, ticket: Ticket) -> tuple[CliInvocation, Path | None]:
+    def prepare_terminal_handoff(
+        self, run: AgentRun, ticket: Ticket
+    ) -> tuple[CliInvocation, Path | None]:
         """Build a self-contained CLI invocation for this stage without spawning it.
 
         Used to hand a stage off to a human's own terminal instead of the app's subprocess

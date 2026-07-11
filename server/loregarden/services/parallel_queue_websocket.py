@@ -37,7 +37,7 @@ async def queue_run_ws(
         # self.session.add(queued_run)
         # self.session.commit()
 
-        logger.info(f'Run {run.run_id} queued in workspace {workspace_id}')
+        logger.info(f"Run {run.run_id} queued in workspace {workspace_id}")
 
         # NEW: Emit execution update to show new queue state
         try:
@@ -52,25 +52,25 @@ async def queue_run_ws(
                 stats=stats,
             )
 
-            logger.debug(f'Emitted execution_update for queue in {workspace_id}')
+            logger.debug(f"Emitted execution_update for queue in {workspace_id}")
         except Exception as e:
-            logger.warning(f'Failed to emit execution_update: {e}')
+            logger.warning(f"Failed to emit execution_update: {e}")
 
         # return queued_run
 
     except Exception as e:
-        logger.error(f'Error queuing run: {e}', exc_info=True)
+        logger.error(f"Error queuing run: {e}", exc_info=True)
 
         # NEW: Emit error event
         try:
             emit_error(
-                target_room=f'workspace:{workspace_id}',
-                message=f'Failed to queue run: {str(e)}',
-                code='QUEUE_ERROR',
-                context={'run_id': run.run_id}
+                target_room=f"workspace:{workspace_id}",
+                message=f"Failed to queue run: {str(e)}",
+                code="QUEUE_ERROR",
+                context={"run_id": run.run_id},
             )
         except Exception as emit_err:
-            logger.warning(f'Failed to emit error: {emit_err}')
+            logger.warning(f"Failed to emit error: {emit_err}")
 
         raise
 
@@ -96,9 +96,7 @@ async def promote_from_queue_ws(
         promoted_run = None  # placeholder
 
         if promoted_run:
-            logger.info(
-                f'Run {promoted_run.run_id} promoted to slot {promoted_run.slot_number}'
-            )
+            logger.info(f"Run {promoted_run.run_id} promoted to slot {promoted_run.slot_number}")
 
             # NEW: Emit queue promotion event
             try:
@@ -107,9 +105,9 @@ async def promote_from_queue_ws(
                     run_id=promoted_run.run_id,
                     slot_number=promoted_run.slot_number,
                 )
-                logger.debug(f'Emitted queue_promoted for {promoted_run.run_id}')
+                logger.debug(f"Emitted queue_promoted for {promoted_run.run_id}")
             except Exception as e:
-                logger.warning(f'Failed to emit queue_promoted: {e}')
+                logger.warning(f"Failed to emit queue_promoted: {e}")
 
             # NEW: Emit updated execution status
             try:
@@ -124,25 +122,25 @@ async def promote_from_queue_ws(
                     stats=stats,
                 )
 
-                logger.debug(f'Emitted execution_update after promotion in {workspace_id}')
+                logger.debug(f"Emitted execution_update after promotion in {workspace_id}")
             except Exception as e:
-                logger.warning(f'Failed to emit execution_update: {e}')
+                logger.warning(f"Failed to emit execution_update: {e}")
 
         return promoted_run
 
     except Exception as e:
-        logger.error(f'Error promoting from queue: {e}', exc_info=True)
+        logger.error(f"Error promoting from queue: {e}", exc_info=True)
 
         # NEW: Emit error event
         try:
             emit_error(
-                target_room=f'workspace:{workspace_id}',
-                message=f'Failed to promote from queue: {str(e)}',
-                code='PROMOTION_ERROR',
-                context={'workspace_id': workspace_id}
+                target_room=f"workspace:{workspace_id}",
+                message=f"Failed to promote from queue: {str(e)}",
+                code="PROMOTION_ERROR",
+                context={"workspace_id": workspace_id},
             )
         except Exception as emit_err:
-            logger.warning(f'Failed to emit error: {emit_err}')
+            logger.warning(f"Failed to emit error: {emit_err}")
 
         raise
 
@@ -165,7 +163,7 @@ async def on_run_complete_ws(
         run_id = run.run_id
         status = run.status
 
-        logger.info(f'Run {run_id} completed with status {status}')
+        logger.info(f"Run {run_id} completed with status {status}")
 
         # Existing logic: free the slot, update database
         # ... mark slot as available ...
@@ -179,18 +177,18 @@ async def on_run_complete_ws(
                 run_id=run_id,
                 status=status,
             )
-            logger.debug(f'Emitted run_completed for {run_id}')
+            logger.debug(f"Emitted run_completed for {run_id}")
         except Exception as e:
-            logger.warning(f'Failed to emit run_completed: {e}')
+            logger.warning(f"Failed to emit run_completed: {e}")
 
         # Try to promote next queued run
         try:
             promoted = await self.promote_from_queue(workspace_id)
             # promote_from_queue already emits events
             if promoted:
-                logger.info(f'Promoted {promoted.run_id} to fill freed slot')
+                logger.info(f"Promoted {promoted.run_id} to fill freed slot")
         except Exception as e:
-            logger.warning(f'Failed to promote from queue: {e}')
+            logger.warning(f"Failed to promote from queue: {e}")
 
         # NEW: Emit final execution status
         try:
@@ -205,23 +203,23 @@ async def on_run_complete_ws(
                 stats=stats,
             )
 
-            logger.debug(f'Emitted execution_update after completion in {workspace_id}')
+            logger.debug(f"Emitted execution_update after completion in {workspace_id}")
         except Exception as e:
-            logger.warning(f'Failed to emit execution_update: {e}')
+            logger.warning(f"Failed to emit execution_update: {e}")
 
     except Exception as e:
-        logger.error(f'Error handling run completion: {e}', exc_info=True)
+        logger.error(f"Error handling run completion: {e}", exc_info=True)
 
         # NEW: Emit error event
         try:
             emit_error(
-                target_room=f'workspace:{run.workspace_id}',
-                message=f'Failed to handle run completion: {str(e)}',
-                code='COMPLETION_HANDLER_ERROR',
-                context={'run_id': run.run_id}
+                target_room=f"workspace:{run.workspace_id}",
+                message=f"Failed to handle run completion: {str(e)}",
+                code="COMPLETION_HANDLER_ERROR",
+                context={"run_id": run.run_id},
             )
         except Exception as emit_err:
-            logger.warning(f'Failed to emit error: {emit_err}')
+            logger.warning(f"Failed to emit error: {emit_err}")
 
         raise
 

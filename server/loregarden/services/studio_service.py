@@ -140,6 +140,7 @@ def _ensure_studio_role_preamble(role_body: str) -> str:
         return f"{STUDIO_ROLE_PREAMBLE}\n{body}"
     return STUDIO_ROLE_PREAMBLE.strip()
 
+
 DEFAULT_HANDOFF_CHECKS = [
     StudioHandoffCheck(
         kind="mcp_complete",
@@ -926,9 +927,10 @@ def invoke_studio_generate_model(session: Session, prompt: str) -> str:
             raise TimeoutError(f"Studio generate assistant timed out after {timeout}s") from None
 
         if proc.returncode != 0:
-            detail = stderr.decode("utf-8", errors="replace").strip() or stdout.decode(
-                "utf-8", errors="replace"
-            ).strip()
+            detail = (
+                stderr.decode("utf-8", errors="replace").strip()
+                or stdout.decode("utf-8", errors="replace").strip()
+            )
             raise RuntimeError(detail or f"Studio generate CLI exited with code {proc.returncode}")
 
         reply = extract_triage_reply(stdout.decode("utf-8", errors="replace"))
@@ -963,7 +965,9 @@ def parse_agent_generate_payload(text: str) -> StudioGeneratedAgent | None:
     )
 
 
-def _normalize_generated_stage(raw: dict, *, order: int, agent_ids: set[str], skills: set[str]) -> StudioWorkflowStage | None:
+def _normalize_generated_stage(
+    raw: dict, *, order: int, agent_ids: set[str], skills: set[str]
+) -> StudioWorkflowStage | None:
     key = _slugify(str(raw.get("key") or f"stage_{order}"))
     name = str(raw.get("name") or key.replace("-", " ").title()).strip()
     stage_type = str(raw.get("stage_type") or "agent").strip().lower()
@@ -990,8 +994,16 @@ def _normalize_generated_stage(raw: dict, *, order: int, agent_ids: set[str], sk
             route_skill = "apply_patch" if "apply_patch" in skills else route_skill
         routes.append(
             ClassifyRoute(
-                languages=[str(item).strip() for item in (route_raw.get("languages") or []) if str(item).strip()],
-                specialties=[str(item).strip() for item in (route_raw.get("specialties") or []) if str(item).strip()],
+                languages=[
+                    str(item).strip()
+                    for item in (route_raw.get("languages") or [])
+                    if str(item).strip()
+                ],
+                specialties=[
+                    str(item).strip()
+                    for item in (route_raw.get("specialties") or [])
+                    if str(item).strip()
+                ],
                 agent_id=route_agent or "backend_implementer",
                 skill_name=route_skill,
                 default=bool(route_raw.get("default")),
@@ -1002,7 +1014,9 @@ def _normalize_generated_stage(raw: dict, *, order: int, agent_ids: set[str], sk
             ClassifyRoute(
                 languages=["python"],
                 specialties=["backend"],
-                agent_id="backend_implementer" if "backend_implementer" in agent_ids else agent_id or "planner",
+                agent_id="backend_implementer"
+                if "backend_implementer" in agent_ids
+                else agent_id or "planner",
                 skill_name="apply_patch" if "apply_patch" in skills else skill_name,
                 default=True,
             )

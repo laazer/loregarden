@@ -89,8 +89,7 @@ class ParallelQueueService:
 
             # Check available slots
             slot_stmt = select(AgentSlot).where(
-                (AgentSlot.workspace_id == workspace_id)
-                & (AgentSlot.is_available == True)
+                (AgentSlot.workspace_id == workspace_id) & (AgentSlot.is_available == True)
             )
             available_slot = self.session.exec(slot_stmt).first()
 
@@ -102,7 +101,9 @@ class ParallelQueueService:
                 self.session.add(available_slot)
                 self.session.commit()
 
-                logger.info(f"Run {run_id} started immediately on slot {available_slot.slot_number}")
+                logger.info(
+                    f"Run {run_id} started immediately on slot {available_slot.slot_number}"
+                )
 
                 # Emit execution update
                 try:
@@ -117,7 +118,7 @@ class ParallelQueueService:
                         stats=stats,
                     )
                 except Exception as e:
-                    logger.warning(f'Failed to emit execution_update: {e}')
+                    logger.warning(f"Failed to emit execution_update: {e}")
 
                 return {
                     "status": "started",
@@ -164,7 +165,7 @@ class ParallelQueueService:
                     stats=stats,
                 )
             except Exception as e:
-                logger.warning(f'Failed to emit execution_update: {e}')
+                logger.warning(f"Failed to emit execution_update: {e}")
 
             return {
                 "status": "queued",
@@ -180,13 +181,13 @@ class ParallelQueueService:
             # Emit error event
             try:
                 emit_error(
-                    target_room=f'workspace:{workspace_id}',
-                    message=f'Failed to queue run: {str(e)}',
-                    code='QUEUE_ERROR',
-                    context={'run_id': run_id}
+                    target_room=f"workspace:{workspace_id}",
+                    message=f"Failed to queue run: {str(e)}",
+                    code="QUEUE_ERROR",
+                    context={"run_id": run_id},
                 )
             except Exception as emit_err:
-                logger.warning(f'Failed to emit error: {emit_err}')
+                logger.warning(f"Failed to emit error: {emit_err}")
 
             return {
                 "status": "error",
@@ -211,8 +212,7 @@ class ParallelQueueService:
         """
         try:
             slot_stmt = select(AgentSlot).where(
-                (AgentSlot.workspace_id == workspace_id)
-                & (AgentSlot.is_available == False)
+                (AgentSlot.workspace_id == workspace_id) & (AgentSlot.is_available == False)
             )
             active_slots = self.session.exec(slot_stmt).all()
 
@@ -229,15 +229,19 @@ class ParallelQueueService:
 
                 if run:
                     elapsed = (now - slot.assigned_at).total_seconds() if slot.assigned_at else 0
-                    active_runs.append({
-                        "run_id": run.id,
-                        "slot_number": slot.slot_number,
-                        "ticket_id": run.ticket_id,
-                        "agent_id": run.agent_id,
-                        "assigned_at": slot.assigned_at.isoformat() if slot.assigned_at else None,
-                        "elapsed_seconds": int(elapsed),
-                        "status": run.status.value,
-                    })
+                    active_runs.append(
+                        {
+                            "run_id": run.id,
+                            "slot_number": slot.slot_number,
+                            "ticket_id": run.ticket_id,
+                            "agent_id": run.agent_id,
+                            "assigned_at": slot.assigned_at.isoformat()
+                            if slot.assigned_at
+                            else None,
+                            "elapsed_seconds": int(elapsed),
+                            "status": run.status.value,
+                        }
+                    )
 
             return active_runs
 
@@ -263,10 +267,14 @@ class ParallelQueueService:
             }
         """
         try:
-            queue_stmt = select(QueuedRun).where(
-                (QueuedRun.workspace_id == workspace_id)
-                & (QueuedRun.status.in_([QueuePosition.QUEUED, QueuePosition.SCHEDULED]))
-            ).order_by(QueuedRun.position)
+            queue_stmt = (
+                select(QueuedRun)
+                .where(
+                    (QueuedRun.workspace_id == workspace_id)
+                    & (QueuedRun.status.in_([QueuePosition.QUEUED, QueuePosition.SCHEDULED]))
+                )
+                .order_by(QueuedRun.position)
+            )
 
             queued_runs_records = self.session.exec(queue_stmt).all()
             queued_runs = []
@@ -279,15 +287,19 @@ class ParallelQueueService:
 
                 if run:
                     wait = (now - qr.created_at).total_seconds() if qr.created_at else 0
-                    queued_runs.append({
-                        "run_id": run.id,
-                        "ticket_id": run.ticket_id,
-                        "agent_id": run.agent_id,
-                        "position": qr.position,
-                        "estimated_start_at": qr.estimated_start_at.isoformat() if qr.estimated_start_at else None,
-                        "queued_at": qr.created_at.isoformat() if qr.created_at else None,
-                        "wait_seconds": int(wait),
-                    })
+                    queued_runs.append(
+                        {
+                            "run_id": run.id,
+                            "ticket_id": run.ticket_id,
+                            "agent_id": run.agent_id,
+                            "position": qr.position,
+                            "estimated_start_at": qr.estimated_start_at.isoformat()
+                            if qr.estimated_start_at
+                            else None,
+                            "queued_at": qr.created_at.isoformat() if qr.created_at else None,
+                            "wait_seconds": int(wait),
+                        }
+                    )
 
             return queued_runs
 
@@ -314,8 +326,7 @@ class ParallelQueueService:
         try:
             # Find available slot
             slot_stmt = select(AgentSlot).where(
-                (AgentSlot.workspace_id == workspace_id)
-                & (AgentSlot.is_available == True)
+                (AgentSlot.workspace_id == workspace_id) & (AgentSlot.is_available == True)
             )
             available_slot = self.session.exec(slot_stmt).first()
 
@@ -324,10 +335,14 @@ class ParallelQueueService:
                 return None
 
             # Find first queued run
-            queue_stmt = select(QueuedRun).where(
-                (QueuedRun.workspace_id == workspace_id)
-                & (QueuedRun.status == QueuePosition.QUEUED)
-            ).order_by(QueuedRun.position)
+            queue_stmt = (
+                select(QueuedRun)
+                .where(
+                    (QueuedRun.workspace_id == workspace_id)
+                    & (QueuedRun.status == QueuePosition.QUEUED)
+                )
+                .order_by(QueuedRun.position)
+            )
 
             queued_run = self.session.exec(queue_stmt).first()
 
@@ -361,7 +376,7 @@ class ParallelQueueService:
                     slot_number=available_slot.slot_number,
                 )
             except Exception as e:
-                logger.warning(f'Failed to emit queue_promoted: {e}')
+                logger.warning(f"Failed to emit queue_promoted: {e}")
 
             # Re-order remaining queue
             await self._reorder_queue(workspace_id)
@@ -379,7 +394,7 @@ class ParallelQueueService:
                     stats=stats,
                 )
             except Exception as e:
-                logger.warning(f'Failed to emit execution_update: {e}')
+                logger.warning(f"Failed to emit execution_update: {e}")
 
             return {
                 "run_id": queued_run.run_id,
@@ -394,13 +409,13 @@ class ParallelQueueService:
             # Emit error event
             try:
                 emit_error(
-                    target_room=f'workspace:{workspace_id}',
-                    message=f'Failed to promote from queue: {str(e)}',
-                    code='PROMOTION_ERROR',
-                    context={'workspace_id': workspace_id}
+                    target_room=f"workspace:{workspace_id}",
+                    message=f"Failed to promote from queue: {str(e)}",
+                    code="PROMOTION_ERROR",
+                    context={"workspace_id": workspace_id},
                 )
             except Exception as emit_err:
-                logger.warning(f'Failed to emit error: {emit_err}')
+                logger.warning(f"Failed to emit error: {emit_err}")
 
             return None
 
@@ -429,7 +444,7 @@ class ParallelQueueService:
                     status=run_status,
                 )
             except Exception as e:
-                logger.warning(f'Failed to emit run_completed: {e}')
+                logger.warning(f"Failed to emit run_completed: {e}")
 
             # Find slot with this run
             slot_stmt = select(AgentSlot).where(AgentSlot.current_run_id == run_id)
@@ -460,7 +475,7 @@ class ParallelQueueService:
                     stats=stats,
                 )
             except Exception as e:
-                logger.warning(f'Failed to emit execution_update: {e}')
+                logger.warning(f"Failed to emit execution_update: {e}")
 
             if promoted:
                 return {
@@ -479,23 +494,27 @@ class ParallelQueueService:
             # Emit error event
             try:
                 emit_error(
-                    target_room=f'workspace:{workspace_id}',
-                    message=f'Failed to handle run completion: {str(e)}',
-                    code='COMPLETION_HANDLER_ERROR',
-                    context={'run_id': run_id}
+                    target_room=f"workspace:{workspace_id}",
+                    message=f"Failed to handle run completion: {str(e)}",
+                    code="COMPLETION_HANDLER_ERROR",
+                    context={"run_id": run_id},
                 )
             except Exception as emit_err:
-                logger.warning(f'Failed to emit error: {emit_err}')
+                logger.warning(f"Failed to emit error: {emit_err}")
 
             return None
 
     async def _reorder_queue(self, workspace_id: str) -> None:
         """Re-order queue positions after promotion."""
         try:
-            queue_stmt = select(QueuedRun).where(
-                (QueuedRun.workspace_id == workspace_id)
-                & (QueuedRun.status == QueuePosition.QUEUED)
-            ).order_by(QueuedRun.position)
+            queue_stmt = (
+                select(QueuedRun)
+                .where(
+                    (QueuedRun.workspace_id == workspace_id)
+                    & (QueuedRun.status == QueuePosition.QUEUED)
+                )
+                .order_by(QueuedRun.position)
+            )
 
             queued_runs = self.session.exec(queue_stmt).all()
 
@@ -560,8 +579,7 @@ class ParallelQueueService:
         try:
             # Count active slots
             active_stmt = select(AgentSlot).where(
-                (AgentSlot.workspace_id == workspace_id)
-                & (AgentSlot.is_available == False)
+                (AgentSlot.workspace_id == workspace_id) & (AgentSlot.is_available == False)
             )
             active_slots = self.session.exec(active_stmt).all()
             active_count = len(active_slots)

@@ -72,12 +72,8 @@ class TestFinalizeHierarchyHappyPath:
         assert len(body["created_ids"]) == 2
 
         # Verify parent-child relationship
-        milestone = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-m-02")
-        ).first()
-        feature = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-f-02")
-        ).first()
+        milestone = db_session.exec(select(Ticket).where(Ticket.external_id == "test-m-02")).first()
+        feature = db_session.exec(select(Ticket).where(Ticket.external_id == "test-f-02")).first()
         assert milestone is not None
         assert feature is not None
         assert feature.parent_ticket_id == milestone.id
@@ -120,12 +116,8 @@ class TestFinalizeHierarchyHappyPath:
         assert len(created_ids) == 3
 
         # Verify hierarchy chain
-        milestone = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-m-03")
-        ).first()
-        feature = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-f-03")
-        ).first()
+        milestone = db_session.exec(select(Ticket).where(Ticket.external_id == "test-m-03")).first()
+        feature = db_session.exec(select(Ticket).where(Ticket.external_id == "test-f-03")).first()
         capability = db_session.exec(
             select(Ticket).where(Ticket.external_id == "test-c-03")
         ).first()
@@ -283,9 +275,7 @@ class TestFinalizeHierarchyAtomicity:
         assert "error" in body or "detail" in body
 
         # Verify nothing was created
-        exists = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-dup-01")
-        ).all()
+        exists = db_session.exec(select(Ticket).where(Ticket.external_id == "test-dup-01")).all()
         assert len(exists) == 0
 
     def test_rollback_on_milestone_with_parent_id(self, client: TestClient, db_session: Session):
@@ -593,12 +583,8 @@ class TestFinalizeHierarchyEdgeCases:
         body = res.json()
         assert body["total_created"] == 2
 
-        m1 = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-root-1")
-        ).first()
-        m2 = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-root-2")
-        ).first()
+        m1 = db_session.exec(select(Ticket).where(Ticket.external_id == "test-root-1")).first()
+        m2 = db_session.exec(select(Ticket).where(Ticket.external_id == "test-root-2")).first()
         assert m1 is not None
         assert m2 is not None
 
@@ -630,9 +616,7 @@ class TestFinalizeHierarchyBugs:
             },
         )
         assert res.status_code == 201
-        bug = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-bug-1")
-        ).first()
+        bug = db_session.exec(select(Ticket).where(Ticket.external_id == "test-bug-1")).first()
         assert bug.work_item_type == WorkItemType.BUG
 
     def test_bug_under_feature(self, client: TestClient, db_session: Session):
@@ -736,9 +720,7 @@ class TestFinalizeHierarchyExternalIdGeneration:
             },
         )
         assert res.status_code == 201
-        ticket = db_session.exec(
-            select(Ticket).where(Ticket.external_id == external_id)
-        ).first()
+        ticket = db_session.exec(select(Ticket).where(Ticket.external_id == external_id)).first()
         assert ticket.external_id == external_id
 
     def test_no_duplicate_external_ids_across_workspace(
@@ -878,9 +860,7 @@ class TestFinalizeHierarchyAdvancedTypeValidation:
         )
         assert res.status_code == 400
         # Verify neither was created
-        bug = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-bug-parent")
-        ).first()
+        bug = db_session.exec(select(Ticket).where(Ticket.external_id == "test-bug-parent")).first()
         child = db_session.exec(
             select(Ticket).where(Ticket.external_id == "test-invalid-under-bug")
         ).first()
@@ -913,15 +893,11 @@ class TestFinalizeHierarchyAdvancedTypeValidation:
         assert res.status_code == 400
         # Verify neither was created
         assert (
-            db_session.exec(
-                select(Ticket).where(Ticket.external_id == "test-feature-task")
-            ).first()
+            db_session.exec(select(Ticket).where(Ticket.external_id == "test-feature-task")).first()
             is None
         )
 
-    def test_capability_cannot_have_feature_children(
-        self, client: TestClient, db_session: Session
-    ):
+    def test_capability_cannot_have_feature_children(self, client: TestClient, db_session: Session):
         """Capability can only have Task or Bug children, not Feature."""
         res = client.post(
             "/api/tickets/finalize-hierarchy",
@@ -1117,10 +1093,7 @@ class TestFinalizeHierarchyAtomicityAdvanced:
             "test-deep-bad",
         ]:
             assert (
-                db_session.exec(
-                    select(Ticket).where(Ticket.external_id == ext_id)
-                ).first()
-                is None
+                db_session.exec(select(Ticket).where(Ticket.external_id == ext_id)).first() is None
             )
 
     def test_rollback_on_duplicate_id_in_deep_hierarchy(
@@ -1158,11 +1131,7 @@ class TestFinalizeHierarchyAtomicityAdvanced:
         assert res.status_code == 400
         # Verify no items were created
         for ext_id in ["test-dup-deep-root", "test-dup-deep-f"]:
-            count = len(
-                db_session.exec(
-                    select(Ticket).where(Ticket.external_id == ext_id)
-                ).all()
-            )
+            count = len(db_session.exec(select(Ticket).where(Ticket.external_id == ext_id)).all())
             assert count == 0 or count == 1  # At most the pre-existing one
 
 
@@ -1234,12 +1203,8 @@ class TestFinalizeHierarchyAcceptanceCriteria:
         )
         assert res.status_code == 201
         # Both exist because transaction succeeded
-        root = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "ac2-root")
-        ).first()
-        child = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "ac2-child")
-        ).first()
+        root = db_session.exec(select(Ticket).where(Ticket.external_id == "ac2-root")).first()
+        child = db_session.exec(select(Ticket).where(Ticket.external_id == "ac2-child")).first()
         assert root is not None
         assert child is not None
         assert child.parent_ticket_id == root.id
@@ -1292,21 +1257,11 @@ class TestFinalizeHierarchyAcceptanceCriteria:
         assert res.status_code == 201
 
         # Verify the complete hierarchy
-        m = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "ac3-m")
-        ).first()
-        f1 = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "ac3-f1")
-        ).first()
-        f2 = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "ac3-f2")
-        ).first()
-        c1 = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "ac3-c1")
-        ).first()
-        t1 = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "ac3-t1")
-        ).first()
+        m = db_session.exec(select(Ticket).where(Ticket.external_id == "ac3-m")).first()
+        f1 = db_session.exec(select(Ticket).where(Ticket.external_id == "ac3-f1")).first()
+        f2 = db_session.exec(select(Ticket).where(Ticket.external_id == "ac3-f2")).first()
+        c1 = db_session.exec(select(Ticket).where(Ticket.external_id == "ac3-c1")).first()
+        t1 = db_session.exec(select(Ticket).where(Ticket.external_id == "ac3-t1")).first()
 
         # Check all relationships
         assert f1.parent_ticket_id == m.id

@@ -87,7 +87,10 @@ async def receive_ci_webhook(
             # Only process workflow_run events
             if x_github_event != "workflow_run":
                 logger.debug(f"Ignoring GitHub event type: {x_github_event}")
-                return {"status": "ignored", "reason": f"Event type not supported: {x_github_event}"}
+                return {
+                    "status": "ignored",
+                    "reason": f"Event type not supported: {x_github_event}",
+                }
 
             provider = "github_actions"
             payload = json.loads(body)

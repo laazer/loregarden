@@ -31,9 +31,7 @@ class TestPauseRun:
         db_session.add(run)
         db_session.commit()
 
-        updated = db_session.exec(
-            select(QueuedRun).where(QueuedRun.run_id == "run-1")
-        ).first()
+        updated = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-1")).first()
 
         assert updated.status == "paused"
 
@@ -72,9 +70,7 @@ class TestPauseRun:
         db_session.add(run)
         db_session.commit()
 
-        with patch(
-            "loregarden.api.queue_management.emit_execution_update"
-        ) as mock_emit:
+        with patch("loregarden.api.queue_management.emit_execution_update") as mock_emit:
             await pause_run("run-pause-emit", db_session)
 
         mock_emit.assert_called_once()
@@ -119,9 +115,7 @@ class TestResumeRun:
         db_session.add(run)
         db_session.commit()
 
-        updated = db_session.exec(
-            select(QueuedRun).where(QueuedRun.run_id == "run-3")
-        ).first()
+        updated = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-3")).first()
 
         assert updated.status == QueuePosition.ACTIVE
 
@@ -177,9 +171,7 @@ class TestCancelRun:
         db_session.add(run)
         db_session.commit()
 
-        updated = db_session.exec(
-            select(QueuedRun).where(QueuedRun.run_id == "run-5")
-        ).first()
+        updated = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-5")).first()
 
         assert updated.status == "cancelled"
 

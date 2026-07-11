@@ -131,7 +131,7 @@ def build_mcp_run_context(
             "",
             "## Loregarden artifacts (memory, learnings, blog posts)",
             "Workspace-scoped **Obsidian markdown** + optional **SQLite memory graph**. **Never write files or SQL directly.**",
-            f"Always pass `workspace_slug=\"{workspace.slug}\"` on memory tools.",
+            f'Always pass `workspace_slug="{workspace.slug}"` on memory tools.',
             f"**Discover backends:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_memory_status` with "
             f'`workspace_slug="{workspace.slug}"` → Obsidian dirs + `memory_sqlite_path` (graph DB for memory/learnings nodes).',
             "SQLite stores `memory` and `learning` nodes in `memory_nodes` + `memory_relations`. Blog posts are Obsidian-only.",

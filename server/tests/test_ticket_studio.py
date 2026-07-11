@@ -155,7 +155,9 @@ def test_ticket_studio_scope_and_commit(client: TestClient, monkeypatch):
 
     tickets = client.get("/api/tickets?workspace=loregarden&search=Ticket+Studio").json()
     assert any(t["title"] == "Ticket Studio" and t["work_item_type"] == "feature" for t in tickets)
-    assert any(t["title"] == "Add ticket studio routes" and t["work_item_type"] == "task" for t in tickets)
+    assert any(
+        t["title"] == "Add ticket studio routes" and t["work_item_type"] == "task" for t in tickets
+    )
 
     dup_commit = client.post(f"/api/ticket-studio/sessions/{session_id}/commit")
     assert dup_commit.status_code == 400
@@ -193,9 +195,14 @@ def test_ticket_studio_scope_surfaces_root_milestone_in_draft(client: TestClient
     assert len(result["created_ticket_ids"]) == 4
 
     tickets = {
-        t["id"]: t for t in client.get("/api/tickets?workspace=loregarden&search=Ticket+Studio").json()
+        t["id"]: t
+        for t in client.get("/api/tickets?workspace=loregarden&search=Ticket+Studio").json()
     }
-    feature = next(t for t in tickets.values() if t["title"] == "Ticket Studio" and t["work_item_type"] == "feature")
+    feature = next(
+        t
+        for t in tickets.values()
+        if t["title"] == "Ticket Studio" and t["work_item_type"] == "feature"
+    )
     milestone = tickets[feature["parent_ticket_id"]]
     assert milestone["work_item_type"] == "milestone"
     assert milestone["title"] == "Ticket Studio feature"
@@ -244,7 +251,9 @@ def test_ticket_studio_scope_survives_large_json_payload(client: TestClient, mon
         )
 
     monkeypatch.setattr(ticket_studio_service, "build_triage_invocation", fake_resolve)
-    monkeypatch.setattr(ticket_studio_service.subprocess, "Popen", lambda *args, **kwargs: FakeProc())
+    monkeypatch.setattr(
+        ticket_studio_service.subprocess, "Popen", lambda *args, **kwargs: FakeProc()
+    )
     monkeypatch.delenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", raising=False)
 
     create = client.post(

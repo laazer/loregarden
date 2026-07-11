@@ -107,7 +107,9 @@ def _isolate_seeded_workspace_repo(session: Session, tmp_path) -> None:
         check=True,
         capture_output=True,
     )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.name", "Test"], cwd=repo, check=True, capture_output=True
+    )
     (repo / "README.md").write_text("# test\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)

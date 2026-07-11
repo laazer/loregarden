@@ -43,7 +43,9 @@ def _seeded_repo_root(isolated_db) -> Path:
 
 def _add_bare_origin(repo: Path, tmp_path: Path) -> Path:
     bare = tmp_path / "origin.git"
-    subprocess.run(["git", "init", "--bare", "-b", "main", str(bare)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "init", "--bare", "-b", "main", str(bare)], check=True, capture_output=True
+    )
     _git(repo, "remote", "add", "origin", str(bare))
     _git(repo, "push", "origin", "main")
     return bare

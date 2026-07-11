@@ -71,11 +71,11 @@ async def create_parallel_run_ws(
             )
 
             logger.info(
-                f'Emitted execution_update for new run in {ticket.workspace_id}',
-                extra={'status': result.get('status')}
+                f"Emitted execution_update for new run in {ticket.workspace_id}",
+                extra={"status": result.get("status")},
             )
         except Exception as e:
-            logger.warning(f'Failed to emit execution_update: {e}')
+            logger.warning(f"Failed to emit execution_update: {e}")
             # Don't fail the request if WebSocket emission fails
 
         return result
@@ -88,13 +88,13 @@ async def create_parallel_run_ws(
         # NEW: Emit error event
         try:
             emit_error(
-                target_room=f'workspace:{ticket.workspace_id}',
-                message=f'Failed to create run: {str(e)}',
-                code='RUN_CREATION_ERROR',
-                context={'ticket_id': ticket_id}
+                target_room=f"workspace:{ticket.workspace_id}",
+                message=f"Failed to create run: {str(e)}",
+                code="RUN_CREATION_ERROR",
+                context={"ticket_id": ticket_id},
             )
         except Exception as emit_err:
-            logger.warning(f'Failed to emit error: {emit_err}')
+            logger.warning(f"Failed to emit error: {emit_err}")
 
         raise HTTPException(status_code=500, detail=str(e)) from e
 
@@ -125,7 +125,7 @@ async def complete_run_ws(
         session.add(run)
         session.commit()
 
-        logger.info(f'Run {run_id} marked as {status}')
+        logger.info(f"Run {run_id} marked as {status}")
 
         # NEW: Emit run completed event
         try:
@@ -135,7 +135,7 @@ async def complete_run_ws(
                 status=status,
             )
         except Exception as e:
-            logger.warning(f'Failed to emit run_completed: {e}')
+            logger.warning(f"Failed to emit run_completed: {e}")
 
         # Promote from queue if applicable
         try:
@@ -143,7 +143,7 @@ async def complete_run_ws(
             await queue_service.on_run_complete(run)
             # on_run_complete already emits events
         except Exception as e:
-            logger.warning(f'Failed to promote from queue: {e}')
+            logger.warning(f"Failed to promote from queue: {e}")
 
         # NEW: Emit updated execution status
         try:
@@ -159,14 +159,14 @@ async def complete_run_ws(
                 stats=stats,
             )
 
-            logger.info('Emitted execution_update after run completion')
+            logger.info("Emitted execution_update after run completion")
         except Exception as e:
-            logger.warning(f'Failed to emit execution_update: {e}')
+            logger.warning(f"Failed to emit execution_update: {e}")
 
         return {
-            'status': 'completed',
-            'run_id': run_id,
-            'final_status': status,
+            "status": "completed",
+            "run_id": run_id,
+            "final_status": status,
         }
 
     except HTTPException:
@@ -179,13 +179,13 @@ async def complete_run_ws(
             run = session.get(AgentRun, run_id)
             if run:
                 emit_error(
-                    target_room=f'workspace:{run.workspace_id}',
-                    message=f'Failed to complete run: {str(e)}',
-                    code='RUN_COMPLETION_ERROR',
-                    context={'run_id': run_id}
+                    target_room=f"workspace:{run.workspace_id}",
+                    message=f"Failed to complete run: {str(e)}",
+                    code="RUN_COMPLETION_ERROR",
+                    context={"run_id": run_id},
                 )
         except Exception as emit_err:
-            logger.warning(f'Failed to emit error: {emit_err}')
+            logger.warning(f"Failed to emit error: {emit_err}")
 
         raise HTTPException(status_code=500, detail=str(e)) from e
 
@@ -212,12 +212,12 @@ async def cancel_run_ws(
         workspace_id = run.workspace_id
 
         # Cancel the run
-        if run.status in ['queued', 'scheduled']:
-            run.status = 'cancelled'
+        if run.status in ["queued", "scheduled"]:
+            run.status = "cancelled"
             session.add(run)
             session.commit()
 
-            logger.info(f'Run {run_id} cancelled')
+            logger.info(f"Run {run_id} cancelled")
 
             # NEW: Emit updated execution status
             try:
@@ -233,13 +233,13 @@ async def cancel_run_ws(
                     stats=stats,
                 )
             except Exception as e:
-                logger.warning(f'Failed to emit execution_update: {e}')
+                logger.warning(f"Failed to emit execution_update: {e}")
         else:
             raise HTTPException(status_code=400, detail="Can only cancel queued runs")
 
         return {
-            'status': 'cancelled',
-            'run_id': run_id,
+            "status": "cancelled",
+            "run_id": run_id,
         }
 
     except HTTPException:
@@ -250,13 +250,13 @@ async def cancel_run_ws(
         # NEW: Emit error event
         try:
             emit_error(
-                target_room=f'workspace:{run.workspace_id}',
-                message=f'Failed to cancel run: {str(e)}',
-                code='RUN_CANCELLATION_ERROR',
-                context={'run_id': run_id}
+                target_room=f"workspace:{run.workspace_id}",
+                message=f"Failed to cancel run: {str(e)}",
+                code="RUN_CANCELLATION_ERROR",
+                context={"run_id": run_id},
             )
         except Exception as emit_err:
-            logger.warning(f'Failed to emit error: {emit_err}')
+            logger.warning(f"Failed to emit error: {emit_err}")
 
         raise HTTPException(status_code=500, detail=str(e)) from e
 

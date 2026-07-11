@@ -70,9 +70,7 @@ def _worktree_dirty(worktree_path: str) -> bool:
 
 
 def _ticket_branch_map(session: Session, workspace_id: str) -> dict[str, list[dict[str, str]]]:
-    tickets = session.exec(
-        select(Ticket).where(Ticket.workspace_id == workspace_id)
-    ).all()
+    tickets = session.exec(select(Ticket).where(Ticket.workspace_id == workspace_id)).all()
     by_branch: dict[str, list[dict[str, str]]] = {}
     for ticket in tickets:
         branch = resolve_ticket_branch(ticket)
@@ -188,12 +186,8 @@ def _branch_diff_options(
     if upstream:
         options.append({"mode": "remote", "label": f"vs {upstream}", "ref": upstream})
     if is_current:
-        options.append(
-            {"mode": "unstaged", "label": "Unstaged changes", "ref": "working tree"}
-        )
-        options.append(
-            {"mode": "uncommitted", "label": "Uncommitted changes", "ref": "HEAD"}
-        )
+        options.append({"mode": "unstaged", "label": "Unstaged changes", "ref": "working tree"})
+        options.append({"mode": "uncommitted", "label": "Uncommitted changes", "ref": "HEAD"})
     return options
 
 
@@ -237,9 +231,15 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
         linked = ticket_map.get(name, [])
         wt_list = worktrees_by_branch.get(name, [])
         dirty = any(wt["dirty"] for wt in wt_list)
-        is_current = name == current and any(
-            wt["path"] == str(repo_root.resolve()) for wt in worktrees if wt.get("branch") == name
-        ) or name == current
+        is_current = (
+            name == current
+            and any(
+                wt["path"] == str(repo_root.resolve())
+                for wt in worktrees
+                if wt.get("branch") == name
+            )
+            or name == current
+        )
 
         issues = _detect_issues(
             branch=name,
@@ -319,9 +319,7 @@ def branch_diff_snapshot(
         raise ValueError(f"Invalid diff mode: {mode}")
     if file_path:
         _validate_diff_file_path(file_path)
-        return capture_branch_file_diff(
-            workspace, branch, file_path, base=base, mode=mode
-        )
+        return capture_branch_file_diff(workspace, branch, file_path, base=base, mode=mode)
     return branch_diff_manifest(workspace, branch, base=base, mode=mode)
 
 

@@ -81,7 +81,9 @@ def fail_interrupted_orchestration_runs(
         ticket = session.get(Ticket, run.ticket_id)
         if not ticket:
             continue
-        callbacks.complete_orchestration(run, ticket, status=OrchestrationRunStatus.FAILED, message=message)
+        callbacks.complete_orchestration(
+            run, ticket, status=OrchestrationRunStatus.FAILED, message=message
+        )
         failed.append(run)
     return failed
 

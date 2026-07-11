@@ -23,9 +23,7 @@ async def save_queue_snapshot(
 ) -> dict:
     """Save current queue state as a snapshot for restoration."""
     # Verify workspace exists
-    ws = session.exec(
-        select(Workspace).where(Workspace.id == workspace_id)
-    ).first()
+    ws = session.exec(select(Workspace).where(Workspace.id == workspace_id)).first()
 
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
@@ -129,8 +127,7 @@ async def get_snapshot_details(
     """Get detailed information about a snapshot including full queue state."""
     snapshot = session.exec(
         select(QueueSnapshot).where(
-            (QueueSnapshot.id == snapshot_id)
-            & (QueueSnapshot.workspace_id == workspace_id)
+            (QueueSnapshot.id == snapshot_id) & (QueueSnapshot.workspace_id == workspace_id)
         )
     ).first()
 
@@ -162,9 +159,7 @@ async def restore_queue_from_snapshot(
 ) -> dict:
     """Restore queue to a previous snapshot state."""
     # Verify workspace exists
-    ws = session.exec(
-        select(Workspace).where(Workspace.id == workspace_id)
-    ).first()
+    ws = session.exec(select(Workspace).where(Workspace.id == workspace_id)).first()
 
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
@@ -172,8 +167,7 @@ async def restore_queue_from_snapshot(
     # Get snapshot
     snapshot = session.exec(
         select(QueueSnapshot).where(
-            (QueueSnapshot.id == snapshot_id)
-            & (QueueSnapshot.workspace_id == workspace_id)
+            (QueueSnapshot.id == snapshot_id) & (QueueSnapshot.workspace_id == workspace_id)
         )
     ).first()
 
@@ -289,8 +283,7 @@ async def delete_snapshot(
     """Delete a saved queue snapshot."""
     snapshot = session.exec(
         select(QueueSnapshot).where(
-            (QueueSnapshot.id == snapshot_id)
-            & (QueueSnapshot.workspace_id == workspace_id)
+            (QueueSnapshot.id == snapshot_id) & (QueueSnapshot.workspace_id == workspace_id)
         )
     ).first()
 
@@ -322,9 +315,7 @@ async def search_snapshots(
     if tag:
         base_query = base_query.where(QueueSnapshot.tags.ilike(f"%{tag}%"))
 
-    snapshots = session.exec(
-        base_query.order_by(QueueSnapshot.created_at.desc())
-    ).all()
+    snapshots = session.exec(base_query.order_by(QueueSnapshot.created_at.desc())).all()
 
     return {
         "total": len(snapshots),

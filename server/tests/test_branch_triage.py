@@ -36,8 +36,12 @@ def triage_repo(tmp_path, monkeypatch):
     repo = tmp_path / "loregarden"
     repo.mkdir()
     _init_repo(repo)
-    subprocess.run(["git", "branch", "loregarden/orphan"], cwd=repo, check=True, capture_output=True)
-    subprocess.run(["git", "checkout", "loregarden/orphan"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "branch", "loregarden/orphan"], cwd=repo, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "checkout", "loregarden/orphan"], cwd=repo, check=True, capture_output=True
+    )
     (repo / "orphan.txt").write_text("orphan\n", encoding="utf-8")
     subprocess.run(["git", "add", "orphan.txt"], cwd=repo, check=True, capture_output=True)
     subprocess.run(
@@ -190,8 +194,12 @@ def test_branch_diff_endpoint(client: TestClient, triage_repo, db_session: Sessi
     )
     assert res.status_code == 404
 
-    subprocess.run(["git", "branch", "feature/triage"], cwd=triage_repo, check=True, capture_output=True)
-    subprocess.run(["git", "checkout", "feature/triage"], cwd=triage_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "branch", "feature/triage"], cwd=triage_repo, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "checkout", "feature/triage"], cwd=triage_repo, check=True, capture_output=True
+    )
     (triage_repo / "feature.txt").write_text("feature\n", encoding="utf-8")
     subprocess.run(["git", "add", "feature.txt"], cwd=triage_repo, check=True, capture_output=True)
     subprocess.run(
@@ -235,9 +243,7 @@ def test_branch_diff_remote_and_working_tree_modes(
     )
     (triage_repo / "remote.txt").write_text("v1\n", encoding="utf-8")
     subprocess.run(["git", "add", "remote.txt"], cwd=triage_repo, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", "v1"], cwd=triage_repo, check=True, capture_output=True
-    )
+    subprocess.run(["git", "commit", "-m", "v1"], cwd=triage_repo, check=True, capture_output=True)
     v1_sha = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=triage_repo,
@@ -307,8 +313,12 @@ def test_branch_diff_comments_and_submit(
     ws = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
     assert ws is not None
 
-    subprocess.run(["git", "branch", "feature/review"], cwd=triage_repo, check=True, capture_output=True)
-    subprocess.run(["git", "checkout", "feature/review"], cwd=triage_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "branch", "feature/review"], cwd=triage_repo, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "checkout", "feature/review"], cwd=triage_repo, check=True, capture_output=True
+    )
     (triage_repo / "review.txt").write_text("review\n", encoding="utf-8")
     subprocess.run(["git", "add", "review.txt"], cwd=triage_repo, check=True, capture_output=True)
     subprocess.run(
@@ -361,7 +371,9 @@ def test_branch_chat_messages(client: TestClient, triage_repo, db_session: Sessi
     ws = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
     assert ws is not None
 
-    subprocess.run(["git", "branch", "feature/chat"], cwd=triage_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "branch", "feature/chat"], cwd=triage_repo, check=True, capture_output=True
+    )
 
     empty = client.get(
         "/api/workspaces/loregarden/branch-triage/chat",

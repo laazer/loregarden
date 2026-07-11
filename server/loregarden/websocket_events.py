@@ -18,7 +18,7 @@ def init_websocket(ws_server: WebSocketServer) -> None:
     """Initialize the global WebSocket server instance."""
     global _ws_server
     _ws_server = ws_server
-    logger.info('WebSocket server initialized for event emissions')
+    logger.info("WebSocket server initialized for event emissions")
 
 
 def get_ws_server() -> WebSocketServer | None:
@@ -48,11 +48,11 @@ def emit_execution_update(
     try:
         ws.broadcast_execution_update(workspace_id, active_runs, queued_runs, stats)
         logger.debug(
-            f'Emitted execution_update to workspace:{workspace_id}',
-            extra={'active': len(active_runs), 'queued': len(queued_runs)}
+            f"Emitted execution_update to workspace:{workspace_id}",
+            extra={"active": len(active_runs), "queued": len(queued_runs)},
         )
     except Exception as e:
-        logger.warning(f'Failed to emit execution_update: {e}')
+        logger.warning(f"Failed to emit execution_update: {e}")
 
 
 def emit_conflict_detected(
@@ -76,11 +76,11 @@ def emit_conflict_detected(
     try:
         ws.broadcast_conflict_detected(worktree_id, run_id, conflicts, preview, severity)
         logger.debug(
-            f'Emitted conflict_detected to worktree:{worktree_id}',
-            extra={'severity': severity, 'count': len(conflicts)}
+            f"Emitted conflict_detected to worktree:{worktree_id}",
+            extra={"severity": severity, "count": len(conflicts)},
         )
     except Exception as e:
-        logger.warning(f'Failed to emit conflict_detected: {e}')
+        logger.warning(f"Failed to emit conflict_detected: {e}")
 
 
 def emit_conflict_resolved(
@@ -100,9 +100,9 @@ def emit_conflict_resolved(
 
     try:
         ws.broadcast_conflict_resolved(worktree_id, run_id)
-        logger.debug(f'Emitted conflict_resolved to worktree:{worktree_id}')
+        logger.debug(f"Emitted conflict_resolved to worktree:{worktree_id}")
     except Exception as e:
-        logger.warning(f'Failed to emit conflict_resolved: {e}')
+        logger.warning(f"Failed to emit conflict_resolved: {e}")
 
 
 def emit_queue_promoted(
@@ -124,11 +124,11 @@ def emit_queue_promoted(
     try:
         ws.broadcast_queue_promoted(workspace_id, run_id, slot_number)
         logger.debug(
-            f'Emitted queue_promoted to workspace:{workspace_id}',
-            extra={'run_id': run_id, 'slot': slot_number}
+            f"Emitted queue_promoted to workspace:{workspace_id}",
+            extra={"run_id": run_id, "slot": slot_number},
         )
     except Exception as e:
-        logger.warning(f'Failed to emit queue_promoted: {e}')
+        logger.warning(f"Failed to emit queue_promoted: {e}")
 
 
 def emit_run_completed(
@@ -150,11 +150,11 @@ def emit_run_completed(
     try:
         ws.broadcast_run_completed(workspace_id, run_id, status)
         logger.debug(
-            f'Emitted run_completed to workspace:{workspace_id}',
-            extra={'run_id': run_id, 'status': status}
+            f"Emitted run_completed to workspace:{workspace_id}",
+            extra={"run_id": run_id, "status": status},
         )
     except Exception as e:
-        logger.warning(f'Failed to emit run_completed: {e}')
+        logger.warning(f"Failed to emit run_completed: {e}")
 
 
 def emit_error(
@@ -177,9 +177,6 @@ def emit_error(
 
     try:
         ws.broadcast_error(target_room, message, code, context)
-        logger.debug(
-            f'Emitted error to {target_room}',
-            extra={'code': code, 'message': message}
-        )
+        logger.debug(f"Emitted error to {target_room}", extra={"code": code, "message": message})
     except Exception as e:
-        logger.warning(f'Failed to emit error: {e}')
+        logger.warning(f"Failed to emit error: {e}")

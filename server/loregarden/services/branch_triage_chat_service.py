@@ -220,9 +220,7 @@ def invoke_branch_triage_model(
         return stub
 
     ticket = _linked_ticket(session, workspace.id, branch)
-    effective_workspace = (
-        apply_triage_runtime_overrides(workspace, ticket) if ticket else workspace
-    )
+    effective_workspace = apply_triage_runtime_overrides(workspace, ticket) if ticket else workspace
 
     repo_root = resolve_workspace_root(effective_workspace)
     if not repo_root.is_dir():

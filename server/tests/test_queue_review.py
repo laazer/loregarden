@@ -353,9 +353,7 @@ class TestOperationListing:
                 },
             )
 
-        response = client.get(
-            f"/api/parallel/workspace/{workspace.id}/queue/operations"
-        )
+        response = client.get(f"/api/parallel/workspace/{workspace.id}/queue/operations")
 
         assert response.status_code == 200
         data = response.json()

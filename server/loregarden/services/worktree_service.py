@@ -136,13 +136,9 @@ class WorktreeService:
                 conflict_files = self._extract_conflict_files(worktree_path)
                 worktree.has_conflicts = True
                 worktree.conflict_files = conflict_files
-                worktree.conflict_summary = (
-                    f"Merge conflicts in {len(conflict_files)} files"
-                )
+                worktree.conflict_summary = f"Merge conflicts in {len(conflict_files)} files"
 
-                logger.warning(
-                    f"Conflicts detected in worktree {worktree.id}: {conflict_files}"
-                )
+                logger.warning(f"Conflicts detected in worktree {worktree.id}: {conflict_files}")
             else:
                 # Abort the dry-run merge
                 subprocess.run(
@@ -196,9 +192,7 @@ class WorktreeService:
         """
         try:
             if worktree.state != WorktreeState.ACTIVE:
-                logger.warning(
-                    f"Cannot merge worktree {worktree.id} in state {worktree.state}"
-                )
+                logger.warning(f"Cannot merge worktree {worktree.id} in state {worktree.state}")
                 return False
 
             worktree_path = Path(worktree.worktree_path)
@@ -225,9 +219,7 @@ class WorktreeService:
 
             if has_conflicts:
                 if not auto_resolve:
-                    logger.warning(
-                        f"Merge conflicts in {worktree.id}, not auto-resolving"
-                    )
+                    logger.warning(f"Merge conflicts in {worktree.id}, not auto-resolving")
                     worktree.state = WorktreeState.FAILED
                     self.session.add(worktree)
                     self.session.commit()
@@ -358,6 +350,7 @@ class WorktreeService:
                 # Remove directory if still exists
                 if worktree_path.exists():
                     import shutil
+
                     shutil.rmtree(worktree_path)
 
             # Update record
@@ -381,8 +374,7 @@ class WorktreeService:
     def get_active_worktrees(self, workspace_id: str) -> list[Worktree]:
         """Get all active worktrees for a workspace."""
         stmt = select(Worktree).where(
-            (Worktree.workspace_id == workspace_id)
-            & (Worktree.state == WorktreeState.ACTIVE)
+            (Worktree.workspace_id == workspace_id) & (Worktree.state == WorktreeState.ACTIVE)
         )
         return self.session.exec(stmt).all()
 

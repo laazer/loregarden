@@ -66,9 +66,7 @@ class ConflictDetectorService:
                 conflict_files = self._extract_conflict_files(worktree_path)
 
                 # Try to determine if auto-mergeable
-                auto_mergeable = self._check_auto_mergeable(
-                    worktree_path, conflict_files
-                )
+                auto_mergeable = self._check_auto_mergeable(worktree_path, conflict_files)
 
                 # Abort the dry-run merge
                 subprocess.run(
@@ -162,8 +160,7 @@ class ConflictDetectorService:
         for file_path in conflict_files:
             # Check if file matches auto-merge pattern
             is_mergeable = any(
-                file_path.endswith(pattern.replace("*", ""))
-                for pattern in auto_merge_patterns
+                file_path.endswith(pattern.replace("*", "")) for pattern in auto_merge_patterns
             )
             if not is_mergeable:
                 # Check if conflict is simple (only whitespace/formatting)
@@ -185,7 +182,8 @@ class ConflictDetectorService:
             diff_output = result.stdout
             # If diff is mostly conflict markers and whitespace, it's simple
             lines_with_code = [
-                line for line in diff_output.split("\n")
+                line
+                for line in diff_output.split("\n")
                 if line.strip() and not line.startswith(("<<<<<<", ">>>>>>", "======"))
             ]
 
@@ -236,9 +234,7 @@ class ConflictDetectorService:
             conflicts = []
 
             for file_path in conflict_files:
-                conflict_info = self._get_file_conflict_details(
-                    worktree_path, file_path
-                )
+                conflict_info = self._get_file_conflict_details(worktree_path, file_path)
                 conflicts.append(conflict_info)
 
             suggestions = self._generate_suggestions(conflicts, preview)
@@ -344,13 +340,20 @@ class ConflictDetectorService:
 
         # Count conflicts in critical files
         critical_patterns = [
-            ".py", ".ts", ".js", ".jsx", ".tsx",
-            ".go", ".rust", ".java", ".cpp", ".c",
+            ".py",
+            ".ts",
+            ".js",
+            ".jsx",
+            ".tsx",
+            ".go",
+            ".rust",
+            ".java",
+            ".cpp",
+            ".c",
         ]
 
         critical_conflicts = sum(
-            1 for c in conflicts
-            if any(c["file"].endswith(pat) for pat in critical_patterns)
+            1 for c in conflicts if any(c["file"].endswith(pat) for pat in critical_patterns)
         )
 
         if critical_conflicts == 0:
@@ -407,7 +410,9 @@ class ConflictDetectorService:
 
     def get_worktree_conflicts(self, worktree_id: str) -> list[ConflictReport]:
         """Get all conflict reports for a worktree."""
-        stmt = select(ConflictReport).where(
-            ConflictReport.worktree_id == worktree_id
-        ).order_by(ConflictReport.created_at.desc())
+        stmt = (
+            select(ConflictReport)
+            .where(ConflictReport.worktree_id == worktree_id)
+            .order_by(ConflictReport.created_at.desc())
+        )
         return self.session.exec(stmt).all()

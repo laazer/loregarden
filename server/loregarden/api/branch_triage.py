@@ -73,9 +73,7 @@ def _serialize_comment(comment: BranchDiffComment) -> dict:
 
 
 def _linked_ticket_for_branch(session: Session, workspace_id: str, branch: str) -> Ticket | None:
-    tickets = session.exec(
-        select(Ticket).where(Ticket.workspace_id == workspace_id)
-    ).all()
+    tickets = session.exec(select(Ticket).where(Ticket.workspace_id == workspace_id)).all()
     for ticket in tickets:
         ticket_branch = (ticket.branch or "").strip()
         if ticket_branch and ticket_branch == branch:
@@ -138,9 +136,7 @@ def remove_branch(
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    removed_worktrees = (
-        bool(body and body.remove_worktrees) and removed
-    )
+    removed_worktrees = bool(body and body.remove_worktrees) and removed
     return {
         "deleted": branch,
         "already_gone": not removed,
@@ -247,9 +243,7 @@ def submit_branch_diff_to_agent(
         for comment in sorted(file_comments, key=lambda c: c.line_index):
             kind = comment.line_kind
             prefix = "+" if kind == "a" else "−" if kind == "d" else " "
-            lines.append(
-                f"- Line {comment.line_index + 1} ({prefix}): {comment.content}"
-            )
+            lines.append(f"- Line {comment.line_index + 1} ({prefix}): {comment.content}")
 
     if body.instructions.strip():
         lines.append(f"\n## Additional instructions\n{body.instructions.strip()}")

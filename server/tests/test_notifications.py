@@ -1,6 +1,5 @@
 """Tests for notifications API endpoints."""
 
-
 import pytest
 
 

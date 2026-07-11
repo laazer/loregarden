@@ -517,7 +517,9 @@ def _format_usage_http_error(
             # not for this usage-limits endpoint, which needs the broader scopes
             # (user:profile etc.) that only an interactive `/login` session gets.
             # Regenerating the token won't change its scope, so don't suggest that.
-            return "This token is scoped to inference only — can't read live usage limits (HTTP 403)."
+            return (
+                "This token is scoped to inference only — can't read live usage limits (HTTP 403)."
+            )
         return f"{label} usage request failed (HTTP {response.status_code})."
     if response.status_code == 429:
         detail = ""
@@ -628,15 +630,15 @@ def _fetch_claude_usage(
             response = _claude_usage_request(client, access_token)
 
     if response.status_code >= 400:
-        rate_limited_until = (
-            _rate_limit_until(response) if response.status_code == 429 else None
-        )
+        rate_limited_until = _rate_limit_until(response) if response.status_code == 429 else None
         return ProviderUsage(
             provider="claude",
             plan=_claude_plan_label(oauth),
             logged_in=True,
             error=_format_usage_http_error(
-                "claude", response, has_refresh_token=bool(str(oauth.get("refreshToken") or "").strip())
+                "claude",
+                response,
+                has_refresh_token=bool(str(oauth.get("refreshToken") or "").strip()),
             ),
             breakdown=_scan_claude_logs(),
             rate_limited_until=rate_limited_until,

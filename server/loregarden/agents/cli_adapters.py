@@ -286,7 +286,9 @@ def _claude_oauth_env_prefix() -> str:
     return f'CLAUDE_CODE_OAUTH_TOKEN="$(cat {shlex.quote(str(token_path))})" '
 
 
-def render_terminal_handoff_command(invocation: CliInvocation, *, cleanup_path: Path | None = None) -> str:
+def render_terminal_handoff_command(
+    invocation: CliInvocation, *, cleanup_path: Path | None = None
+) -> str:
     """Render an invocation as a short, paste-ready shell command.
 
     The system prompt is written to disk ahead of time (see

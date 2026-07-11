@@ -40,7 +40,9 @@ def apply_stage_route(
         explicit_to=next_stage_key,
     )
     if not plan:
-        raise ValueError(f"No workflow route defined from stage '{from_key}' with outcome '{outcome}'")
+        raise ValueError(
+            f"No workflow route defined from stage '{from_key}' with outcome '{outcome}'"
+        )
 
     stage_map = parse_stage_map(instance, stages)
     if plan.upstream or outcome == "reject":

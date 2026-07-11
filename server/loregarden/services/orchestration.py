@@ -803,6 +803,7 @@ class OrchestrationService:
 
         except Exception as e:
             import logging
+
             logging.error(f"Error creating parallel run: {e}", exc_info=True)
             raise
 
@@ -864,6 +865,7 @@ class OrchestrationService:
 
         except Exception as e:
             import logging
+
             logging.error(f"Error creating run in worktree: {e}", exc_info=True)
             raise
 
@@ -936,6 +938,7 @@ class OrchestrationService:
 
         except Exception as e:
             import logging
+
             logging.error(f"Error on parallel run complete: {e}", exc_info=True)
             raise
 

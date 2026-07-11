@@ -52,16 +52,12 @@ def evaluate_self_improve_restart(
     workspace_slug: str = "loregarden",
 ) -> dict:
     """Return whether the dev server may restart for a human-triage handoff."""
-    workspace = session.exec(
-        select(Workspace).where(Workspace.slug == workspace_slug)
-    ).first()
+    workspace = session.exec(select(Workspace).where(Workspace.slug == workspace_slug)).first()
     if not workspace:
         raise ValueError(f"Workspace not found: {workspace_slug}")
 
     orch = OrchestrationService(session)
-    tickets = list(
-        session.exec(select(Ticket).where(Ticket.workspace_id == workspace.id)).all()
-    )
+    tickets = list(session.exec(select(Ticket).where(Ticket.workspace_id == workspace.id)).all())
 
     human_gate_tickets = [
         payload
@@ -86,9 +82,7 @@ def evaluate_self_improve_restart(
         ).all()
     )
     running_workflow_tickets = [
-        ticket
-        for ticket in tickets
-        if ticket.workflow_stage_status == StageStatus.RUNNING
+        ticket for ticket in tickets if ticket.workflow_stage_status == StageStatus.RUNNING
     ]
 
     blockers: list[str] = []

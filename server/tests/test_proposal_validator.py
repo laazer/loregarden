@@ -448,7 +448,9 @@ class TestProposalValidatorTextFields:
 
     def test_acceptance_criteria_max_items_valid(self):
         """Max acceptance criteria items should pass."""
-        criteria = [f"Criterion {i}" for i in range(ProposalValidator.MAX_ACCEPTANCE_CRITERIA_ITEMS)]
+        criteria = [
+            f"Criterion {i}" for i in range(ProposalValidator.MAX_ACCEPTANCE_CRITERIA_ITEMS)
+        ]
         item = HierarchyWorkItem(
             external_id="id1",
             title="Test",
@@ -460,7 +462,9 @@ class TestProposalValidatorTextFields:
 
     def test_acceptance_criteria_exceeds_max_items_fails(self):
         """Exceeding max acceptance criteria items should fail."""
-        criteria = [f"Criterion {i}" for i in range(ProposalValidator.MAX_ACCEPTANCE_CRITERIA_ITEMS + 1)]
+        criteria = [
+            f"Criterion {i}" for i in range(ProposalValidator.MAX_ACCEPTANCE_CRITERIA_ITEMS + 1)
+        ]
         item = HierarchyWorkItem(
             external_id="id1",
             title="Test",
@@ -480,7 +484,10 @@ class TestProposalValidatorTextFields:
             acceptance_criteria=[criterion],
         )
         result = ProposalValidator.validate_all([item])
-        assert len(result[0].acceptance_criteria[0]) == ProposalValidator.MAX_ACCEPTANCE_CRITERIA_ITEM_LENGTH
+        assert (
+            len(result[0].acceptance_criteria[0])
+            == ProposalValidator.MAX_ACCEPTANCE_CRITERIA_ITEM_LENGTH
+        )
 
     def test_acceptance_criterion_exceeds_max_length_fails(self):
         """Criterion exceeding max length should fail."""
@@ -491,7 +498,9 @@ class TestProposalValidatorTextFields:
             work_item_type=WorkItemType.TASK,
             acceptance_criteria=[criterion],
         )
-        with pytest.raises(ProposalValidationError, match="Acceptance criterion .* exceeds max length"):
+        with pytest.raises(
+            ProposalValidationError, match="Acceptance criterion .* exceeds max length"
+        ):
             ProposalValidator.validate_all([item])
 
 

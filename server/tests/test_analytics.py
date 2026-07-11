@@ -1,6 +1,5 @@
 """Tests for analytics API endpoints."""
 
-
 import pytest
 from loregarden.models.domain import Workspace
 from sqlmodel import Session

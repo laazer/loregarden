@@ -54,7 +54,9 @@ def list_diff_comments(ticket_id: str, session: Session = Depends(get_session)) 
     comments = session.exec(
         select(TicketDiffComment)
         .where(TicketDiffComment.ticket_id == ticket_id)
-        .order_by(TicketDiffComment.file_path, TicketDiffComment.line_index, TicketDiffComment.created_at)
+        .order_by(
+            TicketDiffComment.file_path, TicketDiffComment.line_index, TicketDiffComment.created_at
+        )
     ).all()
     return {
         "ticket_id": ticket_id,
@@ -108,9 +110,7 @@ def submit_diff_comments_to_agent(
         for comment in sorted(file_comments, key=lambda c: c.line_index):
             kind = comment.line_kind
             prefix = "+" if kind == "a" else "−" if kind == "d" else " "
-            lines.append(
-                f"- Line {comment.line_index + 1} ({prefix}): {comment.content}"
-            )
+            lines.append(f"- Line {comment.line_index + 1} ({prefix}): {comment.content}")
 
     if body.instructions.strip():
         lines.append(f"\n## Additional instructions\n{body.instructions.strip()}")

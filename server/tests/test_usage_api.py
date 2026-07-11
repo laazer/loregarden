@@ -286,8 +286,12 @@ def test_usage_cache_fallback_on_api_error(tmp_path, monkeypatch):
         error="Not logged in to Cursor.",
     )
 
-    monkeypatch.setattr(usage_service, "_fetch_claude_usage", lambda client, cache_entry=None: failure)
-    monkeypatch.setattr(usage_service, "_fetch_cursor_usage", lambda client, cache_entry=None: cursor)
+    monkeypatch.setattr(
+        usage_service, "_fetch_claude_usage", lambda client, cache_entry=None: failure
+    )
+    monkeypatch.setattr(
+        usage_service, "_fetch_cursor_usage", lambda client, cache_entry=None: cursor
+    )
 
     snapshot = usage_service.get_usage_snapshot()
     claude = next(p for p in snapshot["providers"] if p["provider"] == "claude")
@@ -303,7 +307,12 @@ def test_format_usage_http_error_for_claude_rate_limit():
     response = httpx.Response(
         429,
         headers={"retry-after": "188"},
-        json={"error": {"type": "rate_limit_error", "message": "Rate limited. Please try again later."}},
+        json={
+            "error": {
+                "type": "rate_limit_error",
+                "message": "Rate limited. Please try again later.",
+            }
+        },
         request=httpx.Request("GET", usage_service.CLAUDE_USAGE_URL),
     )
     message = usage_service._format_usage_http_error("claude", response)
@@ -466,7 +475,9 @@ def test_usage_rate_limit_backoff_skips_live_fetch(tmp_path, monkeypatch):
     monkeypatch.setattr(
         usage_service,
         "_fetch_cursor_usage",
-        lambda client, cache_entry=None: usage_service.ProviderUsage(provider="cursor", logged_in=False),
+        lambda client, cache_entry=None: usage_service.ProviderUsage(
+            provider="cursor", logged_in=False
+        ),
     )
 
     with patch.object(usage_service.httpx.Client, "get", fake_get):
@@ -504,7 +515,9 @@ def test_cursor_rate_limit_backoff_skips_live_fetch(tmp_path, monkeypatch):
     monkeypatch.setattr(
         usage_service,
         "_fetch_claude_usage",
-        lambda client, cache_entry=None: usage_service.ProviderUsage(provider="claude", logged_in=False),
+        lambda client, cache_entry=None: usage_service.ProviderUsage(
+            provider="claude", logged_in=False
+        ),
     )
     monkeypatch.setattr(usage_service, "_read_cursor_access_token", lambda: "cursor-token")
 

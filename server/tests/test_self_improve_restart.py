@@ -47,7 +47,9 @@ def _ticket_at_human_gate(db_session: Session, ticket_id: str) -> Ticket:
     return ticket
 
 
-def test_ready_when_ticket_at_human_gate_and_no_active_work(client: TestClient, db_session: Session):
+def test_ready_when_ticket_at_human_gate_and_no_active_work(
+    client: TestClient, db_session: Session
+):
     ticket = _ticket_at_human_gate(
         db_session, _ticket_id_by_external_id(client, "04-workflow-template-overrides")
     )

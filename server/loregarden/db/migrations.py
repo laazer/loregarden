@@ -149,7 +149,9 @@ def _m_agent_run_auto_approve(conn: Connection) -> None:
     _add_columns_if_missing(
         conn,
         "agent_runs",
-        {"auto_approve": "ALTER TABLE agent_runs ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 0"},
+        {
+            "auto_approve": "ALTER TABLE agent_runs ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 0"
+        },
     )
 
 
@@ -283,10 +285,7 @@ def _m_ticket_diff_comments(conn: Connection) -> None:
         )
     )
     conn.execute(
-        text(
-            "CREATE INDEX ix_ticket_diff_comments_ticket_id "
-            "ON ticket_diff_comments (ticket_id)"
-        )
+        text("CREATE INDEX ix_ticket_diff_comments_ticket_id ON ticket_diff_comments (ticket_id)")
     )
     conn.execute(
         text(

@@ -56,13 +56,9 @@ def _watch_parent(parent_pid: int, poll_interval: float = 2.0) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(prog="loregarden")
     parser.add_argument("--host", default=os.environ.get("LOREGARDEN_HOST", "127.0.0.1"))
-    parser.add_argument(
-        "--port", type=int, default=int(os.environ.get("LOREGARDEN_PORT", "8000"))
-    )
+    parser.add_argument("--port", type=int, default=int(os.environ.get("LOREGARDEN_PORT", "8000")))
     parser.add_argument("--reload", action="store_true")
-    parser.add_argument(
-        "--log-level", default=os.environ.get("LOREGARDEN_LOG_LEVEL", "info")
-    )
+    parser.add_argument("--log-level", default=os.environ.get("LOREGARDEN_LOG_LEVEL", "info"))
     args = parser.parse_args()
 
     parent_pid = int(os.environ.get("LOREGARDEN_PARENT_PID", os.getppid()))

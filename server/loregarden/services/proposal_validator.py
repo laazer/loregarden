@@ -62,9 +62,7 @@ class ProposalValidator:
         return normalized
 
     @staticmethod
-    def _normalize_and_validate_item(
-        item: HierarchyWorkItem, depth: int = 0
-    ) -> HierarchyWorkItem:
+    def _normalize_and_validate_item(item: HierarchyWorkItem, depth: int = 0) -> HierarchyWorkItem:
         """Validate and normalize a single hierarchy item and its children.
 
         Normalization happens BEFORE validation to catch issues like
@@ -330,8 +328,7 @@ class ProposalValidator:
         """
         if len(title) > ProposalValidator.MAX_TITLE_LENGTH:
             raise ProposalValidationError(
-                f"Title exceeds max length {ProposalValidator.MAX_TITLE_LENGTH} "
-                f"(got {len(title)})"
+                f"Title exceeds max length {ProposalValidator.MAX_TITLE_LENGTH} (got {len(title)})"
             )
 
         if len(description) > ProposalValidator.MAX_DESCRIPTION_LENGTH:
@@ -384,9 +381,7 @@ class ProposalValidator:
                     f"exceeds maximum {max_breadth}"
                 )
 
-            ProposalValidator.validate_tree_limits(
-                item.children, depth + 1, max_depth, max_breadth
-            )
+            ProposalValidator.validate_tree_limits(item.children, depth + 1, max_depth, max_breadth)
 
     @staticmethod
     def normalize_text(text: str, preserve_breaks: bool = False) -> str:

@@ -1,6 +1,5 @@
 """Registry agents must have role files with memory protocol guidance."""
 
-
 from loregarden.agents.registry import AGENTS
 from loregarden.config import settings
 

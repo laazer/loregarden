@@ -42,9 +42,7 @@ async def get_notifications(workspace_id: str = Path(...)):
             while True:
                 try:
                     # Wait for events with timeout to keep connection alive
-                    event_type, data = await asyncio.wait_for(
-                        event_queue.get(), timeout=30.0
-                    )
+                    event_type, data = await asyncio.wait_for(event_queue.get(), timeout=30.0)
 
                     # Format as SSE
                     yield f"event: {event_type}\n"

@@ -99,9 +99,7 @@ async def get_analytics(
             max_duration = max(durations) if durations else 0
             success_rate = successes / count if count > 0 else 0
             last_7_success_rate = (
-                last_7_days["successes"] / last_7_days["count"]
-                if last_7_days["count"] > 0
-                else 0
+                last_7_days["successes"] / last_7_days["count"] if last_7_days["count"] > 0 else 0
             )
 
             metrics.append(

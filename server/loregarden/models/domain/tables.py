@@ -382,7 +382,9 @@ class TicketStudioSession(SQLModel, table=True):
     parent_ticket_id: str | None = Field(default=None, foreign_key="tickets.id")
     status: TicketStudioSessionStatus = Field(
         default=TicketStudioSessionStatus.DRAFT,
-        sa_column=_str_enum_column(TicketStudioSessionStatus, TicketStudioSessionStatus.DRAFT, index=True),
+        sa_column=_str_enum_column(
+            TicketStudioSessionStatus, TicketStudioSessionStatus.DRAFT, index=True
+        ),
     )
     draft_json: str = "[]"
     summary: str = ""

@@ -472,7 +472,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "run_id": _string_prop("Orchestration run UUID."),
                 "stage_key": _string_prop("Workflow stage key."),
                 "next_agent": _string_prop("Optional next agent hint."),
-                "next_stage_key": _string_prop("Optional explicit target stage (for upstream rework)."),
+                "next_stage_key": _string_prop(
+                    "Optional explicit target stage (for upstream rework)."
+                ),
                 "outcome": _enum_string_prop("Stage outcome.", ["pass", "reject"]),
                 "blocking_issues": _string_prop("Optional rework notes when routing upstream."),
             },
@@ -597,7 +599,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "body": _string_prop("Memory body (markdown)."),
                 "tags": _string_prop("Optional comma-separated tags or JSON array."),
                 "ticket_id": _string_prop("Optional related ticket id."),
-                "workspace_slug": _string_prop("Workspace slug (required — scopes note and graph DB)."),
+                "workspace_slug": _string_prop(
+                    "Workspace slug (required — scopes note and graph DB)."
+                ),
             },
             required=["title", "workspace_slug"],
         ),

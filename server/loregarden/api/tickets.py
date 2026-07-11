@@ -408,9 +408,7 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
     template = orch.get_template_for_ticket(ticket)
     from loregarden.services.workflow_routing import normalize_transitions_for_api
 
-    transitions = (
-        normalize_transitions_for_api(template.transitions_json) if template else []
-    )
+    transitions = normalize_transitions_for_api(template.transitions_json) if template else []
     return TicketDetail(
         **summary.model_dump(),
         description=ticket.description,
@@ -422,9 +420,7 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         state_locked=ticket.state_locked,
         workflow_template_slug=template.slug if template else "",
         workflow_template_name=template.name if template else "",
-        workflow_transitions=[
-            WorkflowTransitionView.model_validate(item) for item in transitions
-        ],
+        workflow_transitions=[WorkflowTransitionView.model_validate(item) for item in transitions],
         artifacts=_artifacts_grouped(session, ticket),
     )
 
@@ -690,10 +686,12 @@ def finalize_hierarchy(
                     raise ValueError(f"Parent not found: {parent_id}")
                 validate_parent_child(parent.work_item_type, item.work_item_type)
             else:
-                if item.work_item_type not in (WorkItemType.MILESTONE, WorkItemType.FEATURE, WorkItemType.CAPABILITY):
-                    raise ValueError(
-                        f"{item.work_item_type.value} cannot be a root item"
-                    )
+                if item.work_item_type not in (
+                    WorkItemType.MILESTONE,
+                    WorkItemType.FEATURE,
+                    WorkItemType.CAPABILITY,
+                ):
+                    raise ValueError(f"{item.work_item_type.value} cannot be a root item")
 
             ext_id = item.external_id.strip()
             if not ext_id:

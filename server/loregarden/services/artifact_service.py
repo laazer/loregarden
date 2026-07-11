@@ -66,7 +66,9 @@ def _parse_numstat(text: str) -> list[dict[str, Any]]:
         if add_raw == "-" or del_raw == "-":
             entries.append({"path": path, "add": 0, "del": 0, "binary": True})
         else:
-            entries.append({"path": path, "add": int(add_raw), "del": int(del_raw), "binary": False})
+            entries.append(
+                {"path": path, "add": int(add_raw), "del": int(del_raw), "binary": False}
+            )
     return entries
 
 
@@ -94,7 +96,11 @@ def _manifest_from_entries(
         "branch": branch,
         "base": base,
         "file_entries": [
-            {"path": item["path"], "add": int(item.get("add") or 0), "del": int(item.get("del") or 0)}
+            {
+                "path": item["path"],
+                "add": int(item.get("add") or 0),
+                "del": int(item.get("del") or 0),
+            }
             for item in entries
         ],
         "sections": [],
@@ -534,6 +540,7 @@ def _artifact_from_git_diff(
         "base": base,
         "sections": sections,
     }
+
 
 def capture_git_diff(workspace: Workspace) -> dict[str, Any] | None:
     """Return diff artifact payload from the workspace git checkout."""

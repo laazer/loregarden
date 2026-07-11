@@ -596,9 +596,7 @@ class PermissionBridgeRunner:
         code within /server/**" that were previously prompt text only (see
         ticket 33 postmortem: a backend_implementer agent implemented
         frontend code because nothing actually stopped it)."""
-        tool_input = (
-            permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
-        )
+        tool_input = permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
         scope_denial = check_agent_scope(
             agent_id=ctx.agent_id,
             agent_name=ctx.agent_name,
@@ -610,7 +608,8 @@ class PermissionBridgeRunner:
             return None
 
         self._send_response(
-            proc, build_control_response(request_id=request_id, approved=False, message=scope_denial)
+            proc,
+            build_control_response(request_id=request_id, approved=False, message=scope_denial),
         )
         if streamer:
             streamer.append("TOOL", f"Denied (out of scope): {scope_denial}", force=True)
@@ -644,9 +643,7 @@ class PermissionBridgeRunner:
         auto_approve flag, or the persisted permission allowlist. Returns
         True if a response was already written (caller should treat the
         permission as handled and move on to the next line)."""
-        tool_input = (
-            permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
-        )
+        tool_input = permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
 
         if bare_mcp and is_auto_approved_mcp_tool(permission["tool_name"]):
             enriched = enrich_mcp_tool_input(
@@ -656,7 +653,10 @@ class PermissionBridgeRunner:
                 workspace_slug=ctx.workspace_slug,
             )
             self._send_response(
-                proc, build_control_response(request_id=request_id, approved=True, updated_input=enriched)
+                proc,
+                build_control_response(
+                    request_id=request_id, approved=True, updated_input=enriched
+                ),
             )
             if streamer:
                 streamer.append("TOOL", f"Auto-approved read-only MCP: {bare_mcp}", force=True)
@@ -673,7 +673,9 @@ class PermissionBridgeRunner:
                 )
             self._send_response(
                 proc,
-                build_control_response(request_id=request_id, approved=True, updated_input=tool_input),
+                build_control_response(
+                    request_id=request_id, approved=True, updated_input=tool_input
+                ),
             )
             if streamer:
                 streamer.append("TOOL", f"Auto-approved: {permission['tool_name']}", force=True)
@@ -856,9 +858,7 @@ class PermissionBridgeRunner:
 
         if state.finished_with_result:
             _close_stdin(proc)
-            _drain_stdout_after_result(
-                proc, stdout_reader, state.stdout_lines, streamer=streamer
-            )
+            _drain_stdout_after_result(proc, stdout_reader, state.stdout_lines, streamer=streamer)
 
         remaining = deadline - time.time()
         if proc.poll() is None:
@@ -895,9 +895,7 @@ class PermissionBridgeRunner:
                 proc.kill()
         stderr_stream = proc.stderr
         if stderr_stream:
-            stderr_lines.extend(
-                stderr_stream.read().decode("utf-8", errors="replace").splitlines()
-            )
+            stderr_lines.extend(stderr_stream.read().decode("utf-8", errors="replace").splitlines())
 
         stdout = "\n".join(state.stdout_lines)
         stderr = "\n".join(stderr_lines)
@@ -905,7 +903,9 @@ class PermissionBridgeRunner:
             status = RunStatus.FAILED if state.result_is_error else RunStatus.SUCCEEDED
         else:
             status = RunStatus.SUCCEEDED if proc.returncode == 0 else RunStatus.FAILED
-        return BridgeResult(status=status, stdout=stdout, stderr=stderr, session_id=state.session_id)
+        return BridgeResult(
+            status=status, stdout=stdout, stderr=stderr, session_id=state.session_id
+        )
 
     def _create_question_approval(
         self,

@@ -6,8 +6,12 @@ if [ "$#" -eq 0 ]; then
   exit 0
 fi
 
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CLIENT_ROOT="$ROOT/client"
+
+# shellcheck source=ensure-node.sh
+source "$SCRIPT_DIR/ensure-node.sh"
 
 if [ ! -x "$CLIENT_ROOT/node_modules/.bin/oxlint" ]; then
   echo "pre-commit: oxlint not found (cd client && npm ci)." >&2
