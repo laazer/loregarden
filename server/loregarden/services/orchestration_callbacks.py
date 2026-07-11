@@ -217,7 +217,9 @@ class OrchestrationCallbackService:
             )
         else:
             set_stage_status(ticket, instance, stages, stage_key, StageStatus.DONE)
-            if next_agent:
+            # See workflow_routing.apply_stage_route: next_agent is only a
+            # trusted override on rework (reject), not a normal-pass hint.
+            if next_agent and outcome == "reject":
                 ticket.next_agent = next_agent
                 ticket.next_status = "Proceed"
             ticket.blocking_issues = blocking_issues[:2000] if blocking_issues else ""

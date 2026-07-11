@@ -227,6 +227,69 @@ def test_resolve_classify_route_prefers_ticket_next_agent():
     assert skill == "apply_patch"
 
 
+def test_resolve_classify_route_matches_frontend_synonyms_without_literal_keywords():
+    ticket = Ticket(
+        id="t1",
+        external_id="33-add-smart-import-button-to-import-modal-ui",
+        workspace_id="ws",
+        title="Add smart import button to import modal UI",
+        description="Update import modal to present smart import as an option alongside regular import.",
+    )
+    stage = WorkflowStageDef(
+        key="implement",
+        name="Implement",
+        stage_type="classify",
+        classify_routes=[
+            ClassifyRoute(
+                languages=["typescript", "javascript"],
+                specialties=["frontend"],
+                agent_id="frontend_implementer",
+                skill_name="apply_patch",
+            ),
+            ClassifyRoute(
+                languages=["typescript", "javascript"],
+                specialties=["backend"],
+                agent_id="backend_implementer",
+                skill_name="apply_patch",
+                default=True,
+            ),
+        ],
+    )
+    agent_id, skill = resolve_classify_route(ticket, stage)
+    assert agent_id == "frontend_implementer"
+    assert skill == "apply_patch"
+
+
+def test_resolve_classify_route_word_boundary_avoids_false_substring_match():
+    ticket = Ticket(
+        id="t1",
+        external_id="01-test",
+        workspace_id="ws",
+        title="Add a logo to the header",
+        description="Swap the logo image asset in the header component.",
+    )
+    stage = WorkflowStageDef(
+        key="route_impl",
+        name="Route Implementation",
+        stage_type="classify",
+        classify_routes=[
+            ClassifyRoute(
+                languages=[],
+                specialties=["go"],
+                agent_id="go_implementer",
+                skill_name="apply_patch",
+            ),
+            ClassifyRoute(
+                agent_id="fallback_implementer",
+                skill_name="apply_patch",
+                default=True,
+            ),
+        ],
+    )
+    agent_id, skill = resolve_classify_route(ticket, stage)
+    assert agent_id == "fallback_implementer"
+
+
 def test_studio_mcp_tools(client: TestClient):
     res = client.get("/api/studio/mcp-tools")
     assert res.status_code == 200

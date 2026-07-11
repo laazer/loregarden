@@ -64,8 +64,23 @@ def apply_stage_route(
         ticket.blocking_issues = ""
         ticket.next_status = "Proceed"
 
+    # Reconcile first: it derives workflow_stage_key/status/ticket.state from
+    # the stage map and, as a side effect, backfills ticket.next_agent from
+    # the current stage's static agent_id. Computing the *real* next_agent
+    # below and writing it after this call ensures that backfill never
+    # clobbers a deliberately-resolved value (classify routing, an explicit
+    # reject-hint, or a template-declared transition agent).
+    reconcile_workflow_state(ticket, instance, stages, persist=False)
+
     target_stage = next((stage for stage in stages if stage.key == plan.to_key), None)
-    chosen_agent = (next_agent or plan.transition_agent_id or "").strip()
+    # next_agent is a hint an agent supplies when it calls complete_stage — it's
+    # documented (loregarden_mcp_v1.md) as being for routing back to an upstream
+    # agent on rework, not for steering a normal forward pass. Honoring it
+    # unconditionally let a completing agent silently override the workflow
+    # template's own agent assignment for the *next* stage (e.g. sending "review"
+    # to whatever agent it named instead of the template's architecture_reviewer).
+    agent_hint = next_agent if outcome == "reject" else ""
+    chosen_agent = (agent_hint or plan.transition_agent_id or "").strip()
     if not chosen_agent and target_stage:
         chosen_agent, _ = resolve_stage_execution(ticket, target_stage)
     if chosen_agent:
@@ -73,7 +88,6 @@ def apply_stage_route(
     elif target_stage and target_stage.agent_id:
         ticket.next_agent = target_stage.agent_id
 
-    reconcile_workflow_state(ticket, instance, stages, persist=False)
     if orch_run is not None:
         orch_run.current_stage_key = plan.to_key
     return plan

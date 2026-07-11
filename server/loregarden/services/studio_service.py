@@ -11,8 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from loregarden.agents.cli_adapters import build_triage_invocation
-from loregarden.agents.registry import AGENTS
-from loregarden.agents.registry import get_agent
+from loregarden.agents.registry import AGENTS, get_agent
 from loregarden.agents.registry import list_agents as list_builtin_agents
 from loregarden.config import settings
 from loregarden.models.domain import (
@@ -42,8 +41,8 @@ from loregarden.models.domain import (
 from loregarden.services.cli_output import extract_triage_reply
 from loregarden.services.ticket_studio_service import extract_json_block
 from loregarden.services.workflow_service import WorkflowService
-from loregarden.skills.registry import list_skills
 from loregarden.services.workspace_paths import resolve_workspace_root
+from loregarden.skills.registry import list_skills
 from sqlmodel import Session, select
 
 
@@ -594,6 +593,83 @@ def preview_agent_markdown(body: StudioAgentPreviewRequest) -> StudioAgentPrevie
     )
 
 
+# Generic vocabulary that implies a specialty even when the ticket text doesn't
+# use the route's literal keyword (e.g. "modal button" implies frontend work).
+_SPECIALTY_SYNONYMS: dict[str, list[str]] = {
+    "frontend": [
+        "ui",
+        "component",
+        "modal",
+        "button",
+        "page",
+        "screen",
+        "css",
+        "style",
+        "styling",
+        "react",
+        "client",
+        "dialog",
+        "tooltip",
+        "layout",
+        "render",
+        "dom",
+        "browser",
+        "form",
+        "dropdown",
+        "menu",
+        "tab",
+        "widget",
+    ],
+    "backend": [
+        "api",
+        "endpoint",
+        "server",
+        "database",
+        "db",
+        "schema",
+        "migration",
+        "service",
+        "route",
+        "controller",
+        "query",
+        "auth",
+        "middleware",
+        "sql",
+        "orm",
+        "cron",
+        "worker",
+        "queue",
+    ],
+}
+
+
+def _word_in_haystack(word: str, haystack: str) -> bool:
+    pattern = r"\b" + re.escape(word.lower()) + r"\b"
+    return re.search(pattern, haystack) is not None
+
+
+def _route_match_score(route: ClassifyRoute, haystack: str) -> int | None:
+    """Returns the keyword hit count if the route is eligible, else None.
+
+    Specialty is the hard gate: tickets rarely spell out an implementation
+    language, but they do describe the domain (buttons, endpoints, etc.), so
+    a specialty match is required whenever the route declares one. Language
+    only contributes bonus score to break ties between otherwise-eligible
+    routes — requiring it outright meant tickets that never mention
+    "typescript"/"python"/etc. could never match any language-scoped route.
+    """
+    spec_words: list[str] = []
+    for spec in route.specialties:
+        spec_words.append(spec)
+        spec_words.extend(_SPECIALTY_SYNONYMS.get(spec.lower(), []))
+    spec_hits = [word for word in spec_words if _word_in_haystack(word, haystack)]
+    if route.specialties and not spec_hits:
+        return None
+
+    lang_hits = [lang for lang in route.languages if _word_in_haystack(lang, haystack)]
+    return len(spec_hits) + len(lang_hits)
+
+
 def resolve_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
     if stage.stage_type != "classify" or not stage.classify_routes:
         return stage.agent_id, stage.skill_name
@@ -602,25 +678,35 @@ def resolve_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str
     if routed:
         return routed
 
+    acceptance_criteria = ""
+    try:
+        acceptance_criteria = " ".join(json.loads(ticket.acceptance_criteria_json or "[]"))
+    except (TypeError, ValueError):
+        pass
+
     haystack = " ".join(
         [
             ticket.title or "",
             ticket.description or "",
             ticket.external_id or "",
+            acceptance_criteria,
         ]
     ).lower()
 
     default_route: ClassifyRoute | None = None
+    best_route: ClassifyRoute | None = None
+    best_score = -1
     for route in stage.classify_routes:
         if route.default:
             default_route = route
             continue
-        lang_ok = not route.languages or any(lang.lower() in haystack for lang in route.languages)
-        spec_ok = not route.specialties or any(
-            spec.lower() in haystack for spec in route.specialties
-        )
-        if lang_ok and spec_ok:
-            return route.agent_id, route.skill_name or stage.skill_name
+        score = _route_match_score(route, haystack)
+        if score is not None and score > best_score:
+            best_route = route
+            best_score = score
+
+    if best_route:
+        return best_route.agent_id, best_route.skill_name or stage.skill_name
 
     if default_route:
         return default_route.agent_id, default_route.skill_name or stage.skill_name

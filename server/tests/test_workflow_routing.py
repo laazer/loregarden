@@ -12,7 +12,6 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import initial_stages_json, parse_stage_map
 from sqlmodel import Session, select
@@ -192,6 +191,88 @@ def test_apply_stage_route_uses_template_reject_transition(db_session: Session):
     reject = StateMachine.resolve_transition_target(transitions, "script_review", "reject")
     assert reject is not None
     assert reject[0] == "implementation"
+
+
+def test_apply_stage_route_ignores_next_agent_hint_on_pass():
+    """A completing agent's next_agent hint must not hijack a forward (pass)
+    transition — only reject/rework routing should honor it. Regression for
+    ticket 33's review stage landing on backend_implementer instead of the
+    template's architecture_reviewer."""
+    from loregarden.models.domain import WorkflowStageDef
+
+    stages = [
+        WorkflowStageDef(key="implement", name="Implement", agent_id="frontend_implementer", order=1),
+        WorkflowStageDef(key="review", name="Review", agent_id="architecture_reviewer", order=2),
+    ]
+    transitions = [{"from": "implement", "to": "review", "when": "pass"}]
+
+    ticket = Ticket(
+        external_id="pass-hint-test",
+        workspace_id="ws",
+        title="Pass hint test",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+        workflow_stage_key="implement",
+        workflow_stage_status=StageStatus.RUNNING,
+    )
+    instance = WorkflowInstance(
+        ticket_id="t1",
+        template_id="tpl1",
+        current_stage_key="implement",
+        stages_json=initial_stages_json(stages),
+    )
+
+    plan = apply_stage_route(
+        ticket,
+        instance,
+        stages,
+        transitions,
+        from_key="implement",
+        outcome="pass",
+        # A rogue/mistaken hint from the completing agent — must be ignored
+        # on a normal pass; the template's own agent assignment must win.
+        next_agent="backend_implementer",
+    )
+    assert plan.to_key == "review"
+    assert ticket.next_agent == "architecture_reviewer"
+
+
+def test_apply_stage_route_honors_next_agent_hint_on_reject():
+    from loregarden.models.domain import WorkflowStageDef
+
+    stages = [
+        WorkflowStageDef(key="implement", name="Implement", agent_id="frontend_implementer", order=1),
+        WorkflowStageDef(key="review", name="Review", agent_id="architecture_reviewer", order=2),
+    ]
+    transitions = [{"from": "review", "to": "implement", "when": "reject"}]
+
+    ticket = Ticket(
+        external_id="reject-hint-test",
+        workspace_id="ws",
+        title="Reject hint test",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+        workflow_stage_key="review",
+        workflow_stage_status=StageStatus.RUNNING,
+    )
+    instance = WorkflowInstance(
+        ticket_id="t1",
+        template_id="tpl1",
+        current_stage_key="review",
+        stages_json=initial_stages_json(stages),
+    )
+
+    plan = apply_stage_route(
+        ticket,
+        instance,
+        stages,
+        transitions,
+        from_key="review",
+        outcome="reject",
+        next_agent="core_simulation",
+    )
+    assert plan.to_key == "implement"
+    assert ticket.next_agent == "core_simulation"
 
 
 def test_blobert_template_includes_reject_transitions(client: TestClient, db_session: Session):
