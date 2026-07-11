@@ -10,12 +10,15 @@ module.exports = {
           parser: {
             syntax: "typescript",
             tsx: true,
+            decorators: true,
+            dynamicImport: true,
           },
           transform: {
             react: {
               runtime: "automatic",
             },
           },
+          loose: true,
         },
         module: {
           type: "commonjs",

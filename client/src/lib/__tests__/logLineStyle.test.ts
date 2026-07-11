@@ -17,4 +17,10 @@ describe("logTagVariant", () => {
     expect(logTagVariant("run")).toBe("run");
     expect(logTagVariant("Ok")).toBe("ok");
   });
+
+  it("falls back to info for missing tags instead of throwing", () => {
+    expect(logTagVariant(undefined)).toBe("info");
+    expect(logTagVariant(null)).toBe("info");
+    expect(logTagVariant("")).toBe("info");
+  });
 });

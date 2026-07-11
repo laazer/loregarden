@@ -534,6 +534,8 @@ export interface TicketImportPreviewResponse {
   by_type: Record<string, number>;
   formats: string[];
   show_preview: boolean;
+  mode?: string;
+  studio_context?: Record<string, unknown> | null;
 }
 
 export interface TicketImportResult {
@@ -580,6 +582,16 @@ export interface UsageSnapshot {
   fetched_at: string;
 }
 
+export interface ImportedTicket {
+  external_id: string;
+  title: string;
+  description?: string;
+  work_item_type: WorkItemType;
+  acceptance_criteria?: string[];
+  priority?: 1 | 2 | 3;
+  source_workspace?: string;
+}
+
 export interface TicketStudioDraftItem {
   ref: string;
   work_item_type: WorkItemType;
@@ -615,6 +627,8 @@ export interface TicketStudioSession {
   draft: TicketStudioDraftItem[];
   messages: TicketStudioMessage[];
   runtime: WorkspaceRuntimeSettings;
+  is_preview: boolean;
+  imported_tickets: ImportedTicket[];
   created_at: string;
   updated_at: string;
 }

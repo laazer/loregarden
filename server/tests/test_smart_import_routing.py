@@ -62,7 +62,6 @@ def sample_ticket_md(
 class TestSmartImportNavigation:
     """Verify smart import mode triggers Studio navigation path."""
 
-    @pytest.mark.skip(reason="Implementation pending")
     def test_smart_import_returns_preview_data_for_studio(self, client: TestClient):
         """
         N1: Smart import preview returns data suitable for Studio session.
@@ -84,7 +83,6 @@ class TestSmartImportNavigation:
         assert "studio_context" in body
         assert "imported_tickets" in body["studio_context"]
 
-    @pytest.mark.skip(reason="Implementation pending")
     def test_regular_import_does_not_include_studio_context(self, client: TestClient):
         """
         N2: Regular import uses existing confirmation flow (no studio_context).
@@ -102,7 +100,7 @@ class TestSmartImportNavigation:
         assert body.get("mode") == "regular"
         assert "studio_context" not in body
 
-    @pytest.mark.skip(reason="Implementation pending")
+
     def test_smart_import_defaults_to_studio_context(self, client: TestClient):
         """
         N3: If mode parameter omitted, smart import assumes Studio context.
@@ -130,7 +128,7 @@ class TestSmartImportNavigation:
 class TestDataFlowToStudio:
     """Verify imported ticket data flows correctly to Studio session."""
 
-    @pytest.mark.skip(reason="Implementation pending")
+
     def test_smart_import_includes_full_ticket_data(self, client: TestClient):
         """
         D1: Imported ticket data includes all fields needed by Studio.
@@ -158,7 +156,7 @@ class TestDataFlowToStudio:
         assert "description" in ticket
         assert "acceptance_criteria" in ticket
 
-    @pytest.mark.skip(reason="Implementation pending")
+
     def test_multiple_files_smart_import_included_in_studio_context(
         self, client: TestClient
     ):
@@ -182,7 +180,7 @@ class TestDataFlowToStudio:
         assert len(tickets) == 2
         assert {t["external_id"] for t in tickets} == {"f1", "f2"}
 
-    @pytest.mark.skip(reason="Implementation pending")
+
     def test_smart_import_preserves_ticket_hierarchy(self, client: TestClient):
         """
         D3: Parent-child relationships in imported files are preserved.
@@ -227,7 +225,7 @@ class TestDataFlowToStudio:
 class TestPreviewStateRecognition:
     """Verify Studio correctly handles preview state from smart import."""
 
-    @pytest.mark.skip(reason="Implementation pending")
+
     def test_smart_import_session_marked_as_preview(self, client: TestClient):
         """
         P1: Studio session created from smart import has is_preview=True.
@@ -260,7 +258,7 @@ class TestPreviewStateRecognition:
         session = session_res.json()
         assert session.get("is_preview") is True
 
-    @pytest.mark.skip(reason="Implementation pending")
+
     def test_regular_import_session_not_marked_as_preview(self, client: TestClient):
         """
         P2: Regular import sessions do not use is_preview flag.
@@ -271,7 +269,7 @@ class TestPreviewStateRecognition:
         # This test documents expected behavior.
         pass
 
-    @pytest.mark.skip(reason="Implementation pending")
+
     def test_preview_session_prevents_direct_commit(self, client: TestClient):
         """
         P3: Preview session cannot be committed until reviewed by user.
@@ -301,7 +299,7 @@ class TestPreviewStateRecognition:
             or commit_res.json().get("requires_preview_confirmation") is True
         )
 
-    @pytest.mark.skip(reason="Implementation pending")
+
     def test_preview_session_survives_clarifications(self, client: TestClient):
         """
         P4: Preview flag is maintained through clarification request/response.
@@ -325,7 +323,7 @@ class TestPreviewStateRecognition:
 class TestSmartImportEndToEnd:
     """Verify complete flow from import files through Studio session."""
 
-    @pytest.mark.skip(reason="Implementation pending")
+
     def test_smart_import_full_flow(self, client: TestClient):
         """
         E1: Complete smart import flow: files → preview → Studio session.
@@ -372,7 +370,7 @@ class TestSmartImportEndToEnd:
         assert session_detail.get("is_preview") is True
         assert len(session_detail.get("draft", [])) >= 1
 
-    @pytest.mark.skip(reason="Implementation pending")
+
     def test_smart_import_multiple_files_e2e(self, client: TestClient):
         """
         E2: Smart import with multiple files routes all to single Studio session.

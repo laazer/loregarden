@@ -1,6 +1,7 @@
 import json
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from loregarden.agents.cli_adapters import render_terminal_handoff_command
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
@@ -312,25 +313,27 @@ def create_ticket(body: TicketCreate, session: Session = Depends(get_session)) -
     return get_ticket(ticket.id, session)
 
 
-@router.post("/import/preview", response_model=TicketImportPreviewResponse)
+@router.post("/import/preview")
 def preview_ticket_import(
     body: TicketImportPreviewRequest,
     session: Session = Depends(get_session),
-) -> TicketImportPreviewResponse:
+):
     if not body.files:
         raise HTTPException(400, "At least one file is required")
     svc = TicketImportService(session)
-    return svc.preview(
+    response = svc.preview(
         workspace_slug=body.workspace_slug,
         files=[(file.name, file.content) for file in body.files],
+        mode=body.mode or "smart",
     )
+    return JSONResponse(content=response.model_dump(exclude_none=True))
 
 
-@router.post("/import/preview-paths", response_model=TicketImportPreviewResponse)
+@router.post("/import/preview-paths")
 def preview_ticket_import_paths(
     body: TicketImportPreviewPathsRequest,
     session: Session = Depends(get_session),
-) -> TicketImportPreviewResponse:
+):
     if not body.file_paths:
         raise HTTPException(400, "At least one file path is required")
     try:
@@ -338,7 +341,8 @@ def preview_ticket_import_paths(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     svc = TicketImportService(session)
-    return svc.preview(workspace_slug=body.workspace_slug, files=files)
+    response = svc.preview(workspace_slug=body.workspace_slug, files=files)
+    return JSONResponse(content=response.model_dump(exclude_none=True))
 
 
 @router.post("/import", response_model=TicketImportResult, status_code=201)

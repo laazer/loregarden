@@ -206,6 +206,8 @@ def _m_ticket_studio_tables(conn: Connection) -> None:
                     clarifying_questions_json TEXT NOT NULL DEFAULT '[]',
                     clarifying_answers_json TEXT NOT NULL DEFAULT '[]',
                     runtime_json TEXT NOT NULL DEFAULT '{}',
+                    is_preview INTEGER NOT NULL DEFAULT 0,
+                    imported_tickets_json TEXT NOT NULL DEFAULT '[]',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY(workspace_id) REFERENCES workspaces(id),
@@ -357,6 +359,23 @@ def _m_branch_triage_messages(conn: Connection) -> None:
     )
 
 
+def _m_ticket_studio_preview_state(conn: Connection) -> None:
+    _add_columns_if_missing(
+        conn,
+        "ticket_studio_sessions",
+        {
+            "is_preview": (
+                "ALTER TABLE ticket_studio_sessions "
+                "ADD COLUMN is_preview INTEGER NOT NULL DEFAULT 0"
+            ),
+            "imported_tickets_json": (
+                "ALTER TABLE ticket_studio_sessions "
+                "ADD COLUMN imported_tickets_json TEXT NOT NULL DEFAULT '[]'"
+            ),
+        },
+    )
+
+
 # Ordered registry. Append new migrations here with the next id; never reorder or
 # rewrite an id that may already be recorded in a deployed database.
 MIGRATIONS: list[tuple[str, Migration]] = [
@@ -372,6 +391,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0010_branch_diff_comments", _m_branch_diff_comments),
     ("0011_branch_triage_messages", _m_branch_triage_messages),
     ("0012_agent_run_auto_approve", _m_agent_run_auto_approve),
+    ("0013_ticket_studio_preview_state", _m_ticket_studio_preview_state),
 ]
 
 

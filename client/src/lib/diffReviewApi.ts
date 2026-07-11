@@ -12,9 +12,16 @@ export interface TicketDiffComment {
 }
 
 async function diffReviewRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const base =
-    import.meta.env.VITE_API_BASE ??
-    (typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8000");
+  const getBase = (): string => {
+    try {
+      return (globalThis as any).import?.meta?.env?.VITE_API_BASE ??
+        (typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8000");
+    } catch {
+      return typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8000";
+    }
+  };
+
+  const base = getBase();
   const res = await fetch(`${base}${path}`, {
     headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,

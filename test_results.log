@@ -1,0 +1,13 @@
+
+> client@0.0.0 test
+> jest ImportedTicketsPreviewState --testPathPattern=ImportedTicketsPreviewState --no-coverage
+
+testPathPattern:
+
+  Option "testPathPattern" was replaced by "--testPathPatterns". "--testPathPatterns" is only available as a command-line option.
+  
+  Please update your configuration.
+
+  CLI Options Documentation:
+  https://jestjs.io/docs/cli
+
