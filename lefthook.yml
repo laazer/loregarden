@@ -1,0 +1,61 @@
+# Git hooks for loregarden (FastAPI control plane + React/Tauri desktop app).
+# Install:  lefthook install
+# Skip:     LEFTHOOK=0 git commit / git push
+# Agent/CI: bash hooks source .lefthook/scripts/hook-noninteractive.sh (no prompts).
+#
+# Adapted from the blobert project's lefthook setup, retargeted at loregarden's
+# single Python root (server/) and React/oxlint client (client/), and scoped to
+# match .github/workflows/ci.yml exactly so pre-push failures predict CI failures.
+#
+# pre-commit — fast checks on staged files only:
+#   - py-review: Ruff check (E/W/F/I/UP/B/C4, server/pyproject.toml) on staged server/**/*.py
+#   - py-pylint: Pylint too-many-statements (max 50) on same staged Python
+#   - py-organization: file/class size caps, __init__.py minimalism, private-import ban,
+#     getattr/setattr ban (outside tests), DRY duplicate-function-body detection
+#   - py-defensive-normalization: flags str(...).strip().lower() comparisons (code smell)
+#   - client-lint: oxlint on staged client/**/*.{ts,tsx,js,jsx}
+#
+# pre-push — full suites, mirrors CI jobs (parallel: true):
+#   - server-tests: ruff check, ruff format --check, pytest -q (server/)
+#   - client-tests: oxlint, tsc -b, jest (client/)
+#   - Opt-out: LEFTHOOK=0 skips all hooks; LEFTHOOK_EXCLUDE=<command> skips one command
+#
+# Requires:
+#   - server/.venv (or uv on PATH) — see server/pyproject.toml; uv sync --extra dev
+#   - client/node_modules (or npm on PATH) — cd client && npm ci
+
+pre-commit:
+  parallel: true
+  commands:
+    py-review:
+      name: Python (Ruff, server/pyproject.toml)
+      glob: "server/**/*.py"
+      run: bash .lefthook/scripts/py-review.sh {staged_files}
+    py-pylint:
+      name: Python (Pylint too-many-statements)
+      glob: "server/**/*.py"
+      run: bash .lefthook/scripts/py-pylint.sh {staged_files}
+    py-organization:
+      name: Python organization guardrails
+      glob: "server/**/*.py"
+      run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_organization_check.py {staged_files}
+    py-defensive-normalization:
+      name: Python defensive normalization check (code smell)
+      glob: "server/**/*.py"
+      run: bash .lefthook/scripts/detect-defensive-normalization.sh {staged_files}
+    client-lint:
+      name: Client (oxlint)
+      glob: "client/**/*.{ts,tsx,js,jsx}"
+      run: bash .lefthook/scripts/client-lint.sh {staged_files}
+
+pre-push:
+  parallel: true
+  commands:
+    server-tests:
+      name: Server tests (ruff + pytest, mirrors CI)
+      glob: "server/**/*.py"
+      run: bash .lefthook/scripts/server-tests.sh
+    client-tests:
+      name: Client tests (oxlint + tsc + jest, mirrors CI)
+      glob: "client/**/*.{ts,tsx,js,jsx,json}"
+      run: bash .lefthook/scripts/client-tests.sh

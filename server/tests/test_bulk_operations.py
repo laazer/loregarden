@@ -1,11 +1,10 @@
 """Tests for bulk queue operations and retry logic."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from unittest.mock import patch, AsyncMock
-from sqlmodel import Session, select
+from datetime import datetime, timedelta, timezone
 
-from loregarden.models.domain import QueuedRun, QueuePosition, Workspace, Ticket
+import pytest
+from loregarden.models.domain import QueuedRun, QueuePosition, Workspace
+from sqlmodel import Session, select
 
 
 @pytest.mark.asyncio
@@ -479,7 +478,7 @@ class TestRetryAllFailed:
 
         # Verify all retried
         retried = db_session.exec(
-            select(QueuedRun).where(QueueDRun.workspace_id == "ws-13")
+            select(QueuedRun).where(QueuedRun.workspace_id == "ws-13")
         ).all()
 
         assert all(r.retry_count > 0 for r in retried)
@@ -566,7 +565,7 @@ class TestSkipFailedRuns:
         # Skip all
         failed = db_session.exec(
             select(QueuedRun).where(
-                (QueueDRun.workspace_id == "ws-15")
+                (QueuedRun.workspace_id == "ws-15")
                 & (QueuedRun.status == "failed")
             )
         ).all()
@@ -580,7 +579,7 @@ class TestSkipFailedRuns:
         # Verify all skipped
         skipped = db_session.exec(
             select(QueuedRun).where(
-                (QueueDRun.workspace_id == "ws-15")
+                (QueuedRun.workspace_id == "ws-15")
                 & (QueuedRun.status == "skipped")
             )
         ).all()

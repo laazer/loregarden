@@ -9,6 +9,7 @@ data/loregarden.db-*
 server/.venv/
 server/.self-improve-restart
 server/.pyinstaller/
+server/.pylint_home/
 .loregarden/
 client/node_modules/
 client/dist/

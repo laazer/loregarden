@@ -1,13 +1,11 @@
 import json
 
 from fastapi.testclient import TestClient
-
 from loregarden.services.ticket_studio_service import (
     clarifying_questions_resolved,
     format_studio_reply_for_display,
     parse_scope_payload,
 )
-
 
 SCOPE_STUB = """Here is the scoped breakdown:
 

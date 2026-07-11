@@ -6,15 +6,13 @@ This file demonstrates the pattern - integrate into existing services/parallel_q
 """
 
 import logging
-from typing import List, Optional
-from datetime import datetime, timedelta
 
 from loregarden.models.domain import AgentRun, QueuedRun
 from loregarden.websocket_events import (
+    emit_error,
     emit_execution_update,
     emit_queue_promoted,
     emit_run_completed,
-    emit_error,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,7 +79,7 @@ async def queue_run_ws(
 async def promote_from_queue_ws(
     self,  # self from ParallelQueueService
     workspace_id: str,
-) -> Optional[AgentRun]:
+) -> AgentRun | None:
     """
     Promote next queued run to available execution slot.
 

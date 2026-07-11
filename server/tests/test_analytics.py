@@ -1,11 +1,9 @@
 """Tests for analytics API endpoints."""
 
-import pytest
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, patch
-from sqlmodel import Session, select
 
-from loregarden.models.domain import AgentRun, Workspace, QueuePosition
+import pytest
+from loregarden.models.domain import Workspace
+from sqlmodel import Session
 
 
 @pytest.mark.asyncio

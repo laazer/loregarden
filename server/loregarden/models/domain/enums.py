@@ -160,3 +160,7 @@ class QueuePosition(str, Enum):
     PROMOTED = "promoted"
     STARTED = "started"
     ACTIVE = "active"
+    PAUSED = "paused"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+    SKIPPED = "skipped"

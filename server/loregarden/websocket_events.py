@@ -4,13 +4,14 @@ Provides easy integration points for emitting real-time updates.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from loregarden.websocket import WebSocketServer
 
 logger = logging.getLogger(__name__)
 
 # Global WebSocket server instance
-_ws_server: Optional[WebSocketServer] = None
+_ws_server: WebSocketServer | None = None
 
 
 def init_websocket(ws_server: WebSocketServer) -> None:
@@ -20,16 +21,16 @@ def init_websocket(ws_server: WebSocketServer) -> None:
     logger.info('WebSocket server initialized for event emissions')
 
 
-def get_ws_server() -> Optional[WebSocketServer]:
+def get_ws_server() -> WebSocketServer | None:
     """Get the global WebSocket server instance."""
     return _ws_server
 
 
 def emit_execution_update(
     workspace_id: str,
-    active_runs: List[Dict[str, Any]],
-    queued_runs: List[Dict[str, Any]],
-    stats: Dict[str, Any],
+    active_runs: list[dict[str, Any]],
+    queued_runs: list[dict[str, Any]],
+    stats: dict[str, Any],
 ) -> None:
     """
     Emit execution status update to workspace subscribers.
@@ -57,8 +58,8 @@ def emit_execution_update(
 def emit_conflict_detected(
     worktree_id: str,
     run_id: str,
-    conflicts: List[Dict[str, Any]],
-    preview: Dict[str, Any],
+    conflicts: list[dict[str, Any]],
+    preview: dict[str, Any],
     severity: str,
 ) -> None:
     """
@@ -160,7 +161,7 @@ def emit_error(
     target_room: str,
     message: str,
     code: str,
-    context: Optional[Dict[str, Any]] = None,
+    context: dict[str, Any] | None = None,
 ) -> None:
     """
     Emit error event to subscribers.

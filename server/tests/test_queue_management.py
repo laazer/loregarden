@@ -1,12 +1,11 @@
 """Tests for queue management API endpoints."""
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from datetime import datetime, timezone
-from sqlmodel import Session, select
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from loregarden.models.domain import QueuedRun, QueuePosition, AgentRun, Workspace
+import pytest
 from loregarden.api.queue_management import _reorder_queue_internal
+from loregarden.models.domain import QueuedRun, QueuePosition, Workspace
+from sqlmodel import Session, select
 
 
 @pytest.mark.asyncio
@@ -400,7 +399,6 @@ class TestQueueConcurrency:
 
     async def test_concurrent_reorder_requests(self, db_session: Session):
         """Multiple reorder requests at same time."""
-        import asyncio
 
         ws = Workspace(id="ws-18", name="Test Workspace 18")
         db_session.add(ws)

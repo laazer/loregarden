@@ -4,10 +4,9 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Path, Query
-from sqlmodel import Session, select
-
 from loregarden.db.session import get_session
 from loregarden.models.domain import AgentRun, RunStatus, Ticket
+from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 

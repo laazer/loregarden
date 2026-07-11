@@ -1,14 +1,12 @@
 """Bulk queue operations: cancel/pause/reorder multiple runs at once."""
 
-from datetime import datetime, timezone, timedelta
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlmodel import Session, select
-import json
+from datetime import datetime, timedelta, timezone
 
-from loregarden.models.domain import QueuedRun, QueuePosition, Workspace
-from loregarden.db.session import get_session
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from loregarden.api.queue_management import emit_execution_update
+from loregarden.db.session import get_session
+from loregarden.models.domain import QueuedRun, QueuePosition
+from sqlmodel import Session, select
 
 router = APIRouter(prefix="/api/parallel", tags=["bulk-operations"])
 
@@ -17,7 +15,7 @@ class BulkOperationRequest:
     """Request for bulk queue operations."""
     operation: str  # "cancel", "pause", "resume", "retry"
     run_ids: list[str]
-    filters: Optional[dict] = None  # Optional: filter by status, position range, etc
+    filters: dict | None = None  # Optional: filter by status, position range, etc
 
 
 class BulkOperationResponse:
@@ -291,7 +289,7 @@ async def retry_failed_run(
 @router.post("/workspace/{workspace_id}/queue/retry-all-failed")
 async def retry_all_failed_runs(
     workspace_id: str,
-    max_retries: Optional[int] = None,
+    max_retries: int | None = None,
     session: Session = Depends(get_session),
     background_tasks: BackgroundTasks = None,
 ) -> dict:

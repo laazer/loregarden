@@ -3,12 +3,12 @@ WebSocket server for real-time parallel execution updates.
 Uses Flask-SocketIO for event-driven communication.
 """
 
-from flask_socketio import SocketIO, emit, join_room, leave_room, rooms
-from flask import request
 import logging
 from datetime import datetime
-from typing import Dict, Any, List, Optional
-import json
+from typing import Any
+
+from flask import request
+from flask_socketio import SocketIO, emit, join_room, leave_room
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +18,8 @@ class WebSocketServer:
 
     def __init__(self, socketio: SocketIO):
         self.socketio = socketio
-        self.connected_users: Dict[str, str] = {}  # sid -> user_id
-        self.subscriptions: Dict[str, List[str]] = {}  # room -> [sids]
+        self.connected_users: dict[str, str] = {}  # sid -> user_id
+        self.subscriptions: dict[str, list[str]] = {}  # room -> [sids]
 
     def initialize_handlers(self):
         """Register all WebSocket event handlers."""
@@ -231,9 +231,9 @@ class WebSocketServer:
     def broadcast_execution_update(
         self,
         workspace_id: str,
-        active_runs: List[Dict[str, Any]],
-        queued_runs: List[Dict[str, Any]],
-        stats: Dict[str, Any]
+        active_runs: list[dict[str, Any]],
+        queued_runs: list[dict[str, Any]],
+        stats: dict[str, Any]
     ):
         """Broadcast execution status update to workspace subscribers."""
         room = f'workspace:{workspace_id}'
@@ -267,8 +267,8 @@ class WebSocketServer:
         self,
         worktree_id: str,
         run_id: str,
-        conflicts: List[Dict[str, Any]],
-        preview: Dict[str, Any],
+        conflicts: list[dict[str, Any]],
+        preview: dict[str, Any],
         severity: str
     ):
         """Broadcast conflict detection event."""
@@ -376,7 +376,7 @@ class WebSocketServer:
         target_room: str,
         message: str,
         code: str,
-        context: Optional[Dict[str, Any]] = None
+        context: dict[str, Any] | None = None
     ):
         """Broadcast error event to subscribers."""
         self.socketio.emit(
@@ -397,7 +397,7 @@ class WebSocketServer:
             extra={'code': code, 'message': message}
         )
 
-    def get_connection_stats(self) -> Dict[str, Any]:
+    def get_connection_stats(self) -> dict[str, Any]:
         """Get WebSocket connection statistics."""
         return {
             'connected_users': len(self.connected_users),

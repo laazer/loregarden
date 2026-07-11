@@ -1,18 +1,11 @@
 """Tests for queue operation review system (diffs, comments, approvals)."""
 
-import json
 import pytest
-from datetime import datetime
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-
 from loregarden.models.domain import (
-    QueueOperation,
-    QueueOperationComment,
-    RunOutputReview,
-    QueueOperationType,
     Workspace,
 )
+from sqlmodel import Session
 
 
 @pytest.fixture

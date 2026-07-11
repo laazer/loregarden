@@ -1,8 +1,7 @@
 """Tests for finalize-hierarchy endpoint — atomic bulk work-item creation."""
 
-import pytest
 from fastapi.testclient import TestClient
-from loregarden.models.domain import WorkItemType, Ticket
+from loregarden.models.domain import Ticket, WorkItemType
 from sqlmodel import Session, select
 
 

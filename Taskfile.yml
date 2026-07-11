@@ -75,3 +75,45 @@ tasks:
       - server
       - client
       - self-improve:watch
+
+  hooks:install:
+    desc: Install lefthook git hooks (pre-commit, pre-push) for this repo
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - lefthook install
+
+  hooks:server:
+    desc: Run pre-push server hook (ruff + pytest, mirrors CI) on demand
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - bash .lefthook/scripts/server-tests.sh
+
+  hooks:client:
+    desc: Run pre-push client hook (oxlint + tsc + jest, mirrors CI) on demand
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - bash .lefthook/scripts/client-tests.sh
+
+  hooks:py-review:
+    desc: Ruff check for staged Python (server/pyproject.toml)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - bash .lefthook/scripts/py-review.sh {{.CLI_ARGS}}
+
+  hooks:py-pylint:
+    desc: Pylint too-many-statements for staged Python (server/pyproject.toml)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - bash .lefthook/scripts/py-pylint.sh {{.CLI_ARGS}}
+
+  hooks:py-organization:
+    desc: Python organization guardrails for staged files
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_organization_check.py {{.CLI_ARGS}}
+
+  hooks:client-lint:
+    desc: oxlint for staged client files
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - bash .lefthook/scripts/client-lint.sh {{.CLI_ARGS}}

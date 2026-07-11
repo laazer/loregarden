@@ -1,15 +1,11 @@
 """API endpoints for parallel execution, queue management, and conflict detection."""
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from sqlmodel import Session, select
-
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     AgentRun,
-    ConflictReport,
     Ticket,
     Worktree,
     WorktreeState,
@@ -19,11 +15,12 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.services.worktree_service import WorktreeService
 from loregarden.websocket_events import (
-    emit_execution_update,
-    emit_error,
     emit_conflict_detected,
     emit_conflict_resolved,
+    emit_error,
+    emit_execution_update,
 )
+from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +30,7 @@ router = APIRouter(prefix="/api/parallel", tags=["parallel"])
 @router.post("/runs/{ticket_id}")
 async def create_parallel_run(
     ticket_id: str = Path(...),
-    stage_key: Optional[str] = Query(None),
+    stage_key: str | None = Query(None),
     max_concurrent: int = Query(3),
     session: Session = Depends(get_session),
 ):
@@ -105,7 +102,7 @@ async def create_parallel_run(
         except Exception as emit_err:
             logger.warning(f'Failed to emit error: {emit_err}')
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/status/{workspace_id}")
@@ -149,7 +146,7 @@ async def get_parallel_status(
 
     except Exception as e:
         logger.error(f"Error getting parallel status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/queue/{run_id}/cancel")
@@ -219,7 +216,7 @@ async def cancel_queued_run(
         except Exception as emit_err:
             logger.warning(f'Failed to emit error: {emit_err}')
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/conflicts/{worktree_id}")
@@ -310,7 +307,7 @@ async def check_conflicts(
         except Exception as emit_err:
             logger.warning(f'Failed to emit error: {emit_err}')
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/worktree/{worktree_id}/merge")
@@ -416,7 +413,7 @@ async def merge_worktree(
         except Exception as emit_err:
             logger.warning(f'Failed to emit error: {emit_err}')
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/worktree/{worktree_id}/cleanup")
@@ -461,7 +458,7 @@ async def cleanup_worktree(
         raise
     except Exception as e:
         logger.error(f"Error cleaning up worktree: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/worktree/{worktree_id}")
@@ -510,7 +507,7 @@ async def get_worktree_details(
         raise
     except Exception as e:
         logger.error(f"Error getting worktree details: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/conflict-reports/{worktree_id}")
@@ -557,7 +554,7 @@ async def get_conflict_reports(
 
     except Exception as e:
         logger.error(f"Error getting conflict reports: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/active-runs/{workspace_id}")
@@ -593,7 +590,7 @@ async def get_active_runs(
 
     except Exception as e:
         logger.error(f"Error getting active runs: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/queued-runs/{workspace_id}")
@@ -629,4 +626,4 @@ async def get_queued_runs(
 
     except Exception as e:
         logger.error(f"Error getting queued runs: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

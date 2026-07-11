@@ -2,24 +2,21 @@
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from uuid import uuid4
-
-from sqlmodel import Session, select
 
 from loregarden.models.domain import (
     AgentRun,
     AgentSlot,
     QueuedRun,
     QueuePosition,
-    RunStatus,
 )
 from loregarden.websocket_events import (
+    emit_error,
     emit_execution_update,
     emit_queue_promoted,
     emit_run_completed,
-    emit_error,
 )
+from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
@@ -298,7 +295,7 @@ class ParallelQueueService:
             logger.error(f"Error getting queued runs: {e}", exc_info=True)
             return []
 
-    async def promote_from_queue(self, workspace_id: str) -> Optional[dict]:
+    async def promote_from_queue(self, workspace_id: str) -> dict | None:
         """
         Check if queue has items and slots available.
         If yes, promote next queued run to active slot.
@@ -407,7 +404,7 @@ class ParallelQueueService:
 
             return None
 
-    async def on_run_complete(self, workspace_id: str, run_id: str) -> Optional[dict]:
+    async def on_run_complete(self, workspace_id: str, run_id: str) -> dict | None:
         """
         Called when an agent run completes.
         Frees up the slot and promotes next from queue.

@@ -24,7 +24,6 @@ Implementation Notes:
 
 import textwrap
 
-import pytest
 from fastapi.testclient import TestClient
 
 

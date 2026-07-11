@@ -1,22 +1,18 @@
 """Queue operation review system: diffs, comments, and approval workflow."""
 
+import json
 from datetime import datetime, timezone
-from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException
-from pydantic import BaseModel
-from sqlmodel import Session, select
-import json
-import difflib
-
+from loregarden.db.session import get_session
 from loregarden.models.domain import (
     QueueOperation,
-    QueueOperationType,
     QueueOperationComment,
     RunOutputReview,
     Workspace,
 )
-from loregarden.db.session import get_session
+from pydantic import BaseModel
+from sqlmodel import Session, select
 
 router = APIRouter(prefix="/api/parallel", tags=["queue-review"])
 
@@ -31,8 +27,8 @@ class CreateOperationRequest(BaseModel):
 
 class OperationCommentRequest(BaseModel):
     content: str
-    line_number: Optional[int] = None
-    run_id: Optional[str] = None
+    line_number: int | None = None
+    run_id: str | None = None
     created_by: str = "system"
 
 

@@ -6,20 +6,18 @@ This file demonstrates the pattern - integrate into existing api/parallel.py
 """
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from sqlmodel import Session, select
-
 from loregarden.db.session import get_session
-from loregarden.models.domain import AgentRun, Ticket, WorktreeState
+from loregarden.models.domain import AgentRun, Ticket
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.websocket_events import (
-    emit_execution_update,
     emit_error,
+    emit_execution_update,
     emit_run_completed,
 )
+from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +28,7 @@ router = APIRouter(prefix="/api/parallel", tags=["parallel"])
 @router.post("/runs/{ticket_id}")
 async def create_parallel_run_ws(
     ticket_id: str = Path(...),
-    stage_key: Optional[str] = Query(None),
+    stage_key: str | None = Query(None),
     max_concurrent: int = Query(3),
     session: Session = Depends(get_session),
 ):
@@ -98,7 +96,7 @@ async def create_parallel_run_ws(
         except Exception as emit_err:
             logger.warning(f'Failed to emit error: {emit_err}')
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # EXAMPLE 2: Enhanced run completion with event emission
@@ -161,7 +159,7 @@ async def complete_run_ws(
                 stats=stats,
             )
 
-            logger.info(f'Emitted execution_update after run completion')
+            logger.info('Emitted execution_update after run completion')
         except Exception as e:
             logger.warning(f'Failed to emit execution_update: {e}')
 
@@ -189,7 +187,7 @@ async def complete_run_ws(
         except Exception as emit_err:
             logger.warning(f'Failed to emit error: {emit_err}')
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # EXAMPLE 3: Enhanced cancel run with event emission
@@ -260,7 +258,7 @@ async def cancel_run_ws(
         except Exception as emit_err:
             logger.warning(f'Failed to emit error: {emit_err}')
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # EXAMPLE 4: No changes needed to status endpoint

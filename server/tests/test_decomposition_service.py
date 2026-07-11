@@ -1,9 +1,8 @@
 """Tests for ticket decomposition service — LLM-powered hierarchy generation."""
 
 import json
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock
 
-import pytest
 from loregarden.models.domain import WorkItemType
 from loregarden.models.domain.schemas import HierarchyWorkItem
 
@@ -13,9 +12,7 @@ class MockClaudeResponse:
 
     def __init__(self, content: str):
         self.content = [MagicMock(text=content)]
-        self.usage = MagicMock(
-            input_tokens=100, output_tokens=200, cache_creation_input_tokens=0
-        )
+        self.usage = MagicMock(input_tokens=100, output_tokens=200, cache_creation_input_tokens=0)
 
 
 def parse_hierarchy_from_response(response_text: str) -> list[HierarchyWorkItem]:
@@ -49,12 +46,6 @@ class TestDecompositionServiceHappyPath:
 
     def test_decompose_simple_feature(self):
         """Decompose a simple feature ticket into hierarchy."""
-        ticket_content = {
-            "title": "Add user authentication",
-            "description": "Implement login and signup flows",
-            "acceptance_criteria": ["Users can sign up", "Users can log in"],
-        }
-
         mock_response_text = json.dumps(
             {
                 "hierarchy": [
@@ -121,10 +112,6 @@ class TestDecompositionServiceHappyPath:
 
     def test_decompose_milestone(self):
         """Decompose milestone into features and capabilities."""
-        ticket_content = {
-            "title": "Q3 Release Milestone",
-            "description": "Deliver core platform features for Q3",
-        }
 
         mock_response_text = json.dumps(
             {
@@ -204,10 +191,7 @@ class TestDecompositionServiceHappyPath:
         assert hierarchy[0].work_item_type == WorkItemType.MILESTONE
         assert hierarchy[0].children[0].work_item_type == WorkItemType.FEATURE
         assert hierarchy[0].children[0].children[0].work_item_type == WorkItemType.CAPABILITY
-        assert (
-            hierarchy[0].children[0].children[0].children[0].work_item_type
-            == WorkItemType.TASK
-        )
+        assert hierarchy[0].children[0].children[0].children[0].work_item_type == WorkItemType.TASK
 
     def test_decompose_with_bugs_in_hierarchy(self):
         """Include bug work items in hierarchy at appropriate levels."""
@@ -359,11 +343,6 @@ class TestDecompositionServiceEdgeCases:
 
     def test_decompose_empty_description(self):
         """Handle ticket with empty description."""
-        ticket_content = {
-            "title": "Quick Fix",
-            "description": "",
-            "acceptance_criteria": [],
-        }
 
         mock_response_text = json.dumps(
             {
@@ -671,9 +650,7 @@ class TestDecompositionServiceErrorHandling:
 
     def test_api_rate_limit_scenario(self):
         """API rate limit returns empty or error indicator."""
-        error_response = json.dumps(
-            {"error": "rate_limit_exceeded", "hierarchy": []}
-        )
+        error_response = json.dumps({"error": "rate_limit_exceeded", "hierarchy": []})
 
         hierarchy = parse_hierarchy_from_response(error_response)
 
@@ -692,7 +669,7 @@ class TestDecompositionServicePromptValidation:
         }
 
         # This would be called in the actual service
-        expected_prompt_elements = [
+        [
             ticket["title"],
             ticket["description"],
             "acceptance_criteria",
@@ -765,11 +742,6 @@ class TestDecompositionServiceRepeatability:
 
     def test_same_input_produces_consistent_structure(self):
         """Same ticket should produce consistent hierarchy structure."""
-        ticket = {
-            "title": "User authentication",
-            "description": "Implement auth system",
-            "acceptance_criteria": ["Users can sign up", "Users can log in"],
-        }
 
         # Generate multiple hierarchies from same input
         response_text = json.dumps(
@@ -1095,7 +1067,7 @@ class TestDecompositionServiceBoundaryMutations:
 
         # Pydantic validates; None is not a valid string
         try:
-            hierarchy = parse_hierarchy_from_response(mock_response_text)
+            parse_hierarchy_from_response(mock_response_text)
             assert False, "Should have raised ValidationError for None external_id"
         except ValidationError:
             pass  # Expected
@@ -1229,7 +1201,7 @@ class TestDecompositionServiceBoundaryMutations:
 
         # Will raise ValueError when trying to construct WorkItemType enum
         try:
-            hierarchy = parse_hierarchy_from_response(mock_response_text)
+            parse_hierarchy_from_response(mock_response_text)
             # If it didn't raise, that's a bug
             assert False, "Should have raised ValueError for invalid work_item_type"
         except ValueError:
@@ -1256,7 +1228,7 @@ class TestDecompositionServiceBoundaryMutations:
 
         # Pydantic enforces list type
         try:
-            hierarchy = parse_hierarchy_from_response(mock_response_text)
+            parse_hierarchy_from_response(mock_response_text)
             assert False, "Should reject non-list acceptance_criteria"
         except ValidationError:
             pass  # Expected
@@ -1285,7 +1257,7 @@ class TestDecompositionServiceBoundaryMutations:
 
         # Pydantic requires all list elements to be strings
         try:
-            hierarchy = parse_hierarchy_from_response(mock_response_text)
+            parse_hierarchy_from_response(mock_response_text)
             assert False, "Should reject None in acceptance_criteria list"
         except ValidationError:
             pass  # Expected
@@ -1609,12 +1581,8 @@ class TestDecompositionServiceConcurrencyAndState:
         # Simulate cache key generation
         import hashlib
 
-        cache_key_1 = hashlib.md5(
-            json.dumps(ticket_content, sort_keys=True).encode()
-        ).hexdigest()
-        cache_key_2 = hashlib.md5(
-            json.dumps(ticket_content, sort_keys=True).encode()
-        ).hexdigest()
+        cache_key_1 = hashlib.md5(json.dumps(ticket_content, sort_keys=True).encode()).hexdigest()
+        cache_key_2 = hashlib.md5(json.dumps(ticket_content, sort_keys=True).encode()).hexdigest()
 
         assert cache_key_1 == cache_key_2
 
@@ -1624,6 +1592,7 @@ class TestDecompositionServiceMockBreaking:
 
     def test_response_without_text_attribute(self):
         """Real API response has different structure than mock."""
+
         # Real anthropic SDK response has .content[0].text
         # This tests if code assumes specific mock structure
         class RealishResponse:
@@ -1645,6 +1614,7 @@ class TestDecompositionServiceMockBreaking:
 
     def test_no_usage_attribute_on_response(self):
         """Some API error responses might not have usage field."""
+
         # Catches tests that assume usage is always present
         class BareResponse:
             def __init__(self):

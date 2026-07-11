@@ -4,23 +4,16 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Optional
 from uuid import uuid4
 
-from sqlmodel import Session, select
-
 from loregarden.models.domain import (
-    AgentRun,
     AutoFixAttempt,
     AutoFixStatus,
     CIRunResult,
     CIStatus,
-    OrchestrationRun,
-    RunStatus,
     Ticket,
-    TicketState,
-    WorkItemType,
 )
+from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +29,7 @@ class CIService:
         workspace_id: str,
         provider: str,
         payload: dict,
-    ) -> Optional[CIRunResult]:
+    ) -> CIRunResult | None:
         """
         Process incoming CI webhook (GitHub Actions, GitLab CI, generic).
 
@@ -63,7 +56,7 @@ class CIService:
         self,
         workspace_id: str,
         payload: dict,
-    ) -> Optional[CIRunResult]:
+    ) -> CIRunResult | None:
         """Process GitHub Actions workflow_run event."""
         try:
             # Extract relevant fields from GitHub Actions payload
@@ -135,7 +128,7 @@ class CIService:
         self,
         workspace_id: str,
         payload: dict,
-    ) -> Optional[CIRunResult]:
+    ) -> CIRunResult | None:
         """Process GitLab CI pipeline event."""
         # TODO: Implement GitLab CI webhook processing
         logger.warning("GitLab CI webhook processing not yet implemented")
@@ -145,13 +138,13 @@ class CIService:
         self,
         workspace_id: str,
         payload: dict,
-    ) -> Optional[CIRunResult]:
+    ) -> CIRunResult | None:
         """Process generic webhook (expects standard format)."""
         # TODO: Implement generic webhook processing
         logger.warning("Generic webhook processing not yet implemented")
         return None
 
-    def _extract_ticket_id_from_branch(self, branch: str, workspace_id: str) -> Optional[str]:
+    def _extract_ticket_id_from_branch(self, branch: str, workspace_id: str) -> str | None:
         """
         Extract ticket ID from git branch name.
 
@@ -176,7 +169,7 @@ class CIService:
 
         return ticket.id if ticket else None
 
-    async def get_latest_ci_status(self, ticket_id: str) -> Optional[CIRunResult]:
+    async def get_latest_ci_status(self, ticket_id: str) -> CIRunResult | None:
         """Fetch latest CI result for a ticket."""
         stmt = select(CIRunResult).where(CIRunResult.ticket_id == ticket_id).order_by(
             CIRunResult.created_at.desc()
@@ -187,7 +180,7 @@ class CIService:
         self,
         ci_result: CIRunResult,
         max_attempts: int = 3,
-    ) -> Optional[AutoFixAttempt]:
+    ) -> AutoFixAttempt | None:
         """
         Create auto-fix attempt: parse failure logs, trigger implementer agent.
 

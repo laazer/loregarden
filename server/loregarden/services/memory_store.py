@@ -533,7 +533,6 @@ class AgentMemoryService:
         obsidian_vault = resolved_obsidian_vault()
         memory_db = resolved_memory_sqlite_path(workspace_slug)
         slug = workspace_slug.strip()
-        graph_path = memory_db
         return {
             "enabled": self.obsidian is not None or memory_db is not None,
             "workspace_slug": slug or None,

@@ -1,18 +1,16 @@
 """API endpoints for queue management and reordering."""
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from sqlmodel import Session, select
-
 from loregarden.db.session import get_session
-from loregarden.models.domain import QueuedRun, QueuePosition, AgentRun
+from loregarden.models.domain import QueuedRun, QueuePosition
 from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.websocket_events import (
-    emit_execution_update,
     emit_error,
+    emit_execution_update,
 )
+from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +139,7 @@ async def reorder_queued_run(
         except Exception as emit_err:
             logger.warning(f"Failed to emit error: {emit_err}")
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 async def _reorder_queue_internal(
@@ -249,7 +247,7 @@ async def get_queue_info(
 
     except Exception as e:
         logger.error(f"Error getting queue info: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/{run_id}/promote")
@@ -317,7 +315,7 @@ async def promote_run(
         except Exception as emit_err:
             logger.warning(f"Failed to emit error: {emit_err}")
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/{run_id}/pause")
@@ -375,14 +373,14 @@ async def pause_run(
         return {
             "status": "paused",
             "run_id": run_id,
-            "message": f"Run paused",
+            "message": "Run paused",
         }
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error pausing run: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/{run_id}/resume")
@@ -440,14 +438,14 @@ async def resume_run(
         return {
             "status": "resumed",
             "run_id": run_id,
-            "message": f"Run resumed",
+            "message": "Run resumed",
         }
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error resuming run: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/{run_id}/cancel")
@@ -511,11 +509,11 @@ async def cancel_run(
         return {
             "status": "cancelled",
             "run_id": run_id,
-            "message": f"Run cancelled",
+            "message": "Run cancelled",
         }
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error cancelling run: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

@@ -19,7 +19,6 @@ from loregarden.models.domain import (
     TicketDetail,
     TicketImportPreviewPathsRequest,
     TicketImportPreviewRequest,
-    TicketImportPreviewResponse,
     TicketImportRequest,
     TicketImportResult,
     TicketState,
@@ -625,7 +624,7 @@ def finalize_hierarchy(
 ) -> FinalizeHierarchyResponse:
     """Create all work items in hierarchy atomically, with parent-child validation."""
     from loregarden.services.hierarchy_service import validate_parent_child
-    from loregarden.services.proposal_validator import ProposalValidator, ProposalValidationError
+    from loregarden.services.proposal_validator import ProposalValidationError, ProposalValidator
 
     ws = session.exec(select(Workspace).where(Workspace.slug == body.workspace_slug)).first()
     if not ws:
@@ -641,7 +640,7 @@ def finalize_hierarchy(
         try:
             validated_hierarchy = ProposalValidator.validate_all(body.hierarchy)
         except ProposalValidationError as e:
-            raise HTTPException(400, f"Proposal validation failed: {e}")
+            raise HTTPException(400, f"Proposal validation failed: {e}") from e
 
         def collect_all_items(items: list) -> list:
             """Collect all items in parent-first order."""

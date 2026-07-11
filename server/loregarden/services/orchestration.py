@@ -770,7 +770,6 @@ class OrchestrationService:
         """
         from loregarden.services.parallel_queue import ParallelQueueService
         from loregarden.services.worktree_service import WorktreeService
-        from loregarden.config import settings
 
         try:
             queue_service = ParallelQueueService(self.session, max_concurrent=max_concurrent)

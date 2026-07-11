@@ -1,10 +1,10 @@
 """Tests for run control endpoints (pause, resume, cancel)."""
 
-import pytest
-from unittest.mock import AsyncMock, patch
-from sqlmodel import Session, select
+from unittest.mock import patch
 
+import pytest
 from loregarden.models.domain import QueuedRun, QueuePosition, Workspace
+from sqlmodel import Session, select
 
 
 @pytest.mark.asyncio
@@ -56,13 +56,38 @@ class TestPauseRun:
         assert run.status != QueuePosition.ACTIVE
 
     async def test_pause_emits_update_event(self, db_session: Session):
-        """Pause emits execution_update event."""
-        # Should emit with updated queue state
+        """Pause emits execution_update event with the workspace's updated queue state."""
+        from loregarden.api.queue_management import pause_run
+
+        ws = Workspace(id="ws-pause-emit", slug="ws-pause-emit", name="Test")
+        db_session.add(ws)
+        db_session.commit()
+
+        run = QueuedRun(
+            run_id="run-pause-emit",
+            ticket_id="ticket-1",
+            workspace_id="ws-pause-emit",
+            status=QueuePosition.ACTIVE,
+        )
+        db_session.add(run)
+        db_session.commit()
+
         with patch(
             "loregarden.api.queue_management.emit_execution_update"
         ) as mock_emit:
-            # After pause, should emit
-            pass
+            await pause_run("run-pause-emit", db_session)
+
+        mock_emit.assert_called_once()
+        _, kwargs = mock_emit.call_args
+        assert kwargs["workspace_id"] == "ws-pause-emit"
+        assert isinstance(kwargs["active_runs"], list)
+        assert isinstance(kwargs["queued_runs"], list)
+        assert isinstance(kwargs["stats"], dict)
+
+        updated = db_session.exec(
+            select(QueuedRun).where(QueuedRun.run_id == "run-pause-emit")
+        ).first()
+        assert updated.status == "paused"
 
     async def test_pause_non_existent_run(self, db_session: Session):
         """Pause non-existent run returns 404."""

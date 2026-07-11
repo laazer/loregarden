@@ -3,14 +3,10 @@
 import asyncio
 import json
 import logging
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Path
 from fastapi.responses import StreamingResponse
-from sqlmodel import Session, select
-
-from loregarden.db.session import get_session
-from loregarden.models.domain import QueuedRun, QueuePosition
 from loregarden.websocket_events import ws
 
 logger = logging.getLogger(__name__)

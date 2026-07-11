@@ -12,7 +12,12 @@ from loregarden.agents.cli_adapters import (
     build_triage_invocation,
 )
 from loregarden.agents.registry import get_agent
-from loregarden.models.domain import BranchTriageMessage, Ticket, Workspace, WorkspaceRuntimeSettings
+from loregarden.models.domain import (
+    BranchTriageMessage,
+    Ticket,
+    Workspace,
+    WorkspaceRuntimeSettings,
+)
 from loregarden.services.branch_triage_service import branch_triage_snapshot
 from loregarden.services.cli_output import extract_triage_reply
 from loregarden.services.triage_service import (

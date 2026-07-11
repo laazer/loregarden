@@ -1,6 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session
-
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     TicketStudioClarificationsUpdate,
@@ -11,6 +9,7 @@ from loregarden.models.domain import (
     WorkspaceRuntimeUpdate,
 )
 from loregarden.services.ticket_studio_service import TicketStudioService
+from sqlmodel import Session
 
 router = APIRouter(prefix="/ticket-studio", tags=["ticket-studio"])
 

@@ -13,8 +13,7 @@ safely persisted. Coverage includes:
 import pytest
 from loregarden.models.domain import WorkItemType
 from loregarden.models.domain.schemas import HierarchyWorkItem
-from loregarden.services.proposal_validator import ProposalValidator, ProposalValidationError
-
+from loregarden.services.proposal_validator import ProposalValidationError, ProposalValidator
 
 # ============================================================================
 # TEST SUITE

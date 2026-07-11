@@ -1,10 +1,7 @@
 """Tests for notifications API endpoints."""
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from datetime import datetime
 
-from loregarden.models.domain import QueuedRun, QueuePosition
+import pytest
 
 
 @pytest.mark.asyncio

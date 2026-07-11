@@ -2,13 +2,12 @@
 
 import json
 import logging
-from typing import Optional
 
 import anthropic
 from loregarden.models.domain import WorkItemType
 from loregarden.models.domain.enums import VALID_HIERARCHY
 from loregarden.models.domain.schemas import HierarchyWorkItem
-from loregarden.services.proposal_validator import ProposalValidator, ProposalValidationError
+from loregarden.services.proposal_validator import ProposalValidationError, ProposalValidator
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +15,7 @@ logger = logging.getLogger(__name__)
 class DecompositionService:
     """Generates hierarchical work item breakdowns using Claude."""
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         """Initialize Claude API client.
 
         Args:
@@ -197,7 +196,7 @@ Return a JSON object with this exact structure:
         try:
             work_item_type = WorkItemType(work_item_type_str)
         except ValueError as e:
-            raise ValueError(f"Invalid work_item_type '{work_item_type_str}': {e}")
+            raise ValueError(f"Invalid work_item_type '{work_item_type_str}': {e}") from e
 
         description = data.get("description", "")
         acceptance_criteria = data.get("acceptance_criteria", [])

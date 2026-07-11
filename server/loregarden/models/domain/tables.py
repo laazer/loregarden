@@ -25,8 +25,8 @@ from loregarden.models.domain.enums import (
     _str_enum_column,
     utcnow,
 )
-from sqlmodel import Field, SQLModel
 from pydantic import model_validator
+from sqlmodel import Field, SQLModel
 
 
 class Workspace(SQLModel, table=True):

@@ -3,12 +3,11 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
-from sqlmodel import Session, select
-
 from loregarden.db.session import get_session
 from loregarden.models.domain import Ticket, TicketDiffComment
 from loregarden.services.triage_service import send_triage_message
+from pydantic import BaseModel, Field
+from sqlmodel import Session, select
 
 router = APIRouter(prefix="/tickets", tags=["diff-review"])
 

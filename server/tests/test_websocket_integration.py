@@ -1,17 +1,11 @@
 """Integration tests for WebSocket event flow from backend to frontend."""
 
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
-import asyncio
-from unittest.mock import Mock, AsyncMock, patch
-from datetime import datetime, timezone
-
-from fastapi.testclient import TestClient
-from sqlmodel import Session, create_engine, SQLModel, select
+from loregarden.websocket_events import WebSocketServer
+from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
-
-from loregarden.db.session import get_session
-from loregarden.models.domain import Ticket, AgentRun, Worktree, WorktreeState
-from loregarden.websocket_events import init_websocket, WebSocketServer
 
 
 @pytest.fixture
@@ -176,9 +170,9 @@ class TestWebSocketEventFlow:
         """Verify multiple events emitted in sequence for run completion."""
         with patch('loregarden.websocket_events.get_ws_server', return_value=mock_ws_server):
             from loregarden.websocket_events import (
-                emit_run_completed,
-                emit_queue_promoted,
                 emit_execution_update,
+                emit_queue_promoted,
+                emit_run_completed,
             )
 
             # Simulate run completion sequence
@@ -215,8 +209,8 @@ class TestWebSocketEventFlow:
         """Verify events are routed to correct WebSocket rooms."""
         with patch('loregarden.websocket_events.get_ws_server', return_value=mock_ws_server):
             from loregarden.websocket_events import (
-                emit_execution_update,
                 emit_conflict_detected,
+                emit_execution_update,
             )
 
             # Workspace event should target workspace room

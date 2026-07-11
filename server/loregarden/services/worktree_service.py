@@ -1,23 +1,17 @@
 """Git worktree service for parallel agent execution isolation."""
 
 import logging
-import os
-import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 from uuid import uuid4
-
-from sqlmodel import Session, select
 
 from loregarden.models.domain import (
     AgentRun,
-    ConflictReport,
-    Ticket,
     Worktree,
     WorktreeState,
 )
+from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +29,7 @@ class WorktreeService:
         workspace_id: str,
         agent_run_id: str,
         parent_branch: str = "main",
-    ) -> Optional[Worktree]:
+    ) -> Worktree | None:
         """
         Create an isolated git worktree for an agent run.
 
@@ -257,15 +251,14 @@ class WorktreeService:
             )
 
             # Merge worktree branch into main
-            # Get the current branch of worktree
-            result = subprocess.run(
+            # Validate the worktree HEAD resolves to a branch before merging
+            subprocess.run(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
                 cwd=str(worktree_path),
                 check=True,
                 capture_output=True,
                 text=True,
             )
-            worktree_branch = result.stdout.strip()
 
             # Cherry-pick or merge commits from worktree
             result = subprocess.run(
@@ -380,7 +373,7 @@ class WorktreeService:
             logger.error(f"Error cleaning up worktree: {e}", exc_info=True)
             return False
 
-    def get_worktree(self, worktree_id: str) -> Optional[Worktree]:
+    def get_worktree(self, worktree_id: str) -> Worktree | None:
         """Fetch worktree by ID."""
         stmt = select(Worktree).where(Worktree.id == worktree_id)
         return self.session.exec(stmt).first()

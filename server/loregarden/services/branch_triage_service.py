@@ -12,7 +12,6 @@ from loregarden.services.artifact_service import (
     _git_base_ref,
     _resolve_upstream_ref,
     branch_diff_manifest,
-    capture_branch_diff,
     capture_branch_file_diff,
 )
 from loregarden.services.file_editor import _current_branch, _list_branches, _parse_worktrees

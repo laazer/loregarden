@@ -3,11 +3,8 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
-from sqlmodel import Session, select
-
 from loregarden.db.session import get_session
-from loregarden.models.domain import BranchDiffComment, BranchTriageMessage, Ticket, Workspace
+from loregarden.models.domain import BranchDiffComment, Ticket, Workspace
 from loregarden.services.branch_triage_chat_service import (
     branch_chat_snapshot,
     send_branch_triage_message,
@@ -19,6 +16,8 @@ from loregarden.services.branch_triage_service import (
 )
 from loregarden.services.file_editor import checkout_editor_branch
 from loregarden.services.triage_service import send_triage_message
+from pydantic import BaseModel, Field
+from sqlmodel import Session, select
 
 router = APIRouter(prefix="/workspaces", tags=["branch-triage"])
 

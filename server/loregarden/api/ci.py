@@ -4,15 +4,12 @@ import hashlib
 import hmac
 import json
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlmodel import Session
-
 from loregarden.config import settings
 from loregarden.db.session import get_session
-from loregarden.models.domain import CIRunResult, AutoFixAttempt, AutoFixStatus
 from loregarden.services.ci_service import CIService
+from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +18,7 @@ router = APIRouter(prefix="/ci", tags=["ci"])
 
 def _verify_github_signature(
     payload_bytes: bytes,
-    signature_header: Optional[str],
+    signature_header: str | None,
 ) -> bool:
     """Verify GitHub webhook HMAC signature."""
     if not settings.LOREGARDEN_CI_WEBHOOK_SECRET:
@@ -53,9 +50,9 @@ def _verify_github_signature(
 async def receive_ci_webhook(
     workspace_id: str,
     request: Request,
-    x_github_event: Optional[str] = Header(None),
-    x_github_signature_256: Optional[str] = Header(None),
-    x_gitlab_event: Optional[str] = Header(None),
+    x_github_event: str | None = Header(None),
+    x_github_signature_256: str | None = Header(None),
+    x_gitlab_event: str | None = Header(None),
     session: Session = Depends(get_session),
 ):
     """
@@ -126,13 +123,13 @@ async def receive_ci_webhook(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid JSON payload",
-        )
+        ) from e
     except Exception as e:
         logger.error(f"Error processing CI webhook: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error processing webhook",
-        )
+        ) from e
 
 
 @router.get("/status/{ticket_id}")
@@ -179,7 +176,7 @@ async def get_ci_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error fetching CI status",
-        )
+        ) from e
 
 
 @router.post("/manual-override/{ticket_id}")
@@ -206,7 +203,7 @@ async def skip_ci_check(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error skipping CI check",
-        )
+        ) from e
 
 
 @router.post("/trigger-auto-fix/{ticket_id}")
@@ -251,4 +248,4 @@ async def trigger_manual_auto_fix(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error triggering auto-fix",
-        )
+        ) from e

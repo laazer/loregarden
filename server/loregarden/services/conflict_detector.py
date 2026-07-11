@@ -4,12 +4,10 @@ import logging
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 from uuid import uuid4
 
-from sqlmodel import Session, select
-
 from loregarden.models.domain import ConflictReport, Worktree
+from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
@@ -187,8 +185,8 @@ class ConflictDetectorService:
             diff_output = result.stdout
             # If diff is mostly conflict markers and whitespace, it's simple
             lines_with_code = [
-                l for l in diff_output.split("\n")
-                if l.strip() and not l.startswith(("<<<<<<", ">>>>>>", "======"))
+                line for line in diff_output.split("\n")
+                if line.strip() and not line.startswith(("<<<<<<", ">>>>>>", "======"))
             ]
 
             return len(lines_with_code) < 5
@@ -280,7 +278,7 @@ class ConflictDetectorService:
                     "preview": "",
                 }
 
-            with open(file_full_path, "r") as f:
+            with open(file_full_path) as f:
                 content = f.read()
 
             # Extract conflict sections
@@ -367,7 +365,7 @@ class ConflictDetectorService:
         worktree_id: str,
         ticket_id: str,
         conflict_preview: dict,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Create a conflict report record.
 
@@ -402,7 +400,7 @@ class ConflictDetectorService:
             logger.error(f"Error creating conflict report: {e}", exc_info=True)
             return None
 
-    def get_conflict_report(self, report_id: str) -> Optional[ConflictReport]:
+    def get_conflict_report(self, report_id: str) -> ConflictReport | None:
         """Fetch a conflict report."""
         stmt = select(ConflictReport).where(ConflictReport.id == report_id)
         return self.session.exec(stmt).first()

@@ -21,6 +21,8 @@ dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
     "ruff>=0.9.0",
+    # Pre-commit: function size (too-many-statements / R0915); see [tool.pylint].
+    "pylint>=3.3",
 ]
 
 [dependency-groups]
@@ -28,6 +30,7 @@ dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
     "ruff>=0.9.0",
+    "pylint>=3.3",
 ]
 # Only pulled in by scripts/build-backend.sh when packaging the desktop
 # sidecar — not part of the default dev sync, so `uv run`/tests stay fast.
@@ -60,7 +63,16 @@ select = ["E", "W", "F", "I", "UP", "B", "C4"]
 ignore = [
     "E501",  # line length handled by the formatter, not enforced as a lint error
     "B008",  # FastAPI dependency-injection idiom relies on calls in defaults
+    "E712",  # `Column == True/False` is SQLAlchemy/SQLModel filter syntax, not a bug;
+             # `is True` would break query building since `is` can't be overloaded
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B", "E402"]
+
+[tool.pylint.main]
+disable = ["all"]
+enable = ["too-many-statements"]
+
+[tool.pylint.design]
+max-statements = 50

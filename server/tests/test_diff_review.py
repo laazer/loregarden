@@ -1,9 +1,8 @@
 """Tests for inline ticket diff code review comments."""
 
 from fastapi.testclient import TestClient
-from sqlmodel import Session
-
 from loregarden.models.domain import Ticket, Workspace
+from sqlmodel import Session
 
 
 def _workspace(db_session: Session) -> Workspace:

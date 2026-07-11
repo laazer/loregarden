@@ -1,14 +1,13 @@
 """Queue state persistence: save/restore/replay queue snapshots."""
 
-from datetime import datetime
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlmodel import Session, select
 import json
+from datetime import datetime
 
-from loregarden.models.domain import QueueSnapshot, QueuedRun, QueuePosition, Workspace
-from loregarden.db.session import get_session
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from loregarden.api.queue_management import emit_execution_update
+from loregarden.db.session import get_session
+from loregarden.models.domain import QueuedRun, QueuePosition, QueueSnapshot, Workspace
+from sqlmodel import Session, select
 
 router = APIRouter(prefix="/api/parallel", tags=["queue-persistence"])
 
@@ -17,8 +16,8 @@ router = APIRouter(prefix="/api/parallel", tags=["queue-persistence"])
 async def save_queue_snapshot(
     workspace_id: str,
     name: str,
-    description: Optional[str] = None,
-    tags: Optional[str] = None,
+    description: str | None = None,
+    tags: str | None = None,
     created_by: str = "system",
     session: Session = Depends(get_session),
 ) -> dict:
@@ -233,7 +232,7 @@ async def restore_queue_from_snapshot(
 
     except Exception as e:
         session.rollback()
-        raise HTTPException(status_code=400, detail=f"Restore failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Restore failed: {str(e)}") from e
 
 
 @router.post("/workspace/{workspace_id}/queue/replay-last")
@@ -278,7 +277,7 @@ async def replay_last_n_runs(
 
     except Exception as e:
         session.rollback()
-        raise HTTPException(status_code=400, detail=f"Replay failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Replay failed: {str(e)}") from e
 
 
 @router.delete("/workspace/{workspace_id}/queue/snapshot/{snapshot_id}")
@@ -308,7 +307,7 @@ async def delete_snapshot(
 async def search_snapshots(
     workspace_id: str,
     query: str = "",
-    tag: Optional[str] = None,
+    tag: str | None = None,
     session: Session = Depends(get_session),
 ) -> dict:
     """Search snapshots by name, description, or tags."""
