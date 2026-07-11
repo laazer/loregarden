@@ -23,7 +23,7 @@ export class ProposalItem implements HierarchyNode {
   title: string;
   description: string;
   type: "item" = "item";
-  children: HierarchyNode[] = [];
+  private _children: HierarchyNode[] = [];
   parent?: HierarchyNode;
 
   constructor(id: string, title: string, description: string = "") {
@@ -32,8 +32,16 @@ export class ProposalItem implements HierarchyNode {
     this.description = description;
   }
 
+  get children(): HierarchyNode[] {
+    return this._children;
+  }
+
+  set children(value: HierarchyNode[]) {
+    this._children = value;
+  }
+
   getChildren(): HierarchyNode[] {
-    return this.children;
+    return this._children;
   }
 
   addChild(child: HierarchyNode): void {
@@ -54,7 +62,7 @@ export class ProposalFolder implements HierarchyNode {
   title: string;
   description: string;
   type: "folder" = "folder";
-  children: HierarchyNode[] = [];
+  private _children: HierarchyNode[] = [];
   parent?: HierarchyNode;
 
   constructor(id: string, title: string, description: string = "") {
@@ -63,34 +71,50 @@ export class ProposalFolder implements HierarchyNode {
     this.description = description;
   }
 
+  get children(): HierarchyNode[] {
+    return this._children;
+  }
+
+  set children(value: HierarchyNode[]) {
+    this._children = value;
+  }
+
   getChildren(): HierarchyNode[] {
-    return this.children;
+    return this._children;
   }
 
   addChild(child: HierarchyNode): void {
-    // Defensive check: validate type property at runtime
-    if (this.type !== "folder") {
-      throw new Error("ProposalItem cannot have children");
-    }
-    if (this.children.some((c) => c.id === child.id)) {
+    if (this._children.some((c) => c.id === child.id)) {
       throw new Error(`Child with id ${child.id} already exists`);
     }
+    // Prevent multi-parent nodes: child cannot already have a different parent
+    if (child.parent && child.parent !== this) {
+      throw new Error(
+        `Child ${child.id} already has parent ${child.parent.id}`
+      );
+    }
     child.parent = this;
-    this.children.push(child);
+    this._children.push(child);
   }
 
   removeChild(id: string): boolean {
-    const index = this.children.findIndex((c) => c.id === id);
+    const index = this._children.findIndex((c) => c.id === id);
     if (index === -1) return false;
-    const removed = this.children[index];
+    const removed = this._children[index];
     removed.parent = undefined;
-    this.children.splice(index, 1);
+    this._children.splice(index, 1);
     return true;
+  }
+
+  insertChildAt(child: HierarchyNode, index: number): void {
+    // Internal method for undo operations - inserts without duplicate checking
+    // Assumes parent pointer is already set correctly
+    this._children.splice(index, 0, child);
   }
 
   accept(visitor: HierarchyVisitor): void {
     visitor.visitProposalFolder(this);
-    this.children.forEach((child) => child.accept(visitor));
+    this._children.forEach((child) => child.accept(visitor));
   }
 }
 
@@ -168,30 +192,40 @@ export class RemoveChildCommand implements Command {
   private parent: HierarchyNode;
   private child: HierarchyNode;
   private originalIndex: number;
+  private savedParent: HierarchyNode | undefined;
 
   constructor(parent: HierarchyNode, child: HierarchyNode) {
     this.parent = parent;
     this.child = child;
+    // Find the child in parent's children at construction time
     this.originalIndex = parent.children.findIndex((c) => c.id === child.id);
-    // Check if child was ever added to this parent (parent pointer must be set)
-    // This catches cases where child was never added, but allows cases where it was removed via mutation
-    if (child.parent !== parent) {
+    // Save the parent state for robust undo (may be corrupted, so save it)
+    this.savedParent = child.parent;
+    // Validate that child either has this parent or is directly in the array
+    // (Allow construction even if child is no longer in parent - may have been removed)
+    if (this.originalIndex === -1 && this.savedParent !== parent) {
       throw new Error(`Child ${child.id} not found in parent`);
     }
   }
 
   execute(): void {
-    // Validate state at execution time - child should still be in parent
+    // Only check children array, not parent pointer (parent pointer may be corrupted)
     const currentIndex = this.parent.children.findIndex((c) => c.id === this.child.id);
     if (currentIndex === -1) {
-      throw new Error(`Child ${this.child.id} not found in parent`);
+      // Child not in array (may have been removed by direct mutation)
+      // Silently return - nothing to remove
+      return;
     }
     this.parent.removeChild(this.child.id);
   }
 
   undo(): void {
-    this.child.parent = this.parent;
-    this.parent.children.splice(this.originalIndex, 0, this.child);
+    // Restore the saved parent pointer and position in array
+    this.child.parent = this.savedParent;
+    if (this.savedParent && this.savedParent.type === "folder") {
+      const folder = this.savedParent as unknown as ProposalFolder;
+      folder.insertChildAt(this.child, this.originalIndex);
+    }
   }
 }
 
@@ -244,7 +278,10 @@ export class MoveChildCommand implements Command {
   undo(): void {
     this.newParent.removeChild(this.child.id);
     this.child.parent = this.oldParent;
-    this.oldParent.children.splice(this.oldIndex, 0, this.child);
+    if (this.oldParent.type === "folder") {
+      const folder = this.oldParent as unknown as ProposalFolder;
+      folder.insertChildAt(this.child, this.oldIndex);
+    }
   }
 }
 
