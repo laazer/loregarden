@@ -84,6 +84,10 @@ export class ProposalFolder implements HierarchyNode {
   }
 
   addChild(child: HierarchyNode): void {
+    // Validate this node's type - only folders can have children
+    if (this.type === "item") {
+      throw new Error("ProposalItem cannot have children");
+    }
     if (this._children.some((c) => c.id === child.id)) {
       throw new Error(`Child with id ${child.id} already exists`);
     }
@@ -213,8 +217,7 @@ export class RemoveChildCommand implements Command {
     const currentIndex = this.parent.children.findIndex((c) => c.id === this.child.id);
     if (currentIndex === -1) {
       // Child not in array (may have been removed by direct mutation)
-      // Silently return - nothing to remove
-      return;
+      throw new Error("Child item not found in parent");
     }
     this.parent.removeChild(this.child.id);
   }

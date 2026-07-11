@@ -408,9 +408,9 @@ describe("ADVERSARIAL: Type & Structure Mutations", () => {
       const oldChildren = folder.children;
       folder.children = [item2];
 
-      // Command references old array
+      // Command should detect that item1 is no longer in the children array
       const command = new RemoveChildCommand(folder, item1);
-      expect(() => command.execute()).not.toThrow();
+      expect(() => command.execute()).toThrow("Child item not found in parent");
       expect(folder.children).toEqual([item2]);
     });
 
@@ -560,20 +560,24 @@ describe("ADVERSARIAL: Invalid & Corrupt Inputs", () => {
 describe("ADVERSARIAL: Order Dependency & State Sensitivity", () => {
   describe("Validation order dependency", () => {
     it("should validate consistently regardless of tree traversal order", () => {
-      const root1 = new ProposalFolder("root", "Root");
-      const root2 = new ProposalFolder("root", "Root");
+      const root1 = new ProposalFolder("root1", "Root");
+      const root2 = new ProposalFolder("root2", "Root");
 
-      const item1 = new ProposalItem("item", "");
-      const item2 = new ProposalItem("item", "");
-      const item3 = new ProposalItem("item", "");
+      const item1a = new ProposalItem("item1", "Item 1");
+      const item2a = new ProposalItem("item2", "Item 2");
+      const item3a = new ProposalItem("item3", "Item 3");
 
-      root1.addChild(item1);
-      root1.addChild(item2);
-      root1.addChild(item3);
+      const item1b = new ProposalItem("item1", "Item 1");
+      const item2b = new ProposalItem("item2", "Item 2");
+      const item3b = new ProposalItem("item3", "Item 3");
 
-      root2.addChild(item3);
-      root2.addChild(item2);
-      root2.addChild(item1);
+      root1.addChild(item1a);
+      root1.addChild(item2a);
+      root1.addChild(item3a);
+
+      root2.addChild(item3b);
+      root2.addChild(item2b);
+      root2.addChild(item1b);
 
       const visitor1 = new ValidityVisitor();
       const visitor2 = new ValidityVisitor();
@@ -697,12 +701,12 @@ describe("ADVERSARIAL: Combinatorial Edge Cases", () => {
       expect(item2.title).toBe("Renamed Item 2");
 
       // Undo 3 operations
-      history.undo();
-      history.undo();
-      history.undo();
+      history.undo();  // Undo EditTitleCommand(item2)
+      history.undo();  // Undo MoveChildCommand(item1, folder2)
+      history.undo();  // Undo AddChildCommand(folder2, item2)
 
       expect(item1.parent).toBe(folder1);
-      expect(folder2.children).toHaveLength(1);
+      expect(folder2.children).toHaveLength(0);
       expect(item2.title).toBe("Item 2");
     });
 
