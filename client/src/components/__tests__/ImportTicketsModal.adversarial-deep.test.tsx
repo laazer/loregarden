@@ -282,6 +282,11 @@ describe("GROUP DEEP2 — Focus Management & Accessibility", () => {
     const buttons = screen.getAllByRole("button");
 
     for (const button of buttons) {
+      if (button.hasAttribute("disabled")) {
+        // Disabled elements are intentionally excluded from the focus/tab
+        // order; asserting they can receive focus would fail everywhere.
+        continue;
+      }
       button.focus();
       expect(button).toHaveFocus();
       // In JSDOM, can't verify visual focus ring, but element must be focusable.

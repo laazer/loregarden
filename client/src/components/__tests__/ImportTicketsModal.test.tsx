@@ -848,16 +848,12 @@ describe("Group X — Adversarial edge cases", () => {
     const explorer = screen.getByTestId("mock-file-explorer");
     const group = getModeGroup();
 
-    // Both should be in the document and not hidden by each other.
+    // Both should be in the document and not hidden by each other. jsdom
+    // never computes real layout (getBoundingClientRect always returns
+    // zeroes here), so toBeVisible()'s CSS/attribute-based check is the
+    // meaningful signal for "not hidden" in this environment.
     expect(explorer).toBeVisible();
     expect(group).toBeVisible();
-
-    // Mode selector should be before file explorer or at least not obscuring it.
-    const groupRect = group.getBoundingClientRect();
-    const explorerRect = explorer.getBoundingClientRect();
-    // Simple check: neither is zero-sized (indicating hidden).
-    expect(groupRect.height).toBeGreaterThan(0);
-    expect(explorerRect.height).toBeGreaterThan(0);
   });
 
   it("X29: changing initialMode prop re-renders with new default (on re-open)", () => {
@@ -1014,7 +1010,7 @@ describe("Group X — Adversarial edge cases", () => {
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
 
     expect(throwingContinue).toHaveBeenCalledTimes(1);
-    expect(receivedArgs[0]).toEqual(["a.md"], "regular");
+    expect(receivedArgs[0]).toEqual([["a.md"], "regular"]);
   });
 
   it("X37: workspaceSlug change does not reset or corrupt mode state", async () => {
