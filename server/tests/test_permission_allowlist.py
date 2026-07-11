@@ -25,6 +25,47 @@ from loregarden.services.seed import seed_database
 from sqlmodel import Session, select
 
 
+class _FakeStdout:
+    def __init__(self, lines):
+        self.lines = list(lines)
+        self._closed = False
+
+    def readline(self):
+        if self.lines:
+            return self.lines.pop(0) + "\n"
+        self._closed = True
+        return ""
+
+
+class _FakeStdin:
+    def __init__(self):
+        self.writes: list[str] = []
+
+    def write(self, data):
+        self.writes.append(data.decode("utf-8") if isinstance(data, bytes) else data)
+
+    def flush(self):
+        return None
+
+
+class _FakeProc:
+    returncode = 0
+
+    def __init__(self, lines):
+        self.stdout = _FakeStdout(lines)
+        self.stdin = _FakeStdin()
+        self.stderr = None
+
+    def poll(self):
+        return 0 if self.stdout._closed else None
+
+    def wait(self, timeout=None):
+        return 0
+
+    def kill(self):
+        self.returncode = 1
+
+
 def test_permission_rule_matches_exact_tool_input():
     rule = {"tool_name": "Bash", "tool_input": {"command": "npm test"}}
     assert permission_rule_matches(rule, "Bash", {"command": "npm test"}) is True
@@ -146,48 +187,11 @@ def test_permission_bridge_auto_approves_workspace_allowlist(tmp_path, isolated_
             {"type": "result", "session_id": "sess_allowlist", "subtype": "success"}
         )
 
-        class FakeStdout:
-            def __init__(self, lines):
-                self.lines = list(lines)
-                self._closed = False
-
-            def readline(self):
-                if self.lines:
-                    return self.lines.pop(0) + "\n"
-                self._closed = True
-                return ""
-
-        class FakeStdin:
-            def __init__(self):
-                self.writes: list[str] = []
-
-            def write(self, data):
-                self.writes.append(data.decode("utf-8") if isinstance(data, bytes) else data)
-
-            def flush(self):
-                return None
-
-        class FakeProc:
-            returncode = 0
-
-            def __init__(self):
-                self.stdout = FakeStdout([permission_line, result_line])
-                self.stdin = FakeStdin()
-
-            def poll(self):
-                return 0 if self.stdout._closed else None
-
-            def wait(self, timeout=None):
-                return 0
-
-            def kill(self):
-                self.returncode = 1
-
-        captured_proc: FakeProc | None = None
+        captured_proc: _FakeProc | None = None
 
         def fake_spawn(*args, **kwargs):
             nonlocal captured_proc
-            captured_proc = FakeProc()
+            captured_proc = _FakeProc([permission_line, result_line])
             return captured_proc
 
         bridge = PermissionBridgeRunner(session)

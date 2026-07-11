@@ -17,6 +17,51 @@ from loregarden.agents.executors.permission_bridge import (
 )
 
 
+class _FakeStdout:
+    """Feeds a fixed sequence of stream-json lines to the permission loop,
+    then reports EOF (closed) — shared across every test that drives
+    PermissionBridgeRunner.run() through a scripted CLI conversation."""
+
+    def __init__(self, lines):
+        self.lines = list(lines)
+        self._closed = False
+
+    def readline(self):
+        if self.lines:
+            return self.lines.pop(0) + "\n"
+        self._closed = True
+        return ""
+
+
+class _FakeStdin:
+    def __init__(self):
+        self.writes: list[str] = []
+
+    def write(self, data):
+        self.writes.append(data.decode("utf-8") if isinstance(data, bytes) else data)
+
+    def flush(self):
+        return None
+
+
+class _FakeProc:
+    returncode = 0
+
+    def __init__(self, lines):
+        self.stdout = _FakeStdout(lines)
+        self.stdin = _FakeStdin()
+        self.stderr = None
+
+    def poll(self):
+        return 0 if self.stdout._closed else None
+
+    def wait(self, timeout=None):
+        return 0
+
+    def kill(self):
+        self.returncode = 1
+
+
 def test_extract_permission_request_control_message():
     payload = {
         "type": "control_request",
@@ -210,49 +255,12 @@ def test_permission_bridge_creates_inbox_item_and_continues(tmp_path):
         )
         result_line = json.dumps({"type": "result", "session_id": "sess_1", "subtype": "success"})
 
-        class FakeStdout:
-            def __init__(self, lines):
-                self.lines = list(lines)
-                self._closed = False
-
-            def readline(self):
-                if self.lines:
-                    return self.lines.pop(0) + "\n"
-                self._closed = True
-                return ""
-
-        class FakeStdin:
-            def __init__(self):
-                self.writes: list[str] = []
-
-            def write(self, data):
-                self.writes.append(data)
-
-            def flush(self):
-                return None
-
-        class FakeProc:
-            returncode = 0
-
-            def __init__(self):
-                self.stdout = FakeStdout([permission_line, result_line])
-                self.stdin = FakeStdin()
-
-            def poll(self):
-                return 0 if self.stdout._closed else None
-
-            def wait(self, timeout=None):
-                return 0
-
-            def kill(self):
-                self.returncode = 1
-
         approvals_seen: list[str] = []
-        captured_proc: FakeProc | None = None
+        captured_proc: _FakeProc | None = None
 
         def fake_spawn(*args, **kwargs):
             nonlocal captured_proc
-            captured_proc = FakeProc()
+            captured_proc = _FakeProc([permission_line, result_line])
             return captured_proc
 
         def fake_wait(approval_id, **kwargs):
@@ -287,6 +295,104 @@ def test_permission_bridge_creates_inbox_item_and_continues(tmp_path):
         assert allow_response["response"]["response"]["updatedInput"] == {
             "path": "src/main.py",
         }
+
+
+def test_permission_bridge_denies_out_of_scope_write_without_human_approval(tmp_path):
+    """A scoped agent (backend_implementer) attempting to Edit a file outside
+    its declared /server/** scope must be denied automatically — no pending
+    Approval created, no human round-trip needed. Regression for ticket 33:
+    a backend_implementer agent implemented frontend code because nothing
+    technically stopped it, only prompt text."""
+    from loregarden.agents.cli_adapters import build_interactive_invocation
+    from loregarden.models.domain import AgentRun, Approval, RunStatus, Ticket, Workspace
+    from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+
+        repo_root = tmp_path / "repo"
+        (repo_root / "client" / "src").mkdir(parents=True)
+        (repo_root / "server").mkdir()
+        workspace = session.get(Workspace, ticket.workspace_id)
+        workspace.repo_path = str(repo_root)
+        session.add(workspace)
+        session.commit()
+
+        run = AgentRun(
+            run_code="run_scope_test",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="backend_implementer",
+            stage_key="implementation",
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("implement the button", encoding="utf-8")
+        invocation = build_interactive_invocation(
+            adapter="claude", prompt_file=prompt_file, workspace_root=repo_root
+        )
+
+        target = str(repo_root / "client" / "src" / "ImportTicketsModal.tsx")
+        lines = [
+            json.dumps(
+                {
+                    "type": "control_request",
+                    "request_id": "perm_scope_1",
+                    "request": {
+                        "subtype": "can_use_tool",
+                        "tool_name": "Edit",
+                        "tool_input": {"file_path": target, "old_string": "a", "new_string": "b"},
+                    },
+                }
+            ),
+            json.dumps({"type": "result", "session_id": "sess_scope", "subtype": "success"}),
+        ]
+        captured_proc: _FakeProc | None = None
+
+        def fake_spawn(*args, **kwargs):
+            nonlocal captured_proc
+            captured_proc = _FakeProc(lines)
+            return captured_proc
+
+        def fake_wait(approval_id, **kwargs):
+            raise AssertionError("must not wait for human approval — scope violations auto-deny")
+
+        bridge = PermissionBridgeRunner(session)
+        result = bridge.run(
+            run_id=run.id,
+            ticket=ticket,
+            invocation=invocation,
+            prompt="implement the button",
+            timeout_seconds=30,
+            spawn_process=fake_spawn,
+            wait_for_approval=fake_wait,
+        )
+
+        assert result.status == RunStatus.FAILED
+        assert "backend_implementer" in result.stderr
+        assert session.exec(select(Approval).where(Approval.run_id == run.id)).first() is None
+        session.refresh(ticket)
+        assert "backend_implementer" in ticket.blocking_issues
+
+        assert captured_proc is not None
+        writes = "".join(
+            raw.decode("utf-8") if isinstance(raw, bytes) else raw
+            for raw in captured_proc.stdin.writes
+        )
+        assert '"behavior": "deny"' in writes
 
 
 def test_permission_bridge_bash_allow_passes_command(tmp_path):
@@ -345,48 +451,11 @@ def test_permission_bridge_bash_allow_passes_command(tmp_path):
             {"type": "result", "session_id": "sess_bash", "subtype": "success"}
         )
 
-        class FakeStdout:
-            def __init__(self, lines):
-                self.lines = list(lines)
-                self._closed = False
-
-            def readline(self):
-                if self.lines:
-                    return self.lines.pop(0) + "\n"
-                self._closed = True
-                return ""
-
-        class FakeStdin:
-            def __init__(self):
-                self.writes: list[str] = []
-
-            def write(self, data):
-                self.writes.append(data.decode("utf-8") if isinstance(data, bytes) else data)
-
-            def flush(self):
-                return None
-
-        class FakeProc:
-            returncode = 0
-
-            def __init__(self):
-                self.stdout = FakeStdout([permission_line, result_line])
-                self.stdin = FakeStdin()
-
-            def poll(self):
-                return 0 if self.stdout._closed else None
-
-            def wait(self, timeout=None):
-                return 0
-
-            def kill(self):
-                self.returncode = 1
-
-        captured_proc: FakeProc | None = None
+        captured_proc: _FakeProc | None = None
 
         def fake_spawn(*args, **kwargs):
             nonlocal captured_proc
-            captured_proc = FakeProc()
+            captured_proc = _FakeProc([permission_line, result_line])
             return captured_proc
 
         def fake_wait(approval_id, **kwargs):
@@ -480,48 +549,11 @@ def test_permission_bridge_auto_approves_mcp_get_ticket(tmp_path):
         )
         result_line = json.dumps({"type": "result", "session_id": "sess_mcp", "subtype": "success"})
 
-        class FakeStdout:
-            def __init__(self, lines):
-                self.lines = list(lines)
-                self._closed = False
-
-            def readline(self):
-                if self.lines:
-                    return self.lines.pop(0) + "\n"
-                self._closed = True
-                return ""
-
-        class FakeStdin:
-            def __init__(self):
-                self.writes: list[str] = []
-
-            def write(self, data):
-                self.writes.append(data.decode("utf-8") if isinstance(data, bytes) else data)
-
-            def flush(self):
-                return None
-
-        class FakeProc:
-            returncode = 0
-
-            def __init__(self):
-                self.stdout = FakeStdout([permission_line, result_line])
-                self.stdin = FakeStdin()
-
-            def poll(self):
-                return 0 if self.stdout._closed else None
-
-            def wait(self, timeout=None):
-                return 0
-
-            def kill(self):
-                self.returncode = 1
-
-        captured_proc: FakeProc | None = None
+        captured_proc: _FakeProc | None = None
 
         def fake_spawn(*args, **kwargs):
             nonlocal captured_proc
-            captured_proc = FakeProc()
+            captured_proc = _FakeProc([permission_line, result_line])
             return captured_proc
 
         bridge = PermissionBridgeRunner(session)
@@ -608,48 +640,11 @@ def test_permission_bridge_auto_approves_via_agent_run_flag(tmp_path):
         )
         result_line = json.dumps({"type": "result", "session_id": "sess_manual", "subtype": "success"})
 
-        class FakeStdout:
-            def __init__(self, lines):
-                self.lines = list(lines)
-                self._closed = False
-
-            def readline(self):
-                if self.lines:
-                    return self.lines.pop(0) + "\n"
-                self._closed = True
-                return ""
-
-        class FakeStdin:
-            def __init__(self):
-                self.writes: list[str] = []
-
-            def write(self, data):
-                self.writes.append(data.decode("utf-8") if isinstance(data, bytes) else data)
-
-            def flush(self):
-                return None
-
-        class FakeProc:
-            returncode = 0
-
-            def __init__(self):
-                self.stdout = FakeStdout([permission_line, result_line])
-                self.stdin = FakeStdin()
-
-            def poll(self):
-                return 0 if self.stdout._closed else None
-
-            def wait(self, timeout=None):
-                return 0
-
-            def kill(self):
-                self.returncode = 1
-
-        captured_proc: FakeProc | None = None
+        captured_proc: _FakeProc | None = None
 
         def fake_spawn(*args, **kwargs):
             nonlocal captured_proc
-            captured_proc = FakeProc()
+            captured_proc = _FakeProc([permission_line, result_line])
             return captured_proc
 
         bridge = PermissionBridgeRunner(session)
@@ -724,23 +719,12 @@ def test_permission_bridge_finishes_on_result_when_process_stays_alive(tmp_path)
             {"type": "result", "session_id": "sess_done", "subtype": "success"}
         )
 
-        class FakeStdout:
-            def __init__(self, lines):
-                self.lines = list(lines)
-                self._closed = False
-
-            def readline(self):
-                if self.lines:
-                    return self.lines.pop(0) + "\n"
-                self._closed = True
-                return ""
-
         class HungAfterResultProc:
             returncode = None
             killed = False
 
             def __init__(self):
-                self.stdout = FakeStdout([result_line])
+                self.stdout = _FakeStdout([result_line])
                 self.stdin = type(
                     "In",
                     (),
@@ -750,6 +734,7 @@ def test_permission_bridge_finishes_on_result_when_process_stays_alive(tmp_path)
                         "close": lambda *a, **k: None,
                     },
                 )()
+                self.stderr = None
 
             def poll(self):
                 return None if not self.killed else 0
@@ -841,48 +826,11 @@ def test_permission_bridge_question_returns_answers(tmp_path):
         )
         result_line = json.dumps({"type": "result", "session_id": "sess_q", "subtype": "success"})
 
-        class FakeStdout:
-            def __init__(self, lines):
-                self.lines = list(lines)
-                self._closed = False
-
-            def readline(self):
-                if self.lines:
-                    return self.lines.pop(0) + "\n"
-                self._closed = True
-                return ""
-
-        class FakeStdin:
-            def __init__(self):
-                self.writes: list[str] = []
-
-            def write(self, data):
-                self.writes.append(data.decode("utf-8") if isinstance(data, bytes) else data)
-
-            def flush(self):
-                return None
-
-        class FakeProc:
-            returncode = 0
-
-            def __init__(self):
-                self.stdout = FakeStdout([question_line, result_line])
-                self.stdin = FakeStdin()
-
-            def poll(self):
-                return 0 if self.stdout._closed else None
-
-            def wait(self, timeout=None):
-                return 0
-
-            def kill(self):
-                self.returncode = 1
-
-        captured_proc: FakeProc | None = None
+        captured_proc: _FakeProc | None = None
 
         def fake_spawn(*args, **kwargs):
             nonlocal captured_proc
-            captured_proc = FakeProc()
+            captured_proc = _FakeProc([question_line, result_line])
             return captured_proc
 
         def fake_wait(approval_id, **kwargs):
@@ -970,6 +918,7 @@ def test_permission_bridge_agent_timeout(tmp_path):
                 self.stdin = type(
                     "In", (), {"write": lambda *a, **k: None, "flush": lambda *a, **k: None}
                 )()
+                self.stderr = None
 
             def poll(self):
                 return None
