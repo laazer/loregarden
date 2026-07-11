@@ -1051,6 +1051,12 @@ button {
   border-color: rgba(255, 106, 84, 0.4);
 }
 
+.studio-stage-remove:disabled {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
 .studio-mcp-tool-row {
   display: flex;
   gap: 12px;

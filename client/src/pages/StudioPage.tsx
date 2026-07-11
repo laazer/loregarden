@@ -995,6 +995,44 @@ export function StudioPage() {
                           </span>
                           <span className={`studio-stage-type-badge ${typeClass}`}>{typeLabel}</span>
                           <div style={{ flex: 1 }} />
+                          {!isWorkflowReadOnly && (
+                            <>
+                              <button
+                                type="button"
+                                className="studio-stage-remove"
+                                aria-label={`Move stage ${index + 1} up`}
+                                disabled={index === 0}
+                                onClick={() =>
+                                  setWorkflowDraft((draft) => {
+                                    const stages = [...draft.stages];
+                                    [stages[index - 1], stages[index]] = [stages[index], stages[index - 1]];
+                                    return { ...draft, stages };
+                                  })
+                                }
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                                  <path d="M12 19V5M5 12l7-7 7 7" />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                className="studio-stage-remove"
+                                aria-label={`Move stage ${index + 1} down`}
+                                disabled={index === workflowDraft.stages.length - 1}
+                                onClick={() =>
+                                  setWorkflowDraft((draft) => {
+                                    const stages = [...draft.stages];
+                                    [stages[index], stages[index + 1]] = [stages[index + 1], stages[index]];
+                                    return { ...draft, stages };
+                                  })
+                                }
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                                  <path d="M12 5v14M5 12l7 7 7-7" />
+                                </svg>
+                              </button>
+                            </>
+                          )}
                           {!isWorkflowReadOnly && workflowDraft.stages.length > 1 && (
                             <button
                               type="button"
@@ -1103,12 +1141,20 @@ export function StudioPage() {
                                 disabled={isWorkflowReadOnly}
                                 onChange={(e) => updateStage(index, { agent_id: e.target.value })}
                               >
+                                {stage.stage_type === "agent" && (
+                                  <option value="">— None (human approval) —</option>
+                                )}
                                 {agentOptions.map((opt) => (
                                   <option key={opt.id} value={opt.id}>
                                     {opt.label}
                                   </option>
                                 ))}
                               </select>
+                              {stage.stage_type === "agent" && !stage.agent_id && (
+                                <div style={{ marginTop: 4, fontSize: 11, color: "var(--txl)" }}>
+                                  No agent runs — the ticket pauses here until a human approves in Triage/Inbox.
+                                </div>
+                              )}
                             </div>
                             <div>
                               <div className="studio-stage-field-label">Skill</div>
@@ -1305,7 +1351,9 @@ export function StudioPage() {
               name={workflowDraft.name}
               slug={workflowDraft.slug}
               stages={workflowDraft.stages}
-              agentLabel={(agentId) => agentOptions.find((opt) => opt.id === agentId)?.label ?? agentId}
+              agentLabel={(agentId) =>
+                agentId ? agentOptions.find((opt) => opt.id === agentId)?.label ?? agentId : "Human"
+              }
             />
           </div>
         )}

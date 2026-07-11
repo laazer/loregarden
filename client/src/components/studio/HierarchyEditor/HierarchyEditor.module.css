@@ -1,0 +1,257 @@
+.hierarchyEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--bg-secondary, #fff);
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e5e7eb);
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+}
+
+.buttonGroup {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.button {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 4px;
+  cursor: pointer;
+  background: var(--bg-primary, #f9fafb);
+  color: var(--text-primary, #1f2937);
+  transition: all 0.2s ease;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--bg-hover, #f3f4f6);
+  border-color: var(--border-hover, #9ca3af);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.button.primary {
+  background: var(--primary-color, #3b82f6);
+  color: white;
+  border-color: var(--primary-color, #3b82f6);
+}
+
+.button.primary:hover:not(:disabled) {
+  background: var(--primary-hover, #2563eb);
+  border-color: var(--primary-hover, #2563eb);
+}
+
+.button.secondary {
+  background: var(--secondary-color, #ef4444);
+  color: white;
+  border-color: var(--secondary-color, #ef4444);
+}
+
+.button.secondary:hover:not(:disabled) {
+  background: var(--secondary-hover, #dc2626);
+  border-color: var(--secondary-hover, #dc2626);
+}
+
+.validationErrors {
+  padding: 1rem;
+  background: var(--error-bg, #fee2e2);
+  border: 1px solid var(--error-border, #fecaca);
+  border-radius: 4px;
+  color: var(--error-text, #991b1b);
+}
+
+.validationErrors strong {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.validationErrors ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+
+.validationErrors li {
+  margin: 0.25rem 0;
+  font-size: 0.875rem;
+}
+
+.hierarchyTree {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.nodeWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.node {
+  padding: 0.75rem;
+  background: var(--node-bg, #f9fafb);
+  border: 1px solid var(--node-border, #e5e7eb);
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.node.selected {
+  background: var(--node-selected-bg, #dbeafe);
+  border-color: var(--node-selected-border, #3b82f6);
+}
+
+.node.error {
+  background: var(--node-error-bg, #fef2f2);
+  border-color: var(--node-error-border, #fecaca);
+}
+
+.nodeHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.expandButton {
+  width: 1.5rem;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #6b7280);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.expandButton:hover {
+  color: var(--text-primary, #1f2937);
+}
+
+.expandPlaceholder {
+  width: 1.5rem;
+}
+
+.nodeType {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 0.125rem 0.5rem;
+  background: var(--node-type-bg, #e5e7eb);
+  color: var(--node-type-text, #374151);
+  border-radius: 2px;
+  min-width: 50px;
+}
+
+.nodeContent {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.title {
+  flex: 1;
+  font-weight: 500;
+  color: var(--text-primary, #1f2937);
+  padding: 0.25rem;
+  border-radius: 2px;
+  cursor: text;
+}
+
+.title:hover {
+  background: var(--title-hover-bg, #f3f4f6);
+}
+
+.titleInput {
+  flex: 1;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--primary-color, #3b82f6);
+  border-radius: 2px;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.nodeDescription {
+  margin-left: 1.75rem;
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #6b7280);
+  background: var(--description-bg, #f3f4f6);
+  border-radius: 2px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.errorMessages {
+  margin-left: 1.75rem;
+  margin-top: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.errorMessage {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--error-text, #991b1b);
+  background: var(--error-bg, #fee2e2);
+  border-radius: 2px;
+}
+
+.nodeActions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: 1.75rem;
+  margin-top: 0.5rem;
+}
+
+.actionButton {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 2px;
+  background: var(--action-bg, #f9fafb);
+  color: var(--text-primary, #1f2937);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.actionButton:hover {
+  background: var(--action-hover-bg, #f3f4f6);
+  border-color: var(--border-hover, #9ca3af);
+}
+
+.actionButton.danger {
+  color: var(--error-text, #991b1b);
+  border-color: var(--error-border, #fecaca);
+}
+
+.actionButton.danger:hover {
+  background: var(--error-bg, #fee2e2);
+}
+
+.children {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}

@@ -611,7 +611,8 @@ class OrchestrationService:
         if instance and stages and advance_workflow:
             if status == RunStatus.SUCCEEDED:
                 stage_status = StageStatus.DONE
-                if run.stage_key.endswith("approval") or "approval" in run.stage_key:
+                stage_def = next((s for s in stages if s.key == run.stage_key), None)
+                if stage_def and stage_def.gate_required:
                     stage_status = StageStatus.AWAITING
                     template = self.get_template_for_ticket(ticket)
                     if template:
