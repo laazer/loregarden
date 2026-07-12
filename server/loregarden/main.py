@@ -9,6 +9,7 @@ from loregarden.api import (
     agents,
     analytics,
     branch_triage,
+    bulk_queue_operations,
     ci,
     diff_review,
     editor,
@@ -91,6 +92,7 @@ app.include_router(memory.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
 app.include_router(ci.router, prefix="/api")
 app.include_router(parallel.router)
+app.include_router(bulk_queue_operations.router)
 app.include_router(queue_review.router)
 app.include_router(analytics.router)
 app.include_router(mcp.router, prefix="/mcp")
