@@ -10,12 +10,11 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlmodel import Session, select
-
 from loregarden.agents.cli_adapters import build_triage_invocation
 from loregarden.agents.registry import get_agent
 from loregarden.config import settings
 from loregarden.models.domain import (
+    VALID_HIERARCHY,
     Ticket,
     TicketStudioCommitResult,
     TicketStudioDraftItem,
@@ -25,7 +24,6 @@ from loregarden.models.domain import (
     TicketStudioSessionStatus,
     TicketStudioSessionUpdate,
     TicketStudioSessionView,
-    VALID_HIERARCHY,
     WorkItemType,
     Workspace,
     WorkspaceRuntimeSettings,
@@ -36,6 +34,7 @@ from loregarden.services.cli_settings import VALID_CLI_ADAPTERS
 from loregarden.services.hierarchy_service import validate_parent_child
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.workspace_paths import resolve_workspace_root
+from sqlmodel import Session, select
 
 TICKET_STUDIO_AGENT_ID = "ticket_scoper"
 MAX_STUDIO_HISTORY_MESSAGES = 16
@@ -90,7 +89,9 @@ def get_studio_runtime(session_row: TicketStudioSession) -> WorkspaceRuntimeSett
     )
 
 
-def apply_studio_runtime_overrides(workspace: Workspace, session_row: TicketStudioSession) -> Workspace:
+def apply_studio_runtime_overrides(
+    workspace: Workspace, session_row: TicketStudioSession
+) -> Workspace:
     overrides = json.loads(session_row.runtime_json or "{}")
     if not overrides:
         return workspace
@@ -191,7 +192,11 @@ def format_studio_reply_for_display(content: str) -> str:
     if summary and summary not in prose:
         parts.append(summary)
 
-    questions = [str(item).strip() for item in (payload.get("clarifying_questions") or []) if str(item).strip()]
+    questions = [
+        str(item).strip()
+        for item in (payload.get("clarifying_questions") or [])
+        if str(item).strip()
+    ]
     if questions:
         parts.append("**Questions**\n" + "\n".join(f"- {question}" for question in questions))
 
@@ -271,7 +276,9 @@ def _session_view(
     )
 
 
-def list_studio_messages(session: Session, session_id: str, *, limit: int = 200) -> list[TicketStudioMessage]:
+def list_studio_messages(
+    session: Session, session_id: str, *, limit: int = 200
+) -> list[TicketStudioMessage]:
     return list(
         session.exec(
             select(TicketStudioMessage)
@@ -464,7 +471,10 @@ def invoke_ticket_studio_model(
             raise TimeoutError(f"Ticket studio assistant timed out after {timeout}s") from None
 
         if proc.returncode != 0:
-            detail = stderr.decode("utf-8", errors="replace").strip() or stdout.decode("utf-8", errors="replace").strip()
+            detail = (
+                stderr.decode("utf-8", errors="replace").strip()
+                or stdout.decode("utf-8", errors="replace").strip()
+            )
             raise RuntimeError(detail or f"Ticket studio CLI exited with code {proc.returncode}")
 
         reply = extract_triage_reply(stdout.decode("utf-8", errors="replace"))
@@ -543,7 +553,9 @@ def _validate_draft_hierarchy(
     refs = {item.ref for item in items}
     for item in items:
         if item.parent_ref and item.parent_ref not in refs:
-            raise ValueError(f"Draft item {item.ref} references unknown parent_ref: {item.parent_ref}")
+            raise ValueError(
+                f"Draft item {item.ref} references unknown parent_ref: {item.parent_ref}"
+            )
 
     roots = [item for item in items if not item.parent_ref]
     if parent_ticket:
@@ -593,7 +605,9 @@ class TicketStudioService:
     def list_sessions(self, *, workspace_slug: str | None = None) -> list[TicketStudioSessionView]:
         query = select(TicketStudioSession).order_by(TicketStudioSession.updated_at.desc())
         if workspace_slug:
-            ws = self.session.exec(select(Workspace).where(Workspace.slug == workspace_slug)).first()
+            ws = self.session.exec(
+                select(Workspace).where(Workspace.slug == workspace_slug)
+            ).first()
             if not ws:
                 return []
             query = query.where(TicketStudioSession.workspace_id == ws.id)
@@ -611,7 +625,9 @@ class TicketStudioService:
         if not title:
             raise ValueError("Title is required")
 
-        ws = self.session.exec(select(Workspace).where(Workspace.slug == body.workspace_slug)).first()
+        ws = self.session.exec(
+            select(Workspace).where(Workspace.slug == body.workspace_slug)
+        ).first()
         if not ws:
             raise ValueError(f"Workspace not found: {body.workspace_slug}")
 
@@ -648,7 +664,9 @@ class TicketStudioService:
             parent_ticket_id=body.parent_ticket_id,
             is_preview=is_preview,
             imported_tickets_json=imported_tickets_json,
-            draft_json=json.dumps([item.model_dump(mode="json") for item in draft_items]) if draft_items else "[]",
+            draft_json=json.dumps([item.model_dump(mode="json") for item in draft_items])
+            if draft_items
+            else "[]",
             created_at=now,
             updated_at=now,
         )
@@ -657,7 +675,9 @@ class TicketStudioService:
         self.session.refresh(row)
         return _session_view(self.session, row)
 
-    def update_session(self, session_id: str, body: TicketStudioSessionUpdate) -> TicketStudioSessionView:
+    def update_session(
+        self, session_id: str, body: TicketStudioSessionUpdate
+    ) -> TicketStudioSessionView:
         row = self.session.get(TicketStudioSession, session_id)
         if not row:
             raise ValueError("Ticket studio session not found")
@@ -697,7 +717,9 @@ class TicketStudioService:
         self.session.delete(row)
         self.session.commit()
 
-    def set_runtime(self, session_id: str, body: WorkspaceRuntimeUpdate) -> WorkspaceRuntimeSettings:
+    def set_runtime(
+        self, session_id: str, body: WorkspaceRuntimeUpdate
+    ) -> WorkspaceRuntimeSettings:
         row = self.session.get(TicketStudioSession, session_id)
         if not row:
             raise ValueError("Ticket studio session not found")
@@ -717,7 +739,9 @@ class TicketStudioService:
         self.session.refresh(row)
         return get_studio_runtime(row)
 
-    def update_draft(self, session_id: str, items: list[TicketStudioDraftItem]) -> TicketStudioSessionView:
+    def update_draft(
+        self, session_id: str, items: list[TicketStudioDraftItem]
+    ) -> TicketStudioSessionView:
         row = self.session.get(TicketStudioSession, session_id)
         if not row:
             raise ValueError("Ticket studio session not found")
@@ -807,7 +831,10 @@ class TicketStudioService:
         if not questions:
             raise ValueError("No clarifying questions to answer")
 
-        normalized = [str(answers[index] if index < len(answers) else "").strip() for index in range(len(questions))]
+        normalized = [
+            str(answers[index] if index < len(answers) else "").strip()
+            for index in range(len(questions))
+        ]
         if not clarifying_questions_resolved(questions, normalized):
             raise ValueError("Answer every clarifying question before generating tickets")
 
@@ -845,7 +872,10 @@ class TicketStudioService:
         assistant_message = TicketStudioMessage(session_id=row.id, role="assistant", content=reply)
         self.session.add(assistant_message)
         if not _apply_scope_to_session(row, reply, apply_tickets=True):
-            row.summary = row.summary or "Scope generation did not return structured tickets — refine the brief or chat further."
+            row.summary = (
+                row.summary
+                or "Scope generation did not return structured tickets — refine the brief or chat further."
+            )
         row.updated_at = datetime.now(timezone.utc)
         self.session.add(row)
         self.session.commit()
@@ -867,13 +897,17 @@ class TicketStudioService:
         if not draft:
             raise ValueError("No selected tickets in draft")
 
-        parent_ticket = self.session.get(Ticket, row.parent_ticket_id) if row.parent_ticket_id else None
+        parent_ticket = (
+            self.session.get(Ticket, row.parent_ticket_id) if row.parent_ticket_id else None
+        )
         _validate_draft_hierarchy(draft, parent_ticket=parent_ticket)
 
         ticket_svc = TicketService(self.session)
         ref_to_id: dict[str, str] = {}
         created_ids: list[str] = []
+        breakdown: dict[str, int] = {}
         synthetic_milestone_id: str | None = None
+        root_ticket_id: str | None = row.parent_ticket_id
 
         for item in _topo_sort_items(draft):
             parent_id: str | None
@@ -897,6 +931,11 @@ class TicketStudioService:
                     )
                     synthetic_milestone_id = milestone.id
                     created_ids.append(milestone.id)
+                    breakdown[WorkItemType.MILESTONE.value] = (
+                        breakdown.get(WorkItemType.MILESTONE.value, 0) + 1
+                    )
+                    if root_ticket_id is None:
+                        root_ticket_id = synthetic_milestone_id
                 parent_id = synthetic_milestone_id
 
             created = ticket_svc.create_ticket(
@@ -910,6 +949,9 @@ class TicketStudioService:
             )
             ref_to_id[item.ref] = created.id
             created_ids.append(created.id)
+            breakdown[item.work_item_type.value] = breakdown.get(item.work_item_type.value, 0) + 1
+            if root_ticket_id is None and parent_id is None:
+                root_ticket_id = created.id
 
         row.status = TicketStudioSessionStatus.COMMITTED
         row.is_preview = False
@@ -921,4 +963,6 @@ class TicketStudioService:
             session_id=row.id,
             created_ticket_ids=created_ids,
             created_count=len(created_ids),
+            breakdown=breakdown,
+            root_ticket_id=root_ticket_id,
         )
