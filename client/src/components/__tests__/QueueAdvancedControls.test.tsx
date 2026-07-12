@@ -161,7 +161,7 @@ describe('QueueAdvancedControls', () => {
       fireEvent.click(toggleButtons[0]);
 
       await waitFor(() => {
-        expect(screen.getByText('Pause')).toBeInTheDocument();
+        expect(screen.getByText(/Pause/)).toBeInTheDocument();
       });
     });
 
@@ -178,8 +178,8 @@ describe('QueueAdvancedControls', () => {
       fireEvent.click(toggleButtons[0]); // Active run
 
       await waitFor(() => {
-        expect(screen.getByText('Pause')).toBeInTheDocument();
-        expect(screen.getByText('Cancel')).toBeInTheDocument();
+        expect(screen.getByText(/Pause/)).toBeInTheDocument();
+        expect(screen.getByText(/Cancel/)).toBeInTheDocument();
       });
     });
 
@@ -196,8 +196,8 @@ describe('QueueAdvancedControls', () => {
       fireEvent.click(toggleButtons[1]); // Queued run
 
       await waitFor(() => {
-        expect(screen.getByText('Promote')).toBeInTheDocument();
-        expect(screen.getByText('Cancel')).toBeInTheDocument();
+        expect(screen.getByText(/Promote/)).toBeInTheDocument();
+        expect(screen.getByText(/Cancel/)).toBeInTheDocument();
       });
     });
 
@@ -218,7 +218,7 @@ describe('QueueAdvancedControls', () => {
       const toggleButtons = screen.getAllByLabelText('Toggle controls');
       fireEvent.click(toggleButtons[0]);
 
-      const pauseButton = screen.getByText('Pause');
+      const pauseButton = screen.getByText(/Pause/);
       fireEvent.click(pauseButton);
 
       await waitFor(() => {
@@ -304,11 +304,12 @@ describe('QueueAdvancedControls', () => {
       const toggleButtons = screen.getAllByLabelText('Toggle controls');
       fireEvent.click(toggleButtons[0]);
 
-      const pauseButton = screen.getByText('Pause');
+      const pauseButton = screen.getByText(/Pause/);
       fireEvent.click(pauseButton);
 
       await waitFor(() => {
-        expect(screen.getByText('Failed to pause run')).toBeInTheDocument();
+        // Component surfaces the underlying error's own message verbatim
+        expect(screen.getByText('Failed to pause')).toBeInTheDocument();
       });
     });
 
@@ -329,7 +330,7 @@ describe('QueueAdvancedControls', () => {
       const toggleButtons = screen.getAllByLabelText('Toggle controls');
       fireEvent.click(toggleButtons[0]);
 
-      const pauseButton = screen.getByText('Pause');
+      const pauseButton = screen.getByText(/Pause/);
       fireEvent.click(pauseButton);
 
       await waitFor(() => {
@@ -356,7 +357,7 @@ describe('QueueAdvancedControls', () => {
       const toggleButtons = screen.getAllByLabelText('Toggle controls');
       fireEvent.click(toggleButtons[0]);
 
-      const pauseButton = screen.getByText('Pause');
+      const pauseButton = screen.getByText(/Pause/);
       fireEvent.click(pauseButton);
 
       await waitFor(() => {
@@ -382,7 +383,7 @@ describe('QueueAdvancedControls', () => {
       const toggleButtons = screen.getAllByLabelText('Toggle controls');
       fireEvent.click(toggleButtons[0]);
 
-      const pauseButton = screen.getByText('Pause');
+      const pauseButton = screen.getByText(/Pause/);
       fireEvent.click(pauseButton);
 
       await waitFor(() => {

@@ -153,7 +153,7 @@ describe('Parallel Execution Integration Tests', () => {
       );
 
       // Initially shows queue section
-      expect(screen.queryByText(/Queue/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/^Queue \(/)).not.toBeInTheDocument();
 
       // Update to show queue
       mockUseParallelExecution.mockReturnValue({
@@ -171,7 +171,7 @@ describe('Parallel Execution Integration Tests', () => {
         </>
       );
 
-      expect(screen.getByText(/Queue/)).toBeInTheDocument();
+      expect(screen.getByText(/^Queue \(/)).toBeInTheDocument();
     });
 
     test('displays conflicts alongside execution status', () => {
@@ -260,7 +260,7 @@ describe('Parallel Execution Integration Tests', () => {
       );
 
       expect(screen.getByText('2/3')).toBeInTheDocument();
-      expect(screen.queryByText(/Queue/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/^Queue \(/)).not.toBeInTheDocument();
     });
 
     test('conflict warning appears during active merge attempt', () => {
@@ -301,8 +301,8 @@ describe('Parallel Execution Integration Tests', () => {
         </>
       );
 
-      const resolveButton = screen.getByText('Resolve Conflicts');
-      const abortButton = screen.getByText('Abort');
+      const resolveButton = screen.getByText(/Resolve Conflicts/);
+      const abortButton = screen.getByText(/Abort/);
 
       expect(resolveButton).toBeInTheDocument();
       expect(abortButton).toBeInTheDocument();

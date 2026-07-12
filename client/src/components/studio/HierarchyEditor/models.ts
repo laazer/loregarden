@@ -16,6 +16,9 @@ export interface HierarchyNode {
   type: "item" | "folder";
   children: HierarchyNode[];
   parent?: HierarchyNode;
+  addChild(child: HierarchyNode): void;
+  removeChild(id: string): boolean;
+  accept(visitor: HierarchyVisitor): void;
 }
 
 export class ProposalItem implements HierarchyNode {
@@ -44,11 +47,11 @@ export class ProposalItem implements HierarchyNode {
     return this._children;
   }
 
-  addChild(child: HierarchyNode): void {
+  addChild(_child: HierarchyNode): void {
     throw new Error("ProposalItem cannot have children");
   }
 
-  removeChild(id: string): boolean {
+  removeChild(_id: string): boolean {
     throw new Error("ProposalItem cannot have children");
   }
 
@@ -84,8 +87,11 @@ export class ProposalFolder implements HierarchyNode {
   }
 
   addChild(child: HierarchyNode): void {
-    // Validate this node's type - only folders can have children
-    if (this.type === "item") {
+    // Runtime guard against corrupted/mutated node state: the `type` field is
+    // statically "folder" here, but callers can bypass the type system (e.g.
+    // via `as any`) and mutate it at runtime, so re-check it defensively
+    // instead of trusting static narrowing.
+    if ((this.type as string) === "item") {
       throw new Error("ProposalItem cannot have children");
     }
     if (this._children.some((c) => c.id === child.id)) {
@@ -241,7 +247,7 @@ export class MoveChildCommand implements Command {
   constructor(
     child: HierarchyNode,
     newParent: HierarchyNode,
-    newIndex?: number,
+    _newIndex?: number,
   ) {
     if (!child.parent) {
       throw new Error("Child has no parent");

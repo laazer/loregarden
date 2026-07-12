@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import type { ImportedTicket } from "../../api/client";
 import type { TicketStudioPanelProps } from "../studio/TicketStudioPanel";
 import { TicketStudioPanel } from "../studio/TicketStudioPanel";
 
@@ -45,12 +46,12 @@ jest.mock("react-router-dom", () => ({
 
 interface KeyboardTestProps extends Partial<TicketStudioPanelProps> {
   isPreview?: boolean;
-  importedTickets?: Array<{ external_id: string; title: string }>;
+  importedTickets?: any[];
 }
 
-const SAMPLE_TICKETS = [
-  { external_id: "cap-1", title: "Capability 1" },
-  { external_id: "cap-2", title: "Capability 2" },
+const SAMPLE_TICKETS: ImportedTicket[] = [
+  { external_id: "cap-1", title: "Capability 1", work_item_type: "capability" },
+  { external_id: "cap-2", title: "Capability 2", work_item_type: "capability" },
 ];
 
 function renderWithKeyboardSupport(overrides: KeyboardTestProps = {}) {
@@ -218,7 +219,6 @@ describe("KBD-PREVIEW-2: Tab Navigation & Focus Management", () => {
   });
 
   it("KBD-PREVIEW-2.2: focus is visible when button is tabbed to", async () => {
-    const user = userEvent.setup();
     renderWithKeyboardSupport({ isPreview: true });
 
     const finalizeBtn = getFinalizeButton();
@@ -227,7 +227,6 @@ describe("KBD-PREVIEW-2: Tab Navigation & Focus Management", () => {
 
       // Should have some visual focus indicator
       // Either :focus styles or visible focus ring
-      const styles = window.getComputedStyle(finalizeBtn, ":focus");
       expect(
         finalizeBtn.style.outline ||
         finalizeBtn.style.boxShadow ||
@@ -314,7 +313,10 @@ describe("KBD-PREVIEW-3: ARIA & Accessibility Attributes", () => {
   it("KBD-PREVIEW-3.4: preview indicator has accessible text (not just icon)", () => {
     renderWithKeyboardSupport({ isPreview: true });
 
-    const previewIndicator = screen.queryByText(/preview|draft|not.*finalized/i);
+    // Scoped to the dedicated preview indicator testid — a bare "draft"
+    // match also hits the always-present "Draft tickets" section header,
+    // which isn't the element under test here.
+    const previewIndicator = screen.queryByTestId("preview-state-indicator");
     if (previewIndicator) {
       // Text should be visible to screen readers
       expect(previewIndicator.textContent).toBeTruthy();
@@ -375,14 +377,16 @@ describe("KBD-PREVIEW-4: Screen Reader Announcements", () => {
 
     // Change to preview
     rerender(
-      <MemoryRouter>
-        <TicketStudioPanel
-          workspaceSlug="loregarden"
-          onClose={jest.fn()}
-          // @ts-ignore
-          isPreview={true}
-        />
-      </MemoryRouter>,
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <TicketStudioPanel
+            workspaceSlug="loregarden"
+            onClose={jest.fn()}
+            // @ts-ignore
+            isPreview={true}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     finalizeBtn = getFinalizeButton();
@@ -516,7 +520,10 @@ describe("KBD-PREVIEW-6: High Contrast Mode", () => {
   it("KBD-PREVIEW-6.2: preview badge has sufficient contrast", () => {
     renderWithKeyboardSupport({ isPreview: true });
 
-    const previewIndicator = screen.queryByText(/preview|draft/i);
+    // Scoped to the dedicated preview indicator testid — a bare "draft"
+    // match also hits the always-present "Draft tickets" section header,
+    // which isn't the element under test here.
+    const previewIndicator = screen.queryByTestId("preview-state-indicator");
     if (previewIndicator) {
       const styles = window.getComputedStyle(previewIndicator);
 

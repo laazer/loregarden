@@ -2,7 +2,7 @@
  * Unit tests for useWorktreeConflictsWS hook.
  */
 
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 import { useWorktreeConflictsWS } from '../useWorktreeConflictsWS';
 import * as websocketService from '../../services/websocket';
 
@@ -42,6 +42,16 @@ describe('useWorktreeConflictsWS', () => {
     };
 
     (websocketService.getWebSocketClient as jest.Mock).mockReturnValue(mockWebSocketClient);
+  });
+
+  afterEach(() => {
+    // 'respects fallback timeout' below switches to fake timers and only
+    // restores real ones on its last line — if that test fails before
+    // reaching it (e.g. the assertion throws), fake timers would otherwise
+    // leak into every later test in this file. Restoring unconditionally
+    // here makes that failure mode inert instead of destabilizing sibling
+    // tests. Calling this when timers are already real is a harmless no-op.
+    jest.useRealTimers();
   });
 
   test('returns initial loading state when enabled', () => {
@@ -111,8 +121,15 @@ describe('useWorktreeConflictsWS', () => {
 
     const { result } = renderHook(() => useWorktreeConflictsWS('wt-1', undefined, 30000, true));
 
-    if (conflictDetectedHandler) {
-      conflictDetectedHandler({
+    // `wsClient.on(...)` is only called after the mocked `connect()` promise
+    // resolves, which happens on a later microtask than this synchronous test
+    // body. Wait for the handler to actually be registered before invoking it.
+    await waitFor(() => {
+      expect(conflictDetectedHandler).toBeDefined();
+    });
+
+    act(() => {
+      conflictDetectedHandler!({
         worktreeId: 'wt-1',
         runId: 'run-123',
         timestamp: new Date().toISOString(),
@@ -126,7 +143,7 @@ describe('useWorktreeConflictsWS', () => {
           },
         },
       });
-    }
+    });
 
     await waitFor(() => {
       expect(result.current.conflicts).toEqual(mockConflicts);
@@ -148,9 +165,13 @@ describe('useWorktreeConflictsWS', () => {
 
     const { result } = renderHook(() => useWorktreeConflictsWS('wt-1', undefined, 30000, true));
 
+    await waitFor(() => {
+      expect(detectedHandler).toBeDefined();
+    });
+
     // First detect a conflict
-    if (detectedHandler) {
-      detectedHandler({
+    act(() => {
+      detectedHandler!({
         worktreeId: 'wt-1',
         runId: 'run-123',
         timestamp: new Date().toISOString(),
@@ -171,20 +192,24 @@ describe('useWorktreeConflictsWS', () => {
           },
         },
       });
-    }
+    });
 
     await waitFor(() => {
       expect(result.current.hasConflicts).toBe(true);
     });
 
+    await waitFor(() => {
+      expect(resolvedHandler).toBeDefined();
+    });
+
     // Then resolve it
-    if (resolvedHandler) {
-      resolvedHandler({
+    act(() => {
+      resolvedHandler!({
         worktreeId: 'wt-1',
         runId: 'run-123',
         timestamp: new Date().toISOString(),
       });
-    }
+    });
 
     await waitFor(() => {
       expect(result.current.conflicts).toEqual([]);
@@ -220,13 +245,26 @@ describe('useWorktreeConflictsWS', () => {
       useWorktreeConflictsWS('wt-1', undefined, 1000, true, true)
     );
 
-    // Simulate connection error
-    if (stateChangeHandler) {
-      stateChangeHandler({ state: 'error' });
-    }
+    await waitFor(() => {
+      expect(stateChangeHandler).toBeDefined();
+    });
+
+    // Simulate connection error. The real WebSocketClient always updates its
+    // internal state before emitting 'websocket:state_change' (see
+    // updateState() in services/websocket.ts), so getState() must agree with
+    // the event here too — the hook now polls getState() directly (to catch
+    // a connection stuck in 'connecting' with no event at all), and a mock
+    // left inconsistent with the event it just fired would incorrectly look
+    // like a recovered connection to that poll.
+    mockWebSocketClient.getState.mockReturnValue('error');
+    act(() => {
+      stateChangeHandler!({ state: 'error' });
+    });
 
     // Fast-forward time past fallback timeout
-    jest.advanceTimersByTime(1100);
+    act(() => {
+      jest.advanceTimersByTime(1100);
+    });
 
     await waitFor(() => {
       expect(result.current.isWebSocket).toBe(false);
@@ -267,11 +305,29 @@ describe('useWorktreeConflictsWS', () => {
   });
 
   test('returns correct connection state', async () => {
+    // `connect()` normally auto-resolves (see beforeEach's
+    // `mockResolvedValue`), which races its continuation's microtask against
+    // this test's synchronous assertion below — whether that microtask has
+    // run yet by the time `expect` executes depends on exactly how many
+    // ticks act()'s effect-flushing consumes, which isn't guaranteed. Hold
+    // `connect()` open so 'disconnected' is asserted before any connection
+    // work can possibly complete, then resolve it and await 'connected'.
+    let resolveConnect: () => void;
+    mockWebSocketClient.connect.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveConnect = resolve;
+      })
+    );
+
     const { result } = renderHook(() =>
       useWorktreeConflictsWS('wt-1', undefined, 30000, true)
     );
 
     expect(result.current.connectionState).toBe('disconnected');
+
+    await act(async () => {
+      resolveConnect();
+    });
 
     await waitFor(() => {
       expect(result.current.connectionState).toBe('connected');
@@ -290,8 +346,12 @@ describe('useWorktreeConflictsWS', () => {
 
     const timestamp = new Date().toISOString();
 
-    if (conflictDetectedHandler) {
-      conflictDetectedHandler({
+    await waitFor(() => {
+      expect(conflictDetectedHandler).toBeDefined();
+    });
+
+    act(() => {
+      conflictDetectedHandler!({
         worktreeId: 'wt-1',
         runId: 'run-123',
         timestamp,
@@ -305,7 +365,7 @@ describe('useWorktreeConflictsWS', () => {
           },
         },
       });
-    }
+    });
 
     await waitFor(() => {
       expect(result.current.details).not.toBeNull();
@@ -326,9 +386,13 @@ describe('useWorktreeConflictsWS', () => {
       useWorktreeConflictsWS('wt-1', undefined, 30000, true)
     );
 
-    if (errorHandler) {
-      errorHandler({ message: 'Server error' });
-    }
+    await waitFor(() => {
+      expect(errorHandler).toBeDefined();
+    });
+
+    act(() => {
+      errorHandler!({ message: 'Server error' });
+    });
 
     await waitFor(() => {
       expect(result.current.error).toBe('Server error');

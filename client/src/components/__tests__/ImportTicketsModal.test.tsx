@@ -2,7 +2,6 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ImportTicketsModal } from "../ImportTicketsModal";
-import type { SelectedImportFile } from "../ImportTicketFileExplorer";
 
 /**
  * Behavioral + adversarial test suite for ImportTicketsModal.
@@ -109,9 +108,7 @@ function renderModal(overrides: Partial<ModalProps> = {}) {
     onContinue: jest.fn(),
     ...overrides,
   };
-  // Cast: the current component prop type still declares the single-arg
-  // onContinue; the mode arg is the additive change under test.
-  const utils = render(<ImportTicketsModal {...(props as unknown as never)} />);
+  const utils = render(<ImportTicketsModal {...props} />);
   return { ...utils, props };
 }
 
@@ -390,7 +387,7 @@ describe("Group C — Regression / backward compatibility", () => {
           isLoading: true,
           onClose,
           onContinue: jest.fn(),
-        } as unknown as never)}
+        })}
       />,
     );
     await userEvent.click(document.querySelector(".modal-overlay") as HTMLElement);
@@ -407,7 +404,7 @@ describe("Group C — Regression / backward compatibility", () => {
     // Close.
     rerender(
       <ImportTicketsModal
-        {...({ ...props, open: false } as unknown as never)}
+        {...({ ...props, open: false })}
       />,
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -415,7 +412,7 @@ describe("Group C — Regression / backward compatibility", () => {
     // Re-open — selection cleared, mode reset to default.
     rerender(
       <ImportTicketsModal
-        {...({ ...props, open: true } as unknown as never)}
+        {...({ ...props, open: true })}
       />,
     );
     expect(screen.queryByText(/selected \(/i)).not.toBeInTheDocument();
@@ -562,7 +559,7 @@ describe("Group X — Adversarial edge cases", () => {
           isLoading: false,
           onClose: props.onClose,
           onContinue: props.onContinue,
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -584,7 +581,7 @@ describe("Group X — Adversarial edge cases", () => {
           onClose: props.onClose,
           onContinue: props.onContinue,
           initialMode: "smart",
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -601,7 +598,7 @@ describe("Group X — Adversarial edge cases", () => {
           onClose: props.onClose,
           onContinue: props.onContinue,
           initialMode: "smart",
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -611,7 +608,6 @@ describe("Group X — Adversarial edge cases", () => {
   it("X12: keyboard arrow keys navigate radiogroup (left/right or up/down)", async () => {
     // Standard ARIA radiogroup behavior: arrow keys move focus/selection.
     renderModal();
-    const group = getModeGroup();
     const regular = getRegularOption();
     const smart = getSmartOption();
 
@@ -653,7 +649,7 @@ describe("Group X — Adversarial edge cases", () => {
       resolve = res;
     }));
 
-    const { props } = renderModal({ onContinue: slowContinue as never });
+    renderModal({ onContinue: slowContinue as never });
     await toggle("a.md");
     const button = screen.getByRole("button", { name: /continue/i });
 
@@ -672,7 +668,7 @@ describe("Group X — Adversarial edge cases", () => {
     const slowReject = jest.fn(() => Promise.reject(new Error("Upload failed")));
     const onClose = jest.fn();
 
-    const { props } = renderModal({ onContinue: slowReject as never, onClose });
+    renderModal({ onContinue: slowReject as never, onClose });
     await toggle("a.md");
     const button = screen.getByRole("button", { name: /continue/i });
 
@@ -698,7 +694,7 @@ describe("Group X — Adversarial edge cases", () => {
           onClose: props.onClose,
           onContinue: props.onContinue,
           initialMode: "smart",
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -771,12 +767,12 @@ describe("Group X — Adversarial edge cases", () => {
 
   it("X22: initially null errorMessage vs empty string both render nothing", () => {
     // Null and undefined should not render; empty string also shouldn't.
-    const { rerender } = renderModal({ errorMessage: null });
+    renderModal({ errorMessage: null });
     expect(screen.queryByText(/could not/i)).not.toBeInTheDocument();
 
-    const { props } = renderModal({ errorMessage: "" });
+    renderModal({ errorMessage: "" });
     // Empty string might render an empty <p>; should be guarded.
-    const error = screen.queryByRole("button", { name: /reading files/i });
+    screen.queryByRole("button", { name: /reading files/i });
   });
 
   it("X23: Continue fires onContinue only once even if called synchronously twice", async () => {
@@ -870,7 +866,7 @@ describe("Group X — Adversarial edge cases", () => {
           onClose: jest.fn(),
           onContinue: jest.fn(),
           initialMode: "regular",
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -884,7 +880,7 @@ describe("Group X — Adversarial edge cases", () => {
           onClose: jest.fn(),
           onContinue: jest.fn(),
           initialMode: "smart",
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -899,7 +895,9 @@ describe("Group X — Adversarial edge cases", () => {
 
   it("X31: onContinue paths argument matches selected files exactly (no mutations)", async () => {
     const received: string[] = [];
-    const onContinue = jest.fn((paths) => received.push(...paths));
+    const onContinue = jest.fn((paths) => {
+      received.push(...paths);
+    });
 
     renderModal({ onContinue });
     await toggle("nested/aa.md");
@@ -936,7 +934,7 @@ describe("Group X — Adversarial edge cases", () => {
     // If implementation accepts only "regular" | "smart", invalid values should either:
     // - default to "regular", or
     // - throw/warn with intent
-    const { props } = renderModal({ initialMode: "invalid" as never });
+    renderModal({ initialMode: "invalid" as never });
     const regular = getRegularOption();
     // After rendering, one must be checked; "invalid" should not be a live state.
     expect(
@@ -971,7 +969,7 @@ describe("Group X — Adversarial edge cases", () => {
           open: false,
           onContinue,
           onClose,
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1034,7 +1032,7 @@ describe("Group X — Adversarial edge cases", () => {
           onClose: props.onClose,
           onContinue: props.onContinue,
           initialMode: "smart",
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1090,7 +1088,7 @@ describe("Group X — Adversarial edge cases", () => {
         // Reopen
         rerender(
           <ImportTicketsModal
-            {...({ ...props, open: true } as unknown as never)}
+            {...({ ...props, open: true })}
           />,
         );
       }
@@ -1109,7 +1107,7 @@ describe("Group X — Adversarial edge cases", () => {
       // Close.
       rerender(
         <ImportTicketsModal
-          {...({ ...props, open: false } as unknown as never)}
+          {...({ ...props, open: false })}
         />,
       );
     }
@@ -1151,7 +1149,7 @@ describe("Group X — Adversarial edge cases", () => {
           isLoading: true,
           onClose: props.onClose,
           onContinue: props.onContinue,
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1166,7 +1164,7 @@ describe("Group X — Adversarial edge cases", () => {
           isLoading: false,
           onClose: props.onClose,
           onContinue: props.onContinue,
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1245,7 +1243,7 @@ describe("Group X — Adversarial edge cases", () => {
           isLoading: true,
           onClose: props.onClose,
           onContinue: props.onContinue,
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1263,7 +1261,7 @@ describe("Group X — Adversarial edge cases", () => {
           isLoading: false,
           onClose: props.onClose,
           onContinue: props.onContinue,
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1295,7 +1293,7 @@ describe("Group X — Adversarial edge cases", () => {
           onClose: props.onClose,
           onContinue: props.onContinue,
           initialMode: "smart",
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1315,7 +1313,7 @@ describe("Group X — Adversarial edge cases", () => {
           onClose: props.onClose,
           onContinue: props.onContinue,
           initialMode: "smart",
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1373,10 +1371,6 @@ describe("Group X — Adversarial edge cases", () => {
 
     const regular = getRegularOption();
     const smart = getSmartOption();
-
-    // Accessible names should be exact and not truncated/ellipsized in JSDOM.
-    const regularName = regular.getAttribute("aria-label") || regular.textContent;
-    const smartName = smart.getAttribute("aria-label") || smart.textContent;
 
     // Names must be findable via getByRole with name.
     expect(
@@ -1456,7 +1450,7 @@ describe("Group X — Adversarial edge cases", () => {
           isLoading: false,
           onClose: props.onClose,
           onContinue: newOnContinue,
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1494,7 +1488,7 @@ describe("Group X — Adversarial edge cases", () => {
           isLoading: false,
           onClose: props.onClose,
           onContinue: captureOnContinue,
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1507,7 +1501,7 @@ describe("Group X — Adversarial edge cases", () => {
           onClose: props.onClose,
           onContinue: captureOnContinue,
           initialMode: "smart",
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1547,7 +1541,7 @@ describe("Group X — Adversarial edge cases", () => {
       resolve = res;
     }));
 
-    const { props } = renderModal({ onContinue });
+    renderModal({ onContinue });
 
     await toggle("a.md");
     const button = screen.getByRole("button", { name: /continue/i });
@@ -1589,7 +1583,7 @@ describe("Group X — Adversarial edge cases", () => {
           errorMessage: "Error 1",
           onClose: props.onClose,
           onContinue: props.onContinue,
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1604,7 +1598,7 @@ describe("Group X — Adversarial edge cases", () => {
           errorMessage: null,
           onClose: props.onClose,
           onContinue: props.onContinue,
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1639,7 +1633,7 @@ describe("Group X — Adversarial edge cases", () => {
           isLoading: false,
           onClose: props.onClose,
           onContinue: props.onContinue,
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1764,7 +1758,7 @@ describe("Group X — Adversarial edge cases", () => {
           isLoading: false,
           onClose: props.onClose,
           onContinue: props.onContinue,
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1833,7 +1827,7 @@ describe("Group X — Adversarial edge cases", () => {
           isLoading: false,
           onClose: props.onClose,
           onContinue,
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -1846,7 +1840,7 @@ describe("Group X — Adversarial edge cases", () => {
           isLoading: false,
           onClose: props.onClose,
           onContinue,
-        } as unknown as never)}
+        })}
       />,
     );
 

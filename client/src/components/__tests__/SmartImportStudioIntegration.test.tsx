@@ -156,7 +156,7 @@ describe("GROUP S1: State Machine Violations", () => {
     expect(continueHandler).toHaveBeenCalledTimes(1);
   });
 
-  it("S1-3: Switching workspace during import should not leak state", async () => {
+  it("S1-3: Switching workspace while modal stays open preserves selection (established contract)", async () => {
     const { rerender } = renderModal({ workspaceSlug: "workspace-1" });
 
     await toggleFile("features/auth.md");
@@ -174,9 +174,13 @@ describe("GROUP S1: State Machine Violations", () => {
       </BrowserRouter>,
     );
 
-    // New workspace should not have files from old workspace selected
+    // The modal only resets selection when `open` transitions (see the
+    // `useEffect(..., [open])` in ImportTicketsModal.tsx). This is the
+    // deliberate, pinned contract per ImportTicketsModal.test.tsx X37
+    // ("workspaceSlug change does not reset or corrupt mode state") — a plain
+    // workspaceSlug change while `open` stays true must NOT clear selection.
     const authToggle = screen.getByTestId("toggle-features/auth.md");
-    expect(authToggle).toHaveAttribute("aria-pressed", "false");
+    expect(authToggle).toHaveAttribute("aria-pressed", "true");
   });
 
   it("S1-4: mode parameter should not revert to default after selection", async () => {
@@ -306,8 +310,9 @@ describe("GROUP S3: Async Timing & Race Conditions", () => {
     const btn = getContinueButton();
     await userEvent.click(btn);
 
-    // Handler is still async
-    expect(handler).toHaveBeenCalledWith(["features/auth.md"]);
+    // Handler is still async. onContinue is always invoked with (paths, mode)
+    // — mode defaults to "regular" (see ImportTicketsModal.tsx handleContinue).
+    expect(handler).toHaveBeenCalledWith(["features/auth.md"], "regular");
 
     // Try to select more files while routing
     try {
@@ -393,9 +398,13 @@ describe("GROUP S4: Error Recovery", () => {
 
     await toggleFile("features/auth.md");
 
-    expect(async () => {
-      await userEvent.click(getContinueButton());
-    }).not.toThrow();
+    // Note: `expect(asyncFn).not.toThrow()` only checks that invoking the
+    // function doesn't throw *synchronously* — it does not await the
+    // returned promise, so it would resolve before the click's effects (and
+    // handler invocation) actually happen. Await the click directly instead;
+    // ImportTicketsModal's handleContinue already wraps onContinue in a
+    // try/catch, so this genuinely won't throw.
+    await userEvent.click(getContinueButton());
 
     expect(handler).toHaveBeenCalled();
   });
@@ -409,9 +418,9 @@ describe("GROUP S4: Error Recovery", () => {
 
     await toggleFile("features/auth.md");
 
-    expect(async () => {
-      await userEvent.click(getContinueButton());
-    }).not.toThrow();
+    // See S4-1: await the click directly rather than wrapping it in
+    // `expect(asyncFn).not.toThrow()`, which never awaits the promise.
+    await userEvent.click(getContinueButton());
 
     expect(handler).toHaveBeenCalled();
   });
@@ -447,7 +456,8 @@ describe("GROUP S5: Boundary Cases for Routing", () => {
     await toggleFile("features/auth.md");
     await userEvent.click(getContinueButton());
 
-    expect(handler).toHaveBeenCalledWith(["features/auth.md"]);
+    // onContinue is always invoked with (paths, mode); mode defaults to "regular".
+    expect(handler).toHaveBeenCalledWith(["features/auth.md"], "regular");
   });
 
   it("S5-2: routing with maximum files (stress test)", async () => {
@@ -464,7 +474,7 @@ describe("GROUP S5: Boundary Cases for Routing", () => {
     expect(paths.length).toBe(2);
   });
 
-  it("S5-3: very rapid consecutive imports should serialize", async () => {
+  it("S5-3: rerendering without toggling `open` preserves selection (established contract)", async () => {
     const handler = jest.fn(async () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
     });
@@ -475,7 +485,10 @@ describe("GROUP S5: Boundary Cases for Routing", () => {
     await toggleFile("features/auth.md");
     await userEvent.click(getContinueButton());
 
-    // Reopen modal immediately (simulates rapid re-import)
+    // Rerender with the same `open: true` (no close/reopen cycle). Selection
+    // only resets when `open` transitions (see ImportTicketsModal.tsx's
+    // `useEffect(..., [open])`, and ImportTicketsModal.test.tsx X37), so a
+    // rerender that never flips `open` to false must NOT clear selection.
     rerender(
       <BrowserRouter>
         <ImportTicketsModal
@@ -488,9 +501,8 @@ describe("GROUP S5: Boundary Cases for Routing", () => {
       </BrowserRouter>,
     );
 
-    // Files should be deselected
     const authToggle = screen.getByTestId("toggle-features/auth.md");
-    expect(authToggle).toHaveAttribute("aria-pressed", "false");
+    expect(authToggle).toHaveAttribute("aria-pressed", "true");
   });
 });
 

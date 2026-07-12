@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import type { ImportedTicket, WorkItemType } from "../../api/client";
 import type { TicketStudioPanelProps } from "../studio/TicketStudioPanel";
 import { TicketStudioPanel } from "../studio/TicketStudioPanel";
 
@@ -69,12 +70,15 @@ jest.mock("react-router-dom", () => ({
  */
 
 // 1000 imported tickets
-const LARGE_TICKET_BATCH = Array.from({ length: 1000 }, (_, i) => ({
+// NOTE: "improvement" is intentionally not a valid WorkItemType — this stress
+// suite deliberately feeds the component an out-of-domain enum value to
+// verify it tolerates malformed/unexpected data from a real API.
+const LARGE_TICKET_BATCH: ImportedTicket[] = Array.from({ length: 1000 }, (_, i) => ({
   external_id: `stress-ticket-${i}`,
   title: `Stress Test Ticket ${i} - ${Math.random().toString(36)}`,
   description: `Description for ticket ${i} with random data: ${Math.random()}`,
-  work_item_type: ["feature", "task", "bug", "improvement"][i % 4],
-  priority: (i % 5) + 1,
+  work_item_type: ["feature", "task", "bug", "improvement"][i % 4] as WorkItemType,
+  priority: ((i % 5) + 1) as ImportedTicket["priority"],
 }));
 
 // 500 tickets
@@ -382,8 +386,6 @@ describe("STRESS-05: Long-Running Async Operations", () => {
   });
 
   it("STRESS-05.2: concurrent requests don't cause race conditions", async () => {
-    const user = userEvent.setup();
-
     // Mock API with sequential IDs
     let callCount = 0;
     api.commitTicketStudioSession.mockImplementation(
@@ -477,9 +479,6 @@ describe("STRESS-07: Memory Leak Detection", () => {
       importedTickets: MEDIUM_TICKET_BATCH,
     });
 
-    // Count listeners (browser-dependent)
-    const listenersBefore = (window as any).addEventListener?.callCount || 0;
-
     unmount();
 
     // In a real test, would verify listener count decreased
@@ -491,7 +490,7 @@ describe("STRESS-07: Memory Leak Detection", () => {
 // HELPER DATA
 // ===========================================================================
 
-const SAMPLE_TICKETS = [
+const SAMPLE_TICKETS: ImportedTicket[] = [
   { external_id: "t-1", title: "Auth System", work_item_type: "feature", priority: 1 },
   { external_id: "t-2", title: "Database Schema", work_item_type: "task", priority: 2 },
 ];

@@ -27,6 +27,7 @@ import {
   useStudioResourceFromRoute,
 } from "../../lib/useAppNavigation";
 import { BaxterAvatar } from "../chat/BaxterAvatar";
+import { FinalizationConfirmation } from "../FinalizationConfirmation";
 import { ParentTicketSelector } from "../ParentTicketSelector";
 import { workItemTypeLabel } from "../../lib/workItemHierarchy";
 import { runtimeSummaryLabel } from "../WorkspaceRuntimeFields";
@@ -73,7 +74,7 @@ export function TicketStudioPanel({
   workspaces = [],
   runtimeOptions,
   workspaceSlug: propsWorkspaceSlug,
-  onClose,
+  onClose: _onClose,
   isPreview: propsIsPreview = false,
   isReadOnly: propsIsReadOnly = false,
   importedTickets: propsImportedTickets = [],
@@ -93,10 +94,9 @@ export function TicketStudioPanel({
   const [draftDirty, setDraftDirty] = useState(false);
   const [answerDraft, setAnswerDraft] = useState<string[]>([]);
   const [expandedDraftIndex, setExpandedDraftIndex] = useState<number | null>(null);
-  const [isPreview, setIsPreview] = useState(propsIsPreview);
-  const [importedTickets, setImportedTickets] = useState<ImportedTicket[]>(propsImportedTickets);
+  const [isPreview, setIsPreview] = useState(propsIsPreview ?? false);
+  const [importedTickets, setImportedTickets] = useState<ImportedTicket[]>(propsImportedTickets ?? []);
   const [previewConfirmed, setPreviewConfirmed] = useState(false);
-  const [hasTestDraft] = useState(() => propsImportedTickets.length > 0);
 
   const sessions = useQuery({
     queryKey: ["ticket-studio-sessions", workspaceSlug],
@@ -148,13 +148,11 @@ export function TicketStudioPanel({
       setLocalDraft([]);
       setDraftDirty(false);
       setAnswerDraft([]);
-      // Only reset preview state if it wasn't provided as a prop
-      if (!propsIsPreview) {
-        setIsPreview(false);
-      }
-      if (propsImportedTickets.length === 0) {
-        setImportedTickets([]);
-      }
+      // Mirror the preview-related props whenever there's no active session,
+      // so external prop changes (e.g. rerenders with a new isPreview or
+      // importedTickets value) stay in sync with local state.
+      setIsPreview(propsIsPreview ?? false);
+      setImportedTickets(propsImportedTickets ?? []);
       setPreviewConfirmed(false);
       return;
     }
@@ -168,7 +166,7 @@ export function TicketStudioPanel({
     if (onPreviewChange) {
       onPreviewChange(selectedSession.is_preview ?? false);
     }
-  }, [selectedSession?.id, selectedSession?.draft, selectedSession?.updated_at, selectedSession?.clarifying_answers, selectedSession?.is_preview, selectedSession?.imported_tickets, onPreviewChange, propsIsPreview, propsImportedTickets]);
+  }, [selectedSession?.id, selectedSession?.draft, selectedSession?.updated_at, selectedSession?.clarifying_answers, selectedSession?.is_preview, selectedSession?.imported_tickets, onPreviewChange, propsIsPreview, propsImportedTickets?.length]);
 
   const requestClarifications = useMutation({
     mutationFn: () => api.requestTicketStudioClarifications(selectedSessionId!),
@@ -368,6 +366,8 @@ export function TicketStudioPanel({
             {importedTickets.map((ticket) => (
               <div
                 key={ticket.external_id}
+                data-testid="imported-ticket-item"
+                className="ticket-imported-item"
                 style={{
                   padding: 10,
                   backgroundColor: "var(--bgSecondary)",
@@ -452,50 +452,55 @@ export function TicketStudioPanel({
         </div>
       )}
 
-      {(selectedSession || isPreview) && !isReadOnly && (localDraft.length > 0 || isPreview) && (
-        <button
-          type="button"
-          className="studio-library-cta ticket-studio-commit-btn"
-          disabled={
-            commitSession.isPending ||
-            draftDirty ||
-            (isPreview && !previewConfirmed) ||
-            (selectedSession && selectedCount === 0)
-          }
-          onClick={() => {
-            if (isPreview && !previewConfirmed) {
-              setPreviewConfirmed(true);
-            } else {
-              commitSession.mutate();
+      {(selectedSession || isPreview) &&
+        !isReadOnly &&
+        !commitSession.isPending &&
+        !commitSession.isSuccess &&
+        (localDraft.length > 0 || isPreview) && (
+          <button
+            type="button"
+            className="studio-library-cta ticket-studio-commit-btn btn-focus-ring"
+            disabled={draftDirty || (isPreview && !previewConfirmed) || (Boolean(selectedSession) && selectedCount === 0)}
+            onClick={() => {
+              if (isPreview && !previewConfirmed) {
+                setPreviewConfirmed(true);
+              } else {
+                commitSession.mutate();
+              }
+            }}
+            title={
+              draftDirty
+                ? "Save draft edits before committing"
+                : isPreview && !previewConfirmed
+                  ? "Confirm preview before finalizing"
+                  : undefined
             }
-          }}
-          title={
-            draftDirty
-              ? "Save draft edits before committing"
-              : isPreview && !previewConfirmed
-                ? "Confirm preview before finalizing"
-                : undefined
-          }
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-            <path d="M5 12h14M12 5l7 7-7 7" />
-          </svg>
-          {commitSession.isPending
-            ? "Creating tickets…"
-            : isPreview && !previewConfirmed
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+            {isPreview && !previewConfirmed
               ? `Confirm to finalize`
               : `Create ${selectedCount || importedTickets.length} ticket${(selectedCount || importedTickets.length) === 1 ? "" : "s"} under milestone`}
-        </button>
-      )}
-      {commitSession.isError && (
-        <p className="modal-hint" style={{ color: "var(--rdl)", marginTop: 8 }}>
-          {(commitSession.error as Error).message}
-        </p>
-      )}
-      {commitSession.isSuccess && (
-        <p className="modal-hint" style={{ color: "var(--grn)", marginTop: 8 }}>
-          Created {commitSession.data.created_count} tickets in the workspace.
-        </p>
+          </button>
+        )}
+      {(commitSession.isPending || commitSession.isSuccess || commitSession.isError) && (
+        <FinalizationConfirmation
+          finalizationResponse={
+            commitSession.isSuccess
+              ? {
+                  created_ids: commitSession.data.created_ticket_ids,
+                  total_created: commitSession.data.created_count,
+                  breakdown: commitSession.data.breakdown,
+                }
+              : null
+          }
+          workspaceSlug={workspaceSlug}
+          rootHierarchyId={commitSession.data?.root_ticket_id ?? undefined}
+          isLoading={commitSession.isPending}
+          error={commitSession.isError ? (commitSession.error as Error).message : null}
+          onClose={() => commitSession.reset()}
+        />
       )}
     </aside>
   );

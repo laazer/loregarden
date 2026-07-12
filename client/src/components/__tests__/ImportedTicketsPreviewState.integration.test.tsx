@@ -1,8 +1,9 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import type { ImportedTicket } from "../../api/client";
 import type { TicketStudioPanelProps } from "../studio/TicketStudioPanel";
 import { TicketStudioPanel } from "../studio/TicketStudioPanel";
 
@@ -44,12 +45,12 @@ jest.mock("react-router-dom", () => ({
 
 interface IntegrationTestProps extends Partial<TicketStudioPanelProps> {
   isPreview?: boolean;
-  importedTickets?: Array<{ external_id: string; title: string }>;
+  importedTickets?: any[];
 }
 
-const SAMPLE_TICKETS = [
-  { external_id: "cap-1", title: "Capability 1" },
-  { external_id: "cap-2", title: "Capability 2" },
+const SAMPLE_TICKETS: ImportedTicket[] = [
+  { external_id: "cap-1", title: "Capability 1", work_item_type: "capability" },
+  { external_id: "cap-2", title: "Capability 2", work_item_type: "capability" },
 ];
 
 function renderWithRealQueryClient(overrides: IntegrationTestProps = {}) {
@@ -376,10 +377,6 @@ describe("INT-PREVIEW-3: Async State Management", () => {
 // ===========================================================================
 describe("INT-PREVIEW-4: Query Client Integration", () => {
   it("INT-PREVIEW-4.1: preview state is managed correctly within React Query context", async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-
     renderWithRealQueryClient({ isPreview: true });
 
     const finalizeBtn = getFinalizeButton();

@@ -3,7 +3,7 @@
  * Tests integration of all components with real WebSocket connections and API calls
  */
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { QueueDashboard } from '../QueueDashboard';
 import * as useHook from '../../hooks/useParallelExecutionWS';
 
@@ -67,11 +67,12 @@ describe('QueueDashboard E2E Tests', () => {
     });
 
     test('displays header metrics', () => {
-      render(<QueueDashboard workspaceId="ws-1" />);
+      const { container } = render(<QueueDashboard workspaceId="ws-1" />);
 
-      expect(screen.getByText('Utilization')).toBeInTheDocument();
-      expect(screen.getByText('Active')).toBeInTheDocument();
-      expect(screen.getByText('Queued')).toBeInTheDocument();
+      const headerMetrics = within(container.querySelector('.header-metrics')!);
+      expect(headerMetrics.getByText('Utilization')).toBeInTheDocument();
+      expect(headerMetrics.getByText('Active')).toBeInTheDocument();
+      expect(headerMetrics.getByText('Queued')).toBeInTheDocument();
     });
 
     test('shows connection status', () => {
@@ -96,27 +97,29 @@ describe('QueueDashboard E2E Tests', () => {
     test('calculates utilization correctly', () => {
       render(<QueueDashboard workspaceId="ws-1" />);
 
-      // 1/3 active = 33%
-      expect(screen.getByText(/33%/)).toBeInTheDocument();
+      // 1/3 active = 33%, shown in both the header badge and the overview status grid
+      expect(screen.getAllByText('33%').length).toBeGreaterThan(0);
     });
 
     test('displays active run count', () => {
       render(<QueueDashboard workspaceId="ws-1" />);
 
-      expect(screen.getByText('1/3')).toBeInTheDocument(); // active/max
+      // active/max, shown in both the header badge and the overview status grid
+      expect(screen.getAllByText('1/3').length).toBeGreaterThan(0);
     });
 
     test('displays queued run count', () => {
       render(<QueueDashboard workspaceId="ws-1" />);
 
-      // Should show 2 queued runs
-      expect(screen.getByText('2')).toBeInTheDocument();
+      // Should show 2 queued runs, in both the header badge and the overview status grid
+      expect(screen.getAllByText('2').length).toBeGreaterThan(0);
     });
 
     test('updates metrics when hook data changes', () => {
-      const { rerender } = render(<QueueDashboard workspaceId="ws-1" />);
+      const { container, rerender } = render(<QueueDashboard workspaceId="ws-1" />);
 
-      expect(screen.getByText('1/3')).toBeInTheDocument();
+      const headerMetrics = within(container.querySelector('.header-metrics')!);
+      expect(headerMetrics.getByText('1/3')).toBeInTheDocument();
 
       // Update hook data
       (useHook.useParallelExecutionWS as jest.Mock).mockReturnValue({
@@ -129,7 +132,7 @@ describe('QueueDashboard E2E Tests', () => {
 
       rerender(<QueueDashboard workspaceId="ws-1" />);
 
-      expect(screen.getByText('2/3')).toBeInTheDocument();
+      expect(headerMetrics.getByText('2/3')).toBeInTheDocument();
     });
   });
 
@@ -137,15 +140,15 @@ describe('QueueDashboard E2E Tests', () => {
     test('renders all tabs', () => {
       render(<QueueDashboard workspaceId="ws-1" />);
 
-      expect(screen.getByText('📊 Overview')).toBeInTheDocument();
-      expect(screen.getByText('⚙️ Controls')).toBeInTheDocument();
-      expect(screen.getByText('📈 Analytics')).toBeInTheDocument();
+      expect(screen.getByText('Overview')).toBeInTheDocument();
+      expect(screen.getByText('Controls')).toBeInTheDocument();
+      expect(screen.getByText('Analytics')).toBeInTheDocument();
     });
 
     test('switches to controls tab', () => {
       render(<QueueDashboard workspaceId="ws-1" />);
 
-      const controlsTab = screen.getByText('⚙️ Controls');
+      const controlsTab = screen.getByText('Controls');
       fireEvent.click(controlsTab);
 
       expect(controlsTab).toHaveClass('active');
@@ -154,7 +157,7 @@ describe('QueueDashboard E2E Tests', () => {
     test('switches to analytics tab', () => {
       render(<QueueDashboard workspaceId="ws-1" />);
 
-      const analyticsTab = screen.getByText('📈 Analytics');
+      const analyticsTab = screen.getByText('Analytics');
       fireEvent.click(analyticsTab);
 
       expect(analyticsTab).toHaveClass('active');
@@ -163,57 +166,42 @@ describe('QueueDashboard E2E Tests', () => {
     test('hides controls tab when showControls=false', () => {
       render(<QueueDashboard workspaceId="ws-1" showControls={false} />);
 
-      expect(screen.queryByText('⚙️ Controls')).not.toBeInTheDocument();
+      expect(screen.queryByText('Controls')).not.toBeInTheDocument();
     });
 
     test('hides analytics tab when showAnalytics=false', () => {
       render(<QueueDashboard workspaceId="ws-1" showAnalytics={false} />);
 
-      expect(screen.queryByText('📈 Analytics')).not.toBeInTheDocument();
+      expect(screen.queryByText('Analytics')).not.toBeInTheDocument();
     });
   });
 
   describe('Overview Panel', () => {
     test('displays status grid on overview tab', () => {
-      render(<QueueDashboard workspaceId="ws-1" />);
+      const { container } = render(<QueueDashboard workspaceId="ws-1" />);
 
-      expect(screen.getByText('Total Runs')).toBeInTheDocument();
-      expect(screen.getByText('Utilization')).toBeInTheDocument();
-      expect(screen.getByText('Active Slots')).toBeInTheDocument();
-      expect(screen.getByText('Queue Depth')).toBeInTheDocument();
+      const statusGrid = within(container.querySelector('.status-grid')!);
+      expect(statusGrid.getByText('Total Runs')).toBeInTheDocument();
+      expect(statusGrid.getByText('Utilization')).toBeInTheDocument();
+      expect(statusGrid.getByText('Active Slots')).toBeInTheDocument();
+      expect(statusGrid.getByText('Queue Depth')).toBeInTheDocument();
     });
 
-    test('displays legend', () => {
-      render(<QueueDashboard workspaceId="ws-1" />);
-
-      expect(screen.getByText('Running')).toBeInTheDocument();
-      expect(screen.getByText('Queued')).toBeInTheDocument();
-      expect(screen.getByText('Available')).toBeInTheDocument();
-    });
-
-    test('displays connection status', () => {
-      render(<QueueDashboard workspaceId="ws-1" />);
-
-      expect(screen.getByText('Real-time WebSocket')).toBeInTheDocument();
-    });
-
-    test('shows polling message when disconnected', () => {
-      (useHook.useParallelExecutionWS as jest.Mock).mockReturnValue({
-        ...mockHookData,
-        isWebSocket: false,
-      });
-
-      render(<QueueDashboard workspaceId="ws-1" />);
-
-      expect(screen.getByText('Polling (5s interval)')).toBeInTheDocument();
-    });
+    // Note: a standalone status legend and a "Real-time WebSocket" / "Polling
+    // (5s interval)" connection line used to live in the overview panel, but
+    // both were removed when the queue review components were integrated
+    // (see commit 2fef9bc). Connection state is now only shown via the
+    // header's connection badge, already covered by the "Dashboard Rendering"
+    // tests above, and the run-state legend lives in ParallelQueueVisualization
+    // (covered by ParallelQueueVisualization.test.tsx).
   });
 
   describe('Real-time Updates', () => {
     test('updates header metrics in real-time', () => {
-      const { rerender } = render(<QueueDashboard workspaceId="ws-1" />);
+      const { container, rerender } = render(<QueueDashboard workspaceId="ws-1" />);
 
-      expect(screen.getByText('1/3')).toBeInTheDocument();
+      const headerMetrics = within(container.querySelector('.header-metrics')!);
+      expect(headerMetrics.getByText('1/3')).toBeInTheDocument();
 
       // Simulate WebSocket update
       (useHook.useParallelExecutionWS as jest.Mock).mockReturnValue({
@@ -236,7 +224,7 @@ describe('QueueDashboard E2E Tests', () => {
 
       rerender(<QueueDashboard workspaceId="ws-1" />);
 
-      expect(screen.getByText('2/3')).toBeInTheDocument();
+      expect(headerMetrics.getByText('2/3')).toBeInTheDocument();
     });
 
     test('refreshes dashboard on connection state change', () => {
@@ -275,7 +263,7 @@ describe('QueueDashboard E2E Tests', () => {
     test('passes controls data to QueueAdvancedControls', () => {
       render(<QueueDashboard workspaceId="ws-1" />);
 
-      const controlsTab = screen.getByText('⚙️ Controls');
+      const controlsTab = screen.getByText('Controls');
       fireEvent.click(controlsTab);
 
       // Controls component would receive activeRuns and queuedRuns
@@ -285,7 +273,7 @@ describe('QueueDashboard E2E Tests', () => {
     test('passes workspace ID to QueueHistoricalAnalytics', () => {
       render(<QueueDashboard workspaceId="ws-1" />);
 
-      const analyticsTab = screen.getByText('📈 Analytics');
+      const analyticsTab = screen.getByText('Analytics');
       fireEvent.click(analyticsTab);
 
       // Analytics component would receive workspace ID

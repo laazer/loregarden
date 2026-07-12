@@ -2,7 +2,6 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ImportTicketsModal } from "../ImportTicketsModal";
-import type { SelectedImportFile } from "../ImportTicketFileExplorer";
 
 /**
  * Adversarial Deep Break Test Suite for ImportTicketsModal
@@ -85,7 +84,7 @@ function renderModal(overrides: Partial<ModalProps> = {}) {
     onContinue: jest.fn(),
     ...overrides,
   };
-  const utils = render(<ImportTicketsModal {...(props as unknown as never)} />);
+  const utils = render(<ImportTicketsModal {...props} />);
   return { ...utils, props };
 }
 
@@ -136,7 +135,7 @@ describe("GROUP DEEP1 — Memory Leaks & Cleanup", () => {
     // Immediately close.
     rerender(
       <ImportTicketsModal
-        {...({ ...props, open: false } as unknown as never)}
+        {...({ ...props, open: false })}
       />,
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -150,7 +149,7 @@ describe("GROUP DEEP1 — Memory Leaks & Cleanup", () => {
       const isOpen = i % 2 === 0;
       rerender(
         <ImportTicketsModal
-          {...({ ...props, open: isOpen } as unknown as never)}
+          {...({ ...props, open: isOpen })}
         />,
       );
     }
@@ -182,7 +181,7 @@ describe("GROUP DEEP1 — Memory Leaks & Cleanup", () => {
     unmount();
 
     // Resolve the pending promise.
-    if (resolve) resolve();
+    if (resolve) (resolve as () => void)();
 
     // No error should occur (React would warn about setState on unmounted component).
   });
@@ -208,12 +207,12 @@ describe("GROUP DEEP1 — Memory Leaks & Cleanup", () => {
         {...({
           ...props,
           onContinue: onContinue2,
-        } as unknown as never)}
+        })}
       />,
     );
 
     // Resolve the original promise.
-    if (resolve) resolve();
+    if (resolve) (resolve as () => void)();
 
     // First callback should have been called.
     expect(onContinue1).toHaveBeenCalledTimes(1);
@@ -348,7 +347,7 @@ describe("GROUP DEEP3 — Stress & Performance", () => {
   });
 
   it("DEEP3-3: concurrent file toggles don't race and corrupt Map state", async () => {
-    const { props } = renderModal();
+    renderModal();
 
     // Simulate rapid concurrent toggles.
     const toggles = [
@@ -430,7 +429,7 @@ describe("GROUP DEEP4 — Boundary Conditions & Extremes", () => {
     // Toggle loading.
     rerender(
       <ImportTicketsModal
-        {...({ ...props, isLoading: true } as unknown as never)}
+        {...({ ...props, isLoading: true })}
       />,
     );
 
@@ -463,7 +462,7 @@ describe("GROUP DEEP5 — State Isolation & Prop Independence", () => {
           ...props,
           workspaceSlug: "space-2",
           initialMode: "smart",
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -490,7 +489,7 @@ describe("GROUP DEEP5 — State Isolation & Prop Independence", () => {
           ...props,
           initialBrowsePath: "src/",
           initialMode: "smart",
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -517,7 +516,7 @@ describe("GROUP DEEP5 — State Isolation & Prop Independence", () => {
         {...({
           ...props,
           onClose: onClose2,
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -545,7 +544,7 @@ describe("GROUP DEEP5 — State Isolation & Prop Independence", () => {
     // Close.
     rerender(
       <ImportTicketsModal
-        {...({ ...props, open: false, initialMode: "regular" } as unknown as never)}
+        {...({ ...props, open: false, initialMode: "regular" })}
       />,
     );
 
@@ -556,7 +555,7 @@ describe("GROUP DEEP5 — State Isolation & Prop Independence", () => {
           ...props,
           open: true,
           initialMode: "smart",
-        } as unknown as never)}
+        })}
       />,
     );
 
@@ -591,7 +590,7 @@ describe("GROUP DEEP6 — Modal Interaction & Overlay Behavior", () => {
     }));
     const onClose = jest.fn();
 
-    const { rerender, props } = renderModal({ onContinue, onClose });
+    renderModal({ onContinue, onClose });
 
     await toggle("a.md");
     const button = screen.queryByRole("button", { name: /continue/i });
@@ -601,7 +600,7 @@ describe("GROUP DEEP6 — Modal Interaction & Overlay Behavior", () => {
 
     // onContinue is now pending. Component may disable the overlay to prevent accidental closes.
     // This is implementation-dependent; test documents the behavior.
-    if (resolve) resolve();
+    if (resolve) (resolve as () => void)();
   });
 
   it("DEEP6-3: clicking modal content doesn't propagate to overlay click handler", async () => {
@@ -650,7 +649,7 @@ describe("GROUP DEEP7 — Button Behavior & State Guards", () => {
 
     rerender(
       <ImportTicketsModal
-        {...({ ...props, isLoading: true } as unknown as never)}
+        {...({ ...props, isLoading: true })}
       />,
     );
 
@@ -659,7 +658,7 @@ describe("GROUP DEEP7 — Button Behavior & State Guards", () => {
 
     rerender(
       <ImportTicketsModal
-        {...({ ...props, isLoading: false } as unknown as never)}
+        {...({ ...props, isLoading: false })}
       />,
     );
 
@@ -797,7 +796,7 @@ describe("GROUP DEEP9 — Error Handling & Recovery", () => {
   it("DEEP9-2: if onContinue Promise rejects, modal doesn't auto-close", async () => {
     const onContinue = jest.fn(() => Promise.reject(new Error("Upload failed")));
 
-    const { props } = renderModal({ onContinue });
+    renderModal({ onContinue });
 
     await toggle("a.md");
     const button = screen.queryByRole("button", { name: /continue/i });
@@ -834,10 +833,7 @@ describe("GROUP DEEP9 — Error Handling & Recovery", () => {
 describe("GROUP DEEP10 — Determinism & Idempotency", () => {
   it("DEEP10-1: opening with same props multiple times produces identical DOM structure", async () => {
     const { container: container1 } = renderModal();
-    const dom1 = container1.innerHTML;
-
     const { container: container2 } = renderModal();
-    const dom2 = container2.innerHTML;
 
     // Should be identical (aside from instance IDs if any).
     // This is a rough check; exact comparison may vary.
@@ -867,13 +863,13 @@ describe("GROUP DEEP10 — Determinism & Idempotency", () => {
     // Close and reopen, select in different order.
     rerender(
       <ImportTicketsModal
-        {...({ ...props, open: false } as unknown as never)}
+        {...({ ...props, open: false })}
       />,
     );
 
     rerender(
       <ImportTicketsModal
-        {...({ ...props, open: true } as unknown as never)}
+        {...({ ...props, open: true })}
       />,
     );
 

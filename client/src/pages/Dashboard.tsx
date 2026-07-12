@@ -186,7 +186,7 @@ export function Dashboard() {
   const artifactTabRefs = useRef<Partial<Record<string, HTMLButtonElement>>>({});
 
   useEffect(() => {
-    artifactTabRefs.current[artifactTab]?.scrollIntoView({ block: "nearest", inline: "center" });
+    artifactTabRefs.current[artifactTab]?.scrollIntoView?.({ block: "nearest", inline: "center" });
   }, [artifactTab]);
 
   const wsParam = workspace === "all" ? undefined : workspace;

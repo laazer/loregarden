@@ -1,7 +1,6 @@
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import type { ReactNode } from "react";
 
 import type { FinalizationConfirmationProps } from "../FinalizationConfirmation";
 import { FinalizationConfirmation } from "../FinalizationConfirmation";
@@ -415,8 +414,11 @@ describe("ADVA-3: Type & Structure Mutations", () => {
       },
     });
 
-    // Should either parse or crash gracefully
-    expect(screen.queryByText(/success|completed|4/i)).toBeInTheDocument();
+    // Should either parse or crash gracefully. Both the title ("...
+    // successfully") and the total count ("4") independently match this
+    // pattern, so use queryAllByText rather than queryByText — a single-match
+    // query throws when more than one element matches.
+    expect(screen.queryAllByText(/success|completed|4/i).length).toBeGreaterThan(0);
   });
 
   it("ADVA-3.2: handles breakdown as array instead of object", () => {
@@ -542,8 +544,11 @@ describe("ADVA-3: Type & Structure Mutations", () => {
       finalizationResponse: {} as any,
     });
 
-    // May show nothing or minimal info
-    const container = screen.queryByText(/success|0|completed/i);
+    // May show nothing or minimal info. Use queryAllByText (never throws on
+    // ambiguous matches, unlike queryByText/getByText) since the title and
+    // the total count can both independently match this pattern — the point
+    // here is just that querying the DOM doesn't crash.
+    screen.queryAllByText(/success|0|completed/i);
     // Either shows success (falsy check on undefined fields) or nothing
     // Important: it shouldn't crash
   });
@@ -857,13 +862,14 @@ describe("ADVA-6: Order Dependency & State-Sensitive Logic", () => {
       breakdown: BASE_RESPONSE.breakdown,
     };
 
-    const { rerender: rerender1 } = renderConfirmation({
+    const { unmount } = renderConfirmation({
       finalizationResponse: response1,
     });
 
     expect(screen.getByText(/4|total/i)).toBeInTheDocument();
+    unmount();
 
-    const { rerender: rerender2 } = renderConfirmation({
+    renderConfirmation({
       finalizationResponse: response2,
     });
 
@@ -1022,7 +1028,11 @@ describe("ADVA-7: Combinatorial & Stress Testing", () => {
       },
     });
 
-    expect(screen.getByText(/10000|9999/i)).toBeInTheDocument();
+    // The total count ("10000") and the breakdown summary ("...9999 tasks")
+    // render as two separate elements — assert each individually rather
+    // than an OR'd regex, which throws when more than one element matches.
+    expect(screen.getByText("10000")).toBeInTheDocument();
+    expect(screen.getByText(/9999/)).toBeInTheDocument();
   });
 
   it("ADVA-7.6: handles rapid prop changes across all fields", async () => {
@@ -1109,12 +1119,14 @@ describe("ADVA-8: Assumption Validation", () => {
       finalizationResponse: BASE_RESPONSE,
     });
 
-    const milestoneText = screen.getByText(/milestone/i);
-    const featureText = screen.getByText(/feature/i);
+    screen.getByText(/milestone/i);
+    screen.getByText(/feature/i);
 
-    // Milestone should appear before feature in DOM
-    const milestoneIndex = document.body.innerText.indexOf("milestone");
-    const featureIndex = document.body.innerText.indexOf("feature");
+    // Milestone should appear before feature in DOM. jsdom doesn't
+    // implement `innerText` (it's layout-aware and jsdom has no layout
+    // engine) — use `textContent`, which is DOM-order-based and available.
+    const milestoneIndex = (document.body.textContent ?? "").indexOf("milestone");
+    const featureIndex = (document.body.textContent ?? "").indexOf("feature");
 
     expect(milestoneIndex).toBeLessThan(featureIndex);
   });
@@ -1151,8 +1163,10 @@ describe("ADVA-8: Assumption Validation", () => {
       finalizationResponse: minimal as any,
     });
 
-    // Should still render total
-    expect(screen.getByText(/4|total/i)).toBeInTheDocument();
+    // Should still render total. Match the total count exactly — the
+    // breakdown summary text ("...4 tasks") also contains "4", which would
+    // make a loose /4/ regex match two elements and throw.
+    expect(screen.getByText("4")).toBeInTheDocument();
   });
 
   it("ADVA-8.7: assumes created_ids[0] represents root milestone", () => {

@@ -3,7 +3,7 @@
  * Covers slot display, queue items, drag-to-reorder, and real-time updates
  */
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { ParallelQueueVisualization } from '../ParallelQueueVisualization';
 import * as useHook from '../../hooks/useParallelExecutionWS';
 
@@ -64,17 +64,17 @@ describe('ParallelQueueVisualization', () => {
 
   describe('Rendering', () => {
     test('renders component with all sections', () => {
-      render(<ParallelQueueVisualization workspaceId="ws-1" />);
+      const { container } = render(<ParallelQueueVisualization workspaceId="ws-1" />);
 
       expect(screen.getByText('Parallel Execution Queue')).toBeInTheDocument();
       expect(screen.getByText('Execution Slots')).toBeInTheDocument();
-      expect(screen.getByText(/Queue/)).toBeInTheDocument();
+      expect(container.querySelector('.queue-list-section')).toBeInTheDocument();
     });
 
     test('displays connection status indicator', () => {
       render(<ParallelQueueVisualization workspaceId="ws-1" />);
 
-      expect(screen.getByText('🟢 Real-time')).toBeInTheDocument();
+      expect(screen.getByText('Connected')).toBeInTheDocument();
       expect(screen.getByText('connected')).toBeInTheDocument();
     });
 
@@ -86,7 +86,7 @@ describe('ParallelQueueVisualization', () => {
 
       render(<ParallelQueueVisualization workspaceId="ws-1" />);
 
-      expect(screen.getByText('📡 Polling')).toBeInTheDocument();
+      expect(screen.getByText('Polling')).toBeInTheDocument();
     });
   });
 
@@ -111,8 +111,9 @@ describe('ParallelQueueVisualization', () => {
     test('displays estimated clear time', () => {
       render(<ParallelQueueVisualization workspaceId="ws-1" />);
 
-      expect(screen.getByText('Estimated Clear')).toBeInTheDocument();
-      expect(screen.getByText(/m/)).toBeInTheDocument(); // Shows minutes
+      const label = screen.getByText('Estimated Clear');
+      const card = label.closest('.overview-card');
+      expect(card).toHaveTextContent(/\d+m/); // Shows minutes
     });
 
     test('displays queue wait time', () => {
@@ -155,9 +156,9 @@ describe('ParallelQueueVisualization', () => {
     });
 
     test('marks available slots', () => {
-      render(<ParallelQueueVisualization workspaceId="ws-1" />);
+      const { container } = render(<ParallelQueueVisualization workspaceId="ws-1" />);
 
-      expect(screen.getByText('Available')).toBeInTheDocument();
+      expect(container.querySelector('.empty-text')).toHaveTextContent('Available');
     });
   });
 
@@ -179,8 +180,7 @@ describe('ParallelQueueVisualization', () => {
     test('displays wait time for each queued run', () => {
       render(<ParallelQueueVisualization workspaceId="ws-1" />);
 
-      expect(screen.getByText('Wait:')).toBeInTheDocument();
-      // Should show wait times
+      // Should show wait times, one per queued run
       const waitLabels = screen.getAllByText('Wait:');
       expect(waitLabels.length).toBe(2);
     });
@@ -188,13 +188,14 @@ describe('ParallelQueueVisualization', () => {
     test('shows estimated start time', () => {
       render(<ParallelQueueVisualization workspaceId="ws-1" />);
 
-      expect(screen.getByText('Est. start:')).toBeInTheDocument();
+      const estLabels = screen.getAllByText('Est. start:');
+      expect(estLabels.length).toBe(2);
     });
 
     test('displays queued badge', () => {
       render(<ParallelQueueVisualization workspaceId="ws-1" />);
 
-      const badges = screen.getAllByText('Queued');
+      const badges = screen.getAllByText('Queued', { selector: '.badge-text' });
       expect(badges.length).toBe(2);
     });
   });
@@ -335,11 +336,12 @@ describe('ParallelQueueVisualization', () => {
 
   describe('Legend', () => {
     test('displays legend with all states', () => {
-      render(<ParallelQueueVisualization workspaceId="ws-1" />);
+      const { container } = render(<ParallelQueueVisualization workspaceId="ws-1" />);
 
-      expect(screen.getByText('Running')).toBeInTheDocument();
-      expect(screen.getByText('Queued')).toBeInTheDocument();
-      expect(screen.getByText('Available')).toBeInTheDocument();
+      const legend = within(container.querySelector('.queue-legend')!);
+      expect(legend.getByText('Running')).toBeInTheDocument();
+      expect(legend.getByText('Queued')).toBeInTheDocument();
+      expect(legend.getByText('Available')).toBeInTheDocument();
     });
   });
 

@@ -80,11 +80,13 @@ describe('useParallelExecutionWS Integration', () => {
     test('passes user ID to join workspace if provided', async () => {
       renderHook(() => useParallelExecutionWS('ws-1', 'user-123'));
 
+      // `userId` is forwarded to `wsClient.connect(userId)` for the socket
+      // handshake (see the "passes userId to WebSocket connection" unit test);
+      // `joinWorkspace(workspaceId: string)` itself takes a single argument
+      // (see src/services/websocket.ts) and has no userId parameter.
       await waitFor(() => {
-        expect(mockWebSocketClient.joinWorkspace).toHaveBeenCalledWith(
-          'ws-1',
-          'user-123'
-        );
+        expect(mockWebSocketClient.connect).toHaveBeenCalledWith('user-123');
+        expect(mockWebSocketClient.joinWorkspace).toHaveBeenCalledWith('ws-1');
       });
     });
   });
@@ -131,8 +133,11 @@ describe('useParallelExecutionWS Integration', () => {
       });
 
       if (eventHandler) {
+        // The hook destructures `data.data` (see useParallelExecutionWS.ts's
+        // handleExecutionUpdate), matching the server's WebSocketEvent
+        // envelope shape (`{ type, timestamp, data }`).
         act(() => {
-          eventHandler!(mockData);
+          eventHandler!({ data: mockData });
         });
       }
 
@@ -261,7 +266,7 @@ describe('useParallelExecutionWS Integration', () => {
 
       if (eventHandler) {
         act(() => {
-          eventHandler!(mockData);
+          eventHandler!({ data: mockData });
         });
       }
 
@@ -299,7 +304,7 @@ describe('useParallelExecutionWS Integration', () => {
 
       if (eventHandler) {
         act(() => {
-          eventHandler!(mockData);
+          eventHandler!({ data: mockData });
         });
       }
 

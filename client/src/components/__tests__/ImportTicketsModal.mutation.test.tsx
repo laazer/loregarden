@@ -84,7 +84,7 @@ function renderModal(overrides: Partial<ModalProps> = {}) {
     onContinue: jest.fn(),
     ...overrides,
   };
-  const utils = render(<ImportTicketsModal {...(props as unknown as never)} />);
+  const utils = render(<ImportTicketsModal {...props} />);
   return { ...utils, props };
 }
 
@@ -254,7 +254,7 @@ describe("GROUP MUT3 — Continue Button Logic Mutations", () => {
     // Enable loading.
     rerender(
       <ImportTicketsModal
-        {...({ ...props, isLoading: true } as unknown as never)}
+        {...({ ...props, isLoading: true })}
       />,
     );
 
@@ -278,7 +278,7 @@ describe("GROUP MUT3 — Continue Button Logic Mutations", () => {
     // Set loading.
     rerender(
       <ImportTicketsModal
-        {...({ ...props, isLoading: true } as unknown as never)}
+        {...({ ...props, isLoading: true })}
       />,
     );
     const button3 = screen.queryByRole("button", { name: /reading files/i });
@@ -332,13 +332,13 @@ describe("GROUP MUT4 — File Sorting & Order Mutations", () => {
     // Close and reopen.
     rerender(
       <ImportTicketsModal
-        {...({ ...props, open: false } as unknown as never)}
+        {...({ ...props, open: false })}
       />,
     );
 
     rerender(
       <ImportTicketsModal
-        {...({ ...props, open: true } as unknown as never)}
+        {...({ ...props, open: true })}
       />,
     );
 
@@ -573,14 +573,14 @@ describe("GROUP MUT8 — State Reset Mutations", () => {
     // Close.
     rerender(
       <ImportTicketsModal
-        {...({ ...props, open: false } as unknown as never)}
+        {...({ ...props, open: false })}
       />,
     );
 
     // Reopen.
     rerender(
       <ImportTicketsModal
-        {...({ ...props, open: true } as unknown as never)}
+        {...({ ...props, open: true })}
       />,
     );
 
@@ -600,14 +600,14 @@ describe("GROUP MUT8 — State Reset Mutations", () => {
     // Close.
     rerender(
       <ImportTicketsModal
-        {...({ ...props, open: false, initialMode: "regular" } as unknown as never)}
+        {...({ ...props, open: false, initialMode: "regular" })}
       />,
     );
 
     // Reopen.
     rerender(
       <ImportTicketsModal
-        {...({ ...props, open: true, initialMode: "regular" } as unknown as never)}
+        {...({ ...props, open: true, initialMode: "regular" })}
       />,
     );
 

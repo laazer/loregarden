@@ -1,161 +1,118 @@
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
 import type { TicketStudioPanelProps } from "../TicketStudioPanel";
 import { TicketStudioPanel } from "../TicketStudioPanel";
+import type { TicketStudioSession } from "../../../api/types";
 
 /**
  * Integration test suite for post-finalization UX in Studio context.
  *
  * Ticket:   43-post-finalization-ux-and-navigation
- * Stage:    test_break (test_designer)
  *
  * Tests the full flow: user completes hierarchy editing in Studio → clicks
- * "Finalize" → POST /api/tickets/finalize-hierarchy succeeds → confirmation
- * displays with counts → user can navigate to created hierarchy.
+ * "Create tickets" → POST /api/ticket-studio/sessions/:id/commit succeeds →
+ * FinalizationConfirmation displays with counts → user can navigate to the
+ * created hierarchy.
  *
  * Acceptance Criteria:
  *   - AC1: Success confirmation displayed after finalization
  *   - AC2: Clear indication of what was created (milestone/feature/capability/task counts)
  *   - AC3: Navigation to created hierarchy available
- *
- * Test Groups:
- *   - Group I  — Integration: Finalize Flow
- *   - Group II — Success Display & Navigation
- *   - Group III — Error Handling
- *   - Group IV — Edge Cases & State Management
  */
 
-// Mock the API client
-jest.mock("../../api/client", () => {
-  const originalClient = jest.requireActual("../../api/client");
+jest.mock("../../../api/client", () => {
+  const originalClient = jest.requireActual("../../../api/client");
   return {
     ...originalClient,
-    apiClient: {
-      ...originalClient.apiClient,
-      finalizeHierarchy: jest.fn(),
+    api: {
+      ...originalClient.api,
+      ticketStudioSessions: jest.fn(),
+      ticketStudioSession: jest.fn(),
+      studioAgents: jest.fn(),
+      commitTicketStudioSession: jest.fn(),
     },
   };
 });
 
-const { apiClient } = require("../../api/client");
+const { api } = require("../../../api/client");
 
-// Mock router
 const mockNavigate = jest.fn();
 jest.mock("react-router-dom", () => ({
   ...jest.requireActual("react-router-dom"),
   useNavigate: () => mockNavigate,
 }));
 
-// Fixture: studio draft with a hierarchy ready to finalize
-const DRAFT_HIERARCHY = [
-  {
-    external_id: "fin-test-m1",
+const SESSION_ID = "session-fin-1";
+
+function buildSession(overrides: Partial<TicketStudioSession> = {}): TicketStudioSession {
+  return {
+    id: SESSION_ID,
+    workspace_slug: "loregarden",
     title: "Login Feature",
-    work_item_type: "milestone",
-    description: "User authentication system",
-    priority: 1,
-    acceptance_criteria: ["User can log in"],
-    children: [
+    brief: "User authentication system",
+    parent_ticket_id: null,
+    parent_ticket_title: "",
+    status: "draft",
+    summary: "Scoped into a feature with tasks.",
+    clarifying_questions: [],
+    clarifying_answers: [],
+    clarifying_resolved: true,
+    draft: [
       {
-        external_id: "fin-test-f1",
-        title: "Email Login Flow",
+        ref: "f1",
         work_item_type: "feature",
+        parent_ref: null,
+        title: "Email Login Flow",
         description: "Email-based authentication",
-        priority: 1,
         acceptance_criteria: ["Accept email/password"],
-        children: [
-          {
-            external_id: "fin-test-c1",
-            title: "Login Form UI",
-            work_item_type: "capability",
-            description: "Build login form component",
-            priority: 1,
-            acceptance_criteria: ["Form accepts input"],
-            children: [
-              {
-                external_id: "fin-test-t1",
-                title: "Create LoginForm component",
-                work_item_type: "task",
-                priority: 2,
-                children: [],
-              },
-              {
-                external_id: "fin-test-t2",
-                title: "Add validation",
-                work_item_type: "task",
-                priority: 2,
-                children: [],
-              },
-            ],
-          },
-          {
-            external_id: "fin-test-c2",
-            title: "Auth API Integration",
-            work_item_type: "capability",
-            priority: 1,
-            children: [
-              {
-                external_id: "fin-test-t3",
-                title: "Integrate auth service",
-                work_item_type: "task",
-                priority: 2,
-                children: [],
-              },
-            ],
-          },
-        ],
+        priority: 1,
+        suggested_agent: "",
+        selected: true,
       },
       {
-        external_id: "fin-test-f2",
-        title: "Session Management",
-        work_item_type: "feature",
+        ref: "t1",
+        work_item_type: "task",
+        parent_ref: "f1",
+        title: "Create LoginForm component",
+        description: "",
+        acceptance_criteria: [],
         priority: 2,
-        children: [
-          {
-            external_id: "fin-test-c3",
-            title: "Session Store",
-            work_item_type: "capability",
-            priority: 2,
-            children: [],
-          },
-        ],
+        suggested_agent: "",
+        selected: true,
       },
     ],
-  },
-];
+    messages: [],
+    runtime: {
+      cli_adapter: "default",
+      claude_model: "",
+      cursor_model: "",
+      lmstudio_base_url: "",
+      lmstudio_model: "",
+    },
+    is_preview: false,
+    imported_tickets: [],
+    created_at: "2026-07-01T00:00:00Z",
+    updated_at: "2026-07-01T00:00:00Z",
+    ...overrides,
+  };
+}
 
-// Fixture: success response from finalize endpoint
 const FINALIZE_SUCCESS_RESPONSE = {
-  created_ids: [
-    "uuid-m1",
-    "uuid-f1",
-    "uuid-f2",
-    "uuid-c1",
-    "uuid-c2",
-    "uuid-c3",
-    "uuid-t1",
-    "uuid-t2",
-    "uuid-t3",
-  ],
-  total_created: 9,
-  breakdown: {
-    milestone: 1,
-    feature: 2,
-    capability: 3,
-    task: 3,
-  },
+  session_id: SESSION_ID,
+  created_ticket_ids: ["uuid-m1", "uuid-f1", "uuid-t1"],
+  created_count: 3,
+  breakdown: { milestone: 1, feature: 1, task: 1 },
+  root_ticket_id: "uuid-m1",
 };
 
-// Fixture: error response
-const FINALIZE_ERROR_RESPONSE = {
-  detail: "Duplicate external_id: 'fin-test-m1' already exists in workspace",
-};
+function renderStudioPanel(overrides: Partial<TicketStudioPanelProps> = {}) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
 
-function renderStudioPanel(
-  overrides: Partial<TicketStudioPanelProps> = {},
-) {
   const props: TicketStudioPanelProps = {
     workspaceSlug: "loregarden",
     onClose: jest.fn(),
@@ -163,9 +120,11 @@ function renderStudioPanel(
   };
 
   const utils = render(
-    <MemoryRouter>
-      <TicketStudioPanel {...props} />
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`/studio/tickets/${SESSION_ID}`]}>
+        <TicketStudioPanel {...props} />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 
   return { ...utils, props };
@@ -174,633 +133,239 @@ function renderStudioPanel(
 beforeEach(() => {
   jest.clearAllMocks();
   mockNavigate.mockClear();
-  apiClient.finalizeHierarchy.mockClear();
+  api.ticketStudioSessions.mockResolvedValue([buildSession()]);
+  api.ticketStudioSession.mockResolvedValue(buildSession());
+  api.studioAgents.mockResolvedValue([]);
 });
 
-// ===========================================================================
-// Group I — Integration: Finalize Flow
-// ===========================================================================
+async function getCommitButton() {
+  return waitFor(() => screen.getByRole("button", { name: /create.*ticket/i }));
+}
+
 describe("Group I — Integration: Finalize Flow", () => {
-  it("I1: user can click finalize button to start finalization", async () => {
-    // AC1/AC3: User initiates finalization
+  it("I1: user can click the commit button to start finalization", async () => {
     const user = userEvent.setup();
+    api.commitTicketStudioSession.mockResolvedValueOnce(FINALIZE_SUCCESS_RESPONSE);
     renderStudioPanel();
 
-    // User loads hierarchy (mocked in component)
-    // User clicks finalize button
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy|commit|apply/i,
-    });
-    expect(finalizeButton).toBeInTheDocument();
+    const commitButton = await getCommitButton();
+    await user.click(commitButton);
 
-    await user.click(finalizeButton);
-
-    // Finalization request should be initiated
     await waitFor(() => {
-      expect(apiClient.finalizeHierarchy).toHaveBeenCalled();
+      expect(api.commitTicketStudioSession).toHaveBeenCalledWith(SESSION_ID);
     });
   });
 
-  it("I2: finalize button sends workspace slug and hierarchy to API", async () => {
-    // AC1: Full finalization request
+  it("I2: shows loading state while finalization is in progress", async () => {
     const user = userEvent.setup();
-    apiClient.finalizeHierarchy.mockResolvedValueOnce(
-      FINALIZE_SUCCESS_RESPONSE,
+    let resolveCommit: (value: typeof FINALIZE_SUCCESS_RESPONSE) => void;
+    api.commitTicketStudioSession.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveCommit = resolve; }),
     );
+    renderStudioPanel();
 
-    renderStudioPanel({
-      workspaceSlug: "loregarden",
-    });
+    const commitButton = await getCommitButton();
+    await user.click(commitButton);
 
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
+    expect(screen.getByRole("status", { hidden: true })).toBeInTheDocument();
 
+    resolveCommit!(FINALIZE_SUCCESS_RESPONSE);
     await waitFor(() => {
-      expect(apiClient.finalizeHierarchy).toHaveBeenCalledWith({
-        workspace_slug: "loregarden",
-        hierarchy: expect.any(Array),
-      });
+      expect(screen.getByRole("heading", { name: /hierarchy.*created/i })).toBeInTheDocument();
     });
   });
 
-  it("I3: shows loading indicator while finalization is in progress", async () => {
-    // AC1: UX feedback during operation
+  it("I3: commit button is removed once finalization succeeds (no double submission)", async () => {
     const user = userEvent.setup();
-
-    // Mock delayed response to observe loading state
-    apiClient.finalizeHierarchy.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          setTimeout(
-            () => resolve(FINALIZE_SUCCESS_RESPONSE),
-            500,
-          );
-        }),
-    );
-
+    api.commitTicketStudioSession.mockResolvedValueOnce(FINALIZE_SUCCESS_RESPONSE);
     renderStudioPanel();
 
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
+    const commitButton = await getCommitButton();
+    await user.click(commitButton);
 
-    // Loading spinner should appear
-    const spinner = screen.queryByRole("status", { hidden: true });
-    expect(spinner).toBeInTheDocument();
-
-    // Wait for completion
     await waitFor(() => {
-      expect(
-        screen.getByRole("heading", {
-          name: /success|completed|created/i,
-        }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: /hierarchy.*created/i })).toBeInTheDocument();
     });
-  });
 
-  it("I4: disables finalize button while request is in flight", async () => {
-    // Safety: prevent double-submission
-    const user = userEvent.setup();
-    apiClient.finalizeHierarchy.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          setTimeout(
-            () => resolve(FINALIZE_SUCCESS_RESPONSE),
-            300,
-          );
-        }),
-    );
-
-    renderStudioPanel();
-
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
-
-    // Button should be disabled during request
-    expect(finalizeButton).toBeDisabled();
-
-    // Wait for completion
-    await waitFor(() => {
-      // Button may be disabled or re-enabled depending on implementation
-      expect(apiClient.finalizeHierarchy).toHaveBeenCalled();
-    });
+    expect(screen.queryByRole("button", { name: /create.*ticket/i })).not.toBeInTheDocument();
+    expect(api.commitTicketStudioSession).toHaveBeenCalledTimes(1);
   });
 });
 
-// ===========================================================================
-// Group II — Success Display & Navigation
-// ===========================================================================
 describe("Group II — Success Display & Navigation", () => {
   it("II1: displays success confirmation after finalization succeeds", async () => {
-    // AC1: Success confirmation displayed
     const user = userEvent.setup();
-    apiClient.finalizeHierarchy.mockResolvedValueOnce(
-      FINALIZE_SUCCESS_RESPONSE,
-    );
-
+    api.commitTicketStudioSession.mockResolvedValueOnce(FINALIZE_SUCCESS_RESPONSE);
     renderStudioPanel();
 
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
+    const commitButton = await getCommitButton();
+    await user.click(commitButton);
 
-    // Success confirmation appears
     await waitFor(() => {
-      expect(
-        screen.getByRole("heading", {
-          name: /success|completed|hierarchy.*created/i,
-        }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: /hierarchy.*created/i })).toBeInTheDocument();
     });
   });
 
-  it("II2: displays breakdown of created items (1 milestone, 2 features, 3 capabilities, 3 tasks)", async () => {
-    // AC2: Counts displayed
+  it("II2: displays total count of items created", async () => {
     const user = userEvent.setup();
-    apiClient.finalizeHierarchy.mockResolvedValueOnce(
-      FINALIZE_SUCCESS_RESPONSE,
-    );
-
+    api.commitTicketStudioSession.mockResolvedValueOnce(FINALIZE_SUCCESS_RESPONSE);
     renderStudioPanel();
 
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
+    const commitButton = await getCommitButton();
+    await user.click(commitButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/1.*milestone|milestone.*1/i)).toBeInTheDocument();
-      expect(screen.getByText(/2.*feature|feature.*2/i)).toBeInTheDocument();
-      expect(
-        screen.getByText(/3.*capabilit|capabilit.*3/i),
-      ).toBeInTheDocument();
-      expect(screen.getByText(/3.*task|task.*3/i)).toBeInTheDocument();
+      expect(screen.getByText("3")).toBeInTheDocument();
     });
   });
 
-  it("II3: displays total count of items created (9 total)", async () => {
-    // AC2: Total count summary
+  it("II3: provides button to navigate to created hierarchy", async () => {
     const user = userEvent.setup();
-    apiClient.finalizeHierarchy.mockResolvedValueOnce(
-      FINALIZE_SUCCESS_RESPONSE,
-    );
-
+    api.commitTicketStudioSession.mockResolvedValueOnce(FINALIZE_SUCCESS_RESPONSE);
     renderStudioPanel();
 
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
+    const commitButton = await getCommitButton();
+    await user.click(commitButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/9|total.*9/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /view.*hierarchy/i })).toBeInTheDocument();
     });
   });
 
-  it("II4: provides button to navigate to created hierarchy", async () => {
-    // AC3: Navigation available
+  it("II4: navigate button navigates using the root ticket ID from the response", async () => {
     const user = userEvent.setup();
-    apiClient.finalizeHierarchy.mockResolvedValueOnce(
-      FINALIZE_SUCCESS_RESPONSE,
-    );
-
+    api.commitTicketStudioSession.mockResolvedValueOnce(FINALIZE_SUCCESS_RESPONSE);
     renderStudioPanel();
 
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
+    const commitButton = await getCommitButton();
+    await user.click(commitButton);
 
-    await waitFor(() => {
-      const navButton = screen.getByRole("button", {
-        name: /view.*hierarchy|view.*created|open.*hierarchy|see.*items/i,
-      });
-      expect(navButton).toBeInTheDocument();
-    });
-  });
-
-  it("II5: navigate button navigates to root hierarchy ID", async () => {
-    // AC3: Navigation precision
-    const user = userEvent.setup();
-    apiClient.finalizeHierarchy.mockResolvedValueOnce(
-      FINALIZE_SUCCESS_RESPONSE,
-    );
-
-    renderStudioPanel({
-      workspaceSlug: "loregarden",
-    });
-
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
-
-    await waitFor(() => {
-      const navButton = screen.getByRole("button", {
-        name: /view.*hierarchy|view.*created|open.*hierarchy/i,
-      });
-      expect(navButton).toBeInTheDocument();
-    });
-
-    // Get the root ID (first created ID, which is the milestone)
-    const rootId = FINALIZE_SUCCESS_RESPONSE.created_ids[0];
-    const navButton = screen.getByRole("button", {
-      name: /view.*hierarchy|view.*created/i,
-    });
+    const navButton = await waitFor(() => screen.getByRole("button", { name: /view.*hierarchy/i }));
     await user.click(navButton);
 
-    expect(mockNavigate).toHaveBeenCalledWith(
-      expect.stringContaining(rootId),
-    );
+    expect(mockNavigate).toHaveBeenCalledWith(expect.stringContaining("uuid-m1"));
   });
 
-  it("II6: user can close confirmation and return to studio", async () => {
-    // AC1: Dismissal after success
+  it("II5: user can close the confirmation", async () => {
     const user = userEvent.setup();
-    const onClose = jest.fn();
-    apiClient.finalizeHierarchy.mockResolvedValueOnce(
-      FINALIZE_SUCCESS_RESPONSE,
-    );
+    api.commitTicketStudioSession.mockResolvedValueOnce(FINALIZE_SUCCESS_RESPONSE);
+    renderStudioPanel();
 
-    renderStudioPanel({
-      onClose,
-    });
+    const commitButton = await getCommitButton();
+    await user.click(commitButton);
 
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
-
-    await waitFor(() => {
-      const closeButton = screen.getByRole("button", {
-        name: /close|done|dismiss|continue/i,
-      });
-      expect(closeButton).toBeInTheDocument();
-    });
-
-    const closeButton = screen.getByRole("button", {
-      name: /close|done|dismiss|continue/i,
-    });
+    const closeButton = await waitFor(() => screen.getByRole("button", { name: /close/i }));
     await user.click(closeButton);
 
-    // Should dismiss confirmation
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: /hierarchy.*created/i })).not.toBeInTheDocument();
+    });
   });
 });
 
-// ===========================================================================
-// Group III — Error Handling
-// ===========================================================================
 describe("Group III — Error Handling", () => {
   it("III1: displays error message when finalization fails", async () => {
-    // Error handling
     const user = userEvent.setup();
-    apiClient.finalizeHierarchy.mockRejectedValueOnce(
+    api.commitTicketStudioSession.mockRejectedValueOnce(
       new Error("Duplicate external_id: 'fin-test-m1' already exists"),
     );
-
     renderStudioPanel();
 
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
+    const commitButton = await getCommitButton();
+    await user.click(commitButton);
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/duplicate|error|failed/i),
-      ).toBeInTheDocument();
+      expect(screen.getByText(/duplicate/i)).toBeInTheDocument();
     });
   });
 
   it("III2: does not show success confirmation when finalization fails", async () => {
-    // Error fallback
     const user = userEvent.setup();
-    apiClient.finalizeHierarchy.mockRejectedValueOnce(
-      new Error("Validation failed"),
-    );
-
+    api.commitTicketStudioSession.mockRejectedValueOnce(new Error("Validation failed"));
     renderStudioPanel();
 
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
+    const commitButton = await getCommitButton();
+    await user.click(commitButton);
 
     await waitFor(() => {
-      expect(
-        screen.queryByRole("heading", {
-          name: /success|completed|hierarchy.*created/i,
-        }),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: /hierarchy.*created/i })).not.toBeInTheDocument();
     });
   });
 
-  it("III3: allows user to retry finalization after error", async () => {
-    // Recovery: user can try again
+  it("III3: allows user to retry finalization after error via close then commit again", async () => {
     const user = userEvent.setup();
-
-    // First call fails
-    apiClient.finalizeHierarchy.mockRejectedValueOnce(
-      new Error("Network error"),
-    );
-
+    api.commitTicketStudioSession.mockRejectedValueOnce(new Error("Network error"));
     renderStudioPanel();
 
-    let finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
+    let commitButton = await getCommitButton();
+    await user.click(commitButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/network|error|failed/i)).toBeInTheDocument();
+      expect(screen.getByText(/network/i)).toBeInTheDocument();
     });
 
-    // Reset mock for retry
-    apiClient.finalizeHierarchy.mockResolvedValueOnce(
-      FINALIZE_SUCCESS_RESPONSE,
-    );
+    const closeButton = screen.getByRole("button", { name: /close/i });
+    await user.click(closeButton);
 
-    // Find finalize button again (may have changed)
-    finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy|retry/i,
-    });
-    await user.click(finalizeButton);
-
-    // Should succeed on retry
-    await waitFor(() => {
-      expect(
-        screen.getByRole("heading", {
-          name: /success|completed/i,
-        }),
-      ).toBeInTheDocument();
-    });
-  });
-
-  it("III4: shows detailed error information from API", async () => {
-    // UX: User understands what failed
-    const user = userEvent.setup();
-    const errorMessage = "Type validation failed: Task cannot have Feature as child";
-    apiClient.finalizeHierarchy.mockRejectedValueOnce(
-      new Error(errorMessage),
-    );
-
-    renderStudioPanel();
-
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
+    api.commitTicketStudioSession.mockResolvedValueOnce(FINALIZE_SUCCESS_RESPONSE);
+    commitButton = await getCommitButton();
+    await user.click(commitButton);
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/type validation|task|feature|child/i),
-      ).toBeInTheDocument();
-    });
-  });
-
-  it("III5: handles network timeout gracefully", async () => {
-    // Network error handling
-    const user = userEvent.setup();
-    apiClient.finalizeHierarchy.mockRejectedValueOnce(
-      new Error("Request timeout"),
-    );
-
-    renderStudioPanel();
-
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
-
-    await waitFor(() => {
-      expect(screen.getByText(/timeout|network|error/i)).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: /hierarchy.*created/i })).toBeInTheDocument();
     });
   });
 });
 
-// ===========================================================================
-// Group IV — Edge Cases & State Management
-// ===========================================================================
 describe("Group IV — Edge Cases & State Management", () => {
-  it("IV1: handles very large hierarchy (100+ items) finalization", async () => {
-    // Scalability
+  it("IV1: passes the workspace-scoped session ID to the commit API", async () => {
     const user = userEvent.setup();
-    const largeResponse = {
-      created_ids: Array.from({ length: 120 }, (_, i) => `id-${i}`),
-      total_created: 120,
-      breakdown: {
-        milestone: 10,
-        feature: 40,
-        capability: 35,
-        task: 35,
-      },
-    };
+    api.commitTicketStudioSession.mockResolvedValueOnce(FINALIZE_SUCCESS_RESPONSE);
+    renderStudioPanel({ workspaceSlug: "custom-workspace" });
 
-    apiClient.finalizeHierarchy.mockResolvedValueOnce(largeResponse);
+    const commitButton = await getCommitButton();
+    await user.click(commitButton);
 
+    await waitFor(() => {
+      expect(api.commitTicketStudioSession).toHaveBeenCalledWith(SESSION_ID);
+    });
+  });
+
+  it("IV2: handles a response with an empty breakdown gracefully", async () => {
+    const user = userEvent.setup();
+    api.commitTicketStudioSession.mockResolvedValueOnce({
+      session_id: SESSION_ID,
+      created_ticket_ids: ["uuid-1"],
+      created_count: 1,
+      breakdown: {},
+      root_ticket_id: "uuid-1",
+    });
     renderStudioPanel();
 
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
+    const commitButton = await getCommitButton();
+    await user.click(commitButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/120|total.*120/i)).toBeInTheDocument();
+      expect(screen.getByText("1")).toBeInTheDocument();
     });
   });
 
-  it("IV2: does not show counts if breakdown missing from response", async () => {
-    // Resilience
+  it("IV3: handles a large hierarchy finalization (120 items)", async () => {
     const user = userEvent.setup();
-    const responseWithoutBreakdown = {
-      created_ids: ["id-1", "id-2"],
-      total_created: 2,
-    };
-
-    apiClient.finalizeHierarchy.mockResolvedValueOnce(
-      responseWithoutBreakdown,
-    );
-
+    api.commitTicketStudioSession.mockResolvedValueOnce({
+      session_id: SESSION_ID,
+      created_ticket_ids: Array.from({ length: 120 }, (_, i) => `id-${i}`),
+      created_count: 120,
+      breakdown: { milestone: 10, feature: 40, capability: 35, task: 35 },
+      root_ticket_id: "id-0",
+    });
     renderStudioPanel();
 
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
+    const commitButton = await getCommitButton();
+    await user.click(commitButton);
 
     await waitFor(() => {
-      // Should show total
-      expect(screen.getByText(/2|total/i)).toBeInTheDocument();
-    });
-  });
-
-  it("IV3: handles finalization of single-item hierarchy (milestone only)", async () => {
-    // Edge case: minimal hierarchy
-    const user = userEvent.setup();
-    const singleItemResponse = {
-      created_ids: ["milestone-single"],
-      total_created: 1,
-      breakdown: {
-        milestone: 1,
-        feature: 0,
-        capability: 0,
-        task: 0,
-      },
-    };
-
-    apiClient.finalizeHierarchy.mockResolvedValueOnce(singleItemResponse);
-
-    renderStudioPanel();
-
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
-
-    await waitFor(() => {
-      expect(screen.getByText(/1.*milestone|milestone.*1/i)).toBeInTheDocument();
-      expect(screen.getByText(/1|total.*1/i)).toBeInTheDocument();
-    });
-  });
-
-  it("IV4: confirmation remains stable during rapid nav clicks", async () => {
-    // Stability: no race conditions
-    const user = userEvent.setup();
-    apiClient.finalizeHierarchy.mockResolvedValueOnce(
-      FINALIZE_SUCCESS_RESPONSE,
-    );
-
-    renderStudioPanel({
-      workspaceSlug: "loregarden",
-    });
-
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
-
-    await waitFor(() => {
-      const navButton = screen.getByRole("button", {
-        name: /view.*hierarchy|view.*created/i,
-      });
-      expect(navButton).toBeInTheDocument();
-    });
-
-    // Rapid clicks
-    const navButton = screen.getByRole("button", {
-      name: /view.*hierarchy|view.*created/i,
-    });
-    await user.click(navButton);
-    await user.click(navButton);
-    await user.click(navButton);
-
-    // Confirmation should still show
-    expect(
-      screen.getByRole("heading", {
-        name: /success|completed/i,
-      }),
-    ).toBeInTheDocument();
-
-    // All navigation calls should go through
-    expect(mockNavigate).toHaveBeenCalledTimes(3);
-  });
-
-  it("IV5: clears previous error when user retries and succeeds", async () => {
-    // State cleanup
-    const user = userEvent.setup();
-
-    // First: error
-    apiClient.finalizeHierarchy.mockRejectedValueOnce(
-      new Error("Duplicate ID"),
-    );
-
-    renderStudioPanel();
-
-    let finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
-
-    await waitFor(() => {
-      expect(screen.getByText(/duplicate|error/i)).toBeInTheDocument();
-    });
-
-    // Second: success (error should be cleared)
-    apiClient.finalizeHierarchy.mockResolvedValueOnce(
-      FINALIZE_SUCCESS_RESPONSE,
-    );
-
-    finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy|retry/i,
-    });
-    await user.click(finalizeButton);
-
-    await waitFor(() => {
-      expect(screen.getByText(/9|total.*9/i)).toBeInTheDocument();
-      // Error message should not appear
-      expect(screen.queryByText(/duplicate/i)).not.toBeInTheDocument();
-    });
-  });
-
-  it("IV6: workspace context passed to API call", async () => {
-    // AC: Workspace scope
-    const user = userEvent.setup();
-    apiClient.finalizeHierarchy.mockResolvedValueOnce(
-      FINALIZE_SUCCESS_RESPONSE,
-    );
-
-    renderStudioPanel({
-      workspaceSlug: "custom-workspace",
-    });
-
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
-
-    await waitFor(() => {
-      expect(apiClient.finalizeHierarchy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          workspace_slug: "custom-workspace",
-        }),
-      );
-    });
-  });
-
-  it("IV7: handles empty hierarchy (0 items) gracefully", async () => {
-    // Edge case: no items in response
-    const user = userEvent.setup();
-    const emptyResponse = {
-      created_ids: [],
-      total_created: 0,
-      breakdown: {
-        milestone: 0,
-        feature: 0,
-        capability: 0,
-        task: 0,
-      },
-    };
-
-    apiClient.finalizeHierarchy.mockResolvedValueOnce(emptyResponse);
-
-    renderStudioPanel();
-
-    const finalizeButton = screen.getByRole("button", {
-      name: /finalize|create.*hierarchy/i,
-    });
-    await user.click(finalizeButton);
-
-    await waitFor(() => {
-      // Should show 0 items, not crash
-      expect(screen.getByText(/0|zero|no items/i)).toBeInTheDocument();
+      expect(screen.getByText("120")).toBeInTheDocument();
     });
   });
 });

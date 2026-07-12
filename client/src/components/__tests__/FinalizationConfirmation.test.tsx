@@ -1,7 +1,6 @@
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import type { ReactNode } from "react";
 
 import type { FinalizationConfirmationProps } from "../FinalizationConfirmation";
 import { FinalizationConfirmation } from "../FinalizationConfirmation";
@@ -309,7 +308,11 @@ describe("Group B — Counts & Breakdown", () => {
       finalizationResponse: SINGLE_MILESTONE_RESPONSE,
     });
 
-    expect(screen.getByText(/1.*total|total.*1/i)).toBeInTheDocument();
+    // The total is shown as a bare count ("1"), not literally alongside the
+    // word "total". Match it exactly rather than with a loose /1/ regex,
+    // since the breakdown summary text below also happens to contain "1"
+    // (a single milestone), which would otherwise make the query ambiguous.
+    expect(screen.getByText("1")).toBeInTheDocument();
     expect(screen.getByText(/1.*milestone|milestone.*1/i)).toBeInTheDocument();
   });
 

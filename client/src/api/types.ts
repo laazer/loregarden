@@ -637,6 +637,8 @@ export interface TicketStudioCommitResult {
   session_id: string;
   created_ticket_ids: string[];
   created_count: number;
+  breakdown: Record<string, number>;
+  root_ticket_id: string | null;
 }
 
 export type CIStatusValue = "pending" | "passing" | "failing" | "partial" | "skipped";

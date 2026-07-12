@@ -98,8 +98,8 @@ describe('QueueAdvancedTimeline', () => {
         />
       );
 
-      // formatTime(120) = "2m 0s", formatTime(300) = "5m 0s"
-      expect(screen.getByText(/2m 0s/)).toBeInTheDocument();
+      // Remaining time = estimated_duration_seconds - elapsed_seconds = 300 - 120 = 180s = "3m 0s"
+      expect(screen.getByText(/Total Clear Time: 3m 0s/)).toBeInTheDocument();
     });
 
     test('formats hours scale correctly', () => {
@@ -118,7 +118,7 @@ describe('QueueAdvancedTimeline', () => {
       );
 
       // In hours scale: should format with hours and minutes
-      expect(screen.getByText(/h /)).toBeInTheDocument();
+      expect(screen.getByText(/Total Clear Time: 1h 0m/)).toBeInTheDocument();
     });
 
     test('displays remaining time correctly', () => {
@@ -347,8 +347,8 @@ describe('QueueAdvancedTimeline', () => {
         />
       );
 
-      // Should format in minutes: "2m 0s remaining"
-      expect(screen.getByText(/\dm \d{1,2}s/)).toBeInTheDocument();
+      // Remaining time = 300 - 120 = 180s = "3m 0s"
+      expect(screen.getByText(/Total Clear Time: \dm \d{1,2}s/)).toBeInTheDocument();
     });
 
     test('switches to hours scale when specified', () => {
@@ -367,7 +367,7 @@ describe('QueueAdvancedTimeline', () => {
       );
 
       // Should format with hours
-      expect(screen.getByText(/\dh \d{1,2}m/)).toBeInTheDocument();
+      expect(screen.getByText(/Total Clear Time: \dh \d{1,2}m/)).toBeInTheDocument();
     });
 
     test('adjusts timeline scale for hours', () => {

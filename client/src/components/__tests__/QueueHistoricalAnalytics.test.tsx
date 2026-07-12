@@ -94,8 +94,8 @@ describe('QueueHistoricalAnalytics', () => {
       render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
 
       await waitFor(() => {
-        // Look for the count metric display
-        expect(screen.getByText(/Total Runs/)).toBeInTheDocument();
+        // One "Total Runs" label per ticket-type card (2 in mockMetrics)
+        expect(screen.getAllByText(/Total Runs/).length).toBeGreaterThan(0);
       });
     });
 
@@ -103,7 +103,7 @@ describe('QueueHistoricalAnalytics', () => {
       render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Avg Duration/)).toBeInTheDocument();
+        expect(screen.getAllByText(/Avg Duration/).length).toBeGreaterThan(0);
       });
     });
 
@@ -111,7 +111,7 @@ describe('QueueHistoricalAnalytics', () => {
       render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Range/)).toBeInTheDocument();
+        expect(screen.getAllByText(/Range/).length).toBeGreaterThan(0);
       });
     });
 
@@ -119,7 +119,7 @@ describe('QueueHistoricalAnalytics', () => {
       render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Last 7 Days/)).toBeInTheDocument();
+        expect(screen.getAllByText(/Last 7 Days/).length).toBeGreaterThan(0);
       });
     });
   });
@@ -173,6 +173,16 @@ describe('QueueHistoricalAnalytics', () => {
 
   describe('Insights', () => {
     test('shows fast execution indicator for runs <2min', async () => {
+      // mockMetrics' avg durations (245s, 180s) are both >= 2min, so neither
+      // qualifies; override with a run whose avg duration is under 120s.
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            metrics: [{ ...mockMetrics[0], avg_duration_seconds: 90 }],
+          }),
+      });
+
       const { container } = render(
         <QueueHistoricalAnalytics workspaceId="ws-1" />
       );
@@ -197,6 +207,17 @@ describe('QueueHistoricalAnalytics', () => {
     });
 
     test('shows warning for success rate <85%', async () => {
+      // mockMetrics' success rates (0.95, 0.85) are both >= 85%, so neither
+      // qualifies (bug-fix sits exactly at the 85% boundary); override with
+      // a run that's strictly below it.
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            metrics: [{ ...mockMetrics[1], success_rate: 0.8 }],
+          }),
+      });
+
       const { container } = render(
         <QueueHistoricalAnalytics workspaceId="ws-1" />
       );
@@ -230,8 +251,7 @@ describe('QueueHistoricalAnalytics', () => {
 
       await waitFor(() => {
         expect(global.fetch).toHaveBeenCalledWith(
-          expect.stringContaining('range=30d'),
-          expect.anything()
+          expect.stringContaining('range=30d')
         );
       });
     });
@@ -346,8 +366,9 @@ describe('QueueHistoricalAnalytics', () => {
       render(<QueueHistoricalAnalytics workspaceId="ws-1" />);
 
       await waitFor(() => {
+        // Component surfaces the underlying Error's own message verbatim
         expect(
-          screen.getByText(/Failed to load analytics/)
+          screen.getByText('Failed to fetch')
         ).toBeInTheDocument();
       });
     });
@@ -374,8 +395,7 @@ describe('QueueHistoricalAnalytics', () => {
 
       await waitFor(() => {
         expect(global.fetch).toHaveBeenCalledWith(
-          expect.stringContaining('/api/parallel/workspace/ws-1/analytics'),
-          expect.anything()
+          expect.stringContaining('/api/parallel/workspace/ws-1/analytics')
         );
       });
     });
@@ -385,22 +405,23 @@ describe('QueueHistoricalAnalytics', () => {
 
       await waitFor(() => {
         expect(global.fetch).toHaveBeenCalledWith(
-          expect.stringContaining('/ws-custom/'),
-          expect.anything()
+          expect.stringContaining('/ws-custom/')
         );
       });
     });
   });
 
   describe('Responsive Design', () => {
-    test('uses responsive grid layout', () => {
+    test('uses responsive grid layout', async () => {
       const { container } = render(
         <QueueHistoricalAnalytics workspaceId="ws-1" />
       );
 
-      expect(
-        container.querySelector('.analytics-grid')
-      ).toBeInTheDocument();
+      await waitFor(() => {
+        expect(
+          container.querySelector('.analytics-grid')
+        ).toBeInTheDocument();
+      });
     });
 
     test('displays summary in grid layout', async () => {

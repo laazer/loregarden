@@ -75,6 +75,7 @@ export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButton
         className={`btn-secondary btn-compact dashboard-details-btn ${className}`}
         aria-label="View ticket details"
         type="button"
+        disabled={isLoading && isModalOpen}
       >
         {isLoading && isModalOpen ? (
           <>

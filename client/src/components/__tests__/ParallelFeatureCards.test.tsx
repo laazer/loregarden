@@ -69,13 +69,13 @@ describe('ParallelFeatureCards', () => {
       error: null,
     });
 
-    render(<ParallelFeatureCards workspaceId="workspace-1" />);
+    const { container } = render(<ParallelFeatureCards workspaceId="workspace-1" />);
 
     // Check stats bar
     expect(screen.getByText('Active')).toBeInTheDocument();
     expect(screen.getByText('2/3')).toBeInTheDocument();
     expect(screen.getByText('Queue')).toBeInTheDocument();
-    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(container.querySelector('.stats-value.queued')).toHaveTextContent('1');
 
     // Check active runs section
     expect(screen.getByText(/Active Features/)).toBeInTheDocument();
@@ -83,7 +83,7 @@ describe('ParallelFeatureCards', () => {
     expect(screen.getByTestId('active-run-run-2')).toBeInTheDocument();
 
     // Check queued runs section
-    expect(screen.getByText(/Queue/)).toBeInTheDocument();
+    expect(screen.getByText(/^Queue \(/)).toBeInTheDocument();
     expect(screen.getByTestId('queued-run-run-3')).toBeInTheDocument();
   });
 
@@ -151,7 +151,7 @@ describe('ParallelFeatureCards', () => {
     render(<ParallelFeatureCards workspaceId="workspace-1" />);
 
     expect(screen.getByText(/Active Features/)).toBeInTheDocument();
-    expect(screen.queryByText(/Queue/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Queue \(/)).not.toBeInTheDocument();
   });
 
   test('displays only queued runs when none active', () => {
@@ -168,7 +168,7 @@ describe('ParallelFeatureCards', () => {
 
     render(<ParallelFeatureCards workspaceId="workspace-1" />);
 
-    expect(screen.getByText(/Queue/)).toBeInTheDocument();
+    expect(screen.getByText(/^Queue \(/)).toBeInTheDocument();
     expect(screen.queryByText(/Active Features/)).not.toBeInTheDocument();
   });
 

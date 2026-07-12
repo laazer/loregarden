@@ -64,16 +64,16 @@ jest.mock("../ImportTicketFileExplorer", () => {
   };
 });
 
-jest.mock("../../../lib/useAppNavigation", () => ({
-  ...jest.requireActual("../../../lib/useAppNavigation"),
+jest.mock("../../lib/useAppNavigation", () => ({
+  ...jest.requireActual("../../lib/useAppNavigation"),
   navigateToStudio: jest.fn(),
   navigateToStudioTicketSessionNew: jest.fn(),
 }));
 
-jest.mock("../../../api/client", () => ({
-  ...jest.requireActual("../../../api/client"),
+jest.mock("../../api/client", () => ({
+  ...jest.requireActual("../../api/client"),
   api: {
-    ...jest.requireActual("../../../api/client").api,
+    ...jest.requireActual("../../api/client").api,
     previewTicketImport: jest.fn(),
   },
 }));
@@ -267,6 +267,18 @@ describe("Group P — Preview State (AC-3)", () => {
       expect.stringMatching(/smart/i),
     );
 
+    // ImportTicketsModal only resets its file selection and mode when `open`
+    // transitions (see its `useEffect(..., [open])`, pinned by
+    // ImportTicketsModal.test.tsx X37). Close and reopen the modal to start a
+    // genuinely fresh session, rather than rerendering in place — an in-place
+    // rerender would leave "features/auth.md" selected and mode="smart" from
+    // the prior submission, so a second toggle click would deselect the file
+    // instead of selecting it.
+    rerender(
+      <BrowserRouter>
+        <ImportTicketsModal {...({ open: false, onContinue: regularHandler, workspaceSlug: "loregarden", isLoading: false, onClose: jest.fn() } as React.ComponentProps<typeof ImportTicketsModal>)} />
+      </BrowserRouter>,
+    );
     rerender(
       <BrowserRouter>
         <ImportTicketsModal {...({ open: true, onContinue: regularHandler, workspaceSlug: "loregarden", isLoading: false, onClose: jest.fn() } as React.ComponentProps<typeof ImportTicketsModal>)} />
@@ -295,7 +307,7 @@ describe("Group P — Preview State (AC-3)", () => {
 
   it("P3: smart and regular modes coexist (not mutually exclusive in behavior)", async () => {
     const handler = jest.fn();
-    renderModal({ onContinue: handler });
+    const { rerender } = renderModal({ onContinue: handler });
 
     // Regular mode first
     await toggleFile("features/auth.md");
@@ -305,12 +317,31 @@ describe("Group P — Preview State (AC-3)", () => {
       "regular",
     );
 
-    handler.mockClear();
+    // ImportTicketsModal's handleContinue only allows one submission per
+    // `onContinue` reference (`hasSubmitted` guard) — Continue stays disabled
+    // until a *new* onContinue is supplied (see the "fresh submission path"
+    // comment in ImportTicketsModal.tsx). Supply a new handler to re-enable it,
+    // matching that established contract, rather than expecting a second call
+    // on the same reference.
+    const secondHandler = jest.fn();
+    rerender(
+      <BrowserRouter>
+        <ImportTicketsModal
+          {...({
+            open: true,
+            workspaceSlug: "loregarden",
+            isLoading: false,
+            onClose: jest.fn(),
+            onContinue: secondHandler,
+          } as React.ComponentProps<typeof ImportTicketsModal>)}
+        />
+      </BrowserRouter>,
+    );
 
     // Switch to smart mode (in same session, files preserved)
     await userEvent.click(getSmartOption());
     await userEvent.click(getContinueButton());
-    expect(handler).toHaveBeenLastCalledWith(
+    expect(secondHandler).toHaveBeenLastCalledWith(
       expect.anything(),
       "smart",
     );

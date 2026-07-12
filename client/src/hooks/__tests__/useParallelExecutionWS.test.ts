@@ -2,7 +2,7 @@
  * Unit tests for useParallelExecutionWS hook.
  */
 
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 import { useParallelExecutionWS } from '../useParallelExecutionWS';
 import * as websocketService from '../../services/websocket';
 
@@ -48,6 +48,16 @@ describe('useParallelExecutionWS', () => {
     };
 
     (websocketService.getWebSocketClient as jest.Mock).mockReturnValue(mockWebSocketClient);
+  });
+
+  afterEach(() => {
+    // 'respects fallback timeout' below switches to fake timers and only
+    // restores real ones on its last line — if that test fails before
+    // reaching it (e.g. the assertion throws), fake timers would otherwise
+    // leak into every later test in this file. Restoring unconditionally
+    // here makes that failure mode inert instead of destabilizing sibling
+    // tests. Calling this when timers are already real is a harmless no-op.
+    jest.useRealTimers();
   });
 
   test('returns initial loading state', () => {
@@ -107,9 +117,18 @@ describe('useParallelExecutionWS', () => {
 
     const { result } = renderHook(() => useParallelExecutionWS('ws-1'));
 
+    // `wsClient.on(...)` is only called after the mocked `connect()` promise
+    // resolves, which happens on a later microtask than this synchronous test
+    // body. Wait for the handler to actually be registered before invoking it,
+    // otherwise `executionUpdateHandler` is still undefined and the event is
+    // silently never fired.
+    await waitFor(() => {
+      expect(executionUpdateHandler).toBeDefined();
+    });
+
     // Trigger the event
-    if (executionUpdateHandler) {
-      executionUpdateHandler({
+    act(() => {
+      executionUpdateHandler!({
         data: {
           activeRuns: mockRuns,
           queuedRuns: [],
@@ -123,7 +142,7 @@ describe('useParallelExecutionWS', () => {
           },
         },
       });
-    }
+    });
 
     await waitFor(() => {
       expect(result.current.activeRuns).toEqual(mockRuns);
@@ -159,9 +178,15 @@ describe('useParallelExecutionWS', () => {
 
     const { result } = renderHook(() => useParallelExecutionWS('ws-1'));
 
-    if (errorHandler) {
-      errorHandler({ message: 'Server error' });
-    }
+    // Wait for the handler to be registered (happens after the mocked
+    // `connect()` promise resolves on a later microtask).
+    await waitFor(() => {
+      expect(errorHandler).toBeDefined();
+    });
+
+    act(() => {
+      errorHandler!({ message: 'Server error' });
+    });
 
     await waitFor(() => {
       expect(result.current.error).toBe('Server error');
@@ -196,13 +221,28 @@ describe('useParallelExecutionWS', () => {
       useParallelExecutionWS('ws-1', undefined, 1000, true)
     );
 
-    // Simulate connection error
-    if (stateChangeHandler) {
-      stateChangeHandler({ state: 'error' });
-    }
+    // Wait for the handler to be registered (happens after the mocked
+    // `connect()` promise resolves on a later microtask).
+    await waitFor(() => {
+      expect(stateChangeHandler).toBeDefined();
+    });
+
+    // Simulate connection error. The real WebSocketClient always updates its
+    // internal state before emitting 'websocket:state_change' (see
+    // updateState() in services/websocket.ts), so getState() must agree with
+    // the event here too — the hook now polls getState() directly (to catch
+    // a connection stuck in 'connecting' with no event at all), and a mock
+    // left inconsistent with the event it just fired would incorrectly look
+    // like a recovered connection to that poll.
+    mockWebSocketClient.getState.mockReturnValue('error');
+    act(() => {
+      stateChangeHandler!({ state: 'error' });
+    });
 
     // Fast-forward time past fallback timeout
-    jest.advanceTimersByTime(1100);
+    act(() => {
+      jest.advanceTimersByTime(1100);
+    });
 
     await waitFor(() => {
       expect(result.current.isWebSocket).toBe(false);
@@ -249,9 +289,27 @@ describe('useParallelExecutionWS', () => {
   });
 
   test('returns correct connection state', async () => {
+    // `connect()` normally auto-resolves (see beforeEach's
+    // `mockResolvedValue`), which races its continuation's microtask against
+    // this test's synchronous assertion below — whether that microtask has
+    // run yet by the time `expect` executes depends on exactly how many
+    // ticks act()'s effect-flushing consumes, which isn't guaranteed. Hold
+    // `connect()` open so 'disconnected' is asserted before any connection
+    // work can possibly complete, then resolve it and await 'connected'.
+    let resolveConnect: () => void;
+    mockWebSocketClient.connect.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveConnect = resolve;
+      })
+    );
+
     const { result } = renderHook(() => useParallelExecutionWS('ws-1'));
 
     expect(result.current.connectionState).toBe('disconnected');
+
+    await act(async () => {
+      resolveConnect();
+    });
 
     await waitFor(() => {
       expect(result.current.connectionState).toBe('connected');
@@ -277,15 +335,19 @@ describe('useParallelExecutionWS', () => {
       queue_wait_time_minutes: 10,
     };
 
-    if (executionUpdateHandler) {
-      executionUpdateHandler({
+    await waitFor(() => {
+      expect(executionUpdateHandler).toBeDefined();
+    });
+
+    act(() => {
+      executionUpdateHandler!({
         data: {
           activeRuns: [],
           queuedRuns: [],
           stats: mockStats,
         },
       });
-    }
+    });
 
     await waitFor(() => {
       expect(result.current.stats).toEqual(mockStats);

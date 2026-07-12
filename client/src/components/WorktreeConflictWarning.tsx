@@ -26,10 +26,6 @@ export function WorktreeConflictWarning({
     useWorktreeConflicts(worktreeId, 3000, true);
   const [expandedFile, setExpandedFile] = useState<string | null>(null);
 
-  if (!hasConflicts && !loading) {
-    return null; // Don't show component if no conflicts
-  }
-
   if (loading) {
     return (
       <div className="conflict-warning loading">
@@ -45,6 +41,10 @@ export function WorktreeConflictWarning({
         ⚠️ Error checking conflicts: {error}
       </div>
     );
+  }
+
+  if (!hasConflicts) {
+    return null; // Don't show component if no conflicts
   }
 
   if (!preview) {
@@ -114,7 +114,7 @@ export function WorktreeConflictWarning({
         </div>
       </div>
 
-      {!compact && preview.total_conflicts > 0 && (
+      {preview.total_conflicts > 0 && (
         <>
           <div className="conflict-progress">
             <div className="progress-bar">
@@ -142,20 +142,18 @@ export function WorktreeConflictWarning({
         </>
       )}
 
-      {!compact && (
-        <div className="conflict-actions">
-          {onResolve && (
-            <button className="action-button primary" onClick={onResolve}>
-              🔧 Resolve Conflicts
-            </button>
-          )}
-          {onAbort && (
-            <button className="action-button secondary" onClick={onAbort}>
-              ✕ Abort
-            </button>
-          )}
-        </div>
-      )}
+      <div className="conflict-actions">
+        {onResolve && (
+          <button className="action-button primary" onClick={onResolve}>
+            🔧 Resolve Conflicts
+          </button>
+        )}
+        {onAbort && (
+          <button className="action-button secondary" onClick={onAbort}>
+            ✕ Abort
+          </button>
+        )}
+      </div>
     </div>
   );
 }

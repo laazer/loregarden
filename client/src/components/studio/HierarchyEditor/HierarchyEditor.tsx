@@ -8,7 +8,6 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import {
-  HierarchyNode,
   ProposalItem,
   ProposalFolder,
   CommandHistory,
@@ -18,8 +17,9 @@ import {
   RemoveChildCommand,
   MoveChildCommand,
   HierarchyValidator,
-  ValidationError,
-  ValidationObserver,
+  type HierarchyNode,
+  type ValidationError,
+  type ValidationObserver,
 } from "./models";
 import styles from "./HierarchyEditor.module.css";
 
@@ -365,15 +365,10 @@ function HierarchyNodeEditor({
 }: HierarchyNodeEditorProps) {
   const hasChildren = node.children.length > 0;
   const [titleValue, setTitleValue] = useState(node.title);
-  const [descriptionValue, setDescriptionValue] = useState(node.description);
 
   useEffect(() => {
     setTitleValue(node.title);
   }, [node.title]);
-
-  useEffect(() => {
-    setDescriptionValue(node.description);
-  }, [node.description]);
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setTitleValue(e.target.value);
@@ -384,18 +379,6 @@ function HierarchyNodeEditor({
       onEditTitle(node, titleValue);
     }
     onStopEditing();
-  };
-
-  const handleDescriptionChange = (
-    e: React.ChangeEvent<HTMLTextAreaElement>,
-  ) => {
-    setDescriptionValue(e.target.value);
-  };
-
-  const handleDescriptionBlur = () => {
-    if (descriptionValue !== node.description) {
-      onEditDescription(node, descriptionValue);
-    }
   };
 
   return (

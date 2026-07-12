@@ -2,7 +2,7 @@
  * Unit tests for ParallelExecutionTimeline component.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { ParallelExecutionTimeline } from '../ParallelExecutionTimeline';
 
 jest.mock('../../hooks/useParallelExecution', () => ({
@@ -130,11 +130,12 @@ describe('ParallelExecutionTimeline', () => {
       error: null,
     });
 
-    render(<ParallelExecutionTimeline workspaceId="workspace-1" />);
+    const { container } = render(<ParallelExecutionTimeline workspaceId="workspace-1" />);
 
-    expect(screen.getByText('Running')).toBeInTheDocument();
-    expect(screen.getByText('Queued')).toBeInTheDocument();
-    expect(screen.getByText('Available')).toBeInTheDocument();
+    const legend = within(container.querySelector('.timeline-legend')!);
+    expect(legend.getByText('Running')).toBeInTheDocument();
+    expect(legend.getByText('Queued')).toBeInTheDocument();
+    expect(legend.getByText('Available')).toBeInTheDocument();
   });
 
   test('renders timeline bars for active runs', () => {

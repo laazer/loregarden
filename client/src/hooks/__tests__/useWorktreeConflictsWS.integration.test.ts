@@ -50,8 +50,10 @@ describe('useWorktreeConflictsWS Integration', () => {
         useWorktreeConflictsWS('wt-1', undefined, undefined, true)
       );
 
+      // `wsClient.joinWorktree(worktreeId, runId)` always passes runId
+      // (undefined here since none was provided) — see useWorktreeConflictsWS.ts.
       await waitFor(() => {
-        expect(mockWebSocketClient.joinWorktree).toHaveBeenCalledWith('wt-1');
+        expect(mockWebSocketClient.joinWorktree).toHaveBeenCalledWith('wt-1', undefined);
       });
     });
 
@@ -90,7 +92,7 @@ describe('useWorktreeConflictsWS Integration', () => {
       rerender({ enabled: true });
 
       await waitFor(() => {
-        expect(mockWebSocketClient.joinWorktree).toHaveBeenCalledWith('wt-1');
+        expect(mockWebSocketClient.joinWorktree).toHaveBeenCalledWith('wt-1', undefined);
       });
     });
   });
@@ -122,10 +124,14 @@ describe('useWorktreeConflictsWS Integration', () => {
         useWorktreeConflictsWS('wt-1', undefined, undefined, true)
       );
 
+      // ConflictFile's field is `path` (see src/hooks/useWorktreeConflicts.ts),
+      // and the hook destructures the event's nested `data` field (see
+      // useWorktreeConflictsWS.ts's handleConflictDetected), matching the
+      // server's WebSocketEvent envelope shape.
       const mockConflictData = {
         conflicts: [
           {
-            file: 'src/main.py',
+            path: 'src/main.py',
             status: 'conflicted',
             ours_lines: 2,
             theirs_lines: 1,
@@ -145,7 +151,7 @@ describe('useWorktreeConflictsWS Integration', () => {
 
       if (eventHandler) {
         act(() => {
-          eventHandler!(mockConflictData);
+          eventHandler!({ data: mockConflictData });
         });
       }
 
@@ -186,12 +192,18 @@ describe('useWorktreeConflictsWS Integration', () => {
         useWorktreeConflictsWS('wt-1', undefined, undefined, true)
       );
 
+      await waitFor(() => {
+        expect(conflictDetectedHandler).toBeDefined();
+      });
+
       // First, detect conflicts
       if (conflictDetectedHandler) {
         act(() => {
           conflictDetectedHandler!({
-            conflicts: [{ file: 'src/main.py', status: 'conflicted' }],
-            preview: { has_conflicts: true, conflicting_files: ['src/main.py'] },
+            data: {
+              conflicts: [{ path: 'src/main.py', status: 'conflicted' }],
+              preview: { has_conflicts: true, conflicting_files: ['src/main.py'] },
+            },
           });
         });
       }
@@ -272,17 +284,18 @@ describe('useWorktreeConflictsWS Integration', () => {
         useWorktreeConflictsWS('wt-1', undefined, undefined, true)
       );
 
+      // ConflictFile's field is `path` (see src/hooks/useWorktreeConflicts.ts).
       const mockData = {
         conflicts: [
           {
-            file: 'src/auth.ts',
+            path: 'src/auth.ts',
             status: 'conflicted',
             ours_lines: 5,
             theirs_lines: 3,
             preview: '<<<<<<< HEAD\n...',
           },
           {
-            file: 'src/config.ts',
+            path: 'src/config.ts',
             status: 'conflicted',
             ours_lines: 2,
             theirs_lines: 1,
@@ -303,7 +316,7 @@ describe('useWorktreeConflictsWS Integration', () => {
 
       if (eventHandler) {
         act(() => {
-          eventHandler!(mockData);
+          eventHandler!({ data: mockData });
         });
       }
 

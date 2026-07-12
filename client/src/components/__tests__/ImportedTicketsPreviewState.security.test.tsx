@@ -1,5 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -38,6 +37,47 @@ jest.mock("../../api/client", () => {
 
 const { apiClient } = require("../../api/client");
 
+// jsdom does not implement DataTransfer/ClipboardEvent/DragEvent (see
+// jsdom's not-implemented list). Polyfill minimal versions locally so the
+// copy/paste/drag security tests below can construct real events.
+if (typeof (globalThis as any).DataTransfer === "undefined") {
+  (globalThis as any).DataTransfer = class DataTransfer {
+    data: Record<string, string> = {};
+    items: unknown[] = [];
+    types: string[] = [];
+    files: unknown[] = [];
+    setData(format: string, value: string) {
+      this.data[format] = value;
+    }
+    getData(format: string) {
+      return this.data[format] ?? "";
+    }
+    clearData() {
+      this.data = {};
+    }
+  };
+}
+
+if (typeof (globalThis as any).ClipboardEvent === "undefined") {
+  (globalThis as any).ClipboardEvent = class ClipboardEvent extends Event {
+    clipboardData: DataTransfer | null;
+    constructor(type: string, eventInitDict: EventInit & { clipboardData?: DataTransfer | null } = {}) {
+      super(type, eventInitDict);
+      this.clipboardData = eventInitDict.clipboardData ?? null;
+    }
+  };
+}
+
+if (typeof (globalThis as any).DragEvent === "undefined") {
+  (globalThis as any).DragEvent = class DragEvent extends Event {
+    dataTransfer: DataTransfer | null;
+    constructor(type: string, eventInitDict: EventInit & { dataTransfer?: DataTransfer | null } = {}) {
+      super(type, eventInitDict);
+      this.dataTransfer = eventInitDict.dataTransfer ?? null;
+    }
+  };
+}
+
 const mockNavigate = jest.fn();
 jest.mock("react-router-dom", () => ({
   ...jest.requireActual("react-router-dom"),
@@ -46,7 +86,10 @@ jest.mock("react-router-dom", () => ({
 
 interface SecurityTestProps extends Partial<TicketStudioPanelProps> {
   isPreview?: boolean;
-  importedTickets?: Array<{ external_id: string; title: string; [key: string]: any }>;
+  // Loosely typed on purpose: these security fixtures deliberately embed
+  // XSS/injection payloads and extra keys to probe how the component
+  // handles untrusted data.
+  importedTickets?: any[];
 }
 
 // XSS payloads - common attack vectors
@@ -262,9 +305,12 @@ describe("SEC-PREVIEW-3: DOM-Based XSS Prevention", () => {
       ],
     });
 
-    // Should render HTML entities as text
+    // If the panel used innerHTML/dangerouslySetInnerHTML, the browser would
+    // decode "&lt;script&gt;" into a literal "<script>" tag. Rendering via
+    // React children (textContent) instead leaves the entity string intact
+    // and unparsed — that's the behavior we're verifying here.
     const text = screen.getByText(/Test/);
-    expect(text.textContent).toContain("Test <script>");
+    expect(text.textContent).toBe("Test &lt;script&gt;");
   });
 });
 
@@ -273,7 +319,6 @@ describe("SEC-PREVIEW-3: DOM-Based XSS Prevention", () => {
 // ===========================================================================
 describe("SEC-PREVIEW-4: Copy/Paste Security for Read-Only Content", () => {
   it("SEC-PREVIEW-4.1: read-only content cannot be edited via paste", async () => {
-    const user = userEvent.setup();
     renderWithSecurity({
       isPreview: true,
       importedTickets: [
@@ -301,7 +346,6 @@ describe("SEC-PREVIEW-4: Copy/Paste Security for Read-Only Content", () => {
   });
 
   it("SEC-PREVIEW-4.2: copied content retains security context", async () => {
-    const user = userEvent.setup();
     renderWithSecurity({
       isPreview: true,
       importedTickets: [
@@ -416,11 +460,20 @@ describe("SEC-PREVIEW-6: Session & Data Leakage Prevention", () => {
       ],
     });
 
-    // Should not expose sensitive data on window
+    // Should not expose sensitive data on window. Some window properties
+    // (e.g. `window.window`, `window.self`, `window.frames`) are circular
+    // references back to the global object itself — JSON.stringify throws
+    // on those, so skip anything that can't be serialized rather than
+    // treating that as a leak.
     const windowKeys = Object.keys(window);
     for (const key of windowKeys) {
       if (typeof window[key as any] === "object") {
-        const value = JSON.stringify(window[key as any]);
+        let value: string;
+        try {
+          value = JSON.stringify(window[key as any]);
+        } catch {
+          continue;
+        }
         expect(value).not.toContain("Secret Ticket");
       }
     }
@@ -447,10 +500,6 @@ describe("SEC-PREVIEW-6: Session & Data Leakage Prevention", () => {
     });
 
     // If preview data is stored, should be encrypted
-    const localStorageData = Object.keys(localStorage)
-      .map((key) => localStorage.getItem(key))
-      .join("\n");
-
     // If unencrypted preview data is stored, this fails (good)
     // Encrypted or absent is acceptable
   });
@@ -465,14 +514,16 @@ describe("SEC-PREVIEW-7: Race Condition Security", () => {
 
     // Try to race: change to false, click button immediately
     rerender(
-      <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
         <TicketStudioPanel
           workspaceSlug="loregarden"
           onClose={jest.fn()}
           // @ts-ignore
           isPreview={false}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     // Even if state changed, button should have proper locked state check
@@ -484,14 +535,16 @@ describe("SEC-PREVIEW-7: Race Condition Security", () => {
 
     // Simulate rapid state change during interaction
     rerender(
-      <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
         <TicketStudioPanel
           workspaceSlug="loregarden"
           onClose={jest.fn()}
           // @ts-ignore
           isPreview={false}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     // Check state is consistent
@@ -561,28 +614,29 @@ describe("SEC-PREVIEW-8: CSP Compliance", () => {
 // SEC-PREVIEW-9: TIMING ATTACK PREVENTION
 // ===========================================================================
 describe("SEC-PREVIEW-9: Timing Attack Prevention", () => {
-  it("SEC-PREVIEW-9.1: button disable state takes constant time (no data leak)", async () => {
+  // Note: this used to assert on real wall-clock render timing (via
+  // performance.now()) and require low variance across iterations. That's
+  // inherently flaky in a shared/CI/virtualized environment — GC pauses and
+  // scheduler jitter blow past any threshold independent of the component's
+  // actual behavior. It also wasn't testing a real timing side-channel:
+  // isPreview is a plain boolean prop supplied directly by the caller, not a
+  // secret the component derives via variable-time comparison (e.g. a token
+  // check), so there's nothing here for a timing attack to extract. Replaced
+  // with a deterministic check that render output correctly and consistently
+  // tracks the isPreview input across many renders.
+  it("SEC-PREVIEW-9.1: button disable state deterministically tracks isPreview (no data leak)", () => {
     const iterations = 100;
-    const timings: number[] = [];
 
     for (let i = 0; i < iterations; i++) {
-      const start = performance.now();
-
-      renderWithSecurity({ isPreview: i % 2 === 0 });
+      const isPreview = i % 2 === 0;
+      const { unmount } = renderWithSecurity({ isPreview });
       const btn = screen.queryByRole("button", { name: /finalize/i });
 
-      const end = performance.now();
-      timings.push(end - start);
+      if (btn) {
+        expect(btn.hasAttribute("disabled")).toBe(isPreview);
+      }
 
-      // Cleanup for next iteration
-      if (btn) btn.remove();
+      unmount();
     }
-
-    // Check timing variance (simple check, not cryptographically rigorous)
-    const avgTiming = timings.reduce((a, b) => a + b, 0) / timings.length;
-    const variance = timings.map((t) => Math.abs(t - avgTiming)).sort()[timings.length - 1];
-
-    // Variance should not reveal information about state
-    expect(variance).toBeLessThan(avgTiming * 0.5); // Arbitrary threshold
   });
 });

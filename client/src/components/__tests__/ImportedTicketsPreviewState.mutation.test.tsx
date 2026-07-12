@@ -1,8 +1,9 @@
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import type { ImportedTicket } from "../../api/client";
 import type { TicketStudioPanelProps } from "../studio/TicketStudioPanel";
 import { TicketStudioPanel } from "../studio/TicketStudioPanel";
 
@@ -46,14 +47,17 @@ jest.mock("react-router-dom", () => ({
 interface MutationTestProps extends Partial<TicketStudioPanelProps> {
   isPreview?: boolean;
   isReadOnly?: boolean;
-  importedTickets?: Array<{ external_id: string; title: string }>;
+  // Loosely typed on purpose: several mutation cases deliberately mutate the
+  // shape/type of importedTickets (objects instead of arrays, missing
+  // fields, etc.) to probe the component's tolerance of bad data.
+  importedTickets?: any[];
   showPreviewBadge?: boolean;
 }
 
-const SAMPLE_TICKETS = [
-  { external_id: "cap-1", title: "Capability 1" },
-  { external_id: "cap-2", title: "Capability 2" },
-  { external_id: "cap-3", title: "Capability 3" },
+const SAMPLE_TICKETS: ImportedTicket[] = [
+  { external_id: "cap-1", title: "Capability 1", work_item_type: "capability" },
+  { external_id: "cap-2", title: "Capability 2", work_item_type: "capability" },
+  { external_id: "cap-3", title: "Capability 3", work_item_type: "capability" },
 ];
 
 function renderWithMutations(overrides: MutationTestProps = {}) {
@@ -128,14 +132,16 @@ describe("MUT-PREVIEW-1: Boolean Mutation Testing", () => {
 
     // Flip to true
     rerender(
-      <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
         <TicketStudioPanel
           workspaceSlug="loregarden"
           onClose={jest.fn()}
           // @ts-ignore
           isPreview={true}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     btn = getFinalizeButton();
@@ -161,7 +167,10 @@ describe("MUT-PREVIEW-1: Boolean Mutation Testing", () => {
   it("MUT-PREVIEW-1.6: showPreviewBadge TRUE displays badge", () => {
     renderWithMutations({ isPreview: true, showPreviewBadge: true });
 
-    const badge = screen.queryByText(/preview|draft/i);
+    // Scoped to the dedicated preview indicator testid — a bare "draft"
+    // match also hits the always-present "Draft tickets" section header,
+    // which isn't the badge under test here.
+    const badge = screen.queryByTestId("preview-state-indicator");
     expect(badge).toBeInTheDocument();
   });
 
@@ -176,11 +185,16 @@ describe("MUT-PREVIEW-1: Boolean Mutation Testing", () => {
   });
 
   it("MUT-PREVIEW-1.8: isPreview AND isReadOnly both true", () => {
-    // Combined mutation: both flags true
+    // Combined mutation: both flags true. Per AC3 the finalize action may be
+    // disabled OR hidden entirely — the panel currently hides the commit
+    // button altogether when isReadOnly is true, which also satisfies
+    // "cannot finalize".
     renderWithMutations({ isPreview: true, isReadOnly: true });
 
     const btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    if (btn) {
+      expect(btn).toBeDisabled();
+    }
 
     const indicator = getReadOnlyIndicator();
     if (indicator) {
@@ -196,7 +210,7 @@ describe("MUT-PREVIEW-1: Boolean Mutation Testing", () => {
     expect(btn).toBeDisabled();
 
     // Now flip: preview false, readonly true
-    const { rerender } = renderWithMutations({ isPreview: false, isReadOnly: true });
+    renderWithMutations({ isPreview: false, isReadOnly: true });
 
     // Button might be disabled due to readonly OR missing confirmation
   });
@@ -210,7 +224,7 @@ describe("MUT-PREVIEW-1: Boolean Mutation Testing", () => {
     expect(btn).toBeDisabled();
 
     // Now test actual not
-    const { rerender } = renderWithMutations({ isPreview: !true }); // isPreview = false
+    renderWithMutations({ isPreview: !true }); // isPreview = false
   });
 });
 
@@ -263,7 +277,8 @@ describe("MUT-PREVIEW-2: Array Size Mutations", () => {
 
     // Add tickets
     rerender(
-      <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
         <TicketStudioPanel
           workspaceSlug="loregarden"
           onClose={jest.fn()}
@@ -271,7 +286,8 @@ describe("MUT-PREVIEW-2: Array Size Mutations", () => {
           isPreview={true}
           importedTickets={SAMPLE_TICKETS}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByText(/Capability 1/)).toBeInTheDocument();
@@ -291,7 +307,8 @@ describe("MUT-PREVIEW-2: Array Size Mutations", () => {
 
     // Remove tickets
     rerender(
-      <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
         <TicketStudioPanel
           workspaceSlug="loregarden"
           onClose={jest.fn()}
@@ -299,7 +316,8 @@ describe("MUT-PREVIEW-2: Array Size Mutations", () => {
           isPreview={true}
           importedTickets={[SAMPLE_TICKETS[0]]}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByText(/Capability 1/)).toBeInTheDocument();
@@ -464,14 +482,16 @@ describe("MUT-PREVIEW-4: Conditional Logic Mutations", () => {
     expect(btn).toBeDisabled();
 
     rerender(
-      <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
         <TicketStudioPanel
           workspaceSlug="loregarden"
           onClose={jest.fn()}
           // @ts-ignore
           isPreview={false}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     btn = getFinalizeButton();
@@ -494,14 +514,16 @@ describe("MUT-PREVIEW-5: State Transition Mutations", () => {
     }
 
     rerender(
-      <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
         <TicketStudioPanel
           workspaceSlug="loregarden"
           onClose={jest.fn()}
           // @ts-ignore
           isPreview={true}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     btn = getFinalizeButton();
@@ -515,14 +537,16 @@ describe("MUT-PREVIEW-5: State Transition Mutations", () => {
     expect(btn).toBeDisabled();
 
     rerender(
-      <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
         <TicketStudioPanel
           workspaceSlug="loregarden"
           onClose={jest.fn()}
           // @ts-ignore
           isPreview={false}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     btn = getFinalizeButton();
@@ -540,7 +564,8 @@ describe("MUT-PREVIEW-5: State Transition Mutations", () => {
     expect(screen.queryByText(/Capability/)).not.toBeInTheDocument();
 
     rerender(
-      <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
         <TicketStudioPanel
           workspaceSlug="loregarden"
           onClose={jest.fn()}
@@ -548,7 +573,8 @@ describe("MUT-PREVIEW-5: State Transition Mutations", () => {
           isPreview={true}
           importedTickets={SAMPLE_TICKETS}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByText(/Capability 1/)).toBeInTheDocument();
@@ -563,7 +589,8 @@ describe("MUT-PREVIEW-5: State Transition Mutations", () => {
     expect(screen.getByText(/Capability 1/)).toBeInTheDocument();
 
     rerender(
-      <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
         <TicketStudioPanel
           workspaceSlug="loregarden"
           onClose={jest.fn()}
@@ -571,7 +598,8 @@ describe("MUT-PREVIEW-5: State Transition Mutations", () => {
           isPreview={true}
           importedTickets={[]}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     expect(screen.queryByText(/Capability/)).not.toBeInTheDocument();
@@ -591,7 +619,8 @@ describe("MUT-PREVIEW-5: State Transition Mutations", () => {
 
     // Change all at once
     rerender(
-      <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
         <TicketStudioPanel
           workspaceSlug="loregarden"
           onClose={jest.fn()}
@@ -600,11 +629,17 @@ describe("MUT-PREVIEW-5: State Transition Mutations", () => {
           isReadOnly={true}
           importedTickets={SAMPLE_TICKETS}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
+      </QueryClientProvider>,
     );
 
+    // Per AC3 the finalize action may be disabled OR hidden entirely — the
+    // panel currently hides the commit button altogether when isReadOnly is
+    // true, which also satisfies "cannot finalize".
     btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    if (btn) {
+      expect(btn).toBeDisabled();
+    }
 
     expect(screen.getByText(/Capability 1/)).toBeInTheDocument();
   });
@@ -618,7 +653,6 @@ describe("MUT-PREVIEW-6: Type Coercion Mutations", () => {
     // String 'true' is truthy but might not equal boolean true
     renderWithMutations({ isPreview: "true" as any });
 
-    const btn = getFinalizeButton();
     // Depending on implementation, might be enabled (strings don't === true)
   });
 
@@ -626,7 +660,6 @@ describe("MUT-PREVIEW-6: Type Coercion Mutations", () => {
     // Number 1 is truthy but !== true
     renderWithMutations({ isPreview: 1 as any });
 
-    const btn = getFinalizeButton();
     // Depending on implementation
   });
 
@@ -664,7 +697,8 @@ describe("MUT-PREVIEW-7: Edge Case Sequences", () => {
 
     // Add tickets
     rerender(
-      <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
         <TicketStudioPanel
           workspaceSlug="loregarden"
           onClose={jest.fn()}
@@ -672,14 +706,16 @@ describe("MUT-PREVIEW-7: Edge Case Sequences", () => {
           isPreview={true}
           importedTickets={SAMPLE_TICKETS}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByText(/Capability 1/)).toBeInTheDocument();
 
     // Remove again
     rerender(
-      <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
         <TicketStudioPanel
           workspaceSlug="loregarden"
           onClose={jest.fn()}
@@ -687,7 +723,8 @@ describe("MUT-PREVIEW-7: Edge Case Sequences", () => {
           isPreview={true}
           importedTickets={[]}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     expect(screen.queryByText(/Capability/)).not.toBeInTheDocument();
@@ -703,14 +740,16 @@ describe("MUT-PREVIEW-7: Edge Case Sequences", () => {
 
     // Toggle true
     rerender(
-      <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
         <TicketStudioPanel
           workspaceSlug="loregarden"
           onClose={jest.fn()}
           // @ts-ignore
           isPreview={true}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     btn = getFinalizeButton();
@@ -718,14 +757,16 @@ describe("MUT-PREVIEW-7: Edge Case Sequences", () => {
 
     // Toggle false again
     rerender(
-      <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
         <TicketStudioPanel
           workspaceSlug="loregarden"
           onClose={jest.fn()}
           // @ts-ignore
           isPreview={false}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     btn = getFinalizeButton();
@@ -740,14 +781,16 @@ describe("MUT-PREVIEW-7: Edge Case Sequences", () => {
     for (let i = 0; i < 10; i++) {
       const isPreview = i % 2 === 0;
       rerender(
-        <MemoryRouter>
-          <TicketStudioPanel
-            workspaceSlug="loregarden"
-            onClose={jest.fn()}
-            // @ts-ignore
-            isPreview={isPreview}
-          />
-        </MemoryRouter>,
+        <QueryClientProvider client={new QueryClient()}>
+          <MemoryRouter>
+            <TicketStudioPanel
+              workspaceSlug="loregarden"
+              onClose={jest.fn()}
+              // @ts-ignore
+              isPreview={isPreview}
+            />
+          </MemoryRouter>
+        </QueryClientProvider>,
       );
     }
 
@@ -813,13 +856,12 @@ describe("MUT-PREVIEW-8: Integration (real state transitions)", () => {
     expect(screen.getByText(/Capability 1/)).toBeInTheDocument();
 
     // But no edit controls should exist
-    const editButtons = screen.queryAllByRole("button", { name: /edit|modify/i });
     const ticketElements = screen.queryAllByText(/Capability/);
 
     for (const element of ticketElements) {
       const container = element.closest("[data-testid*='ticket']");
       if (container) {
-        const editBtn = within(container).queryByRole("button", {
+        const editBtn = within(container as HTMLElement).queryByRole("button", {
           name: /edit|modify/i,
         });
         expect(editBtn).not.toBeInTheDocument();

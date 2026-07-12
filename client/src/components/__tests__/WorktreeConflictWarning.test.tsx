@@ -305,7 +305,7 @@ describe('WorktreeConflictWarning', () => {
       />
     );
 
-    const resolveButton = screen.getByText('Resolve Conflicts');
+    const resolveButton = screen.getByText(/Resolve Conflicts/);
     fireEvent.click(resolveButton);
 
     expect(onResolve).toHaveBeenCalled();
@@ -330,7 +330,7 @@ describe('WorktreeConflictWarning', () => {
       />
     );
 
-    const abortButton = screen.getByText('Abort');
+    const abortButton = screen.getByText(/Abort/);
     fireEvent.click(abortButton);
 
     expect(onAbort).toHaveBeenCalled();

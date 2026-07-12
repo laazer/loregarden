@@ -20,6 +20,12 @@ export interface ParallelExecutionWSStatus {
 }
 
 const DEFAULT_POLL_FALLBACK_TIMEOUT = 30000; // 30 seconds
+// How often to re-check wsClient.getState() directly. Socket.IO doesn't emit
+// a 'websocket:state_change' event while stuck in 'connecting' (no error, no
+// success), so relying on events alone can never notice — and can never
+// notice a later recovery once we've fallen back to polling. This interval
+// is the only thing that catches both.
+const STATE_POLL_INTERVAL = 1000;
 
 export function useParallelExecutionWS(
   workspaceId: string,
@@ -58,6 +64,57 @@ export function useParallelExecutionWS(
 
   useEffect(() => {
     let isMounted = true;
+    let cleanupListeners: (() => void) | undefined;
+    let pollIntervalId: NodeJS.Timeout | null = null;
+
+    // Schedule the fallback-to-polling timeout at most once per "not
+    // connected" episode. Calling this repeatedly (e.g. from every poll
+    // tick) must NOT keep pushing the deadline out, or a connection stuck
+    // in 'connecting' would postpone fallback forever.
+    const scheduleFallbackIfNeeded = () => {
+      if (!useFallback) return;
+      if (fallbackTimeoutRef.current) return;
+
+      fallbackTimeoutRef.current = setTimeout(() => {
+        fallbackTimeoutRef.current = null;
+        if (!isMounted) return;
+
+        setIsWebSocket(false);
+        setError('Using polling due to WebSocket timeout');
+      }, fallbackTimeout);
+    };
+
+    const clearFallbackTimer = () => {
+      if (fallbackTimeoutRef.current) {
+        clearTimeout(fallbackTimeoutRef.current);
+        fallbackTimeoutRef.current = null;
+      }
+    };
+
+    // Single source of truth for reacting to a connection state, whether it
+    // came from an explicit 'websocket:state_change' event or from directly
+    // polling wsClient.getState().
+    const syncConnectionState = (state: typeof connectionState) => {
+      if (!isMounted) return;
+      setConnectionState(state);
+
+      if (state === 'connected') {
+        clearFallbackTimer();
+        setIsWebSocket(true);
+      } else {
+        scheduleFallbackIfNeeded();
+      }
+    };
+
+    // Start polling immediately, synchronously, rather than waiting for the
+    // connect() promise to settle: the fallback countdown needs to start the
+    // moment we begin trying to connect, not whenever connect()'s resolution
+    // happens to be scheduled, or a connection stuck in 'connecting' could
+    // silently postpone the deadline.
+    pollIntervalId = setInterval(() => {
+      if (!isMounted) return;
+      syncConnectionState(wsClient.getState());
+    }, STATE_POLL_INTERVAL);
 
     const initializeWebSocket = async () => {
       try {
@@ -65,8 +122,11 @@ export function useParallelExecutionWS(
         await wsClient.connect(userId);
         if (!isMounted) return;
 
-        setConnectionState('connected');
-        setIsWebSocket(true);
+        // Trust the client's actual reported state rather than assuming
+        // "connect() resolved" always means 'connected' — defensive against
+        // any race between the resolved promise and the client's internal
+        // state.
+        syncConnectionState(wsClient.getState());
         setError(null);
         setLoading(false);
 
@@ -76,6 +136,9 @@ export function useParallelExecutionWS(
         // Set up event handler for execution updates
         const handleExecutionUpdate = (data: any) => {
           if (!isMounted) return;
+          // Defend against a malformed/missing event payload (e.g. a null
+          // event) so a bad server message can't crash the hook.
+          if (!data) return;
 
           const { data: updateData } = data;
           if (updateData) {
@@ -90,16 +153,7 @@ export function useParallelExecutionWS(
 
         // Set up connection state listeners
         const handleStateChange = (data: any) => {
-          if (!isMounted) return;
-          const newState = data.state as typeof connectionState;
-          setConnectionState(newState);
-
-          if (newState === 'error' || newState === 'disconnected') {
-            // Start fallback timeout
-            if (useFallback) {
-              startFallbackTimer();
-            }
-          }
+          syncConnectionState(data.state as typeof connectionState);
         };
 
         wsClient.on('websocket:state_change', handleStateChange);
@@ -112,8 +166,11 @@ export function useParallelExecutionWS(
 
         wsClient.on('websocket:server_error', handleServerError);
 
-        // Cleanup on unmount
-        return () => {
+        // Register cleanup to run when the effect tears down (unmount or
+        // dependency change). Previously this was returned from inside this
+        // async function, whose resolved value is discarded by the caller
+        // below, so listeners/room membership were never actually released.
+        cleanupListeners = () => {
           wsClient.off('execution_update', handleExecutionUpdate);
           wsClient.off('websocket:state_change', handleStateChange);
           wsClient.off('websocket:server_error', handleServerError);
@@ -132,40 +189,38 @@ export function useParallelExecutionWS(
           // Use fallback polling hook
           return;
         } else {
-          const errorMsg = err instanceof Error ? err.message : 'Failed to connect';
+          const errorMsg = err instanceof Error ? `Failed to connect: ${err.message}` : 'Failed to connect';
           setError(errorMsg);
           setLoading(false);
         }
       }
     };
 
-    const startFallbackTimer = () => {
-      if (fallbackTimeoutRef.current) {
-        clearTimeout(fallbackTimeoutRef.current);
-      }
-
-      if (!useFallback) return;
-
-      fallbackTimeoutRef.current = setTimeout(() => {
-        if (!isMounted) return;
-
-        // Switch to polling fallback
-        setIsWebSocket(false);
-        setError('Using polling due to WebSocket timeout');
-      }, fallbackTimeout);
-    };
-
     initializeWebSocket();
 
     return () => {
+      isMounted = false;
       if (fallbackTimeoutRef.current) {
         clearTimeout(fallbackTimeoutRef.current);
+        fallbackTimeoutRef.current = null;
+      }
+      if (pollIntervalId) {
+        clearInterval(pollIntervalId);
+        pollIntervalId = null;
+      }
+      if (cleanupListeners) {
+        cleanupListeners();
       }
     };
   }, [workspaceId, userId, fallbackTimeout, useFallback]);
 
-  // Use fallback polling hook data if WebSocket fails
-  if (!isWebSocket) {
+  // Use fallback polling hook data if WebSocket fails, but only when the
+  // caller actually opted into fallback polling (`useFallback`). Otherwise
+  // `isWebSocket: false` just reports connection failure and the hook's own
+  // error/connection state (set in the catch block above) must still surface
+  // — previously this branch ignored `useFallback` entirely and always
+  // substituted the (unrelated) polling hook's data.
+  if (!isWebSocket && useFallback) {
     return {
       activeRuns: fallbackHook.activeRuns,
       queuedRuns: fallbackHook.queuedRuns,
@@ -184,7 +239,7 @@ export function useParallelExecutionWS(
     loading,
     error,
     connectionState,
-    isWebSocket: true,
+    isWebSocket,
   };
 }
 

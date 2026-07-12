@@ -21,10 +21,6 @@
  * - Edge cases and error conditions
  */
 
-import { render, screen, within, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { ReactNode } from "react";
-
 // =============================================================================
 // TEST FIXTURES & MOCKS
 // =============================================================================
@@ -41,6 +37,9 @@ interface HierarchyNode {
   type: "item" | "folder";
   children: HierarchyNode[];
   parent?: HierarchyNode;
+  addChild(child: HierarchyNode): void;
+  removeChild(id: string): boolean;
+  accept(visitor: HierarchyVisitor): void;
 }
 
 class ProposalItem implements HierarchyNode {
@@ -61,11 +60,11 @@ class ProposalItem implements HierarchyNode {
     return this.children;
   }
 
-  addChild(child: HierarchyNode): void {
+  addChild(_child: HierarchyNode): void {
     throw new Error("ProposalItem cannot have children");
   }
 
-  removeChild(id: string): boolean {
+  removeChild(_id: string): boolean {
     throw new Error("ProposalItem cannot have children");
   }
 
@@ -218,7 +217,7 @@ class MoveChildCommand implements Command {
   constructor(
     child: HierarchyNode,
     newParent: HierarchyNode,
-    newIndex?: number,
+    _newIndex?: number,
   ) {
     if (!child.parent) {
       throw new Error("Child has no parent");

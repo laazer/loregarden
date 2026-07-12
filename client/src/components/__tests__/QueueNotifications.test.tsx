@@ -6,13 +6,53 @@
 import { render, waitFor } from '@testing-library/react';
 import { QueueNotifications } from '../QueueNotifications';
 
+/**
+ * jsdom does not implement EventSource, and QueueNotifications falls back to
+ * it (`new EventSource(...)`) whenever the WebSocket status check doesn't
+ * resolve to an ok response. Without a mock, that constructor call throws an
+ * uncaught ReferenceError that crashes the whole test process (not just this
+ * suite), so every test here needs EventSource + fetch stubbed out.
+ */
+class MockEventSource {
+  static instances: MockEventSource[] = [];
+  url: string;
+  private listeners: Record<string, Array<(event: { data: string }) => void>> = {};
+
+  constructor(url: string) {
+    this.url = url;
+    MockEventSource.instances.push(this);
+  }
+
+  addEventListener(type: string, cb: (event: { data: string }) => void) {
+    (this.listeners[type] ||= []).push(cb);
+  }
+
+  removeEventListener(type: string, cb: (event: { data: string }) => void) {
+    this.listeners[type] = (this.listeners[type] || []).filter((l) => l !== cb);
+  }
+
+  close() {}
+
+  dispatch(type: string, data: unknown) {
+    (this.listeners[type] || []).forEach((cb) => cb({ data: JSON.stringify(data) }));
+  }
+}
+
 describe('QueueNotifications', () => {
+  const originalFetch = global.fetch;
+  const originalEventSource = (global as unknown as { EventSource?: unknown }).EventSource;
+
   beforeEach(() => {
     jest.useFakeTimers();
+    MockEventSource.instances = [];
+    (global as unknown as { EventSource: unknown }).EventSource = MockEventSource;
+    global.fetch = jest.fn().mockResolvedValue({ ok: false });
   });
 
   afterEach(() => {
     jest.useRealTimers();
+    (global as unknown as { EventSource: unknown }).EventSource = originalEventSource;
+    global.fetch = originalFetch;
   });
 
   describe('Rendering', () => {

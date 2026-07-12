@@ -39,7 +39,6 @@ import {
   HierarchyValidator,
   ValidityVisitor,
   type HierarchyNode,
-  type Command,
   type HierarchyVisitor,
   type ValidationError,
   type ValidationObserver,
@@ -405,7 +404,6 @@ describe("ADVERSARIAL: Type & Structure Mutations", () => {
 
       folder.addChild(item1);
 
-      const oldChildren = folder.children;
       folder.children = [item2];
 
       // Command should detect that item1 is no longer in the children array
