@@ -12,7 +12,7 @@ class TestAnalyticsMetrics:
     async def test_get_analytics_basic(self, db_session: Session):
         """Retrieve analytics for workspace."""
         # Create workspace
-        ws = Workspace(id="ws-1", name="Test")
+        ws = Workspace(id="ws-1", slug="ws-1", name="Test")
         db_session.add(ws)
         db_session.commit()
 

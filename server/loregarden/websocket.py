@@ -249,27 +249,17 @@ class WebSocketServer:
                 f"Client error from {user_id}: {error_msg}", extra={"sid": sid, "error": error_msg}
             )
 
-    def broadcast_execution_update(
-        self,
-        workspace_id: str,
-        active_runs: list[dict[str, Any]],
-        queued_runs: list[dict[str, Any]],
-        stats: dict[str, Any],
-    ):
+    def broadcast_execution_update(self, workspaceId: str, data: dict[str, Any]):
         """Broadcast execution status update to workspace subscribers."""
-        room = f"workspace:{workspace_id}"
+        room = f"workspace:{workspaceId}"
 
         self.socketio.emit(
             "execution_update",
             {
                 "type": "execution_update",
-                "workspaceId": workspace_id,
+                "workspaceId": workspaceId,
                 "timestamp": datetime.utcnow().isoformat(),
-                "data": {
-                    "activeRuns": active_runs,
-                    "queuedRuns": queued_runs,
-                    "stats": stats,
-                },
+                "data": data,
             },
             room=room,
             skip_sid=None,
@@ -278,35 +268,24 @@ class WebSocketServer:
         logger.debug(
             f"Broadcast execution_update to {room}",
             extra={
-                "workspace_id": workspace_id,
-                "active_count": len(active_runs),
-                "queued_count": len(queued_runs),
+                "workspace_id": workspaceId,
+                "active_count": len(data.get("activeRuns", [])),
+                "queued_count": len(data.get("queuedRuns", [])),
             },
         )
 
-    def broadcast_conflict_detected(
-        self,
-        worktree_id: str,
-        run_id: str,
-        conflicts: list[dict[str, Any]],
-        preview: dict[str, Any],
-        severity: str,
-    ):
+    def broadcast_conflict_detected(self, worktreeId: str, runId: str, data: dict[str, Any]):
         """Broadcast conflict detection event."""
-        room = f"worktree:{worktree_id}"
+        room = f"worktree:{worktreeId}"
 
         self.socketio.emit(
             "conflict_detected",
             {
                 "type": "conflict_detected",
-                "worktreeId": worktree_id,
-                "runId": run_id,
+                "worktreeId": worktreeId,
+                "runId": runId,
                 "timestamp": datetime.utcnow().isoformat(),
-                "data": {
-                    "conflicts": conflicts,
-                    "preview": preview,
-                    "severity": severity,
-                },
+                "data": data,
             },
             room=room,
             skip_sid=None,
@@ -314,7 +293,7 @@ class WebSocketServer:
 
         logger.debug(
             f"Broadcast conflict_detected to {room}",
-            extra={"worktree_id": worktree_id, "severity": severity},
+            extra={"worktree_id": worktreeId, "severity": data.get("severity")},
         )
 
     def broadcast_conflict_resolved(self, worktree_id: str, run_id: str):
@@ -335,18 +314,17 @@ class WebSocketServer:
 
         logger.debug(f"Broadcast conflict_resolved to {room}", extra={"worktree_id": worktree_id})
 
-    def broadcast_queue_promoted(self, workspace_id: str, run_id: str, slot_number: int):
+    def broadcast_queue_promoted(self, workspaceId: str, data: dict[str, Any]):
         """Broadcast queue promotion event."""
-        room = f"workspace:{workspace_id}"
+        room = f"workspace:{workspaceId}"
 
         self.socketio.emit(
             "queue_promoted",
             {
                 "type": "queue_promoted",
-                "workspaceId": workspace_id,
-                "runId": run_id,
-                "slotNumber": slot_number,
+                "workspaceId": workspaceId,
                 "timestamp": datetime.utcnow().isoformat(),
+                "data": data,
             },
             room=room,
             skip_sid=None,
@@ -354,21 +332,20 @@ class WebSocketServer:
 
         logger.debug(
             f"Broadcast queue_promoted to {room}",
-            extra={"workspace_id": workspace_id, "run_id": run_id},
+            extra={"workspace_id": workspaceId, "run_id": data.get("runId")},
         )
 
-    def broadcast_run_completed(self, workspace_id: str, run_id: str, status: str):
+    def broadcast_run_completed(self, workspaceId: str, data: dict[str, Any]):
         """Broadcast run completion event."""
-        room = f"workspace:{workspace_id}"
+        room = f"workspace:{workspaceId}"
 
         self.socketio.emit(
             "run_completed",
             {
                 "type": "run_completed",
-                "workspaceId": workspace_id,
-                "runId": run_id,
-                "status": status,
+                "workspaceId": workspaceId,
                 "timestamp": datetime.utcnow().isoformat(),
+                "data": data,
             },
             room=room,
             skip_sid=None,
@@ -376,28 +353,29 @@ class WebSocketServer:
 
         logger.debug(
             f"Broadcast run_completed to {room}",
-            extra={"workspace_id": workspace_id, "run_id": run_id, "status": status},
+            extra={
+                "workspace_id": workspaceId,
+                "run_id": data.get("runId"),
+                "status": data.get("status"),
+            },
         )
 
-    def broadcast_error(
-        self, target_room: str, message: str, code: str, context: dict[str, Any] | None = None
-    ):
+    def broadcast_error(self, targetRoom: str, data: dict[str, Any]):
         """Broadcast error event to subscribers."""
         self.socketio.emit(
             "error",
             {
                 "type": "error",
-                "message": message,
-                "code": code,
                 "timestamp": datetime.utcnow().isoformat(),
-                "context": context or {},
+                **data,
             },
-            room=target_room,
+            room=targetRoom,
             skip_sid=None,
         )
 
         logger.warning(
-            f"Broadcast error to {target_room}: {code}", extra={"code": code, "message": message}
+            f"Broadcast error to {targetRoom}: {data.get('code')}",
+            extra={"code": data.get("code"), "message": data.get("message")},
         )
 
     def get_connection_stats(self) -> dict[str, Any]:

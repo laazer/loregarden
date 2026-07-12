@@ -392,7 +392,14 @@ class TestRetryLogic:
         updated = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-1")).first()
 
         assert updated.last_failed_at is not None
-        assert (updated.last_failed_at - now).total_seconds() < 1
+        # SQLite (via SQLModel) round-trips datetimes as naive values, stripping
+        # tzinfo even though we always write UTC-aware values (see `utcnow()` in
+        # models/domain/enums.py) — re-attach UTC before comparing, consistent
+        # with the rest of this codebase's naive-storage/aware-application convention.
+        stored = updated.last_failed_at
+        if stored.tzinfo is None:
+            stored = stored.replace(tzinfo=timezone.utc)
+        assert (stored - now).total_seconds() < 1
 
 
 @pytest.mark.asyncio

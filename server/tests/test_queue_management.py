@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from loregarden.api.queue_management import _reorder_queue_internal
-from loregarden.models.domain import QueuedRun, QueuePosition, Workspace
+from loregarden.models.domain import AgentRun, QueuedRun, QueuePosition, Workspace
 from sqlmodel import Session, select
 
 
@@ -15,7 +15,7 @@ class TestQueueReordering:
     async def test_reorder_run_to_earlier_position(self, db_session: Session):
         """Test moving a run to an earlier position in queue."""
         # Create workspace
-        ws = Workspace(id="ws-1", name="Test Workspace")
+        ws = Workspace(id="ws-1", slug="ws-1", name="Test Workspace")
         db_session.add(ws)
         db_session.commit()
 
@@ -58,7 +58,7 @@ class TestQueueReordering:
 
     async def test_reorder_run_to_later_position(self, db_session: Session):
         """Test moving a run to a later position in queue."""
-        ws = Workspace(id="ws-2", name="Test Workspace 2")
+        ws = Workspace(id="ws-2", slug="ws-2", name="Test Workspace 2")
         db_session.add(ws)
         db_session.commit()
 
@@ -103,7 +103,7 @@ class TestQueueReordering:
         """Test reorder with position beyond queue length."""
         from fastapi import HTTPException
 
-        ws = Workspace(id="ws-3", name="Test Workspace 3")
+        ws = Workspace(id="ws-3", slug="ws-3", name="Test Workspace 3")
         db_session.add(ws)
         db_session.commit()
 
@@ -130,7 +130,7 @@ class TestQueueReordering:
         """Test reorder with position 0 (should be 1-indexed)."""
         from fastapi import HTTPException
 
-        ws = Workspace(id="ws-4", name="Test Workspace 4")
+        ws = Workspace(id="ws-4", slug="ws-4", name="Test Workspace 4")
         db_session.add(ws)
         db_session.commit()
 
@@ -166,7 +166,7 @@ class TestQueueReordering:
         """Test reordering a run that's not in queue."""
         from fastapi import HTTPException
 
-        ws = Workspace(id="ws-5", name="Test Workspace 5")
+        ws = Workspace(id="ws-5", slug="ws-5", name="Test Workspace 5")
         db_session.add(ws)
         db_session.commit()
 
@@ -193,7 +193,7 @@ class TestQueueReordering:
         """Test reordering run to its current position."""
         from loregarden.api.queue_management import reorder_queued_run
 
-        ws = Workspace(id="ws-6", name="Test Workspace 6")
+        ws = Workspace(id="ws-6", slug="ws-6", name="Test Workspace 6")
         db_session.add(ws)
         db_session.commit()
 
@@ -216,7 +216,7 @@ class TestQueueReordering:
         """Verify execution_update event emitted after reorder."""
         from loregarden.api.queue_management import reorder_queued_run
 
-        ws = Workspace(id="ws-7", name="Test Workspace 7")
+        ws = Workspace(id="ws-7", slug="ws-7", name="Test Workspace 7")
         db_session.add(ws)
         db_session.commit()
 
@@ -249,8 +249,8 @@ class TestQueueReordering:
 
     async def test_reorder_preserves_other_workspace_queues(self, db_session: Session):
         """Test that reordering in one workspace doesn't affect others."""
-        ws1 = Workspace(id="ws-8", name="Workspace 1")
-        ws2 = Workspace(id="ws-9", name="Workspace 2")
+        ws1 = Workspace(id="ws-8", slug="ws-8", name="Workspace 1")
+        ws2 = Workspace(id="ws-9", slug="ws-9", name="Workspace 2")
         db_session.add_all([ws1, ws2])
         db_session.commit()
 
@@ -312,8 +312,25 @@ class TestQueueInfo:
         """Get info about queue with active runs."""
         from loregarden.api.queue_management import get_queue_info
 
-        ws = Workspace(id="ws-10", name="Test Workspace 10")
+        ws = Workspace(id="ws-10", slug="ws-10", name="Test Workspace 10")
         db_session.add(ws)
+        db_session.commit()
+
+        agent_run1 = AgentRun(
+            id="run-1",
+            run_code="run_1",
+            ticket_id="ticket-1",
+            workspace_id="ws-10",
+            agent_id="dev",
+        )
+        agent_run2 = AgentRun(
+            id="run-2",
+            run_code="run_2",
+            ticket_id="ticket-2",
+            workspace_id="ws-10",
+            agent_id="dev",
+        )
+        db_session.add_all([agent_run1, agent_run2])
         db_session.commit()
 
         run1 = QueuedRun(
@@ -344,7 +361,7 @@ class TestQueueInfo:
         """Get info about empty queue."""
         from loregarden.api.queue_management import get_queue_info
 
-        ws = Workspace(id="ws-11", name="Test Workspace 11")
+        ws = Workspace(id="ws-11", slug="ws-11", name="Test Workspace 11")
         db_session.add(ws)
         db_session.commit()
 
@@ -358,11 +375,22 @@ class TestQueueInfo:
         """Verify estimated clear time calculation."""
         from loregarden.api.queue_management import get_queue_info
 
-        ws = Workspace(id="ws-12", name="Test Workspace 12")
+        ws = Workspace(id="ws-12", slug="ws-12", name="Test Workspace 12")
         db_session.add(ws)
         db_session.commit()
 
         # Create 3 queued runs (300s each = 900s)
+        for i in range(1, 4):
+            agent_run = AgentRun(
+                id=f"run-{i}",
+                run_code=f"run_{i}",
+                ticket_id=f"ticket-{i}",
+                workspace_id="ws-12",
+                agent_id="dev",
+            )
+            db_session.add(agent_run)
+        db_session.commit()
+
         for i in range(1, 4):
             run = QueuedRun(
                 run_id=f"run-{i}",
@@ -398,7 +426,7 @@ class TestQueuePromotion:
         """Promote queued run when slot available."""
         from loregarden.api.queue_management import promote_run
 
-        ws = Workspace(id="ws-13", name="Test Workspace 13")
+        ws = Workspace(id="ws-13", slug="ws-13", name="Test Workspace 13")
         db_session.add(ws)
         db_session.commit()
 
@@ -428,7 +456,7 @@ class TestQueuePromotion:
         """Try to promote when all slots occupied."""
         from loregarden.api.queue_management import promote_run
 
-        ws = Workspace(id="ws-14", name="Test Workspace 14")
+        ws = Workspace(id="ws-14", slug="ws-14", name="Test Workspace 14")
         db_session.add(ws)
         db_session.commit()
 
@@ -466,7 +494,7 @@ class TestQueuePromotion:
         """Try to promote run not in queue."""
         from loregarden.api.queue_management import promote_run
 
-        ws = Workspace(id="ws-15", name="Test Workspace 15")
+        ws = Workspace(id="ws-15", slug="ws-15", name="Test Workspace 15")
         db_session.add(ws)
         db_session.commit()
 
@@ -498,7 +526,7 @@ class TestQueueErrorHandling:
         """Handle WebSocket emit failure gracefully."""
         from loregarden.api.queue_management import reorder_queued_run
 
-        ws = Workspace(id="ws-16", name="Test Workspace 16")
+        ws = Workspace(id="ws-16", slug="ws-16", name="Test Workspace 16")
         db_session.add(ws)
         db_session.commit()
 
@@ -532,7 +560,7 @@ class TestQueueErrorHandling:
         """Handle case where run deleted while fetching info."""
         from loregarden.api.queue_management import get_queue_info
 
-        ws = Workspace(id="ws-17", name="Test Workspace 17")
+        ws = Workspace(id="ws-17", slug="ws-17", name="Test Workspace 17")
         db_session.add(ws)
         db_session.commit()
 
@@ -561,7 +589,7 @@ class TestQueueConcurrency:
     async def test_concurrent_reorder_requests(self, db_session: Session):
         """Multiple reorder requests at same time."""
 
-        ws = Workspace(id="ws-18", name="Test Workspace 18")
+        ws = Workspace(id="ws-18", slug="ws-18", name="Test Workspace 18")
         db_session.add(ws)
         db_session.commit()
 
@@ -596,8 +624,8 @@ class TestQueueConcurrency:
 
     async def test_multiple_workspaces_concurrent_reorder(self, db_session: Session):
         """Reordering in multiple workspaces at same time."""
-        ws1 = Workspace(id="ws-19", name="Workspace 1")
-        ws2 = Workspace(id="ws-20", name="Workspace 2")
+        ws1 = Workspace(id="ws-19", slug="ws-19", name="Workspace 1")
+        ws2 = Workspace(id="ws-20", slug="ws-20", name="Workspace 2")
         db_session.add_all([ws1, ws2])
         db_session.commit()
 
@@ -636,7 +664,7 @@ class TestQueueIntegration:
 
     async def test_reorder_then_complete_run(self, db_session: Session):
         """Reorder, then complete a run and promote."""
-        ws = Workspace(id="ws-21", name="Test Workspace 21")
+        ws = Workspace(id="ws-21", slug="ws-21", name="Test Workspace 21")
         db_session.add(ws)
         db_session.commit()
 
@@ -679,8 +707,25 @@ class TestQueueIntegration:
         """Verify reorder updates queue state for frontend."""
         from loregarden.api.queue_management import reorder_queued_run
 
-        ws = Workspace(id="ws-22", name="Test Workspace 22")
+        ws = Workspace(id="ws-22", slug="ws-22", name="Test Workspace 22")
         db_session.add(ws)
+        db_session.commit()
+
+        agent_run1 = AgentRun(
+            id="run-1",
+            run_code="run_1",
+            ticket_id="ticket-1",
+            workspace_id="ws-22",
+            agent_id="dev",
+        )
+        agent_run2 = AgentRun(
+            id="run-2",
+            run_code="run_2",
+            ticket_id="ticket-2",
+            workspace_id="ws-22",
+            agent_id="dev",
+        )
+        db_session.add_all([agent_run1, agent_run2])
         db_session.commit()
 
         run1 = QueuedRun(

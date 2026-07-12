@@ -61,7 +61,8 @@ def apply_stage_route(
             ticket.blocking_issues = ""
         ticket.next_status = "Proceed"
     else:
-        set_stage_status(ticket, instance, stages, from_key, StageStatus.DONE)
+        if stage_map.get(from_key) != StageStatus.WONT_DO:
+            set_stage_status(ticket, instance, stages, from_key, StageStatus.DONE)
         ticket.workflow_stage_key = plan.to_key
         ticket.blocking_issues = ""
         ticket.next_status = "Proceed"

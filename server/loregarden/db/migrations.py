@@ -375,6 +375,19 @@ def _m_ticket_studio_preview_state(conn: Connection) -> None:
     )
 
 
+def _m_queued_run_failure_columns(conn: Connection) -> None:
+    _add_columns_if_missing(
+        conn,
+        "queued_runs",
+        {
+            "failure_reason": (
+                "ALTER TABLE queued_runs ADD COLUMN failure_reason TEXT NOT NULL DEFAULT ''"
+            ),
+            "last_failed_at": "ALTER TABLE queued_runs ADD COLUMN last_failed_at TEXT",
+        },
+    )
+
+
 # Ordered registry. Append new migrations here with the next id; never reorder or
 # rewrite an id that may already be recorded in a deployed database.
 MIGRATIONS: list[tuple[str, Migration]] = [
@@ -391,6 +404,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0011_branch_triage_messages", _m_branch_triage_messages),
     ("0012_agent_run_auto_approve", _m_agent_run_auto_approve),
     ("0013_ticket_studio_preview_state", _m_ticket_studio_preview_state),
+    ("0014_queued_run_failure_columns", _m_queued_run_failure_columns),
 ]
 
 

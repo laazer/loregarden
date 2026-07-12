@@ -13,13 +13,34 @@ class TestParallelQueueEventEmissions:
 
     async def test_queue_run_emits_execution_update_when_queued(self, db_session):
         """Verify execution_update event emitted when run is queued."""
+        ws = Workspace(id="ws-1", slug="ws-1", name="Test")
+        db_session.add(ws)
+        db_session.commit()
+
+        # get_queued_runs() joins back to AgentRun to build each entry, so — like
+        # every other test in this suite that expects a run to show up in a
+        # queue/active list (see test_queue_management.py) — the AgentRun rows
+        # must actually exist, not just the QueuedRun/AgentSlot pointers to them.
+        agent_run_0 = AgentRun(
+            id="run-0", run_code="run-0", ticket_id="ticket-0", workspace_id="ws-1", agent_id="dev"
+        )
+        agent_run_1 = AgentRun(
+            id="run-1", run_code="run-1", ticket_id="ticket-1", workspace_id="ws-1", agent_id="dev"
+        )
+        db_session.add_all([agent_run_0, agent_run_1])
+        db_session.commit()
+
+        service = ParallelQueueService(db_session, max_concurrent=1)
+
+        # Create a run that will be queued (no available slots)
+        service.initialize_slots("ws-1")
+
+        # Occupy the single slot first, so the next run actually has to queue —
+        # with only 1 slot, queuing the very first run starts it immediately.
+        await service.queue_run("ws-1", "ticket-0", "run-0")
+
         with patch("loregarden.services.parallel_queue.emit_execution_update") as mock_emit:
-            service = ParallelQueueService(db_session, max_concurrent=1)
-
-            # Create a run that will be queued (no available slots)
-            service.initialize_slots("ws-1")
-
-            # Queue first run
+            # Queue second run — no slots available now.
             await service.queue_run("ws-1", "ticket-1", "run-1")
 
             # Verify emit was called
@@ -30,6 +51,18 @@ class TestParallelQueueEventEmissions:
 
     async def test_queue_run_emits_execution_update_when_started(self, db_session):
         """Verify execution_update event emitted when run starts immediately."""
+        ws = Workspace(id="ws-1", slug="ws-1", name="Test")
+        db_session.add(ws)
+        db_session.commit()
+
+        # get_active_runs() joins back to AgentRun, so it needs to actually exist
+        # (see comment in test_queue_run_emits_execution_update_when_queued above).
+        agent_run = AgentRun(
+            id="run-1", run_code="run-1", ticket_id="ticket-1", workspace_id="ws-1", agent_id="dev"
+        )
+        db_session.add(agent_run)
+        db_session.commit()
+
         with patch("loregarden.services.parallel_queue.emit_execution_update") as mock_emit:
             service = ParallelQueueService(db_session, max_concurrent=2)
 

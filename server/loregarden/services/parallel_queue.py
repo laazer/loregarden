@@ -228,7 +228,10 @@ class ParallelQueueService:
                 run = self.session.exec(run_stmt).first()
 
                 if run:
-                    elapsed = (now - slot.assigned_at).total_seconds() if slot.assigned_at else 0
+                    assigned_at = slot.assigned_at
+                    if assigned_at and assigned_at.tzinfo is None:
+                        assigned_at = assigned_at.replace(tzinfo=timezone.utc)
+                    elapsed = (now - assigned_at).total_seconds() if assigned_at else 0
                     active_runs.append(
                         {
                             "run_id": run.id,
@@ -286,7 +289,10 @@ class ParallelQueueService:
                 run = self.session.exec(run_stmt).first()
 
                 if run:
-                    wait = (now - qr.created_at).total_seconds() if qr.created_at else 0
+                    created_at = qr.created_at
+                    if created_at and created_at.tzinfo is None:
+                        created_at = created_at.replace(tzinfo=timezone.utc)
+                    wait = (now - created_at).total_seconds() if created_at else 0
                     queued_runs.append(
                         {
                             "run_id": run.id,
@@ -296,7 +302,7 @@ class ParallelQueueService:
                             "estimated_start_at": qr.estimated_start_at.isoformat()
                             if qr.estimated_start_at
                             else None,
-                            "queued_at": qr.created_at.isoformat() if qr.created_at else None,
+                            "queued_at": created_at.isoformat() if created_at else None,
                             "wait_seconds": int(wait),
                         }
                     )
@@ -596,7 +602,10 @@ class ParallelQueueService:
             queue_wait_minutes = 0
             if queued_runs:
                 oldest_queue = min(queued_runs, key=lambda r: r.created_at)
-                oldest_age = (datetime.now(timezone.utc) - oldest_queue.created_at).total_seconds()
+                oldest_created_at = oldest_queue.created_at
+                if oldest_created_at and oldest_created_at.tzinfo is None:
+                    oldest_created_at = oldest_created_at.replace(tzinfo=timezone.utc)
+                oldest_age = (datetime.now(timezone.utc) - oldest_created_at).total_seconds()
                 queue_wait_minutes = int(oldest_age / 60)
 
             return {

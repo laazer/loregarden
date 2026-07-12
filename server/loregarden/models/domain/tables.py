@@ -544,6 +544,9 @@ class QueuedRun(SQLModel, table=True):
     estimated_start_at: datetime | None = None
     promoted_at: datetime | None = None
     started_at: datetime | None = None
+    failure_reason: str = ""
+    last_failed_at: datetime | None = None
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class QueueSnapshot(SQLModel, table=True):

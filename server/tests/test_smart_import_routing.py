@@ -293,7 +293,18 @@ class TestPreviewStateRecognition:
         """
         P4: Preview flag is maintained through clarification request/response.
         """
-        session_id = "some-preview-session-id"
+        # Create a preview session
+        session_res = client.post(
+            "/api/ticket-studio/sessions",
+            json={
+                "workspace_slug": "loregarden",
+                "title": "Import preview",
+                "brief": "Smart imported tickets",
+                "is_preview": True,
+            },
+        )
+        assert session_res.status_code == 200 or session_res.status_code == 201
+        session_id = session_res.json()["id"]
 
         # Request clarifications on preview session
         clarify_res = client.post(

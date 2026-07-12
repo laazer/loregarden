@@ -13,7 +13,7 @@ class TestPauseRun:
 
     async def test_pause_active_run(self, db_session: Session):
         """Pause an active run."""
-        ws = Workspace(id="ws-1", name="Test")
+        ws = Workspace(id="ws-1", slug="ws-1", name="Test")
         db_session.add(ws)
         db_session.commit()
 
@@ -37,7 +37,7 @@ class TestPauseRun:
 
     async def test_pause_non_active_run_fails(self, db_session: Session):
         """Cannot pause non-active run."""
-        ws = Workspace(id="ws-2", name="Test")
+        ws = Workspace(id="ws-2", slug="ws-2", name="Test")
         db_session.add(ws)
         db_session.commit()
 
@@ -97,7 +97,7 @@ class TestResumeRun:
 
     async def test_resume_paused_run(self, db_session: Session):
         """Resume a paused run."""
-        ws = Workspace(id="ws-3", name="Test")
+        ws = Workspace(id="ws-3", slug="ws-3", name="Test")
         db_session.add(ws)
         db_session.commit()
 
@@ -121,7 +121,7 @@ class TestResumeRun:
 
     async def test_resume_non_paused_run_fails(self, db_session: Session):
         """Cannot resume non-paused run."""
-        ws = Workspace(id="ws-4", name="Test")
+        ws = Workspace(id="ws-4", slug="ws-4", name="Test")
         db_session.add(ws)
         db_session.commit()
 
@@ -152,7 +152,7 @@ class TestCancelRun:
 
     async def test_cancel_queued_run(self, db_session: Session):
         """Cancel a queued run."""
-        ws = Workspace(id="ws-5", name="Test")
+        ws = Workspace(id="ws-5", slug="ws-5", name="Test")
         db_session.add(ws)
         db_session.commit()
 
@@ -177,7 +177,7 @@ class TestCancelRun:
 
     async def test_cancel_active_run_promotes_next(self, db_session: Session):
         """Cancelling active run promotes next from queue."""
-        ws = Workspace(id="ws-6", name="Test")
+        ws = Workspace(id="ws-6", slug="ws-6", name="Test")
         db_session.add(ws)
         db_session.commit()
 
@@ -218,7 +218,7 @@ class TestCancelRun:
 
     async def test_cancel_already_cancelled_run(self, db_session: Session):
         """Cancelling already-cancelled run is safe."""
-        ws = Workspace(id="ws-7", name="Test")
+        ws = Workspace(id="ws-7", slug="ws-7", name="Test")
         db_session.add(ws)
         db_session.commit()
 

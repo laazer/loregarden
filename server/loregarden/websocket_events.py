@@ -4,6 +4,7 @@ Provides easy integration points for emitting real-time updates.
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from loregarden.websocket import WebSocketServer
@@ -26,6 +27,10 @@ def get_ws_server() -> WebSocketServer | None:
     return _ws_server
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def emit_execution_update(
     workspace_id: str,
     active_runs: list[dict[str, Any]],
@@ -46,7 +51,14 @@ def emit_execution_update(
         return
 
     try:
-        ws.broadcast_execution_update(workspace_id, active_runs, queued_runs, stats)
+        ws.broadcast_execution_update(
+            workspaceId=workspace_id,
+            data={
+                "activeRuns": active_runs,
+                "queuedRuns": queued_runs,
+                "stats": stats,
+            },
+        )
         logger.debug(
             f"Emitted execution_update to workspace:{workspace_id}",
             extra={"active": len(active_runs), "queued": len(queued_runs)},
@@ -74,7 +86,15 @@ def emit_conflict_detected(
         return
 
     try:
-        ws.broadcast_conflict_detected(worktree_id, run_id, conflicts, preview, severity)
+        ws.broadcast_conflict_detected(
+            worktreeId=worktree_id,
+            runId=run_id,
+            data={
+                "conflicts": conflicts,
+                "preview": preview,
+                "severity": severity,
+            },
+        )
         logger.debug(
             f"Emitted conflict_detected to worktree:{worktree_id}",
             extra={"severity": severity, "count": len(conflicts)},
@@ -122,7 +142,14 @@ def emit_queue_promoted(
         return
 
     try:
-        ws.broadcast_queue_promoted(workspace_id, run_id, slot_number)
+        ws.broadcast_queue_promoted(
+            workspaceId=workspace_id,
+            data={
+                "runId": run_id,
+                "slotNumber": slot_number,
+                "timestamp": _now_iso(),
+            },
+        )
         logger.debug(
             f"Emitted queue_promoted to workspace:{workspace_id}",
             extra={"run_id": run_id, "slot": slot_number},
@@ -148,7 +175,14 @@ def emit_run_completed(
         return
 
     try:
-        ws.broadcast_run_completed(workspace_id, run_id, status)
+        ws.broadcast_run_completed(
+            workspaceId=workspace_id,
+            data={
+                "runId": run_id,
+                "status": status,
+                "timestamp": _now_iso(),
+            },
+        )
         logger.debug(
             f"Emitted run_completed to workspace:{workspace_id}",
             extra={"run_id": run_id, "status": status},
@@ -176,7 +210,14 @@ def emit_error(
         return
 
     try:
-        ws.broadcast_error(target_room, message, code, context)
+        ws.broadcast_error(
+            targetRoom=target_room,
+            data={
+                "message": message,
+                "code": code,
+                "context": context or {},
+            },
+        )
         logger.debug(f"Emitted error to {target_room}", extra={"code": code, "message": message})
     except Exception as e:
         logger.warning(f"Failed to emit error: {e}")
