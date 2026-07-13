@@ -38,4 +38,6 @@ export const api = {
   previewTicketImportPaths: jest.fn(),
   importTickets: jest.fn(),
   createTicket: jest.fn(),
+  createTicketStudioSession: jest.fn(),
+  browseImportDirectory: jest.fn().mockResolvedValue([]),
 };

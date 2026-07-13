@@ -379,6 +379,8 @@ export const api = {
     title: string;
     brief?: string;
     parent_ticket_id?: string | null;
+    is_preview?: boolean;
+    imported_tickets?: TicketImportItem[];
   }) =>
     request<TicketStudioSession>("/api/ticket-studio/sessions", {
       method: "POST",

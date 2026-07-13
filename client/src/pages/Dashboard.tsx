@@ -25,7 +25,7 @@ import {
 } from "../lib/stageDisplay";
 import { CreateWorkItemModal, type CreateWorkItemDraft } from "../components/CreateWorkItemModal";
 import { IconCloseButton } from "../components/IconCloseButton";
-import { ImportTicketsModal } from "../components/ImportTicketsModal";
+import { ImportTicketsModal, type ImportMode } from "../components/ImportTicketsModal";
 import { ImportTicketsConfirmModal } from "../components/ImportTicketsConfirmModal";
 import { AddWorkspaceModal, type AddWorkspaceDraft } from "../components/AddWorkspaceModal";
 import { DeleteTicketConfirmModal } from "../components/DeleteTicketConfirmModal";
@@ -33,7 +33,7 @@ import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { runtimeFromWorkspace, runtimeSettingsEqual, runtimeSummaryLabel } from "../components/WorkspaceRuntimeFields";
 import { TriageModelModal } from "../components/TriageModelModal";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
-import { navigateToPage, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
+import { navigateToPage, navigateToStudioTicketSession, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
 import { isArtifactTab } from "../lib/appNavigation";
 import { useUiStore, type PaneId } from "../state/uiStore";
 import { agentsAssembleLabel } from "../lib/workflowHelpers";
@@ -550,6 +550,40 @@ export function Dashboard() {
     },
   });
 
+  const startSmartImport = useMutation({
+    mutationFn: async ({
+      workspaceSlug,
+      filePaths,
+    }: {
+      workspaceSlug: string;
+      filePaths: string[];
+    }) => {
+      const preview = await api.previewTicketImportPaths({
+        workspace_slug: workspaceSlug,
+        file_paths: filePaths,
+      });
+      if (preview.tickets.length === 0) {
+        throw new Error(
+          preview.errors[0] || "No importable tickets found in the selected files.",
+        );
+      }
+      return api.createTicketStudioSession({
+        workspace_slug: workspaceSlug,
+        title:
+          preview.tickets.length === 1
+            ? preview.tickets[0].title
+            : `Smart import (${preview.tickets.length} tickets)`,
+        brief: `Imported from ${filePaths.length} file${filePaths.length === 1 ? "" : "s"} via smart import.`,
+        is_preview: true,
+        imported_tickets: preview.tickets,
+      });
+    },
+    onSuccess: (session) => {
+      setImportPickerOpen(false);
+      navigateToStudioTicketSession(session.id);
+    },
+  });
+
   const importTickets = useMutation({
     mutationFn: ({
       workspaceSlug,
@@ -652,13 +686,22 @@ export function Dashboard() {
     if (!slug) return;
     setImportTargetWorkspace(slug);
     previewTicketImport.reset();
+    startSmartImport.reset();
     importTickets.reset();
     setImportPickerOpen(true);
   };
 
-  const handleImportPathsContinue = async (filePaths: string[]) => {
+  const handleImportPathsContinue = async (filePaths: string[], mode: ImportMode) => {
     const slug = importTargetWorkspace || defaultCreateWorkspaceSlug;
     if (!slug || filePaths.length === 0) return;
+    if (mode === "smart") {
+      try {
+        await startSmartImport.mutateAsync({ workspaceSlug: slug, filePaths });
+      } catch {
+        // Error surfaced to the modal via startSmartImportError below.
+      }
+      return;
+    }
     try {
       await previewTicketImport.mutateAsync({ workspaceSlug: slug, filePaths });
     } catch {
@@ -684,6 +727,18 @@ export function Dashboard() {
             return parsed.detail ?? previewTicketImport.error.message;
           } catch {
             return previewTicketImport.error.message;
+          }
+        })()
+      : null;
+
+  const startSmartImportError =
+    startSmartImport.error instanceof Error
+      ? (() => {
+          try {
+            const parsed = JSON.parse(startSmartImport.error.message) as { detail?: string };
+            return parsed.detail ?? startSmartImport.error.message;
+          } catch {
+            return startSmartImport.error.message;
           }
         })()
       : null;
@@ -1005,7 +1060,7 @@ export function Dashboard() {
                             ? "Import work items from .md, .json, or .yaml files"
                             : "Load workspaces before importing work items"
                         }
-                        disabled={!defaultCreateWorkspaceSlug || previewTicketImport.isPending}
+                        disabled={!defaultCreateWorkspaceSlug || previewTicketImport.isPending || startSmartImport.isPending}
                         onClick={openImportTickets}
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -1596,12 +1651,13 @@ export function Dashboard() {
         open={importPickerOpen}
         workspaceSlug={importWorkspaceSlug}
         initialBrowsePath={importBrowsePath}
-        isLoading={previewTicketImport.isPending}
-        errorMessage={previewTicketImportError}
+        isLoading={previewTicketImport.isPending || startSmartImport.isPending}
+        errorMessage={previewTicketImportError || startSmartImportError}
         onClose={() => {
-          if (previewTicketImport.isPending) return;
+          if (previewTicketImport.isPending || startSmartImport.isPending) return;
           setImportPickerOpen(false);
           previewTicketImport.reset();
+          startSmartImport.reset();
         }}
         onContinue={handleImportPathsContinue}
       />
