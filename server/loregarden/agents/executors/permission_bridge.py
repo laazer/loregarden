@@ -356,9 +356,10 @@ class _LoopStep:
 class PermissionBridgeRunner:
     """Run CLIs with permission prompts routed to the Loregarden inbox."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, track_workflow_stage: bool = True) -> None:
         self.session = session
         self.orch = OrchestrationService(session)
+        self.track_workflow_stage = track_workflow_stage
 
     def run(
         self,
@@ -925,16 +926,17 @@ class PermissionBridgeRunner:
         if len(questions) > 1:
             summary = f"{summary} (+{len(questions) - 1} more)"
 
-        instance, stages = self.orch._resolve_stages(ticket)
-        if instance and stages and ticket.workflow_stage_key:
-            set_stage_status(
-                ticket,
-                instance,
-                stages,
-                ticket.workflow_stage_key,
-                StageStatus.AWAITING,
-            )
-            self.session.add(instance)
+        if self.track_workflow_stage:
+            instance, stages = self.orch._resolve_stages(ticket)
+            if instance and stages and ticket.workflow_stage_key:
+                set_stage_status(
+                    ticket,
+                    instance,
+                    stages,
+                    ticket.workflow_stage_key,
+                    StageStatus.AWAITING,
+                )
+                self.session.add(instance)
 
         approval = Approval(
             ticket_id=ticket.id,
@@ -943,7 +945,7 @@ class PermissionBridgeRunner:
             kind=ApprovalKind.CLI_QUESTION,
             title="Agent questions",
             level="medium",
-            stage_key=ticket.workflow_stage_key,
+            stage_key=ticket.workflow_stage_key if self.track_workflow_stage else "triage",
             impact=summary[:2000],
             permission_request_id=request_id,
             tool_name=ASK_USER_QUESTION_TOOL,
@@ -978,16 +980,17 @@ class PermissionBridgeRunner:
         cli_adapter: str,
         cli_session_id: str,
     ) -> Approval:
-        instance, stages = self.orch._resolve_stages(ticket)
-        if instance and stages and ticket.workflow_stage_key:
-            set_stage_status(
-                ticket,
-                instance,
-                stages,
-                ticket.workflow_stage_key,
-                StageStatus.AWAITING,
-            )
-            self.session.add(instance)
+        if self.track_workflow_stage:
+            instance, stages = self.orch._resolve_stages(ticket)
+            if instance and stages and ticket.workflow_stage_key:
+                set_stage_status(
+                    ticket,
+                    instance,
+                    stages,
+                    ticket.workflow_stage_key,
+                    StageStatus.AWAITING,
+                )
+                self.session.add(instance)
 
         approval = Approval(
             ticket_id=ticket.id,
@@ -996,8 +999,12 @@ class PermissionBridgeRunner:
             kind=ApprovalKind.CLI_PERMISSION,
             title=f"Allow {tool_name}?",
             level="high",
-            stage_key=ticket.workflow_stage_key,
-            impact=f"Agent requested `{tool_name}` during stage `{ticket.workflow_stage_key}`.",
+            stage_key=ticket.workflow_stage_key if self.track_workflow_stage else "triage",
+            impact=(
+                f"Agent requested `{tool_name}` during stage `{ticket.workflow_stage_key}`."
+                if self.track_workflow_stage
+                else f"Agent requested `{tool_name}` during triage."
+            ),
             permission_request_id=request_id,
             tool_name=tool_name,
             tool_input_json=serialize_tool_input(tool_input),
@@ -1021,6 +1028,8 @@ class PermissionBridgeRunner:
         return approval
 
     def _mark_stage_running(self, ticket: Ticket) -> None:
+        if not self.track_workflow_stage:
+            return
         instance, stages = self.orch._resolve_stages(ticket)
         if instance and stages and ticket.workflow_stage_key:
             set_stage_status(
@@ -1035,6 +1044,8 @@ class PermissionBridgeRunner:
             self.session.commit()
 
     def _mark_stage_blocked(self, ticket: Ticket, message: str) -> None:
+        if not self.track_workflow_stage:
+            return
         instance, stages = self.orch._resolve_stages(ticket)
         if instance and stages and ticket.workflow_stage_key:
             set_stage_status(

@@ -63,7 +63,7 @@ import type {
   OrchestrationProfileView,
   WorkspaceWorkflow,
   Approval,
-  TriageMessage,
+  TriageSendResult,
   TriageSnapshot,
   StudioAgent,
   StudioMcpToolGuide,
@@ -313,13 +313,10 @@ export const api = {
       body: JSON.stringify(body),
     }),
   sendTriageMessage: (ticketId: string, content: string) =>
-    request<{ user_message: TriageMessage; assistant_message: TriageMessage }>(
-      `/api/tickets/${ticketId}/triage/messages`,
-      {
-        method: "POST",
-        body: JSON.stringify({ content }),
-      },
-    ),
+    request<TriageSendResult>(`/api/tickets/${ticketId}/triage/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
   skills: () => request<string[]>("/api/agents/skills"),
   studioMcpTools: () => request<string[]>("/api/studio/mcp-tools"),
   studioMcpToolGuides: () => request<StudioMcpToolGuide[]>("/api/studio/mcp-tool-guides"),

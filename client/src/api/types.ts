@@ -379,11 +379,21 @@ export interface TriageMessage {
   created_at: string;
 }
 
+export type TriageRunStatus = "idle" | "running" | "awaiting_input";
+
 export interface TriageSnapshot {
   pending_approvals: Approval[];
   recent_approvals: Approval[];
   messages: TriageMessage[];
   runtime: WorkspaceRuntimeSettings;
+  run_status: TriageRunStatus;
+  active_run_id: string | null;
+}
+
+export interface TriageSendResult {
+  user_message: TriageMessage;
+  run_id: string;
+  status: "queued";
 }
 
 export interface StudioGateCheck {

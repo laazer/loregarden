@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from loregarden.models.domain import Ticket, TriageMessage, Workspace
+from loregarden.models.domain import AgentRun, RunStatus, Ticket, TriageMessage, Workspace
 from sqlmodel import Session, select
 
 
@@ -115,10 +115,13 @@ def test_triage_invoke_uses_runtime_override(client: TestClient, monkeypatch):
         f"/api/tickets/{ticket_id}/triage/messages",
         json={"content": "Which model?"},
     )
-    assert res.status_code == 200
+    assert res.status_code == 202
     assert captured["workspace"].cli_adapter == "lmstudio"
     assert captured["workspace"].lmstudio_model == "override-model"
-    assert "runtime override ok" in res.json()["assistant_message"]["content"]
+
+    snapshot = client.get(f"/api/tickets/{ticket_id}/triage").json()
+    assert snapshot["run_status"] == "idle"
+    assert "runtime override ok" in snapshot["messages"][-1]["content"]
 
 
 def test_triage_chat_stub(client: TestClient, monkeypatch):
@@ -128,13 +131,15 @@ def test_triage_chat_stub(client: TestClient, monkeypatch):
         f"/api/tickets/{ticket_id}/triage/messages",
         json={"content": "What should I do next?"},
     )
-    assert res.status_code == 200
+    assert res.status_code == 202
     payload = res.json()
     assert payload["user_message"]["content"] == "What should I do next?"
-    assert "pytest" in payload["assistant_message"]["content"].lower()
+    assert payload["status"] == "queued"
 
     snapshot = client.get(f"/api/tickets/{ticket_id}/triage").json()
     assert len(snapshot["messages"]) == 2
+    assert snapshot["run_status"] == "idle"
+    assert "pytest" in snapshot["messages"][-1]["content"].lower()
 
 
 def test_triage_messages_persist(client: TestClient, monkeypatch):
@@ -242,3 +247,93 @@ def test_triage_includes_child_ticket_approvals(client: TestClient):
     body = client.get(f"/api/tickets/{parent_id}/triage").json()
     titles = [item["title"] for item in body["pending_approvals"]]
     assert "Child stage sign-off" in titles
+
+
+def _seed_active_run(client: TestClient, ticket_id: str, *, agent_id: str, status: RunStatus) -> None:
+    from loregarden.db.session import engine
+
+    with Session(engine) as session:
+        ticket = session.get(Ticket, ticket_id)
+        session.add(
+            AgentRun(
+                run_code="run_active_test",
+                ticket_id=ticket_id,
+                workspace_id=ticket.workspace_id,
+                agent_id=agent_id,
+                stage_key=ticket.workflow_stage_key or "triage",
+                status=status,
+            )
+        )
+        session.commit()
+
+
+def test_triage_concurrency_guard_rejects_overlapping_stage_run(client: TestClient):
+    ticket_id = _ticket_id(client)
+    _seed_active_run(client, ticket_id, agent_id="planner", status=RunStatus.RUNNING)
+
+    res = client.post(f"/api/tickets/{ticket_id}/triage/messages", json={"content": "hello"})
+    assert res.status_code == 409
+
+
+def test_triage_concurrency_guard_rejects_overlapping_triage_run(client: TestClient):
+    ticket_id = _ticket_id(client)
+    _seed_active_run(client, ticket_id, agent_id="triage", status=RunStatus.AWAITING_PERMISSION)
+
+    res = client.post(f"/api/tickets/{ticket_id}/triage/messages", json={"content": "hello"})
+    assert res.status_code == 409
+
+
+def test_orchestration_start_run_rejects_while_triage_active(client: TestClient, db_session):
+    from loregarden.services.orchestration import OrchestrationService
+
+    ticket_id = _ticket_id(client, external_id="01-bootstrap-fastapi-control-plane")
+    _seed_active_run(client, ticket_id, agent_id="triage", status=RunStatus.RUNNING)
+
+    ticket = db_session.get(Ticket, ticket_id)
+    try:
+        OrchestrationService(db_session).start_run(ticket)
+        raised = False
+    except ValueError as exc:
+        raised = True
+        assert "triage" in str(exc).lower()
+    assert raised
+
+
+def test_triage_run_excluded_from_list_runs(client: TestClient, db_session):
+    from loregarden.services.run_service import RunService
+
+    ticket_id = _ticket_id(client)
+    _seed_active_run(client, ticket_id, agent_id="triage", status=RunStatus.RUNNING)
+
+    svc = RunService(db_session)
+    assert svc.list_runs(ticket_id=ticket_id) == []
+    included = svc.list_runs(ticket_id=ticket_id, include_triage=True)
+    assert len(included) == 1
+    assert included[0].agent_id == "triage"
+
+
+def test_triage_async_send_returns_immediately_reply_via_poll(client: TestClient, monkeypatch):
+    import time
+
+    monkeypatch.delenv("LOREGARDEN_SYNC_RUNS", raising=False)
+    monkeypatch.setenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", "Async reply from Baxter.")
+
+    ticket_id = _ticket_id(client)
+    res = client.post(f"/api/tickets/{ticket_id}/triage/messages", json={"content": "async please"})
+    assert res.status_code == 202
+    payload = res.json()
+    assert "assistant_message" not in payload
+    assert payload["status"] == "queued"
+
+    deadline = time.time() + 10
+    snapshot = None
+    while time.time() < deadline:
+        snapshot = client.get(f"/api/tickets/{ticket_id}/triage").json()
+        if snapshot["run_status"] == "idle" and len(snapshot["messages"]) == 2:
+            break
+        time.sleep(0.1)
+
+    assert snapshot is not None
+    assert snapshot["run_status"] == "idle"
+    assert len(snapshot["messages"]) == 2
+    assert "Async reply from Baxter." in snapshot["messages"][-1]["content"]

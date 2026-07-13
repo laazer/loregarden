@@ -410,6 +410,16 @@ def _m_agent_model_columns(conn: Connection) -> None:
     )
 
 
+def _m_triage_message_run_id(conn: Connection) -> None:
+    _add_columns_if_missing(
+        conn,
+        "triage_messages",
+        {
+            "run_id": "ALTER TABLE triage_messages ADD COLUMN run_id TEXT",
+        },
+    )
+
+
 # Ordered registry. Append new migrations here with the next id; never reorder or
 # rewrite an id that may already be recorded in a deployed database.
 MIGRATIONS: list[tuple[str, Migration]] = [
@@ -428,6 +438,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0013_ticket_studio_preview_state", _m_ticket_studio_preview_state),
     ("0014_queued_run_failure_columns", _m_queued_run_failure_columns),
     ("0015_agent_model_columns", _m_agent_model_columns),
+    ("0016_triage_message_run_id", _m_triage_message_run_id),
 ]
 
 

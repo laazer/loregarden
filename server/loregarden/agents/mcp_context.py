@@ -148,14 +148,19 @@ def build_mcp_run_context(
     return "\n".join(lines)
 
 
-def build_mcp_triage_context(*, ticket: Ticket, workspace: Workspace) -> str:
+def build_mcp_triage_context(*, ticket: Ticket, workspace: Workspace, interactive: bool = True) -> str:
     mcp_url = resolve_mcp_url()
+    tool_line = (
+        "These MCP tools are wired in and callable directly — use them rather than describing what you would do."
+        if interactive
+        else "You are advisory in triage — suggest MCP tools the operator or agents should call; do not claim you invoked them."
+    )
     return "\n".join(
         [
             "## Loregarden MCP reference",
             f"MCP endpoint: `{mcp_url}`",
             f"ticket_id: `{ticket.id}` · external_id: `{ticket.external_id}` · workspace: `{workspace.slug}`",
-            "You are advisory in triage — suggest MCP tools the operator or agents should call; do not claim you invoked them.",
+            tool_line,
             "Tools: " + ", ".join(_tool_names()),
         ]
     )

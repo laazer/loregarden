@@ -25,8 +25,6 @@ export function TriageComposer({
   showAutoScrollToggle = false,
   autoScroll = true,
   onAutoScrollChange,
-  onSendStart,
-  onSendEnd,
   onSent,
 }: {
   ticketId: string;
@@ -38,8 +36,6 @@ export function TriageComposer({
   showAutoScrollToggle?: boolean;
   autoScroll?: boolean;
   onAutoScrollChange?: (value: boolean) => void;
-  onSendStart?: () => void;
-  onSendEnd?: () => void;
   onSent?: () => void;
 }) {
   const qc = useQueryClient();
@@ -67,18 +63,14 @@ export function TriageComposer({
 
   const sendMessage = useMutation({
     mutationFn: (content: string) => api.sendTriageMessage(ticketId, content),
-    onMutate: () => {
-      onSendStart?.();
-    },
     onSuccess: () => {
       setDraft("");
       qc.invalidateQueries({ queryKey: ["triage", ticketId] });
       onSent?.();
     },
-    onSettled: () => {
-      onSendEnd?.();
-    },
   });
+
+  const turnBusy = sendMessage.isPending || (triage.data ? triage.data.run_status !== "idle" : false);
 
   useEffect(() => {
     setAttachLogs(attachLogsDefault);
@@ -86,7 +78,7 @@ export function TriageComposer({
 
   const submitChat = () => {
     const text = draft.trim();
-    if (!text || sendMessage.isPending) return;
+    if (!text || turnBusy) return;
 
     let content = text;
     if (showAttachLogsToggle && attachLogs && attachLogContext) {
@@ -140,7 +132,7 @@ export function TriageComposer({
         onChange={setDraft}
         onSubmit={submitChat}
         placeholder={placeholder}
-        isSending={sendMessage.isPending}
+        isSending={turnBusy}
         sendLabel={`Ask ${TRIAGE_AGENT_NAME}`}
         optionsRow={optionsRow}
         error={composerError}

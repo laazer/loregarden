@@ -218,6 +218,7 @@ class TriageMessage(SQLModel, table=True):
     ticket_id: str = Field(foreign_key="tickets.id", index=True)
     role: str = Field(index=True)  # user | assistant | system
     content: str = ""
+    run_id: str | None = Field(default=None, foreign_key="agent_runs.id")
     created_at: datetime = Field(default_factory=utcnow)
 
 

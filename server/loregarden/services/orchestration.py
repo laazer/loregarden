@@ -501,6 +501,15 @@ class OrchestrationService:
         )
         return ticket
 
+    def _reject_if_triage_active(self, ticket: Ticket) -> None:
+        from loregarden.services.run_concurrency import find_active_run
+        from loregarden.services.triage_service import TRIAGE_AGENT_ID
+
+        if find_active_run(self.session, ticket.id, only_agent_id=TRIAGE_AGENT_ID):
+            raise ValueError(
+                "Triage is currently running for this ticket — wait for it to finish before starting a stage run."
+            )
+
     def start_run(
         self,
         ticket: Ticket,
@@ -532,6 +541,8 @@ class OrchestrationService:
                 and target_key == ticket.workflow_stage_key
             ):
                 raise ValueError("Current stage must complete before advancing")
+
+        self._reject_if_triage_active(ticket)
 
         stage_def = next((s for s in stages if s.key == target_key), None)
         if not stage_def:

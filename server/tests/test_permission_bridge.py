@@ -945,3 +945,190 @@ def test_permission_bridge_agent_timeout(tmp_path):
 
         assert result.status == RunStatus.FAILED
         assert result.stderr == "Agent timed out after 2s"
+
+
+def test_permission_bridge_triage_question_does_not_mutate_stage(tmp_path):
+    """track_workflow_stage=False must not touch the ticket's active workflow
+    stage — a triage turn is a side channel, not the active stage."""
+    from loregarden.agents.cli_adapters import build_interactive_invocation
+    from loregarden.models.domain import AgentRun, Approval, ApprovalKind, RunStatus, Ticket
+    from loregarden.services.orchestration import ApprovalService
+    from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        stage_key_before = ticket.workflow_stage_key
+        stage_status_before = ticket.workflow_stage_status
+
+        run = AgentRun(
+            run_code="run_triage_question_test",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="triage",
+            stage_key="triage",
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        workspace = tmp_path / "repo"
+        workspace.mkdir()
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("triage prompt", encoding="utf-8")
+        invocation = build_interactive_invocation(
+            adapter="claude",
+            prompt_file=prompt_file,
+            workspace_root=workspace,
+        )
+
+        question_line = json.dumps(
+            {
+                "type": "control_request",
+                "request_id": "q_triage",
+                "request": {
+                    "subtype": "can_use_tool",
+                    "tool_name": "AskUserQuestion",
+                    "tool_input": {
+                        "questions": [
+                            {
+                                "question": "Which behavior did you mean?",
+                                "header": "Clarify",
+                                "options": [
+                                    {"label": "A", "description": "First"},
+                                    {"label": "B", "description": "Second"},
+                                ],
+                                "multiSelect": False,
+                            }
+                        ]
+                    },
+                },
+            }
+        )
+        result_line = json.dumps({"type": "result", "session_id": "sess_triage", "subtype": "success"})
+
+        def fake_spawn(*args, **kwargs):
+            return _FakeProc([question_line, result_line])
+
+        def fake_wait(approval_id, **kwargs):
+            ApprovalService(session).resolve(
+                approval_id, approved=True, answers={"Which behavior did you mean?": "A"}
+            )
+            approval = session.get(Approval, approval_id)
+            return ApprovalResolution(
+                approved=True,
+                updated_input=json.loads(approval.response_json)["updated_input"],
+            )
+
+        bridge = PermissionBridgeRunner(session, track_workflow_stage=False)
+        result = bridge.run(
+            run_id=run.id,
+            ticket=ticket,
+            invocation=invocation,
+            prompt="triage prompt",
+            timeout_seconds=30,
+            spawn_process=fake_spawn,
+            wait_for_approval=fake_wait,
+        )
+
+        assert result.status == RunStatus.SUCCEEDED
+        session.refresh(ticket)
+        assert ticket.workflow_stage_key == stage_key_before
+        assert ticket.workflow_stage_status == stage_status_before
+
+        approval = session.exec(select(Approval).where(Approval.run_id == run.id)).first()
+        assert approval.kind == ApprovalKind.CLI_QUESTION
+        assert approval.stage_key == "triage"
+
+
+def test_permission_bridge_triage_read_only_mcp_tool_auto_approved(tmp_path):
+    """A triage turn calling an auto-approved read-only MCP tool completes
+    without creating any Approval row (and without touching stage status)."""
+    from loregarden.agents.cli_adapters import build_interactive_invocation
+    from loregarden.models.domain import AgentRun, Approval, RunStatus, Ticket
+    from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+
+        run = AgentRun(
+            run_code="run_triage_auto_approve_test",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="triage",
+            stage_key="triage",
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        workspace = tmp_path / "repo"
+        workspace.mkdir()
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("triage prompt", encoding="utf-8")
+        invocation = build_interactive_invocation(
+            adapter="claude",
+            prompt_file=prompt_file,
+            workspace_root=workspace,
+        )
+
+        tool_line = json.dumps(
+            {
+                "type": "control_request",
+                "request_id": "tool_1",
+                "request": {
+                    "subtype": "can_use_tool",
+                    "tool_name": "mcp__loregarden__loregarden_get_ticket",
+                    "tool_input": {"ticket_id": ticket.id},
+                },
+            }
+        )
+        result_line = json.dumps({"type": "result", "session_id": "sess_auto", "subtype": "success"})
+
+        captured_proc: _FakeProc | None = None
+
+        def fake_spawn(*args, **kwargs):
+            nonlocal captured_proc
+            captured_proc = _FakeProc([tool_line, result_line])
+            return captured_proc
+
+        bridge = PermissionBridgeRunner(session, track_workflow_stage=False)
+        result = bridge.run(
+            run_id=run.id,
+            ticket=ticket,
+            invocation=invocation,
+            prompt="triage prompt",
+            timeout_seconds=30,
+            spawn_process=fake_spawn,
+        )
+
+        assert result.status == RunStatus.SUCCEEDED
+        assert captured_proc is not None
+        # The tool call should have been auto-approved (an "allow" control response
+        # written to stdin) without ever creating a pending Approval row.
+        assert any("allow" in write for write in captured_proc.stdin.writes)
+        approvals = session.exec(select(Approval).where(Approval.run_id == run.id)).all()
+        assert approvals == []

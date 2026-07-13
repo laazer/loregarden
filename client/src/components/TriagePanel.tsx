@@ -79,7 +79,6 @@ export function TriagePanel({
 }) {
   const qc = useQueryClient();
   const [recentExpanded, setRecentExpanded] = useState(false);
-  const [isSending, setIsSending] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
 
   const triage = useQuery({
@@ -89,9 +88,12 @@ export function TriagePanel({
     retry: 1,
     refetchInterval: (query) => {
       const pending = query.state.data?.pending_approvals?.length ?? 0;
-      return pending > 0 ? 2000 : 5000;
+      const busy = query.state.data ? query.state.data.run_status !== "idle" : false;
+      return pending > 0 || busy ? 2000 : 5000;
     },
   });
+
+  const isSending = triage.data ? triage.data.run_status !== "idle" : false;
 
   const ticketApprovals = useQuery({
     queryKey: ["approvals", ticket?.id],
@@ -212,8 +214,6 @@ export function TriagePanel({
         showAutoScrollToggle
         autoScroll={autoScroll}
         onAutoScrollChange={setAutoScroll}
-        onSendStart={() => setIsSending(true)}
-        onSendEnd={() => setIsSending(false)}
         onSent={onResolved}
       />
     </div>

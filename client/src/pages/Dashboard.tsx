@@ -849,7 +849,8 @@ export function Dashboard() {
     retry: 1,
     refetchInterval: (query) => {
       const pending = query.state.data?.pending_approvals?.length ?? 0;
-      return pending > 0 ? 2000 : 8000;
+      const busy = query.state.data ? query.state.data.run_status !== "idle" : false;
+      return pending > 0 || busy ? 2000 : 8000;
     },
   });
 

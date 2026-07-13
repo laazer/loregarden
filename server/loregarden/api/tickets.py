@@ -44,11 +44,12 @@ from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.run_service import RunService, schedule_agent_run, schedule_orchestration
 from loregarden.services.ticket_import_service import TicketImportService
 from loregarden.services.ticket_service import TicketService
-from loregarden.services.triage_service import (
-    send_triage_message,
-    set_triage_runtime,
-    triage_snapshot,
+from loregarden.services.triage_run_service import (
+    TriageConflictError,
+    schedule_triage_turn,
+    start_triage_run,
 )
+from loregarden.services.triage_service import set_triage_runtime, triage_snapshot
 from sqlmodel import Session, col, select
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
@@ -370,7 +371,7 @@ def get_ticket_triage(ticket_id: str, session: Session = Depends(get_session)) -
     return triage_snapshot(session, ticket)
 
 
-@router.post("/{ticket_id}/triage/messages")
+@router.post("/{ticket_id}/triage/messages", status_code=202)
 def post_triage_message(
     ticket_id: str,
     body: TriageMessageCreate,
@@ -380,9 +381,22 @@ def post_triage_message(
     if not ticket:
         raise HTTPException(404, "Ticket not found")
     try:
-        return send_triage_message(session, ticket, body.content)
+        user_message, run = start_triage_run(session, ticket, body.content)
+    except TriageConflictError as exc:
+        raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    schedule_triage_turn(run.id)
+    return {
+        "user_message": {
+            "id": user_message.id,
+            "role": user_message.role,
+            "content": user_message.content,
+            "created_at": user_message.created_at.isoformat(),
+        },
+        "run_id": run.id,
+        "status": "queued",
+    }
 
 
 @router.patch("/{ticket_id}/triage/runtime", response_model=WorkspaceRuntimeSettings)

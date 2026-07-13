@@ -119,7 +119,7 @@ AGENTS: dict[str, dict] = {
         "name": "Baxter",
         "role_file": "agents/misc_agents/research_librarian_v1.md",
         "adapter": "claude",
-        "timeout": 300,
+        "timeout": 1800,
         "claude_model": "haiku",
     },
     "ticket_scoper": {

@@ -287,10 +287,15 @@ class RunService:
         *,
         ticket_id: str | None = None,
         limit: int = 50,
+        include_triage: bool = False,
     ) -> list[AgentRun]:
         query = select(AgentRun).order_by(AgentRun.created_at.desc()).limit(limit)
         if ticket_id:
             query = query.where(AgentRun.ticket_id == ticket_id)
+        if not include_triage:
+            from loregarden.services.triage_service import TRIAGE_AGENT_ID
+
+            query = query.where(AgentRun.agent_id != TRIAGE_AGENT_ID)
         return list(self.session.exec(query).all())
 
     def get_run(self, run_id: str) -> AgentRun | None:

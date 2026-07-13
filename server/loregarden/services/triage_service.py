@@ -17,6 +17,7 @@ from loregarden.models.domain import (
     AgentRun,
     Approval,
     ApprovalStatus,
+    RunStatus,
     Ticket,
     TriageMessage,
     Workspace,
@@ -124,9 +125,27 @@ def list_ticket_approvals(session: Session, ticket_id: str) -> tuple[list[dict],
     )
 
 
+def triage_run_status(session: Session, ticket_id: str) -> tuple[str, str | None]:
+    """Return (run_status, active_run_id) for the ticket's latest triage turn."""
+    latest_run = session.exec(
+        select(AgentRun)
+        .where(AgentRun.ticket_id == ticket_id, AgentRun.agent_id == TRIAGE_AGENT_ID)
+        .order_by(AgentRun.created_at.desc())
+        .limit(1)
+    ).first()
+    if not latest_run:
+        return "idle", None
+    if latest_run.status == RunStatus.AWAITING_PERMISSION:
+        return "awaiting_input", latest_run.id
+    if latest_run.status in (RunStatus.QUEUED, RunStatus.RUNNING):
+        return "running", latest_run.id
+    return "idle", None
+
+
 def triage_snapshot(session: Session, ticket: Ticket) -> dict:
     pending, recent = list_ticket_approvals(session, ticket.id)
     messages = list_triage_messages(session, ticket.id)
+    run_status, active_run_id = triage_run_status(session, ticket.id)
     return {
         "pending_approvals": pending,
         "recent_approvals": recent,
@@ -140,6 +159,8 @@ def triage_snapshot(session: Session, ticket: Ticket) -> dict:
             for msg in messages
         ],
         "runtime": get_triage_runtime(ticket).model_dump(),
+        "run_status": run_status,
+        "active_run_id": active_run_id,
     }
 
 
@@ -254,13 +275,14 @@ def build_triage_prompt(
     latest_user_message: str,
     *,
     session: Session,
+    interactive: bool = False,
 ) -> str:
     workspace = session.get(Workspace, ticket.workspace_id)
     ac = json.loads(ticket.acceptance_criteria_json or "[]")
 
     runs = session.exec(
         select(AgentRun)
-        .where(AgentRun.ticket_id == ticket.id)
+        .where(AgentRun.ticket_id == ticket.id, AgentRun.agent_id != TRIAGE_AGENT_ID)
         .order_by(AgentRun.created_at.desc())
         .limit(5)
     ).all()
@@ -269,11 +291,32 @@ def build_triage_prompt(
         "# Loregarden ticket triage",
         "You are Baxter, the operator's triage assistant for this work item.",
         "Help clarify requirements, interpret agent output, suggest next workflow steps, and answer questions.",
-        "You are advisory only in this channel — do not claim to have executed tools or changed the repo.",
-        "",
     ]
+    if interactive:
+        sections.extend(
+            [
+                "You have real tool access in this workspace — file read/write, Bash, and the Loregarden MCP tools.",
+                "Investigate proactively: read code, run tests/lints, and reproduce failures before answering.",
+                "When you find an actionable fix, make it directly rather than only describing it.",
+                "Ask the operator a clarifying question (via AskUserQuestion) whenever the ticket, "
+                "acceptance criteria, or a requested change is ambiguous — do not guess on anything "
+                "consequential or hard to reverse.",
+                "Destructive or high-risk actions still route through Loregarden's approval prompt "
+                "automatically — request them when needed rather than avoiding the work.",
+            ]
+        )
+    else:
+        sections.append(
+            "You are advisory only in this channel — do not claim to have executed tools or changed the repo."
+        )
+    sections.append("")
     if workspace:
-        sections.extend([build_mcp_triage_context(ticket=ticket, workspace=workspace), ""])
+        sections.extend(
+            [
+                build_mcp_triage_context(ticket=ticket, workspace=workspace, interactive=interactive),
+                "",
+            ]
+        )
     description = (ticket.description or "—")[:MAX_TRIAGE_DESCRIPTION_CHARS]
     if ticket.description and len(ticket.description) > MAX_TRIAGE_DESCRIPTION_CHARS:
         description += "…"
