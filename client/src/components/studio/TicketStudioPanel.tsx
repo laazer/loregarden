@@ -331,8 +331,8 @@ export function TicketStudioPanel({
             alignItems: "center",
             gap: 4,
             padding: "2px 8px",
-            backgroundColor: "var(--warnBg)",
-            color: "var(--warn)",
+            backgroundColor: "rgba(229, 167, 44, 0.14)",
+            color: "var(--aml)",
             borderRadius: 3,
             fontSize: 11,
             fontWeight: 500,
@@ -358,7 +358,7 @@ export function TicketStudioPanel({
       </div>
 
       {importedTickets && importedTickets.length > 0 && (
-        <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--bdl)" }}>
+        <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--bd)" }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: "var(--txm)", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
             Imported Tickets
           </div>
@@ -370,7 +370,7 @@ export function TicketStudioPanel({
                 className="ticket-imported-item"
                 style={{
                   padding: 10,
-                  backgroundColor: "var(--bgSecondary)",
+                  backgroundColor: "var(--bg3)",
                   borderRadius: 4,
                   fontSize: 12,
                 }}
@@ -806,13 +806,17 @@ export function TicketStudioPanel({
           zIndex: 1000,
         }}>
           <div style={{
-            backgroundColor: "var(--bgSurface)",
+            backgroundColor: "var(--bg2)",
+            border: "1px solid var(--bd)",
             borderRadius: 8,
             padding: 24,
-            maxWidth: 400,
-            boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
+            width: 400,
+            maxWidth: "calc(100vw - 32px)",
+            maxHeight: "calc(100vh - 32px)",
+            overflowY: "auto",
+            boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.4)",
           }}>
-            <h3 style={{ margin: "0 0 8px 0", fontSize: 16, fontWeight: 600 }}>
+            <h3 style={{ margin: "0 0 8px 0", fontSize: 16, fontWeight: 600, color: "var(--tx)" }}>
               Finalize imported tickets?
             </h3>
             <p style={{ margin: "0 0 16px 0", fontSize: 13.5, color: "var(--txm)" }}>
@@ -820,11 +824,12 @@ export function TicketStudioPanel({
             </p>
             {importedTickets && importedTickets.length > 0 && (
               <div style={{
-                backgroundColor: "var(--bgSecondary)",
+                backgroundColor: "var(--bg3)",
                 borderRadius: 4,
                 padding: 12,
                 marginBottom: 16,
                 fontSize: 12,
+                color: "var(--tx)",
               }}>
                 <div style={{ fontWeight: 500, marginBottom: 6 }}>
                   {importedTickets.length} imported {importedTickets.length === 1 ? "ticket" : "tickets"}
