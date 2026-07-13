@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { TicketDetail } from "../../api/client";
+import type { ContextSection } from "../../api/types";
 import { InlineCodeDiffReview } from "../InlineCodeDiffReview";
 
 export function ArtifactView({
@@ -240,8 +241,20 @@ export function ArtifactView({
   }
 
   const sections = art.context ?? [];
+  const stages = ticket.stages ?? [];
   const runRows = runs;
-  if (!sections.length && !runRows.length) return <EmptyArtifacts />;
+  const reportsByStage = new Map<string, ContextSection[]>();
+  const otherSections: ContextSection[] = [];
+  for (const sec of sections) {
+    if (sec.stage_key) {
+      const list = reportsByStage.get(sec.stage_key) ?? [];
+      list.push(sec);
+      reportsByStage.set(sec.stage_key, list);
+    } else {
+      otherSections.push(sec);
+    }
+  }
+  if (!sections.length && !runRows.length && !stages.length) return <EmptyArtifacts />;
   return (
     <div style={{ padding: 16 }}>
       {runRows.length > 0 && (
@@ -254,7 +267,50 @@ export function ArtifactView({
           ))}
         </div>
       )}
-      {sections.map((sec, i) => (
+      {stages.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div className="state-label">Workflow steps</div>
+          {stages.map((stage) => {
+            const reports = reportsByStage.get(stage.key) ?? [];
+            return (
+              <div key={stage.key} style={{ padding: "9px 0", borderBottom: "1px solid var(--bd)" }}>
+                <div style={{ color: "var(--tx)", fontSize: 13 }}>{stage.name}</div>
+                <div style={{ fontSize: 12, color: "var(--txm)" }}>
+                  Agent: {stage.agent_id || "N/A"} · Status: {stage.status}
+                </div>
+                {reports.map((report, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      marginTop: 6,
+                      marginLeft: 8,
+                      paddingLeft: 8,
+                      borderLeft: "2px solid var(--bd)",
+                      fontSize: 12,
+                    }}
+                  >
+                    <div>
+                      Report status: <strong>{report.status}</strong>
+                      {typeof report.confidence === "number" && (
+                        <> · confidence: {report.confidence.toFixed(2)}</>
+                      )}
+                    </div>
+                    {report.reroute_to_stage && (
+                      <div style={{ color: "var(--txm)" }}>Reroute to: {report.reroute_to_stage}</div>
+                    )}
+                    {report.reroute_context && (
+                      <div style={{ color: "var(--txm)", fontFamily: "var(--mono)" }}>
+                        {report.reroute_context}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {otherSections.map((sec, i) => (
         <div key={i} style={{ marginBottom: 16 }}>
           <div className="state-label">{sec.title}</div>
           {sec.rows?.map((r, j) => (

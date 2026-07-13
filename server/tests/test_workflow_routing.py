@@ -12,7 +12,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from loregarden.services.workflow_routing import apply_stage_route
+from loregarden.services.workflow_routing import apply_stage_route, previous_stage_key
 from loregarden.services.workflow_state import initial_stages_json, parse_stage_map
 from sqlmodel import Session, select
 
@@ -277,6 +277,113 @@ def test_apply_stage_route_honors_next_agent_hint_on_reject():
     )
     assert plan.to_key == "implement"
     assert ticket.next_agent == "core_simulation"
+
+
+def test_previous_stage_key_returns_immediate_predecessor():
+    from loregarden.models.domain import WorkflowStageDef
+
+    stages = [
+        WorkflowStageDef(key="spec", name="Spec", order=1),
+        WorkflowStageDef(key="implement", name="Implement", order=2),
+        WorkflowStageDef(key="review", name="Review", order=3),
+    ]
+    assert previous_stage_key(stages, "review") == "implement"
+    assert previous_stage_key(stages, "implement") == "spec"
+
+
+def test_previous_stage_key_returns_none_for_first_stage():
+    from loregarden.models.domain import WorkflowStageDef
+
+    stages = [
+        WorkflowStageDef(key="spec", name="Spec", order=1),
+        WorkflowStageDef(key="implement", name="Implement", order=2),
+    ]
+    assert previous_stage_key(stages, "spec") is None
+
+
+def test_apply_stage_route_reject_falls_back_to_previous_stage_when_undefined():
+    """No template `reject` transition and no explicit next_stage_key — should
+    route to the immediately preceding stage rather than raise/stall."""
+    from loregarden.models.domain import WorkflowStageDef
+
+    stages = [
+        WorkflowStageDef(key="spec", name="Spec", order=1),
+        WorkflowStageDef(key="implement", name="Implement", order=2),
+        WorkflowStageDef(key="review", name="Review", order=3),
+    ]
+    transitions = [{"from": "implement", "to": "review", "when": "pass"}]  # no reject route
+
+    ticket = Ticket(
+        external_id="fallback-route-test",
+        workspace_id="ws",
+        title="Fallback route test",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+        workflow_stage_key="review",
+        workflow_stage_status=StageStatus.RUNNING,
+    )
+    instance = WorkflowInstance(
+        ticket_id="t1",
+        template_id="tpl1",
+        current_stage_key="review",
+        stages_json=initial_stages_json(stages),
+    )
+
+    plan = apply_stage_route(
+        ticket,
+        instance,
+        stages,
+        transitions,
+        from_key="review",
+        outcome="reject",
+        blocking_issues="reviewer found regressions",
+    )
+    assert plan.to_key == "implement"
+    assert plan.upstream is True
+    assert ticket.workflow_stage_key == "implement"
+    assert ticket.blocking_issues == "reviewer found regressions"
+
+
+def test_apply_stage_route_reject_raises_when_first_stage_has_no_fallback():
+    """A failing first-in-order stage has nowhere to fall back to — must
+    still raise so the caller can BLOCKED the ticket instead of silently
+    stalling on a fabricated route."""
+    from loregarden.models.domain import WorkflowStageDef
+
+    stages = [
+        WorkflowStageDef(key="spec", name="Spec", order=1),
+        WorkflowStageDef(key="implement", name="Implement", order=2),
+    ]
+    transitions: list[dict[str, str]] = []
+
+    ticket = Ticket(
+        external_id="no-fallback-test",
+        workspace_id="ws",
+        title="No fallback test",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+        workflow_stage_key="spec",
+        workflow_stage_status=StageStatus.RUNNING,
+    )
+    instance = WorkflowInstance(
+        ticket_id="t1",
+        template_id="tpl1",
+        current_stage_key="spec",
+        stages_json=initial_stages_json(stages),
+    )
+
+    try:
+        apply_stage_route(
+            ticket,
+            instance,
+            stages,
+            transitions,
+            from_key="spec",
+            outcome="reject",
+        )
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
 
 
 def test_blobert_template_includes_reject_transitions(client: TestClient, db_session: Session):

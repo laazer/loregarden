@@ -26,6 +26,11 @@ from loregarden.services.gate_runner import run_transition_gates
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
+from loregarden.services.stage_report import (
+    StageReport,
+    parse_stage_report,
+    stage_report_artifact_content,
+)
 from loregarden.services.studio_service import is_agentless_stage
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
@@ -302,26 +307,71 @@ class BuiltinOrchestrator:
             self.session.refresh(ticket)
             return True, ""
 
+        branch_error = self._checkout_branch_for_parallel_stage(ticket, stage_key)
+        if branch_error:
+            return False, branch_error
+
+        runs = self._start_parallel_stage_runs(
+            ticket, orch_run, stage_def, stage_key, specs, auto_approve=auto_approve
+        )
+        failures, reports = self._run_and_collect_parallel_results(runs)
+
+        for agent_id, report in reports:
+            self.callbacks.attach_artifact(
+                ticket,
+                kind="context",
+                title=f"Stage report — {stage_key} ({agent_id})",
+                content=stage_report_artifact_content(stage_key, report),
+            )
+
+        if failures:
+            return self._handle_parallel_stage_failures(ticket, stage_key, failures, reports)
+
+        self.orch.finalize_stage(ticket, stage_key, status=StageStatus.DONE)
+        self.session.refresh(ticket)
+        return True, ""
+
+    def _checkout_branch_for_parallel_stage(self, ticket: Ticket, stage_key: str) -> str:
+        """Ensure the ticket's branch is checked out before spawning parallel agents.
+
+        Returns an error message (and finalizes the stage as BLOCKED) on failure,
+        else an empty string.
+        """
         workspace = self.session.get(Workspace, ticket.workspace_id)
-        if workspace:
-            from loregarden.services.git_branch import ensure_ticket_branch
-            from loregarden.services.workspace_paths import resolve_workspace_root
+        if not workspace:
+            return ""
 
-            repo_root = resolve_workspace_root(workspace)
-            if repo_root.is_dir():
-                try:
-                    ensure_ticket_branch(repo_root, ticket)
-                except (ValueError, subprocess.CalledProcessError) as exc:
-                    message = f"Failed to checkout branch: {exc}"
-                    self.orch.finalize_stage(
-                        ticket,
-                        stage_key,
-                        status=StageStatus.BLOCKED,
-                        blocking_message=message,
-                    )
-                    self.session.refresh(ticket)
-                    return False, message
+        from loregarden.services.git_branch import ensure_ticket_branch
+        from loregarden.services.workspace_paths import resolve_workspace_root
 
+        repo_root = resolve_workspace_root(workspace)
+        if not repo_root.is_dir():
+            return ""
+
+        try:
+            ensure_ticket_branch(repo_root, ticket)
+        except (ValueError, subprocess.CalledProcessError) as exc:
+            message = f"Failed to checkout branch: {exc}"
+            self.orch.finalize_stage(
+                ticket,
+                stage_key,
+                status=StageStatus.BLOCKED,
+                blocking_message=message,
+            )
+            self.session.refresh(ticket)
+            return message
+        return ""
+
+    def _start_parallel_stage_runs(
+        self,
+        ticket: Ticket,
+        orch_run: OrchestrationRun,
+        stage_def: WorkflowStageDef,
+        stage_key: str,
+        specs,
+        *,
+        auto_approve: bool,
+    ) -> list[AgentRun]:
         runs: list[AgentRun] = []
         for spec in specs:
             run = self.orch.start_run(
@@ -333,10 +383,15 @@ class BuiltinOrchestrator:
                 auto_approve=auto_approve,
             )
             runs.append(run)
+        return runs
 
+    def _run_and_collect_parallel_results(
+        self, runs: list[AgentRun]
+    ) -> tuple[list[str], list[tuple[str, StageReport]]]:
         failures: list[str] = []
+        reports: list[tuple[str, StageReport]] = []
 
-        def _run_agent(run_id: str) -> tuple[str, str, str]:
+        def _run_agent(run_id: str) -> tuple[str, str, str, str]:
             with Session(engine) as session:
                 worker = CliAgentExecutor(session)
                 run = session.get(AgentRun, run_id)
@@ -351,13 +406,22 @@ class BuiltinOrchestrator:
                     advance_workflow=False,
                     skip_git_branch=True,
                 )
-                return completed.agent_id, completed.status.value, completed.stderr or ""
+                return (
+                    completed.agent_id,
+                    completed.status.value,
+                    completed.stderr or "",
+                    completed.stdout or "",
+                )
 
-        def _collect_result(agent_label: str, result: tuple[str, str, str]) -> None:
-            agent_id, status_value, stderr = result
+        def _collect_result(agent_label: str, result: tuple[str, str, str, str]) -> None:
+            agent_id, status_value, stderr, stdout = result
+            report = parse_stage_report(stdout)
+            if report:
+                reports.append((agent_id, report))
             if status_value != RunStatus.SUCCEEDED.value:
-                detail = stderr or "agent run failed"
-                failures.append(f"{agent_id}: {detail}")
+                failures.append(f"{agent_id}: {stderr or 'agent run failed'}")
+            elif report and report.status in ("fail", "needs_rework"):
+                failures.append(f"{agent_id}: {report.reroute_context or 'agent reported failure'}")
 
         from sqlmodel.pool import StaticPool
 
@@ -377,43 +441,65 @@ class BuiltinOrchestrator:
                     except Exception as exc:
                         failures.append(f"{agent_label}: {exc}")
 
-        if failures:
-            message = "; ".join(failures)
-            transitions = self.orch._resolve_transitions(ticket)
-            reject_route = StateMachine.resolve_transition_target(transitions, stage_key, "reject")
-            if reject_route:
-                instance, stages = self.orch._resolve_stages(ticket)
-                if instance and stages:
-                    to_key, transition_agent = reject_route
-                    apply_stage_route(
-                        ticket,
-                        instance,
-                        stages,
-                        transitions,
-                        from_key=stage_key,
-                        outcome="reject",
-                        next_stage_key=to_key,
-                        next_agent=transition_agent or ticket.next_agent,
-                        blocking_issues=message[:2000],
-                    )
-                    self.session.add(ticket)
-                    self.session.add(instance)
-                    self.session.commit()
-                    self.session.refresh(ticket)
-                    return True, message
+        return failures, reports
 
-            self.orch.finalize_stage(
-                ticket,
-                stage_key,
-                status=StageStatus.BLOCKED,
-                blocking_message=message[:2000],
-            )
-            self.session.refresh(ticket)
-            return False, message
+    def _handle_parallel_stage_failures(
+        self,
+        ticket: Ticket,
+        stage_key: str,
+        failures: list[str],
+        reports: list[tuple[str, StageReport]],
+    ) -> tuple[bool, str]:
+        message = "; ".join(failures)
+        transitions = self.orch._resolve_transitions(ticket)
 
-        self.orch.finalize_stage(ticket, stage_key, status=StageStatus.DONE)
+        # Prefer an agent-specified reroute target (highest-confidence
+        # among reject/needs_rework reports) over the template's `reject`
+        # transition — apply_stage_route falls back to the template route,
+        # then to the immediately preceding stage, when this is empty.
+        rejecting = [
+            (agent_id, r)
+            for agent_id, r in reports
+            if r.status in ("fail", "needs_rework") and r.reroute_to_stage
+        ]
+        rejecting.sort(key=lambda pair: pair[1].confidence, reverse=True)
+        agent_to_key = rejecting[0][1].reroute_to_stage if rejecting else ""
+        agent_context = rejecting[0][1].reroute_context if rejecting else ""
+
+        template_route = StateMachine.resolve_transition_target(transitions, stage_key, "reject")
+        to_key = agent_to_key or (template_route[0] if template_route else "")
+        transition_agent = template_route[1] if template_route else ""
+
+        instance, stages = self.orch._resolve_stages(ticket)
+        if instance and stages:
+            try:
+                apply_stage_route(
+                    ticket,
+                    instance,
+                    stages,
+                    transitions,
+                    from_key=stage_key,
+                    outcome="reject",
+                    next_stage_key=to_key,
+                    next_agent=transition_agent or ticket.next_agent,
+                    blocking_issues=(agent_context or message)[:2000],
+                )
+                self.session.add(ticket)
+                self.session.add(instance)
+                self.session.commit()
+                self.session.refresh(ticket)
+                return True, message
+            except ValueError:
+                pass  # first-in-order stage, nowhere to fall back to — BLOCKED below
+
+        self.orch.finalize_stage(
+            ticket,
+            stage_key,
+            status=StageStatus.BLOCKED,
+            blocking_message=message[:2000],
+        )
         self.session.refresh(ticket)
-        return True, ""
+        return False, message
 
     def _recover_interrupted_stage(self, ticket: Ticket, instance, stages) -> bool:
         """Clear a stage blocked only by a server restart, not a genuine failure.

@@ -1,14 +1,13 @@
 """Studio agents persisted in SQLite must include memory MCP tools and protocol."""
 
-from sqlmodel import Session, SQLModel, create_engine
-from sqlmodel.pool import StaticPool
-
 from loregarden.models.domain import StudioAgent
 from loregarden.services.studio_service import (
     DEFAULT_MEMORY_MCP_TOOLS,
     DEFAULT_STAGE_MCP_TOOLS,
     studio_agent_config,
 )
+from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel.pool import StaticPool
 
 
 def test_legacy_studio_agent_merges_memory_tools_at_runtime():

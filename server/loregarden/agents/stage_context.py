@@ -30,20 +30,29 @@ def build_orchestration_context(
     legacy_stage = LEGACY_STAGE_ALIASES.get(stage_key, stage_key.upper())
     skill = run.skill_name or (stage_def.skill_name if stage_def else "")
 
-    return "\n".join(
-        [
-            "## Loregarden run context (authoritative for this run)",
-            "This stage was started by the Loregarden control plane. Execute the work below even if",
-            "the project_board ticket markdown WORKFLOW STATE section shows a different legacy Stage.",
+    lines = [
+        "## Loregarden run context (authoritative for this run)",
+        "This stage was started by the Loregarden control plane. Execute the work below even if",
+        "the project_board ticket markdown WORKFLOW STATE section shows a different legacy Stage.",
+        "",
+        f"- Loregarden stage key: `{stage_key}`",
+        f"- Display name: {display_name}",
+        f"- Legacy workflow alias: {legacy_stage}",
+        f"- Assigned agent: {run.agent_id}",
+        f"- Skill: {skill or '—'}",
+        "",
+        "Do not refuse work because the ticket file still says IMPLEMENTATION or names a different",
+        "next agent. Complete this Loregarden stage, then update the ticket file only if your",
+        "role requires it.",
+    ]
+
+    if ticket.blocking_issues:
+        lines += [
             "",
-            f"- Loregarden stage key: `{stage_key}`",
-            f"- Display name: {display_name}",
-            f"- Legacy workflow alias: {legacy_stage}",
-            f"- Assigned agent: {run.agent_id}",
-            f"- Skill: {skill or '—'}",
+            "## Why you're here — prior stage feedback",
+            "This ticket was routed back to this stage. Address the following before reporting `pass`:",
             "",
-            "Do not refuse work because the ticket file still says IMPLEMENTATION or names a different",
-            "next agent. Complete this Loregarden stage, then update the ticket file only if your",
-            "role requires it.",
+            ticket.blocking_issues,
         ]
-    )
+
+    return "\n".join(lines)

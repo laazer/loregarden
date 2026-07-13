@@ -9,6 +9,7 @@ from loregarden.models.domain import (
     AgentSlot,
     QueuedRun,
     QueuePosition,
+    RunStatus,
 )
 from loregarden.websocket_events import (
     emit_error,
@@ -451,6 +452,19 @@ class ParallelQueueService:
                 )
             except Exception as e:
                 logger.warning(f"Failed to emit run_completed: {e}")
+
+            # Mark the queue entry FAILED so retry-all-failed / get-failed-runs
+            # (api/bulk_queue_operations.py) can actually see and act on it —
+            # previously nothing ever set QueuedRun.status to FAILED.
+            if run and run.status == RunStatus.FAILED:
+                queued_stmt = select(QueuedRun).where(QueuedRun.run_id == run_id)
+                queued_run = self.session.exec(queued_stmt).first()
+                if queued_run:
+                    queued_run.status = QueuePosition.FAILED
+                    queued_run.failure_reason = (run.stderr or "Agent run failed")[:2000]
+                    queued_run.last_failed_at = datetime.now(timezone.utc)
+                    self.session.add(queued_run)
+                    self.session.commit()
 
             # Find slot with this run
             slot_stmt = select(AgentSlot).where(AgentSlot.current_run_id == run_id)

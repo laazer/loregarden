@@ -1,5 +1,6 @@
 """Bulk queue operations: cancel/pause/reorder multiple runs at once."""
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -11,6 +12,7 @@ from sqlmodel import Session, select
 router = APIRouter(prefix="/api/parallel", tags=["bulk-operations"])
 
 
+@dataclass
 class BulkOperationRequest:
     """Request for bulk queue operations."""
 
@@ -19,6 +21,7 @@ class BulkOperationRequest:
     filters: dict | None = None  # Optional: filter by status, position range, etc
 
 
+@dataclass
 class BulkOperationResponse:
     """Response from bulk operation."""
 

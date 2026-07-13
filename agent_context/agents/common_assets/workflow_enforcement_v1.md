@@ -110,6 +110,29 @@ If blocked:
 - Route appropriately
 
 ------------------------------------------------------------
+STAGE REPORT CONTRACT (REQUIRED — ALL AGENTS)
+------------------------------------------------------------
+
+The last thing in your response, after all other output, MUST be a single sentinel-delimited
+JSON block reporting your outcome for this stage. Loregarden's orchestrator parses this to
+decide whether to advance, and where to route on failure — do not rely on the human/orchestrator
+inferring your outcome from prose or exit code alone.
+
+```
+<<<LOREGARDEN_STAGE_REPORT>>>
+{"status": "pass|fail|needs_rework", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_context": "<what the target stage needs to know it missed>"}
+<<<END_STAGE_REPORT>>>
+```
+
+Field rules:
+- `status`: `pass` if this stage's work is complete and correct; `fail` or `needs_rework` if it is not (e.g. static QA found real violations, a reviewer rejected the diff, tests could not be made to pass).
+- `confidence`: your honest confidence (0.0–1.0) that `status` is correct. Do not default to 1.0 — if you are uncertain, say so.
+- `reroute_to_stage`: when `status` is not `pass` and you know which upstream stage should redo the work (e.g. `implementation_backend`, `spec`), name its stage key. Use `null` if you don't know — the orchestrator will fall back to the workflow template's rework route, or the immediately preceding stage.
+- `reroute_context`: when rerouting, a specific, actionable description of what the target stage missed or must fix. This is delivered to that stage's agent as prior-stage feedback — write it for that reader, not for a human audit log.
+
+If you emit no report, or a malformed one, the orchestrator falls back to today's exit-code-only behavior — but that means a stage that only *looks* successful (clean exit, buggy work) silently advances. Always emit the report.
+
+------------------------------------------------------------
 REVISION RULE
 ------------------------------------------------------------
 

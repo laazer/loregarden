@@ -149,6 +149,8 @@ def test_ticket_studio_scope_and_commit(client: TestClient, monkeypatch):
     result = commit.json()
     assert result["created_count"] == 3
     assert len(result["created_ticket_ids"]) == 3
+    assert result["root_ticket_id"] == milestone_id
+    assert sum(result["breakdown"].values()) == result["created_count"]
 
     session_after = client.get(f"/api/ticket-studio/sessions/{session_id}").json()
     assert session_after["status"] == "committed"
@@ -206,6 +208,8 @@ def test_ticket_studio_scope_surfaces_root_milestone_in_draft(client: TestClient
     milestone = tickets[feature["parent_ticket_id"]]
     assert milestone["work_item_type"] == "milestone"
     assert milestone["title"] == "Ticket Studio feature"
+    assert result["root_ticket_id"] == milestone["id"]
+    assert result["breakdown"].get("milestone") == 1
 
 
 def test_ticket_studio_scope_survives_large_json_payload(client: TestClient, monkeypatch):

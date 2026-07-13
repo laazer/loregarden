@@ -2,7 +2,7 @@
 Title: M01 — Bootstrap vertical slice
 Project: loregarden
 Created By: loregarden-export
-Created On: 2026-07-10T21:47:14.315301
+Created On: 2026-07-13T01:29:11.722989
 
 ---
 
@@ -59,4 +59,4 @@ Human
 Proceed
 
 ## Reason
-Exported from SQLite at 2026-07-10T21:47:14.803909+00:00
+Exported from SQLite at 2026-07-13T01:29:12.219304+00:00

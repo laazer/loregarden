@@ -4721,3 +4721,50 @@ button {
 .diff-file-open-btn:hover {
   text-decoration: underline;
 }
+
+[role="radiogroup"] {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.import-mode-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  background: var(--bg2);
+  color: var(--txm);
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-family: var(--ui);
+  line-height: 1.2;
+  transition: all 150ms ease;
+}
+
+.import-mode-option:not(:disabled):hover {
+  background: var(--bg3);
+  border-color: var(--bd);
+  color: var(--tx);
+}
+
+.import-mode-option[aria-checked="true"] {
+  background: var(--ac);
+  color: var(--onac);
+  border-color: var(--ac);
+  font-weight: 600;
+}
+
+.import-mode-option[aria-checked="true"]:not(:disabled):hover {
+  background: var(--ac2);
+  border-color: var(--ac2);
+}
+
+.import-mode-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

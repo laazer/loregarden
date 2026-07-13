@@ -19,6 +19,24 @@ from loregarden.services.workflow_state import (
 )
 
 
+def previous_stage_key(stages: list[WorkflowStageDef], from_key: str) -> str | None:
+    """Immediately preceding stage by `order` — last-resort reject-reroute target.
+
+    Used only when neither an agent-specified reroute target nor a template
+    `reject` transition exists, so a stage failure doesn't stall in BLOCKED
+    forever just because the template is missing a rework route.
+    """
+    ordered = sorted(stages, key=lambda s: s.order)
+    keys = [s.key for s in ordered]
+    try:
+        idx = keys.index(from_key)
+    except ValueError:
+        return None
+    if idx <= 0:
+        return None
+    return keys[idx - 1]
+
+
 def apply_stage_route(
     ticket: Ticket,
     instance: WorkflowInstance,
@@ -39,6 +57,15 @@ def apply_stage_route(
         outcome=outcome,
         explicit_to=next_stage_key,
     )
+    if not plan and outcome == "reject":
+        fallback_key = previous_stage_key(stages, from_key)
+        if fallback_key:
+            plan = StageRoutePlan(
+                from_key=from_key,
+                to_key=fallback_key,
+                outcome=outcome,
+                upstream=True,
+            )
     if not plan:
         raise ValueError(
             f"No workflow route defined from stage '{from_key}' with outcome '{outcome}'"

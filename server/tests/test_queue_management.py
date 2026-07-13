@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from loregarden.api.queue_management import _reorder_queue_internal
-from loregarden.models.domain import AgentRun, QueuedRun, QueuePosition, Workspace
+from loregarden.models.domain import AgentRun, QueuedRun, QueuePosition, RunStatus, Workspace
 from sqlmodel import Session, select
 
 
@@ -757,3 +757,135 @@ class TestQueueIntegration:
             queued_runs = call_kwargs["queued_runs"]
             assert queued_runs[0]["run_id"] == "run-2"
             assert queued_runs[1]["run_id"] == "run-1"
+
+
+@pytest.mark.asyncio
+class TestOnRunCompleteFailureWiring:
+    """A FAILED AgentRun must mark its QueuedRun FAILED so the retry API
+    (api/bulk_queue_operations.py) can see and act on it — previously
+    on_run_complete never inspected run.status at all, so FAILED was never
+    produced and the retry endpoints always saw an empty list."""
+
+    def _patched_emits(self):
+        return (
+            patch("loregarden.services.parallel_queue.emit_run_completed"),
+            patch("loregarden.services.parallel_queue.emit_execution_update"),
+            patch("loregarden.services.parallel_queue.emit_queue_promoted"),
+            patch("loregarden.services.parallel_queue.emit_error"),
+        )
+
+    async def test_failed_run_marks_queued_run_failed(self, db_session: Session):
+        from loregarden.services.parallel_queue import ParallelQueueService
+
+        ws = Workspace(id="ws-fail-1", slug="ws-fail-1", name="Test Workspace Fail 1")
+        db_session.add(ws)
+        db_session.commit()
+
+        agent_run = AgentRun(
+            id="run-fail-1",
+            run_code="run_fail_1",
+            ticket_id="ticket-fail-1",
+            workspace_id="ws-fail-1",
+            agent_id="dev",
+            status=RunStatus.FAILED,
+            stderr="static_qa found 3 violations",
+        )
+        db_session.add(agent_run)
+        db_session.commit()
+
+        queued = QueuedRun(
+            run_id="run-fail-1",
+            ticket_id="ticket-fail-1",
+            workspace_id="ws-fail-1",
+            position=1,
+            status=QueuePosition.PROMOTED,
+        )
+        db_session.add(queued)
+        db_session.commit()
+
+        service = ParallelQueueService(db_session)
+        p1, p2, p3, p4 = self._patched_emits()
+        with p1, p2, p3, p4:
+            await service.on_run_complete("ws-fail-1", "run-fail-1")
+
+        db_session.refresh(queued)
+        assert queued.status == QueuePosition.FAILED
+        assert "static_qa" in queued.failure_reason
+        assert queued.last_failed_at is not None
+
+    async def test_failed_run_visible_via_get_failed_runs(self, db_session: Session):
+        from loregarden.api.bulk_queue_operations import get_failed_runs
+        from loregarden.services.parallel_queue import ParallelQueueService
+
+        ws = Workspace(id="ws-fail-2", slug="ws-fail-2", name="Test Workspace Fail 2")
+        db_session.add(ws)
+        db_session.commit()
+
+        agent_run = AgentRun(
+            id="run-fail-2",
+            run_code="run_fail_2",
+            ticket_id="ticket-fail-2",
+            workspace_id="ws-fail-2",
+            agent_id="dev",
+            status=RunStatus.FAILED,
+            stderr="agent crashed",
+        )
+        db_session.add(agent_run)
+        db_session.commit()
+
+        queued = QueuedRun(
+            run_id="run-fail-2",
+            ticket_id="ticket-fail-2",
+            workspace_id="ws-fail-2",
+            position=1,
+            status=QueuePosition.PROMOTED,
+        )
+        db_session.add(queued)
+        db_session.commit()
+
+        service = ParallelQueueService(db_session)
+        p1, p2, p3, p4 = self._patched_emits()
+        with p1, p2, p3, p4:
+            await service.on_run_complete("ws-fail-2", "run-fail-2")
+
+        failed = await get_failed_runs("ws-fail-2", db_session)
+        assert len(failed) == 1
+        assert failed[0]["run_id"] == "run-fail-2"
+        assert failed[0]["failure_reason"] == "agent crashed"
+
+    async def test_successful_run_does_not_mark_queued_run_failed(self, db_session: Session):
+        from loregarden.services.parallel_queue import ParallelQueueService
+
+        ws = Workspace(id="ws-ok-1", slug="ws-ok-1", name="Test Workspace OK 1")
+        db_session.add(ws)
+        db_session.commit()
+
+        agent_run = AgentRun(
+            id="run-ok-1",
+            run_code="run_ok_1",
+            ticket_id="ticket-ok-1",
+            workspace_id="ws-ok-1",
+            agent_id="dev",
+            status=RunStatus.SUCCEEDED,
+        )
+        db_session.add(agent_run)
+        db_session.commit()
+
+        queued = QueuedRun(
+            run_id="run-ok-1",
+            ticket_id="ticket-ok-1",
+            workspace_id="ws-ok-1",
+            position=1,
+            status=QueuePosition.PROMOTED,
+        )
+        db_session.add(queued)
+        db_session.commit()
+
+        service = ParallelQueueService(db_session)
+        p1, p2, p3, p4 = self._patched_emits()
+        with p1, p2, p3, p4:
+            await service.on_run_complete("ws-ok-1", "run-ok-1")
+
+        db_session.refresh(queued)
+        assert queued.status == QueuePosition.PROMOTED
+        assert queued.failure_reason == ""

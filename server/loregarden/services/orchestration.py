@@ -24,6 +24,11 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.run_log_stream import bootstrap_run_log, finalize_run_log_artifact
+from loregarden.services.stage_report import (
+    StageReport,
+    parse_stage_report,
+    stage_report_artifact_content,
+)
 from loregarden.services.workflow_service import resolve_ticket_stages, resolve_workspace_stages
 from loregarden.services.workflow_state import (
     build_stage_views,
@@ -38,6 +43,15 @@ from sqlmodel import Session, select
 
 def _run_code() -> str:
     return f"run_{secrets.token_hex(3)}"
+
+
+def _stage_report_artifact(stage_key: str, report: StageReport) -> dict:
+    """Build a `context`-kind artifact payload from a parsed stage report."""
+    return {
+        "kind": "context",
+        "title": f"Stage report — {stage_key}",
+        "content": stage_report_artifact_content(stage_key, report),
+    }
 
 
 class OrchestrationService:
@@ -607,28 +621,95 @@ class OrchestrationService:
         if not ticket:
             return run
 
-        instance, stages = self._resolve_stages(ticket)
-        if instance and stages and advance_workflow:
-            if status == RunStatus.SUCCEEDED:
-                stage_status = StageStatus.DONE
-                stage_def = next((s for s in stages if s.key == run.stage_key), None)
-                if stage_def and stage_def.gate_required:
-                    stage_status = StageStatus.AWAITING
-                    template = self.get_template_for_ticket(ticket)
-                    if template:
-                        stage_name = stage_display_name(template, run.stage_key)
-                        self._create_workflow_gate_approval(ticket, run.stage_key, stage_name)
-                set_stage_status(ticket, instance, stages, run.stage_key, stage_status)
-                ticket.blocking_issues = ""
-            else:
-                ticket.blocking_issues = stderr[:2000] or "Agent run failed"
-                set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
-            self.session.add(ticket)
-            self.session.add(instance)
-            self.session.commit()
+        report = parse_stage_report(stdout)
+        if advance_workflow:
+            self._advance_stage_after_run(ticket, run, report, status, stderr)
 
+        self._persist_run_artifacts(ticket, run, status, stderr, report, artifacts)
+
+        event_bus.publish(
+            self.session,
+            EventType.AGENT_RUN_COMPLETED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            run_id=run.id,
+            payload={"status": status.value},
+        )
+        if advance_workflow:
+            workspace = self.session.get(Workspace, ticket.workspace_id)
+            if workspace:
+                from loregarden.services.artifact_service import refresh_execution_artifacts
+
+                refresh_execution_artifacts(
+                    self.session,
+                    ticket=ticket,
+                    run=run,
+                    workspace=workspace,
+                )
+        finalize_run_log_artifact(run, status=status, stderr=stderr)
+        return run
+
+    def _advance_stage_after_run(
+        self,
+        ticket: Ticket,
+        run: AgentRun,
+        report,
+        status: RunStatus,
+        stderr: str,
+    ) -> None:
+        instance, stages = self._resolve_stages(ticket)
+        if not instance or not stages:
+            return
+
+        if report and report.status in ("fail", "needs_rework"):
+            from loregarden.services.workflow_routing import apply_stage_route
+
+            transitions = self._resolve_transitions(ticket)
+            try:
+                apply_stage_route(
+                    ticket,
+                    instance,
+                    stages,
+                    transitions,
+                    from_key=run.stage_key,
+                    outcome="reject",
+                    next_stage_key=report.reroute_to_stage or "",
+                    blocking_issues=report.reroute_context or stderr[:2000],
+                )
+            except ValueError:
+                # No reject transition, no agent-specified target, and no
+                # preceding stage to fall back to (already first-in-order).
+                ticket.blocking_issues = report.reroute_context or stderr[:2000] or "Agent run failed"
+                set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+        elif status == RunStatus.SUCCEEDED:
+            stage_status = StageStatus.DONE
+            stage_def = next((s for s in stages if s.key == run.stage_key), None)
+            if stage_def and stage_def.gate_required:
+                stage_status = StageStatus.AWAITING
+                template = self.get_template_for_ticket(ticket)
+                if template:
+                    stage_name = stage_display_name(template, run.stage_key)
+                    self._create_workflow_gate_approval(ticket, run.stage_key, stage_name)
+            set_stage_status(ticket, instance, stages, run.stage_key, stage_status)
+            ticket.blocking_issues = ""
+        else:
+            ticket.blocking_issues = stderr[:2000] or "Agent run failed"
+            set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.commit()
+
+    def _persist_run_artifacts(
+        self,
+        ticket: Ticket,
+        run: AgentRun,
+        status: RunStatus,
+        stderr: str,
+        report,
+        artifacts: list[dict] | None,
+    ) -> None:
+        artifacts = list(artifacts or [])
         if status != RunStatus.SUCCEEDED:
-            artifacts = list(artifacts or [])
             artifacts.append(
                 {
                     "kind": "error",
@@ -642,8 +723,10 @@ class OrchestrationService:
                     },
                 }
             )
+        if report:
+            artifacts.append(_stage_report_artifact(run.stage_key, report))
 
-        for item in artifacts or []:
+        for item in artifacts:
             if item.get("kind") == "log":
                 existing = self.session.exec(
                     select(Artifact).where(
@@ -671,28 +754,6 @@ class OrchestrationService:
                 artifact_id=artifact.id,
                 payload={"kind": artifact.kind},
             )
-
-        event_bus.publish(
-            self.session,
-            EventType.AGENT_RUN_COMPLETED,
-            workspace_id=ticket.workspace_id,
-            ticket_id=ticket.id,
-            run_id=run.id,
-            payload={"status": status.value},
-        )
-        if advance_workflow:
-            workspace = self.session.get(Workspace, ticket.workspace_id)
-            if workspace:
-                from loregarden.services.artifact_service import refresh_execution_artifacts
-
-                refresh_execution_artifacts(
-                    self.session,
-                    ticket=ticket,
-                    run=run,
-                    workspace=workspace,
-                )
-        finalize_run_log_artifact(run, status=status, stderr=stderr)
-        return run
 
     def finalize_stage(
         self,
