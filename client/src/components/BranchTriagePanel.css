@@ -152,6 +152,19 @@
   color: var(--txm);
 }
 
+.branch-triage-badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--bd2);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+a.branch-triage-badge:hover {
+  filter: brightness(1.15);
+}
+
 .branch-triage-actions {
   display: flex;
   flex-wrap: wrap;

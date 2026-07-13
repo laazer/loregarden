@@ -1,16 +1,19 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
+import type { TicketState } from "../api/client";
 import {
   checkoutBranchTriage,
   deleteBranchTriage,
   type BranchTriageEntry,
+  type BranchTriagePrStatus,
 } from "../lib/branchTriageApi";
 import { ticketPath } from "../lib/appNavigation";
 import { useNavigate } from "react-router-dom";
 import { BranchCheckoutConfirmModal } from "./BranchCheckoutConfirmModal";
 import { BranchDeleteConfirmModal } from "./BranchDeleteConfirmModal";
 import { BranchTriageCurrentTag } from "./BranchTriageCurrentTag";
+import { STATE_COLORS, STATE_LABELS } from "./UpdateStateModal";
 import "./BranchTriagePanel.css";
 
 function branchNeedsWorktreeRemoval(branch: BranchTriageEntry): boolean {
@@ -21,6 +24,42 @@ function severityClass(severity: string) {
   if (severity === "high") return "high";
   if (severity === "medium") return "medium";
   return "low";
+}
+
+function ticketStateBadge(state: string) {
+  const known = STATE_LABELS[state as TicketState];
+  const color = STATE_COLORS[state as TicketState] ?? "var(--txm)";
+  const label = known ?? state.replace(/_/g, " ");
+  return (
+    <span className="branch-triage-badge" style={{ color, borderColor: color }} title="Ticket state">
+      {label}
+    </span>
+  );
+}
+
+function prBadgeLabelAndColor(pr: BranchTriagePrStatus): { label: string; color: string } {
+  if (pr.state === "merged") return { label: "PR merged", color: "var(--grn)" };
+  if (pr.state === "closed") return { label: "PR closed", color: "var(--rdl)" };
+  if (pr.is_draft) return { label: "PR draft", color: "var(--txm)" };
+  return { label: "PR open", color: "var(--blue)" };
+}
+
+function prStateBadge(pr: BranchTriagePrStatus) {
+  const { label, color } = prBadgeLabelAndColor(pr);
+  const title = pr.number ? `${pr.title} (#${pr.number})` : pr.title;
+  return (
+    <a
+      className="branch-triage-badge"
+      style={{ color, borderColor: color }}
+      href={pr.url}
+      target="_blank"
+      rel="noreferrer"
+      title={title}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {label}
+    </a>
+  );
 }
 
 export function BranchTriageList({
@@ -164,6 +203,10 @@ export function BranchTriageList({
             {branch.linked_tickets[0] ? (
               <span>{branch.linked_tickets[0].external_id || branch.linked_tickets[0].title}</span>
             ) : null}
+            {branch.linked_tickets[0] && !(branch.is_base && branch.linked_tickets[0].state === "done")
+              ? ticketStateBadge(branch.linked_tickets[0].state)
+              : null}
+            {branch.pr ? prStateBadge(branch.pr) : null}
           </div>
 
           {branch.issues.length ? (

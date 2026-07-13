@@ -133,6 +133,43 @@ def test_branch_triage_treats_squash_merged_branch_as_not_ahead(
     assert "diverged" not in codes
 
 
+def test_branch_triage_includes_pr_status_and_caches(
+    triage_workspace, triage_repo, triage_session: Session, monkeypatch
+):
+    subprocess.run(
+        ["git", "branch", "feature/has-pr"], cwd=triage_repo, check=True, capture_output=True
+    )
+
+    call_count = {"n": 0}
+    pr_payload = {
+        "state": "open",
+        "is_draft": False,
+        "url": "https://github.com/example/repo/pull/7",
+        "number": 7,
+        "title": "Add feature",
+    }
+
+    def fake_fetch(repo_root, branch):
+        call_count["n"] += 1
+        return pr_payload if branch == "feature/has-pr" else None
+
+    monkeypatch.setattr(
+        "loregarden.services.branch_triage_service._fetch_pr_status_live", fake_fetch
+    )
+
+    snapshot = branch_triage_snapshot(triage_session, triage_workspace)
+    with_pr = next(b for b in snapshot["branches"] if b["name"] == "feature/has-pr")
+    assert with_pr["pr"] == pr_payload
+    without_pr = next(b for b in snapshot["branches"] if b["name"] == "main")
+    assert without_pr["pr"] is None
+
+    calls_after_first = call_count["n"]
+    assert calls_after_first > 0
+
+    branch_triage_snapshot(triage_session, triage_workspace)
+    assert call_count["n"] == calls_after_first
+
+
 def test_delete_unmerged_branch_requires_force(triage_workspace, triage_repo):
     subprocess.run(
         ["git", "checkout", "-b", "feature/unmerged"],

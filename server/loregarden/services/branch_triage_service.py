@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -21,6 +24,10 @@ from sqlmodel import Session, select
 
 STALE_DAYS = 30
 AGENT_BRANCH_PREFIXES = ("loregarden/", "agent/")
+PR_STATUS_TTL_SECONDS = 60
+PR_STATUS_MAX_WORKERS = 6
+
+_pr_status_cache: dict[tuple[str, str], tuple[float, dict[str, Any] | None]] = {}
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -105,6 +112,65 @@ def _branch_last_commit(repo_root: Path, branch: str) -> dict[str, str]:
 def _worktree_dirty(worktree_path: str) -> bool:
     proc = _git(Path(worktree_path), "status", "--porcelain")
     return proc.returncode == 0 and bool((proc.stdout or "").strip())
+
+
+def _fetch_pr_status_live(repo_root: Path, branch: str) -> dict[str, Any] | None:
+    """Look up the PR associated with a branch via the `gh` CLI (network call)."""
+    try:
+        proc = subprocess.run(
+            ["gh", "pr", "view", branch, "--json", "state,url,number,isDraft,title"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        data = json.loads(proc.stdout or "{}")
+    except ValueError:
+        return None
+    if not data:
+        return None
+    return {
+        "state": str(data.get("state", "")).lower(),
+        "is_draft": bool(data.get("isDraft")),
+        "url": data.get("url", ""),
+        "number": data.get("number"),
+        "title": data.get("title", ""),
+    }
+
+
+def _branch_pr_statuses(repo_root: Path, branches: list[str]) -> dict[str, dict[str, Any] | None]:
+    """Resolve PR status for each branch, serving from a short-TTL cache where possible."""
+    now = time.monotonic()
+    results: dict[str, dict[str, Any] | None] = {}
+    stale: list[str] = []
+
+    for name in branches:
+        cached = _pr_status_cache.get((str(repo_root), name))
+        if cached and now - cached[0] < PR_STATUS_TTL_SECONDS:
+            results[name] = cached[1]
+        else:
+            stale.append(name)
+
+    if not stale:
+        return results
+
+    with ThreadPoolExecutor(max_workers=min(PR_STATUS_MAX_WORKERS, len(stale))) as pool:
+        future_map = {pool.submit(_fetch_pr_status_live, repo_root, name): name for name in stale}
+        for future in as_completed(future_map):
+            name = future_map[future]
+            try:
+                value = future.result()
+            except Exception:
+                value = None
+            _pr_status_cache[(str(repo_root), name)] = (now, value)
+            results[name] = value
+
+    return results
 
 
 def _ticket_branch_map(session: Session, workspace_id: str) -> dict[str, list[dict[str, str]]]:
@@ -260,6 +326,8 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
             }
         )
 
+    pr_statuses = _branch_pr_statuses(repo_root, [name for name in branch_names if name != base])
+
     branches: list[dict[str, Any]] = []
     issue_count = 0
 
@@ -316,6 +384,7 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
                 "linked_tickets": linked,
                 "last_commit": last,
                 "issues": issues,
+                "pr": pr_statuses.get(name),
             }
         )
 

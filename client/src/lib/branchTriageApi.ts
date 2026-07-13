@@ -33,6 +33,14 @@ export interface BranchTriageWorktree {
   dirty: boolean;
 }
 
+export interface BranchTriagePrStatus {
+  state: "open" | "closed" | "merged" | string;
+  is_draft: boolean;
+  url: string;
+  number: number | string;
+  title: string;
+}
+
 export type BranchDiffMode = "base" | "remote" | "unstaged" | "uncommitted";
 
 export interface BranchDiffOption {
@@ -54,6 +62,7 @@ export interface BranchTriageEntry {
   linked_tickets: BranchTriageLinkedTicket[];
   last_commit: { date: string; message: string };
   issues: BranchTriageIssue[];
+  pr: BranchTriagePrStatus | null;
 }
 
 export interface BranchTriageSnapshot {
