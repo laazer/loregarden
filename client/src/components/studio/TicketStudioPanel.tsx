@@ -460,7 +460,7 @@ export function TicketStudioPanel({
           <button
             type="button"
             className="studio-library-cta ticket-studio-commit-btn btn-focus-ring"
-            disabled={draftDirty || (isPreview && !previewConfirmed) || (Boolean(selectedSession) && selectedCount === 0)}
+            disabled={draftDirty || (Boolean(selectedSession) && selectedCount === 0)}
             onClick={() => {
               if (isPreview && !previewConfirmed) {
                 setPreviewConfirmed(true);
@@ -468,13 +468,7 @@ export function TicketStudioPanel({
                 commitSession.mutate();
               }
             }}
-            title={
-              draftDirty
-                ? "Save draft edits before committing"
-                : isPreview && !previewConfirmed
-                  ? "Confirm preview before finalizing"
-                  : undefined
-            }
+            title={draftDirty ? "Save draft edits before committing" : undefined}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <path d="M5 12h14M12 5l7 7-7 7" />

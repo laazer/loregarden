@@ -567,7 +567,7 @@ export function Dashboard() {
           preview.errors[0] || "No importable tickets found in the selected files.",
         );
       }
-      return api.createTicketStudioSession({
+      const created = await api.createTicketStudioSession({
         workspace_slug: workspaceSlug,
         title:
           preview.tickets.length === 1
@@ -577,6 +577,15 @@ export function Dashboard() {
         is_preview: true,
         imported_tickets: preview.tickets,
       });
+      try {
+        const clarified = await api.requestTicketStudioClarifications(created.id);
+        if (clarified.clarifying_resolved && clarified.clarifying_questions.length === 0) {
+          return api.generateTicketStudioScope(clarified.id);
+        }
+        return clarified;
+      } catch {
+        return created;
+      }
     },
     onSuccess: (session) => {
       setImportPickerOpen(false);

@@ -367,9 +367,14 @@ def build_studio_prompt(
             [
                 "## Task",
                 "Review the feature brief and identify ambiguities before ticket generation.",
+                "You have real Read/Grep/Bash access to this repo — investigate existing code, "
+                "similar features, and config defaults first, and answer what you can from that "
+                "instead of asking. Only list a question when it is a genuine product/design call "
+                "the operator must make and would materially change the ticket hierarchy.",
                 "Output JSON with `summary`, `clarifying_questions`, and `tickets: []`.",
                 "Do not propose tickets yet.",
-                "If the brief is already clear, return an empty `clarifying_questions` array.",
+                "If the brief is already clear (or answerable from the codebase), return an empty "
+                "`clarifying_questions` array.",
                 SCOPE_JSON_SCHEMA,
             ]
         )
@@ -398,6 +403,13 @@ def build_studio_prompt(
             [
                 "## Task",
                 "Reply conversationally in 2–6 sentences to refine the scope.",
+                "You have real Read/Grep/Bash access to this repo — before asking the operator "
+                "anything, check whether the codebase already answers it (existing similar "
+                "features, models/services, naming conventions, config defaults).",
+                "You've already asked one round of clarifying questions in this conversation if "
+                "any appear above — do not open a new round of questions. Instead, state your best "
+                "reasonable assumption for anything still unresolved and move toward scope, "
+                "inviting a correction rather than blocking on an answer.",
                 "If the operator asks to generate tickets, remind them to answer clarifying questions first,",
                 "then use Generate tickets. Only include JSON when explicitly asked to draft tickets.",
             ]
