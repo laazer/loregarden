@@ -151,8 +151,9 @@ describe("DEEP-01: Conflicting Prop Combinations", () => {
     }
   });
 
-  it("DEEP-01.2: isPreview=true + importedTickets=[] → button disabled, badge visible", () => {
-    // Vulnerability: preview state might rely on importedTickets.length > 0
+  it("DEEP-01.2: isPreview=true + importedTickets=[] → button enabled, badge visible", () => {
+    // importedTickets emptiness doesn't gate the button — the confirm
+    // dialog is the actual lock, not the disabled attribute.
     renderStudioWithPreview({
       isPreview: true,
       importedTickets: [],
@@ -161,9 +162,8 @@ describe("DEEP-01: Conflicting Prop Combinations", () => {
 
     expect(getPreviewBadge()).toBeInTheDocument();
     const btn = getFinalizeButton();
-    // Button should exist but be disabled (or not render if condition is wrong)
     if (btn) {
-      expect(btn).toBeDisabled();
+      expect(btn).not.toBeDisabled();
     }
   });
 
@@ -182,8 +182,8 @@ describe("DEEP-01: Conflicting Prop Combinations", () => {
     }
   });
 
-  it("DEEP-01.4: showPreviewBadge=false + isPreview=true → badge hidden, button still locked", () => {
-    // Vulnerability: toggle badge visibility but forget to lock button
+  it("DEEP-01.4: showPreviewBadge=false + isPreview=true → badge hidden, button still requires explicit confirm", () => {
+    // Badge visibility is cosmetic; it shouldn't change the confirm-first label/flow.
     renderStudioWithPreview({
       isPreview: true,
       showPreviewBadge: false,
@@ -193,8 +193,7 @@ describe("DEEP-01: Conflicting Prop Combinations", () => {
     expect(getPreviewBadge()).not.toBeInTheDocument();
     const btn = getFinalizeButton();
     if (btn) {
-      // Button should STILL be disabled even if badge is hidden
-      expect(btn).toBeDisabled();
+      expect(btn).not.toBeDisabled();
       expect(btn.textContent).toMatch(/confirm/i);
     }
   });
@@ -204,8 +203,9 @@ describe("DEEP-01: Conflicting Prop Combinations", () => {
 // DEEP-02: BUTTON STATE VERIFICATION (Not Mocked)
 // ===========================================================================
 describe("DEEP-02: Button State Verification", () => {
-  it("DEEP-02.1: finalize button has HTML disabled attribute when isPreview=true", () => {
-    // Prior finding: mocks hide button disabled state. Verify actual HTML.
+  it("DEEP-02.1: finalize button has no HTML disabled attribute purely from isPreview=true", () => {
+    // Preview alone doesn't disable the button — only unsaved edits or an
+    // empty selection do; verify the actual HTML, not just a mock.
     renderStudioWithPreview({
       isPreview: true,
       importedTickets: SAMPLE_TICKETS,
@@ -214,9 +214,7 @@ describe("DEEP-02: Button State Verification", () => {
     const btn = getFinalizeButton();
     expect(btn).toBeDefined();
     if (btn) {
-      // Check actual HTML disabled attribute, not just role
-      expect(btn.hasAttribute("disabled") || btn.disabled).toBe(true);
-      expect(btn.getAttribute("aria-disabled")).not.toBe("false");
+      expect(btn.hasAttribute("disabled") || btn.disabled).toBe(false);
     }
   });
 
@@ -235,7 +233,7 @@ describe("DEEP-02: Button State Verification", () => {
     }
   });
 
-  it("DEEP-02.3: button enabled state changes when preview is confirmed", async () => {
+  it("DEEP-02.3: clicking the finalize button opens the confirm dialog (previewConfirmed flips true)", async () => {
     const user = userEvent.setup();
     renderStudioWithPreview({
       isPreview: true,
@@ -243,17 +241,11 @@ describe("DEEP-02: Button State Verification", () => {
     });
 
     const btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
 
-    // After clicking (first click should toggle previewConfirmed)
-    if (btn && !btn.disabled) {
+    if (btn) {
       await user.click(btn);
-    } else if (btn) {
-      // Button is disabled, this tests the logic path
-      // In the real component, button click should toggle confirmation
-      // but since it's disabled, we can't click it in this test
-      // This reveals the design: button is disabled UNTIL confirmed, so user can't click it
-      expect(btn.textContent).toMatch(/confirm/i);
+      expect(screen.getByText(/finalize imported tickets\?/i)).toBeInTheDocument();
     }
   });
 
@@ -268,7 +260,7 @@ describe("DEEP-02: Button State Verification", () => {
     if (btn) {
       // Before confirmation: should say "Confirm to finalize"
       expect(btn.textContent).toMatch(/confirm.*finalize/i);
-      expect(btn).toBeDisabled();
+      expect(btn).not.toBeDisabled();
     }
   });
 });
@@ -293,26 +285,25 @@ describe("DEEP-03: Confirmation Flow Real Behavior", () => {
     }
   });
 
-  it("DEEP-03.2: preview state requires TWO clicks: confirm → finalize", async () => {
-    // Design validation: first click should toggle confirmation, not finalize
+  it("DEEP-03.2: preview state requires TWO steps: confirm click → dialog Confirm click", async () => {
+    // Design validation: first click opens the confirm dialog (does not
+    // finalize); the API only fires from the dialog's own Confirm button.
+    const user = userEvent.setup();
     renderStudioWithPreview({
       isPreview: true,
       importedTickets: SAMPLE_TICKETS,
     });
 
     const btn = getFinalizeButton();
-    if (btn && btn.disabled && btn.textContent?.includes("Confirm")) {
-      // Button is initially in "confirm" state and disabled
-      // After user confirms, button text should change and become enabled
-      // Current design: clicking disabled button does nothing
-      // VULNERABILITY: Button can never be clicked because it's disabled!
+    expect(btn).not.toBeDisabled();
 
-      // This suggests the implementation might be:
-      // - First click event (if button not disabled) sets previewConfirmed
-      // - Second click does the actual finalization
-      // But if button is disabled when previewConfirmed=false,
-      // user can never click to confirm!
-      expect(btn).toBeDisabled();
+    if (btn) {
+      await user.click(btn);
+      expect(api.commitTicketStudioSession).not.toHaveBeenCalled();
+
+      const dialogConfirmBtn = screen.getByRole("button", { name: /^confirm$/i });
+      await user.click(dialogConfirmBtn);
+      expect(api.commitTicketStudioSession).toHaveBeenCalled();
     }
   });
 
@@ -336,7 +327,7 @@ describe("DEEP-03: Confirmation Flow Real Behavior", () => {
 // DEEP-04: RAPID USER INTERACTION
 // ===========================================================================
 describe("DEEP-04: Rapid User Interaction & Bypass Attempts", () => {
-  it("DEEP-04.1: double-clicking finalize button with preview mode doesn't bypass lock", async () => {
+  it("DEEP-04.1: opening the confirm dialog and cancelling doesn't call the API without an explicit Confirm click", async () => {
     const user = userEvent.setup();
     renderStudioWithPreview({
       isPreview: true,
@@ -345,8 +336,13 @@ describe("DEEP-04: Rapid User Interaction & Bypass Attempts", () => {
 
     const btn = getFinalizeButton();
     if (btn) {
-      // Try double-click on disabled button
-      await user.dblClick(btn);
+      await user.click(btn);
+      expect(screen.getByText(/finalize imported tickets\?/i)).toBeInTheDocument();
+
+      const cancelBtn = screen.getByRole("button", { name: /cancel/i });
+      await user.click(cancelBtn);
+      expect(screen.queryByText(/finalize imported tickets\?/i)).not.toBeInTheDocument();
+
       expect(api.commitTicketStudioSession).not.toHaveBeenCalled();
     }
   });
@@ -476,14 +472,14 @@ describe("DEEP-06: Props Synchronization to Internal State", () => {
     }
   });
 
-  it("DEEP-06.2: clearing importedTickets while in preview keeps button locked", () => {
+  it("DEEP-06.2: importedTickets content doesn't affect the finalize button's enabled state", () => {
     renderStudioWithPreview({
       isPreview: true,
       importedTickets: SAMPLE_TICKETS,
     });
 
     const btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
   });
 
   it("DEEP-06.3: isPreview prop change triggers preview badge re-render", () => {
@@ -671,14 +667,15 @@ describe("DEEP-10: Button Label State Transitions", () => {
     expect(btn?.textContent).toBeDefined();
   });
 
-  it("DEEP-10.3: button disabled state matches preview lock logic", () => {
+  it("DEEP-10.3: button enabled state matches the corrected preview lock logic", () => {
     renderStudioWithPreview({
       isPreview: true,
       importedTickets: SAMPLE_TICKETS,
     });
 
     const btn = getFinalizeButton();
-    // Disabled when: isPreview && !previewConfirmed
-    expect(btn).toBeDisabled();
+    // isPreview alone no longer disables the button — only draftDirty or an
+    // empty selection does; the real lock is the confirm dialog.
+    expect(btn).not.toBeDisabled();
   });
 });

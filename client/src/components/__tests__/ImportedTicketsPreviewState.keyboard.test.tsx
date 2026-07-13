@@ -270,15 +270,15 @@ describe("KBD-PREVIEW-2: Tab Navigation & Focus Management", () => {
 // KBD-PREVIEW-3: ARIA & ACCESSIBILITY ATTRIBUTES
 // ===========================================================================
 describe("KBD-PREVIEW-3: ARIA & Accessibility Attributes", () => {
-  it("KBD-PREVIEW-3.1: disabled button has aria-disabled or HTML disabled", () => {
+  it("KBD-PREVIEW-3.1: finalize button is not disabled and has no conflicting aria-disabled", () => {
+    // Preview no longer disables the button — the confirm dialog is the
+    // real lock — so it must not claim to be disabled to a11y tools either.
     renderWithKeyboardSupport({ isPreview: true });
 
     const finalizeBtn = getFinalizeButton();
     if (finalizeBtn) {
-      const hasDisabledAttr = finalizeBtn.hasAttribute("disabled");
-      const hasAriaDisabled = finalizeBtn.getAttribute("aria-disabled") === "true";
-
-      expect(hasDisabledAttr || hasAriaDisabled).toBeTruthy();
+      expect(finalizeBtn).not.toHaveAttribute("disabled");
+      expect(finalizeBtn.getAttribute("aria-disabled")).not.toBe("true");
     }
   });
 
@@ -368,12 +368,9 @@ describe("KBD-PREVIEW-4: Screen Reader Announcements", () => {
   it("KBD-PREVIEW-4.2: preview state change is announced to screen readers", async () => {
     const { rerender } = renderWithKeyboardSupport({ isPreview: false });
 
-    // Initially enabled
-    let finalizeBtn = getFinalizeButton();
-    const initialLabel =
-      finalizeBtn?.getAttribute("aria-label") ||
-      finalizeBtn?.getAttribute("title") ||
-      "";
+    // With no session/draft and isPreview=false, the button doesn't render.
+    const initialBtn = getFinalizeButton();
+    const initialName = initialBtn?.textContent || "";
 
     // Change to preview
     rerender(
@@ -389,14 +386,13 @@ describe("KBD-PREVIEW-4: Screen Reader Announcements", () => {
       </QueryClientProvider>,
     );
 
-    finalizeBtn = getFinalizeButton();
-    const updatedLabel =
-      finalizeBtn?.getAttribute("aria-label") ||
-      finalizeBtn?.getAttribute("title") ||
-      "";
+    const updatedBtn = getFinalizeButton();
+    const updatedName = updatedBtn?.textContent || "";
 
-    // Label should reflect new state
-    expect(updatedLabel).not.toBe(initialLabel);
+    // The button appears with a descriptive "Confirm to finalize" name once
+    // isPreview is true — that's the screen-reader-visible state change.
+    expect(updatedName).not.toBe(initialName);
+    expect(updatedName).toMatch(/confirm/i);
   });
 
   it("KBD-PREVIEW-4.3: confirmation dialog has accessible title and role", async () => {

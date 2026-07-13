@@ -95,29 +95,26 @@ beforeEach(() => {
 // INT-PREVIEW-1: BUTTON INTERACTION VERIFICATION (Mock-Resistant)
 // ===========================================================================
 describe("INT-PREVIEW-1: Button Interaction Verification", () => {
-  it("INT-PREVIEW-1.1: verifies button is actually disabled in DOM (not just mocked)", () => {
-    // This test fails if component doesn't render disabled attribute
+  it("INT-PREVIEW-1.1: verifies button has no disabled attribute purely from isPreview=true (not just mocked)", () => {
+    // Preview alone doesn't disable the button in the DOM — confirmed
+    // rather than assumed from a mock.
     renderWithRealQueryClient({ isPreview: true });
 
     const finalizeBtn = getFinalizeButton();
     expect(finalizeBtn).toBeInTheDocument();
-
-    // Core assertion: HTML disabled attribute must exist
-    expect(finalizeBtn).toHaveAttribute("disabled");
-    // This is stronger than just checking click doesn't call mocked API
+    expect(finalizeBtn).not.toHaveAttribute("disabled");
   });
 
-  it("INT-PREVIEW-1.2: button doesn't respond to click when disabled", async () => {
+  it("INT-PREVIEW-1.2: clicking the (enabled) finalize button opens the confirm dialog, not the API directly", async () => {
     const user = userEvent.setup();
     renderWithRealQueryClient({ isPreview: true });
 
     const finalizeBtn = getFinalizeButton();
-    expect(finalizeBtn).toHaveAttribute("disabled");
+    expect(finalizeBtn).not.toHaveAttribute("disabled");
 
-    // Click disabled button
     await user.click(finalizeBtn!);
 
-    // Should NOT call API
+    expect(screen.getByText(/finalize imported tickets\?/i)).toBeInTheDocument();
     expect(apiClient.finalizeHierarchy).not.toHaveBeenCalled();
   });
 
@@ -142,11 +139,11 @@ describe("INT-PREVIEW-1: Button Interaction Verification", () => {
     }
   });
 
-  it("INT-PREVIEW-1.4: disabled state persists across multiple renders", async () => {
+  it("INT-PREVIEW-1.4: enabled state persists across multiple renders", async () => {
     const { rerender } = renderWithRealQueryClient({ isPreview: true });
 
     let btn = getFinalizeButton();
-    expect(btn).toHaveAttribute("disabled");
+    expect(btn).not.toHaveAttribute("disabled");
 
     // Simulate a re-render (e.g., unrelated state change)
     rerender(
@@ -163,7 +160,7 @@ describe("INT-PREVIEW-1: Button Interaction Verification", () => {
     );
 
     btn = getFinalizeButton();
-    expect(btn).toHaveAttribute("disabled");
+    expect(btn).not.toHaveAttribute("disabled");
   });
 
   it("INT-PREVIEW-1.5: button ariaDisabled attribute set correctly", () => {
@@ -220,16 +217,16 @@ describe("INT-PREVIEW-2: API Payload Verification", () => {
     }
   });
 
-  it("INT-PREVIEW-2.2: finalizeHierarchy is NOT called when preview is true", async () => {
+  it("INT-PREVIEW-2.2: finalizeHierarchy is NOT called by a single click while preview is true", async () => {
     const user = userEvent.setup();
     renderWithRealQueryClient({ isPreview: true });
 
     const finalizeBtn = getFinalizeButton();
-    expect(finalizeBtn).toHaveAttribute("disabled");
+    expect(finalizeBtn).not.toHaveAttribute("disabled");
 
     await user.click(finalizeBtn!);
 
-    // API should never be called
+    // The click opens the confirm dialog; it doesn't call the API directly
     expect(apiClient.finalizeHierarchy).not.toHaveBeenCalled();
   });
 
@@ -329,11 +326,10 @@ describe("INT-PREVIEW-3: Async State Management", () => {
         </QueryClientProvider>,
       );
 
-      // Verify DOM state matches prop state
+      // Verify DOM state matches prop state — isPreview no longer disables
+      // the button by itself in either case.
       const btn = getFinalizeButton();
-      if (isPreview) {
-        expect(btn).toHaveAttribute("disabled");
-      } else if (btn) {
+      if (btn) {
         expect(btn).not.toHaveAttribute("disabled");
       }
     }
@@ -346,7 +342,7 @@ describe("INT-PREVIEW-3: Async State Management", () => {
     });
 
     let btn = getFinalizeButton();
-    expect(btn).toHaveAttribute("disabled");
+    expect(btn).not.toHaveAttribute("disabled");
 
     // Add imported tickets
     rerender(
@@ -363,9 +359,9 @@ describe("INT-PREVIEW-3: Async State Management", () => {
       </QueryClientProvider>,
     );
 
-    // Button should still be disabled
+    // Button should still be enabled — importedTickets content doesn't gate it
     btn = getFinalizeButton();
-    expect(btn).toHaveAttribute("disabled");
+    expect(btn).not.toHaveAttribute("disabled");
 
     // Tickets should be visible
     expect(screen.getByText(/Capability 1/)).toBeInTheDocument();
@@ -380,23 +376,23 @@ describe("INT-PREVIEW-4: Query Client Integration", () => {
     renderWithRealQueryClient({ isPreview: true });
 
     const finalizeBtn = getFinalizeButton();
-    expect(finalizeBtn).toHaveAttribute("disabled");
+    expect(finalizeBtn).not.toHaveAttribute("disabled");
 
-    // Query client state should not interfere with preview locking
+    // Query client state should not interfere with the button's enabled state
   });
 
   it("INT-PREVIEW-4.2: cache invalidation doesn't affect preview button state", async () => {
     const { queryClient } = renderWithRealQueryClient({ isPreview: true });
 
     let btn = getFinalizeButton();
-    expect(btn).toHaveAttribute("disabled");
+    expect(btn).not.toHaveAttribute("disabled");
 
     // Simulate cache invalidation
     queryClient.invalidateQueries();
 
-    // Button should still be disabled
+    // Button state should be unaffected
     btn = getFinalizeButton();
-    expect(btn).toHaveAttribute("disabled");
+    expect(btn).not.toHaveAttribute("disabled");
   });
 });
 
@@ -404,34 +400,34 @@ describe("INT-PREVIEW-4: Query Client Integration", () => {
 // INT-PREVIEW-5: REAL USER INTERACTION FLOWS (Mock-Resistant)
 // ===========================================================================
 describe("INT-PREVIEW-5: Real User Interaction Flows", () => {
-  it("INT-PREVIEW-5.1: user cannot finalize even by holding down button", async () => {
+  it("INT-PREVIEW-5.1: holding down the button opens the confirm dialog but never calls the API directly", async () => {
     const user = userEvent.setup({ delay: null }); // No artificial delay
     renderWithRealQueryClient({ isPreview: true });
 
     const finalizeBtn = getFinalizeButton();
-    expect(finalizeBtn).toHaveAttribute("disabled");
+    expect(finalizeBtn).not.toHaveAttribute("disabled");
 
     // Hold down button for extended duration
     await user.pointer({ keys: "[MouseLeft>]" });
     await new Promise((resolve) => setTimeout(resolve, 100));
     await user.pointer({ keys: "[/MouseLeft]" });
 
-    // Should never call API
+    // The click opens the confirm dialog; it never calls the API directly
     expect(apiClient.finalizeHierarchy).not.toHaveBeenCalled();
   });
 
-  it("INT-PREVIEW-5.2: button remains disabled even with mouse over", async () => {
+  it("INT-PREVIEW-5.2: hovering the button doesn't change its enabled state", async () => {
     const user = userEvent.setup();
     renderWithRealQueryClient({ isPreview: true });
 
     const finalizeBtn = getFinalizeButton();
-    expect(finalizeBtn).toHaveAttribute("disabled");
+    expect(finalizeBtn).not.toHaveAttribute("disabled");
 
     // Hover over button
     await user.hover(finalizeBtn!);
 
-    // Button should still be disabled
-    expect(finalizeBtn).toHaveAttribute("disabled");
+    // Button state should be unaffected by hovering
+    expect(finalizeBtn).not.toHaveAttribute("disabled");
   });
 });
 
@@ -460,7 +456,8 @@ describe("INT-PREVIEW-6: Error Handling & Recovery", () => {
       });
     }
 
-    // Changing to preview should still lock
+    // Changing to preview should still leave the button enabled — the lock
+    // is the confirm dialog, not the disabled attribute.
     rerender(
       <QueryClientProvider client={new QueryClient()}>
         <MemoryRouter>
@@ -475,10 +472,10 @@ describe("INT-PREVIEW-6: Error Handling & Recovery", () => {
     );
 
     const btn = getFinalizeButton();
-    expect(btn).toHaveAttribute("disabled");
+    expect(btn).not.toHaveAttribute("disabled");
   });
 
-  it("INT-PREVIEW-6.2: recovery from error state preserves preview lock", async () => {
+  it("INT-PREVIEW-6.2: recovery from error state preserves preview behavior", async () => {
     apiClient.finalizeHierarchy.mockRejectedValueOnce(new Error("Failed"));
 
     const { rerender } = renderWithRealQueryClient({ isPreview: false });
@@ -504,6 +501,6 @@ describe("INT-PREVIEW-6: Error Handling & Recovery", () => {
     );
 
     finalizeBtn = getFinalizeButton();
-    expect(finalizeBtn).toHaveAttribute("disabled");
+    expect(finalizeBtn).not.toHaveAttribute("disabled");
   });
 });

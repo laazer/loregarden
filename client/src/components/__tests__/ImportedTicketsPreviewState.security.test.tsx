@@ -624,7 +624,7 @@ describe("SEC-PREVIEW-9: Timing Attack Prevention", () => {
   // check), so there's nothing here for a timing attack to extract. Replaced
   // with a deterministic check that render output correctly and consistently
   // tracks the isPreview input across many renders.
-  it("SEC-PREVIEW-9.1: button disable state deterministically tracks isPreview (no data leak)", () => {
+  it("SEC-PREVIEW-9.1: button disable state deterministically ignores isPreview (no data leak)", () => {
     const iterations = 100;
 
     for (let i = 0; i < iterations; i++) {
@@ -633,7 +633,9 @@ describe("SEC-PREVIEW-9: Timing Attack Prevention", () => {
       const btn = screen.queryByRole("button", { name: /finalize/i });
 
       if (btn) {
-        expect(btn.hasAttribute("disabled")).toBe(isPreview);
+        // isPreview never drives the disabled attribute — the confirm
+        // dialog is the actual lock, so this must be deterministically false.
+        expect(btn.hasAttribute("disabled")).toBe(false);
       }
 
       unmount();

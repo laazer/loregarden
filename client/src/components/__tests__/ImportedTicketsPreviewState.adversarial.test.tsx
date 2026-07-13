@@ -18,7 +18,10 @@ import { TicketStudioPanel } from "../studio/TicketStudioPanel";
  * Acceptance Criteria:
  *   - AC1: Studio recognizes and renders preview state UI
  *   - AC2: Read-only source ticket content visible
- *   - AC3: Finalize button disabled/hidden until user explicitly confirms
+ *   - AC3: Finalization (the actual create-tickets API call) requires an
+ *     explicit second confirmation via a dialog — the entry-point button
+ *     itself is not blocked; clicking it opens the dialog rather than
+ *     finalizing directly.
  *
  * Test Dimensions (Test Breaker Checklist Matrix):
  *   - [X] Null & Empty Values (preview state, imported tickets)
@@ -379,12 +382,13 @@ describe("ADVA-PREVIEW-2: Read-Only Source Content (AC2)", () => {
 // ADVA-PREVIEW-3: FINALIZE BUTTON LOCKING (AC3)
 // ===========================================================================
 describe("ADVA-PREVIEW-3: Finalize Button Locking (AC3)", () => {
-  it("ADVA-PREVIEW-3.1: finalize button is disabled when isPreview=true", () => {
-    // AC3: Preview blocks finalization
+  it("ADVA-PREVIEW-3.1: finalize button is enabled (not blocked) when isPreview=true", () => {
+    // AC3: preview doesn't block the entry-point button — it gates the
+    // actual creation via a confirm dialog instead (see ADVA-PREVIEW-4).
     renderStudioWithPreview({ isPreview: true });
 
     const finalizeBtn = getFinalizeButton();
-    expect(finalizeBtn).toBeDisabled();
+    expect(finalizeBtn).not.toBeDisabled();
   });
 
   it("ADVA-PREVIEW-3.2: finalize button is enabled when isPreview=false", () => {
@@ -397,28 +401,28 @@ describe("ADVA-PREVIEW-3: Finalize Button Locking (AC3)", () => {
     }
   });
 
-  it("ADVA-PREVIEW-3.3: disabled finalize button has accessibility info", () => {
-    // A11y: User knows why button is disabled
+  it("ADVA-PREVIEW-3.3: finalize button label communicates the confirm step (a11y)", () => {
+    // A11y: the button isn't disabled, so its own label is what tells the
+    // user a confirm step follows.
     renderStudioWithPreview({ isPreview: true });
 
     const finalizeBtn = getFinalizeButton();
     if (finalizeBtn) {
-      expect(finalizeBtn).toHaveAttribute("disabled");
-      // Should have title or aria-label explaining why
+      expect(finalizeBtn).not.toBeDisabled();
       const ariaLabel = finalizeBtn.getAttribute("aria-label") || "";
       const title = finalizeBtn.getAttribute("title") || "";
       expect(ariaLabel || title || finalizeBtn.textContent).toMatch(
-        /confirm|preview|disable|must/i,
+        /confirm|preview|finalize/i,
       );
     }
   });
 
-  it("ADVA-PREVIEW-3.4: finalize button remains disabled during navigation", async () => {
-    // AC3: Locking persists
+  it("ADVA-PREVIEW-3.4: unrelated navigation doesn't disable or auto-confirm the finalize button", async () => {
+    // AC3: only clicking the button itself starts the confirm flow
     renderStudioWithPreview({ isPreview: true });
 
     let finalizeBtn = getFinalizeButton();
-    expect(finalizeBtn).toBeDisabled();
+    expect(finalizeBtn).not.toBeDisabled();
 
     // Simulate navigation
     const expandButtons = screen.queryAllByRole("button", { name: /expand|toggle/i });
@@ -427,7 +431,8 @@ describe("ADVA-PREVIEW-3: Finalize Button Locking (AC3)", () => {
     }
 
     finalizeBtn = getFinalizeButton();
-    expect(finalizeBtn).toBeDisabled();
+    expect(finalizeBtn).not.toBeDisabled();
+    expect(screen.queryByText(/finalize imported tickets\?/i)).not.toBeInTheDocument();
   });
 
   it("ADVA-PREVIEW-3.5: finalize button click is prevented when disabled", async () => {
@@ -443,18 +448,13 @@ describe("ADVA-PREVIEW-3: Finalize Button Locking (AC3)", () => {
     }
   });
 
-  it("ADVA-PREVIEW-3.6: finalize button hidden entirely (not just disabled)", () => {
-    // Variant: Some systems hide rather than disable
+  it("ADVA-PREVIEW-3.6: finalize button is visible and interactive (locking happens via the confirm dialog, not visibility)", () => {
     renderStudioWithPreview({ isPreview: true });
 
     const finalizeBtn = getFinalizeButton();
     if (finalizeBtn) {
-      // Either disabled OR hidden
-      const isDisabled = finalizeBtn.hasAttribute("disabled");
-      const isHidden = finalizeBtn.getAttribute("aria-hidden") === "true" ||
-        finalizeBtn.style.display === "none";
-
-      expect(isDisabled || isHidden).toBeTruthy();
+      expect(finalizeBtn).toBeVisible();
+      expect(finalizeBtn).not.toBeDisabled();
     }
   });
 
@@ -475,7 +475,7 @@ describe("ADVA-PREVIEW-3: Finalize Button Locking (AC3)", () => {
     const { rerender } = renderStudioWithPreview({ isPreview: true });
 
     let finalizeBtn = getFinalizeButton();
-    expect(finalizeBtn).toBeDisabled();
+    expect(finalizeBtn).not.toBeDisabled();
 
     // Change to finalized state
     rerender(
@@ -502,9 +502,9 @@ describe("ADVA-PREVIEW-3: Finalize Button Locking (AC3)", () => {
     renderStudioWithPreview({ isPreview: true });
 
     const finalizeBtn = getFinalizeButton();
-    // Test should pass if button exists and is disabled, or doesn't exist
+    // Test should pass if button exists and is enabled, or doesn't exist
     if (finalizeBtn) {
-      expect(finalizeBtn).toBeDisabled();
+      expect(finalizeBtn).not.toBeDisabled();
     }
   });
 
@@ -627,7 +627,7 @@ describe("ADVA-PREVIEW-5: State Transitions & Race Conditions", () => {
     const { rerender } = renderStudioWithPreview({ isPreview: true });
 
     let finalizeBtn = getFinalizeButton();
-    expect(finalizeBtn).toBeDisabled();
+    expect(finalizeBtn).not.toBeDisabled();
 
     // Change state
     rerender(
@@ -700,7 +700,7 @@ describe("ADVA-PREVIEW-5: State Transitions & Race Conditions", () => {
     const { unmount } = renderStudioWithPreview({ isPreview: true });
 
     const finalizeBtn = getFinalizeButton();
-    expect(finalizeBtn).toBeDisabled();
+    expect(finalizeBtn).not.toBeDisabled();
 
     // Unmount should not cause state issues
     unmount();
@@ -724,7 +724,7 @@ describe("ADVA-PREVIEW-6: Edge Cases & Regression", () => {
     expect(indicator).toBeInTheDocument();
 
     const finalizeBtn = getFinalizeButton();
-    expect(finalizeBtn).toBeDisabled();
+    expect(finalizeBtn).not.toBeDisabled();
   });
 
   it("ADVA-PREVIEW-6.2: non-preview state ignores imported tickets", () => {
@@ -756,7 +756,7 @@ describe("ADVA-PREVIEW-6: Edge Cases & Regression", () => {
 
     // Should not crash
     const finalizeBtn = getFinalizeButton();
-    expect(finalizeBtn).toBeDisabled();
+    expect(finalizeBtn).not.toBeDisabled();
   });
 
   it("ADVA-PREVIEW-6.4: preview state persists across modal open/close cycles", async () => {
@@ -837,9 +837,9 @@ describe("ADVA-PREVIEW-7: Assumption Validation", () => {
     renderStudioWithPreview({ isPreview: true });
 
     const finalizeBtn = getFinalizeButton();
-    // Either exists and is disabled, or doesn't exist (both valid)
+    // Either exists and is enabled, or doesn't exist (both valid)
     if (finalizeBtn) {
-      expect(finalizeBtn).toBeDisabled();
+      expect(finalizeBtn).not.toBeDisabled();
     }
   });
 

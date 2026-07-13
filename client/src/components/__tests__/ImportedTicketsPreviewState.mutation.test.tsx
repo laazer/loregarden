@@ -106,11 +106,11 @@ beforeEach(() => {
 // MUT-PREVIEW-1: BOOLEAN MUTATION TESTING
 // ===========================================================================
 describe("MUT-PREVIEW-1: Boolean Mutation Testing", () => {
-  it("MUT-PREVIEW-1.1: isPreview TRUE blocks finalize", () => {
+  it("MUT-PREVIEW-1.1: isPreview TRUE does not disable finalize (confirm dialog gates it instead)", () => {
     renderWithMutations({ isPreview: true });
 
     const btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
   });
 
   it("MUT-PREVIEW-1.2: isPreview FALSE enables finalize", () => {
@@ -122,7 +122,7 @@ describe("MUT-PREVIEW-1: Boolean Mutation Testing", () => {
     }
   });
 
-  it("MUT-PREVIEW-1.3: flipping isPreview false->true disables button", () => {
+  it("MUT-PREVIEW-1.3: flipping isPreview false->true doesn't disable the button", () => {
     const { rerender } = renderWithMutations({ isPreview: false });
 
     let btn = getFinalizeButton();
@@ -145,7 +145,7 @@ describe("MUT-PREVIEW-1: Boolean Mutation Testing", () => {
     );
 
     btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
   });
 
   it("MUT-PREVIEW-1.4: isReadOnly TRUE shows readonly indicator", () => {
@@ -202,12 +202,12 @@ describe("MUT-PREVIEW-1: Boolean Mutation Testing", () => {
     }
   });
 
-  it("MUT-PREVIEW-1.9: isPreview true OR isReadOnly true blocks edit", () => {
-    // Logic: Either condition should block editing
+  it("MUT-PREVIEW-1.9: isPreview alone doesn't block edit; isReadOnly does", () => {
+    // isPreview no longer gates via disabled; isReadOnly hides the button entirely
     renderWithMutations({ isPreview: true, isReadOnly: false });
 
     const btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
 
     // Now flip: preview false, readonly true
     renderWithMutations({ isPreview: false, isReadOnly: true });
@@ -221,7 +221,7 @@ describe("MUT-PREVIEW-1: Boolean Mutation Testing", () => {
     renderWithMutations({ isPreview: !notPreview }); // isPreview = true
 
     const btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
 
     // Now test actual not
     renderWithMutations({ isPreview: !true }); // isPreview = false
@@ -239,7 +239,7 @@ describe("MUT-PREVIEW-2: Array Size Mutations", () => {
     });
 
     const btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
 
     // Should still show preview indicator
     const badge = screen.queryByText(/preview/i);
@@ -273,7 +273,7 @@ describe("MUT-PREVIEW-2: Array Size Mutations", () => {
 
     // Should render preview state but no tickets
     let btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
 
     // Add tickets
     rerender(
@@ -293,7 +293,7 @@ describe("MUT-PREVIEW-2: Array Size Mutations", () => {
     expect(screen.getByText(/Capability 1/)).toBeInTheDocument();
 
     btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
   });
 
   it("MUT-PREVIEW-2.5: importedTickets shrinks from multiple to single", () => {
@@ -364,38 +364,38 @@ describe("MUT-PREVIEW-2: Array Size Mutations", () => {
 // MUT-PREVIEW-3: COMPARISON OPERATOR MUTATIONS
 // ===========================================================================
 describe("MUT-PREVIEW-3: Comparison Operator Mutations", () => {
-  it("MUT-PREVIEW-3.1: isPreview === true blocks finalize", () => {
+  it("MUT-PREVIEW-3.1: isPreview === true does not disable finalize", () => {
     renderWithMutations({ isPreview: true });
     const btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
   });
 
-  it("MUT-PREVIEW-3.2: isPreview !== false blocks finalize", () => {
+  it("MUT-PREVIEW-3.2: isPreview !== false does not disable finalize", () => {
     // Alternative: if (isPreview !== false)
     renderWithMutations({ isPreview: true });
     const btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
   });
 
-  it("MUT-PREVIEW-3.3: NOT(isPreview === false) blocks finalize", () => {
+  it("MUT-PREVIEW-3.3: NOT(isPreview === false) does not disable finalize", () => {
     // Double negative
     renderWithMutations({ isPreview: true });
     const btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
   });
 
-  it("MUT-PREVIEW-3.4: isPreview && true blocks finalize", () => {
+  it("MUT-PREVIEW-3.4: isPreview && true does not disable finalize", () => {
     // AND with true
     renderWithMutations({ isPreview: true });
     const btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
   });
 
   it("MUT-PREVIEW-3.5: isPreview || false has no extra effect", () => {
     // OR with false (no-op)
     renderWithMutations({ isPreview: true });
     const btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
   });
 
   it("MUT-PREVIEW-3.6: importedTickets.length > 0 shows content", () => {
@@ -431,10 +431,10 @@ describe("MUT-PREVIEW-3: Comparison Operator Mutations", () => {
 // MUT-PREVIEW-4: CONDITIONAL LOGIC MUTATIONS
 // ===========================================================================
 describe("MUT-PREVIEW-4: Conditional Logic Mutations", () => {
-  it("MUT-PREVIEW-4.1: if (isPreview) disable: TRUE disables", () => {
+  it("MUT-PREVIEW-4.1: if (isPreview) disable: TRUE does not disable", () => {
     renderWithMutations({ isPreview: true });
     const btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
   });
 
   it("MUT-PREVIEW-4.2: if (isPreview) disable: FALSE enables", () => {
@@ -465,21 +465,21 @@ describe("MUT-PREVIEW-4: Conditional Logic Mutations", () => {
 
   it("MUT-PREVIEW-4.5: if-else swap: inverted logic fails", () => {
     // Mutation: swap if/else branches
-    // Expected: isPreview=true -> disable button
+    // Expected: isPreview=true -> button stays enabled (dialog gates it)
     renderWithMutations({ isPreview: true });
     const btn = getFinalizeButton();
 
     // Should NOT be the opposite of what we expect
     expect(btn).not.toHaveAttribute("enabled");
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
   });
 
   it("MUT-PREVIEW-4.6: ternary mutation: true branch vs false branch", () => {
-    // isPreview ? "disabled" : "enabled" (test both branches)
+    // isPreview doesn't select a disabled/enabled branch either way anymore
     const { rerender } = renderWithMutations({ isPreview: true });
 
     let btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
 
     rerender(
       <QueryClientProvider client={new QueryClient()}>
@@ -527,14 +527,14 @@ describe("MUT-PREVIEW-5: State Transition Mutations", () => {
     );
 
     btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
   });
 
   it("MUT-PREVIEW-5.2: transition: preview=true -> false", () => {
     const { rerender } = renderWithMutations({ isPreview: true });
 
     let btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
 
     rerender(
       <QueryClientProvider client={new QueryClient()}>
@@ -753,7 +753,7 @@ describe("MUT-PREVIEW-7: Edge Case Sequences", () => {
     );
 
     btn = getFinalizeButton();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
 
     // Toggle false again
     rerender(
@@ -818,10 +818,10 @@ describe("MUT-PREVIEW-8: Integration (real state transitions)", () => {
 
     const btn = getFinalizeButton();
     if (btn) {
-      // Click should be ignored (button is disabled)
+      // Click opens the confirm dialog rather than finalizing directly
       await user.click(btn);
 
-      // API should never be called
+      // API should not be called by that single click
       expect(apiClient.finalizeHierarchy).not.toHaveBeenCalled();
     }
   });
