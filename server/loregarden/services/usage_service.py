@@ -85,6 +85,7 @@ class ProviderUsage:
     from_cache: bool = False
     cached_at: str | None = None
     rate_limited_until: str | None = None
+    rate_limit_streak: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -489,8 +490,19 @@ def _retry_after_seconds(response: httpx.Response) -> int | None:
         return None
 
 
-def _rate_limit_until(response: httpx.Response, *, default_seconds: int = 300) -> str:
-    seconds = _retry_after_seconds(response) or default_seconds
+RATE_LIMIT_MAX_BACKOFF_SECONDS = 4 * 60 * 60  # cap consecutive-rate-limit backoff at 4 hours
+
+
+def _rate_limit_backoff_seconds(
+    response: httpx.Response, streak: int, *, default_seconds: int = 300
+) -> int:
+    base = _retry_after_seconds(response) or default_seconds
+    escalated = base * (2 ** max(streak, 0))
+    return min(escalated, RATE_LIMIT_MAX_BACKOFF_SECONDS)
+
+
+def _rate_limit_until(response: httpx.Response, streak: int, *, default_seconds: int = 300) -> str:
+    seconds = _rate_limit_backoff_seconds(response, streak, default_seconds=default_seconds)
     return (datetime.now(tz=timezone.utc) + timedelta(seconds=seconds)).isoformat()
 
 
@@ -578,6 +590,11 @@ def _active_rate_limit_until(cache_entry: dict[str, Any] | None) -> str | None:
     return until_iso
 
 
+def _rate_limit_streak_from_cache(cache_entry: dict[str, Any] | None) -> int:
+    streak = (cache_entry or {}).get("rate_limit_streak", 0)
+    return streak if isinstance(streak, int) and streak >= 0 else 0
+
+
 def _fetch_claude_usage(
     client: httpx.Client,
     cache_entry: dict[str, Any] | None = None,
@@ -630,7 +647,12 @@ def _fetch_claude_usage(
             response = _claude_usage_request(client, access_token)
 
     if response.status_code >= 400:
-        rate_limited_until = _rate_limit_until(response) if response.status_code == 429 else None
+        rate_limited_until = None
+        rate_limit_streak = None
+        if response.status_code == 429:
+            prior_streak = _rate_limit_streak_from_cache(cache_entry)
+            rate_limit_streak = prior_streak + 1
+            rate_limited_until = _rate_limit_until(response, prior_streak)
         return ProviderUsage(
             provider="claude",
             plan=_claude_plan_label(oauth),
@@ -642,6 +664,7 @@ def _fetch_claude_usage(
             ),
             breakdown=_scan_claude_logs(),
             rate_limited_until=rate_limited_until,
+            rate_limit_streak=rate_limit_streak,
         )
 
     body = response.json()
@@ -800,6 +823,25 @@ def _scan_cursor_activity(days_back: int = 7) -> list[UsageBreakdownItem]:
     ][:8]
 
 
+def _cursor_usage_http_error(
+    usage_response: httpx.Response, cache_entry: dict[str, Any] | None
+) -> ProviderUsage:
+    rate_limited_until = None
+    rate_limit_streak = None
+    if usage_response.status_code == 429:
+        prior_streak = _rate_limit_streak_from_cache(cache_entry)
+        rate_limit_streak = prior_streak + 1
+        rate_limited_until = _rate_limit_until(usage_response, prior_streak)
+    return ProviderUsage(
+        provider="cursor",
+        logged_in=True,
+        error=_format_usage_http_error("cursor", usage_response),
+        breakdown=_scan_cursor_activity(),
+        rate_limited_until=rate_limited_until,
+        rate_limit_streak=rate_limit_streak,
+    )
+
+
 def _fetch_cursor_usage(
     client: httpx.Client,
     cache_entry: dict[str, Any] | None = None,
@@ -827,16 +869,7 @@ def _fetch_cursor_usage(
     usage_response = _cursor_connect_post(client, CURSOR_USAGE_URL, token)
     plan_response = _cursor_connect_post(client, CURSOR_PLAN_URL, token)
     if usage_response.status_code >= 400:
-        rate_limited_until = (
-            _rate_limit_until(usage_response) if usage_response.status_code == 429 else None
-        )
-        return ProviderUsage(
-            provider="cursor",
-            logged_in=True,
-            error=_format_usage_http_error("cursor", usage_response),
-            breakdown=_scan_cursor_activity(),
-            rate_limited_until=rate_limited_until,
-        )
+        return _cursor_usage_http_error(usage_response, cache_entry)
 
     usage_body = usage_response.json()
     plan_body = plan_response.json() if plan_response.status_code < 400 else {}
@@ -1071,8 +1104,11 @@ def _merge_cache_entry(
     merged["provider"] = provider.provider
     if provider.rate_limited_until:
         merged["rate_limited_until"] = provider.rate_limited_until
+        if provider.rate_limit_streak is not None:
+            merged["rate_limit_streak"] = provider.rate_limit_streak
     elif provider.error is None:
         merged.pop("rate_limited_until", None)
+        merged.pop("rate_limit_streak", None)
     return merged
 
 

@@ -14,8 +14,7 @@ import {
 } from "./TopbarDropdown";
 import { UsageModal } from "./UsageModal";
 
-const USAGE_AUTO_REFRESH_MS = 5 * 60_000;
-const USAGE_BACKGROUND_REFRESH_MS = 10 * 60_000;
+const USAGE_REFRESH_MS = 30 * 60_000;
 
 export function AppTopbarActions() {
   const qc = useQueryClient();
@@ -30,8 +29,8 @@ export function AppTopbarActions() {
   const usage = useQuery({
     queryKey: ["usage"],
     queryFn: api.usage,
-    refetchInterval: usageOpen ? USAGE_AUTO_REFRESH_MS : USAGE_BACKGROUND_REFRESH_MS,
-    staleTime: USAGE_AUTO_REFRESH_MS,
+    refetchInterval: USAGE_REFRESH_MS,
+    staleTime: USAGE_REFRESH_MS,
     refetchOnWindowFocus: false,
   });
 

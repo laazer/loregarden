@@ -9,8 +9,8 @@
     "build:vite-only": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "jest",
-    "test:watch": "jest --watch"
+    "test": "node --expose-gc ./node_modules/.bin/jest",
+    "test:watch": "node --expose-gc ./node_modules/.bin/jest --watch"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
