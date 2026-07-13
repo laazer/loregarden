@@ -13,6 +13,7 @@ import { useNavigate } from "react-router-dom";
 import { BranchCheckoutConfirmModal } from "./BranchCheckoutConfirmModal";
 import { BranchDeleteConfirmModal } from "./BranchDeleteConfirmModal";
 import { BranchTriageCurrentTag } from "./BranchTriageCurrentTag";
+import { BranchWorktreesModal } from "./BranchWorktreesModal";
 import { STATE_COLORS, STATE_LABELS } from "./UpdateStateModal";
 import "./BranchTriagePanel.css";
 
@@ -82,6 +83,7 @@ export function BranchTriageList({
   const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
   const [branchPendingDelete, setBranchPendingDelete] = useState<BranchTriageEntry | null>(null);
   const [branchPendingCheckout, setBranchPendingCheckout] = useState<BranchTriageEntry | null>(null);
+  const [worktreesBranchName, setWorktreesBranchName] = useState<string | null>(null);
 
   const checkout = useMutation({
     mutationFn: (branch: string) => checkoutBranchTriage(workspaceSlug, branch),
@@ -168,6 +170,12 @@ export function BranchTriageList({
           });
         }}
       />
+      <BranchWorktreesModal
+        open={worktreesBranchName !== null}
+        branch={sorted.find((item) => item.name === worktreesBranchName) ?? null}
+        workspaceSlug={workspaceSlug}
+        onClose={() => setWorktreesBranchName(null)}
+      />
       {deleteNotice ? (
         <div className="branch-triage-delete-notice">{deleteNotice}</div>
       ) : !branchPendingDelete && remove.error ? (
@@ -247,6 +255,16 @@ export function BranchTriageList({
               }}
             >
               Diff review
+            </button>
+            <button
+              type="button"
+              className="btn-secondary btn-compact"
+              onClick={(event) => {
+                event.stopPropagation();
+                setWorktreesBranchName(branch.name);
+              }}
+            >
+              Worktrees{branch.worktrees.length ? ` (${branch.worktrees.length})` : ""}
             </button>
             {branch.linked_tickets[0] ? (
               <button

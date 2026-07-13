@@ -31,6 +31,7 @@ export interface BranchTriageWorktree {
   path: string;
   label: string;
   dirty: boolean;
+  is_primary: boolean;
 }
 
 export interface BranchTriagePrStatus {
@@ -198,6 +199,21 @@ export async function deleteBranchTriage(
     {
       method: "POST",
       body: JSON.stringify({ force, remove_worktrees: removeWorktrees }),
+    },
+  );
+}
+
+export async function removeBranchWorktree(
+  slug: string,
+  branch: string,
+  path: string,
+): Promise<{ branch: string; removed_path: string }> {
+  const q = new URLSearchParams({ branch });
+  return branchTriageRequest(
+    `/api/workspaces/${encodeURIComponent(slug)}/branch-triage/worktrees/remove?${q}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ path }),
     },
   );
 }

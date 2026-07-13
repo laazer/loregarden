@@ -13,6 +13,7 @@ from loregarden.services.branch_triage_service import (
     branch_diff_snapshot,
     branch_triage_snapshot,
     delete_branch,
+    remove_branch_worktree,
 )
 from loregarden.services.file_editor import checkout_editor_branch
 from loregarden.services.triage_service import send_triage_message
@@ -43,6 +44,10 @@ class BranchCheckoutRequest(BaseModel):
 class BranchDeleteRequest(BaseModel):
     force: bool = False
     remove_worktrees: bool = False
+
+
+class BranchWorktreeRemoveRequest(BaseModel):
+    path: str = Field(min_length=1)
 
 
 class BranchChatMessageCreate(BaseModel):
@@ -142,6 +147,21 @@ def remove_branch(
         "already_gone": not removed,
         "removed_worktrees": removed_worktrees,
     }
+
+
+@router.post("/{slug}/branch-triage/worktrees/remove")
+def remove_worktree(
+    slug: str,
+    body: BranchWorktreeRemoveRequest,
+    branch: str = Query(..., min_length=1),
+    session: Session = Depends(get_session),
+) -> dict:
+    ws = _workspace_or_404(session, slug)
+    try:
+        remove_branch_worktree(ws, branch, body.path)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"branch": branch, "removed_path": body.path}
 
 
 @router.get("/{slug}/branch-triage/chat")

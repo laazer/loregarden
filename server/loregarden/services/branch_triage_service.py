@@ -322,7 +322,8 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
     worktrees = _parse_worktrees(repo_root)
     ticket_map = _ticket_branch_map(session, workspace.id)
 
-    worktrees_by_branch: dict[str, list[dict[str, str]]] = {}
+    main_repo_path = str(repo_root.resolve())
+    worktrees_by_branch: dict[str, list[dict[str, Any]]] = {}
     for item in worktrees:
         branch_name = item.get("branch") or ""
         if not branch_name:
@@ -332,6 +333,7 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
                 "path": item["path"],
                 "label": item["label"],
                 "dirty": _worktree_dirty(item["path"]),
+                "is_primary": item["path"] == main_repo_path,
             }
         )
 
@@ -473,6 +475,24 @@ def _remove_git_worktree(repo_root: Path, worktree_path: str) -> None:
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "worktree remove failed").strip()
         raise ValueError(detail)
+
+
+def remove_branch_worktree(workspace: Workspace, branch: str, path: str) -> None:
+    """Remove a single worktree linked to a branch, leaving the branch itself intact."""
+    validate_branch_name(branch)
+    repo_root = resolve_workspace_root(workspace)
+    if not _is_git_repo(repo_root):
+        raise ValueError("Workspace is not a git repository")
+
+    worktree_paths = _worktree_paths_for_branch(repo_root, branch)
+    if path not in worktree_paths:
+        raise ValueError(f"No worktree at '{path}' for branch '{branch}'")
+
+    main_repo_path = str(repo_root.resolve())
+    if path == main_repo_path:
+        raise ValueError("Cannot remove the primary repository checkout")
+
+    _remove_git_worktree(repo_root, path)
 
 
 def delete_branch(

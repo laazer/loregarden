@@ -13,6 +13,7 @@ from loregarden.services.branch_triage_service import (
     _pr_status_ttl,
     branch_triage_snapshot,
     delete_branch,
+    remove_branch_worktree,
 )
 from loregarden.services.file_editor import _list_branches
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -268,6 +269,85 @@ def test_delete_branch_blocked_by_worktree(triage_workspace, triage_repo, tmp_pa
     )
     branch_names = _list_branches(resolve_workspace_root(triage_workspace))
     assert "feature/worktree" not in branch_names
+
+
+def test_remove_branch_worktree_leaves_branch_intact(
+    triage_workspace, triage_repo, triage_session: Session, tmp_path
+):
+    subprocess.run(
+        ["git", "branch", "feature/wt-cleanup"], cwd=triage_repo, check=True, capture_output=True
+    )
+    wt_path = tmp_path / "wt-feature-cleanup"
+    subprocess.run(
+        ["git", "worktree", "add", str(wt_path), "feature/wt-cleanup"],
+        cwd=triage_repo,
+        check=True,
+        capture_output=True,
+    )
+
+    snapshot = branch_triage_snapshot(triage_session, triage_workspace)
+    branch = next(b for b in snapshot["branches"] if b["name"] == "feature/wt-cleanup")
+    assert len(branch["worktrees"]) == 1
+    assert branch["worktrees"][0]["is_primary"] is False
+
+    remove_branch_worktree(triage_workspace, "feature/wt-cleanup", str(wt_path))
+
+    branch_names = _list_branches(resolve_workspace_root(triage_workspace))
+    assert "feature/wt-cleanup" in branch_names
+    assert not wt_path.exists()
+
+
+def test_remove_branch_worktree_rejects_unknown_path(triage_workspace, triage_repo):
+    subprocess.run(
+        ["git", "branch", "feature/no-worktree"],
+        cwd=triage_repo,
+        check=True,
+        capture_output=True,
+    )
+    with pytest.raises(ValueError, match="No worktree"):
+        remove_branch_worktree(triage_workspace, "feature/no-worktree", "/tmp/not-a-worktree")
+
+
+def test_remove_branch_worktree_rejects_primary_checkout(triage_workspace, triage_repo):
+    with pytest.raises(ValueError, match="primary repository checkout"):
+        remove_branch_worktree(triage_workspace, "main", str(triage_repo.resolve()))
+
+
+def test_remove_worktree_api(client: TestClient, triage_repo, db_session: Session, tmp_path):
+    ws = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+    assert ws is not None
+    # The client fixture repoints the seeded workspace at its own throwaway repo;
+    # restore the relative repo_path so it resolves against triage_repo instead.
+    ws.repo_path = "."
+    db_session.add(ws)
+    db_session.commit()
+
+    subprocess.run(
+        ["git", "branch", "feature/wt-api"], cwd=triage_repo, check=True, capture_output=True
+    )
+    wt_path = tmp_path / "wt-feature-api"
+    subprocess.run(
+        ["git", "worktree", "add", str(wt_path), "feature/wt-api"],
+        cwd=triage_repo,
+        check=True,
+        capture_output=True,
+    )
+
+    res = client.post(
+        f"/api/workspaces/{ws.slug}/branch-triage/worktrees/remove",
+        params={"branch": "feature/wt-api"},
+        json={"path": str(wt_path)},
+    )
+    assert res.status_code == 200
+    assert res.json() == {"branch": "feature/wt-api", "removed_path": str(wt_path)}
+    assert not wt_path.exists()
+
+    bad = client.post(
+        f"/api/workspaces/{ws.slug}/branch-triage/worktrees/remove",
+        params={"branch": "feature/wt-api"},
+        json={"path": str(wt_path)},
+    )
+    assert bad.status_code == 400
 
 
 def test_branch_diff_endpoint(client: TestClient, triage_repo, db_session: Session):
