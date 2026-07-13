@@ -30,7 +30,8 @@ import { ImportTicketsConfirmModal } from "../components/ImportTicketsConfirmMod
 import { AddWorkspaceModal, type AddWorkspaceDraft } from "../components/AddWorkspaceModal";
 import { DeleteTicketConfirmModal } from "../components/DeleteTicketConfirmModal";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
-import { runtimeFromWorkspace, runtimeSettingsEqual } from "../components/WorkspaceRuntimeFields";
+import { runtimeFromWorkspace, runtimeSettingsEqual, runtimeSummaryLabel } from "../components/WorkspaceRuntimeFields";
+import { TriageModelModal } from "../components/TriageModelModal";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
 import { navigateToPage, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
 import { isArtifactTab } from "../lib/appNavigation";
@@ -41,6 +42,14 @@ import {
   buildOrchestrateTerminalCommand,
   buildStageTerminalHandoffCommand,
 } from "../lib/terminalCommands";
+
+const DEFAULT_ORCHESTRATION_RUNTIME: import("../api/client").WorkspaceRuntimeSettings = {
+  cli_adapter: "default",
+  claude_model: "",
+  cursor_model: "",
+  lmstudio_base_url: "",
+  lmstudio_model: "",
+};
 
 function mergeApprovals(...lists: Array<import("../api/client").Approval[] | undefined>) {
   const seen = new Set<string>();
@@ -405,6 +414,7 @@ export function Dashboard() {
   };
 
   const [stateModalOpen, setStateModalOpen] = useState(false);
+  const [ticketModelModalOpen, setTicketModelModalOpen] = useState(false);
   const [runConfirmStageKey, setRunConfirmStageKey] = useState<string | null>(null);
   const [assembleModalOpen, setAssembleModalOpen] = useState(false);
   const [deleteTicketTarget, setDeleteTicketTarget] = useState<TicketDetail | null>(null);
@@ -491,6 +501,16 @@ export function Dashboard() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["workspaces"] });
       qc.invalidateQueries({ queryKey: ["workspace-runtime", vars.slug] });
+    },
+  });
+
+  const setTicketRuntime = useMutation({
+    mutationFn: (runtime: import("../api/client").WorkspaceRuntimeSettings) => {
+      if (!selectedId) throw new Error("No ticket selected");
+      return api.setTicketRuntime(selectedId, runtime);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
     },
   });
 
@@ -1243,8 +1263,25 @@ export function Dashboard() {
                 )}
 
                 <div style={{ marginTop: 24 }}>
-                  <div className="state-label workflow-lifecycle-label">
-                    Workflow lifecycle
+                  <div
+                    className="workflow-lifecycle-label"
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}
+                  >
+                    <span className="state-label" style={{ margin: 0 }}>
+                      Workflow lifecycle
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-secondary btn-compact"
+                      onClick={() => setTicketModelModalOpen(true)}
+                      title="Model settings for this ticket's runs"
+                    >
+                      Model ·{" "}
+                      {runtimeSummaryLabel(
+                        sel.orchestration_runtime ?? DEFAULT_ORCHESTRATION_RUNTIME,
+                        runtimeOptions.data,
+                      )}
+                    </button>
                   </div>
                   <WorkflowStageTimeline
                     stages={sel.stages}
@@ -1515,6 +1552,19 @@ export function Dashboard() {
         isSaving={saveStateFromModal.isPending}
         onClose={() => setStateModalOpen(false)}
         onSave={(draft, original) => saveStateFromModal.mutateAsync({ draft, original })}
+      />
+
+      <TriageModelModal
+        open={ticketModelModalOpen}
+        runtime={sel?.orchestration_runtime ?? DEFAULT_ORCHESTRATION_RUNTIME}
+        runtimeOptions={runtimeOptions.data}
+        isSaving={setTicketRuntime.isPending}
+        scopeLabel="Workflow"
+        subtitle="Choose a provider, then pick a model for this ticket's agent runs"
+        onClose={() => setTicketModelModalOpen(false)}
+        onSave={async (runtime) => {
+          await setTicketRuntime.mutateAsync(runtime);
+        }}
       />
 
       <CreateWorkItemModal

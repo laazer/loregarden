@@ -62,12 +62,14 @@ def test_cli_prompt_includes_orchestration_context():
         executor = CliAgentExecutor(session)
         agent = {"role_file": "agents/9_static_qa/static_qa_v1.md"}
         workspace = session.get(Workspace, ticket.workspace_id)
+        stage_def = executor._resolve_stage_def(ticket, run)
         prompt = executor._build_prompt(
             ticket,
             run,
             agent,
             resolve_agent_context_dir(workspace),
             workspace,
+            stage_def,
         )
         assert "Loregarden run context (authoritative for this run)" in prompt
         assert "STATIC_QA" in prompt

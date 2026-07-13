@@ -43,6 +43,7 @@ class WorkflowStageDef(SQLModel):
     parallel_agents: list[ParallelAgentSpec] = Field(default_factory=list)
     gate_commands: list[str] = Field(default_factory=list)
     gate_required: bool = False
+    model: str = ""
 
 
 class WorkflowStageView(SQLModel):
@@ -56,6 +57,7 @@ class WorkflowStageView(SQLModel):
     note: str = ""
     stage_type: str = "agent"
     agents: list[ParallelAgentSpec] = Field(default_factory=list)
+    model: str = ""
 
 
 class WorkflowTransitionView(SQLModel):
@@ -65,6 +67,22 @@ class WorkflowTransitionView(SQLModel):
     to: str
     when: str = "default"
     agent_id: str = ""
+
+
+class WorkspaceRuntimeUpdate(SQLModel):
+    cli_adapter: str = "default"
+    claude_model: str = ""
+    cursor_model: str = ""
+    lmstudio_base_url: str = ""
+    lmstudio_model: str = ""
+
+
+class WorkspaceRuntimeSettings(SQLModel):
+    cli_adapter: str = "default"
+    claude_model: str = ""
+    cursor_model: str = ""
+    lmstudio_base_url: str = ""
+    lmstudio_model: str = ""
 
 
 class TicketSummary(SQLModel):
@@ -113,6 +131,9 @@ class TicketDetail(TicketSummary):
     workflow_template_name: str = ""
     workflow_transitions: list[WorkflowTransitionView] = Field(default_factory=list)
     artifacts: dict[str, Any]
+    orchestration_runtime: WorkspaceRuntimeSettings = Field(
+        default_factory=WorkspaceRuntimeSettings
+    )
 
 
 class WorkspaceSummary(SQLModel):
@@ -134,22 +155,6 @@ class WorkspaceCreate(SQLModel):
 
 class WorkspaceTemplateUpdate(SQLModel):
     workflow_template_slug: str
-
-
-class WorkspaceRuntimeUpdate(SQLModel):
-    cli_adapter: str = "default"
-    claude_model: str = ""
-    cursor_model: str = ""
-    lmstudio_base_url: str = ""
-    lmstudio_model: str = ""
-
-
-class WorkspaceRuntimeSettings(SQLModel):
-    cli_adapter: str = "default"
-    claude_model: str = ""
-    cursor_model: str = ""
-    lmstudio_base_url: str = ""
-    lmstudio_model: str = ""
 
 
 class ApprovalView(SQLModel):
@@ -381,6 +386,7 @@ class StudioAgentCreate(SQLModel):
     description: str = ""
     role_body: str = ""
     adapter: str = "claude"
+    default_model: str = ""
     timeout: int = 600
     default_skill: str = ""
     mcp_enabled: bool = True
@@ -394,6 +400,7 @@ class StudioAgentUpdate(SQLModel):
     description: str | None = None
     role_body: str | None = None
     adapter: str | None = None
+    default_model: str | None = None
     timeout: int | None = None
     default_skill: str | None = None
     mcp_enabled: bool | None = None
@@ -410,6 +417,7 @@ class StudioAgentView(SQLModel):
     role_body: str
     role_file: str = ""
     adapter: str
+    default_model: str = ""
     timeout: int
     default_skill: str
     mcp_enabled: bool
@@ -473,6 +481,7 @@ class StudioWorkflowStage(SQLModel):
     classify_routes: list[ClassifyRoute] = Field(default_factory=list)
     parallel_agents: list[ParallelAgentSpec] = Field(default_factory=list)
     gate_commands: list[str] = Field(default_factory=list)
+    model: str = ""
 
 
 class StudioWorkflowCreate(SQLModel):
@@ -591,6 +600,8 @@ class TicketStudioCommitResult(SQLModel):
     session_id: str
     created_ticket_ids: list[str]
     created_count: int
+    breakdown: dict[str, int] = Field(default_factory=dict)
+    root_ticket_id: str | None = None
 
 
 class HierarchyWorkItem(SQLModel):

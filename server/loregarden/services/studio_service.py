@@ -369,6 +369,7 @@ def _agent_view(agent: StudioAgent) -> StudioAgentView:
         role_body=_ensure_studio_role_preamble(agent.role_body),
         role_file="",
         adapter=agent.adapter,
+        default_model=agent.default_model,
         timeout=agent.timeout,
         default_skill=agent.default_skill,
         mcp_enabled=agent.mcp_enabled,
@@ -394,6 +395,7 @@ def _builtin_agent_view(agent_id: str, cfg: dict) -> StudioAgentView:
         role_body=role_body,
         role_file=role_file,
         adapter=str(cfg.get("adapter", "claude")),
+        default_model=str(cfg.get("default_model", "")),
         timeout=int(cfg.get("timeout", 600)),
         default_skill="",
         mcp_enabled=True,
@@ -474,6 +476,7 @@ def _studio_agent_dict(agent: StudioAgent) -> dict:
         "name": agent.name,
         "role_body": _ensure_studio_role_preamble(agent.role_body),
         "adapter": agent.adapter,
+        "default_model": agent.default_model,
         "timeout": agent.timeout,
         "default_skill": agent.default_skill,
         "mcp_enabled": agent.mcp_enabled,
@@ -1199,6 +1202,7 @@ class StudioService:
             description=body.description.strip(),
             role_body=_ensure_studio_role_preamble(body.role_body),
             adapter=body.adapter or "claude",
+            default_model=body.default_model,
             timeout=body.timeout,
             default_skill=body.default_skill,
             mcp_enabled=body.mcp_enabled,
@@ -1225,6 +1229,8 @@ class StudioService:
             agent.role_body = _ensure_studio_role_preamble(body.role_body)
         if body.adapter is not None:
             agent.adapter = body.adapter
+        if body.default_model is not None:
+            agent.default_model = body.default_model
         if body.timeout is not None:
             agent.timeout = body.timeout
         if body.default_skill is not None:
@@ -1376,6 +1382,7 @@ class StudioService:
                     "parallel_agents": [item.model_dump() for item in stage.parallel_agents],
                     "gate_commands": list(stage.gate_commands),
                     "gate_required": stage.gate_required,
+                    "model": stage.model,
                 }
             )
 

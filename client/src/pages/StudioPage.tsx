@@ -38,6 +38,7 @@ const EMPTY_AGENT = {
   description: "",
   role_body: "",
   adapter: "claude",
+  default_model: "",
   timeout: 600,
   default_skill: "",
   mcp_enabled: true,
@@ -57,6 +58,7 @@ function emptyStage(order: number): StudioWorkflowStage {
     order,
     gate_required: false,
     classify_routes: [],
+    model: "",
   };
 }
 
@@ -157,6 +159,7 @@ export function StudioPage() {
           description: selectedAgent.description,
           role_body: selectedAgent.role_body,
           adapter: selectedAgent.adapter,
+          default_model: selectedAgent.default_model,
           timeout: selectedAgent.timeout,
           default_skill: selectedAgent.default_skill,
           mcp_enabled: selectedAgent.mcp_enabled,
@@ -169,6 +172,7 @@ export function StudioPage() {
           description: agentDraft.description,
           role_body: agentDraft.role_body,
           adapter: agentDraft.adapter,
+          default_model: agentDraft.default_model,
           timeout: agentDraft.timeout,
           default_skill: agentDraft.default_skill,
           mcp_enabled: agentDraft.mcp_enabled,
@@ -288,6 +292,7 @@ export function StudioPage() {
       description: agent.description,
       role_body: agent.role_body,
       adapter: agent.adapter,
+      default_model: agent.default_model,
       timeout: agent.timeout,
       default_skill: agent.default_skill,
       mcp_enabled: agent.mcp_enabled,
@@ -378,6 +383,7 @@ export function StudioPage() {
       description: agent.description,
       role_body: agent.role_body,
       adapter: agent.adapter,
+      default_model: agent.default_model,
       timeout: agent.timeout,
       default_skill: agent.default_skill,
       mcp_enabled: agent.mcp_enabled,
@@ -721,6 +727,46 @@ export function StudioPage() {
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div className="studio-field">
+                    <div className="studio-field-label">Default model</div>
+                    {(() => {
+                      const adapter = isAgentReadOnly ? selectedAgent?.adapter ?? "claude" : agentDraft.adapter;
+                      const value = isAgentReadOnly
+                        ? selectedAgent?.default_model ?? ""
+                        : agentDraft.default_model;
+                      const modelOptions =
+                        adapter === "cursor"
+                          ? runtimeOptions.data?.cursor_models
+                          : adapter === "claude"
+                            ? runtimeOptions.data?.claude_models
+                            : undefined;
+                      if (modelOptions) {
+                        return (
+                          <select
+                            className="studio-select mono"
+                            value={value}
+                            disabled={isAgentReadOnly}
+                            onChange={(e) => setAgentDraft({ ...agentDraft, default_model: e.target.value })}
+                          >
+                            {modelOptions.map((opt) => (
+                              <option key={opt.id || "default"} value={opt.id}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        );
+                      }
+                      return (
+                        <input
+                          className="studio-input mono"
+                          placeholder="Model id"
+                          value={value}
+                          readOnly={isAgentReadOnly}
+                          onChange={(e) => setAgentDraft({ ...agentDraft, default_model: e.target.value })}
+                        />
+                      );
+                    })()}
                   </div>
                   <div className="studio-field" style={{ flex: 0.8 }}>
                     <div className="studio-field-label">Timeout (s)</div>
@@ -1114,6 +1160,7 @@ export function StudioPage() {
                               note: "",
                               stage_type: stage.stage_type,
                               agents: [],
+                              model: stage.model,
                             }}
                             transitions={selectedWorkflow.transitions}
                             stages={workflowDraft.stages.map((item, stageIndex) => ({
@@ -1127,12 +1174,13 @@ export function StudioPage() {
                               note: "",
                               stage_type: item.stage_type,
                               agents: [],
+                              model: item.model,
                             }))}
                           />
                         ) : null}
 
                         {stage.stage_type === "agent" || stage.stage_type === "gate" ? (
-                          <div className="studio-stage-fields two-col">
+                          <div className="studio-stage-fields">
                             <div>
                               <div className="studio-stage-field-label">Agent</div>
                               <select
@@ -1170,6 +1218,46 @@ export function StudioPage() {
                                   </option>
                                 ))}
                               </select>
+                            </div>
+                            <div>
+                              <div className="studio-stage-field-label">Model override</div>
+                              {(() => {
+                                const stageAgent = agents.data?.find((a) => a.slug === stage.agent_id);
+                                const modelOptions =
+                                  stageAgent?.adapter === "cursor"
+                                    ? runtimeOptions.data?.cursor_models
+                                    : stageAgent?.adapter === "claude" || !stageAgent
+                                      ? runtimeOptions.data?.claude_models
+                                      : undefined;
+                                if (modelOptions) {
+                                  return (
+                                    <select
+                                      className="studio-stage-select mono"
+                                      value={stage.model}
+                                      disabled={isWorkflowReadOnly}
+                                      onChange={(e) => updateStage(index, { model: e.target.value })}
+                                    >
+                                      <option value="">— Agent default —</option>
+                                      {modelOptions
+                                        .filter((opt) => opt.id)
+                                        .map((opt) => (
+                                          <option key={opt.id} value={opt.id}>
+                                            {opt.label}
+                                          </option>
+                                        ))}
+                                    </select>
+                                  );
+                                }
+                                return (
+                                  <input
+                                    className="studio-stage-select mono"
+                                    placeholder="Model id"
+                                    value={stage.model}
+                                    readOnly={isWorkflowReadOnly}
+                                    onChange={(e) => updateStage(index, { model: e.target.value })}
+                                  />
+                                );
+                              })()}
                             </div>
                           </div>
                         ) : (

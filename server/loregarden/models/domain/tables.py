@@ -105,6 +105,7 @@ class Ticket(SQLModel, table=True):
     state_locked: bool = Field(default=False)
     workflow_disabled: bool = Field(default=False)
     triage_runtime_json: str = "{}"
+    orchestration_runtime_json: str = "{}"
     permission_allowlist_json: str = "[]"
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
@@ -242,6 +243,7 @@ class StudioAgent(SQLModel, table=True):
     description: str = ""
     role_body: str = ""
     adapter: str = "claude"
+    default_model: str = ""
     timeout: int = Field(default=600, ge=30)
     default_skill: str = ""
     mcp_enabled: bool = Field(default=True)

@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 from loregarden.models.domain import ClassifyRoute, Ticket, WorkflowStageDef
 from loregarden.services.studio_service import (
@@ -159,6 +161,72 @@ def test_studio_workflow_publish(client: TestClient):
     templates = client.get("/api/workflows/templates")
     slugs = {item["slug"] for item in templates.json()}
     assert "studio-quick-review" in slugs
+
+
+def test_studio_agent_default_model_persists(client: TestClient):
+    create = client.post(
+        "/api/studio/agents",
+        json={
+            "slug": "model-pinned-agent",
+            "name": "Model Pinned Agent",
+            "role_body": "You do a focused thing.",
+            "adapter": "claude",
+            "default_model": "opus",
+        },
+    )
+    assert create.status_code == 200
+    assert create.json()["default_model"] == "opus"
+
+    from loregarden.agents.registry import get_agent
+
+    cfg = get_agent("model-pinned-agent")
+    assert cfg is not None
+    assert cfg["default_model"] == "opus"
+
+    update = client.patch(
+        "/api/studio/agents/model-pinned-agent",
+        json={"default_model": "haiku"},
+    )
+    assert update.status_code == 200
+    assert update.json()["default_model"] == "haiku"
+
+
+def test_studio_workflow_stage_model_survives_publish(client: TestClient):
+    create = client.post(
+        "/api/studio/workflows",
+        json={
+            "slug": "model-pinned-workflow",
+            "name": "Model Pinned Workflow",
+            "stages": [
+                {
+                    "key": "plan",
+                    "name": "Plan",
+                    "stage_type": "agent",
+                    "agent_id": "planner",
+                    "skill_name": "plan",
+                    "order": 1,
+                    "model": "opus",
+                },
+            ],
+        },
+    )
+    assert create.status_code == 200
+    assert create.json()["stages"][0]["model"] == "opus"
+
+    publish = client.post("/api/studio/workflows/model-pinned-workflow/publish")
+    assert publish.status_code == 200
+
+    from loregarden.db.session import engine
+    from loregarden.models.domain import WorkflowTemplate
+    from sqlmodel import Session, select
+
+    with Session(engine) as session:
+        template = session.exec(
+            select(WorkflowTemplate).where(WorkflowTemplate.slug == "studio-model-pinned-workflow")
+        ).first()
+        assert template is not None
+        stages = json.loads(template.stages_json)
+        assert stages[0]["model"] == "opus"
 
 
 def test_resolve_classify_route_python_backend():

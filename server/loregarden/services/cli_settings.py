@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from loregarden.config import settings
-from loregarden.models.domain import Workspace
+from loregarden.models.domain import (
+    Ticket,
+    Workspace,
+    WorkspaceRuntimeSettings,
+    WorkspaceRuntimeUpdate,
+)
+from sqlmodel import Session
 
 CLI_ADAPTER_OPTIONS: list[dict[str, str]] = [
     {"id": "default", "label": "Workspace default"},
@@ -59,12 +67,16 @@ def resolve_effective_adapter(
     *,
     agent_adapter: str,
     workspace: Workspace | None,
+    ticket_adapter: str = "default",
 ) -> str:
     import os
 
     env_override = os.environ.get("LOREGARDEN_CLI_ADAPTER")
     if env_override:
         return env_override
+
+    if ticket_adapter and ticket_adapter != "default":
+        return ticket_adapter
 
     ws = workspace_cli_settings(workspace)
     if ws.cli_adapter and ws.cli_adapter != "default":
@@ -73,22 +85,46 @@ def resolve_effective_adapter(
     return agent_adapter or settings.cli_adapter
 
 
-def resolve_claude_model(workspace: Workspace | None) -> str:
+def resolve_claude_model(
+    workspace: Workspace | None,
+    *,
+    ticket_model: str = "",
+    stage_model: str = "",
+    agent_model: str = "",
+) -> str:
     import os
 
     env_model = os.environ.get("LOREGARDEN_CLAUDE_MODEL")
     if env_model:
         return env_model
+    if ticket_model:
+        return ticket_model
+    if stage_model:
+        return stage_model
+    if agent_model:
+        return agent_model
     ws = workspace_cli_settings(workspace)
     return ws.claude_model or settings.claude_model
 
 
-def resolve_cursor_model(workspace: Workspace | None) -> str:
+def resolve_cursor_model(
+    workspace: Workspace | None,
+    *,
+    ticket_model: str = "",
+    stage_model: str = "",
+    agent_model: str = "",
+) -> str:
     import os
 
     env_model = os.environ.get("LOREGARDEN_CURSOR_MODEL")
     if env_model:
         return env_model
+    if ticket_model:
+        return ticket_model
+    if stage_model:
+        return stage_model
+    if agent_model:
+        return agent_model
     ws = workspace_cli_settings(workspace)
     return ws.cursor_model or settings.cursor_model
 
@@ -111,6 +147,39 @@ def resolve_lmstudio_model(workspace: Workspace | None) -> str:
         return env_model
     ws = workspace_cli_settings(workspace)
     return ws.lmstudio_model or settings.lmstudio_model
+
+
+def get_ticket_orchestration_runtime(ticket: Ticket) -> WorkspaceRuntimeSettings:
+    data = json.loads(ticket.orchestration_runtime_json or "{}")
+    return WorkspaceRuntimeSettings(
+        cli_adapter=str(data.get("cli_adapter") or "default"),
+        claude_model=str(data.get("claude_model") or ""),
+        cursor_model=str(data.get("cursor_model") or ""),
+        lmstudio_base_url=str(data.get("lmstudio_base_url") or ""),
+        lmstudio_model=str(data.get("lmstudio_model") or ""),
+    )
+
+
+def set_ticket_orchestration_runtime(
+    session: Session,
+    ticket: Ticket,
+    body: WorkspaceRuntimeUpdate,
+) -> WorkspaceRuntimeSettings:
+    if body.cli_adapter not in VALID_CLI_ADAPTERS:
+        raise ValueError(f"Invalid cli_adapter: {body.cli_adapter}")
+    payload = {
+        "cli_adapter": body.cli_adapter,
+        "claude_model": body.claude_model.strip(),
+        "cursor_model": body.cursor_model.strip(),
+        "lmstudio_base_url": body.lmstudio_base_url.strip(),
+        "lmstudio_model": body.lmstudio_model.strip(),
+    }
+    ticket.orchestration_runtime_json = json.dumps(payload)
+    ticket.updated_at = datetime.now(timezone.utc)
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    return get_ticket_orchestration_runtime(ticket)
 
 
 def runtime_options_payload() -> dict:

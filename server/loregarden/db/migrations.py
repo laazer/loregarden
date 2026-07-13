@@ -388,6 +388,28 @@ def _m_queued_run_failure_columns(conn: Connection) -> None:
     )
 
 
+def _m_agent_model_columns(conn: Connection) -> None:
+    _add_columns_if_missing(
+        conn,
+        "tickets",
+        {
+            "orchestration_runtime_json": (
+                "ALTER TABLE tickets ADD COLUMN orchestration_runtime_json "
+                "TEXT NOT NULL DEFAULT '{}'"
+            ),
+        },
+    )
+    _add_columns_if_missing(
+        conn,
+        "studio_agents",
+        {
+            "default_model": (
+                "ALTER TABLE studio_agents ADD COLUMN default_model TEXT NOT NULL DEFAULT ''"
+            ),
+        },
+    )
+
+
 # Ordered registry. Append new migrations here with the next id; never reorder or
 # rewrite an id that may already be recorded in a deployed database.
 MIGRATIONS: list[tuple[str, Migration]] = [
@@ -405,6 +427,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0012_agent_run_auto_approve", _m_agent_run_auto_approve),
     ("0013_ticket_studio_preview_state", _m_ticket_studio_preview_state),
     ("0014_queued_run_failure_columns", _m_queued_run_failure_columns),
+    ("0015_agent_model_columns", _m_agent_model_columns),
 ]
 
 

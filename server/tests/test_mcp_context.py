@@ -76,12 +76,14 @@ def test_cli_prompt_includes_mcp_module():
         )
         executor = CliAgentExecutor(session)
         agent = {"role_file": "agents/9_static_qa/static_qa_v1.md"}
+        stage_def = executor._resolve_stage_def(ticket, run)
         prompt = executor._build_prompt(
             ticket,
             run,
             agent,
             resolve_agent_context_dir(workspace),
             workspace,
+            stage_def,
         )
         assert "Loregarden MCP (required for workflow state)" in prompt
         assert "Loregarden memory (workspace-scoped)" in prompt or "Loregarden artifacts" in prompt

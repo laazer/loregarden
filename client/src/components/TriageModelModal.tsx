@@ -12,6 +12,8 @@ interface TriageModelModalProps {
   isSaving: boolean;
   onClose: () => void;
   onSave: (runtime: WorkspaceRuntimeSettings) => Promise<void>;
+  scopeLabel?: string;
+  subtitle?: string;
 }
 
 export function TriageModelModal({
@@ -21,6 +23,8 @@ export function TriageModelModal({
   isSaving,
   onClose,
   onSave,
+  scopeLabel = "Triage",
+  subtitle = "Choose a provider, then pick a model for this ticket",
 }: TriageModelModalProps) {
   const [draft, setDraft] = useState<WorkspaceRuntimeSettings>(runtime);
 
@@ -45,11 +49,11 @@ export function TriageModelModal({
       <div className="modal-panel" role="dialog" aria-labelledby="triage-model-modal-title">
         <div className="modal-header">
           <div>
-            <div className="state-label">Triage</div>
+            <div className="state-label">{scopeLabel}</div>
             <h2 id="triage-model-modal-title" className="modal-title">
               Model settings
             </h2>
-            <p className="modal-subtitle">Choose a provider, then pick a model for this ticket</p>
+            <p className="modal-subtitle">{subtitle}</p>
           </div>
           <IconCloseButton disabled={isSaving} onClick={onClose} />
         </div>

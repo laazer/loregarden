@@ -18,7 +18,8 @@ from loregarden.agents.mcp_context import (
 )
 from loregarden.agents.registry import get_agent
 from loregarden.agents.stage_context import build_orchestration_context
-from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace
+from loregarden.models.domain import AgentRun, RunStatus, Ticket, WorkflowStageDef, Workspace
+from loregarden.services.cli_settings import get_ticket_orchestration_runtime
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_errors import agent_timeout_message
 from loregarden.services.run_log_stream import RunLogStreamer
@@ -85,7 +86,10 @@ class CliAgentExecutor:
                     advance_workflow=advance_workflow,
                 )
 
-        prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace)
+        stage_def = self._resolve_stage_def(ticket, run)
+        ticket_runtime = get_ticket_orchestration_runtime(ticket)
+
+        prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace, stage_def)
         with tempfile.TemporaryDirectory(prefix="loregarden-run-") as tmp:
             prompt_file = Path(tmp) / "prompt.md"
             prompt_file.write_text(prompt, encoding="utf-8")
@@ -99,6 +103,11 @@ class CliAgentExecutor:
                     skill_name=run.skill_name,
                     workspace_root=repo_root,
                     workspace=workspace,
+                    ticket_adapter=ticket_runtime.cli_adapter,
+                    ticket_claude_model=ticket_runtime.claude_model,
+                    ticket_cursor_model=ticket_runtime.cursor_model,
+                    stage_model=stage_def.model if stage_def else "",
+                    agent_model=agent.get("default_model", ""),
                 )
             except ValueError as exc:
                 return self.orchestration.complete_run(
@@ -201,7 +210,8 @@ class CliAgentExecutor:
 
         ensure_ticket_branch(repo_root, ticket)
 
-        prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace)
+        stage_def = self._resolve_stage_def(ticket, run)
+        prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace, stage_def)
         prompt_dir = Path(tempfile.mkdtemp(prefix="loregarden-handoff-"))
         prompt_file = prompt_dir / "prompt.md"
         invocation = resolve_terminal_handoff_invocation(
@@ -288,6 +298,17 @@ class CliAgentExecutor:
         self.session.add(ticket)
         self.session.commit()
 
+    def _resolve_stage_def(self, ticket: Ticket, run: AgentRun) -> WorkflowStageDef | None:
+        template = self.orchestration.get_template_for_ticket(ticket)
+        if not template:
+            return None
+        from loregarden.core.workflow_loader import get_template_stages
+
+        return next(
+            (stage for stage in get_template_stages(template) if stage.key == run.stage_key),
+            None,
+        )
+
     def _build_prompt(
         self,
         ticket: Ticket,
@@ -295,6 +316,7 @@ class CliAgentExecutor:
         agent: dict,
         agent_context_dir: Path,
         workspace: Workspace,
+        stage_def: WorkflowStageDef | None,
     ) -> str:
         role_path = agent_context_dir / agent.get("role_file", "")
         role_body = agent.get("role_body") or ""
@@ -310,15 +332,6 @@ class CliAgentExecutor:
         )
         ac = json.loads(ticket.acceptance_criteria_json or "[]")
 
-        template = self.orchestration.get_template_for_ticket(ticket)
-        stage_def = None
-        if template:
-            from loregarden.core.workflow_loader import get_template_stages
-
-            stage_def = next(
-                (stage for stage in get_template_stages(template) if stage.key == run.stage_key),
-                None,
-            )
         orchestration_context = build_orchestration_context(
             ticket=ticket,
             run=run,

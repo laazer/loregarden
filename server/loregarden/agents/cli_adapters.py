@@ -407,6 +407,11 @@ def resolve_cli_invocation(
     workspace_root: Path,
     workspace=None,
     resume_session_id: str = "",
+    ticket_adapter: str = "default",
+    ticket_claude_model: str = "",
+    ticket_cursor_model: str = "",
+    stage_model: str = "",
+    agent_model: str = "",
 ) -> CliInvocation:
     """Resolve subprocess argv. Agents are adapters — no orchestration logic here."""
     override = _env_command_override(
@@ -419,9 +424,21 @@ def resolve_cli_invocation(
     if override is not None:
         return override
 
-    selected = resolve_effective_adapter(agent_adapter=adapter, workspace=workspace)
-    claude_model = resolve_claude_model(workspace)
-    cursor_model = resolve_cursor_model(workspace)
+    selected = resolve_effective_adapter(
+        agent_adapter=adapter, workspace=workspace, ticket_adapter=ticket_adapter
+    )
+    claude_model = resolve_claude_model(
+        workspace,
+        ticket_model=ticket_claude_model,
+        stage_model=stage_model,
+        agent_model=agent_model,
+    )
+    cursor_model = resolve_cursor_model(
+        workspace,
+        ticket_model=ticket_cursor_model,
+        stage_model=stage_model,
+        agent_model=agent_model,
+    )
 
     if selected == "local":
         return _local_invocation(

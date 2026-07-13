@@ -309,6 +309,11 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  setTicketRuntime: (ticketId: string, body: WorkspaceRuntimeSettings) =>
+    request<WorkspaceRuntimeSettings>(`/api/tickets/${ticketId}/runtime`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   sendTriageMessage: (ticketId: string, content: string) =>
     request<{ user_message: TriageMessage; assistant_message: TriageMessage }>(
       `/api/tickets/${ticketId}/triage/messages`,

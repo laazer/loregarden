@@ -48,6 +48,7 @@ export interface WorkflowStageView {
   note: string;
   stage_type: string;
   agents: { agent_id: string; skill_name: string }[];
+  model?: string;
 }
 
 export interface WorkflowTransition {
@@ -85,6 +86,7 @@ export interface TicketDetail extends TicketSummary {
       body: string;
     } | null;
   };
+  orchestration_runtime?: WorkspaceRuntimeSettings;
 }
 
 export interface RunErrorArtifact {
@@ -143,6 +145,11 @@ export interface TestArtifact {
 export interface ContextSection {
   title: string;
   rows: { k: string; v: string }[];
+  stage_key?: string;
+  status?: string;
+  confidence?: number;
+  reroute_to_stage?: string | null;
+  reroute_context?: string;
 }
 
 export interface WorkspaceSummary {
@@ -398,6 +405,7 @@ export interface StudioAgent {
   role_body: string;
   role_file?: string;
   adapter: string;
+  default_model: string;
   timeout: number;
   default_skill: string;
   mcp_enabled: boolean;
@@ -476,6 +484,7 @@ export interface StudioWorkflowStage {
   order: number;
   gate_required: boolean;
   classify_routes: ClassifyRoute[];
+  model: string;
 }
 
 export interface StudioWorkflow {

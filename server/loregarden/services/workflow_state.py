@@ -204,6 +204,7 @@ def build_stage_views(
                 note=note_by_key.get(stage.key, ""),
                 stage_type=stage.stage_type or "agent",
                 agents=_stage_agent_refs(stage),
+                model=stage.model,
             )
         )
     return views

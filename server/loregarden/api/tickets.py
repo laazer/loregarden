@@ -32,6 +32,10 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
 )
+from loregarden.services.cli_settings import (
+    get_ticket_orchestration_runtime,
+    set_ticket_orchestration_runtime,
+)
 from loregarden.services.hierarchy_service import build_tree, child_count
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -396,6 +400,21 @@ def patch_triage_runtime(
         raise HTTPException(400, str(exc)) from exc
 
 
+@router.patch("/{ticket_id}/runtime", response_model=WorkspaceRuntimeSettings)
+def patch_ticket_runtime(
+    ticket_id: str,
+    body: WorkspaceRuntimeUpdate,
+    session: Session = Depends(get_session),
+) -> WorkspaceRuntimeSettings:
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    try:
+        return set_ticket_orchestration_runtime(session, ticket, body)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @router.get("/{ticket_id}", response_model=TicketDetail)
 def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> TicketDetail:
     ticket = session.get(Ticket, ticket_id)
@@ -422,6 +441,7 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         workflow_template_name=template.name if template else "",
         workflow_transitions=[WorkflowTransitionView.model_validate(item) for item in transitions],
         artifacts=_artifacts_grouped(session, ticket),
+        orchestration_runtime=get_ticket_orchestration_runtime(ticket),
     )
 
 
