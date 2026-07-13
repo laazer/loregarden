@@ -508,6 +508,56 @@ def test_parse_workflow_generate_payload():
     assert generated.stages[1].stage_type == "gate"
 
 
+def test_parse_workflow_generate_payload_supports_parallel_stage():
+    stub = """Draft workflow:
+
+```json
+{
+  "name": "Review Fanout",
+  "slug": "review-fanout",
+  "description": "Plan then fan out to parallel reviewers",
+  "stages": [
+    {
+      "key": "plan",
+      "name": "Plan",
+      "stage_type": "agent",
+      "agent_id": "planner",
+      "skill_name": "plan",
+      "optional": false,
+      "order": 1,
+      "gate_required": false
+    },
+    {
+      "key": "review",
+      "name": "Review",
+      "stage_type": "parallel",
+      "optional": false,
+      "order": 2,
+      "gate_required": false,
+      "parallel_agents": [
+        {"agent_id": "gatekeeper", "skill_name": "ac_gate"},
+        {"agent_id": "backend_implementer", "skill_name": "apply_patch"},
+        {"agent_id": "unknown_agent", "skill_name": "apply_patch"}
+      ]
+    }
+  ]
+}
+```"""
+    generated = parse_workflow_generate_payload(
+        stub,
+        agent_ids=["planner", "gatekeeper", "backend_implementer"],
+        skills=["plan", "ac_gate", "apply_patch"],
+    )
+    assert generated is not None
+    assert len(generated.stages) == 2
+    review_stage = generated.stages[1]
+    assert review_stage.stage_type == "parallel"
+    assert [member.agent_id for member in review_stage.parallel_agents] == [
+        "gatekeeper",
+        "backend_implementer",
+    ]
+
+
 def test_studio_generate_agent_endpoint(client: TestClient, monkeypatch):
     monkeypatch.setenv("LOREGARDEN_STUDIO_GENERATE_STUB_RESPONSE", AGENT_GENERATE_STUB)
     res = client.post(

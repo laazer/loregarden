@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   type ClassifyRoute,
+  type ParallelAgentSpec,
   type StudioAgent,
   type StudioGateCheck,
   type StudioHandoffCheck,
@@ -58,6 +59,7 @@ function emptyStage(order: number): StudioWorkflowStage {
     order,
     gate_required: false,
     classify_routes: [],
+    parallel_agents: [],
     model: "",
   };
 }
@@ -77,6 +79,7 @@ function agentCategory(agent: StudioAgent): { label: string; className: string }
 function stageTypeClass(type: StudioWorkflowStage["stage_type"]): string {
   if (type === "classify") return "classify";
   if (type === "gate") return "gate";
+  if (type === "parallel") return "parallel";
   return "agent";
 }
 
@@ -434,6 +437,34 @@ export function StudioPage() {
         );
         return { ...stage, classify_routes: routes };
       }),
+    }));
+  };
+
+  const updateParallelAgent = (
+    stageIndex: number,
+    memberIndex: number,
+    patch: Partial<ParallelAgentSpec>,
+  ) => {
+    setWorkflowDraft((draft) => ({
+      ...draft,
+      stages: draft.stages.map((stage, idx) => {
+        if (idx !== stageIndex) return stage;
+        const members = stage.parallel_agents.map((member, mIdx) =>
+          mIdx === memberIndex ? { ...member, ...patch } : member,
+        );
+        return { ...stage, parallel_agents: members };
+      }),
+    }));
+  };
+
+  const removeParallelAgent = (stageIndex: number, memberIndex: number) => {
+    setWorkflowDraft((draft) => ({
+      ...draft,
+      stages: draft.stages.map((stage, idx) =>
+        idx === stageIndex
+          ? { ...stage, parallel_agents: stage.parallel_agents.filter((_, mIdx) => mIdx !== memberIndex) }
+          : stage,
+      ),
     }));
   };
 
@@ -1031,7 +1062,13 @@ export function StudioPage() {
                   {workflowDraft.stages.map((stage, index) => {
                     const typeClass = stageTypeClass(stage.stage_type);
                     const typeLabel =
-                      stage.stage_type === "classify" ? "Classify" : stage.stage_type === "gate" ? "Gate" : "Agent";
+                      stage.stage_type === "classify"
+                        ? "Classify"
+                        : stage.stage_type === "gate"
+                          ? "Gate"
+                          : stage.stage_type === "parallel"
+                            ? "Parallel"
+                            : "Agent";
                     return (
                       <div key={`${stage.key}-${index}`} className={`studio-stage-card ${typeClass}`}>
                         <div className="studio-stage-header">
@@ -1137,12 +1174,20 @@ export function StudioPage() {
                                           },
                                         ]
                                       : stage.classify_routes,
+                                  parallel_agents:
+                                    e.target.value === "parallel" && stage.parallel_agents.length === 0
+                                      ? [
+                                          { agent_id: "static_qa", skill_name: "static_qa" },
+                                          { agent_id: "gatekeeper", skill_name: "ac_gate" },
+                                        ]
+                                      : stage.parallel_agents,
                                 })
                               }
                             >
                               <option value="agent">Agent</option>
                               <option value="classify">Classify & route</option>
                               <option value="gate">Gate / review</option>
+                              <option value="parallel">Parallel review</option>
                             </select>
                           </div>
                         </div>
@@ -1179,88 +1224,7 @@ export function StudioPage() {
                           />
                         ) : null}
 
-                        {stage.stage_type === "agent" || stage.stage_type === "gate" ? (
-                          <div className="studio-stage-fields">
-                            <div>
-                              <div className="studio-stage-field-label">Agent</div>
-                              <select
-                                className="studio-stage-select"
-                                value={stage.agent_id}
-                                disabled={isWorkflowReadOnly}
-                                onChange={(e) => updateStage(index, { agent_id: e.target.value })}
-                              >
-                                {stage.stage_type === "agent" && (
-                                  <option value="">— None (human approval) —</option>
-                                )}
-                                {agentOptions.map((opt) => (
-                                  <option key={opt.id} value={opt.id}>
-                                    {opt.label}
-                                  </option>
-                                ))}
-                              </select>
-                              {stage.stage_type === "agent" && !stage.agent_id && (
-                                <div style={{ marginTop: 4, fontSize: 11, color: "var(--txl)" }}>
-                                  No agent runs — the ticket pauses here until a human approves in Triage/Inbox.
-                                </div>
-                              )}
-                            </div>
-                            <div>
-                              <div className="studio-stage-field-label">Skill</div>
-                              <select
-                                className="studio-stage-select mono"
-                                value={stage.skill_name}
-                                disabled={isWorkflowReadOnly}
-                                onChange={(e) => updateStage(index, { skill_name: e.target.value })}
-                              >
-                                {(skills.data ?? []).map((skill) => (
-                                  <option key={skill} value={skill}>
-                                    {skill}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <div className="studio-stage-field-label">Model override</div>
-                              {(() => {
-                                const stageAgent = agents.data?.find((a) => a.slug === stage.agent_id);
-                                const modelOptions =
-                                  stageAgent?.adapter === "cursor"
-                                    ? runtimeOptions.data?.cursor_models
-                                    : stageAgent?.adapter === "claude" || !stageAgent
-                                      ? runtimeOptions.data?.claude_models
-                                      : undefined;
-                                if (modelOptions) {
-                                  return (
-                                    <select
-                                      className="studio-stage-select mono"
-                                      value={stage.model}
-                                      disabled={isWorkflowReadOnly}
-                                      onChange={(e) => updateStage(index, { model: e.target.value })}
-                                    >
-                                      <option value="">— Agent default —</option>
-                                      {modelOptions
-                                        .filter((opt) => opt.id)
-                                        .map((opt) => (
-                                          <option key={opt.id} value={opt.id}>
-                                            {opt.label}
-                                          </option>
-                                        ))}
-                                    </select>
-                                  );
-                                }
-                                return (
-                                  <input
-                                    className="studio-stage-select mono"
-                                    placeholder="Model id"
-                                    value={stage.model}
-                                    readOnly={isWorkflowReadOnly}
-                                    onChange={(e) => updateStage(index, { model: e.target.value })}
-                                  />
-                                );
-                              })()}
-                            </div>
-                          </div>
-                        ) : (
+                        {stage.stage_type === "classify" ? (
                           <div style={{ marginTop: 4 }}>
                             <div className="studio-stage-field-label" style={{ marginBottom: 8 }}>
                               Classification routes
@@ -1381,6 +1345,164 @@ export function StudioPage() {
                                 + Add route
                               </button>
                             )}
+                          </div>
+                        ) : stage.stage_type === "parallel" ? (
+                          <div style={{ marginTop: 4 }}>
+                            <div className="studio-stage-field-label" style={{ marginBottom: 8 }}>
+                              Agents running in parallel
+                            </div>
+                            {stage.parallel_agents.map((member, memberIndex) => (
+                              <div
+                                key={memberIndex}
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: "1fr 1fr auto",
+                                  gap: 10,
+                                  marginTop: memberIndex === 0 ? 0 : 10,
+                                  paddingTop: memberIndex === 0 ? 0 : 10,
+                                  borderTop: memberIndex === 0 ? undefined : "1px solid var(--bd)",
+                                }}
+                              >
+                                <select
+                                  className="studio-stage-select"
+                                  value={member.agent_id}
+                                  disabled={isWorkflowReadOnly}
+                                  onChange={(e) => updateParallelAgent(index, memberIndex, { agent_id: e.target.value })}
+                                >
+                                  {agentOptions.map((opt) => (
+                                    <option key={opt.id} value={opt.id}>
+                                      {opt.label}
+                                    </option>
+                                  ))}
+                                </select>
+                                <select
+                                  className="studio-stage-select mono"
+                                  value={member.skill_name}
+                                  disabled={isWorkflowReadOnly}
+                                  onChange={(e) => updateParallelAgent(index, memberIndex, { skill_name: e.target.value })}
+                                >
+                                  {(skills.data ?? []).map((skill) => (
+                                    <option key={skill} value={skill}>
+                                      {skill}
+                                    </option>
+                                  ))}
+                                </select>
+                                {!isWorkflowReadOnly && (
+                                  <button
+                                    type="button"
+                                    className="studio-stage-remove"
+                                    aria-label={`Remove parallel agent ${memberIndex + 1}`}
+                                    onClick={() => removeParallelAgent(index, memberIndex)}
+                                  >
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            {!isWorkflowReadOnly && (
+                              <button
+                                type="button"
+                                className="studio-add-stage-btn"
+                                style={{ marginTop: 8 }}
+                                onClick={() =>
+                                  updateStage(index, {
+                                    parallel_agents: [
+                                      ...stage.parallel_agents,
+                                      { agent_id: agentOptions[0]?.id ?? "", skill_name: "" },
+                                    ],
+                                  })
+                                }
+                              >
+                                + Add agent
+                              </button>
+                            )}
+                            <div style={{ marginTop: 8, fontSize: 11, color: "var(--txl)" }}>
+                              All agents above run concurrently against the same ticket state; the stage only
+                              advances once every one of them finishes.
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="studio-stage-fields">
+                            <div>
+                              <div className="studio-stage-field-label">Agent</div>
+                              <select
+                                className="studio-stage-select"
+                                value={stage.agent_id}
+                                disabled={isWorkflowReadOnly}
+                                onChange={(e) => updateStage(index, { agent_id: e.target.value })}
+                              >
+                                {stage.stage_type === "agent" && (
+                                  <option value="">— None (human approval) —</option>
+                                )}
+                                {agentOptions.map((opt) => (
+                                  <option key={opt.id} value={opt.id}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                              {stage.stage_type === "agent" && !stage.agent_id && (
+                                <div style={{ marginTop: 4, fontSize: 11, color: "var(--txl)" }}>
+                                  No agent runs — the ticket pauses here until a human approves in Triage/Inbox.
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="studio-stage-field-label">Skill</div>
+                              <select
+                                className="studio-stage-select mono"
+                                value={stage.skill_name}
+                                disabled={isWorkflowReadOnly}
+                                onChange={(e) => updateStage(index, { skill_name: e.target.value })}
+                              >
+                                {(skills.data ?? []).map((skill) => (
+                                  <option key={skill} value={skill}>
+                                    {skill}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <div className="studio-stage-field-label">Model override</div>
+                              {(() => {
+                                const stageAgent = agents.data?.find((a) => a.slug === stage.agent_id);
+                                const modelOptions =
+                                  stageAgent?.adapter === "cursor"
+                                    ? runtimeOptions.data?.cursor_models
+                                    : stageAgent?.adapter === "claude" || !stageAgent
+                                      ? runtimeOptions.data?.claude_models
+                                      : undefined;
+                                if (modelOptions) {
+                                  return (
+                                    <select
+                                      className="studio-stage-select mono"
+                                      value={stage.model}
+                                      disabled={isWorkflowReadOnly}
+                                      onChange={(e) => updateStage(index, { model: e.target.value })}
+                                    >
+                                      <option value="">— Agent default —</option>
+                                      {modelOptions
+                                        .filter((opt) => opt.id)
+                                        .map((opt) => (
+                                          <option key={opt.id} value={opt.id}>
+                                            {opt.label}
+                                          </option>
+                                        ))}
+                                    </select>
+                                  );
+                                }
+                                return (
+                                  <input
+                                    className="studio-stage-select mono"
+                                    placeholder="Model id"
+                                    value={stage.model}
+                                    readOnly={isWorkflowReadOnly}
+                                    onChange={(e) => updateStage(index, { model: e.target.value })}
+                                  />
+                                );
+                              })()}
+                            </div>
                           </div>
                         )}
 

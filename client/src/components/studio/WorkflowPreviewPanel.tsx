@@ -3,12 +3,14 @@ import type { StudioWorkflowStage } from "../../api/client";
 function stageTypeClass(type: StudioWorkflowStage["stage_type"]): string {
   if (type === "classify") return "classify";
   if (type === "gate") return "gate";
+  if (type === "parallel") return "parallel";
   return "agent";
 }
 
 function stageTypeLabel(type: StudioWorkflowStage["stage_type"]): string {
   if (type === "classify") return "Classify";
   if (type === "gate") return "Gate";
+  if (type === "parallel") return "Parallel";
   return "Agent";
 }
 
@@ -57,10 +59,27 @@ export function WorkflowPreviewPanel({
                   </span>
                   <span className={`studio-stage-type-badge ${typeClass}`}>{stageTypeLabel(stage.stage_type)}</span>
                 </div>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txm)" }}>
-                  {agentLabel(stage.agent_id)}
-                  <span style={{ color: "var(--txl)" }}> · {stage.skill_name || "—"}</span>
-                </div>
+                {stage.stage_type === "parallel" ? (
+                  <div className="studio-pipeline-parallel-agents">
+                    {stage.parallel_agents.length === 0 ? (
+                      <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}>
+                        No agents added yet
+                      </span>
+                    ) : (
+                      stage.parallel_agents.map((member, memberIndex) => (
+                        <span key={`${member.agent_id}-${memberIndex}`} className="studio-pipeline-parallel-chip">
+                          {agentLabel(member.agent_id)}
+                          {member.skill_name ? <span style={{ color: "var(--txl)" }}> · {member.skill_name}</span> : null}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txm)" }}>
+                    {agentLabel(stage.agent_id)}
+                    <span style={{ color: "var(--txl)" }}> · {stage.skill_name || "—"}</span>
+                  </div>
+                )}
                 {stage.gate_required && (
                   <div
                     style={{

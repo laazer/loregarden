@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -17,7 +18,7 @@ const markdownComponents: Components = {
   ),
 };
 
-export function MarkdownContent({
+export const MarkdownContent = memo(function MarkdownContent({
   content,
   className,
   normalize = true,
@@ -38,4 +39,4 @@ export function MarkdownContent({
       </ReactMarkdown>
     </div>
   );
-}
+});

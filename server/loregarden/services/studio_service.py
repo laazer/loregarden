@@ -16,6 +16,7 @@ from loregarden.agents.registry import list_agents as list_builtin_agents
 from loregarden.config import settings
 from loregarden.models.domain import (
     ClassifyRoute,
+    ParallelAgentSpec,
     StudioAgent,
     StudioAgentCreate,
     StudioAgentPreview,
@@ -974,7 +975,7 @@ def _normalize_generated_stage(
     key = _slugify(str(raw.get("key") or f"stage_{order}"))
     name = str(raw.get("name") or key.replace("-", " ").title()).strip()
     stage_type = str(raw.get("stage_type") or "agent").strip().lower()
-    if stage_type not in {"agent", "classify", "gate"}:
+    if stage_type not in {"agent", "classify", "gate", "parallel"}:
         stage_type = "agent"
     agent_id = str(raw.get("agent_id") or "").strip()
     skill_name = str(raw.get("skill_name") or "").strip()
@@ -1024,6 +1025,22 @@ def _normalize_generated_stage(
                 default=True,
             )
         ]
+    parallel_agents: list[ParallelAgentSpec] = []
+    for member_raw in raw.get("parallel_agents") or []:
+        if not isinstance(member_raw, dict):
+            continue
+        member_agent = str(member_raw.get("agent_id") or "").strip()
+        if member_agent and member_agent not in agent_ids:
+            continue
+        member_skill = str(member_raw.get("skill_name") or "").strip()
+        if member_skill and member_skill not in skills:
+            member_skill = ""
+        if member_agent:
+            parallel_agents.append(
+                ParallelAgentSpec(agent_id=member_agent, skill_name=member_skill)
+            )
+    if stage_type == "parallel" and not parallel_agents:
+        stage_type = "agent"
     return StudioWorkflowStage(
         key=key,
         name=name,
@@ -1034,6 +1051,7 @@ def _normalize_generated_stage(
         order=order,
         gate_required=bool(raw.get("gate_required")),
         classify_routes=routes,
+        parallel_agents=parallel_agents,
     )
 
 

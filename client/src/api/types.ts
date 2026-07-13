@@ -484,16 +484,22 @@ export interface ClassifyRoute {
   default: boolean;
 }
 
+export interface ParallelAgentSpec {
+  agent_id: string;
+  skill_name: string;
+}
+
 export interface StudioWorkflowStage {
   key: string;
   name: string;
-  stage_type: "agent" | "classify" | "gate";
+  stage_type: "agent" | "classify" | "gate" | "parallel";
   agent_id: string;
   skill_name: string;
   optional: boolean;
   order: number;
   gate_required: boolean;
   classify_routes: ClassifyRoute[];
+  parallel_agents: ParallelAgentSpec[];
   model: string;
 }
 

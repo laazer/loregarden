@@ -921,6 +921,10 @@ button {
   border-left: 3px solid var(--rdl);
 }
 
+.studio-stage-card.parallel {
+  border-left: 3px solid var(--bll);
+}
+
 .studio-stage-header {
   display: flex;
   align-items: center;
@@ -960,6 +964,10 @@ button {
 
 .studio-stage-type-badge.gate {
   color: var(--rdl);
+}
+
+.studio-stage-type-badge.parallel {
+  color: var(--bll);
 }
 
 .studio-stage-fields {
@@ -1423,6 +1431,10 @@ button {
   border-color: var(--rdl);
 }
 
+.studio-pipeline-node.parallel {
+  border-color: var(--bll);
+}
+
 .studio-pipeline-node-dot {
   width: 8px;
   height: 8px;
@@ -1436,6 +1448,26 @@ button {
 
 .studio-pipeline-node.gate .studio-pipeline-node-dot {
   background: var(--rdl);
+}
+
+.studio-pipeline-node.parallel .studio-pipeline-node-dot {
+  background: var(--bll);
+}
+
+.studio-pipeline-parallel-agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.studio-pipeline-parallel-chip {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--tx);
+  background: rgba(75, 155, 255, 0.1);
+  border: 1px solid rgba(75, 155, 255, 0.25);
+  border-radius: 6px;
+  padding: 2px 7px;
 }
 
 .studio-pipeline-content {
