@@ -24,9 +24,5 @@ def resolve_agent_context_dir(workspace: Workspace) -> Path:
     return resolve_workspace_root(workspace) / "agent_context"
 
 
-def resolve_project_board_dir(workspace: Workspace) -> Path:
-    return resolve_workspace_root(workspace) / "project_board"
-
-
 def workspace_repo_exists(workspace: Workspace) -> bool:
     return resolve_workspace_root(workspace).is_dir()

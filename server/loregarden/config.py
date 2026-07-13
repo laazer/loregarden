@@ -28,7 +28,6 @@ class Settings(BaseSettings):
     repo_root: Path = _find_repo_root()
     database_url: str = "sqlite:///data/loregarden.db"
     agent_context_dir: Path = Path("agent_context")
-    project_board_dir: Path = Path("project_board")
     workflow_templates_dir: Path = Path("agent_context/workflows")
     cli_adapter: str = "local"
     claude_model: str = ""
@@ -91,7 +90,6 @@ class Settings(BaseSettings):
 
 settings = Settings()
 settings.agent_context_dir = settings.repo_root / settings.agent_context_dir
-settings.project_board_dir = settings.repo_root / settings.project_board_dir
 settings.workflow_templates_dir = settings.repo_root / settings.workflow_templates_dir
 
 

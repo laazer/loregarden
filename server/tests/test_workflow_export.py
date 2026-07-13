@@ -94,11 +94,3 @@ def test_create_workspace_with_template(client: TestClient):
     )
     assert res.status_code == 201
     assert res.json()["workflow_template_slug"] == "extended-tdd"
-
-
-def test_export_project_board(client: TestClient):
-    res = client.post("/api/export/project-board")
-    assert res.status_code == 200
-    body = res.json()
-    assert body["exported"] >= 5
-    assert any("01_milestone_bootstrap" in p for p in body["paths"])

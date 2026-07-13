@@ -147,8 +147,6 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
-  exportProjectBoard: () =>
-    request<{ exported: number; paths: string[] }>("/api/export/project-board", { method: "POST" }),
   runs: (ticketId?: string) => {
     const q = ticketId ? `?ticket_id=${ticketId}` : "";
     return request<

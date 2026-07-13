@@ -14,7 +14,6 @@ from loregarden.api import (
     diff_review,
     editor,
     events,
-    export,
     inbox,
     mcp,
     memory,
@@ -87,7 +86,6 @@ app.include_router(workflows.router, prefix="/api")
 app.include_router(orchestration.router, prefix="/api")
 app.include_router(studio.router, prefix="/api")
 app.include_router(ticket_studio.router, prefix="/api")
-app.include_router(export.router, prefix="/api")
 app.include_router(memory.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
 app.include_router(ci.router, prefix="/api")

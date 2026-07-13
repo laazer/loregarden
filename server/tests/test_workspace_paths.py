@@ -30,7 +30,6 @@ def test_resolve_workspace_root_absolute(tmp_path):
     from loregarden.models.domain import Workspace
     from loregarden.services.workspace_paths import (
         resolve_agent_context_dir,
-        resolve_project_board_dir,
         resolve_workspace_root,
         workspace_repo_exists,
     )
@@ -38,7 +37,6 @@ def test_resolve_workspace_root_absolute(tmp_path):
     ws = Workspace(slug="sample", name="Sample", repo_path=str(tmp_path))
     assert resolve_workspace_root(ws) == tmp_path.resolve()
     assert resolve_agent_context_dir(ws) == tmp_path / "agent_context"
-    assert resolve_project_board_dir(ws) == tmp_path / "project_board"
     assert workspace_repo_exists(ws) is True
 
 
