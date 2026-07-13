@@ -679,7 +679,9 @@ class OrchestrationService:
             except ValueError:
                 # No reject transition, no agent-specified target, and no
                 # preceding stage to fall back to (already first-in-order).
-                ticket.blocking_issues = report.reroute_context or stderr[:2000] or "Agent run failed"
+                ticket.blocking_issues = (
+                    report.reroute_context or stderr[:2000] or "Agent run failed"
+                )
                 set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
         elif status == RunStatus.SUCCEEDED:
             stage_status = StageStatus.DONE
