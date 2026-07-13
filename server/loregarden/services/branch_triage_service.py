@@ -24,7 +24,9 @@ from sqlmodel import Session, select
 
 STALE_DAYS = 30
 AGENT_BRANCH_PREFIXES = ("loregarden/", "agent/")
-PR_STATUS_TTL_SECONDS = 60
+PR_STATUS_TTL_SECONDS = 120
+PR_STATUS_TERMINAL_TTL_SECONDS = 600
+PR_STATUS_TERMINAL_STATES = ("closed", "merged")
 PR_STATUS_MAX_WORKERS = 6
 
 _pr_status_cache: dict[tuple[str, str], tuple[float, dict[str, Any] | None]] = {}
@@ -143,15 +145,22 @@ def _fetch_pr_status_live(repo_root: Path, branch: str) -> dict[str, Any] | None
     }
 
 
+def _pr_status_ttl(value: dict[str, Any] | None) -> int:
+    """Closed/merged PRs are done changing, so cache them far longer than open ones."""
+    if value and value.get("state") in PR_STATUS_TERMINAL_STATES:
+        return PR_STATUS_TERMINAL_TTL_SECONDS
+    return PR_STATUS_TTL_SECONDS
+
+
 def _branch_pr_statuses(repo_root: Path, branches: list[str]) -> dict[str, dict[str, Any] | None]:
-    """Resolve PR status for each branch, serving from a short-TTL cache where possible."""
+    """Resolve PR status for each branch, serving from a TTL cache where possible."""
     now = time.monotonic()
     results: dict[str, dict[str, Any] | None] = {}
     stale: list[str] = []
 
     for name in branches:
         cached = _pr_status_cache.get((str(repo_root), name))
-        if cached and now - cached[0] < PR_STATUS_TTL_SECONDS:
+        if cached and now - cached[0] < _pr_status_ttl(cached[1]):
             results[name] = cached[1]
         else:
             stale.append(name)

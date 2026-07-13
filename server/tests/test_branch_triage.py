@@ -7,7 +7,13 @@ import pytest
 from fastapi.testclient import TestClient
 from loregarden.config import settings
 from loregarden.models.domain import Ticket, Workspace
-from loregarden.services.branch_triage_service import branch_triage_snapshot, delete_branch
+from loregarden.services.branch_triage_service import (
+    PR_STATUS_TERMINAL_TTL_SECONDS,
+    PR_STATUS_TTL_SECONDS,
+    _pr_status_ttl,
+    branch_triage_snapshot,
+    delete_branch,
+)
 from loregarden.services.file_editor import _list_branches
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
@@ -168,6 +174,14 @@ def test_branch_triage_includes_pr_status_and_caches(
 
     branch_triage_snapshot(triage_session, triage_workspace)
     assert call_count["n"] == calls_after_first
+
+
+def test_pr_status_ttl_is_longer_for_closed_and_merged_prs():
+    assert _pr_status_ttl(None) == PR_STATUS_TTL_SECONDS
+    assert _pr_status_ttl({"state": "open", "is_draft": False}) == PR_STATUS_TTL_SECONDS
+    assert _pr_status_ttl({"state": "closed", "is_draft": False}) == PR_STATUS_TERMINAL_TTL_SECONDS
+    assert _pr_status_ttl({"state": "merged", "is_draft": False}) == PR_STATUS_TERMINAL_TTL_SECONDS
+    assert PR_STATUS_TERMINAL_TTL_SECONDS > PR_STATUS_TTL_SECONDS
 
 
 def test_delete_unmerged_branch_requires_force(triage_workspace, triage_repo):
