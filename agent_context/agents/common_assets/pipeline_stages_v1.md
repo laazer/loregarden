@@ -12,6 +12,8 @@ Exit 1 → set ticket `BLOCKED`, paste verbatim stderr/stdout into scoped checkp
 
 **Background vs. blocking (Stages 7–8):** In autopilot, Stages 7 and 8 fire in the background after the per-ticket completion report; the orchestrator proceeds to the next ticket immediately. In ap-continue, c-continue, and feature, Stages 7 and 8 block before the final report.
 
+**Stage reports (routing signal):** Every stage/reviewer sub-agent ends its response with the `<<<LOREGARDEN_STAGE_REPORT>>>` JSON block required by `agent_context/agents/common_assets/workflow_enforcement_v1.md`. When a stage's own instructions below leave the reject/reroute call to your judgment (e.g. "route back to X", "re-invoke the implementation agent"), read that block first and prefer it over your own reading of prose: pass `outcome: "reject"`, `next_stage_key: <reroute_to_stage>`, and `blocking_issues: <reroute_context>` to `loregarden_complete_stage` when `status` is `fail` or `needs_rework`. Only fall back to your own judgment if the block is missing or malformed.
+
 ---
 
 ## Stage 1 — Planner
