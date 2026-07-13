@@ -1016,7 +1016,9 @@ def test_permission_bridge_triage_question_does_not_mutate_stage(tmp_path):
                 },
             }
         )
-        result_line = json.dumps({"type": "result", "session_id": "sess_triage", "subtype": "success"})
+        result_line = json.dumps(
+            {"type": "result", "session_id": "sess_triage", "subtype": "success"}
+        )
 
         def fake_spawn(*args, **kwargs):
             return _FakeProc([question_line, result_line])
@@ -1106,7 +1108,9 @@ def test_permission_bridge_triage_read_only_mcp_tool_auto_approved(tmp_path):
                 },
             }
         )
-        result_line = json.dumps({"type": "result", "session_id": "sess_auto", "subtype": "success"})
+        result_line = json.dumps(
+            {"type": "result", "session_id": "sess_auto", "subtype": "success"}
+        )
 
         captured_proc: _FakeProc | None = None
 

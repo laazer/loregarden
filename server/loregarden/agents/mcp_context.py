@@ -148,7 +148,9 @@ def build_mcp_run_context(
     return "\n".join(lines)
 
 
-def build_mcp_triage_context(*, ticket: Ticket, workspace: Workspace, interactive: bool = True) -> str:
+def build_mcp_triage_context(
+    *, ticket: Ticket, workspace: Workspace, interactive: bool = True
+) -> str:
     mcp_url = resolve_mcp_url()
     tool_line = (
         "These MCP tools are wired in and callable directly — use them rather than describing what you would do."

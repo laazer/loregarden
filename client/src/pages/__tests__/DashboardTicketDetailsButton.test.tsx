@@ -67,7 +67,7 @@ describe('Dashboard - Ticket Details Button Integration', () => {
     jest.clearAllMocks();
     jest.mocked(apiClient.api.ticket).mockImplementation(async (id: string) => createMockTicket({ id }));
     jest.mocked(apiClient.api.runs).mockResolvedValue([]);
-    jest.mocked(apiClient.api.triage).mockResolvedValue({ pending_approvals: [], recent_approvals: [], messages: [], runtime: { cli_adapter: '', claude_model: '', cursor_model: '', lmstudio_base_url: '', lmstudio_model: '' } });
+    jest.mocked(apiClient.api.triage).mockResolvedValue({ pending_approvals: [], recent_approvals: [], messages: [], runtime: { cli_adapter: '', claude_model: '', cursor_model: '', lmstudio_base_url: '', lmstudio_model: '' }, run_status: 'idle', active_run_id: null });
     jest.mocked(apiClient.api.approvals).mockResolvedValue([]);
   });
 

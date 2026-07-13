@@ -51,7 +51,9 @@ def _run_code() -> str:
     return f"run_{secrets.token_hex(3)}"
 
 
-def start_triage_run(session: Session, ticket: Ticket, content: str) -> tuple[TriageMessage, AgentRun]:
+def start_triage_run(
+    session: Session, ticket: Ticket, content: str
+) -> tuple[TriageMessage, AgentRun]:
     """Validate, guard concurrency, persist the user message, and queue a run.
 
     Does not execute anything — call ``schedule_triage_turn(run.id)`` next.
@@ -99,7 +101,9 @@ class TriageTurnExecutor:
     def execute(self, run: AgentRun, ticket: Ticket) -> None:
         workspace = self.session.get(Workspace, ticket.workspace_id)
         if not workspace:
-            self._finish(run, ticket, status=RunStatus.FAILED, reply="", stderr="Ticket workspace not found")
+            self._finish(
+                run, ticket, status=RunStatus.FAILED, reply="", stderr="Ticket workspace not found"
+            )
             return
 
         effective_workspace = apply_triage_runtime_overrides(workspace, ticket)
@@ -163,10 +167,7 @@ class TriageTurnExecutor:
                 workspace_root=repo_root,
                 claude_model=triage_claude_model,
             )
-            timeout = int(
-                os.environ.get("LOREGARDEN_TRIAGE_TIMEOUT")
-                or agent.get("timeout", 1800)
-            )
+            timeout = int(os.environ.get("LOREGARDEN_TRIAGE_TIMEOUT") or agent.get("timeout", 1800))
             bridge = PermissionBridgeRunner(self.session, track_workflow_stage=False)
             result = bridge.run(
                 run_id=run.id,
@@ -240,7 +241,9 @@ def execute_triage_turn_background(run_id: str) -> None:
                         )
                     session.commit()
         except Exception:
-            logger.exception("Failed to mark triage run %s as failed after background error", run_id)
+            logger.exception(
+                "Failed to mark triage run %s as failed after background error", run_id
+            )
 
 
 def schedule_triage_turn(run_id: str) -> None:

@@ -313,7 +313,9 @@ def build_triage_prompt(
     if workspace:
         sections.extend(
             [
-                build_mcp_triage_context(ticket=ticket, workspace=workspace, interactive=interactive),
+                build_mcp_triage_context(
+                    ticket=ticket, workspace=workspace, interactive=interactive
+                ),
                 "",
             ]
         )

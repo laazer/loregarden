@@ -125,6 +125,8 @@ describe("Dashboard - Smart Import Routing Integration Tests", () => {
       recent_approvals: [],
       messages: [],
       runtime: { cli_adapter: "", claude_model: "", cursor_model: "", lmstudio_base_url: "", lmstudio_model: "" },
+      run_status: "idle",
+      active_run_id: null,
     });
     jest.mocked(apiClient.api.approvals).mockResolvedValue([]);
     jest.mocked(apiClient.api.workspaces).mockResolvedValue([mkWorkspace()]);

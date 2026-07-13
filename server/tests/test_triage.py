@@ -249,7 +249,9 @@ def test_triage_includes_child_ticket_approvals(client: TestClient):
     assert "Child stage sign-off" in titles
 
 
-def _seed_active_run(client: TestClient, ticket_id: str, *, agent_id: str, status: RunStatus) -> None:
+def _seed_active_run(
+    client: TestClient, ticket_id: str, *, agent_id: str, status: RunStatus
+) -> None:
     from loregarden.db.session import engine
 
     with Session(engine) as session:
