@@ -49,7 +49,45 @@ def _branch_ahead_behind(repo_root: Path, base: str, branch: str) -> tuple[int, 
         ahead = int(parts[1])
     except ValueError:
         return 0, 0
+
+    if ahead > 0 and _branch_squash_merged(repo_root, base, branch):
+        ahead = 0
+
     return ahead, behind
+
+
+def _merge_base(repo_root: Path, base: str, branch: str) -> str | None:
+    proc = _git(repo_root, "merge-base", base, branch)
+    if proc.returncode != 0:
+        return None
+    return (proc.stdout or "").strip() or None
+
+
+def _branch_squash_merged(repo_root: Path, base: str, branch: str) -> bool:
+    """Detect a branch whose commits were squashed and merged into base.
+
+    `rev-list --left-right --count` compares commits by SHA, so a branch that
+    was squashed into a single commit on `base` still looks "ahead" even
+    though its changes already landed — the squash commit has a different SHA
+    than the branch's original commits. Treat the branch as merged if every
+    file it touched since the merge-base is byte-identical between the branch
+    tip and `base`.
+    """
+    merge_base = _merge_base(repo_root, base, branch)
+    if not merge_base:
+        return False
+
+    files_proc = _git(repo_root, "diff", "--name-only", f"{merge_base}..{branch}")
+    if files_proc.returncode != 0:
+        return False
+    changed_files = [line for line in (files_proc.stdout or "").splitlines() if line.strip()]
+    if not changed_files:
+        return True
+
+    diff_proc = _git(repo_root, "diff", "--quiet", base, branch, "--", *changed_files)
+    if diff_proc.returncode not in (0, 1):
+        return False
+    return diff_proc.returncode == 0
 
 
 def _branch_last_commit(repo_root: Path, branch: str) -> dict[str, str]:

@@ -93,6 +93,46 @@ def test_branch_triage_links_ticket(triage_workspace, triage_session: Session):
     assert orphan["linked_tickets"][0]["external_id"] == "TK-orphan"
 
 
+def test_branch_triage_treats_squash_merged_branch_as_not_ahead(
+    triage_workspace, triage_repo, triage_session: Session
+):
+    subprocess.run(
+        ["git", "checkout", "-b", "feature/squashed"],
+        cwd=triage_repo,
+        check=True,
+        capture_output=True,
+    )
+    (triage_repo / "squash.txt").write_text("v1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "squash.txt"], cwd=triage_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "wip 1"], cwd=triage_repo, check=True, capture_output=True
+    )
+    (triage_repo / "squash.txt").write_text("v2\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "commit", "-am", "wip 2"], cwd=triage_repo, check=True, capture_output=True
+    )
+
+    subprocess.run(["git", "checkout", "main"], cwd=triage_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "merge", "--squash", "feature/squashed"],
+        cwd=triage_repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "feature/squashed (squashed)"],
+        cwd=triage_repo,
+        check=True,
+        capture_output=True,
+    )
+
+    snapshot = branch_triage_snapshot(triage_session, triage_workspace)
+    squashed = next(b for b in snapshot["branches"] if b["name"] == "feature/squashed")
+    assert squashed["ahead"] == 0
+    codes = {issue["code"] for issue in squashed["issues"]}
+    assert "diverged" not in codes
+
+
 def test_delete_unmerged_branch_requires_force(triage_workspace, triage_repo):
     subprocess.run(
         ["git", "checkout", "-b", "feature/unmerged"],
