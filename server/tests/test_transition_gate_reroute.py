@@ -5,9 +5,12 @@ distinct from an agent-reported fail/needs_rework, which is handled by
 _advance_stage_after_run before this gate check ever runs.
 """
 
+import json
+
 from loregarden.core.workflow_loader import get_template_stages, sync_workflow_templates
 from loregarden.models.domain import (
     AgentRun,
+    Artifact,
     RunStatus,
     StageStatus,
     Ticket,
@@ -103,6 +106,43 @@ def test_gate_failure_reroutes_to_same_stage_instead_of_blocking(
     assert ticket.workflow_stage_key == "test_break"
     assert ticket.workflow_stage_status == StageStatus.PENDING
     assert ticket.blocking_issues
+
+
+def test_gate_failure_keeps_blocking_issues_short_and_files_full_output_as_error_artifact(
+    db_session: Session, monkeypatch, tmp_path
+):
+    """The workflow pane renders ticket.blocking_issues directly and verbatim —
+    a raw lefthook/pylint/etc. dump there is unreadable. The full gate output
+    belongs in the Errors tab (an Artifact with kind="error"), not inline."""
+    from loregarden.agents.executors.cli import CliAgentExecutor
+
+    ticket, profile = _setup_ticket_at_test_break(db_session, tmp_path)
+
+    def fake_execute(self, run: AgentRun, worker_ticket: Ticket, **kwargs):
+        return self.orchestration.complete_run(
+            run,
+            status=RunStatus.SUCCEEDED,
+            stdout=_stage_report("pass", 0.95),
+            stderr="",
+        )
+
+    monkeypatch.setattr(CliAgentExecutor, "execute", fake_execute)
+
+    builtin = BuiltinOrchestrator(db_session)
+    builtin.execute(ticket, profile, max_stages=1)
+
+    db_session.refresh(ticket)
+    assert len(ticket.blocking_issues) < 200
+    assert "Errors tab" in ticket.blocking_issues
+    assert "(command:" not in ticket.blocking_issues
+
+    error_artifacts = db_session.exec(
+        select(Artifact).where(Artifact.ticket_id == ticket.id, Artifact.kind == "error")
+    ).all()
+    assert len(error_artifacts) == 1
+    content = json.loads(error_artifacts[0].content_json)
+    assert content["stage_key"] == "test_break"
+    assert "(command:" in content["message"]
 
 
 def test_gate_passing_advances_normally(db_session: Session, monkeypatch, tmp_path):

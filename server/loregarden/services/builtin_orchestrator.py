@@ -314,7 +314,24 @@ class BuiltinOrchestrator:
         objective check. Reroute back to the same stage (self-redo) rather than
         hard-blocking, so the ticket gets another automatic pass instead of
         stalling for a human.
+
+        The raw gate output (lefthook/pylint/etc. dumps, shell command, ANSI
+        noise) goes to the Errors tab as an artifact — blocking_issues, shown
+        directly in the workflow pane, stays a short pointer rather than a
+        wall of unreadable text.
         """
+        self.callbacks.attach_artifact(
+            ticket,
+            kind="error",
+            title=f"Transition gate failed — {target_key}",
+            content={
+                "message": gate_block,
+                "run_code": "",
+                "agent_id": "",
+                "stage_key": target_key,
+                "command": "",
+            },
+        )
         apply_stage_route(
             ticket,
             instance,
@@ -323,7 +340,9 @@ class BuiltinOrchestrator:
             from_key=target_key,
             outcome="reject",
             next_stage_key=target_key,
-            blocking_issues=gate_block,
+            blocking_issues=(
+                f"Transition gate failed at '{target_key}' — see the Errors tab for details."
+            ),
             orch_run=orch_run,
         )
         self.session.add(ticket)
