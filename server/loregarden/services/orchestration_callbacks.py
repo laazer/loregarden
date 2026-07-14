@@ -21,6 +21,7 @@ from loregarden.models.domain import (
     TicketState,
     Workspace,
 )
+from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.workflow_routing import apply_stage_route
@@ -201,6 +202,14 @@ class OrchestrationCallbackService:
         ticket.revision += 1
         ticket.last_updated_by = "orchestrator"
 
+        short_blocking_issues = record_blocking_issue(
+            self.session,
+            ticket,
+            run_id=orch_run.id,
+            stage_key=stage_key,
+            message=blocking_issues,
+        )
+
         if advance:
             transitions = self.orch._resolve_transitions(ticket)
             apply_stage_route(
@@ -212,7 +221,7 @@ class OrchestrationCallbackService:
                 outcome=outcome,
                 next_stage_key=next_stage_key,
                 next_agent=next_agent,
-                blocking_issues=blocking_issues,
+                blocking_issues=short_blocking_issues,
                 orch_run=orch_run,
             )
         else:
@@ -222,7 +231,7 @@ class OrchestrationCallbackService:
             if next_agent and outcome == "reject":
                 ticket.next_agent = next_agent
                 ticket.next_status = "Proceed"
-            ticket.blocking_issues = blocking_issues[:2000] if blocking_issues else ""
+            ticket.blocking_issues = short_blocking_issues
 
         self.session.add(ticket)
         self.session.add(instance)
@@ -283,7 +292,13 @@ class OrchestrationCallbackService:
             set_stage_status(ticket, instance, stages, key, StageStatus.BLOCKED)
             self.session.add(instance)
         ticket.state = TicketState.BLOCKED
-        ticket.blocking_issues = message[:2000]
+        ticket.blocking_issues = record_blocking_issue(
+            self.session,
+            ticket,
+            run_id=orch_run.id,
+            stage_key=key or "",
+            message=message,
+        )
         ticket.next_status = "Blocked"
         ticket.revision += 1
         ticket.last_updated_by = "orchestrator"

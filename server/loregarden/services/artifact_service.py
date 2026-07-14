@@ -904,6 +904,43 @@ def _upsert_artifact(
         return persisted or artifact
 
 
+BLOCKING_ISSUE_INLINE_LIMIT = 200
+
+
+def record_blocking_issue(
+    session: Session,
+    ticket: Ticket,
+    *,
+    run_id: str | None,
+    stage_key: str,
+    message: str,
+) -> str:
+    """Cap what lands in ticket.blocking_issues, which the workflow pane
+    renders verbatim — raw agent/gate output over the inline limit is filed
+    as an error artifact for the Errors tab instead, leaving a short pointer
+    here so the pane stays readable.
+    """
+    message = message or ""
+    if len(message) <= BLOCKING_ISSUE_INLINE_LIMIT:
+        return message
+    _upsert_artifact(
+        session,
+        ticket_id=ticket.id,
+        run_id=run_id,
+        kind="error",
+        title=f"Stage blocked — {stage_key}" if stage_key else "Stage blocked",
+        content={
+            "message": message,
+            "run_code": "",
+            "agent_id": "",
+            "stage_key": stage_key,
+            "command": "",
+        },
+    )
+    pointer = f"Stage '{stage_key}'" if stage_key else "This stage"
+    return f"{pointer} hit a blocking issue — see the Errors tab for details."
+
+
 def refresh_execution_artifacts(
     session: Session,
     *,

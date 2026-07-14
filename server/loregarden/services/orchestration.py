@@ -24,6 +24,7 @@ from loregarden.models.domain import (
     WorkflowTemplate,
     Workspace,
 )
+from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.run_log_stream import bootstrap_run_log, finalize_run_log_artifact
 from loregarden.services.stage_report import (
     StageReport,
@@ -53,6 +54,12 @@ def _stage_report_artifact(stage_key: str, report: StageReport) -> dict:
         "title": f"Stage report — {stage_key}",
         "content": stage_report_artifact_content(stage_key, report),
     }
+
+
+def _blocking_issue(session: Session, ticket: Ticket, run: AgentRun, message: str) -> str:
+    return record_blocking_issue(
+        session, ticket, run_id=run.id, stage_key=run.stage_key, message=message
+    )
 
 
 class OrchestrationService:
@@ -680,9 +687,9 @@ class OrchestrationService:
             # redo upstream, it's reporting it cannot proceed at all (e.g. needs a
             # human decision) — reroute-for-rework would just waste a cycle, so this
             # halts the ticket directly instead.
-            ticket.blocking_issues = (
-                report.reroute_context or stderr[:2000] or "Agent reported this stage as blocked"
-            )
+            fallback = "Agent reported this stage as blocked"
+            message = report.reroute_context or stderr[:2000] or fallback
+            ticket.blocking_issues = _blocking_issue(self.session, ticket, run, message)
             set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
         elif report and report.status in ("fail", "needs_rework"):
             from loregarden.services.workflow_routing import apply_stage_route
@@ -697,13 +704,18 @@ class OrchestrationService:
                     from_key=run.stage_key,
                     outcome="reject",
                     next_stage_key=report.reroute_to_stage or "",
-                    blocking_issues=report.reroute_context or stderr[:2000],
+                    blocking_issues=_blocking_issue(
+                        self.session, ticket, run, report.reroute_context or stderr[:2000]
+                    ),
                 )
             except ValueError:
                 # No reject transition, no agent-specified target, and no
                 # preceding stage to fall back to (already first-in-order).
-                ticket.blocking_issues = (
-                    report.reroute_context or stderr[:2000] or "Agent run failed"
+                ticket.blocking_issues = _blocking_issue(
+                    self.session,
+                    ticket,
+                    run,
+                    report.reroute_context or stderr[:2000] or "Agent run failed",
                 )
                 set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
         elif status == RunStatus.SUCCEEDED:
@@ -720,7 +732,9 @@ class OrchestrationService:
             set_stage_status(ticket, instance, stages, run.stage_key, stage_status)
             ticket.blocking_issues = ""
         else:
-            ticket.blocking_issues = stderr[:2000] or "Agent run failed"
+            ticket.blocking_issues = _blocking_issue(
+                self.session, ticket, run, stderr[:2000] or "Agent run failed"
+            )
             set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
         self.session.add(ticket)
         self.session.add(instance)
