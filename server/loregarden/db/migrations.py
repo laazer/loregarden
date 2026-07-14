@@ -420,16 +420,6 @@ def _m_triage_message_run_id(conn: Connection) -> None:
     )
 
 
-def _m_approval_checklist(conn: Connection) -> None:
-    _add_columns_if_missing(
-        conn,
-        "approvals",
-        {
-            "checklist_json": "ALTER TABLE approvals ADD COLUMN checklist_json TEXT NOT NULL DEFAULT '[]'",
-        },
-    )
-
-
 def _m_agent_run_timeout_override(conn: Connection) -> None:
     _add_columns_if_missing(
         conn,
@@ -438,6 +428,16 @@ def _m_agent_run_timeout_override(conn: Connection) -> None:
             "timeout_override_seconds": (
                 "ALTER TABLE agent_runs ADD COLUMN timeout_override_seconds INTEGER"
             ),
+        },
+    )
+
+
+def _m_approval_checklist(conn: Connection) -> None:
+    _add_columns_if_missing(
+        conn,
+        "approvals",
+        {
+            "checklist_json": "ALTER TABLE approvals ADD COLUMN checklist_json TEXT NOT NULL DEFAULT '[]'",
         },
     )
 
@@ -461,8 +461,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0014_queued_run_failure_columns", _m_queued_run_failure_columns),
     ("0015_agent_model_columns", _m_agent_model_columns),
     ("0016_triage_message_run_id", _m_triage_message_run_id),
-    ("0017_approval_checklist", _m_approval_checklist),
-    ("0018_agent_run_timeout_override", _m_agent_run_timeout_override),
+    ("0017_agent_run_timeout_override", _m_agent_run_timeout_override),
+    ("0018_approval_checklist", _m_approval_checklist),
 ]
 
 
