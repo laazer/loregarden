@@ -130,7 +130,7 @@ def test_recover_interrupted_stage_clears_stale_block(isolated_db):
         builtin = BuiltinOrchestrator(session)
         instance, stages = builtin.orch._resolve_stages(ticket)
         recovered = builtin._recover_interrupted_stage(ticket, instance, stages)
-        assert recovered is True
+        assert recovered == "testing"
 
         session.refresh(ticket)
         assert ticket.workflow_stage_status == StageStatus.PENDING
@@ -156,7 +156,7 @@ def test_recover_interrupted_stage_ignores_genuine_block(isolated_db):
         builtin = BuiltinOrchestrator(session)
         instance, stages = builtin.orch._resolve_stages(ticket)
         recovered = builtin._recover_interrupted_stage(ticket, instance, stages)
-        assert recovered is False
+        assert recovered is None
 
         session.refresh(ticket)
         assert ticket.workflow_stage_status == StageStatus.BLOCKED

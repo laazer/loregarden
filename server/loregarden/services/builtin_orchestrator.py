@@ -72,93 +72,46 @@ class BuiltinOrchestrator:
 
                 child_pause = self._orchestrate_incomplete_children(ticket, profile)
                 if child_pause:
-                    self.callbacks.complete_orchestration(
-                        orch_run,
-                        ticket,
-                        status=OrchestrationRunStatus.SUCCEEDED,
-                        message=child_pause,
-                    )
-                    self.session.refresh(orch_run)
-                    return orch_run
+                    return self._pause_orchestration(orch_run, ticket, message=child_pause)
 
-                instance, stages = self.orch._resolve_stages(ticket)
+                instance, stages, recovered_stage_key = self._resolve_stages_with_recovery(ticket)
                 if not instance or not stages:
                     break
-
-                if self._recover_interrupted_stage(ticket, instance, stages):
-                    self.session.refresh(ticket)
-                    instance, stages = self.orch._resolve_stages(ticket)
 
                 stage_map = parse_stage_map(instance, stages)
                 target_key = self._next_executable_stage(ticket, stages, stage_map)
                 if not target_key:
-                    self.callbacks.complete_orchestration(
-                        orch_run,
-                        ticket,
-                        status=OrchestrationRunStatus.SUCCEEDED,
-                    )
-                    self.session.refresh(orch_run)
-                    return orch_run
+                    return self._pause_orchestration(orch_run, ticket)
 
                 if limit > 0 and stages_run >= limit:
-                    self.callbacks.complete_orchestration(
-                        orch_run,
-                        ticket,
-                        status=OrchestrationRunStatus.SUCCEEDED,
-                        message=f"Paused after {stages_run} stage(s)",
+                    return self._pause_orchestration(
+                        orch_run, ticket, message=f"Paused after {stages_run} stage(s)"
                     )
-                    self.session.refresh(orch_run)
-                    return orch_run
 
                 stage_def = next(s for s in stages if s.key == target_key)
                 stage_status = stage_map.get(target_key, ticket.workflow_stage_status)
 
                 if stage_status == StageStatus.AWAITING:
-                    self.callbacks.complete_orchestration(
-                        orch_run,
-                        ticket,
-                        status=OrchestrationRunStatus.SUCCEEDED,
-                        message="Awaiting human approval",
+                    return self._pause_orchestration(
+                        orch_run, ticket, message="Awaiting human approval"
                     )
-                    self.session.refresh(orch_run)
-                    return orch_run
 
                 if is_agentless_stage(stage_def):
-                    if stage_def.key == "done":
-                        self.orch.finalize_workflow(ticket)
-                        self.session.refresh(ticket)
-                        stages_run += 1
-                        continue
-                    self.orch.enter_human_gate(ticket, stage_key=target_key)
-                    self.session.refresh(ticket)
+                    handled = self._handle_agentless_stage(ticket, orch_run, stage_def, target_key)
                     stages_run += 1
-                    self.callbacks.complete_orchestration(
-                        orch_run,
-                        ticket,
-                        status=OrchestrationRunStatus.SUCCEEDED,
-                        message="Awaiting human approval",
-                    )
-                    self.session.refresh(orch_run)
-                    return orch_run
+                    if handled is None:
+                        continue
+                    return handled
 
                 if stage_def.stage_type == "parallel":
-                    ok, message = self._execute_parallel_stage(
+                    stopped = self._run_parallel_stage_or_stop(
                         ticket,
                         orch_run,
                         stage_def,
                         target_key,
                         auto_approve=auto_approve,
+                        resuming=(target_key == recovered_stage_key),
                     )
-                    stages_run += 1
-                    if not ok:
-                        self.callbacks.block_ticket(
-                            orch_run,
-                            ticket,
-                            stage_key=target_key,
-                            message=message or "Parallel stage failed",
-                        )
-                        self.session.refresh(orch_run)
-                        return orch_run
                 else:
                     stopped = self._run_sequential_stage(
                         ticket,
@@ -167,10 +120,10 @@ class BuiltinOrchestrator:
                         auto_approve=auto_approve,
                         stop_at_stage_key=stop_at_stage_key,
                     )
-                    stages_run += 1
-                    if stopped:
-                        self.session.refresh(orch_run)
-                        return orch_run
+                stages_run += 1
+                if stopped:
+                    self.session.refresh(orch_run)
+                    return orch_run
 
                 self.session.refresh(ticket)
                 instance, stages = self.orch._resolve_stages(ticket)
@@ -178,14 +131,9 @@ class BuiltinOrchestrator:
                 status_after = stage_map.get(target_key, ticket.workflow_stage_status)
 
                 if status_after == StageStatus.AWAITING:
-                    self.callbacks.complete_orchestration(
-                        orch_run,
-                        ticket,
-                        status=OrchestrationRunStatus.SUCCEEDED,
-                        message="Awaiting human approval",
+                    return self._pause_orchestration(
+                        orch_run, ticket, message="Awaiting human approval"
                     )
-                    self.session.refresh(orch_run)
-                    return orch_run
 
                 next_route = StateMachine.resolve_next_stage_key(
                     stages,
@@ -210,13 +158,7 @@ class BuiltinOrchestrator:
                         return orch_run
 
                 if not next_key:
-                    self.callbacks.complete_orchestration(
-                        orch_run,
-                        ticket,
-                        status=OrchestrationRunStatus.SUCCEEDED,
-                    )
-                    self.session.refresh(orch_run)
-                    return orch_run
+                    return self._pause_orchestration(orch_run, ticket)
 
             final_status = (
                 OrchestrationRunStatus.BLOCKED
@@ -232,6 +174,89 @@ class BuiltinOrchestrator:
             )
         self.session.refresh(orch_run)
         return orch_run
+
+    def _pause_orchestration(
+        self, orch_run: OrchestrationRun, ticket: Ticket, *, message: str = ""
+    ) -> OrchestrationRun:
+        """Mark this orchestration run SUCCEEDED (the run itself didn't fail —
+        it's just pausing here: awaiting approval, hit its stage limit, or has
+        nothing left to do this pass) and return it for the caller to return."""
+        self.callbacks.complete_orchestration(
+            orch_run,
+            ticket,
+            status=OrchestrationRunStatus.SUCCEEDED,
+            message=message,
+        )
+        self.session.refresh(orch_run)
+        return orch_run
+
+    def _resolve_stages_with_recovery(
+        self, ticket: Ticket
+    ) -> tuple[WorkflowInstance | None, list[WorkflowStageDef], str | None]:
+        """Resolve the ticket's workflow stages, recovering a stage BLOCKED only
+        by a server restart (not a genuine failure) before the caller picks the
+        next stage to run. Returns the recovered stage key alongside the
+        (possibly re-resolved) instance/stages, so the caller can tell a
+        parallel stage it's being resumed rather than started fresh.
+        """
+        instance, stages = self.orch._resolve_stages(ticket)
+        if not instance or not stages:
+            return instance, stages, None
+        recovered_stage_key = self._recover_interrupted_stage(ticket, instance, stages)
+        if recovered_stage_key:
+            self.session.refresh(ticket)
+            instance, stages = self.orch._resolve_stages(ticket)
+        return instance, stages, recovered_stage_key
+
+    def _handle_agentless_stage(
+        self,
+        ticket: Ticket,
+        orch_run: OrchestrationRun,
+        stage_def: WorkflowStageDef,
+        target_key: str,
+    ) -> OrchestrationRun | None:
+        """Handle a stage with no agent to run (the final `done` stage, or a
+        human-approval gate). Returns None if the caller should `continue` the
+        loop (workflow just finished), else the `orch_run` to return now.
+        """
+        if stage_def.key == "done":
+            self.orch.finalize_workflow(ticket)
+            self.session.refresh(ticket)
+            return None
+        self.orch.enter_human_gate(ticket, stage_key=target_key)
+        self.session.refresh(ticket)
+        return self._pause_orchestration(orch_run, ticket, message="Awaiting human approval")
+
+    def _run_parallel_stage_or_stop(
+        self,
+        ticket: Ticket,
+        orch_run: OrchestrationRun,
+        stage_def: WorkflowStageDef,
+        target_key: str,
+        *,
+        auto_approve: bool,
+        resuming: bool,
+    ) -> bool:
+        """Run a parallel stage. Returns True if the caller should stop and
+        return `orch_run` now (the stage failed), False to keep going.
+        """
+        ok, message = self._execute_parallel_stage(
+            ticket,
+            orch_run,
+            stage_def,
+            target_key,
+            auto_approve=auto_approve,
+            resuming=resuming,
+        )
+        if ok:
+            return False
+        self.callbacks.block_ticket(
+            orch_run,
+            ticket,
+            stage_key=target_key,
+            message=message or "Parallel stage failed",
+        )
+        return True
 
     def _run_sequential_stage(
         self,
@@ -358,9 +383,20 @@ class BuiltinOrchestrator:
         stage_key: str,
         *,
         auto_approve: bool = False,
+        resuming: bool = False,
     ) -> tuple[bool, str]:
         specs = stage_def.parallel_agents
         if not specs:
+            self.orch.finalize_stage(ticket, stage_key, status=StageStatus.DONE)
+            self.session.refresh(ticket)
+            return True, ""
+
+        pending_specs = (
+            self._incomplete_parallel_specs(ticket, stage_key, specs) if resuming else specs
+        )
+        if not pending_specs:
+            # Resuming after an interruption, but every member had already
+            # succeeded before the crash — nothing left to redo.
             self.orch.finalize_stage(ticket, stage_key, status=StageStatus.DONE)
             self.session.refresh(ticket)
             return True, ""
@@ -370,7 +406,7 @@ class BuiltinOrchestrator:
             return False, branch_error
 
         runs = self._start_parallel_stage_runs(
-            ticket, orch_run, stage_def, stage_key, specs, auto_approve=auto_approve
+            ticket, orch_run, stage_def, stage_key, pending_specs, auto_approve=auto_approve
         )
         failures, reports = self._run_and_collect_parallel_results(runs)
 
@@ -388,6 +424,35 @@ class BuiltinOrchestrator:
         self.orch.finalize_stage(ticket, stage_key, status=StageStatus.DONE)
         self.session.refresh(ticket)
         return True, ""
+
+    def _incomplete_parallel_specs(self, ticket: Ticket, stage_key: str, specs):
+        """Filter a parallel stage's members down to those not already done.
+
+        Only meaningful when resuming a stage interrupted mid-run (e.g. a server
+        restart) — a member's most recent run for this exact ticket+stage already
+        reflects the current attempt, since a genuine reject/rework reroute always
+        starts a fresh attempt for every member instead of reusing this path. Reusing
+        an already-succeeded member here avoids redoing work a crash didn't touch,
+        while whatever remains still runs concurrently via the normal parallel path.
+        """
+        incomplete = []
+        for spec in specs:
+            latest = self.session.exec(
+                select(AgentRun)
+                .where(
+                    AgentRun.ticket_id == ticket.id,
+                    AgentRun.stage_key == stage_key,
+                    AgentRun.agent_id == spec.agent_id,
+                )
+                .order_by(AgentRun.created_at.desc())
+            ).first()
+            if latest is None or latest.status != RunStatus.SUCCEEDED:
+                incomplete.append(spec)
+                continue
+            report = parse_stage_report(latest.stdout)
+            if report and report.status != "pass":
+                incomplete.append(spec)
+        return incomplete
 
     def _checkout_branch_for_parallel_stage(self, ticket: Ticket, stage_key: str) -> str:
         """Ensure the ticket's branch is checked out before spawning parallel agents.
@@ -559,7 +624,7 @@ class BuiltinOrchestrator:
         self.session.refresh(ticket)
         return False, message
 
-    def _recover_interrupted_stage(self, ticket: Ticket, instance, stages) -> bool:
+    def _recover_interrupted_stage(self, ticket: Ticket, instance, stages) -> str | None:
         """Clear a stage blocked only by a server restart, not a genuine failure.
 
         fail_interrupted_runs() marks an orphaned AgentRun FAILED and its stage
@@ -569,24 +634,27 @@ class BuiltinOrchestrator:
         method's call site). _next_executable_stage() otherwise refuses to touch any
         BLOCKED stage, so without this, Continue Run would silently no-op forever on
         a stage that only needs a retry, per that message's own guidance.
+
+        Returns the recovered stage key (so callers can tell _execute_parallel_stage
+        this is a resume, not a fresh attempt) or None if nothing needed recovering.
         """
         from loregarden.services.run_service import INTERRUPTED_RUN_MESSAGE
 
         cursor_key = ticket.workflow_stage_key
         if not cursor_key:
-            return False
+            return None
         stage_map = parse_stage_map(instance, stages)
         if stage_map.get(cursor_key) != StageStatus.BLOCKED:
-            return False
+            return None
         if ticket.blocking_issues != INTERRUPTED_RUN_MESSAGE:
-            return False
+            return None
 
         set_stage_status(ticket, instance, stages, cursor_key, StageStatus.PENDING)
         ticket.blocking_issues = ""
         self.session.add(ticket)
         self.session.add(instance)
         self.session.commit()
-        return True
+        return cursor_key
 
     def _next_executable_stage(self, ticket: Ticket, stages, stage_map) -> str | None:
         ordered = sorted(stages, key=lambda s: s.order)
