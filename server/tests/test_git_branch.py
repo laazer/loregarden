@@ -38,6 +38,17 @@ def test_default_ticket_branch():
     assert default_ticket_branch(ticket) == "loregarden/42-my-feature"
 
 
+def test_default_ticket_branch_uses_milestone_prefix():
+    ticket = Ticket(
+        external_id="42-my-feature",
+        milestone="Q3 Launch",
+        work_item_type=WorkItemType.TASK,
+        title="x",
+        workspace_id="w",
+    )
+    assert default_ticket_branch(ticket) == "q3-launch/42-my-feature"
+
+
 def test_resolve_ticket_branch_prefers_explicit():
     ticket = Ticket(
         external_id="42-my-feature",

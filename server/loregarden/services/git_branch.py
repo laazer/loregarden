@@ -9,11 +9,18 @@ from pathlib import Path
 from loregarden.models.domain import Ticket
 
 _BRANCH_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _slugify(text: str) -> str:
+    slug = _SLUG_RE.sub("-", text.lower()).strip("-")
+    return slug[:48]
 
 
 def default_ticket_branch(ticket: Ticket) -> str:
     slug = ticket.external_id.strip() or ticket.id[:8]
-    return f"loregarden/{slug}"
+    prefix = _slugify(ticket.milestone) or "loregarden"
+    return f"{prefix}/{slug}"
 
 
 def resolve_ticket_branch(ticket: Ticket) -> str:
