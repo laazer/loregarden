@@ -126,5 +126,9 @@ transitions:
     when: reject
   - from: playtest
     to: learning
+    when: pass
+  - from: playtest
+    to: implementation
+    when: reject
   - from: learning
     to: done

@@ -543,7 +543,7 @@ class BuiltinOrchestrator:
                 reports.append((agent_id, report))
             if status_value != RunStatus.SUCCEEDED.value:
                 failures.append(f"{agent_id}: {stderr or 'agent run failed'}")
-            elif report and report.status in ("fail", "needs_rework"):
+            elif report and report.status in ("fail", "needs_rework", "blocked"):
                 failures.append(f"{agent_id}: {report.reroute_context or 'agent reported failure'}")
 
         from sqlmodel.pool import StaticPool

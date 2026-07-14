@@ -14,7 +14,7 @@ _SENTINEL_RE = re.compile(
     re.DOTALL,
 )
 
-_VALID_STATUSES = {"pass", "fail", "needs_rework"}
+_VALID_STATUSES = {"pass", "fail", "needs_rework", "blocked"}
 
 
 @dataclass(frozen=True)

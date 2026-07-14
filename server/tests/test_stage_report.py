@@ -45,6 +45,14 @@ def test_parse_stage_report_invalid_status_returns_none():
     assert parse_stage_report(stdout) is None
 
 
+def test_parse_stage_report_valid_blocked():
+    stdout = _wrap('{"status": "blocked", "confidence": 0.9, "reroute_context": "needs prod credentials"}')
+    report = parse_stage_report(stdout)
+    assert report is not None
+    assert report.status == "blocked"
+    assert report.reroute_context == "needs prod credentials"
+
+
 def test_parse_stage_report_confidence_clamped_to_unit_range():
     stdout = _wrap('{"status": "pass", "confidence": 5.0}')
     report = parse_stage_report(stdout)

@@ -120,15 +120,15 @@ inferring your outcome from prose or exit code alone.
 
 ```
 <<<LOREGARDEN_STAGE_REPORT>>>
-{"status": "pass|fail|needs_rework", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_context": "<what the target stage needs to know it missed>"}
+{"status": "pass|fail|needs_rework|blocked", "confidence": 0.0-1.0, "reroute_to_stage": "<stage_key>|null", "reroute_context": "<what the target stage needs to know it missed>"}
 <<<END_STAGE_REPORT>>>
 ```
 
 Field rules:
-- `status`: `pass` if this stage's work is complete and correct; `fail` or `needs_rework` if it is not (e.g. static QA found real violations, a reviewer rejected the diff, tests could not be made to pass).
+- `status`: `pass` if this stage's work is complete and correct; `fail` or `needs_rework` if it is not (e.g. static QA found real violations, a reviewer rejected the diff, tests could not be made to pass); `blocked` if you cannot proceed at all (e.g. missing credentials, an ambiguous requirement only a human can resolve) — unlike `fail`/`needs_rework`, this halts the ticket for human review rather than rerouting for automatic rework.
 - `confidence`: your honest confidence (0.0–1.0) that `status` is correct. Do not default to 1.0 — if you are uncertain, say so.
-- `reroute_to_stage`: when `status` is not `pass` and you know which upstream stage should redo the work (e.g. `implementation_backend`, `spec`), name its stage key. Use `null` if you don't know — the orchestrator will fall back to the workflow template's rework route, or the immediately preceding stage.
-- `reroute_context`: when rerouting, a specific, actionable description of what the target stage missed or must fix. This is delivered to that stage's agent as prior-stage feedback — write it for that reader, not for a human audit log.
+- `reroute_to_stage`: when `status` is `fail` or `needs_rework` and you know which upstream stage should redo the work (e.g. `implementation_backend`, `spec`), name its stage key. Use `null` if you don't know — the orchestrator will fall back to the workflow template's rework route, or the immediately preceding stage. Ignored when `status` is `blocked`.
+- `reroute_context`: when rerouting, a specific, actionable description of what the target stage missed or must fix. This is delivered to that stage's agent as prior-stage feedback — write it for that reader, not for a human audit log. When `status` is `blocked`, use this field instead to explain the blocker for the human who picks this up.
 
 If you emit no report, or a malformed one, the orchestrator falls back to today's exit-code-only behavior — but that means a stage that only *looks* successful (clean exit, buggy work) silently advances. Always emit the report.
 

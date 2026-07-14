@@ -672,7 +672,16 @@ class OrchestrationService:
         if not instance or not stages:
             return
 
-        if report and report.status in ("fail", "needs_rework"):
+        if report and report.status == "blocked":
+            # Distinct from fail/needs_rework: the agent isn't reporting bad work to
+            # redo upstream, it's reporting it cannot proceed at all (e.g. needs a
+            # human decision) — reroute-for-rework would just waste a cycle, so this
+            # halts the ticket directly instead.
+            ticket.blocking_issues = (
+                report.reroute_context or stderr[:2000] or "Agent reported this stage as blocked"
+            )
+            set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+        elif report and report.status in ("fail", "needs_rework"):
             from loregarden.services.workflow_routing import apply_stage_route
 
             transitions = self._resolve_transitions(ticket)
@@ -1096,10 +1105,27 @@ class ApprovalService:
                 if approved:
                     set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.DONE)
                 else:
-                    ticket.blocking_issues = "Human rejected approval"
-                    set_stage_status(
-                        ticket, instance, stages, approval.stage_key, StageStatus.BLOCKED
-                    )
+                    from loregarden.services.workflow_routing import apply_stage_route
+
+                    reject_message = response_text.strip() or "Human rejected approval"
+                    transitions = self.orchestration._resolve_transitions(ticket)
+                    try:
+                        apply_stage_route(
+                            ticket,
+                            instance,
+                            stages,
+                            transitions,
+                            from_key=approval.stage_key,
+                            outcome="reject",
+                            blocking_issues=reject_message,
+                        )
+                    except ValueError:
+                        # No reject transition and no preceding stage to fall back
+                        # to (already first-in-order) — hard-block in place.
+                        ticket.blocking_issues = reject_message
+                        set_stage_status(
+                            ticket, instance, stages, approval.stage_key, StageStatus.BLOCKED
+                        )
                 self.session.add(ticket)
                 self.session.add(instance)
                 self.session.commit()
