@@ -1064,6 +1064,7 @@ class ApprovalService:
         always_allow: bool = False,
         allow_for_ticket: bool = False,
         allow_for_stage: bool = False,
+        route_to_stage_key: str = "",
     ) -> Approval:
         from loregarden.agents.executors.permission_bridge import (
             build_ask_user_question_input,
@@ -1080,6 +1081,10 @@ class ApprovalService:
             raise ValueError("Approval not found")
         if approval.status != ApprovalStatus.PENDING:
             raise ValueError("Approval already resolved")
+
+        rework_route_key = route_to_stage_key.strip()
+        if rework_route_key:
+            self._validate_rework_route(approval, rework_route_key)
 
         if approval.kind == ApprovalKind.CLI_QUESTION and approved:
             tool_input = json.loads(approval.tool_input_json or "{}")
@@ -1123,35 +1128,13 @@ class ApprovalService:
 
         ticket = self.session.get(Ticket, approval.ticket_id)
         if ticket and approval.kind == ApprovalKind.WORKFLOW_GATE:
-            instance, stages = self.orchestration._resolve_stages(ticket)
-            if instance and stages and approval.stage_key:
-                if approved:
-                    set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.DONE)
-                else:
-                    from loregarden.services.workflow_routing import apply_stage_route
-
-                    reject_message = response_text.strip() or "Human rejected approval"
-                    transitions = self.orchestration._resolve_transitions(ticket)
-                    try:
-                        apply_stage_route(
-                            ticket,
-                            instance,
-                            stages,
-                            transitions,
-                            from_key=approval.stage_key,
-                            outcome="reject",
-                            blocking_issues=reject_message,
-                        )
-                    except ValueError:
-                        # No reject transition and no preceding stage to fall back
-                        # to (already first-in-order) — hard-block in place.
-                        ticket.blocking_issues = reject_message
-                        set_stage_status(
-                            ticket, instance, stages, approval.stage_key, StageStatus.BLOCKED
-                        )
-                self.session.add(ticket)
-                self.session.add(instance)
-                self.session.commit()
+            self._apply_gate_resolution(
+                ticket,
+                approval,
+                approved=approved,
+                rework_route_key=rework_route_key,
+                response_text=response_text,
+            )
 
         event_bus.publish(
             self.session,
@@ -1161,6 +1144,83 @@ class ApprovalService:
             payload={"approval_id": approval.id, "approved": approved},
         )
         return approval
+
+    def _validate_rework_route(self, approval: Approval, rework_route_key: str) -> None:
+        """Validate an explicit stage override up front so a bad target can't
+        leave the approval resolved with the ticket never rerouted. Used both
+        for approve-with-rework (send a passing gate back for formalization)
+        and reject-with-explicit-target (override the template's default
+        reject route/previous-stage fallback with an operator's choice)."""
+        if approval.kind != ApprovalKind.WORKFLOW_GATE:
+            raise ValueError("route_to_stage_key only applies to workflow-gate sign-offs")
+        gate_ticket = self.session.get(Ticket, approval.ticket_id)
+        _, gate_stages = (
+            self.orchestration._resolve_stages(gate_ticket) if gate_ticket else (None, [])
+        )
+        if not gate_stages or rework_route_key not in {s.key for s in gate_stages}:
+            raise ValueError(f"Unknown rework stage key: {rework_route_key}")
+        if not StateMachine.is_upstream_route(gate_stages, approval.stage_key, rework_route_key):
+            raise ValueError(
+                f"Rework stage '{rework_route_key}' must come before "
+                f"gate stage '{approval.stage_key}'"
+            )
+
+    def _apply_gate_resolution(
+        self,
+        ticket: Ticket,
+        approval: Approval,
+        *,
+        approved: bool,
+        rework_route_key: str,
+        response_text: str,
+    ) -> None:
+        instance, stages = self.orchestration._resolve_stages(ticket)
+        if not instance or not stages or not approval.stage_key:
+            return
+
+        from loregarden.services.workflow_routing import apply_stage_route
+
+        if approved and rework_route_key:
+            note = response_text.strip() or (
+                "Formalize the prototype changes made during this verification "
+                "with production-quality implementation and tests."
+            )
+            transitions = self.orchestration._resolve_transitions(ticket)
+            apply_stage_route(
+                ticket,
+                instance,
+                stages,
+                transitions,
+                from_key=approval.stage_key,
+                outcome="reject",
+                next_stage_key=rework_route_key,
+                blocking_issues=f"'{approval.stage_key}' gate approved with rework: {note}",
+            )
+        elif approved:
+            set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.DONE)
+        else:
+            reject_message = response_text.strip() or "Human rejected approval"
+            transitions = self.orchestration._resolve_transitions(ticket)
+            try:
+                apply_stage_route(
+                    ticket,
+                    instance,
+                    stages,
+                    transitions,
+                    from_key=approval.stage_key,
+                    outcome="reject",
+                    next_stage_key=rework_route_key,
+                    blocking_issues=reject_message,
+                )
+            except ValueError:
+                # No reject transition and no preceding stage to fall back to
+                # (already first-in-order) — hard-block in place.
+                ticket.blocking_issues = reject_message
+                set_stage_status(ticket, instance, stages, approval.stage_key, StageStatus.BLOCKED)
+
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.commit()
 
     def list_pending(self) -> list[Approval]:
         return list(

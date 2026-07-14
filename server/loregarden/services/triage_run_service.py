@@ -52,7 +52,7 @@ def _run_code() -> str:
 
 
 def start_triage_run(
-    session: Session, ticket: Ticket, content: str
+    session: Session, ticket: Ticket, content: str, *, auto_approve: bool = False
 ) -> tuple[TriageMessage, AgentRun]:
     """Validate, guard concurrency, persist the user message, and queue a run.
 
@@ -80,6 +80,7 @@ def start_triage_run(
         agent_id=TRIAGE_AGENT_ID,
         stage_key=TRIAGE_STAGE_KEY,
         status=RunStatus.QUEUED,
+        auto_approve=auto_approve,
     )
     session.add(run)
     session.commit()

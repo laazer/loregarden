@@ -269,6 +269,66 @@ def invoke_triage_model(session: Session, ticket: Ticket, latest_user_message: s
         return reply[:8000]
 
 
+def current_human_gate_stage(session: Session, ticket: Ticket):
+    """The ticket's current stage def, if it is an agentless human verification gate."""
+    from loregarden.services.studio_service import is_agentless_stage
+    from loregarden.services.workflow_service import resolve_ticket_stages
+
+    if not ticket.workflow_stage_key or ticket.workflow_stage_key == "done":
+        return None
+    _, stages = resolve_ticket_stages(session, ticket)
+    stage = next((s for s in stages if s.key == ticket.workflow_stage_key), None)
+    if not stage or not is_agentless_stage(stage):
+        return None
+    return stage
+
+
+def _gate_focus_guidance(stage) -> str:
+    label = f"{stage.key} {stage.name}".lower()
+    if "playtest" in label or "gameplay" in label:
+        return (
+            "This is a gameplay playtest. Focus on how the change plays, not just whether "
+            "automated tests pass: launch the relevant scene or build, exercise the change "
+            "hands-on, and judge feel, balance, and regressions in adjacent systems against "
+            "the acceptance criteria."
+        )
+    if "ux" in label or "usability" in label or "user" in label:
+        return (
+            "This is a human UX verification. Focus on the user experience: drive the "
+            "affected flows end-to-end and check layout, copy, affordances, and error "
+            "states against the acceptance criteria."
+        )
+    return (
+        "This is a human verification step. Walk the acceptance criteria hands-on and "
+        "confirm the change behaves correctly in practice, not just in automated tests."
+    )
+
+
+def build_gate_triage_sections(session: Session, ticket: Ticket) -> list[str]:
+    stage = current_human_gate_stage(session, ticket)
+    if stage is None:
+        return []
+    sections = [
+        "",
+        f"## Human verification gate: {stage.name}",
+        f"The ticket is parked at the '{stage.name}' stage — a human sign-off gate, "
+        "not an agent stage. Your job in this conversation is to help the operator run "
+        "that verification: reproduce what they see, diagnose issues, and fix what you can.",
+        _gate_focus_guidance(stage),
+    ]
+    checklist = list(stage.checklist or [])
+    if checklist:
+        sections.append("Verification checklist for this gate:")
+        sections.extend(f"- {item}" for item in checklist)
+    sections.append(
+        "Fixes made during this verification are prototypes. When the operator is "
+        "satisfied, they resolve the gate from the approvals panel — approving it "
+        "forward, or approving it with a route back to an earlier workflow stage so "
+        "prototype changes get rebuilt properly with production code and tests."
+    )
+    return sections
+
+
 def build_triage_prompt(
     ticket: Ticket,
     history: list[TriageMessage],
@@ -309,6 +369,7 @@ def build_triage_prompt(
         sections.append(
             "You are advisory only in this channel — do not claim to have executed tools or changed the repo."
         )
+    sections.extend(build_gate_triage_sections(session, ticket))
     sections.append("")
     if workspace:
         sections.extend(

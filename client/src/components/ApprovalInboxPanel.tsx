@@ -28,6 +28,7 @@ export function ApprovalInboxPanel() {
       always_allow,
       allow_for_ticket,
       allow_for_stage,
+      route_to_stage_key,
     }: {
       id: string;
       action: "approve" | "reject";
@@ -36,6 +37,7 @@ export function ApprovalInboxPanel() {
       always_allow?: boolean;
       allow_for_ticket?: boolean;
       allow_for_stage?: boolean;
+      route_to_stage_key?: string;
     }) =>
       api.resolveApproval(id, {
         action,
@@ -44,6 +46,7 @@ export function ApprovalInboxPanel() {
         always_allow,
         allow_for_ticket,
         allow_for_stage,
+        route_to_stage_key,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["approvals"] });
@@ -88,7 +91,9 @@ export function ApprovalInboxPanel() {
               onApprove={(payload) =>
                 resolveApproval.mutate({ id: a.id, action: "approve", ...payload })
               }
-              onReject={() => resolveApproval.mutate({ id: a.id, action: "reject" })}
+              onReject={(payload) =>
+                resolveApproval.mutate({ id: a.id, action: "reject", ...payload })
+              }
               onInspect={() => {
                 navigateToTicket(a.ticket_id, { tab: "diff" });
                 setInboxOpen(false);

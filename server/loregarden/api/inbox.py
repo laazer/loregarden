@@ -43,6 +43,7 @@ def resolve_approval(
             always_allow=body.always_allow,
             allow_for_ticket=body.allow_for_ticket,
             allow_for_stage=body.allow_for_stage,
+            route_to_stage_key=body.route_to_stage_key,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

@@ -361,6 +361,7 @@ export interface Approval {
   stage_name: string;
   impact: string;
   checklist?: string[];
+  route_options?: { key: string; name: string }[];
   ticket_id: string;
   ticket_external_id: string;
   kind: "workflow_gate" | "cli_permission" | "cli_question";

@@ -179,7 +179,9 @@ export function LogsPanel({
         onApprove={(approval, payload) =>
           resolveApproval.mutate({ id: approval.id, action: "approve", ...payload })
         }
-        onReject={(approval) => resolveApproval.mutate({ id: approval.id, action: "reject" })}
+        onReject={(approval, payload) =>
+          resolveApproval.mutate({ id: approval.id, action: "reject", ...payload })
+        }
       />
 
       <TriageComposer

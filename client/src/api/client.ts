@@ -307,6 +307,7 @@ export const api = {
       always_allow?: boolean;
       allow_for_ticket?: boolean;
       allow_for_stage?: boolean;
+      route_to_stage_key?: string;
     },
   ) =>
     request(`/api/inbox/approvals/${id}`, {
@@ -324,10 +325,10 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
-  sendTriageMessage: (ticketId: string, content: string) =>
+  sendTriageMessage: (ticketId: string, content: string, options?: { auto_approve?: boolean }) =>
     request<TriageSendResult>(`/api/tickets/${ticketId}/triage/messages`, {
       method: "POST",
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, auto_approve: options?.auto_approve ?? false }),
     }),
   skills: () => request<string[]>("/api/agents/skills"),
   studioMcpTools: () => request<string[]>("/api/studio/mcp-tools"),

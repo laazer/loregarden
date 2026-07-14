@@ -167,6 +167,7 @@ class ApprovalView(SQLModel):
     stage_name: str
     impact: str
     checklist: list[str] = Field(default_factory=list)
+    route_options: list[dict[str, str]] = Field(default_factory=list)
     ticket_id: str
     ticket_external_id: str
     kind: str = "workflow_gate"
@@ -374,10 +375,15 @@ class ApprovalAction(SQLModel):
     always_allow: bool = False
     allow_for_ticket: bool = False
     allow_for_stage: bool = False
+    # Workflow gates only: an explicit earlier stage to route the ticket back
+    # to. On approve, sends a passing gate back for formalization (code +
+    # tests). On reject, overrides the template's default reject route.
+    route_to_stage_key: str = ""
 
 
 class TriageMessageCreate(SQLModel):
     content: str
+    auto_approve: bool = False
 
 
 class StudioGateCheck(SQLModel):

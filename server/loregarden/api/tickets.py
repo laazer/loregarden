@@ -381,7 +381,9 @@ def post_triage_message(
     if not ticket:
         raise HTTPException(404, "Ticket not found")
     try:
-        user_message, run = start_triage_run(session, ticket, body.content)
+        user_message, run = start_triage_run(
+            session, ticket, body.content, auto_approve=body.auto_approve
+        )
     except TriageConflictError as exc:
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:

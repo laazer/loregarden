@@ -15,6 +15,16 @@ const DEFAULT_RUNTIME: WorkspaceRuntimeSettings = {
   lmstudio_model: "",
 };
 
+const AUTO_APPROVE_STORAGE_KEY = "loregarden.triage.autoApprove";
+
+function readStoredAutoApprove(): boolean {
+  try {
+    return localStorage.getItem(AUTO_APPROVE_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function TriageComposer({
   ticketId,
   runtimeOptions,
@@ -42,6 +52,7 @@ export function TriageComposer({
   const [draft, setDraft] = useState("");
   const [modelModalOpen, setModelModalOpen] = useState(false);
   const [attachLogs, setAttachLogs] = useState(attachLogsDefault);
+  const [autoApprove, setAutoApprove] = useState(readStoredAutoApprove);
 
   const triage = useQuery({
     queryKey: ["triage", ticketId],
@@ -61,8 +72,18 @@ export function TriageComposer({
     },
   });
 
+  const setAndStoreAutoApprove = (value: boolean) => {
+    setAutoApprove(value);
+    try {
+      localStorage.setItem(AUTO_APPROVE_STORAGE_KEY, value ? "1" : "0");
+    } catch {
+      // localStorage unavailable — keep in-memory state only
+    }
+  };
+
   const sendMessage = useMutation({
-    mutationFn: (content: string) => api.sendTriageMessage(ticketId, content),
+    mutationFn: (content: string) =>
+      api.sendTriageMessage(ticketId, content, { auto_approve: autoApprove }),
     onSuccess: () => {
       setDraft("");
       qc.invalidateQueries({ queryKey: ["triage", ticketId] });
@@ -99,19 +120,30 @@ export function TriageComposer({
       ? (saveRuntime.error as Error)?.message || "Failed to save triage model settings"
       : null);
 
-  const optionsRow =
-    showAttachLogsToggle || showAutoScrollToggle ? (
-      <>
-        {showAttachLogsToggle && (
-          <label className="chat-composer-option">
-            <input
-              type="checkbox"
-              checked={attachLogs}
-              onChange={(e) => setAttachLogs(e.target.checked)}
-            />
-            Include recent log output with your question
-          </label>
-        )}
+  const optionsRow = (
+    <>
+      {showAttachLogsToggle && (
+        <label className="chat-composer-option">
+          <input
+            type="checkbox"
+            checked={attachLogs}
+            onChange={(e) => setAttachLogs(e.target.checked)}
+          />
+          Include recent log output with your question
+        </label>
+      )}
+      <div className="studio-chat-composer-options-inline">
+        <label
+          className="chat-composer-option"
+          title={`Auto-approve ${TRIAGE_AGENT_NAME}'s tool permissions for this turn. Questions and out-of-scope actions still ask.`}
+        >
+          <input
+            type="checkbox"
+            checked={autoApprove}
+            onChange={(e) => setAndStoreAutoApprove(e.target.checked)}
+          />
+          Auto-approve
+        </label>
         {showAutoScrollToggle && onAutoScrollChange && (
           <label className="chat-composer-option">
             <input
@@ -122,8 +154,9 @@ export function TriageComposer({
             Auto-scroll
           </label>
         )}
-      </>
-    ) : undefined;
+      </div>
+    </>
+  );
 
   return (
     <>

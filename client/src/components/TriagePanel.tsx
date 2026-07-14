@@ -111,6 +111,7 @@ export function TriagePanel({
       always_allow,
       allow_for_ticket,
       allow_for_stage,
+      route_to_stage_key,
     }: {
       id: string;
       action: "approve" | "reject";
@@ -119,7 +120,17 @@ export function TriagePanel({
       always_allow?: boolean;
       allow_for_ticket?: boolean;
       allow_for_stage?: boolean;
-    }) => api.resolveApproval(id, { action, answers, response, always_allow, allow_for_ticket, allow_for_stage }),
+      route_to_stage_key?: string;
+    }) =>
+      api.resolveApproval(id, {
+        action,
+        answers,
+        response,
+        always_allow,
+        allow_for_ticket,
+        allow_for_stage,
+        route_to_stage_key,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["triage", ticket?.id] });
       qc.invalidateQueries({ queryKey: ["approvals"] });
@@ -205,7 +216,9 @@ export function TriagePanel({
         onApprove={(approval, payload) =>
           resolveApproval.mutate({ id: approval.id, action: "approve", ...payload })
         }
-        onReject={(approval) => resolveApproval.mutate({ id: approval.id, action: "reject" })}
+        onReject={(approval, payload) =>
+          resolveApproval.mutate({ id: approval.id, action: "reject", ...payload })
+        }
       />
 
       <TriageComposer

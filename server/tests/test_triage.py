@@ -314,6 +314,42 @@ def test_triage_run_excluded_from_list_runs(client: TestClient, db_session):
     assert included[0].agent_id == "triage"
 
 
+def test_start_triage_run_carries_auto_approve_flag(client: TestClient, db_session: Session):
+    from datetime import datetime, timezone
+
+    from loregarden.services.triage_run_service import start_triage_run
+
+    ticket_id = _ticket_id(client)
+    ticket = db_session.get(Ticket, ticket_id)
+    assert ticket is not None
+
+    _, run = start_triage_run(db_session, ticket, "fix the jump height", auto_approve=True)
+    assert run.auto_approve is True
+
+    run.status = RunStatus.SUCCEEDED
+    run.finished_at = datetime.now(timezone.utc)
+    db_session.add(run)
+    db_session.commit()
+
+    _, run_default = start_triage_run(db_session, ticket, "now check the landing")
+    assert run_default.auto_approve is False
+
+
+def test_triage_message_endpoint_accepts_auto_approve(
+    client: TestClient, db_session: Session, monkeypatch
+):
+    monkeypatch.setenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", "ok")
+    ticket_id = _ticket_id(client)
+    res = client.post(
+        f"/api/tickets/{ticket_id}/triage/messages",
+        json={"content": "auto approve please", "auto_approve": True},
+    )
+    assert res.status_code == 202
+    run = db_session.get(AgentRun, res.json()["run_id"])
+    assert run is not None
+    assert run.auto_approve is True
+
+
 def test_triage_async_send_returns_immediately_reply_via_poll(client: TestClient, monkeypatch):
     import time
 

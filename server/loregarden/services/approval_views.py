@@ -5,8 +5,31 @@ from __future__ import annotations
 import json
 
 from loregarden.core.workflow_loader import stage_display_name
-from loregarden.models.domain import Approval, ApprovalKind, Ticket, WorkflowTemplate, Workspace
+from loregarden.models.domain import (
+    Approval,
+    ApprovalKind,
+    ApprovalStatus,
+    Ticket,
+    WorkflowTemplate,
+    Workspace,
+)
 from sqlmodel import Session
+
+
+def _gate_route_options(session: Session, ticket: Ticket | None, gate_stage_key: str) -> list[dict]:
+    """Stages upstream of a workflow gate, offered as approve-and-rework targets."""
+    from loregarden.services.workflow_service import resolve_ticket_stages
+
+    if not ticket or not gate_stage_key:
+        return []
+    _, stages = resolve_ticket_stages(session, ticket)
+    ordered = sorted(stages, key=lambda s: s.order)
+    options: list[dict] = []
+    for stage in ordered:
+        if stage.key == gate_stage_key:
+            break
+        options.append({"key": stage.key, "name": stage.name})
+    return options
 
 
 def approval_to_view(session: Session, approval: Approval) -> dict:
@@ -40,6 +63,10 @@ def approval_to_view(session: Session, approval: Approval) -> dict:
     except json.JSONDecodeError:
         checklist = []
 
+    route_options: list[dict] = []
+    if approval.kind == ApprovalKind.WORKFLOW_GATE and approval.status == ApprovalStatus.PENDING:
+        route_options = _gate_route_options(session, ticket, approval.stage_key)
+
     return {
         "id": approval.id,
         "title": approval.title,
@@ -49,6 +76,7 @@ def approval_to_view(session: Session, approval: Approval) -> dict:
         "stage_name": stage_name,
         "impact": approval.impact,
         "checklist": checklist,
+        "route_options": route_options,
         "ticket_id": approval.ticket_id,
         "ticket_external_id": ticket.external_id if ticket else "",
         "kind": approval.kind.value if hasattr(approval.kind, "value") else str(approval.kind),

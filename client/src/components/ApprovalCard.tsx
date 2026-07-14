@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { AgentQuestion, Approval } from "../api/client";
 import { PermissionDetails } from "./PermissionDetails";
+import { RejectApprovalModal } from "./RejectApprovalModal";
 
 export type ApprovalResolvePayload = {
   answers?: Record<string, string | string[]>;
@@ -9,6 +10,7 @@ export type ApprovalResolvePayload = {
   always_allow?: boolean;
   allow_for_ticket?: boolean;
   allow_for_stage?: boolean;
+  route_to_stage_key?: string;
 };
 
 function questionList(approval: Approval): AgentQuestion[] {
@@ -44,13 +46,14 @@ export function ApprovalCard({
 }: {
   approval: Approval;
   onApprove: (payload?: ApprovalResolvePayload) => void;
-  onReject: () => void;
+  onReject: (payload?: ApprovalResolvePayload) => void;
   onInspect?: () => void;
   isSubmitting?: boolean;
   compact?: boolean;
 }) {
   const isQuestion = approval.kind === "cli_question";
   const isPermission = approval.kind === "cli_permission";
+  const isGate = approval.kind === "workflow_gate";
   const questions = useMemo(() => (isQuestion ? questionList(approval) : []), [approval, isQuestion]);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [customText, setCustomText] = useState<Record<string, string>>({});
@@ -59,6 +62,12 @@ export function ApprovalCard({
   const [allowForTicket, setAllowForTicket] = useState(false);
   const [allowForStage, setAllowForStage] = useState(false);
   const [checkedItems, setCheckedItems] = useState<Record<number, boolean>>({});
+  const [reworkEnabled, setReworkEnabled] = useState(false);
+  const [reworkStageKey, setReworkStageKey] = useState("");
+  const [reworkNote, setReworkNote] = useState("");
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+
+  const routeOptions = isGate ? approval.route_options ?? [] : [];
 
   useEffect(() => {
     setAnswers({});
@@ -68,14 +77,24 @@ export function ApprovalCard({
     setAllowForTicket(false);
     setAllowForStage(false);
     setCheckedItems({});
+    setReworkEnabled(false);
+    setReworkStageKey("");
+    setReworkNote("");
+    setRejectModalOpen(false);
   }, [approval.id]);
 
-  const canSubmit = !isQuestion || answersComplete(questions, answers, freeformResponse);
+  const reworkActive = reworkEnabled && !!reworkStageKey;
+  const canSubmit =
+    (!isQuestion || answersComplete(questions, answers, freeformResponse)) &&
+    (!reworkEnabled || !!reworkStageKey);
 
   const resolvePayload = (): ApprovalResolvePayload => ({
     always_allow: alwaysAllowWorkspace || undefined,
     allow_for_ticket: allowForTicket || undefined,
     allow_for_stage: allowForStage || undefined,
+    ...(reworkActive
+      ? { route_to_stage_key: reworkStageKey, response: reworkNote.trim() || undefined }
+      : {}),
   });
 
   const submitAnswers = () => {
@@ -149,6 +168,77 @@ export function ApprovalCard({
                 <span style={{ textDecoration: checkedItems[idx] ? "line-through" : "none" }}>{item}</span>
               </label>
             ))}
+          </div>
+        )}
+
+        {isGate && routeOptions.length > 0 && (
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            <label
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "flex-start",
+                fontSize: 12,
+                color: "var(--txm)",
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={reworkEnabled}
+                disabled={isSubmitting}
+                onChange={(e) => setReworkEnabled(e.target.checked)}
+                style={{ marginTop: 2 }}
+              />
+              <span>
+                <span style={{ fontWeight: 600 }}>Approve, then send back through the workflow</span>
+                <div style={{ fontSize: 11, color: "var(--txl)", marginTop: 2 }}>
+                  Sign off on the verification, but route the ticket to an earlier stage so
+                  prototype fixes get rebuilt with proper code and tests.
+                </div>
+              </span>
+            </label>
+            {reworkEnabled && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 22 }}>
+                <select
+                  value={reworkStageKey}
+                  disabled={isSubmitting}
+                  onChange={(e) => setReworkStageKey(e.target.value)}
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: "1px solid var(--bd)",
+                    background: "var(--bg2)",
+                    color: "var(--tx)",
+                    fontSize: 12,
+                  }}
+                >
+                  <option value="">Route back to stage…</option>
+                  {routeOptions.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+                <textarea
+                  value={reworkNote}
+                  disabled={isSubmitting}
+                  onChange={(e) => setReworkNote(e.target.value)}
+                  placeholder="What should be formalized? (e.g. prototype fixes made during the playtest)"
+                  rows={2}
+                  style={{
+                    width: "100%",
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: "1px solid var(--bd)",
+                    background: "var(--bg2)",
+                    color: "var(--tx)",
+                    fontSize: 12,
+                    resize: "vertical",
+                  }}
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -327,10 +417,10 @@ export function ApprovalCard({
             type="button"
             className="btn-secondary"
             style={{ flex: 1, borderRadius: 0, color: "var(--grl)" }}
-            disabled={isSubmitting}
+            disabled={!canSubmit || isSubmitting}
             onClick={submitApproval}
           >
-            {isPermission ? "Allow" : "Approve"}
+            {isPermission ? "Allow" : reworkActive ? "Approve & route back" : "Approve"}
           </button>
         )}
         <button
@@ -338,7 +428,7 @@ export function ApprovalCard({
           className="btn-secondary"
           style={{ flex: 1, borderRadius: 0, color: "var(--rdl)" }}
           disabled={isSubmitting}
-          onClick={onReject}
+          onClick={isGate ? () => setRejectModalOpen(true) : () => onReject()}
         >
           {isQuestion ? "Decline" : isPermission ? "Deny" : "Reject"}
         </button>
@@ -348,6 +438,18 @@ export function ApprovalCard({
           </button>
         )}
       </div>
+      {isGate && (
+        <RejectApprovalModal
+          open={rejectModalOpen}
+          approval={approval}
+          isSubmitting={isSubmitting}
+          onClose={() => setRejectModalOpen(false)}
+          onConfirm={(payload) => {
+            setRejectModalOpen(false);
+            onReject(payload);
+          }}
+        />
+      )}
     </div>
   );
 }
