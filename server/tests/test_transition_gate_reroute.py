@@ -32,7 +32,9 @@ def _stage_report(status: str, confidence: float) -> str:
     )
 
 
-def _setup_ticket_at_test_break(db_session: Session, tmp_path) -> tuple[Ticket, OrchestrationProfile]:
+def _setup_ticket_at_test_break(
+    db_session: Session, tmp_path
+) -> tuple[Ticket, OrchestrationProfile]:
     sync_workflow_templates(db_session)
     template = db_session.exec(
         select(WorkflowTemplate).where(WorkflowTemplate.slug == "blobert-tdd")
@@ -76,7 +78,9 @@ def _setup_ticket_at_test_break(db_session: Session, tmp_path) -> tuple[Ticket, 
     return ticket, profile
 
 
-def test_gate_failure_reroutes_to_same_stage_instead_of_blocking(db_session: Session, monkeypatch, tmp_path):
+def test_gate_failure_reroutes_to_same_stage_instead_of_blocking(
+    db_session: Session, monkeypatch, tmp_path
+):
     from loregarden.agents.executors.cli import CliAgentExecutor
 
     ticket, profile = _setup_ticket_at_test_break(db_session, tmp_path)
