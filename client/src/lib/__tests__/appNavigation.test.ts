@@ -57,4 +57,10 @@ describe("appNavigation", () => {
     expect(studioResourceFromPath("/studio/tickets/new")).toBe("new");
     expect(studioResourceFromPath("/studio/agents")).toBeNull();
   });
+
+  it("builds and parses the gates studio route", () => {
+    expect(studioPath("gates")).toBe("/studio/gates");
+    expect(studioSectionFromPath("/studio/gates")).toBe("gates");
+    expect(studioSectionFromPath("/studio/gates/anything")).toBe("gates");
+  });
 });

@@ -232,6 +232,14 @@ export const api = {
     request<{ ok: boolean }>(`/api/tickets/${id}`, { method: "DELETE" }),
   orchestrationProfile: (slug: string) =>
     request<OrchestrationProfileView>(`/api/orchestration/workspaces/${slug}/profile`),
+  updateWorkspaceGates: (
+    slug: string,
+    body: { enabled: boolean; commands: string[]; transition_script: string },
+  ) =>
+    request<OrchestrationProfileView>(`/api/orchestration/workspaces/${slug}/profile/gates`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
   startRun: (id: string, options?: { stage_key?: string; auto_approve?: boolean }) =>
     request<TicketDetail>(`/api/tickets/${id}/start`, {
       method: "POST",

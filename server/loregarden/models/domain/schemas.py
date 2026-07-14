@@ -258,7 +258,15 @@ class OrchestrationProfileView(SQLModel):
     workflow_template: str
     orchestrator_skill: str = ""
     gates_enabled: bool = False
+    gates_commands: list[str] = Field(default_factory=list)
+    gates_transition_script: str = ""
     max_stages_per_run: int = 0
+
+
+class GatesConfigUpdate(SQLModel):
+    enabled: bool = False
+    commands: list[str] = Field(default_factory=list)
+    transition_script: str = ""
 
 
 class AdvanceStageRequest(SQLModel):

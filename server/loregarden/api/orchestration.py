@@ -7,6 +7,7 @@ from loregarden.models.domain import (
     BlockTicketRequest,
     CompleteOrchestrationRequest,
     CompleteStageRequest,
+    GatesConfigUpdate,
     OrchestrationDriver,
     OrchestrationProfileView,
     OrchestrationRun,
@@ -21,8 +22,10 @@ from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import (
+    GatesConfig,
     list_profiles,
     resolve_orchestration_profile,
+    update_gates_config,
 )
 from sqlmodel import Session, select
 
@@ -52,6 +55,8 @@ def _profile_view(profile) -> OrchestrationProfileView:
         workflow_template=profile.workflow_template,
         orchestrator_skill=profile.orchestrator.skill,
         gates_enabled=profile.gates.enabled,
+        gates_commands=profile.gates.commands,
+        gates_transition_script=profile.gates.transition_script,
         max_stages_per_run=profile.max_stages_per_run,
     )
 
@@ -81,6 +86,20 @@ def list_workspace_profiles(
     if not ws:
         raise HTTPException(404, "Workspace not found")
     return [_profile_view(p) for p in list_profiles(ws)]
+
+
+@router.put("/workspaces/{slug}/profile/gates", response_model=OrchestrationProfileView)
+def update_workspace_gates(
+    slug: str, body: GatesConfigUpdate, session: Session = Depends(get_session)
+) -> OrchestrationProfileView:
+    ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
+    if not ws:
+        raise HTTPException(404, "Workspace not found")
+    gates = GatesConfig(
+        enabled=body.enabled, commands=body.commands, transition_script=body.transition_script
+    )
+    profile = update_gates_config(ws, gates)
+    return _profile_view(profile)
 
 
 @router.post("/tickets/{ticket_id}/start", response_model=OrchestrationRunView)

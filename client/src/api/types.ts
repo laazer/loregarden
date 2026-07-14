@@ -317,6 +317,8 @@ export interface OrchestrationProfileView {
   workflow_template: string;
   orchestrator_skill: string;
   gates_enabled: boolean;
+  gates_commands: string[];
+  gates_transition_script: string;
   max_stages_per_run: number;
 }
 

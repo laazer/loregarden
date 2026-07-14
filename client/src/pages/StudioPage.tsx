@@ -20,6 +20,7 @@ import { GateHandoffEditor } from "../components/studio/GateHandoffEditor";
 import { StudioDescribeBar } from "../components/studio/StudioDescribeBar";
 import { TicketStudioPanel } from "../components/studio/TicketStudioPanel";
 import { WorkflowPreviewPanel } from "../components/studio/WorkflowPreviewPanel";
+import { WorkspaceGatesPanel } from "../components/studio/WorkspaceGatesPanel";
 import { navigateToStudio, navigateToStudioAgent, navigateToStudioAgentNew, navigateToStudioWorkflow, navigateToStudioWorkflowNew, useStudioResourceFromRoute, useStudioSectionFromRoute } from "../lib/useAppNavigation";
 import { isStudioNewResource, studioPath } from "../lib/appNavigation";
 
@@ -478,14 +479,22 @@ export function StudioPage() {
             <span className="page-hero-eyebrow-muted">Agents · Workflows · Scoping</span>
           </div>
           <h1 className="page-hero-title">
-            {tab === "agents" ? "Agent Studio" : tab === "workflows" ? "Workflow Studio" : "Ticket Studio"}
+            {tab === "agents"
+              ? "Agent Studio"
+              : tab === "workflows"
+                ? "Workflow Studio"
+                : tab === "gates"
+                  ? "Transition Gates"
+                  : "Ticket Studio"}
           </h1>
           <p className="page-hero-sub">
             {tab === "agents"
               ? "Define role instructions, MCP tools, gates, and handoff rules."
               : tab === "workflows"
                 ? "Chain agents together with classify steps, gates, and human approvals."
-                : "Chat with the scoper to refine scope and generate draft tickets."}
+                : tab === "gates"
+                  ? "Run commands between stages to block a bad handoff before it happens."
+                  : "Chat with the scoper to refine scope and generate draft tickets."}
           </p>
         </div>
         <div className="page-hero-actions">
@@ -526,6 +535,7 @@ export function StudioPage() {
             ["agents", "Agent Studio"],
             ["workflows", "Workflow Studio"],
             ["tickets", "Ticket Studio"],
+            ["gates", "Transition Gates"],
           ] as const
         ).map(([section, label]) => (
           <NavLink
@@ -548,6 +558,8 @@ export function StudioPage() {
               runtimeOptions={runtimeOptions.data}
             />
           </div>
+        ) : tab === "gates" ? (
+          <WorkspaceGatesPanel workspaces={workspaces.data ?? []} />
         ) : tab === "agents" ? (
           <div className="studio-shell">
             {layoutMode === "workbench" && (

@@ -10,7 +10,7 @@ export type ArtifactTab =
   | "triage"
   | "pr";
 
-export type StudioSection = "agents" | "workflows" | "tickets";
+export type StudioSection = "agents" | "workflows" | "tickets" | "gates";
 
 export const ARTIFACT_TABS: ArtifactTab[] = [
   "diff",
@@ -23,7 +23,7 @@ export const ARTIFACT_TABS: ArtifactTab[] = [
   "pr",
 ];
 
-export const STUDIO_SECTIONS: StudioSection[] = ["agents", "workflows", "tickets"];
+export const STUDIO_SECTIONS: StudioSection[] = ["agents", "workflows", "tickets", "gates"];
 
 export const STUDIO_NEW_RESOURCE = "new";
 
@@ -36,7 +36,7 @@ const PAGE_PATHS: Record<AppPage, string> = {
 };
 
 const TICKET_PATH_RE = /^\/tickets\/([^/]+)(?:\/([^/]+))?/;
-const STUDIO_RESOURCE_PATH_RE = /^\/studio\/(agents|workflows|tickets)(?:\/([^/]+))?/;
+const STUDIO_RESOURCE_PATH_RE = /^\/studio\/(agents|workflows|tickets|gates)(?:\/([^/]+))?/;
 
 export function isStudioNewResource(resourceId: string | null | undefined): boolean {
   return resourceId === STUDIO_NEW_RESOURCE;
@@ -111,6 +111,9 @@ export function studioSectionFromPath(pathname: string): StudioSection {
   }
   if (pathname === "/studio/tickets" || pathname.startsWith("/studio/tickets/")) {
     return "tickets";
+  }
+  if (pathname === "/studio/gates" || pathname.startsWith("/studio/gates/")) {
+    return "gates";
   }
   return "agents";
 }

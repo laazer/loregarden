@@ -1,6 +1,7 @@
 import json
 
 from fastapi.testclient import TestClient
+from loregarden.config import settings
 from loregarden.models.domain import (
     AgentRun,
     ClassifyRoute,
@@ -127,7 +128,16 @@ def test_parallel_stage_runs_all_agents(client: TestClient, db_session: Session,
     db_session.commit()
     db_session.refresh(template)
 
-    ws = Workspace(slug="parallel-test-ws", name="Parallel Test", repo_path=str(tmp_path))
+    ws = Workspace(
+        slug="parallel-test-ws",
+        name="Parallel Test",
+        repo_path=str(tmp_path),
+        # Orchestration profiles resolve from loregarden's own repo tree by slug,
+        # not from repo_path — this ad-hoc workspace has no profile of its own,
+        # so it must opt into loregarden's synchronous builtin_autopilot profile
+        # explicitly, or it'd fall to default.yaml's external_mcp driver instead.
+        orchestration_profile_slug="loregarden",
+    )
     db_session.add(ws)
     db_session.commit()
     db_session.refresh(ws)
@@ -175,7 +185,9 @@ def test_parallel_stage_runs_all_agents(client: TestClient, db_session: Session,
     assert {run.agent_id for run in runs} == {"static_qa", "gatekeeper"}
 
 
-def test_orchestration_blocks_when_gate_fails(client: TestClient, db_session: Session, tmp_path):
+def test_orchestration_reroutes_when_gate_fails(
+    client: TestClient, db_session: Session, tmp_path, monkeypatch
+):
     import subprocess
 
     subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
@@ -187,6 +199,10 @@ def test_orchestration_blocks_when_gate_fails(client: TestClient, db_session: Se
         encoding="utf-8",
     )
 
+    # Orchestration profiles resolve from loregarden's own repo tree (never from
+    # the workspace's repo_path) — redirect that to tmp_path so this test's
+    # gate-test.yaml is actually the one resolve_orchestration_profile finds.
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
     orch_dir = tmp_path / "agent_context" / "orchestration"
     orch_dir.mkdir(parents=True)
     (orch_dir / "gate-test.yaml").write_text(
@@ -222,8 +238,8 @@ def test_orchestration_blocks_when_gate_fails(client: TestClient, db_session: Se
     ticket = Ticket(
         external_id="gate-block-test",
         workspace_id=ws.id,
-        title="Gate block ticket",
-        description="Should block after planning",
+        title="Gate reroute ticket",
+        description="Should reroute back to planning after a failing transition gate",
         state=TicketState.BACKLOG,
         work_item_type=WorkItemType.TASK,
         workflow_stage_key="planning",
@@ -247,5 +263,9 @@ def test_orchestration_blocks_when_gate_fails(client: TestClient, db_session: Se
     )
     assert res.status_code == 200
     body = res.json()
-    assert body["state"] == "blocked"
+    # A failing transition gate isn't the agent reporting bad work — it's this
+    # stage's own output failing an objective check, so it self-redoes the same
+    # stage instead of hard-blocking for a human.
+    assert body["state"] != "blocked"
+    assert body["workflow_stage_key"] == "planning"
     assert body["blocking_issues"]
