@@ -35,6 +35,11 @@ def approval_to_view(session: Session, approval: Approval) -> dict:
         except json.JSONDecodeError:
             resolved_answers = None
 
+    try:
+        checklist = json.loads(approval.checklist_json or "[]")
+    except json.JSONDecodeError:
+        checklist = []
+
     return {
         "id": approval.id,
         "title": approval.title,
@@ -43,6 +48,7 @@ def approval_to_view(session: Session, approval: Approval) -> dict:
         "stage_key": approval.stage_key,
         "stage_name": stage_name,
         "impact": approval.impact,
+        "checklist": checklist,
         "ticket_id": approval.ticket_id,
         "ticket_external_id": ticket.external_id if ticket else "",
         "kind": approval.kind.value if hasattr(approval.kind, "value") else str(approval.kind),

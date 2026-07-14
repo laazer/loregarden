@@ -19,6 +19,7 @@ from loregarden.models.domain import (
     TicketState,
     UpdateTicketRequest,
     WorkflowInstance,
+    WorkflowStageDef,
     WorkflowStageView,
     WorkflowTemplate,
     Workspace,
@@ -490,7 +491,7 @@ class OrchestrationService:
             )
         ).first()
         if not existing:
-            self._create_workflow_gate_approval(ticket, target_key, stage_name)
+            self._create_workflow_gate_approval(ticket, target_key, stage_name, stage_def=stage_def)
 
         event_bus.publish(
             self.session,
@@ -711,7 +712,9 @@ class OrchestrationService:
                 template = self.get_template_for_ticket(ticket)
                 if template:
                     stage_name = stage_display_name(template, run.stage_key)
-                    self._create_workflow_gate_approval(ticket, run.stage_key, stage_name)
+                    self._create_workflow_gate_approval(
+                        ticket, run.stage_key, stage_name, stage_def=stage_def
+                    )
             set_stage_status(ticket, instance, stages, run.stage_key, stage_status)
             ticket.blocking_issues = ""
         else:
@@ -802,6 +805,8 @@ class OrchestrationService:
         ticket: Ticket,
         stage_key: str,
         stage_name: str,
+        *,
+        stage_def: WorkflowStageDef | None = None,
     ) -> Approval:
         approval = Approval(
             ticket_id=ticket.id,
@@ -810,7 +815,8 @@ class OrchestrationService:
             title=f"Approve {ticket.title}",
             level="high" if ticket.priority == 1 else "medium",
             stage_key=stage_key,
-            impact=f"Stage '{stage_name}' requires human sign-off before completion.",
+            impact=self._build_gate_impact(ticket, stage_name),
+            checklist_json=json.dumps(stage_def.checklist if stage_def else []),
             status=ApprovalStatus.PENDING,
         )
         self.session.add(approval)
@@ -823,6 +829,21 @@ class OrchestrationService:
             payload={"approval_id": approval.id},
         )
         return approval
+
+    @staticmethod
+    def _build_gate_impact(ticket: Ticket, stage_name: str) -> str:
+        lines = [f"Stage '{stage_name}' requires human sign-off before completion."]
+        lines.append(f"What's being tested: {ticket.title}")
+        if ticket.description.strip():
+            lines.append(ticket.description.strip())
+        try:
+            criteria = json.loads(ticket.acceptance_criteria_json or "[]")
+        except json.JSONDecodeError:
+            criteria = []
+        if criteria:
+            lines.append("Acceptance criteria:")
+            lines.extend(f"- {item}" for item in criteria)
+        return "\n".join(lines)
 
     async def create_parallel_run(
         self,

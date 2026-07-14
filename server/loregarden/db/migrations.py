@@ -420,6 +420,16 @@ def _m_triage_message_run_id(conn: Connection) -> None:
     )
 
 
+def _m_approval_checklist(conn: Connection) -> None:
+    _add_columns_if_missing(
+        conn,
+        "approvals",
+        {
+            "checklist_json": "ALTER TABLE approvals ADD COLUMN checklist_json TEXT NOT NULL DEFAULT '[]'",
+        },
+    )
+
+
 # Ordered registry. Append new migrations here with the next id; never reorder or
 # rewrite an id that may already be recorded in a deployed database.
 MIGRATIONS: list[tuple[str, Migration]] = [
@@ -439,6 +449,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0014_queued_run_failure_columns", _m_queued_run_failure_columns),
     ("0015_agent_model_columns", _m_agent_model_columns),
     ("0016_triage_message_run_id", _m_triage_message_run_id),
+    ("0017_approval_checklist", _m_approval_checklist),
 ]
 
 

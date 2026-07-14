@@ -360,6 +360,7 @@ export interface Approval {
   stage_key: string;
   stage_name: string;
   impact: string;
+  checklist?: string[];
   ticket_id: string;
   ticket_external_id: string;
   kind: "workflow_gate" | "cli_permission" | "cli_question";

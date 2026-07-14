@@ -200,6 +200,7 @@ class Approval(SQLModel, table=True):
     level: str = "medium"
     stage_key: str = ""
     impact: str = ""
+    checklist_json: str = "[]"
     permission_request_id: str = ""
     tool_name: str = ""
     tool_input_json: str = "{}"

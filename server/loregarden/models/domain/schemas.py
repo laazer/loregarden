@@ -44,6 +44,7 @@ class WorkflowStageDef(SQLModel):
     gate_commands: list[str] = Field(default_factory=list)
     gate_required: bool = False
     model: str = ""
+    checklist: list[str] = Field(default_factory=list)
 
 
 class WorkflowStageView(SQLModel):
@@ -165,6 +166,7 @@ class ApprovalView(SQLModel):
     stage_key: str
     stage_name: str
     impact: str
+    checklist: list[str] = Field(default_factory=list)
     ticket_id: str
     ticket_external_id: str
     kind: str = "workflow_gate"

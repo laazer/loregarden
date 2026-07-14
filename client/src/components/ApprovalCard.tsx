@@ -58,6 +58,7 @@ export function ApprovalCard({
   const [alwaysAllowWorkspace, setAlwaysAllowWorkspace] = useState(false);
   const [allowForTicket, setAllowForTicket] = useState(false);
   const [allowForStage, setAllowForStage] = useState(false);
+  const [checkedItems, setCheckedItems] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     setAnswers({});
@@ -66,6 +67,7 @@ export function ApprovalCard({
     setAlwaysAllowWorkspace(false);
     setAllowForTicket(false);
     setAllowForStage(false);
+    setCheckedItems({});
   }, [approval.id]);
 
   const canSubmit = !isQuestion || answersComplete(questions, answers, freeformResponse);
@@ -113,7 +115,42 @@ export function ApprovalCard({
           {isQuestion && approval.cli_adapter && <span> · {approval.cli_adapter} question</span>}
           {!compact && approval.workspace_slug && <span> · {approval.workspace_slug}</span>}
         </div>
-        <p style={{ margin: 0, fontSize: 12, color: "var(--txm)", lineHeight: 1.55 }}>{approval.impact}</p>
+        <p
+          style={{ margin: 0, fontSize: 12, color: "var(--txm)", lineHeight: 1.55, whiteSpace: "pre-line" }}
+        >
+          {approval.impact}
+        </p>
+
+        {!!approval.checklist?.length && (
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--ac2)" }}>
+              Testing checklist (notes only, not required to approve)
+            </div>
+            {approval.checklist.map((item, idx) => (
+              <label
+                key={idx}
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "flex-start",
+                  fontSize: 12,
+                  color: checkedItems[idx] ? "var(--txl)" : "var(--txm)",
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={!!checkedItems[idx]}
+                  onChange={() =>
+                    setCheckedItems((prev) => ({ ...prev, [idx]: !prev[idx] }))
+                  }
+                  style={{ marginTop: 2 }}
+                />
+                <span style={{ textDecoration: checkedItems[idx] ? "line-through" : "none" }}>{item}</span>
+              </label>
+            ))}
+          </div>
+        )}
 
         {isQuestion && questions.length > 0 && (
           <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
