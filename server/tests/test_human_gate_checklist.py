@@ -11,7 +11,11 @@ from sqlmodel import Session, select
 def _create_blobert_ticket(client: TestClient, db_session: Session) -> Ticket:
     ws_resp = client.post(
         "/api/workspaces",
-        json={"slug": "blobert-test", "name": "Blobert Test", "workflow_template_slug": "blobert-tdd"},
+        json={
+            "slug": "blobert-test",
+            "name": "Blobert Test",
+            "workflow_template_slug": "blobert-tdd",
+        },
     )
     assert ws_resp.status_code == 201, ws_resp.text
 

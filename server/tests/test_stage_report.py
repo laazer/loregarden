@@ -46,7 +46,9 @@ def test_parse_stage_report_invalid_status_returns_none():
 
 
 def test_parse_stage_report_valid_blocked():
-    stdout = _wrap('{"status": "blocked", "confidence": 0.9, "reroute_context": "needs prod credentials"}')
+    stdout = _wrap(
+        '{"status": "blocked", "confidence": 0.9, "reroute_context": "needs prod credentials"}'
+    )
     report = parse_stage_report(stdout)
     assert report is not None
     assert report.status == "blocked"
