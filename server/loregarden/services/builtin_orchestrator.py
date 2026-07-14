@@ -18,6 +18,7 @@ from loregarden.models.domain import (
     StageStatus,
     Ticket,
     TicketState,
+    WorkflowInstance,
     WorkflowStageDef,
     WorkItemType,
     Workspace,
@@ -159,33 +160,15 @@ class BuiltinOrchestrator:
                         self.session.refresh(orch_run)
                         return orch_run
                 else:
-                    agent_run = self.orch.start_run(
+                    stopped = self._run_sequential_stage(
                         ticket,
-                        stage_key=target_key,
-                        orchestration_run_id=orch_run.id,
+                        orch_run,
+                        target_key,
                         auto_approve=auto_approve,
+                        stop_at_stage_key=stop_at_stage_key,
                     )
-                    completed = self.executor.execute(agent_run, ticket)
-                    self.session.refresh(ticket)
                     stages_run += 1
-
-                    if stop_at_stage_key and target_key == stop_at_stage_key:
-                        self.callbacks.complete_orchestration(
-                            orch_run,
-                            ticket,
-                            status=OrchestrationRunStatus.SUCCEEDED,
-                            message=f"Paused at stage {target_key}",
-                        )
-                        self.session.refresh(orch_run)
-                        return orch_run
-
-                    if completed.status != RunStatus.SUCCEEDED:
-                        self.callbacks.block_ticket(
-                            orch_run,
-                            ticket,
-                            stage_key=target_key,
-                            message=completed.stderr or "Stage sub-agent failed",
-                        )
+                    if stopped:
                         self.session.refresh(orch_run)
                         return orch_run
 
@@ -220,11 +203,8 @@ class BuiltinOrchestrator:
                         to_stage=next_key,
                     )
                     if gate_block:
-                        self.callbacks.block_ticket(
-                            orch_run,
-                            ticket,
-                            stage_key=target_key,
-                            message=gate_block,
+                        self._reroute_after_gate_failure(
+                            ticket, instance, stages, orch_run, target_key, gate_block
                         )
                         self.session.refresh(orch_run)
                         return orch_run
@@ -252,6 +232,84 @@ class BuiltinOrchestrator:
             )
         self.session.refresh(orch_run)
         return orch_run
+
+    def _run_sequential_stage(
+        self,
+        ticket: Ticket,
+        orch_run: OrchestrationRun,
+        target_key: str,
+        *,
+        auto_approve: bool,
+        stop_at_stage_key: str | None,
+    ) -> bool:
+        """Run a single-agent stage. Returns True if the caller should stop
+        and return `orch_run` now (paused at `stop_at_stage_key`, or the
+        sub-agent failed), False to keep processing this pass normally.
+        """
+        agent_run = self.orch.start_run(
+            ticket,
+            stage_key=target_key,
+            orchestration_run_id=orch_run.id,
+            auto_approve=auto_approve,
+        )
+        completed = self.executor.execute(agent_run, ticket)
+        self.session.refresh(ticket)
+
+        if stop_at_stage_key and target_key == stop_at_stage_key:
+            self.callbacks.complete_orchestration(
+                orch_run,
+                ticket,
+                status=OrchestrationRunStatus.SUCCEEDED,
+                message=f"Paused at stage {target_key}",
+            )
+            return True
+
+        if completed.status != RunStatus.SUCCEEDED:
+            self.callbacks.block_ticket(
+                orch_run,
+                ticket,
+                stage_key=target_key,
+                message=completed.stderr or "Stage sub-agent failed",
+            )
+            return True
+
+        return False
+
+    def _reroute_after_gate_failure(
+        self,
+        ticket: Ticket,
+        instance: WorkflowInstance,
+        stages: list[WorkflowStageDef],
+        orch_run: OrchestrationRun,
+        target_key: str,
+        gate_block: str,
+    ) -> None:
+        """A transition gate (e.g. lint/static-analysis) failing isn't the agent
+        reporting bad work upstream — it's this stage's own output failing an
+        objective check. Reroute back to the same stage (self-redo) rather than
+        hard-blocking, so the ticket gets another automatic pass instead of
+        stalling for a human.
+        """
+        apply_stage_route(
+            ticket,
+            instance,
+            stages,
+            self.orch._resolve_transitions(ticket),
+            from_key=target_key,
+            outcome="reject",
+            next_stage_key=target_key,
+            blocking_issues=gate_block,
+            orch_run=orch_run,
+        )
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.commit()
+        self.callbacks.complete_orchestration(
+            orch_run,
+            ticket,
+            status=OrchestrationRunStatus.SUCCEEDED,
+            message=f"Transition gate failed at '{target_key}'; rerouted for rework",
+        )
 
     def _run_stage_gates(
         self,
