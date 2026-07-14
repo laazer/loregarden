@@ -337,10 +337,11 @@ export function Dashboard() {
   });
 
   const startRun = useMutation({
-    mutationFn: (vars?: { stageKey?: string; autoApprove?: boolean }) =>
+    mutationFn: (vars?: { stageKey?: string; autoApprove?: boolean; timeoutSeconds?: number }) =>
       api.startRun(selectedId!, {
         stage_key: vars?.stageKey,
         auto_approve: vars?.autoApprove,
+        timeout_seconds: vars?.timeoutSeconds,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
@@ -804,13 +805,17 @@ export function Dashboard() {
   };
 
   const requestStageRun = (stageKey: string) => setRunConfirmStageKey(stageKey);
-  const confirmStageRun = async (runtime: typeof activeWorkspaceRuntime, autoApprove: boolean) => {
+  const confirmStageRun = async (
+    runtime: typeof activeWorkspaceRuntime,
+    autoApprove: boolean,
+    timeoutSeconds: number | undefined,
+  ) => {
     if (!runConfirmStageKey) return;
     try {
       if (!runtimeSettingsEqual(runtime, activeWorkspaceRuntime)) {
         await setRuntime.mutateAsync({ slug: activeWorkspaceSlug, runtime });
       }
-      await startRun.mutateAsync({ stageKey: runConfirmStageKey, autoApprove });
+      await startRun.mutateAsync({ stageKey: runConfirmStageKey, autoApprove, timeoutSeconds });
     } catch {
       // Modal stays open; mutation error state clears on retry.
     }

@@ -236,7 +236,12 @@ class RunService:
         return completed_run, ticket
 
     def start_run_async(
-        self, ticket: Ticket, *, stage_key: str | None = None, auto_approve: bool = False
+        self,
+        ticket: Ticket,
+        *,
+        stage_key: str | None = None,
+        auto_approve: bool = False,
+        timeout_seconds: int | None = None,
     ) -> AgentRun:
         """Create a run and mark the stage running; CLI executes in a background task."""
         target_key = stage_key or ticket.workflow_stage_key
@@ -245,12 +250,22 @@ class RunService:
             ticket_id=ticket.id,
             stage_key=target_key or None,
         )
-        run = self.orchestration.start_run(ticket, stage_key=stage_key, auto_approve=auto_approve)
+        run = self.orchestration.start_run(
+            ticket,
+            stage_key=stage_key,
+            auto_approve=auto_approve,
+            timeout_override_seconds=timeout_seconds,
+        )
         self.session.refresh(ticket)
         return run
 
     def start_stage_execution(
-        self, ticket: Ticket, *, stage_key: str | None = None, auto_approve: bool = False
+        self,
+        ticket: Ticket,
+        *,
+        stage_key: str | None = None,
+        auto_approve: bool = False,
+        timeout_seconds: int | None = None,
     ) -> AgentRun | None:
         """Start an agent CLI run, or enter a human approval gate for agentless stages."""
         from loregarden.services.studio_service import is_agentless_stage
@@ -280,7 +295,9 @@ class RunService:
             self.session.refresh(ticket)
             return None
 
-        return self.start_run_async(ticket, stage_key=stage_key, auto_approve=auto_approve)
+        return self.start_run_async(
+            ticket, stage_key=stage_key, auto_approve=auto_approve, timeout_seconds=timeout_seconds
+        )
 
     def list_runs(
         self,

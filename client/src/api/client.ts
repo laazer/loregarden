@@ -240,13 +240,17 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
-  startRun: (id: string, options?: { stage_key?: string; auto_approve?: boolean }) =>
+  startRun: (
+    id: string,
+    options?: { stage_key?: string; auto_approve?: boolean; timeout_seconds?: number },
+  ) =>
     request<TicketDetail>(`/api/tickets/${id}/start`, {
       method: "POST",
       body: JSON.stringify({
         manual: true,
         stage_key: options?.stage_key,
         auto_approve: options?.auto_approve,
+        timeout_seconds: options?.timeout_seconds,
       }),
     }),
   buildTerminalHandoffCommand: (id: string, stageKey: string) =>

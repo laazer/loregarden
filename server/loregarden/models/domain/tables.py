@@ -168,6 +168,7 @@ class AgentRun(SQLModel, table=True):
     stdout: str = ""
     stderr: str = ""
     auto_approve: bool = Field(default=False)
+    timeout_override_seconds: int | None = Field(default=None)
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)

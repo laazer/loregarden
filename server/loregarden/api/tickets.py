@@ -564,7 +564,10 @@ def start_run(
     run_svc = RunService(session)
     try:
         run = run_svc.start_stage_execution(
-            ticket, stage_key=body.stage_key, auto_approve=body.auto_approve
+            ticket,
+            stage_key=body.stage_key,
+            auto_approve=body.auto_approve,
+            timeout_seconds=body.timeout_seconds,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -592,7 +595,10 @@ def build_terminal_handoff_command(
     run_svc = RunService(session)
     try:
         run = run_svc.start_stage_execution(
-            ticket, stage_key=body.stage_key, auto_approve=body.auto_approve
+            ticket,
+            stage_key=body.stage_key,
+            auto_approve=body.auto_approve,
+            timeout_seconds=body.timeout_seconds,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

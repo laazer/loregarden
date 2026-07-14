@@ -430,6 +430,18 @@ def _m_approval_checklist(conn: Connection) -> None:
     )
 
 
+def _m_agent_run_timeout_override(conn: Connection) -> None:
+    _add_columns_if_missing(
+        conn,
+        "agent_runs",
+        {
+            "timeout_override_seconds": (
+                "ALTER TABLE agent_runs ADD COLUMN timeout_override_seconds INTEGER"
+            ),
+        },
+    )
+
+
 # Ordered registry. Append new migrations here with the next id; never reorder or
 # rewrite an id that may already be recorded in a deployed database.
 MIGRATIONS: list[tuple[str, Migration]] = [
@@ -450,6 +462,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0015_agent_model_columns", _m_agent_model_columns),
     ("0016_triage_message_run_id", _m_triage_message_run_id),
     ("0017_approval_checklist", _m_approval_checklist),
+    ("0018_agent_run_timeout_override", _m_agent_run_timeout_override),
 ]
 
 

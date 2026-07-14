@@ -26,7 +26,11 @@ interface ConfirmRunStageModalProps {
   isSavingRuntime: boolean;
   isOpeningPr?: boolean;
   onClose: () => void;
-  onConfirm: (runtime: WorkspaceRuntimeSettings, autoApprove: boolean) => void | Promise<void>;
+  onConfirm: (
+    runtime: WorkspaceRuntimeSettings,
+    autoApprove: boolean,
+    timeoutSeconds: number | undefined,
+  ) => void | Promise<void>;
   onOpenPr?: () => void;
 }
 
@@ -46,11 +50,13 @@ export function ConfirmRunStageModal({
 }: ConfirmRunStageModalProps) {
   const [draftRuntime, setDraftRuntime] = useState(workspaceRuntime);
   const [autoApprove, setAutoApprove] = useState(false);
+  const [timeoutSeconds, setTimeoutSeconds] = useState("");
 
   useEffect(() => {
     if (!open) return;
     setDraftRuntime(workspaceRuntime);
     setAutoApprove(false);
+    setTimeoutSeconds("");
   }, [open, workspaceRuntime, stage?.key]);
 
   if (!open || !ticket || !stage) return null;
@@ -65,7 +71,8 @@ export function ConfirmRunStageModal({
   const showAutoApprove = !humanGate && !doneStage;
 
   const handleConfirm = () => {
-    void onConfirm(draftRuntime, autoApprove);
+    const parsedTimeout = timeoutSeconds.trim() ? Number(timeoutSeconds) : undefined;
+    void onConfirm(draftRuntime, autoApprove, parsedTimeout);
   };
 
   return (
@@ -167,6 +174,22 @@ export function ConfirmRunStageModal({
                   Runtime changes will be saved when you confirm this run.
                 </p>
               )}
+            </div>
+          )}
+
+          {showAutoApprove && (
+            <div style={{ marginTop: 12 }}>
+              <div className="modal-section-title">Timeout (seconds, optional)</div>
+              <input
+                type="number"
+                min={30}
+                className="btn-secondary"
+                style={{ width: 140, fontSize: 12, boxSizing: "border-box" }}
+                value={timeoutSeconds}
+                disabled={busy}
+                onChange={(e) => setTimeoutSeconds(e.target.value)}
+                placeholder="Agent default"
+              />
             </div>
           )}
 

@@ -130,7 +130,11 @@ class CliAgentExecutor:
             )
             streamer.start(run.command)
 
-            timeout = agent.get("timeout", 120)
+            timeout = (
+                run.timeout_override_seconds
+                if run.timeout_override_seconds is not None
+                else agent.get("timeout", 120)
+            )
             try:
                 if invocation.interactive:
                     bridge = PermissionBridgeRunner(self.session)

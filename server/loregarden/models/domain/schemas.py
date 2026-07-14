@@ -189,6 +189,7 @@ class StartRunRequest(SQLModel):
     stage_key: str | None = None
     manual: bool = False
     auto_approve: bool = False
+    timeout_seconds: int | None = None
 
 
 class StartOrchestrationRequest(SQLModel):

@@ -520,6 +520,7 @@ class OrchestrationService:
         agent_id: str | None = None,
         skill_name: str | None = None,
         auto_approve: bool = False,
+        timeout_override_seconds: int | None = None,
     ) -> AgentRun:
         template = self.get_template_for_ticket(ticket)
         if not template:
@@ -591,6 +592,7 @@ class OrchestrationService:
             stage_key=target_key,
             status=RunStatus.RUNNING,
             auto_approve=auto_approve,
+            timeout_override_seconds=timeout_override_seconds,
             started_at=datetime.now(timezone.utc),
         )
         self.session.add(run)
