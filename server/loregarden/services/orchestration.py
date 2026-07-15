@@ -62,6 +62,27 @@ def _blocking_issue(session: Session, ticket: Ticket, run: AgentRun, message: st
     )
 
 
+def _blocking_issue_for_stage(
+    session: Session, ticket: Ticket, stage_key: str, message: str
+) -> str:
+    return record_blocking_issue(session, ticket, run_id=None, stage_key=stage_key, message=message)
+
+
+def _build_gate_impact(ticket: Ticket, stage_name: str) -> str:
+    lines = [f"Stage '{stage_name}' requires human sign-off before completion."]
+    lines.append(f"What's being tested: {ticket.title}")
+    if ticket.description.strip():
+        lines.append(ticket.description.strip())
+    try:
+        criteria = json.loads(ticket.acceptance_criteria_json or "[]")
+    except json.JSONDecodeError:
+        criteria = []
+    if criteria:
+        lines.append("Acceptance criteria:")
+        lines.extend(f"- {item}" for item in criteria)
+    return "\n".join(lines)
+
+
 class OrchestrationService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -364,6 +385,9 @@ class OrchestrationService:
         from loregarden.services.workflow_routing import apply_stage_route
 
         transitions = self._resolve_transitions(ticket)
+        short_blocking_issues = _blocking_issue_for_stage(
+            self.session, ticket, from_stage_key, blocking_issues
+        )
         apply_stage_route(
             ticket,
             instance,
@@ -373,7 +397,7 @@ class OrchestrationService:
             outcome=outcome,
             next_stage_key=next_stage_key,
             next_agent=next_agent,
-            blocking_issues=blocking_issues,
+            blocking_issues=short_blocking_issues,
         )
         ticket.revision += 1
         ticket.last_updated_by = "human"
@@ -831,7 +855,7 @@ class OrchestrationService:
             title=f"Approve {ticket.title}",
             level="high" if ticket.priority == 1 else "medium",
             stage_key=stage_key,
-            impact=self._build_gate_impact(ticket, stage_name),
+            impact=_build_gate_impact(ticket, stage_name),
             checklist_json=json.dumps(stage_def.checklist if stage_def else []),
             status=ApprovalStatus.PENDING,
         )
@@ -845,21 +869,6 @@ class OrchestrationService:
             payload={"approval_id": approval.id},
         )
         return approval
-
-    @staticmethod
-    def _build_gate_impact(ticket: Ticket, stage_name: str) -> str:
-        lines = [f"Stage '{stage_name}' requires human sign-off before completion."]
-        lines.append(f"What's being tested: {ticket.title}")
-        if ticket.description.strip():
-            lines.append(ticket.description.strip())
-        try:
-            criteria = json.loads(ticket.acceptance_criteria_json or "[]")
-        except json.JSONDecodeError:
-            criteria = []
-        if criteria:
-            lines.append("Acceptance criteria:")
-            lines.extend(f"- {item}" for item in criteria)
-        return "\n".join(lines)
 
     async def create_parallel_run(
         self,
