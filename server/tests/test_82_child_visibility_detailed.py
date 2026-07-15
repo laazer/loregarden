@@ -22,7 +22,9 @@ def _flatten_tree_nodes(nodes: list[dict]) -> list[dict]:
 class TestChildVisibilityWithoutParentMatchingFilter:
     """Tests that verify child tickets appear in filtered results even when parent doesn't match."""
 
-    def test_task_child_appears_when_parent_is_feature_with_type_filter_for_task(self, client: TestClient):
+    def test_task_child_appears_when_parent_is_feature_with_type_filter_for_task(
+        self, client: TestClient
+    ):
         """
         CRITICAL TEST: Verify the core feature behavior
 
@@ -48,15 +50,21 @@ class TestChildVisibilityWithoutParentMatchingFilter:
                     break
 
         if feature_with_tasks:
-            task_children = [c for c in feature_with_tasks["children"] if c["work_item_type"] == "task"]
+            task_children = [
+                c for c in feature_with_tasks["children"] if c["work_item_type"] == "task"
+            ]
 
             # Apply filter to show only tasks
-            filtered_tree = client.get("/api/tickets/tree?workspace=loregarden&work_item_type=task").json()
+            filtered_tree = client.get(
+                "/api/tickets/tree?workspace=loregarden&work_item_type=task"
+            ).json()
             filtered_flat = _flatten_tree_nodes(filtered_tree)
 
             # Verify each task child appears in filtered results
             for task_child in task_children:
-                task_ids_in_filtered = {n["id"] for n in filtered_flat if n["work_item_type"] == "task"}
+                task_ids_in_filtered = {
+                    n["id"] for n in filtered_flat if n["work_item_type"] == "task"
+                }
                 assert task_child["id"] in task_ids_in_filtered, (
                     f"Task child {task_child['id']} '{task_child['title']}' should appear "
                     f"in tree filtered to show only tasks, even though parent Feature "
@@ -76,16 +84,24 @@ class TestChildVisibilityWithoutParentMatchingFilter:
         milestone_with_capabilities = None
         for node in all_flat:
             if node["work_item_type"] == "milestone" and node["children"]:
-                capability_children = [c for c in node["children"] if c["work_item_type"] == "capability"]
+                capability_children = [
+                    c for c in node["children"] if c["work_item_type"] == "capability"
+                ]
                 if capability_children:
                     milestone_with_capabilities = node
                     break
 
         if milestone_with_capabilities:
-            capability_children = [c for c in milestone_with_capabilities["children"] if c["work_item_type"] == "capability"]
+            capability_children = [
+                c
+                for c in milestone_with_capabilities["children"]
+                if c["work_item_type"] == "capability"
+            ]
 
             # Filter to show only capabilities
-            filtered_tree = client.get("/api/tickets/tree?workspace=loregarden&work_item_type=capability").json()
+            filtered_tree = client.get(
+                "/api/tickets/tree?workspace=loregarden&work_item_type=capability"
+            ).json()
             filtered_flat = _flatten_tree_nodes(filtered_tree)
 
             for cap_child in capability_children:
@@ -117,11 +133,17 @@ class TestChildVisibilityWithoutParentMatchingFilter:
         if parent_with_mixed:
             # Pick one child type to filter by
             target_type = parent_with_mixed["children"][0]["work_item_type"]
-            matching_children = [c for c in parent_with_mixed["children"] if c["work_item_type"] == target_type]
-            non_matching_children = [c for c in parent_with_mixed["children"] if c["work_item_type"] != target_type]
+            matching_children = [
+                c for c in parent_with_mixed["children"] if c["work_item_type"] == target_type
+            ]
+            non_matching_children = [
+                c for c in parent_with_mixed["children"] if c["work_item_type"] != target_type
+            ]
 
             # Apply filter
-            filtered_tree = client.get(f"/api/tickets/tree?workspace=loregarden&work_item_type={target_type}").json()
+            filtered_tree = client.get(
+                f"/api/tickets/tree?workspace=loregarden&work_item_type={target_type}"
+            ).json()
             filtered_flat = _flatten_tree_nodes(filtered_tree)
             filtered_ids = {n["id"] for n in filtered_flat}
 
@@ -161,14 +183,22 @@ class TestStateFilterWithChildVisibility:
                     break
 
         if parent_backlog_with_inprogress_children:
-            inprogress_children = [c for c in parent_backlog_with_inprogress_children["children"] if c["state"] == "in_progress"]
+            inprogress_children = [
+                c
+                for c in parent_backlog_with_inprogress_children["children"]
+                if c["state"] == "in_progress"
+            ]
 
             # Filter to show only in_progress
-            filtered_tree = client.get("/api/tickets/tree?workspace=loregarden&state=in_progress").json()
+            filtered_tree = client.get(
+                "/api/tickets/tree?workspace=loregarden&state=in_progress"
+            ).json()
             filtered_flat = _flatten_tree_nodes(filtered_tree)
 
             for child in inprogress_children:
-                found = any(n["id"] == child["id"] and n["state"] == "in_progress" for n in filtered_flat)
+                found = any(
+                    n["id"] == child["id"] and n["state"] == "in_progress" for n in filtered_flat
+                )
                 assert found, (
                     f"Child {child['id']} in in_progress state should appear "
                     f"when filtering by in_progress state, even though parent is backlog"
@@ -193,16 +223,16 @@ class TestStateFilterWithChildVisibility:
                     break
 
         if parent_blocked_with_done:
-            done_children = [c for c in parent_blocked_with_done["children"] if c["state"] == "done"]
+            done_children = [
+                c for c in parent_blocked_with_done["children"] if c["state"] == "done"
+            ]
 
             filtered_tree = client.get("/api/tickets/tree?workspace=loregarden&state=done").json()
             filtered_flat = _flatten_tree_nodes(filtered_tree)
 
             for child in done_children:
                 found = any(n["id"] == child["id"] for n in filtered_flat)
-                assert found, (
-                    f"Done child {child['id']} should appear when filtering by done state"
-                )
+                assert found, f"Done child {child['id']} should appear when filtering by done state"
 
 
 class TestHierarchyPreservationWithFilters:
@@ -231,17 +261,17 @@ class TestHierarchyPreservationWithFilters:
             parent, child = parent_child_pair
 
             # Filter by child type (parent will be filtered out)
-            filtered_tree = client.get(f"/api/tickets/tree?workspace=loregarden&work_item_type={child['work_item_type']}").json()
+            filtered_tree = client.get(
+                f"/api/tickets/tree?workspace=loregarden&work_item_type={child['work_item_type']}"
+            ).json()
             filtered_flat = _flatten_tree_nodes(filtered_tree)
 
             # Child should be in filtered results
             found_child = next((n for n in filtered_flat if n["id"] == child["id"]), None)
-            assert found_child is not None, (
-                f"Child {child['id']} should appear in filtered results"
-            )
+            assert found_child is not None, f"Child {child['id']} should appear in filtered results"
 
             # Child should have parent_ticket_id set (to maintain relationship info)
-            if found_child and hasattr(found_child, 'get'):  # Check if it's a dict
+            if found_child and hasattr(found_child, "get"):  # Check if it's a dict
                 # Note: parent_ticket_id may not be in the response, but structure should be valid
                 assert found_child["work_item_type"] == child["work_item_type"]
 
@@ -274,7 +304,9 @@ class TestNestedHierarchyWithFilters:
             grandparent, parent, grandchild = three_level_found
 
             # Filter by grandchild type
-            filtered_tree = client.get(f"/api/tickets/tree?workspace=loregarden&work_item_type={grandchild['work_item_type']}").json()
+            filtered_tree = client.get(
+                f"/api/tickets/tree?workspace=loregarden&work_item_type={grandchild['work_item_type']}"
+            ).json()
             filtered_flat = _flatten_tree_nodes(filtered_tree)
 
             # Grandchild should be visible

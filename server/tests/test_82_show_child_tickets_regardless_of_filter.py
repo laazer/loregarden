@@ -67,11 +67,17 @@ class TestChildTicketsWithTypeFilter:
 
         if parent_with_task_children:
             # Filter to show only tasks
-            filtered_tree = client.get("/api/tickets/tree?workspace=loregarden&work_item_type=task").json()
+            filtered_tree = client.get(
+                "/api/tickets/tree?workspace=loregarden&work_item_type=task"
+            ).json()
             flat_filtered = _flatten_tree_nodes(filtered_tree)
 
             # The task children should be in the filtered tree
-            task_child_ids = {c["id"] for c in parent_with_task_children["children"] if c["work_item_type"] == "task"}
+            task_child_ids = {
+                c["id"]
+                for c in parent_with_task_children["children"]
+                if c["work_item_type"] == "task"
+            }
             found_task_ids = {n["id"] for n in flat_filtered if n["work_item_type"] == "task"}
 
             assert task_child_ids.issubset(found_task_ids), (
@@ -99,7 +105,9 @@ class TestChildTicketsWithTypeFilter:
                     break
 
         if parent_with_varied_children:
-            child_types = sorted({c["work_item_type"] for c in parent_with_varied_children["children"]})
+            child_types = sorted(
+                {c["work_item_type"] for c in parent_with_varied_children["children"]}
+            )
             selected_types = child_types[:2] if len(child_types) >= 2 else child_types
 
             # Filter by selected types
@@ -151,13 +159,14 @@ class TestChildTicketsWithStateFilter:
                 selected_state = next(iter(other_states))
                 # Check if any children have this state
                 matching_children = [
-                    c for c in parent_with_varied_states["children"]
-                    if c["state"] == selected_state
+                    c for c in parent_with_varied_states["children"] if c["state"] == selected_state
                 ]
 
                 if matching_children:
                     # Filter to show only selected_state
-                    filtered_tree = client.get(f"/api/tickets/tree?workspace=loregarden&state={selected_state}").json()
+                    filtered_tree = client.get(
+                        f"/api/tickets/tree?workspace=loregarden&state={selected_state}"
+                    ).json()
                     flat_filtered = _flatten_tree_nodes(filtered_tree)
 
                     # The matching children should be in filtered tree
@@ -224,7 +233,9 @@ class TestGrandchildTicketsPreserved:
             if grandchild:
                 # Filter by a type different from grandparent
                 selected_type = "task" if grandparent["work_item_type"] != "task" else "capability"
-                filtered_tree = client.get(f"/api/tickets/tree?workspace=loregarden&work_item_type={selected_type}").json()
+                filtered_tree = client.get(
+                    f"/api/tickets/tree?workspace=loregarden&work_item_type={selected_type}"
+                ).json()
                 flat_filtered = _flatten_tree_nodes(filtered_tree)
 
                 # If grandchild type matches filter, it should appear
@@ -259,16 +270,19 @@ class TestFilteredChildrenStillFiltered:
 
         if parent_with_mixed_children:
             # Filter to show only tasks
-            filtered_tree = client.get("/api/tickets/tree?workspace=loregarden&work_item_type=task").json()
+            filtered_tree = client.get(
+                "/api/tickets/tree?workspace=loregarden&work_item_type=task"
+            ).json()
             flat_filtered = _flatten_tree_nodes(filtered_tree)
 
             # Non-task children should NOT appear
-            non_task_children = [c for c in parent_with_mixed_children["children"] if c["work_item_type"] != "task"]
+            non_task_children = [
+                c for c in parent_with_mixed_children["children"] if c["work_item_type"] != "task"
+            ]
             for child in non_task_children:
                 found = _find_node_by_id(flat_filtered, child["id"])
                 assert found is None, (
-                    f"Non-task child {child['id']} should not appear when "
-                    f"filtering by type 'task'"
+                    f"Non-task child {child['id']} should not appear when filtering by type 'task'"
                 )
 
     def test_child_with_unmatched_state_filtered_out(self, client: TestClient):
@@ -290,11 +304,15 @@ class TestFilteredChildrenStillFiltered:
 
         if parent_with_mixed_states:
             # Filter to show only backlog
-            filtered_tree = client.get("/api/tickets/tree?workspace=loregarden&state=backlog").json()
+            filtered_tree = client.get(
+                "/api/tickets/tree?workspace=loregarden&state=backlog"
+            ).json()
             flat_filtered = _flatten_tree_nodes(filtered_tree)
 
             # Non-backlog children should NOT appear
-            non_backlog_children = [c for c in parent_with_mixed_states["children"] if c["state"] != "backlog"]
+            non_backlog_children = [
+                c for c in parent_with_mixed_states["children"] if c["state"] != "backlog"
+            ]
             for child in non_backlog_children:
                 found = _find_node_by_id(flat_filtered, child["id"])
                 assert found is None, (
@@ -328,7 +346,9 @@ class TestHierarchyIntegrity:
             child = next((n for n in flat_all if n["id"] == child_id), None)
             if child:
                 # Apply a type filter
-                filtered_tree = client.get(f"/api/tickets/tree?workspace=loregarden&work_item_type={child['work_item_type']}").json()
+                filtered_tree = client.get(
+                    f"/api/tickets/tree?workspace=loregarden&work_item_type={child['work_item_type']}"
+                ).json()
                 flat_filtered = _flatten_tree_nodes(filtered_tree)
 
                 # If child is in filtered tree, its parent should also be included
@@ -358,7 +378,9 @@ class TestHierarchyIntegrity:
 
         if parent_with_children:
             # Filter to show only tasks
-            filtered_tree = client.get("/api/tickets/tree?workspace=loregarden&work_item_type=task").json()
+            filtered_tree = client.get(
+                "/api/tickets/tree?workspace=loregarden&work_item_type=task"
+            ).json()
             flat_filtered = _flatten_tree_nodes(filtered_tree)
 
             # Find this parent in filtered tree
@@ -366,9 +388,9 @@ class TestHierarchyIntegrity:
             if parent_in_filtered:
                 # The filtered parent should show correct child count
                 # (or at least have the correct children array)
-                assert len(parent_in_filtered["children"]) <= len(parent_with_children["children"]), (
-                    "Filtered parent should not have more children than original"
-                )
+                assert len(parent_in_filtered["children"]) <= len(
+                    parent_with_children["children"]
+                ), "Filtered parent should not have more children than original"
 
 
 class TestSearchWithFilters:
@@ -407,10 +429,7 @@ class TestSearchWithFilters:
         flat = _flatten_tree_nodes(all_tree)
 
         # Find any ticket with a distinctive word in title
-        ticket_with_word = next(
-            (n for n in flat if "test" in n["title"].lower()),
-            None
-        )
+        ticket_with_word = next((n for n in flat if "test" in n["title"].lower()), None)
 
         if ticket_with_word:
             # Search for that word
@@ -438,10 +457,7 @@ class TestEdgeCases:
         flat = _flatten_tree_nodes(all_tree)
 
         # Find a parent with exactly one child
-        single_child_parent = next(
-            (n for n in flat if len(n["children"]) == 1),
-            None
-        )
+        single_child_parent = next((n for n in flat if len(n["children"]) == 1), None)
 
         if single_child_parent:
             child = single_child_parent["children"][0]
@@ -510,7 +526,9 @@ class TestEdgeCases:
 
         if parent_without_tasks:
             # Filter to show only tasks
-            filtered_tree = client.get("/api/tickets/tree?workspace=loregarden&work_item_type=task").json()
+            filtered_tree = client.get(
+                "/api/tickets/tree?workspace=loregarden&work_item_type=task"
+            ).json()
             flat_filtered = _flatten_tree_nodes(filtered_tree)
 
             # Parent with no matching children should not appear
