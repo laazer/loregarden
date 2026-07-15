@@ -16,6 +16,8 @@ _SENTINEL_RE = re.compile(
 
 _VALID_STATUSES = {"pass", "fail", "needs_rework", "blocked"}
 
+_SENTINEL = "<<<LOREGARDEN_STAGE_REPORT>>>"
+
 
 @dataclass(frozen=True)
 class StageReport:
@@ -25,19 +27,61 @@ class StageReport:
     reroute_context: str
 
 
+def _embedded_strings(node: object):
+    """Yield every string inside a decoded stream-json line that carries a report."""
+    if isinstance(node, str):
+        if _SENTINEL in node:
+            yield node
+    elif isinstance(node, dict):
+        for value in node.values():
+            yield from _embedded_strings(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _embedded_strings(value)
+
+
+def _candidate_texts(stdout: str):
+    """Yield every text the report block could live in, oldest-to-newest.
+
+    The CLI adapters store stdout as raw `--output-format stream-json` lines, so
+    the agent's report reaches us JSON-*escaped* (`>>>\\n{\\n  \\"status\\"...`) and
+    the sentinel regex can never match the raw buffer. Decoding each line and
+    searching the strings inside recovers it. Plain-text stdout (the local and
+    LM Studio runners) still matches directly off the raw buffer.
+    """
+    yield stdout
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("{") or _SENTINEL not in line:
+            continue
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        yield from _embedded_strings(data)
+
+
 def parse_stage_report(stdout: str) -> StageReport | None:
     """Extract the last sentinel-delimited stage report from agent stdout.
 
     Returns None if absent or malformed. Never raises — callers must fall back
     to exit-code-only behavior when this returns None.
     """
-    if not stdout:
+    if not stdout or _SENTINEL not in stdout:
         return None
-    matches = _SENTINEL_RE.findall(stdout)
-    if not matches:
-        return None
+    matches: list[str] = []
+    for text in _candidate_texts(stdout):
+        matches.extend(_SENTINEL_RE.findall(text))
+    for candidate in reversed(matches):
+        report = _build_report(candidate)
+        if report:
+            return report
+    return None
+
+
+def _build_report(payload: str) -> StageReport | None:
     try:
-        data = json.loads(matches[-1])
+        data = json.loads(payload)
     except (json.JSONDecodeError, TypeError):
         return None
     if not isinstance(data, dict):
