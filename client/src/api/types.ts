@@ -280,6 +280,7 @@ export interface MemoryConfigSettings {
   obsidian_memory_subdir: string;
   obsidian_learnings_subdir: string;
   obsidian_blogposts_subdir: string;
+  obsidian_checkpoints_subdir: string;
   memory_sqlite_url: string;
   database_url: string;
 }
@@ -291,6 +292,7 @@ export interface MemoryStatus {
   obsidian_memory_dir: string | null;
   obsidian_learnings_dir: string | null;
   obsidian_blogposts_dir: string | null;
+  obsidian_checkpoints_dir: string | null;
   memory_sqlite_path: string | null;
   memory_sqlite_in_icloud: boolean;
   memory_graph_tables: string[];

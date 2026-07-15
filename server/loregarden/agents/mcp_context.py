@@ -129,15 +129,18 @@ def build_mcp_run_context(
             "Use MCP tools for ticket workflow state — see Loregarden MCP module below.",
             "Do not update project_board WORKFLOW STATE for stage cursor Loregarden owns.",
             "",
-            "## Loregarden artifacts (memory, learnings, blog posts)",
+            "## Loregarden artifacts (memory, learnings, blog posts, checkpoints)",
             "Workspace-scoped **Obsidian markdown** + optional **SQLite memory graph**. **Never write files or SQL directly.**",
             f'Always pass `workspace_slug="{workspace.slug}"` on memory tools.',
             f"**Discover backends:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_memory_status` with "
             f'`workspace_slug="{workspace.slug}"` → Obsidian dirs + `memory_sqlite_path` (graph DB for memory/learnings nodes).',
-            "SQLite stores `memory` and `learning` nodes in `memory_nodes` + `memory_relations`. Blog posts are Obsidian-only.",
+            "SQLite stores `memory` and `learning` nodes in `memory_nodes` + `memory_relations`. "
+            "Blog posts and checkpoints are Obsidian-only.",
             f"**Memory:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_upsert_memory` · "
             f"**learnings:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_append_learning` · "
             f"**blog posts:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_upsert_blog_post` · "
+            f"**checkpoints:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_append_checkpoint` "
+            "(see checkpoint protocol module below) · "
             f"**graph links:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_create_memory_relation` · "
             f"**search:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_search_memory` (Obsidian + SQLite).",
             "See Memory protocol module below.",

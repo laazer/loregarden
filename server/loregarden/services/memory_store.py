@@ -74,6 +74,7 @@ class ObsidianMemoryStore:
         self._memory_subdir = settings.obsidian_memory_subdir
         self._learnings_subdir = settings.obsidian_learnings_subdir
         self._blogposts_subdir = settings.obsidian_blogposts_subdir
+        self._checkpoints_subdir = settings.obsidian_checkpoints_subdir
 
     @classmethod
     def from_settings(cls) -> ObsidianMemoryStore | None:
@@ -97,6 +98,11 @@ class ObsidianMemoryStore:
 
     def blogposts_dir(self, workspace_slug: str = "") -> Path:
         base = self.vault_dir / self._blogposts_subdir
+        segment = self._workspace_segment(workspace_slug)
+        return base / segment if segment else base
+
+    def checkpoints_dir(self, workspace_slug: str = "") -> Path:
+        base = self.vault_dir / self._checkpoints_subdir
         segment = self._workspace_segment(workspace_slug)
         return base / segment if segment else base
 
@@ -213,6 +219,48 @@ class ObsidianMemoryStore:
             workspace_slug=workspace_slug,
             note_type="blog_post",
         )
+
+    def append_checkpoint(
+        self,
+        *,
+        workspace_slug: str,
+        ticket_id: str,
+        run_id: str,
+        entry: str,
+    ) -> dict[str, str]:
+        """Append one checkpoint entry to this ticket+run's log file, creating
+        it (with a frontmatter header) on first write. Unlike upsert_note's
+        one-file-per-call notes, multiple entries accumulate in one file across
+        a run — matching the checkpoint protocol's <ticket-id>/<run-id>.md log.
+        """
+        base = self.checkpoints_dir(workspace_slug)
+        ticket_slug = _slugify(ticket_id) if ticket_id.strip() else "ticket"
+        run_slug = _slugify(run_id) if run_id.strip() else "run"
+        path = base / ticket_slug / f"{run_slug}.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        if not path.is_file():
+            header = _format_frontmatter(
+                {
+                    "type": "checkpoint",
+                    "ticket_id": ticket_id,
+                    "run_id": run_id,
+                    "workspace": workspace_slug,
+                    "created": _utcnow_iso(),
+                }
+            )
+            path.write_text(
+                f"{header}\n\n# Checkpoint log — {ticket_id} / {run_id}\n\n", encoding="utf-8"
+            )
+
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(entry.strip() + "\n\n")
+
+        return {
+            "path": str(path.relative_to(self.vault_dir)),
+            "ticket_id": ticket_id,
+            "run_id": run_id,
+        }
 
     def list_notes(
         self,
@@ -546,6 +594,9 @@ class AgentMemoryService:
             "obsidian_blogposts_dir": (
                 str(self.obsidian.blogposts_dir(slug)) if self.obsidian and obsidian_vault else None
             ),
+            "obsidian_checkpoints_dir": (
+                str(self.obsidian.checkpoints_dir(slug)) if self.obsidian and obsidian_vault else None
+            ),
             "memory_sqlite_path": str(memory_db) if memory_db else None,
             "memory_sqlite_url": sqlite_url_for_path(memory_db) if memory_db else None,
             "memory_sqlite_in_icloud": (
@@ -555,7 +606,7 @@ class AgentMemoryService:
             ),
             "memory_graph_tables": ["memory_nodes", "memory_relations"] if memory_db else [],
             "memory_graph_node_types": ["memory", "learning"] if memory_db else [],
-            "memory_graph_excludes": ["blog_post"],
+            "memory_graph_excludes": ["blog_post", "checkpoint"],
             "database_path": str(settings.database_url),
         }
 
@@ -661,6 +712,31 @@ class AgentMemoryService:
             "ticket_id": ticket_id,
             "workspace_slug": workspace_slug,
             "obsidian": {"id": note.id, "path": note.path, "updated_at": note.updated_at},
+        }
+
+    def append_checkpoint(
+        self,
+        *,
+        ticket_id: str,
+        workspace_slug: str,
+        run_id: str,
+        entry: str,
+    ) -> dict[str, Any]:
+        if not self.obsidian:
+            raise ValueError(
+                "No Obsidian vault configured. Set LOREGARDEN_OBSIDIAN_VAULT_DIR for checkpoint storage."
+            )
+        result = self.obsidian.append_checkpoint(
+            workspace_slug=workspace_slug,
+            ticket_id=ticket_id,
+            run_id=run_id,
+            entry=entry,
+        )
+        return {
+            "ticket_id": ticket_id,
+            "workspace_slug": workspace_slug,
+            "run_id": run_id,
+            "obsidian": {"path": result["path"]},
         }
 
     def create_relation(

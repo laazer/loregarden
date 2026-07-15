@@ -19,9 +19,12 @@ Agents must **never** write Obsidian files or SQLite databases directly — alwa
 | **Memory** — durable knowledge | `loregarden_upsert_memory` | `{vault}/{memory_subdir}/{workspace}/` | `memory_nodes` row, `node_type: memory` |
 | **Learnings** — ticket insights | `loregarden_append_learning` | `{vault}/{learnings_subdir}/{workspace}/` | `memory_nodes` row, `node_type: learning` |
 | **Blog posts** — retrospectives | `loregarden_upsert_blog_post` | `{vault}/{blogposts_subdir}/{workspace}/` | **not stored** (Obsidian only) |
+| **Checkpoints** — per-run assumption/ambiguity log | `loregarden_append_checkpoint` | `{vault}/{checkpoints_subdir}/{workspace}/{ticket_id}/{run_id}.md` | **not stored** (Obsidian only) |
 | **Relations** between nodes | `loregarden_create_memory_relation` | — | `memory_relations` table |
 
-Default Obsidian subdirs: `Loregarden/Memory`, `Loregarden/Learnings`, `Loregarden/BlogPosts`.
+Default Obsidian subdirs: `Loregarden/Memory`, `Loregarden/Learnings`, `Loregarden/BlogPosts`, `Loregarden/Checkpoints`.
+
+Checkpoints differ from the other artifact types: instead of one file per call, `loregarden_append_checkpoint` appends to a single file per `ticket_id` + `run_id`, since a run typically logs several checkpoint entries as it goes.
 
 Default SQLite layout: base config path `…/Loregarden/memory.db` → per workspace `…/Loregarden/{workspace_slug}/memory.db`.
 
@@ -39,11 +42,12 @@ Call `loregarden_memory_status` with the run's `workspace_slug`:
 | `obsidian_memory_dir` | Durable memory markdown |
 | `obsidian_learnings_dir` | Ticket learning markdown |
 | `obsidian_blogposts_dir` | Blog post markdown |
+| `obsidian_checkpoints_dir` | Checkpoint log markdown |
 | `memory_sqlite_path` | Per-workspace graph DB file path |
 | `memory_sqlite_url` | Same DB as `sqlite:///` URL (operators) |
 | `memory_graph_tables` | `memory_nodes`, `memory_relations` |
 | `memory_graph_node_types` | `memory`, `learning` (what MCP writes to SQLite) |
-| `memory_graph_excludes` | `blog_post` — never in SQLite |
+| `memory_graph_excludes` | `blog_post`, `checkpoint` — never in SQLite |
 
 `database_path` in the same response is the **Loregarden control-plane** DB (tickets, runs) — not agent memory. Do not confuse it with `memory_sqlite_path`.
 
@@ -58,6 +62,7 @@ Every memory tool call must include `workspace_slug` from the run prompt.
 | Ticket learnings (Learning Agent) | `loregarden_append_learning` | Upserts `learning` node |
 | Durable patterns / anti-patterns | `loregarden_upsert_memory` | Upserts `memory` node |
 | Human-readable blog post | `loregarden_upsert_blog_post` | None |
+| Per-run assumption/ambiguity log (checkpoint protocol) | `loregarden_append_checkpoint` | None |
 | Find prior context | `loregarden_search_memory` | Searches Obsidian + `memory_nodes` |
 | Link two graph nodes | `loregarden_create_memory_relation` | Inserts `memory_relations` row |
 | Confirm all backends | `loregarden_memory_status` | — |
