@@ -252,15 +252,40 @@ def ticket_tree(
     )
 
     tickets = session.exec(query).all()
+
+    # Collect all ancestors of filtered tickets to maintain hierarchy
+    ancestors_to_include: set[str] = set()
+    for ticket in tickets:
+        current = ticket
+        while current.parent_ticket_id:
+            ancestor_id = current.parent_ticket_id
+            if ancestor_id in ancestors_to_include:
+                break
+            ancestors_to_include.add(ancestor_id)
+            ancestor = session.get(Ticket, ancestor_id)
+            if not ancestor:
+                break
+            current = ancestor
+
+    # Fetch ancestor tickets
+    ancestor_tickets = []
+    if ancestors_to_include:
+        ancestor_tickets = session.exec(
+            select(Ticket).where(Ticket.id.in_(ancestors_to_include))
+        ).all()
+
+    # Combine filtered tickets with ancestors
+    all_tickets = list(tickets) + ancestor_tickets
+
     stage_names: dict[str, str] = {}
     orch = OrchestrationService(session)
-    for t in tickets:
+    for t in all_tickets:
         template = orch.get_template_for_ticket(t)
         if template and t.workflow_stage_key:
             from loregarden.core.workflow_loader import stage_display_name
 
             stage_names[t.id] = stage_display_name(template, t.workflow_stage_key)
-    return build_tree(session, list(tickets), stage_names=stage_names)
+    return build_tree(session, all_tickets, stage_names=stage_names)
 
 
 @router.get("", response_model=list[TicketSummary])
