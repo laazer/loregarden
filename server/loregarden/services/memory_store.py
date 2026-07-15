@@ -595,7 +595,9 @@ class AgentMemoryService:
                 str(self.obsidian.blogposts_dir(slug)) if self.obsidian and obsidian_vault else None
             ),
             "obsidian_checkpoints_dir": (
-                str(self.obsidian.checkpoints_dir(slug)) if self.obsidian and obsidian_vault else None
+                str(self.obsidian.checkpoints_dir(slug))
+                if self.obsidian and obsidian_vault
+                else None
             ),
             "memory_sqlite_path": str(memory_db) if memory_db else None,
             "memory_sqlite_url": sqlite_url_for_path(memory_db) if memory_db else None,

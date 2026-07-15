@@ -658,7 +658,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "inputSchema": _tool_schema(
             properties={
                 "ticket_id": _string_prop("Ticket external id or UUID."),
-                "workspace_slug": _string_prop("Workspace slug (required — scopes checkpoint dir)."),
+                "workspace_slug": _string_prop(
+                    "Workspace slug (required — scopes checkpoint dir)."
+                ),
                 "run_id": _string_prop("Run id for this ticket+run's checkpoint log."),
                 "entry": _string_prop(
                     "Checkpoint entry markdown block "

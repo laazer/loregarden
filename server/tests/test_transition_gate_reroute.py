@@ -250,9 +250,7 @@ def test_autofix_agent_fallback_retries_inline_then_pauses_after_max_attempts(
     db_session.refresh(ticket)
     # Initial run + exactly autofix_max_agent_attempts inline retries.
     runs = db_session.exec(
-        select(AgentRun).where(
-            AgentRun.ticket_id == ticket.id, AgentRun.stage_key == "test_break"
-        )
+        select(AgentRun).where(AgentRun.ticket_id == ticket.id, AgentRun.stage_key == "test_break")
     ).all()
     assert len(runs) == 3
     # Exhausted: rerouted for rework and paused with a short human-facing pointer.

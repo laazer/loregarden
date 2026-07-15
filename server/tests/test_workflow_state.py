@@ -125,9 +125,7 @@ def test_starting_a_pending_stage_clears_stale_blocking_issues(
     assert ticket.state != TicketState.BLOCKED
 
 
-def test_opening_a_human_gate_clears_stale_blocking_issues(
-    client: TestClient, db_session: Session
-):
+def test_opening_a_human_gate_clears_stale_blocking_issues(client: TestClient, db_session: Session):
     ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
     ticket = db_session.get(Ticket, ticket_id)
     instance = db_session.exec(
