@@ -856,6 +856,9 @@ class OrchestrationService:
         *,
         stage_def: WorkflowStageDef | None = None,
     ) -> Approval:
+        from loregarden.services.triage_service import expand_gate_checklist
+
+        checklist = expand_gate_checklist(ticket, list(stage_def.checklist) if stage_def else [])
         approval = Approval(
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
@@ -864,7 +867,7 @@ class OrchestrationService:
             level="high" if ticket.priority == 1 else "medium",
             stage_key=stage_key,
             impact=_build_gate_impact(ticket, stage_name),
-            checklist_json=json.dumps(stage_def.checklist if stage_def else []),
+            checklist_json=json.dumps(checklist),
             status=ApprovalStatus.PENDING,
         )
         self.session.add(approval)

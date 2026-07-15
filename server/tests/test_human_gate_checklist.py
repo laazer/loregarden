@@ -67,10 +67,14 @@ def test_playtest_human_gate_includes_test_summary_and_checklist(
     assert "Add a dash ability with a cooldown timer." in approval["impact"]
     assert "Dash moves the player" in approval["impact"]
 
+    # The generic "walk through the acceptance criteria" bullet is replaced by
+    # one concrete play-test item per acceptance criterion, so each gate lists
+    # what this specific change needs exercised.
     assert approval["checklist"] == [
         "Create or update the test level scene(s) needed to exercise this change",
         "Load the affected scene(s) in the Godot editor and run them",
-        "Walk through the acceptance criteria by hand, not just the automated tests",
+        "Play-test by hand — Dash moves the player",
+        "Play-test by hand — Cooldown blocks re-triggering",
         "Check for regressions in adjacent systems the change touches",
         "Confirm no console errors/warnings appear during play",
     ]

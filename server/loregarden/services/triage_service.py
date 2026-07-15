@@ -283,6 +283,33 @@ def current_human_gate_stage(session: Session, ticket: Ticket):
     return stage
 
 
+AC_CHECKLIST_PLACEHOLDER = "{{acceptance_criteria}}"
+
+
+def expand_gate_checklist(ticket: Ticket, checklist: list[str]) -> list[str]:
+    """Expand a stage's static checklist into ticket-specific items.
+
+    An ``{{acceptance_criteria}}`` entry is replaced by one concrete play-test
+    item per acceptance criterion, so each gate lists what actually needs
+    exercising for this change instead of the same generic bullet every time.
+    Every other entry passes through unchanged. If the ticket has no acceptance
+    criteria, the placeholder simply expands to nothing.
+    """
+    try:
+        criteria = json.loads(ticket.acceptance_criteria_json or "[]")
+    except json.JSONDecodeError:
+        criteria = []
+    expanded: list[str] = []
+    for item in checklist:
+        if item.strip() == AC_CHECKLIST_PLACEHOLDER:
+            expanded.extend(
+                f"Play-test by hand — {str(c).strip()}" for c in criteria if str(c).strip()
+            )
+        else:
+            expanded.append(item)
+    return expanded
+
+
 def _gate_focus_guidance(stage) -> str:
     label = f"{stage.key} {stage.name}".lower()
     if "playtest" in label or "gameplay" in label:
@@ -316,7 +343,7 @@ def build_gate_triage_sections(session: Session, ticket: Ticket) -> list[str]:
         "that verification: reproduce what they see, diagnose issues, and fix what you can.",
         _gate_focus_guidance(stage),
     ]
-    checklist = list(stage.checklist or [])
+    checklist = expand_gate_checklist(ticket, list(stage.checklist or []))
     if checklist:
         sections.append("Verification checklist for this gate:")
         sections.extend(f"- {item}" for item in checklist)
