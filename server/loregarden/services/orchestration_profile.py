@@ -27,6 +27,17 @@ class GatesConfig(BaseModel):
     enabled: bool = False
     commands: list[str] = Field(default_factory=list)
     transition_script: str = ""
+    # When a transition gate (lint/format/typecheck) fails, try to repair it
+    # automatically before pulling in a human. `autofix_commands` are mechanical
+    # fixers (e.g. `ruff check --fix server/`, `ruff format server/`,
+    # `oxlint --fix client/`) run best-effort in the workspace root; the gate is
+    # then re-run. If it still fails and `autofix_agent_fallback` is on, the
+    # stage is rerouted back to its own agent — with the gate errors in its
+    # context — for up to `autofix_max_agent_attempts` inline retries before
+    # falling back to blocking for a human.
+    autofix_commands: list[str] = Field(default_factory=list)
+    autofix_agent_fallback: bool = True
+    autofix_max_agent_attempts: int = 2
 
 
 class SubagentsConfig(BaseModel):
@@ -121,6 +132,14 @@ def update_gates_config(workspace: Workspace, gates: GatesConfig) -> Orchestrati
     path = _profile_path_for_write(workspace)
     raw = _load_yaml(path) if path.is_file() else {}
     raw.setdefault("slug", workspace.orchestration_profile_slug or workspace.slug)
-    raw["gates"] = gates.model_dump(mode="json")
+    existing_gates = raw.get("gates") or {}
+    new_gates = gates.model_dump(mode="json")
+    # The Gates editor only manages enabled/commands/transition_script; preserve
+    # any autofix_* settings already in the file so saving from the UI doesn't
+    # silently wipe a hand-configured self-fix policy.
+    for key in ("autofix_commands", "autofix_agent_fallback", "autofix_max_agent_attempts"):
+        if key in existing_gates:
+            new_gates[key] = existing_gates[key]
+    raw["gates"] = new_gates
     _write_yaml_atomic(path, raw)
     return load_profile_from_path(path)

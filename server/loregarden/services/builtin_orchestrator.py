@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from enum import Enum
 
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.core.state_machine import StateMachine
@@ -11,6 +12,7 @@ from loregarden.db.session import engine
 from loregarden.models.domain import (
     WORKFLOW_WORK_ITEM_TYPES,
     AgentRun,
+    Artifact,
     OrchestrationDriver,
     OrchestrationRun,
     OrchestrationRunStatus,
@@ -23,7 +25,8 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from loregarden.services.gate_runner import run_transition_gates
+from loregarden.services.gate_runner import run_gate_autofix, run_transition_gates, strip_ansi
+from loregarden.services.git_commit_push_service import commit_ticket_working_tree
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
@@ -36,6 +39,14 @@ from loregarden.services.studio_service import is_agentless_stage
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session, select
+
+
+class _GateDecision(Enum):
+    """Outcome of the transition-gate check for a completed stage."""
+
+    PASS = "pass"  # gate is clean (or was auto-fixed clean) — advance normally
+    REROUTED = "rerouted"  # rerouted back to the stage for an inline auto-fix retry
+    BLOCKED = "blocked"  # automatic fixes exhausted — rerouted and paused for a human
 
 
 class BuiltinOrchestrator:
@@ -143,19 +154,24 @@ class BuiltinOrchestrator:
                 )
                 next_key = next_route.to_key if next_route else None
                 if next_key:
-                    gate_block = self._run_stage_gates(
+                    decision = self._run_gates_with_autofix(
                         ticket,
                         profile,
                         stage_def,
+                        instance,
+                        stages,
+                        orch_run,
                         from_stage=target_key,
                         to_stage=next_key,
                     )
-                    if gate_block:
-                        self._reroute_after_gate_failure(
-                            ticket, instance, stages, orch_run, target_key, gate_block
-                        )
+                    if decision is _GateDecision.BLOCKED:
                         self.session.refresh(orch_run)
                         return orch_run
+                    if decision is _GateDecision.REROUTED:
+                        # Stage was routed back to itself for an inline retry;
+                        # let the loop re-run it this same pass.
+                        continue
+                    # _GateDecision.PASS falls through to advance normally.
 
                 if not next_key:
                     return self._pause_orchestration(orch_run, ticket)
@@ -300,77 +316,18 @@ class BuiltinOrchestrator:
 
         return False
 
-    def _reroute_after_gate_failure(
-        self,
-        ticket: Ticket,
-        instance: WorkflowInstance,
-        stages: list[WorkflowStageDef],
-        orch_run: OrchestrationRun,
-        target_key: str,
-        gate_block: str,
-    ) -> None:
-        """A transition gate (e.g. lint/static-analysis) failing isn't the agent
-        reporting bad work upstream — it's this stage's own output failing an
-        objective check. Reroute back to the same stage (self-redo) rather than
-        hard-blocking, so the ticket gets another automatic pass instead of
-        stalling for a human.
-
-        The raw gate output (lefthook/pylint/etc. dumps, shell command, ANSI
-        noise) goes to the Errors tab as an artifact — blocking_issues, shown
-        directly in the workflow pane, stays a short pointer rather than a
-        wall of unreadable text.
-        """
-        self.callbacks.attach_artifact(
-            ticket,
-            kind="error",
-            title=f"Transition gate failed — {target_key}",
-            content={
-                "message": gate_block,
-                "run_code": "",
-                "agent_id": "",
-                "stage_key": target_key,
-                "command": "",
-            },
-        )
-        apply_stage_route(
-            ticket,
-            instance,
-            stages,
-            self.orch._resolve_transitions(ticket),
-            from_key=target_key,
-            outcome="reject",
-            next_stage_key=target_key,
-            blocking_issues=(
-                f"Transition gate failed at '{target_key}' — see the Errors tab for details."
-            ),
-            orch_run=orch_run,
-        )
-        self.session.add(ticket)
-        self.session.add(instance)
-        self.session.commit()
-        self.callbacks.complete_orchestration(
-            orch_run,
-            ticket,
-            status=OrchestrationRunStatus.SUCCEEDED,
-            message=f"Transition gate failed at '{target_key}'; rerouted for rework",
-        )
-
-    def _run_stage_gates(
+    def _run_gates(
         self,
         ticket: Ticket,
         profile: OrchestrationProfile,
+        workspace: Workspace,
         stage_def: WorkflowStageDef,
-        *,
         from_stage: str,
         to_stage: str,
     ) -> str:
-        if not profile.gates.enabled:
-            return ""
-
-        workspace = self.session.get(Workspace, ticket.workspace_id)
-        if not workspace:
-            return "Workspace not found for gate execution"
-
+        """Run the transition gates once. Returns "" if they pass, else a cleaned,
+        human-readable failure detail. Pure — no ticket/stage mutation, so it can
+        be re-run after an auto-fix pass to check whether the fix cleared it."""
         result = run_transition_gates(
             profile,
             workspace,
@@ -381,18 +338,227 @@ class BuiltinOrchestrator:
         )
         if result.ok:
             return ""
-
         detail = result.message or result.stderr or "Transition gate failed"
         if result.command:
             detail = f"{detail} (command: {result.command})"
-        self.orch.finalize_stage(
-            ticket,
-            from_stage,
-            status=StageStatus.BLOCKED,
-            blocking_message=detail,
+        return strip_ansi(detail)
+
+    def _gate_failure_artifact_title(self, stage_key: str) -> str:
+        return f"Transition gate failed — {stage_key}"
+
+    def _persisted_gate_fix_attempts(self, ticket: Ticket, stage_key: str) -> int:
+        """Count prior automatic gate-fix retries for this stage, persisted via
+        the error artifacts _reroute_for_agent_fix/_block_after_gate_failure
+        attach — so the retry budget holds across separate orchestration runs,
+        not just within a single `execute()` call. A function-local counter
+        resets every time a new run starts (e.g. an operator or auto-resume
+        re-triggers orchestration after a pause), letting a stage that can
+        never pass its gate (a persistent environment issue, not something an
+        agent can fix by editing code) cycle indefinitely instead of ever
+        durably giving up.
+        """
+        return len(
+            self.session.exec(
+                select(Artifact)
+                .where(Artifact.ticket_id == ticket.id)
+                .where(Artifact.kind == "error")
+                .where(Artifact.title == self._gate_failure_artifact_title(stage_key))
+            ).all()
         )
-        self.session.refresh(ticket)
-        return detail
+
+    def _run_gates_with_autofix(
+        self,
+        ticket: Ticket,
+        profile: OrchestrationProfile,
+        stage_def: WorkflowStageDef,
+        instance: WorkflowInstance,
+        stages: list[WorkflowStageDef],
+        orch_run: OrchestrationRun,
+        *,
+        from_stage: str,
+        to_stage: str,
+    ) -> _GateDecision:
+        """Run the transition gate for a just-completed stage and, if it fails,
+        try to fix it automatically before pulling in a human.
+
+        Order: mechanical fixers (ruff --fix, formatters, ...) → re-run gate; if
+        clean, commit the fix and advance. Otherwise hand the residual failure
+        back to the stage's own agent for a bounded number of inline retries.
+        Only once those are exhausted do we fall back to today's behaviour —
+        reroute for rework and pause for a human.
+        """
+        if not profile.gates.enabled:
+            return _GateDecision.PASS
+
+        workspace = self.session.get(Workspace, ticket.workspace_id)
+        if not workspace:
+            # Can't run gates without a workspace; don't wedge the pipeline over it.
+            return _GateDecision.PASS
+
+        detail = self._run_gates(ticket, profile, workspace, stage_def, from_stage, to_stage)
+        if not detail:
+            return _GateDecision.PASS
+
+        # Gate failed. First, let mechanical fixers have a go — these clear the
+        # "basic problems" (imports, formatting, trivial lint) with no agent run.
+        if profile.gates.autofix_commands:
+            autofix = run_gate_autofix(
+                profile,
+                workspace,
+                ticket,
+                from_stage=from_stage,
+                to_stage=to_stage,
+                stage_def=stage_def,
+            )
+            if autofix.ran:
+                residual = self._run_gates(
+                    ticket, profile, workspace, stage_def, from_stage, to_stage
+                )
+                if not residual:
+                    self._commit_autofix(ticket, from_stage, autofix.output)
+                    return _GateDecision.PASS
+                detail = residual
+
+        # Fixers didn't (or couldn't) clear it. Route back to the stage's own
+        # agent with the gate errors in context, up to a bounded number of
+        # tries — counted durably (see _persisted_gate_fix_attempts) so the
+        # budget can't be refreshed just by starting a new orchestration run.
+        attempts = self._persisted_gate_fix_attempts(ticket, from_stage)
+        if (
+            profile.gates.autofix_agent_fallback
+            and attempts < profile.gates.autofix_max_agent_attempts
+        ):
+            self._reroute_for_agent_fix(ticket, instance, stages, orch_run, from_stage, detail)
+            return _GateDecision.REROUTED
+
+        # Out of automatic options — reroute for rework and pause for a human.
+        self._block_after_gate_failure(ticket, instance, stages, orch_run, from_stage, detail)
+        return _GateDecision.BLOCKED
+
+    def _commit_autofix(self, ticket: Ticket, from_stage: str, output: str) -> None:
+        """Commit the mechanical fixer diff onto the ticket branch and note it as
+        a context artifact, so the invisible fix is a first-class commit rather
+        than an uncommitted working-tree change."""
+        try:
+            committed = commit_ticket_working_tree(
+                self.session,
+                ticket,
+                message=(
+                    f"chore({from_stage}): auto-fix static-analysis gate [{ticket.external_id}]"
+                ),
+            )
+        except ValueError:
+            committed = False
+        if committed:
+            self.callbacks.attach_artifact(
+                ticket,
+                kind="context",
+                title=f"Auto-fixed static-analysis gate — {from_stage}",
+                content={
+                    "message": output or "Mechanical fixers cleared the transition gate.",
+                    "run_code": "",
+                    "agent_id": "",
+                    "stage_key": from_stage,
+                    "command": "",
+                },
+            )
+
+    def _reroute_for_agent_fix(
+        self,
+        ticket: Ticket,
+        instance: WorkflowInstance,
+        stages: list[WorkflowStageDef],
+        orch_run: OrchestrationRun,
+        from_stage: str,
+        detail: str,
+    ) -> None:
+        """Mechanical fixers couldn't clear the gate. Route back to this stage so
+        its agent gets another pass — this time with the gate failure in its
+        context — and let the run loop re-run it inline instead of stalling for a
+        human. The full gate output still goes to the Errors tab; blocking_issues
+        carries a trimmed, fix-directed copy (capped by apply_stage_route) so the
+        re-run agent can actually act on it.
+        """
+        self.callbacks.attach_artifact(
+            ticket,
+            kind="error",
+            title=self._gate_failure_artifact_title(from_stage),
+            content={
+                "message": detail,
+                "run_code": "",
+                "agent_id": "",
+                "stage_key": from_stage,
+                "command": "",
+            },
+        )
+        blocking = (
+            f"The '{from_stage}' stage passed its agent but failed the static-analysis gate "
+            f"on the way to the next stage, and automatic fixers couldn't resolve it. "
+            f"Fix these issues and report `pass`:\n\n{detail}"
+        )
+        apply_stage_route(
+            ticket,
+            instance,
+            stages,
+            self.orch._resolve_transitions(ticket),
+            from_key=from_stage,
+            outcome="reject",
+            next_stage_key=from_stage,
+            blocking_issues=blocking,
+            orch_run=orch_run,
+        )
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.commit()
+
+    def _block_after_gate_failure(
+        self,
+        ticket: Ticket,
+        instance: WorkflowInstance,
+        stages: list[WorkflowStageDef],
+        orch_run: OrchestrationRun,
+        from_stage: str,
+        detail: str,
+    ) -> None:
+        """Automatic fixes are exhausted. Reroute back to the stage (self-redo)
+        and pause for a human — the pre-existing gate-failure behaviour. The raw
+        gate output goes to the Errors tab; blocking_issues, rendered directly in
+        the workflow pane, stays a short pointer rather than a wall of text.
+        """
+        self.callbacks.attach_artifact(
+            ticket,
+            kind="error",
+            title=self._gate_failure_artifact_title(from_stage),
+            content={
+                "message": detail,
+                "run_code": "",
+                "agent_id": "",
+                "stage_key": from_stage,
+                "command": "",
+            },
+        )
+        apply_stage_route(
+            ticket,
+            instance,
+            stages,
+            self.orch._resolve_transitions(ticket),
+            from_key=from_stage,
+            outcome="reject",
+            next_stage_key=from_stage,
+            blocking_issues=(
+                f"Transition gate failed at '{from_stage}' — see the Errors tab for details."
+            ),
+            orch_run=orch_run,
+        )
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.commit()
+        self.callbacks.complete_orchestration(
+            orch_run,
+            ticket,
+            status=OrchestrationRunStatus.SUCCEEDED,
+            message=f"Transition gate failed at '{from_stage}'; rerouted for rework",
+        )
 
     def _execute_parallel_stage(
         self,

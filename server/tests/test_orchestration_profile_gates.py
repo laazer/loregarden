@@ -42,6 +42,9 @@ def test_writes_new_profile_file_when_none_exists(tmp_path, monkeypatch):
         "enabled": True,
         "commands": ["echo hi"],
         "transition_script": "ci/gate.py",
+        "autofix_commands": [],
+        "autofix_agent_fallback": True,
+        "autofix_max_agent_attempts": 2,
     }
 
 
@@ -65,11 +68,48 @@ def test_preserves_other_fields_in_existing_profile(tmp_path, monkeypatch):
     raw = yaml.safe_load(path.read_text())
     assert raw["name"] == "Custom Name"
     assert raw["workflow_template"] == "blobert-tdd"
-    assert raw["gates"] == {"enabled": True, "commands": ["true"], "transition_script": ""}
+    assert raw["gates"] == {
+        "enabled": True,
+        "commands": ["true"],
+        "transition_script": "",
+        "autofix_commands": [],
+        "autofix_agent_fallback": True,
+        "autofix_max_agent_attempts": 2,
+    }
 
     profile = resolve_orchestration_profile(ws)
     assert profile.workflow_template == "blobert-tdd"
     assert profile.gates.enabled is True
+
+
+def test_preserves_autofix_settings_the_editor_does_not_manage(tmp_path, monkeypatch):
+    """The Gates editor only writes enabled/commands/transition_script. A save
+    from it must not wipe a hand-configured autofix policy already in the file."""
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+    ws = _workspace()
+    path = orchestration_dir() / f"{ws.slug}.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "slug: gates-write-test\n"
+        "gates:\n"
+        "  enabled: false\n"
+        "  autofix_commands:\n"
+        "    - ruff check --fix server/\n"
+        "  autofix_max_agent_attempts: 5\n",
+        encoding="utf-8",
+    )
+
+    update_gates_config(ws, GatesConfig(enabled=True, commands=["true"], transition_script=""))
+
+    raw = yaml.safe_load(path.read_text())
+    assert raw["gates"]["enabled"] is True
+    assert raw["gates"]["commands"] == ["true"]
+    assert raw["gates"]["autofix_commands"] == ["ruff check --fix server/"]
+    assert raw["gates"]["autofix_max_agent_attempts"] == 5
+
+    profile = resolve_orchestration_profile(ws)
+    assert profile.gates.autofix_commands == ["ruff check --fix server/"]
+    assert profile.gates.autofix_max_agent_attempts == 5
 
 
 def test_resolves_by_slug_regardless_of_workspace_repo_path(tmp_path, monkeypatch):
