@@ -493,8 +493,10 @@ class OrchestrationService:
         if stage_map.get(target_key) == StageStatus.WONT_DO:
             raise ValueError(f"Stage '{target_key}' is marked won't do")
 
-        if stage_map.get(target_key) in (StageStatus.BLOCKED, StageStatus.DONE):
-            ticket.blocking_issues = ""
+        # Opening the gate is a fresh attempt — drop any stale blocking message
+        # left over from a prior failure (see the matching comment in
+        # start_run for why this must be unconditional, not just BLOCKED/DONE).
+        ticket.blocking_issues = ""
 
         if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
             raise ValueError(f"Cannot open human gate for ticket in state: {ticket.state.value}")
@@ -585,8 +587,14 @@ class OrchestrationService:
         if stage_map.get(target_key) == StageStatus.WONT_DO:
             raise ValueError(f"Stage '{target_key}' is marked won't do")
 
-        if stage_map.get(target_key) in (StageStatus.BLOCKED, StageStatus.DONE):
-            ticket.blocking_issues = ""
+        # Starting a stage is a fresh attempt — drop any stale blocking message
+        # left over from a prior failure. Without this, a stage that was left
+        # PENDING (not BLOCKED) after an earlier failure elsewhere carries its
+        # old blocking_issues text forward; the moment this run marks it
+        # RUNNING, reconcile_workflow_state sees non-empty blocking_issues and
+        # misreports the ticket as BLOCKED before anything has actually failed
+        # in this attempt.
+        ticket.blocking_issues = ""
 
         if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
             raise ValueError(f"Cannot start run for ticket in state: {ticket.state.value}")

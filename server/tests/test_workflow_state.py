@@ -103,6 +103,52 @@ def test_rerun_blocked_stage_after_failure(client: TestClient, monkeypatch):
     assert _stage_statuses(after)[stage_key] == "done"
 
 
+def test_starting_a_pending_stage_clears_stale_blocking_issues(
+    client: TestClient, db_session: Session
+):
+    """A stage can be left PENDING (not BLOCKED) while blocking_issues still
+    holds a message from an unrelated earlier failure — e.g. a parallel-stage
+    reroute elsewhere left the text behind without marking this stage BLOCKED.
+    Starting a fresh run must not immediately misreport the ticket as BLOCKED
+    just because that stale message is still sitting there.
+    """
+    ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
+    ticket = db_session.get(Ticket, ticket_id)
+    ticket.blocking_issues = "Stale message from an unrelated earlier failure."
+    db_session.add(ticket)
+    db_session.commit()
+
+    OrchestrationService(db_session).start_run(ticket, stage_key="implementation")
+    db_session.refresh(ticket)
+
+    assert ticket.blocking_issues == ""
+    assert ticket.state != TicketState.BLOCKED
+
+
+def test_opening_a_human_gate_clears_stale_blocking_issues(
+    client: TestClient, db_session: Session
+):
+    ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
+    ticket = db_session.get(Ticket, ticket_id)
+    instance = db_session.exec(
+        select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)
+    ).first()
+    ws = db_session.get(Workspace, ticket.workspace_id)
+    _, stages = resolve_workspace_stages(db_session, ws)
+    set_stage_status(ticket, instance, stages, "approval", StageStatus.PENDING)
+    ticket.blocking_issues = "Stale message from an unrelated earlier failure."
+    db_session.add(ticket)
+    db_session.add(instance)
+    db_session.commit()
+
+    OrchestrationService(db_session).enter_human_gate(ticket, stage_key="approval")
+    db_session.refresh(ticket)
+
+    assert ticket.blocking_issues == ""
+    assert ticket.state != TicketState.BLOCKED
+    assert ticket.workflow_stage_status == StageStatus.AWAITING
+
+
 def test_advance_stage_moves_cursor_and_keeps_steps_consistent(client: TestClient):
     ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
     client.post(f"/api/tickets/{ticket_id}/start", json={"manual": True})

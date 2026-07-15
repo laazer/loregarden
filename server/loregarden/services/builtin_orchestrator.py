@@ -842,6 +842,17 @@ class BuiltinOrchestrator:
         return cursor_key
 
     def _next_executable_stage(self, ticket: Ticket, stages, stage_map) -> str | None:
+        """Pick the next stage to run: earliest-in-template-order wins.
+
+        Deliberately ignores ticket.workflow_stage_key as a shortcut here — a
+        stage can be manually re-run independently of the ticket's cursor (the
+        UI exposes a Run/Re-Run button per stage), which can leave an earlier
+        stage PENDING while the cursor already points at a later one. Trusting
+        the cursor in that state would silently skip the earlier, still-
+        unresolved stage. Always scanning in order means the cursor being
+        "ahead" of an unresolved stage self-heals on the next orchestration
+        pass instead of compounding.
+        """
         ordered = sorted(stages, key=lambda s: s.order)
         keys = [s.key for s in ordered]
 
@@ -851,11 +862,6 @@ class BuiltinOrchestrator:
                     if status == StageStatus.BLOCKED:
                         return None
                     return key
-
-        if ticket.workflow_stage_key and ticket.workflow_stage_key in stage_map:
-            st = stage_map[ticket.workflow_stage_key]
-            if st in (StageStatus.PENDING, StageStatus.RUNNING):
-                return ticket.workflow_stage_key
 
         for key in keys:
             if stage_map.get(key) == StageStatus.PENDING:
