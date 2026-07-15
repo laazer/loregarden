@@ -1245,6 +1245,21 @@ class ApprovalService:
         self.session.add(instance)
         self.session.commit()
 
+        if approved and rework_route_key:
+            self._resume_orchestration(ticket)
+
+    def _resume_orchestration(self, ticket: Ticket) -> None:
+        """Auto-continue after an approve-with-rework reroute — otherwise the
+        ticket would sit at the target stage waiting for the operator to
+        separately click Run/Agents Assemble, which defeats the point of
+        routing it back in the same action."""
+        from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+        from loregarden.services.run_service import schedule_orchestration
+
+        if OrchestrationCallbackService(self.session).get_active_orchestration_run(ticket.id):
+            return
+        schedule_orchestration(ticket.id)
+
     def list_pending(self) -> list[Approval]:
         return list(
             self.session.exec(

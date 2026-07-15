@@ -101,9 +101,17 @@ def test_approving_playtest_gate_still_marks_stage_done(db_session: Session):
     assert stage_map["playtest"] == StageStatus.DONE
 
 
-def test_approving_playtest_gate_with_rework_route_reroutes_upstream(db_session: Session):
+def test_approving_playtest_gate_with_rework_route_reroutes_upstream(
+    db_session: Session, monkeypatch
+):
     """Approve the playtest but send the ticket back so prototype fixes get
-    formalized with production code and tests."""
+    formalized with production code and tests.
+
+    Auto-resume is stubbed out here so this test verifies routing mechanics in
+    isolation — see test_approving_gate_with_rework_route_triggers_resume for
+    the auto-resume trigger itself.
+    """
+    monkeypatch.setattr(ApprovalService, "_resume_orchestration", lambda self, ticket: None)
     ticket, instance, stages, approval = _setup_playtest_ticket(db_session)
 
     svc = ApprovalService(db_session)
@@ -128,7 +136,8 @@ def test_approving_playtest_gate_with_rework_route_reroutes_upstream(db_session:
     assert "real implementation and tests" in ticket.blocking_issues
 
 
-def test_rework_route_without_note_uses_default_context(db_session: Session):
+def test_rework_route_without_note_uses_default_context(db_session: Session, monkeypatch):
+    monkeypatch.setattr(ApprovalService, "_resume_orchestration", lambda self, ticket: None)
     ticket, instance, stages, approval = _setup_playtest_ticket(db_session)
 
     svc = ApprovalService(db_session)
@@ -137,6 +146,57 @@ def test_rework_route_without_note_uses_default_context(db_session: Session):
     db_session.refresh(ticket)
     assert ticket.workflow_stage_key == "implementation"
     assert "formalize the prototype changes" in ticket.blocking_issues.lower()
+
+
+def test_approving_gate_with_rework_route_triggers_resume(db_session: Session, monkeypatch):
+    """Approve+reroute should automatically resume the workflow rather than
+    leaving the ticket sitting at the target stage waiting for a separate
+    Run/Agents Assemble click."""
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "loregarden.services.run_service.schedule_orchestration",
+        lambda ticket_id, **kwargs: calls.append(ticket_id),
+    )
+    ticket, instance, stages, approval = _setup_playtest_ticket(db_session)
+
+    svc = ApprovalService(db_session)
+    svc.resolve(approval.id, approved=True, route_to_stage_key="implementation")
+
+    assert calls == [ticket.id]
+
+
+def test_plain_approve_does_not_trigger_resume(db_session: Session, monkeypatch):
+    """Only approve-with-reroute auto-resumes — a plain approve leaves the
+    ticket for the operator to run manually, same as every other stage
+    transition in the app."""
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "loregarden.services.run_service.schedule_orchestration",
+        lambda ticket_id, **kwargs: calls.append(ticket_id),
+    )
+    ticket, instance, stages, approval = _setup_playtest_ticket(db_session)
+
+    ApprovalService(db_session).resolve(approval.id, approved=True)
+
+    assert calls == []
+
+
+def test_reject_with_explicit_route_does_not_trigger_resume(db_session: Session, monkeypatch):
+    """A reject — even with an explicit route override — doesn't auto-resume;
+    only an *approved* reroute does, since reject signals more work is needed
+    before the operator would want it to run again."""
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "loregarden.services.run_service.schedule_orchestration",
+        lambda ticket_id, **kwargs: calls.append(ticket_id),
+    )
+    ticket, instance, stages, approval = _setup_playtest_ticket(db_session)
+
+    ApprovalService(db_session).resolve(
+        approval.id, approved=False, route_to_stage_key="implementation"
+    )
+
+    assert calls == []
 
 
 def test_rework_route_rejects_downstream_stage(db_session: Session):
