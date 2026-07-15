@@ -145,6 +145,13 @@ def build_mcp_run_context(
             f"**search:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_search_memory` (Obsidian + SQLite).",
             "See Memory protocol module below.",
             "",
+            "## Handoff artifact (workflow gate)",
+            f"**Finishing agents:** write `handoff-latest.yaml` via `{CLAUDE_MCP_TOOL_PREFIX}loregarden_write_handoff` "
+            "(structured `checklist`, not hand-written YAML). It renders canonical schema, computes the "
+            "counters, validates against the workspace handoff gate, and returns violations on FAIL so you "
+            "fix and retry before the orchestrator runs the blocking transition gate. Use the exact "
+            "`item_key`/`item` labels from the frozen catalog for your `(from_agent → to_agent)` pair.",
+            "",
             "Available tools: " + ", ".join(_tool_names()),
         ]
     )

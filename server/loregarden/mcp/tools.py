@@ -338,6 +338,31 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             raise ValueError("state is required")
         return payload
 
+    if name == "loregarden_write_handoff":
+        checklist = args.get("checklist")
+        if isinstance(checklist, str):
+            stripped = checklist.strip()
+            if stripped:
+                try:
+                    checklist = json.loads(stripped)
+                except json.JSONDecodeError:
+                    pass  # leave as string; the service reports the parse error
+        return {
+            "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
+            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
+            "from_agent": _coerce_string(
+                args.get("from_agent")
+                if args.get("from_agent") is not None
+                else args.get("fromAgent"),
+                field="from_agent",
+            ),
+            "to_agent": _coerce_string(
+                args.get("to_agent") if args.get("to_agent") is not None else args.get("toAgent"),
+                field="to_agent",
+            ),
+            "checklist": checklist,
+        }
+
     memory_payload = _normalize_memory_tool_args(name, args)
     if memory_payload is not None:
         return memory_payload
@@ -671,6 +696,59 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": "loregarden_write_handoff",
+        "description": (
+            "Write a ticket's project_board/checkpoints/<ticket>/handoff-latest.yaml from a "
+            "STRUCTURED checklist, then validate it against the workspace's own handoff gate and "
+            "return any violations. Use this instead of hand-writing the YAML: it renders canonical "
+            "schema, auto-computes the required/met counters, and on validation FAIL rolls the file "
+            "back and returns violations so you can fix and retry in the same turn. Use the exact "
+            "item_key/item labels from the frozen catalog for the (from_agent → to_agent) pair "
+            "(see mandatory_workflow_gates_v1.md)."
+        ),
+        "inputSchema": _tool_schema(
+            properties={
+                "ticket_id": _string_prop("Ticket external id slug or UUID."),
+                "workspace_slug": _string_prop("Workspace slug (scopes the repo + gate)."),
+                "from_agent": _string_prop("Finishing (upstream) agent, e.g. test_designer."),
+                "to_agent": _string_prop("Next (downstream) agent, e.g. test_breaker."),
+                "checklist": {
+                    "type": "array",
+                    "description": (
+                        "Checklist items for the pair. Counters are computed for you; do not send "
+                        "required_items_met/total_required_items."
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "item_key": _string_prop(
+                                "Frozen catalog key, e.g. test_suite_complete."
+                            ),
+                            "item": _string_prop(
+                                "Catalog label text (must match the key's catalog text)."
+                            ),
+                            "status": _enum_string_prop(
+                                "Item status.",
+                                ["complete", "incomplete", "deferred", "blocked"],
+                            ),
+                            "evidence": _string_prop("Evidence (path or attestation text)."),
+                            "evidence_type": _string_prop(
+                                "Optional 'path' or 'attestation'; defaults to the catalog's type."
+                            ),
+                            "required": {
+                                "type": "boolean",
+                                "description": "Optional; defaults true. Match the catalog default.",
+                            },
+                        },
+                        "required": ["item_key", "item", "status"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            required=["ticket_id", "workspace_slug", "from_agent", "to_agent", "checklist"],
+        ),
+    },
+    {
         "name": "loregarden_search_memory",
         "description": "Search Obsidian notes and memory graph nodes, optionally scoped to a workspace.",
         "inputSchema": _tool_schema(
@@ -851,6 +929,19 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
         body = UpdateTicketRequest(state=TicketState(arguments["state"]))
         orch.update_ticket_manual(ticket, body)
         return json.dumps(_ticket_state_payload(session, ticket.id), indent=2)
+
+    if name == "loregarden_write_handoff":
+        from loregarden.services.handoff_writer import write_handoff
+
+        result = write_handoff(
+            session,
+            ticket_id=arguments["ticket_id"],
+            workspace_slug=arguments["workspace_slug"],
+            from_agent=arguments["from_agent"],
+            to_agent=arguments["to_agent"],
+            checklist=arguments["checklist"],
+        )
+        return json.dumps(result, indent=2)
 
     memory_result = _execute_memory_tool(name, arguments)
     if memory_result is not None:

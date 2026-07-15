@@ -118,67 +118,21 @@ export function QueueAdvancedControls({
         </div>
       )}
 
-      {/* Active Runs Controls */}
+      {/* Active Runs — read-only. Stopping or suspending an in-flight agent
+          needs process control the runtime doesn't have yet, so there are no
+          actions to offer here. */}
       {activeRuns.length > 0 && (
         <div className="controls-section">
           <div className="section-title">Active Runs</div>
           <div className="runs-list">
             {activeRuns.map((run) => (
-              <div
-                key={run.run_id}
-                className={`run-control-item active ${
-                  selectedRuns.has(run.run_id) ? 'selected' : ''
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedRuns.has(run.run_id)}
-                  onChange={() => toggleRunSelection(run.run_id)}
-                  aria-label={`Select ${run.ticket_id}`}
-                />
-
+              <div key={run.run_id} className="run-control-item active">
                 <div className="run-info">
                   <div className="run-ticket">{run.ticket_id}</div>
                   <div className="run-detail">
                     Slot {run.slot_number} • {run.elapsed_seconds}s elapsed
                   </div>
                 </div>
-
-                <button
-                  className="run-control-toggle"
-                  onClick={() =>
-                    setExpandedRun(
-                      expandedRun === run.run_id ? null : run.run_id
-                    )
-                  }
-                  aria-expanded={expandedRun === run.run_id}
-                  aria-label="Toggle controls"
-                >
-                  ⋯
-                </button>
-
-                {expandedRun === run.run_id && (
-                  <div className="run-actions">
-                    <button
-                      className="action-btn pause"
-                      onClick={() =>
-                        handleRunAction('pause', run.run_id)
-                      }
-                      disabled={isProcessing === run.run_id}
-                    >
-                      {isProcessing === run.run_id ? '⏳' : '⏸'} Pause
-                    </button>
-                    <button
-                      className="action-btn cancel"
-                      onClick={() =>
-                        handleRunAction('cancel', run.run_id)
-                      }
-                      disabled={isProcessing === run.run_id}
-                    >
-                      {isProcessing === run.run_id ? '⏳' : '⏹'} Cancel
-                    </button>
-                  </div>
-                )}
               </div>
             ))}
           </div>

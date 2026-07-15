@@ -4,7 +4,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from loregarden.api.queue_management import _reorder_queue_internal
-from loregarden.models.domain import AgentRun, QueuedRun, QueuePosition, RunStatus, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    AgentSlot,
+    QueuedRun,
+    QueuePosition,
+    RunStatus,
+    Workspace,
+)
 from sqlmodel import Session, select
 
 
@@ -170,13 +177,13 @@ class TestQueueReordering:
         db_session.add(ws)
         db_session.commit()
 
-        # Create an active run instead of queued
+        # Create a run that has already been promoted out of the queue
         run1 = QueuedRun(
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-5",
             position=1,
-            status=QueuePosition.ACTIVE,
+            status=QueuePosition.PROMOTED,
         )
         db_session.add(run1)
         db_session.commit()
@@ -491,7 +498,8 @@ class TestQueuePromotion:
         assert exc_info.value.status_code == 404
 
     async def test_promote_non_queued_run(self, db_session: Session):
-        """Try to promote run not in queue."""
+        """Try to promote a run that has already left the queue."""
+        from fastapi import HTTPException
         from loregarden.api.queue_management import promote_run
 
         ws = Workspace(id="ws-15", slug="ws-15", name="Test Workspace 15")
@@ -503,19 +511,103 @@ class TestQueuePromotion:
             ticket_id="ticket-1",
             workspace_id="ws-15",
             position=1,
-            status=QueuePosition.ACTIVE,
+            status=QueuePosition.PROMOTED,
         )
         db_session.add(run1)
         db_session.commit()
 
-        with patch("loregarden.api.queue_management.ParallelQueueService") as mock_service:
-            mock_instance = MagicMock()
-            mock_service.return_value = mock_instance
-            mock_instance.promote_from_queue = AsyncMock(return_value=None)
+        with pytest.raises(HTTPException) as exc_info:
+            await promote_run("run-1", db_session)
 
-            result = await promote_run("run-1", db_session)
+        assert exc_info.value.status_code == 400
+        assert "not queued" in exc_info.value.detail
 
-            assert result["status"] == "no_slots"
+    async def test_promote_targets_the_requested_run_not_the_head(self, db_session: Session):
+        """Promoting a run mid-queue starts that run, not the longest-waiting one.
+
+        Regression: promote_run used to call promote_from_queue() without a
+        run_id, which promotes the head of the queue. Asking to promote run-2
+        would start run-1 and then report "no_slots" back to the caller.
+        """
+        from loregarden.api.queue_management import promote_run
+
+        ws = Workspace(id="ws-promote-target", slug="ws-promote-target", name="Test")
+        db_session.add(ws)
+        db_session.commit()
+
+        slot = AgentSlot(workspace_id="ws-promote-target", slot_number=1, is_available=True)
+        head = QueuedRun(
+            run_id="run-head",
+            ticket_id="ticket-head",
+            workspace_id="ws-promote-target",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
+        target = QueuedRun(
+            run_id="run-target",
+            ticket_id="ticket-target",
+            workspace_id="ws-promote-target",
+            position=2,
+            status=QueuePosition.QUEUED,
+        )
+        db_session.add_all([slot, head, target])
+        db_session.commit()
+
+        result = await promote_run("run-target", db_session)
+
+        assert result["status"] == "promoted"
+        assert result["promoted_run"]["run_id"] == "run-target"
+
+        # The requested run took the slot; the head stayed queued.
+        updated_slot = db_session.exec(
+            select(AgentSlot).where(AgentSlot.workspace_id == "ws-promote-target")
+        ).first()
+        assert updated_slot.current_run_id == "run-target"
+        assert updated_slot.is_available is False
+
+        updated_head = db_session.exec(
+            select(QueuedRun).where(QueuedRun.run_id == "run-head")
+        ).first()
+        assert updated_head.status == QueuePosition.QUEUED
+
+        updated_target = db_session.exec(
+            select(QueuedRun).where(QueuedRun.run_id == "run-target")
+        ).first()
+        assert updated_target.status == QueuePosition.PROMOTED
+
+    async def test_promote_no_slots_leaves_queue_untouched(self, db_session: Session):
+        """With every slot busy, promoting must not mutate the queue."""
+        from loregarden.api.queue_management import promote_run
+
+        ws = Workspace(id="ws-promote-full", slug="ws-promote-full", name="Test")
+        db_session.add(ws)
+        db_session.commit()
+
+        slot = AgentSlot(
+            workspace_id="ws-promote-full",
+            slot_number=1,
+            is_available=False,
+            current_run_id=None,
+        )
+        queued = QueuedRun(
+            run_id="run-waiting",
+            ticket_id="ticket-waiting",
+            workspace_id="ws-promote-full",
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
+        db_session.add_all([slot, queued])
+        db_session.commit()
+
+        result = await promote_run("run-waiting", db_session)
+
+        assert result["status"] == "no_slots"
+
+        unchanged = db_session.exec(
+            select(QueuedRun).where(QueuedRun.run_id == "run-waiting")
+        ).first()
+        assert unchanged.status == QueuePosition.QUEUED
+        assert unchanged.position == 1
 
 
 @pytest.mark.asyncio

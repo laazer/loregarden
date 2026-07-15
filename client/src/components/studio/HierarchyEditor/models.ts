@@ -25,7 +25,7 @@ export class ProposalItem implements HierarchyNode {
   id: string;
   title: string;
   description: string;
-  type: "item" = "item";
+  type = "item" as const;
   private _children: HierarchyNode[] = [];
   parent?: HierarchyNode;
 
@@ -64,7 +64,7 @@ export class ProposalFolder implements HierarchyNode {
   id: string;
   title: string;
   description: string;
-  type: "folder" = "folder";
+  type = "folder" as const;
   private _children: HierarchyNode[] = [];
   parent?: HierarchyNode;
 

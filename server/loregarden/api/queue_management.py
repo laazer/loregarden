@@ -262,7 +262,7 @@ async def promote_run(
 
     Returns:
         {
-            "status": "promoted" | "no_slots" | "not_found",
+            "status": "promoted" | "no_slots",
             "message": str,
             "promoted_run": {...} (if promoted),
         }
@@ -275,13 +275,21 @@ async def promote_run(
         if not queued_run:
             raise HTTPException(status_code=404, detail="Queued run not found")
 
+        if queued_run.status != QueuePosition.QUEUED:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Run is not queued (status: {queued_run.status.value})",
+            )
+
         workspace_id = queued_run.workspace_id
 
-        # Try to promote
+        # Promote this specific run. Passing run_id matters: without it the
+        # service promotes the head of the queue, which would start the wrong
+        # run and still report failure back to the caller.
         queue_service = ParallelQueueService(session)
-        promoted = await queue_service.promote_from_queue(workspace_id)
+        promoted = await queue_service.promote_from_queue(workspace_id, run_id=run_id)
 
-        if not promoted or promoted["run_id"] != run_id:
+        if not promoted:
             return {
                 "status": "no_slots",
                 "message": "No available slots for promotion",
@@ -312,205 +320,4 @@ async def promote_run(
         except Exception as emit_err:
             logger.warning(f"Failed to emit error: {emit_err}")
 
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@router.post("/{run_id}/pause")
-async def pause_run(
-    run_id: str = Path(...),
-    session: Session = Depends(get_session),
-):
-    """
-    Pause an active run, returning its slot for the next queued run.
-
-    Args:
-        run_id: ID of active run to pause
-
-    Returns:
-        {
-            "status": "paused" | "not_found" | "not_active",
-            "message": str,
-        }
-    """
-    try:
-        stmt = select(QueuedRun).where(QueuedRun.run_id == run_id)
-        run = session.exec(stmt).first()
-
-        if not run:
-            raise HTTPException(status_code=404, detail="Run not found")
-
-        if run.status != QueuePosition.ACTIVE:
-            raise HTTPException(status_code=400, detail="Run is not active")
-
-        workspace_id = run.workspace_id
-
-        # Mark as paused
-        run.status = "paused"
-        session.add(run)
-        session.commit()
-
-        logger.info(f"Paused run {run_id} in workspace {workspace_id}")
-
-        # Emit update event
-        try:
-            queue_service = ParallelQueueService(session)
-            active_runs = await queue_service.get_active_runs(workspace_id)
-            queued_runs = await queue_service.get_queued_runs(workspace_id)
-            stats = queue_service.get_queue_stats(workspace_id)
-
-            emit_execution_update(
-                workspace_id=workspace_id,
-                active_runs=active_runs,
-                queued_runs=queued_runs,
-                stats=stats,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to emit update: {e}")
-
-        return {
-            "status": "paused",
-            "run_id": run_id,
-            "message": "Run paused",
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error pausing run: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@router.post("/{run_id}/resume")
-async def resume_run(
-    run_id: str = Path(...),
-    session: Session = Depends(get_session),
-):
-    """
-    Resume a paused run.
-
-    Args:
-        run_id: ID of paused run to resume
-
-    Returns:
-        {
-            "status": "resumed" | "not_found" | "not_paused",
-            "message": str,
-        }
-    """
-    try:
-        stmt = select(QueuedRun).where(QueuedRun.run_id == run_id)
-        run = session.exec(stmt).first()
-
-        if not run:
-            raise HTTPException(status_code=404, detail="Run not found")
-
-        if run.status != "paused":
-            raise HTTPException(status_code=400, detail="Run is not paused")
-
-        workspace_id = run.workspace_id
-
-        # Mark as active again
-        run.status = QueuePosition.ACTIVE
-        session.add(run)
-        session.commit()
-
-        logger.info(f"Resumed run {run_id} in workspace {workspace_id}")
-
-        # Emit update event
-        try:
-            queue_service = ParallelQueueService(session)
-            active_runs = await queue_service.get_active_runs(workspace_id)
-            queued_runs = await queue_service.get_queued_runs(workspace_id)
-            stats = queue_service.get_queue_stats(workspace_id)
-
-            emit_execution_update(
-                workspace_id=workspace_id,
-                active_runs=active_runs,
-                queued_runs=queued_runs,
-                stats=stats,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to emit update: {e}")
-
-        return {
-            "status": "resumed",
-            "run_id": run_id,
-            "message": "Run resumed",
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error resuming run: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@router.post("/{run_id}/cancel")
-async def cancel_run(
-    run_id: str = Path(...),
-    session: Session = Depends(get_session),
-):
-    """
-    Cancel an active or queued run.
-
-    Args:
-        run_id: ID of run to cancel
-
-    Returns:
-        {
-            "status": "cancelled" | "not_found",
-            "message": str,
-        }
-    """
-    try:
-        stmt = select(QueuedRun).where(QueuedRun.run_id == run_id)
-        run = session.exec(stmt).first()
-
-        if not run:
-            raise HTTPException(status_code=404, detail="Run not found")
-
-        workspace_id = run.workspace_id
-        was_active = run.status == QueuePosition.ACTIVE
-
-        # Mark as cancelled
-        run.status = "cancelled"
-        session.add(run)
-        session.commit()
-
-        logger.info(f"Cancelled run {run_id} in workspace {workspace_id}")
-
-        # If it was active, promote next from queue
-        if was_active:
-            queue_service = ParallelQueueService(session)
-            try:
-                await queue_service.promote_from_queue(workspace_id)
-            except Exception as e:
-                logger.warning(f"Failed to promote next run: {e}")
-
-        # Emit update event
-        try:
-            queue_service = ParallelQueueService(session)
-            active_runs = await queue_service.get_active_runs(workspace_id)
-            queued_runs = await queue_service.get_queued_runs(workspace_id)
-            stats = queue_service.get_queue_stats(workspace_id)
-
-            emit_execution_update(
-                workspace_id=workspace_id,
-                active_runs=active_runs,
-                queued_runs=queued_runs,
-                stats=stats,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to emit update: {e}")
-
-        return {
-            "status": "cancelled",
-            "run_id": run_id,
-            "message": "Run cancelled",
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error cancelling run: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e)) from e
