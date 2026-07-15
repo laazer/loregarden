@@ -91,21 +91,21 @@ describe("Reception Area & Entrance Redesign — Adversarial Suite", () => {
     });
 
     it("should not allow negative coordinates in stations", () => {
-      Object.entries(OFFICEPLACE_STATIONS).forEach(([key, pos]) => {
+      Object.entries(OFFICEPLACE_STATIONS).forEach(([_, pos]) => {
         expect(pos.x).toBeGreaterThanOrEqual(0);
         expect(pos.y).toBeGreaterThanOrEqual(0);
       });
     });
 
     it("should not allow coordinates exceeding map dimensions", () => {
-      Object.entries(OFFICEPLACE_STATIONS).forEach(([key, pos]) => {
+      Object.entries(OFFICEPLACE_STATIONS).forEach(([_, pos]) => {
         expect(pos.x).toBeLessThan(OFFICEPLACE_MAP.width);
         expect(pos.y).toBeLessThan(OFFICEPLACE_MAP.height);
       });
     });
 
     it("should validate desk row positions are within bounds", () => {
-      OFFICEPLACE_DESKS.forEach((desk, idx) => {
+      OFFICEPLACE_DESKS.forEach((desk) => {
         expect(desk.x).toBeGreaterThanOrEqual(0);
         expect(desk.x).toBeLessThan(OFFICEPLACE_MAP.width);
         expect(desk.y).toBeGreaterThanOrEqual(0);
@@ -276,11 +276,7 @@ describe("Reception Area & Entrance Redesign — Adversarial Suite", () => {
 
     it("should ensure errand positions are reasonable", () => {
       OFFICEPLACE_ERRANDS.forEach((errand) => {
-        // Errands should be accessible points, not overlapping major stations
-        const isNearStation = Object.values(OFFICEPLACE_STATIONS).some(
-          (station) => station.x === errand.stand.x && station.y === errand.stand.y,
-        );
-        // Some overlap is ok (like coffee near waiting), but not all
+        // Errands should be accessible points with valid coordinates
         expect(typeof errand.stand.x).toBe("number");
         expect(typeof errand.stand.y).toBe("number");
       });

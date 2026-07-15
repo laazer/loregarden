@@ -13,6 +13,7 @@ from loregarden.agents.cli_adapters import build_triage_invocation
 from loregarden.agents.mcp_context import build_mcp_triage_context
 from loregarden.agents.registry import get_agent
 from loregarden.config import settings
+from loregarden.core.workflow_loader import expand_gate_checklist
 from loregarden.models.domain import (
     AgentRun,
     Approval,
@@ -281,33 +282,6 @@ def current_human_gate_stage(session: Session, ticket: Ticket):
     if not stage or not is_agentless_stage(stage):
         return None
     return stage
-
-
-AC_CHECKLIST_PLACEHOLDER = "{{acceptance_criteria}}"
-
-
-def expand_gate_checklist(ticket: Ticket, checklist: list[str]) -> list[str]:
-    """Expand a stage's static checklist into ticket-specific items.
-
-    An ``{{acceptance_criteria}}`` entry is replaced by one concrete play-test
-    item per acceptance criterion, so each gate lists what actually needs
-    exercising for this change instead of the same generic bullet every time.
-    Every other entry passes through unchanged. If the ticket has no acceptance
-    criteria, the placeholder simply expands to nothing.
-    """
-    try:
-        criteria = json.loads(ticket.acceptance_criteria_json or "[]")
-    except json.JSONDecodeError:
-        criteria = []
-    expanded: list[str] = []
-    for item in checklist:
-        if item.strip() == AC_CHECKLIST_PLACEHOLDER:
-            expanded.extend(
-                f"Play-test by hand — {str(c).strip()}" for c in criteria if str(c).strip()
-            )
-        else:
-            expanded.append(item)
-    return expanded
 
 
 def _gate_focus_guidance(stage) -> str:

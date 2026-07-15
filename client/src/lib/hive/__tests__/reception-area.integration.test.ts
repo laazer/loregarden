@@ -11,11 +11,8 @@
  */
 
 import {
-  OFFICEPLACE_DESKS,
-  OFFICEPLACE_ERRANDS,
   OFFICEPLACE_MAP,
   OFFICEPLACE_STATIONS,
-  OFFICEPLACE_WAITING,
   OFFICEPLACE_ZONES,
 } from "../layouts/officeplaceLayout";
 import { getHiveLayout } from "../layouts";
@@ -200,7 +197,7 @@ describe("Reception Area Integration Tests", () => {
     });
 
     it("should prevent entrance from being blocked by other zones", () => {
-      const deploy = OFFICEPLACE_STATIONS.deploy;
+      const { deploy } = OFFICEPLACE_STATIONS;
       const nearbyZones = layout.zones.filter((z) => {
         const dx = Math.abs(z.x - deploy.x);
         const dy = Math.abs(z.y - deploy.y);

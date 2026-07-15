@@ -3,7 +3,11 @@ gate — a playtest or UX sign-off — and frame the conversation around running
 that verification instead of generic ticket Q&A.
 """
 
-from loregarden.core.workflow_loader import get_template_stages, sync_workflow_templates
+from loregarden.core.workflow_loader import (
+    expand_gate_checklist,
+    get_template_stages,
+    sync_workflow_templates,
+)
 from loregarden.models.domain import (
     StageStatus,
     Ticket,
@@ -18,7 +22,6 @@ from loregarden.services.triage_service import (
     _gate_focus_guidance,
     build_triage_prompt,
     current_human_gate_stage,
-    expand_gate_checklist,
 )
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, select
