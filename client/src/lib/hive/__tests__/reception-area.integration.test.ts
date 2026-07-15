@@ -180,7 +180,6 @@ describe("Reception Area Integration Tests", () => {
     });
 
     it("should allow agents to reach reception from deploy", () => {
-      const deploy = OFFICEPLACE_STATIONS.deploy;
       const reception = layout.zones.find((z) => z.id === "reception");
 
       if (reception) {
