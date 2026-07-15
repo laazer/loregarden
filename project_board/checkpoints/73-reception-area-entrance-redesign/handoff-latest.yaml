@@ -1,0 +1,38 @@
+handoff:
+  schema_version: '1.0'
+  ticket_id: 73-reception-area-entrance-redesign
+  from_agent: gatekeeper
+  to_agent: frontend_implementer
+  validated_at: '2026-07-15T23:37:39Z'
+  required_items_met: 2
+  total_required_items: 4
+  checklist:
+  - item_key: acceptance_criteria_gaps_identified
+    item: 'Gatekeeper identified unmet acceptance criterion: Receptionist NPC not implemented'
+    required: true
+    status: incomplete
+    evidence: 'Test Breaker Report line 86: ''⚠️ Receptionist NPC present & renders correctly | READY
+      | 54 NPC tests created; implementation not yet present''; grep search confirms no receptionist character
+      in codebase'
+    evidence_type: attestation
+  - item_key: test_coverage_ready_for_implementation
+    item: Comprehensive test suite ready for implementation validation
+    required: true
+    status: complete
+    evidence: 'client/src/lib/hive/__tests__/reception-area.npc-rendering.test.ts: 54 NPC rendering tests;
+      all 166 tests currently passing'
+    evidence_type: path
+  - item_key: layout_implementation_complete
+    item: Reception area layout fully implemented and working
+    required: true
+    status: complete
+    evidence: 'client/src/lib/hive/layouts/officeplaceLayout.ts: deploy station at (16,20), reception
+      zone at (16,19), break room at (28,14)'
+    evidence_type: path
+  - item_key: npc_implementation_missing
+    item: Receptionist NPC feature requires implementation before approval
+    required: true
+    status: incomplete
+    evidence: 'No receptionist NPC character found in codebase; acceptance criterion #3 requires ''Receptionist
+      NPC present and renders correctly at reception'''
+    evidence_type: attestation
