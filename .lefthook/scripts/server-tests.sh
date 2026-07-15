@@ -29,5 +29,5 @@ echo "pre-push: ruff check ..."
 echo "pre-push: ruff format --check ..."
 "${RUFF_CMD[@]}" format --check .
 
-echo "pre-push: pytest -q ..."
-LOREGARDEN_REPO_ROOT="$ROOT" "${RUN[@]}" pytest -q
+echo "pre-push: pytest -q -n auto ..."
+LOREGARDEN_REPO_ROOT="$ROOT" "${RUN[@]}" pytest -q -n auto

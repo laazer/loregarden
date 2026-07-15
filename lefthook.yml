@@ -16,7 +16,7 @@
 #   - client-lint: oxlint on staged client/**/*.{ts,tsx,js,jsx}
 #
 # pre-push — full suites, mirrors CI jobs (parallel: true):
-#   - server-tests: ruff check, ruff format --check, pytest -q (server/)
+#   - server-tests: ruff check, ruff format --check, pytest -q -n auto (server/)
 #   - client-tests: oxlint, tsc -b, jest (client/)
 #   - Opt-out: LEFTHOOK=0 skips all hooks; LEFTHOOK_EXCLUDE=<command> skips one command
 #

@@ -38,7 +38,7 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Pytest
-        run: uv run pytest -q
+        run: uv run pytest -q -n auto
         env:
           LOREGARDEN_REPO_ROOT: ${{ github.workspace }}
 
