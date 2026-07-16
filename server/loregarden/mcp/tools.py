@@ -201,31 +201,53 @@ def _normalize_memory_tool_args(name: str, args: dict[str, Any]) -> dict[str, An
     return payload
 
 
-def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
-    """Coerce Claude MCP bridge quirks (aliases, stringified JSON, camelCase)."""
-    args = _coerce_mapping(arguments)
+_ALIAS_MAP: dict[str, tuple[str, ...]] = {
+    "ticket_id": ("ticketId", "id"),
+    "workspace_slug": ("workspaceSlug", "workspace"),
+    "external_id": ("externalId", "slug"),
+    "run_id": ("runId",),
+    "stage_key": ("stageKey", "stage"),
+    "agent_id": ("agentId",),
+    "skill_name": ("skillName",),
+    "content_json": ("contentJson", "content"),
+    "next_agent": ("nextAgent",),
+    "next_stage_key": ("nextStageKey", "route_to_stage"),
+    "blocking_issues": ("blockingIssues",),
+    "outcome": ("routeOutcome",),
+}
 
-    alias_map = {
-        "ticket_id": ("ticketId", "id"),
-        "workspace_slug": ("workspaceSlug", "workspace"),
-        "external_id": ("externalId", "slug"),
-        "run_id": ("runId",),
-        "stage_key": ("stageKey", "stage"),
-        "agent_id": ("agentId",),
-        "skill_name": ("skillName",),
-        "content_json": ("contentJson", "content"),
-        "next_agent": ("nextAgent",),
-        "next_stage_key": ("nextStageKey", "route_to_stage"),
-        "blocking_issues": ("blockingIssues",),
-        "outcome": ("routeOutcome",),
-    }
-    for canonical, aliases in alias_map.items():
+
+def _declared_properties(name: str) -> frozenset[str]:
+    """Argument names `name`'s own schema declares."""
+    for tool in TOOL_DEFINITIONS:
+        if tool["name"] == name:
+            return frozenset(tool.get("inputSchema", {}).get("properties", {}))
+    return frozenset()
+
+
+def _apply_aliases(name: str, args: dict[str, Any]) -> None:
+    """Rewrite bridge aliases to canonical names, in place.
+
+    The alias map is global but the tools do not share a vocabulary: one tool's alias is
+    another's real argument. `content` is an alias for `content_json` on attach_artifact and
+    is also append_learning's own required field, so aliasing it blindly popped `content`
+    away and left append_learning reporting it missing on every correct call. Never rewrite
+    an argument the target tool declares itself.
+    """
+    declared = _declared_properties(name)
+    for canonical, aliases in _ALIAS_MAP.items():
         if canonical in args:
             continue
         for alias in aliases:
-            if alias in args:
+            if alias in args and alias not in declared:
                 args[canonical] = args.pop(alias)
                 break
+
+
+def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
+    """Coerce Claude MCP bridge quirks (aliases, stringified JSON, camelCase)."""
+    args = _coerce_mapping(arguments)
+    _apply_aliases(name, args)
 
     if name == "loregarden_get_ticket":
         payload: dict[str, Any] = {}
