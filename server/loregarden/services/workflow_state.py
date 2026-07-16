@@ -155,7 +155,11 @@ def reconcile_workflow_state(
 
     if current_key:
         stage_def = next((s for s in stages if s.key == current_key), None)
-        if stage_def and stage_def.agent_id:
+        # A classify stage's static agent_id is only a fallback for the route
+        # table; backfilling it here would be read straight back by
+        # resolve_classify_route as if it were a deliberate next_agent hint,
+        # pinning every ticket to that agent and making the routes unreachable.
+        if stage_def and stage_def.agent_id and stage_def.stage_type != "classify":
             ticket.next_agent = stage_def.agent_id
 
     if persist:
