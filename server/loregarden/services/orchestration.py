@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from loregarden.core.event_bus import event_bus
 from loregarden.core.state_machine import StateMachine
-from loregarden.core.workflow_loader import stage_display_name
+from loregarden.core.workflow_loader import expand_gate_checklist, stage_display_name
 from loregarden.models.domain import (
     WORKFLOW_WORK_ITEM_TYPES,
     AgentRun,
@@ -856,8 +856,6 @@ class OrchestrationService:
         *,
         stage_def: WorkflowStageDef | None = None,
     ) -> Approval:
-        from loregarden.services.triage_service import expand_gate_checklist
-
         checklist = expand_gate_checklist(ticket, list(stage_def.checklist) if stage_def else [])
         approval = Approval(
             ticket_id=ticket.id,
