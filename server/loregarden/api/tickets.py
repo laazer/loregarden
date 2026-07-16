@@ -245,6 +245,26 @@ def _collect_ancestors_for_tree(session: Session, parent_tickets: list[Ticket], 
     return []
 
 
+def _has_matching_descendant(session: Session, ancestor_id: str, filtered_ids: set[str], all_tickets_map: dict[str, Ticket]) -> bool:
+    """Check if an ancestor has any descendants in the filtered set."""
+    def _check_descendants(ticket_id: str) -> bool:
+        if ticket_id in filtered_ids:
+            return True
+        # Check all children of this ticket
+        for ticket in all_tickets_map.values():
+            if ticket.parent_ticket_id == ticket_id and _check_descendants(ticket.id):
+                return True
+        return False
+
+    return _check_descendants(ancestor_id)
+
+
+def _filter_ancestors_by_matching_descendants(session: Session, ancestors: list[Ticket], filtered_ids: set[str], all_tickets: list[Ticket]) -> list[Ticket]:
+    """Remove ancestors that have no descendants in the filtered set."""
+    all_tickets_map = {t.id: t for t in all_tickets}
+    return [a for a in ancestors if _has_matching_descendant(session, a.id, filtered_ids, all_tickets_map)]
+
+
 @router.get("/tree", response_model=list[TicketTreeNode])
 def ticket_tree(
     *,
@@ -283,6 +303,10 @@ def ticket_tree(
     # Collect ancestors and build complete ticket list
     all_tickets = list(tickets) + parent_tickets
     ancestor_tickets = _collect_ancestors_for_tree(session, parent_tickets, {t.id for t in all_tickets})
+
+    # Filter ancestors: only keep those with matching descendants
+    ancestor_tickets = _filter_ancestors_by_matching_descendants(session, ancestor_tickets, filtered_ids, all_tickets + ancestor_tickets)
+
     all_tickets.extend(ancestor_tickets)
 
     # Build stage names for display
@@ -328,16 +352,6 @@ def ticket_tree(
         pruned_node = prune_node(node)
         if pruned_node:
             pruned_tree.append(pruned_node)
-
-    # Debug
-    if work_item_type and len(pruned_tree) < len(tree):
-        import sys
-        print(f"DEBUG: Pruned {len(tree) - len(pruned_tree)} root nodes", file=sys.stderr)
-        print(f"DEBUG: filtered_ids count: {len(filtered_ids)}", file=sys.stderr)
-        for node in tree:
-            if node not in pruned_tree:
-                direct_matching = [c for c in node.children if c.id in filtered_ids]
-                print(f"DEBUG: Removed {node.external_id}, direct matching children: {len(direct_matching)}", file=sys.stderr)
 
     return pruned_tree
 
