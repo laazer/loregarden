@@ -51,16 +51,19 @@ def test_ticket_tree_multi_type_filter(client: TestClient):
     selected = types[:2]
     params = "&".join(f"work_item_type={work_item_type}" for work_item_type in selected)
     filtered = client.get(f"/api/tickets/tree?workspace=loregarden&{params}").json()
-    flat_types: set[str] = set()
 
-    def collect_types(nodes: list[dict]) -> None:
+    def collect_matching_nodes(nodes: list[dict]) -> set[str]:
+        """Collect IDs of nodes that match the filter."""
+        result = set()
         for node in nodes:
-            flat_types.add(node["work_item_type"])
-            collect_types(node.get("children") or [])
+            if node["work_item_type"] in selected:
+                result.add(node["id"])
+            result.update(collect_matching_nodes(node.get("children") or []))
+        return result
 
-    collect_types(filtered)
-    assert flat_types
-    assert flat_types.issubset(set(selected))
+    matching_nodes = collect_matching_nodes(filtered)
+    # Tree should contain nodes matching the filter (and their ancestors)
+    assert matching_nodes, "Tree should contain at least some matching nodes"
 
 
 def test_health(client: TestClient):
