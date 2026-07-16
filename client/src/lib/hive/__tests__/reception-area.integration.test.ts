@@ -267,7 +267,9 @@ describe("Reception Area Integration Tests", () => {
     });
 
     it("should handle null zone gracefully", () => {
-      const zone = null;
+      // Cast defeats control-flow narrowing: TS narrows a `null` initializer to `null`,
+      // which makes the guarded branch `never` and `zone.x` a type error.
+      const zone = null as unknown as { x: number } | null;
       expect(() => {
         if (zone?.x) {
           console.log(zone.x);

@@ -113,9 +113,7 @@ def _args_for(
             "workspace_slug": ws,
             "from_agent": "ticket_scoper",
             "to_agent": "planner",
-            "checklist": [
-                {"item_key": "smoke_item", "item": "Smoke item", "status": "complete"}
-            ],
+            "checklist": [{"item_key": "smoke_item", "item": "Smoke item", "status": "complete"}],
         },
         "loregarden_block_ticket": {"run_id": run_id, "message": "smoke block"},
         "loregarden_start_orchestration": {"ticket_id": ticket_id, "driver": "external_mcp"},
@@ -135,8 +133,9 @@ def test_every_advertised_tool_is_callable(client: TestClient):
     """
     ticket_id, external_id = _seed_ticket(client)
 
-    started = _call(client, "loregarden_start_orchestration",
-                    {"ticket_id": ticket_id, "driver": "external_mcp"})
+    started = _call(
+        client, "loregarden_start_orchestration", {"ticket_id": ticket_id, "driver": "external_mcp"}
+    )
     assert "error" not in started, f"start_orchestration: {started.get('error')}"
     run = json.loads(started["result"]["content"][0]["text"])
     run_id = run.get("id", "")
@@ -144,8 +143,11 @@ def test_every_advertised_tool_is_callable(client: TestClient):
     stage_key = run.get("current_stage_key") or "triage"
 
     # create_memory_relation needs real node ids; make one to point at.
-    mem = _call(client, "loregarden_upsert_memory",
-                {"title": "smoke-anchor", "workspace_slug": "loregarden", "body": "anchor"})
+    mem = _call(
+        client,
+        "loregarden_upsert_memory",
+        {"title": "smoke-anchor", "workspace_slug": "loregarden", "body": "anchor"},
+    )
     # upsert_memory returns {"obsidian": {"id": ...}, "graph": {"id": ...}} — no top-level id.
     memory_id = ""
     if "error" not in mem and not mem.get("result", {}).get("isError"):

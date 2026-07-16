@@ -356,7 +356,13 @@ export function StudioPage() {
       skipWorkflowDraftResetRef.current = false;
       return;
     }
-    setWorkflowDraft({ slug: "", name: "", description: "", stages: [emptyStage(1)] });
+    setWorkflowDraft({
+      slug: "",
+      name: "",
+      description: "",
+      stages: [emptyStage(1)],
+      transitions: [],
+    });
     setWorkflowDescribePrompt("");
   }, [isNewWorkflow]);
 
@@ -417,6 +423,10 @@ export function StudioPage() {
       name: `${workflow.name} (copy)`,
       description: workflow.description,
       stages: workflow.stages.map((stage, idx) => ({ ...stage, order: idx + 1 })),
+      // Carry the source workflow's transitions: dropping them here would wipe its
+      // `when: reject` edges on the copy's first save — the bug this draft field exists
+      // to prevent.
+      transitions: workflow.transitions ?? [],
     });
   };
 

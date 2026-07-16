@@ -186,7 +186,9 @@ describe("Reception Area NPC Rendering — Adversarial Suite", () => {
     });
 
     it("should handle null or undefined receptionist gracefully", () => {
-      const receptionist = null;
+      // Cast defeats control-flow narrowing: TS narrows a `null` initializer to `null`,
+      // which makes the guarded branch `never` and `receptionist.id` a type error.
+      const receptionist = null as unknown as { id: string } | null;
       expect(() => {
         if (receptionist) {
           console.log(receptionist.id);

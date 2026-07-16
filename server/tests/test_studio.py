@@ -618,7 +618,12 @@ def test_studio_stage_edit_preserves_reject_transitions(client: TestClient):
         "/api/studio/workflows/reject-preserve",
         json={
             "stages": [
-                {"key": "implement", "name": "Implement (renamed)", "stage_type": "agent", "order": 1},
+                {
+                    "key": "implement",
+                    "name": "Implement (renamed)",
+                    "stage_type": "agent",
+                    "order": 1,
+                },
                 {"key": "gate", "name": "Gate", "stage_type": "agent", "order": 2},
             ]
         },
