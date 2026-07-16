@@ -96,13 +96,39 @@ def extract_permission_request(payload: dict[str, Any]) -> dict[str, Any] | None
 ASK_USER_QUESTION_TOOL = "AskUserQuestion"
 
 LOREGARDEN_MCP_PREFIX = "mcp__loregarden__"
-AUTO_APPROVED_MCP_TOOLS = frozenset(
+
+_READ_ONLY_MCP_TOOLS = frozenset(
     {
         "loregarden_get_ticket",
         "loregarden_get_ticket_by_external",
         "loregarden_list_tickets",
+        "loregarden_memory_status",
+        "loregarden_search_memory",
     }
 )
+
+# Bookkeeping writes that land only in Loregarden's own stores — the Obsidian
+# vault, the memory graph, and the artifacts table. They cannot touch the repo,
+# the filesystem outside the vault, or workflow state, so gating them behind a
+# human click buys no safety: it just spends the run's timeout budget. Agents are
+# now told to route every report through these tools instead of writing markdown
+# into the repo, which makes them hot-path rather than incidental.
+#
+# Deliberately excluded — these mutate workflow state or write repo files, and
+# stay gated: complete_stage, skip_stage, block_ticket, update_ticket,
+# write_handoff, request_approval, start/complete_orchestration, start_stage.
+_CONTROL_PLANE_WRITE_MCP_TOOLS = frozenset(
+    {
+        "loregarden_append_checkpoint",
+        "loregarden_append_learning",
+        "loregarden_upsert_memory",
+        "loregarden_create_memory_relation",
+        "loregarden_upsert_blog_post",
+        "loregarden_attach_artifact",
+    }
+)
+
+AUTO_APPROVED_MCP_TOOLS = _READ_ONLY_MCP_TOOLS | _CONTROL_PLANE_WRITE_MCP_TOOLS
 
 
 def bare_mcp_tool_name(tool_name: str) -> str | None:
@@ -660,7 +686,7 @@ class PermissionBridgeRunner:
                 ),
             )
             if streamer:
-                streamer.append("TOOL", f"Auto-approved read-only MCP: {bare_mcp}", force=True)
+                streamer.append("TOOL", f"Auto-approved Loregarden MCP: {bare_mcp}", force=True)
                 streamer.set_live("Agent running…")
             return True
 
