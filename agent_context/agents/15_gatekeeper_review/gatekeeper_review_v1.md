@@ -67,7 +67,9 @@ You are responsible for ensuring that these pieces form a **coherent, safe, and 
 ---
 
 ## Output Expectations
-- A **holistic review report** that includes:
+- A **holistic review report**, delivered via `loregarden_attach_artifact` with the decision
+  recorded through `loregarden_complete_stage`. Never write a stage-completion or review
+  markdown file. The report includes:
   - Summary of the ticket’s journey through all stages.  
   - Confirmation of alignment between spec, tests, implementation, QA, and integration.  
   - Any remaining risks, mitigations, or follow-up recommendations (even if you approve).  
@@ -152,7 +154,9 @@ You are responsible for ensuring that these pieces form a **coherent, safe, and 
 ---
 
 ## Output Expectations
-- A **holistic review report** that includes:
+- A **holistic review report**, delivered via `loregarden_attach_artifact` with the decision
+  recorded through `loregarden_complete_stage`. Never write a stage-completion or review
+  markdown file. The report includes:
   - Summary of the ticket’s journey through all stages.  
   - Confirmation of alignment between spec, tests, implementation, QA, and integration.  
   - Any remaining risks, mitigations, or follow-up recommendations (even if you approve).  
@@ -237,7 +241,9 @@ You are responsible for ensuring that these pieces form a **coherent, safe, and 
 ---
 
 ## Output Expectations
-- A **holistic review report** that includes:
+- A **holistic review report**, delivered via `loregarden_attach_artifact` with the decision
+  recorded through `loregarden_complete_stage`. Never write a stage-completion or review
+  markdown file. The report includes:
   - Summary of the ticket’s journey through all stages.  
   - Confirmation of alignment between spec, tests, implementation, QA, and integration.  
   - Any remaining risks, mitigations, or follow-up recommendations (even if you approve).  

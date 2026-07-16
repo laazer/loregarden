@@ -365,14 +365,9 @@ Pass this prompt verbatim, substituting `<TICKET_PATH>` and `<TICKET_ID>`:
 >
 > Focus on: bugs or regressions that occurred, rework cycles (e.g. GDScript review found CRITICAL issues requiring a fix iteration), test failures that revealed implementation gaps, incorrect assumptions in planning or spec, and any workflow inefficiencies.
 >
-> Append your output to `project_board/LEARNINGS.md`. If the file does not exist, create it with the header:
-> ```markdown
-> # Autopilot Learnings Log
->
-> Structured insights extracted after each completed ticket.
->
-> ---
-> ```
+> Persist your output with `loregarden_append_learning`. Never write a learnings file to the
+> repo — Loregarden stores learnings in the workspace's Obsidian vault and memory graph, and a
+> file in the repo is invisible to it.
 >
 > If no meaningful insights exist, append:
 > `## [<TICKET_ID>] — No significant learnings identified.`
@@ -387,7 +382,7 @@ Wait for the learning agent to complete before advancing to Stage 8.
 
 After Stage 7 completes **or** Stage 7 was skipped (lean), prepare a **blog context capsule** (5–12 lines) for this ticket. Include: ticket id; one-line goal; outcome (COMPLETE/BLOCKED/etc.); **git commit SHAs** that belong to this ticket’s work (from `git log` since ticket start or from your session — best effort); path to **this run’s** scoped checkpoint log; 2–4 bullets on rework, surprises, or corrections (from the orchestration session — do **not** rely on the blog subagent re-reading the entire parent transcript).
 
-Optionally write the capsule to `project_board/checkpoints/<ticket-id>/blog-context-<run-stub>.md` and pass that path.
+Pass the capsule inline; do not write it to a file.
 
 Invoke a `general-purpose` subagent. Pass:
 

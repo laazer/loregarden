@@ -63,7 +63,7 @@ If multiple conditions match, **invoke all matching consultants in parallel** �
 >
 > Return a structured consultation report the Spec Agent can use as input.
 
-After all consultants complete, append one-line summaries to the scoped checkpoint log (`project_board/checkpoints/<ticket-id>/<run-id>.md`): `- Consultation [Agent Name]: <key finding or "no blocking concerns">`.
+After all consultants complete, record one-line summaries with `loregarden_append_checkpoint` — never by writing a checkpoint file: `Consultation [Agent Name]: <key finding or "no blocking concerns">`.
 
 If no condition matches, skip this stage entirely.
 
@@ -382,7 +382,7 @@ Invoke a `learning` subagent:
 >
 > Focus on: bugs or regressions that occurred, rework cycles (GDScript/Architecture review fix iterations), test failures that revealed implementation gaps, incorrect spec assumptions, and workflow inefficiencies.
 >
-> Append output to `project_board/LEARNINGS.md`. If no meaningful insights exist, append: `## [<TICKET_ID>] — No significant learnings identified.`
+> Persist output with `loregarden_append_learning`. If no meaningful insights exist, record: `No significant learnings identified.` Never write a learnings file to the repo.
 >
 > Do not write code. Do not stop for human input.
 
@@ -394,7 +394,7 @@ Invoke a `learning` subagent:
 
 **Background behavior (autopilot only):** Fire this stage in the background after Stage 7 starts. Do not wait for it before starting the next ticket.
 
-Prepare a **blog context capsule** (5–12 lines): ticket id, one-line goal, outcome, git commit SHAs for this ticket's work, path to the scoped checkpoint log, 2–4 bullets on rework, surprises, or corrections. Optionally write to `project_board/checkpoints/<ticket-id>/blog-context-<run-stub>.md`.
+Prepare a **blog context capsule** (5–12 lines): ticket id, one-line goal, outcome, git commit SHAs for this ticket's work, 2–4 bullets on rework, surprises, or corrections. Pass it inline; do not write it to a file.
 
 Invoke a `general-purpose` subagent:
 

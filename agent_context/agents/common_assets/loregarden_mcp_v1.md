@@ -7,6 +7,30 @@ alwaysApply: true
 
 When Loregarden orchestrates work (IDE, API, or autopilot), **use Loregarden MCP tools** for all ticket data. Tickets live in Loregarden's database and are reachable only through MCP — they are not files in the repo.
 
+## No markdown deliverables in the repo
+
+**Never create a markdown file to report your work.** No `TEST_*_FINDINGS.md`, no
+`*_STAGE_COMPLETION.md`, no `TICKET_*_REPORT.md`, no summary, analysis, sign-off, or
+verification file — not at the repo root, not in `server/tests/`, not anywhere. Loregarden
+reads none of them, so a report written to disk is invisible to the control plane; it only
+gets swept into an unrelated ticket's commit by the orchestrator.
+
+If your role says to "produce a report", "document your findings", or "provide a summary" and
+names no destination, the destination is **MCP** — never a new file:
+
+| You want to record… | Use | Not |
+|---|---|---|
+| Findings, analysis, test output, review report | `loregarden_attach_artifact` | a `*.md` file |
+| Stage outcome / approve / reject decision | `loregarden_complete_stage` | a `*_COMPLETION.md` file |
+| Assumption or ambiguity you resolved alone | `loregarden_append_checkpoint` | a checkpoint `.md` |
+| Ticket learnings, anti-patterns | `loregarden_append_learning` | `LEARNINGS.md` / `learning-output.md` |
+| Spec, description, acceptance criteria | `loregarden_update_ticket` | a spec `.md` |
+| Handoff to the next stage | `loregarden_write_handoff` | a hand-written YAML |
+
+Short findings belong **in your response text**. Long ones belong in
+`loregarden_attach_artifact`. Writing real source code and real test files is of course still
+your job — this rule is about *reports about* the work, not the work.
+
 ## Transport
 
 When Loregarden starts a stage run, the **`loregarden` MCP server is pre-configured** (HTTP at `{MCP_URL}` when the dev server is running, or stdio via `scripts/mcp-server.sh`). Use **native MCP tools** directly — do not call the HTTP endpoint via Bash/curl.

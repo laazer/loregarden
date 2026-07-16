@@ -18,7 +18,17 @@ When Loregarden orchestrates tickets (IDE, API, SQLite control plane):
 - Read and follow `agent_context/agents/common_assets/loregarden_mcp_v1.md`
 - Read and follow `agent_context/agents/common_assets/memory_protocol_v1.md` when persisting or searching memory, learnings, or blog posts
 - Use Loregarden MCP tools for workflow state, stage transitions, approvals, and artifacts
-- Do **not** edit project_board ticket `WORKFLOW STATE` for stage cursor changes Loregarden owns
+- Tickets live in Loregarden's database, not in the repo. Do not search for a ticket file
+
+**Never write a markdown file to report your work.** No findings, summary, analysis,
+sign-off, verification, spec, or stage-completion file — anywhere in the repo. Loregarden
+reads none of them; they only get swept into an unrelated ticket's commit. When your role
+says to produce a report or document findings and names no destination, the destination is
+MCP: `loregarden_attach_artifact` for reports and test output, `loregarden_complete_stage`
+for stage outcomes, `loregarden_append_checkpoint` for assumptions, `loregarden_append_learning`
+for learnings, `loregarden_update_ticket` for spec and acceptance criteria. Short findings go
+in your response text. Writing real source code and real test files remains your job — this
+rule covers *reports about* the work.
 - MCP endpoint: `POST http://127.0.0.1:8000/mcp` (or `LOREGARDEN_MCP_URL` / `./scripts/mcp-server.sh`)
 
 ------------------------------------------------------------
@@ -166,7 +176,7 @@ No handoff or completion without the required Git steps (commits on the feature 
 TESTING DISCIPLINE
 ------------------------------------------------------------
 
-**Baseline before edits:** Any agent that runs tests must execute the relevant test command **once before making any code or test changes** to record which tests already fail. This first run is the pre-existing failure baseline. Document it in the scoped checkpoint log.
+**Baseline before edits:** Any agent that runs tests must execute the relevant test command **once before making any code or test changes** to record which tests already fail. This first run is the pre-existing failure baseline. Record it with `loregarden_append_checkpoint` — do not write a results file.
 
 **Never use `git stash` to establish a baseline.** `git stash` is destructive, unsafe in worktrees (stashes are not branch-scoped and can be applied to the wrong tree), and unnecessary. The correct pattern is:
 1. Run tests at session start (before any edits) → record failures as "pre-existing".

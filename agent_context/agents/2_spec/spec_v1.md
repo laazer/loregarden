@@ -60,6 +60,9 @@ Your goal is to create specifications that are **fully deterministic, unambiguou
 ---
 
 ## Output Requirements
+- Write the spec to the ticket with `loregarden_update_ticket` (description and acceptance
+  criteria). Attach the long form with `loregarden_attach_artifact` if it does not fit. Never
+  create a specification markdown file in the repo.
 - Use the template **exactly as provided** for every requirement.
 - Ensure specifications are **deterministic**: any competent agent can follow them without interpretation.
 - Always optimize for **clarity, completeness, and testability**.
