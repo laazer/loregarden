@@ -213,6 +213,7 @@ export function Dashboard() {
       treeHasRunningWorkflow(query.state.data ?? []) ? 1000 : 5000,
   });
 
+
   const [createWorkItemOpen, setCreateWorkItemOpen] = useState(false);
   const [createTargetWorkspace, setCreateTargetWorkspace] = useState("");
   const [createParentTicket, setCreateParentTicket] = useState<{
@@ -679,9 +680,24 @@ export function Dashboard() {
 
   const sel = detail.data;
   const runConfirmStage = sel?.stages.find((s) => s.key === runConfirmStageKey) ?? null;
+  // The child list describes the selected ticket, so it must not inherit the sidebar's filter —
+  // otherwise a milestone reports child_count 5 (an unfiltered DB count) and lists only the 1
+  // child that survived the filter. When nothing is filtered the sidebar tree is already
+  // complete, so reuse it rather than fetching a second copy.
+  const filtersNarrowTree =
+    stateFilters.length > 0 || typeFilters.length > 0 || Boolean(search.trim());
+
+  const unfilteredTree = useQuery({
+    queryKey: ["ticket-tree", workspace, "unfiltered"],
+    queryFn: () => api.ticketTree({ workspace: wsParam }),
+    enabled: filtersNarrowTree && Boolean(selectedId),
+    refetchInterval: (query) => (treeHasRunningWorkflow(query.state.data ?? []) ? 1000 : 5000),
+  });
+
+  const childSource = filtersNarrowTree ? unfilteredTree.data : ticketTree.data;
   const selChildren = useMemo(
-    () => (selectedId && ticketTree.data ? (findTicketTreeNode(ticketTree.data, selectedId)?.children ?? []) : []),
-    [ticketTree.data, selectedId],
+    () => (selectedId && childSource ? (findTicketTreeNode(childSource, selectedId)?.children ?? []) : []),
+    [childSource, selectedId],
   );
 
   const activeWorkspaceSlug =
