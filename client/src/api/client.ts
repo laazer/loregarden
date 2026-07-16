@@ -219,6 +219,7 @@ export const api = {
       workflow_stage_status?: StageStatus;
       workflow_template_slug?: string;
       branch?: string;
+      compatibility_posture?: string;
       stage_key?: string;
       stage_status?: StageStatus;
       stage_updates?: Record<string, StageStatus>;

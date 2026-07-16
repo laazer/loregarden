@@ -70,6 +70,11 @@ export interface TicketDetail extends TicketSummary {
   workflow_template_slug: string;
   workflow_template_name: string;
   workflow_transitions?: WorkflowTransition[];
+  /** This ticket's own override; "" means inherit. */
+  compatibility_posture?: string;
+  /** What applies after inheritance, and where it came from. */
+  resolved_compatibility_posture?: string;
+  compatibility_posture_source?: string;
   stages: WorkflowStageView[];
   artifacts: {
     diff?: DiffArtifact | null;

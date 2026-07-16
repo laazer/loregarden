@@ -364,6 +364,17 @@ export function Dashboard() {
     },
   });
 
+  const setCompatibilityPosture = useMutation({
+    mutationFn: (posture: string) =>
+      api.updateTicket(selectedId!, { compatibility_posture: posture }),
+    onSuccess: () => {
+      // Descendants inherit, so a change here can move any of their resolved values.
+      qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+      qc.invalidateQueries({ queryKey: ["ticket-tree"] });
+    },
+  });
+
   const invalidateTicketQueries = () => {
     qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
     qc.invalidateQueries({ queryKey: ["tickets"] });
@@ -1286,6 +1297,32 @@ export function Dashboard() {
                         next agent · {sel.next_agent}
                       </div>
                     )}
+                  </div>
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <div className="state-label" style={{ marginBottom: 6 }}>
+                    Compatibility posture · HOW FREELY
+                  </div>
+                  <select
+                    className="btn-secondary"
+                    style={{ width: "100%", maxWidth: 360, fontSize: 12 }}
+                    value={sel.compatibility_posture || ""}
+                    disabled={setCompatibilityPosture.isPending}
+                    onChange={(e) => {
+                      if (!selectedId || e.target.value === (sel.compatibility_posture || "")) return;
+                      setCompatibilityPosture.mutate(e.target.value);
+                    }}
+                  >
+                    <option value="">Inherit</option>
+                    <option value="greenfield">greenfield — no consumers; delete and rename freely</option>
+                    <option value="internal">internal — break freely, but migrate every caller</option>
+                    <option value="public">public — external consumers; preserve and deprecate</option>
+                  </select>
+                  {/* An inherited value is meaningless without its origin — always show which
+                      milestone/feature/workspace the agent will actually be told. */}
+                  <div style={{ fontSize: 11, color: "var(--txm)", marginTop: 6 }}>
+                    Agents are told: <strong>{sel.resolved_compatibility_posture || "—"}</strong>
+                    {sel.compatibility_posture_source ? ` · ${sel.compatibility_posture_source}` : ""}
                   </div>
                 </div>
                 {sel.blocking_issues?.trim() && (
