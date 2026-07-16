@@ -92,7 +92,9 @@ These are the main maintainability risks — large blast radius, hard to test in
 
 **M-7 — Thin frontend test coverage.** ~11 client test files vs ~51 sources (~0.2 ratio). `src/lib/` utilities are well covered (slugify, pathExplorer, hierarchy, stageDisplay, importTicketPreview), but only 2–3 of ~28 components have tests (`TicketDetailsModal`, `DashboardTicketDetailsButton`). Pages, the API client, and Zustand state are untested. *(By contrast the backend suite is strong — see positives.)*
 
-**L-3 — No coverage enforcement; stray test-doc files.** No coverage tooling is wired (only `.coverage`/`htmlcov` gitignored). Test-design markdown is committed alongside tests, e.g. `server/tests/TEST_DESIGN_25_ANALYSIS.md`, `client/src/components/__tests__/ADVERSARIAL_TEST_SUMMARY.md` — clutter that probably belongs in `docs/` or nowhere.
+**L-3 — No coverage enforcement.** No coverage tooling is wired (only `.coverage`/`htmlcov` gitignored).
+
+*Stray test-doc files: resolved.* The 40 committed report files (`TICKET_39_*`, `TEST_BREAK_*`, `server/tests/TEST_DESIGN_25_ANALYSIS.md`, `client/src/components/__tests__/ADVERSARIAL_TEST_SUMMARY.md`, …) were agent output, not authored docs: prompts told agents to "produce a report" without naming a destination, so they invented filenames, and the orchestrator's whole-tree sweep committed them. Prompts now route reports to `loregarden_attach_artifact`; see `agent_context/agents/common_assets/loregarden_mcp_v1.md`.
 
 **Positive:** The backend suite (~43 files) is broad and includes explicit adversarial suites (`test_workflow_deep_adversarial.py`, `test_workflow_any_ticket_adversarial.py`) covering API, services, orchestration, workflows, MCP, permissions, triage, imports, and git branching.
 
