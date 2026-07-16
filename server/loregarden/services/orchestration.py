@@ -25,6 +25,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.artifact_service import record_blocking_issue
+from loregarden.services.compatibility_posture import apply_compatibility_posture
 from loregarden.services.run_log_stream import bootstrap_run_log, finalize_run_log_artifact
 from loregarden.services.stage_report import (
     StageReport,
@@ -66,6 +67,34 @@ def _blocking_issue_for_stage(
     session: Session, ticket: Ticket, stage_key: str, message: str
 ) -> str:
     return record_blocking_issue(session, ticket, run_id=None, stage_key=stage_key, message=message)
+
+
+def _apply_operator_edits(ticket: Ticket, body: UpdateTicketRequest) -> None:
+    """Apply the fields a human edits directly (title, description, posture).
+
+    Module-level rather than another branch inside update_ticket_manual, which is
+    already well past its statement budget.
+    """
+    content_updated = False
+
+    if body.title is not None:
+        title = body.title.strip()
+        if not title:
+            raise ValueError("Title cannot be empty")
+        if ticket.title != title:
+            ticket.title = title
+            content_updated = True
+
+    if body.description is not None and ticket.description != body.description:
+        ticket.description = body.description
+        content_updated = True
+
+    if body.compatibility_posture is not None:
+        apply_compatibility_posture(ticket, body.compatibility_posture)
+
+    if content_updated:
+        ticket.revision += 1
+        ticket.last_updated_by = "human"
 
 
 def _build_gate_impact(ticket: Ticket, stage_name: str) -> str:
@@ -215,23 +244,7 @@ class OrchestrationService:
         return ticket
 
     def update_ticket_manual(self, ticket: Ticket, body: UpdateTicketRequest) -> Ticket:
-        content_updated = False
-
-        if body.title is not None:
-            title = body.title.strip()
-            if not title:
-                raise ValueError("Title cannot be empty")
-            if ticket.title != title:
-                ticket.title = title
-                content_updated = True
-
-        if body.description is not None and ticket.description != body.description:
-            ticket.description = body.description
-            content_updated = True
-
-        if content_updated:
-            ticket.revision += 1
-            ticket.last_updated_by = "human"
+        _apply_operator_edits(ticket, body)
 
         if body.workflow_template_slug is not None:
             from loregarden.services.workflow_service import WorkflowService

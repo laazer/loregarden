@@ -20,6 +20,7 @@ from loregarden.agents.registry import get_agent
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, WorkflowStageDef, Workspace
 from loregarden.services.cli_settings import get_ticket_orchestration_runtime
+from loregarden.services.compatibility_posture import resolve_compatibility_posture
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_errors import agent_timeout_message
 from loregarden.services.run_log_stream import RunLogStreamer
@@ -348,6 +349,7 @@ class CliAgentExecutor:
             run=run,
             stage_def=stage_def,
             stages=self._resolve_template_stages(ticket),
+            posture=resolve_compatibility_posture(self.session, ticket, workspace),
         )
         mcp_context = build_mcp_run_context(ticket=ticket, run=run, workspace=workspace)
         mcp_doc = load_loregarden_mcp_doc(agent_context_dir)

@@ -505,6 +505,31 @@ def _m_clear_classify_next_agent_backfill(conn: Connection) -> None:
 
 # Ordered registry. Append new migrations here with the next id; never reorder or
 # rewrite an id that may already be recorded in a deployed database.
+def _m_compatibility_posture(conn: Connection) -> None:
+    """Two levels of storage give three levels of control: a ticket's own value, any
+    ancestor's (milestones are tickets), else the workspace default. Blank = inherit.
+    """
+    _add_columns_if_missing(
+        conn,
+        "workspaces",
+        {
+            "compatibility_posture": (
+                "ALTER TABLE workspaces ADD COLUMN compatibility_posture "
+                "TEXT NOT NULL DEFAULT 'internal'"
+            )
+        },
+    )
+    _add_columns_if_missing(
+        conn,
+        "tickets",
+        {
+            "compatibility_posture": (
+                "ALTER TABLE tickets ADD COLUMN compatibility_posture TEXT NOT NULL DEFAULT ''"
+            )
+        },
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -525,6 +550,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0017_agent_run_timeout_override", _m_agent_run_timeout_override),
     ("0018_approval_checklist", _m_approval_checklist),
     ("0019_clear_classify_next_agent_backfill", _m_clear_classify_next_agent_backfill),
+    ("0020_compatibility_posture", _m_compatibility_posture),
 ]
 
 

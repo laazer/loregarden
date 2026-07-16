@@ -135,6 +135,12 @@ class TicketDetail(TicketSummary):
     orchestration_runtime: WorkspaceRuntimeSettings = Field(
         default_factory=WorkspaceRuntimeSettings
     )
+    #: This ticket's own override ("" = inherit).
+    compatibility_posture: str = ""
+    #: What actually applies once inheritance is resolved, plus where it came from —
+    #: an inherited value is meaningless to the operator without its origin.
+    resolved_compatibility_posture: str = ""
+    compatibility_posture_source: str = ""
 
 
 class WorkspaceSummary(SQLModel):
@@ -298,6 +304,8 @@ class UpdateTicketRequest(SQLModel):
     stage_status: StageStatus | None = None
     stage_updates: dict[str, StageStatus] | None = None
     auto_state: bool | None = None
+    #: "" clears the override so the ticket inherits again.
+    compatibility_posture: str | None = None
 
 
 class TicketCreate(SQLModel):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef
+from loregarden.services.compatibility_posture import ResolvedPosture
 
 # Legacy ticket / workflow-enforcement stage names agents recognize.
 LEGACY_STAGE_ALIASES: dict[str, str] = {
@@ -25,6 +26,7 @@ def build_orchestration_context(
     run: AgentRun,
     stage_def: WorkflowStageDef | None,
     stages: list[WorkflowStageDef] | None = None,
+    posture: ResolvedPosture | None = None,
 ) -> str:
     stage_key = run.stage_key or ticket.workflow_stage_key
     display_name = stage_def.name if stage_def else stage_key
@@ -64,6 +66,19 @@ def build_orchestration_context(
             "to the immediately preceding stage instead. Use `null` if none applies.",
             "",
             ", ".join(f"`{key}`" for key in upstream),
+        ]
+
+    if posture is not None:
+        lines += [
+            "",
+            "### Compatibility posture — how freely you may change existing code",
+            f"**{posture.posture.value}** (source: {posture.source})",
+            "",
+            "This is the authoritative answer to 'am I allowed to break this?' for this work item.",
+            "It overrides any general instinct — or any role/module text — telling you to preserve",
+            "existing behaviour by default.",
+            "",
+            posture.contract,
         ]
 
     if ticket.blocking_issues:

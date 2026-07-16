@@ -3,6 +3,7 @@ import json
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from loregarden.agents.cli_adapters import render_terminal_handoff_command
+from loregarden.core.workflow_loader import stage_display_name
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     AdvanceStageRequest,
@@ -36,6 +37,7 @@ from loregarden.services.cli_settings import (
     get_ticket_orchestration_runtime,
     set_ticket_orchestration_runtime,
 )
+from loregarden.services.compatibility_posture import resolve_compatibility_posture
 from loregarden.services.hierarchy_service import build_tree, child_count
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -70,8 +72,6 @@ def _ticket_summary(session: Session, ticket: Ticket) -> TicketSummary:
     template = orch.get_template_for_ticket(ticket)
     stage_name = ""
     if template and ticket.workflow_stage_key:
-        from loregarden.core.workflow_loader import stage_display_name
-
         stage_name = stage_display_name(template, ticket.workflow_stage_key)
     stages = orch.build_stage_views(ticket)
     session.refresh(ticket)
@@ -226,151 +226,44 @@ def _apply_ticket_query_filters(
     return query
 
 
-def _collect_ancestors_for_tree(
-    session: Session, parent_tickets: list[Ticket], all_tickets_ids: set[str]
-) -> list[Ticket]:
-    """Recursively collect ancestors of parent tickets for full hierarchy."""
-    ancestors_to_include: set[str] = set()
-    for parent in parent_tickets:
-        current = parent
-        while current.parent_ticket_id:
-            ancestor_id = current.parent_ticket_id
-            if ancestor_id in ancestors_to_include or ancestor_id in all_tickets_ids:
+def _collect_ancestors(session: Session, tickets: list[Ticket]) -> list[Ticket]:
+    """Walk up each ticket's parent chain.
+
+    build_tree re-parents a ticket to the root when its parent is absent, so a match whose
+    ancestors were filtered out would surface as a root node instead of under its hierarchy.
+    Every ancestor returned here anchors at least one matching ticket, so the caller needs no
+    pruning pass.
+    """
+    matched_ids = {t.id for t in tickets}
+    ancestors: dict[str, Ticket] = {}
+    for ticket in tickets:
+        parent_id = ticket.parent_ticket_id
+        # Stop on a ticket already matched (it walks its own chain) or already collected.
+        while parent_id and parent_id not in matched_ids and parent_id not in ancestors:
+            parent = session.get(Ticket, parent_id)
+            if not parent:
                 break
-            ancestors_to_include.add(ancestor_id)
-            ancestor = session.get(Ticket, ancestor_id)
-            if not ancestor:
-                break
-            current = ancestor
-    if ancestors_to_include:
-        return session.exec(select(Ticket).where(Ticket.id.in_(ancestors_to_include))).all()
-    return []
+            ancestors[parent.id] = parent
+            parent_id = parent.parent_ticket_id
+    return list(ancestors.values())
 
 
-def _has_matching_descendant(
-    session: Session, ancestor_id: str, filtered_ids: set[str], all_tickets_map: dict[str, Ticket]
-) -> bool:
-    """Check if an ancestor has any descendants in the filtered set."""
-
-    def _check_descendants(ticket_id: str) -> bool:
-        if ticket_id in filtered_ids:
-            return True
-        # Check all children of this ticket
-        for ticket in all_tickets_map.values():
-            if ticket.parent_ticket_id == ticket_id and _check_descendants(ticket.id):
-                return True
-        return False
-
-    return _check_descendants(ancestor_id)
-
-
-def _filter_ancestors_by_matching_descendants(
-    session: Session, ancestors: list[Ticket], filtered_ids: set[str], all_tickets: list[Ticket]
-) -> list[Ticket]:
-    """Remove ancestors that have no descendants in the filtered set."""
-    all_tickets_map = {t.id: t for t in all_tickets}
-    return [
-        a
-        for a in ancestors
-        if _has_matching_descendant(session, a.id, filtered_ids, all_tickets_map)
-    ]
-
-
-def _normalize_filter_list(values: list[str] | None, enum_class: type) -> list | None:
-    """Normalize filter list, handling empty strings and invalid values."""
-    if not values:
-        return None
-    result = []
-    for val in values:
-        if val and val.strip():
-            try:
-                result.append(enum_class(val.strip()))
-            except ValueError:
-                # Invalid value returns empty results
-                return False
-    return result if result else None
-
-
-def _collect_parent_tickets(
-    session: Session, tickets: list[Ticket], filtered_ids: set[str]
-) -> tuple[list[Ticket], set[str]]:
-    """Collect parent tickets that have direct children matching the filter."""
-    all_tickets = list(tickets)
-    added_ticket_ids = {t.id for t in all_tickets}
-    parents_to_check = {t.parent_ticket_id for t in tickets if t.parent_ticket_id}
-
-    while parents_to_check:
-        new_parents_to_check: set[str] = set()
-        next_batch = session.exec(select(Ticket).where(Ticket.id.in_(parents_to_check))).all()
-
-        for parent in next_batch:
-            has_filtered_child = any(
-                t.parent_ticket_id == parent.id for t in tickets if t.id in filtered_ids
-            )
-            if has_filtered_child and parent.id not in added_ticket_ids:
-                all_tickets.append(parent)
-                added_ticket_ids.add(parent.id)
-                if parent.parent_ticket_id:
-                    new_parents_to_check.add(parent.parent_ticket_id)
-
-        parents_to_check = new_parents_to_check
-
-    return all_tickets, added_ticket_ids
-
-
-def _build_stage_names(session: Session, all_tickets: list[Ticket]) -> dict[str, str]:
-    """Build stage names for display."""
+def _build_stage_names(session: Session, tickets: list[Ticket]) -> dict[str, str]:
     stage_names: dict[str, str] = {}
     orch = OrchestrationService(session)
-    for t in all_tickets:
+    for t in tickets:
         template = orch.get_template_for_ticket(t)
         if template and t.workflow_stage_key:
-            from loregarden.core.workflow_loader import stage_display_name
-
             stage_names[t.id] = stage_display_name(template, t.workflow_stage_key)
     return stage_names
-
-
-def _create_pruned_node(
-    node: TicketTreeNode, pruned_children: list[TicketTreeNode]
-) -> TicketTreeNode:
-    """Create a pruned node with updated child count."""
-    return TicketTreeNode(
-        id=node.id,
-        external_id=node.external_id,
-        title=node.title,
-        state=node.state,
-        priority=node.priority,
-        work_item_type=node.work_item_type,
-        workspace_slug=node.workspace_slug,
-        workflow_stage_name=node.workflow_stage_name,
-        workflow_stage_status=node.workflow_stage_status,
-        child_count=len(pruned_children),
-        children=pruned_children,
-    )
-
-
-def _prune_tree(tree: list[TicketTreeNode], filtered_ids: set[str]) -> list[TicketTreeNode]:
-    """Prune tree nodes that don't match filter and have no matching descendants."""
-
-    def prune_node(node: TicketTreeNode) -> TicketTreeNode | None:
-        pruned_children = [prune_node(child) for child in node.children]
-        pruned_children = [c for c in pruned_children if c]
-
-        if node.id in filtered_ids or pruned_children:
-            return _create_pruned_node(node, pruned_children)
-        return None
-
-    pruned_tree = [prune_node(node) for node in tree]
-    return [node for node in pruned_tree if node]
 
 
 @router.get("/tree", response_model=list[TicketTreeNode])
 def ticket_tree(
     *,
     workspace: str | None = None,
-    state: list[str] | None = Query(default=None),
-    work_item_type: list[str] | None = Query(default=None),
+    state: list[TicketState] | None = Query(default=None),
+    work_item_type: list[WorkItemType] | None = Query(default=None),
     milestone: str | None = None,
     search: str | None = None,
     session: Session = Depends(get_session),
@@ -379,40 +272,25 @@ def ticket_tree(
     if ws is False:
         return []
 
-    # Normalize filter parameters
-    state_list = _normalize_filter_list(state, TicketState)
-    if state_list is False:
-        return []
-    work_item_type_list = _normalize_filter_list(work_item_type, WorkItemType)
-    if work_item_type_list is False:
-        return []
-
     query = select(Ticket)
     if ws:
         query = query.where(Ticket.workspace_id == ws.id)
     query = _apply_ticket_query_filters(
         query,
-        states=state_list,
-        work_item_types=work_item_type_list,
+        states=state,
+        work_item_types=work_item_type,
         milestone=milestone,
         search=search,
     )
 
-    tickets = session.exec(query).all()
-    filtered_ids = {t.id for t in tickets}
-
-    if not filtered_ids:
+    tickets = list(session.exec(query).all())
+    if not tickets:
         return []
 
-    # Collect parents and ancestors
-    all_tickets, _ = _collect_parent_tickets(session, tickets, filtered_ids)
-
-    # Build stage names and tree
+    # Ancestors keep matching tickets anchored in the hierarchy even when the filter excludes them.
+    all_tickets = tickets + _collect_ancestors(session, tickets)
     stage_names = _build_stage_names(session, all_tickets)
-    tree = build_tree(session, all_tickets, stage_names=stage_names)
-
-    # Prune and return
-    return _prune_tree(tree, filtered_ids)
+    return build_tree(session, all_tickets, stage_names=stage_names)
 
 
 @router.get("", response_model=list[TicketSummary])
@@ -596,6 +474,7 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
     from loregarden.services.workflow_routing import normalize_transitions_for_api
 
     transitions = normalize_transitions_for_api(template.transitions_json) if template else []
+    posture = resolve_compatibility_posture(session, ticket)
     return TicketDetail(
         **summary.model_dump(),
         description=ticket.description,
@@ -610,6 +489,9 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         workflow_transitions=[WorkflowTransitionView.model_validate(item) for item in transitions],
         artifacts=_artifacts_grouped(session, ticket),
         orchestration_runtime=get_ticket_orchestration_runtime(ticket),
+        compatibility_posture=ticket.compatibility_posture,
+        resolved_compatibility_posture=posture.posture.value,
+        compatibility_posture_source=posture.source,
     )
 
 
