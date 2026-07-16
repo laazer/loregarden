@@ -1344,7 +1344,16 @@ class StudioService:
             stages = sorted(body.stages, key=lambda stage: stage.order)
             workflow.stages_json = json.dumps([stage.model_dump() for stage in stages])
             if body.transitions is None:
-                workflow.transitions_json = json.dumps(_auto_transitions(stages))
+                # Editing a stage must not destroy hand-authored routes. This used to
+                # regenerate a bare linear chain on every stage edit, silently dropping
+                # every `when: reject` edge — the only thing that routes rework to the
+                # stage a rejecting agent actually asked for. Seed a linear chain only
+                # when there is nothing to preserve; otherwise keep the existing routes,
+                # minus any that now point at a stage that no longer exists.
+                existing = json.loads(workflow.transitions_json or "[]")
+                workflow.transitions_json = json.dumps(
+                    _prune_transitions(existing, stages) if existing else _auto_transitions(stages)
+                )
         if body.transitions is not None:
             workflow.transitions_json = json.dumps(body.transitions)
         workflow.updated_at = datetime.now(timezone.utc)
@@ -1438,11 +1447,29 @@ class StudioService:
 
 
 def _auto_transitions(stages: list[StudioWorkflowStage]) -> list[dict[str, str]]:
+    """Seed a linear forward chain for a workflow that has no routes of its own.
+
+    Forward-only by construction: it cannot express `when: reject`. Use it to
+    bootstrap, never to rewrite — see _prune_transitions and update_workflow.
+    """
     ordered = sorted(stages, key=lambda stage: stage.order)
     transitions: list[dict[str, str]] = []
     for idx in range(len(ordered) - 1):
         transitions.append({"from": ordered[idx].key, "to": ordered[idx + 1].key})
     return transitions
+
+
+def _prune_transitions(
+    transitions: list[dict[str, str]],
+    stages: list[StudioWorkflowStage],
+) -> list[dict[str, str]]:
+    """Drop routes whose endpoints no longer exist, preserving everything else.
+
+    A route to a deleted stage is a phantom target: apply_stage_route can't resolve
+    it, so it degrades to the previous-stage fallback rather than erroring.
+    """
+    keys = {stage.key for stage in stages}
+    return [item for item in transitions if item.get("from") in keys and item.get("to") in keys]
 
 
 def load_studio_agent_config(agent_id: str) -> dict | None:

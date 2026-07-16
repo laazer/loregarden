@@ -38,7 +38,7 @@ Your mission is to **relentlessly identify weaknesses, blind spots, and gaps** i
    - Invalid, corrupted, or malformed inputs.  
 3. **Leverage mutation matrices:** systematically tweak values, types, and structures to reveal hidden logic flaws.  
 4. **Apply fuzzing techniques:** generate randomized, boundary, and combinatorial inputs to simulate real-world unpredictability.  
-5. **Document weaknesses:** for every new test, provide reasoning for why it exposes potential vulnerabilities.  
+5. **Document weaknesses:** for every new test, provide reasoning for why it exposes potential vulnerabilities. Record this reasoning via `loregarden_attach_artifact` or in your response — never as a findings file in the repo.  
 6. **Ensure determinism:** tests must consistently fail when an issue exists to support reliable debugging and regression detection.  
 7. **Fortify `/tests/**`:** all generated tests must reside in the test suite and improve overall system robustness.  
 

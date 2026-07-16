@@ -3,7 +3,11 @@ gate — a playtest or UX sign-off — and frame the conversation around running
 that verification instead of generic ticket Q&A.
 """
 
-from loregarden.core.workflow_loader import get_template_stages, sync_workflow_templates
+from loregarden.core.workflow_loader import (
+    expand_gate_checklist,
+    get_template_stages,
+    sync_workflow_templates,
+)
 from loregarden.models.domain import (
     StageStatus,
     Ticket,
@@ -93,6 +97,38 @@ def test_current_human_gate_stage_ignores_done_and_agent_stages(db_session: Sess
 
     ticket.workflow_stage_key = "done"
     assert current_human_gate_stage(db_session, ticket) is None
+
+
+def test_expand_gate_checklist_substitutes_acceptance_criteria():
+    ticket = Ticket(
+        external_id="expand-ck",
+        workspace_id="ws",
+        title="t",
+        acceptance_criteria_json='["Dash moves the player", "Cooldown blocks re-triggering"]',
+    )
+    checklist = [
+        "Load the affected scene(s) in the Godot editor and run them",
+        "{{acceptance_criteria}}",
+        "Confirm no console errors/warnings appear during play",
+    ]
+
+    assert expand_gate_checklist(ticket, checklist) == [
+        "Load the affected scene(s) in the Godot editor and run them",
+        "Play-test by hand — Dash moves the player",
+        "Play-test by hand — Cooldown blocks re-triggering",
+        "Confirm no console errors/warnings appear during play",
+    ]
+
+
+def test_expand_gate_checklist_drops_placeholder_when_no_criteria():
+    ticket = Ticket(external_id="expand-empty", workspace_id="ws", title="t")
+    checklist = ["Load the scene", "{{acceptance_criteria}}", "Check for regressions"]
+
+    # No acceptance criteria → placeholder expands to nothing, rest passes through.
+    assert expand_gate_checklist(ticket, checklist) == [
+        "Load the scene",
+        "Check for regressions",
+    ]
 
 
 def test_gate_focus_guidance_by_stage_kind():

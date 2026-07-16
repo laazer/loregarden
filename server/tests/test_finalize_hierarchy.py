@@ -1142,7 +1142,6 @@ class TestFinalizeHierarchyAcceptanceCriteria:
         self, client: TestClient, db_session: Session
     ):
         """Finalize endpoint accepts complex nested hierarchy (AC1)."""
-        # This is the exact spec example from SPEC_42_RESEARCH.md
         res = client.post(
             "/api/tickets/finalize-hierarchy",
             json={

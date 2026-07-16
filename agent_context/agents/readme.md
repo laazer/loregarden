@@ -400,7 +400,7 @@ Use `agent_context/agents/readme.md` as the source of truth for their responsibi
 **Runs:** After Gatekeeper approval, before ticket moves to COMPLETE.
 
 **Owns:**
-- `/learning-output.md` (per ticket)
+- Ticket learnings, persisted via `loregarden_append_learning` (per ticket)
 - Memory graph nodes and relations (via Loregarden MCP memory tools)
 
 **Inputs (checkpoints):** Prefer `agent_context/projects/<PROJECT>/project_board/checkpoints/<ticket-id>/<run-id>.md` for assumption audit detail; use `project_board/CHECKPOINTS.md` only as a pointer index; use `project_board/checkpoints/frozen/` only when reading legacy history.
@@ -419,7 +419,7 @@ Use `agent_context/agents/readme.md` as the source of truth for their responsibi
 - May NOT fabricate insights — if input is insufficient, asks clarifying questions
 
 **Outputs:**
-- `/learning-output.md` with structured sections: Learnings, Anti-Patterns, Prompt Patches, Workflow Improvements
+- `loregarden_append_learning` with structured sections: Learnings, Anti-Patterns, Prompt Patches, Workflow Improvements. Never write a learning file to the repo.
 - Memory graph nodes persisted for future agent sessions
 
 ---

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from loregarden.core.workflow_loader import stage_display_name
+from loregarden.core.workflow_loader import expand_gate_checklist, stage_display_name
 from loregarden.models.domain import (
     Approval,
     ApprovalKind,
@@ -62,6 +62,10 @@ def approval_to_view(session: Session, approval: Approval) -> dict:
         checklist = json.loads(approval.checklist_json or "[]")
     except json.JSONDecodeError:
         checklist = []
+    if ticket:
+        # Gates recorded before the checklist was expanded still hold a raw
+        # {{acceptance_criteria}} token; expand on read so it never reaches the UI.
+        checklist = expand_gate_checklist(ticket, checklist)
 
     route_options: list[dict] = []
     if approval.kind == ApprovalKind.WORKFLOW_GATE and approval.status == ApprovalStatus.PENDING:

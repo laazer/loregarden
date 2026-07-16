@@ -8,14 +8,18 @@ Replaces asking the human: log, assume conservatively, proceed.
 
 When you have a **question, ambiguity, risk, or design decision** (not a hard failure above) that would normally warrant human input:
 
-1. Append an entry to the active run log at `agent_context/projects/<PROJECT>/project_board/checkpoints/<ticket-id>/<run-id>.md`:
+1. Call the `loregarden_append_checkpoint` MCP tool — **never write a checkpoint file directly** (checkpoints live in the same Obsidian vault as memory/learnings, not the workspace repo):
 
+   ```json
+   {
+     "ticket_id": "<ticket-id>",
+     "workspace_slug": "<workspace_slug from the run prompt>",
+     "run_id": "<run-id>",
+     "entry": "### [TICKET_ID] <Stage> — <short label>\n**Would have asked:** <exact question>\n**Assumption made:** <what you decided>\n**Confidence:** Low | Medium | High"
+   }
    ```
-   ### [TICKET_ID] <Stage> — <short label>
-   **Would have asked:** <exact question>
-   **Assumption made:** <what you decided>
-   **Confidence:** Low | Medium | High
-   ```
+
+   Entries accumulate in one file per ticket+run — each call appends, it does not overwrite.
 
 2. Resolve with the most conservative, reasonable assumption.
 3. Continue without waiting.
@@ -25,17 +29,17 @@ Steps 2–3 apply to **judgment ambiguity** only. If the underlying issue is a f
 ## Scoped log (subagents) and index (orchestrator)
 
 **Subagents** (Spec, Test Designer, Test Breaker, Implementation, Python Reviewer, AC Gatekeeper, Learning, and all consultative agents):
-- **Write to:** `agent_context/projects/<PROJECT>/project_board/checkpoints/<ticket-id>/<run-id>.md` — your ticket-scoped log only.
-- **Read from:** `agent_context/projects/<PROJECT>/project_board/checkpoints/<ticket-id>/` — your ticket's directory only.
-- Do **not** read or write `agent_context/projects/<PROJECT>/project_board/CHECKPOINTS.md`. Do **not** read other tickets' checkpoint directories.
+- **Write via:** `loregarden_append_checkpoint` with your own `ticket_id` + `run_id` — your ticket-scoped log only.
+- **Read via:** `loregarden_search_memory` scoped to your `workspace_slug`, or `loregarden_memory_status` to discover the resolved Checkpoints dir if you need to browse it directly.
+- Do **not** call `loregarden_append_checkpoint` for another ticket's `ticket_id`, and do not read other tickets' checkpoint entries.
 
 **Orchestrator** (autopilot, ap-continue, c-continue, feature):
-- Maintains `agent_context/projects/<PROJECT>/project_board/CHECKPOINTS.md` as a thin run-level index (run start/end + one-line pointer per ticket — never full body entries).
+- Maintains a thin run-level index (run start/end + one-line pointer per ticket — never full body entries) as its own checkpoint entry, distinct from subagents' per-ticket logs.
 - Updates the index after each ticket completes — not inside subagent prompts.
 
-`<ticket-id>`: short slug (e.g. `feat-add-org-filter`). `<run-id>`: timestamp + stage (e.g. `2026-06-16T10-00-00Z-spec.md`).
+`<ticket-id>`: short slug (e.g. `feat-add-org-filter`). `<run-id>`: timestamp + stage (e.g. `2026-06-16T10-00-00Z-spec`).
 
-**Hard rule:** Subagents must never read or write `CHECKPOINTS.md`. Full checkpoint bodies (`### [...]`, `**Would have asked:**`, etc.) belong only in the ticket-scoped log.
+**Hard rule:** Subagents must never fabricate or reuse another ticket's `run_id`. Full checkpoint bodies (`### [...]`, `**Would have asked:**`, etc.) belong only in the ticket-scoped log entry, not the orchestrator's index.
 
 ## Per-stage resolution hints
 

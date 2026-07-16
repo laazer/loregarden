@@ -50,6 +50,19 @@ def apply_stage_route(
     blocking_issues: str = "",
     orch_run: OrchestrationRun | None = None,
 ) -> StageRoutePlan:
+    misrouted = ""
+    if next_stage_key and next_stage_key not in {stage.key for stage in stages}:
+        # An agent naming a stage key this workflow doesn't have (the stage-report
+        # contract invites a guess, and models reach for plausible names like
+        # "implementation" over the real "implement"). Taking it at face value
+        # parked the cursor on a phantom stage: reset_upstream_stages no-ops on an
+        # unknown target, then reconcile_workflow_state quietly snaps the cursor to
+        # the first PENDING stage — so the rework silently went nowhere. Drop the
+        # bad hint and fall back to the template's reject route / previous stage,
+        # surfacing the miss in blocking_issues rather than swallowing it.
+        misrouted = next_stage_key
+        next_stage_key = ""
+
     plan = StateMachine.resolve_next_stage_key(
         stages,
         transitions,
@@ -82,6 +95,12 @@ def apply_stage_route(
         instance.stages_json = serialize_stage_map(stage_map, stages)
         ticket.workflow_stage_key = plan.to_key
         ticket.workflow_stage_status = StageStatus.PENDING
+        if misrouted:
+            note = (
+                f"(Requested rework stage '{misrouted}' is not a stage in this "
+                f"workflow; routed to '{plan.to_key}' instead.)"
+            )
+            blocking_issues = f"{blocking_issues}\n\n{note}" if blocking_issues else note
         if blocking_issues:
             ticket.blocking_issues = blocking_issues[:2000]
         else:

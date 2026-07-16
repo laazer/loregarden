@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ImportTicketsModal } from "../ImportTicketsModal";
@@ -332,19 +332,27 @@ describe("GROUP DEEP3 — Stress & Performance", () => {
     expect(end - start).toBeLessThan(5000);
   });
 
-  it("DEEP3-2: large file selection map doesn't cause layout thrashing", async () => {
-    // Simulate selecting many files.
-    renderModal();
+  it(
+    "DEEP3-2: large file selection map doesn't cause layout thrashing",
+    async () => {
+      // Simulate selecting many files.
+      renderModal();
 
-    for (let i = 0; i < 100; i++) {
-      await toggle("a.md");
-      await toggle("a.md");
-    }
+      for (let i = 0; i < 100; i++) {
+        await toggle("a.md");
+        await toggle("a.md");
+      }
 
-    // Component should still be responsive.
-    const button = screen.queryByRole("button", { name: /continue/i });
-    expect(button).not.toBeNull();
-  });
+      // Component should still be responsive.
+      const button = screen.queryByRole("button", { name: /continue/i });
+      expect(button).not.toBeNull();
+    },
+    // 200 real userEvent.click() cycles is inherently slower than the 5s
+    // default, especially alongside other suites under the pre-push hook's
+    // parallel client+server test run — this measures responsiveness, not
+    // a race, so it just needs headroom, not a tighter guarantee.
+    20000,
+  );
 
   it("DEEP3-3: concurrent file toggles don't race and corrupt Map state", async () => {
     renderModal();
@@ -397,11 +405,15 @@ describe("GROUP DEEP4 — Boundary Conditions & Extremes", () => {
     // 0 files.
     expect(button?.textContent).toContain("0 files");
 
+    // userEvent.click() resolving doesn't guarantee the resulting re-render
+    // has landed by the very next line under CPU contention (e.g. the
+    // pre-push hook's parallel client+server test run) — waitFor tolerates
+    // that lag instead of asserting on a possibly-stale textContent read.
     await toggle("a.md");
-    expect(button?.textContent).toContain("1 file");
+    await waitFor(() => expect(button?.textContent).toContain("1 file"));
 
     await toggle("b.md");
-    expect(button?.textContent).toContain("2 files");
+    await waitFor(() => expect(button?.textContent).toContain("2 files"));
   });
 
   it("DEEP4-4: null initialMode is treated as 'regular' (not undefined)", () => {
@@ -854,6 +866,11 @@ describe("GROUP DEEP10 — Determinism & Idempotency", () => {
     await toggle("a.md");
 
     const button = screen.queryByRole("button", { name: /continue/i });
+    // Confirm all three toggles actually landed before clicking Continue —
+    // under CPU contention the last click's re-render can lag behind its
+    // userEvent.click() promise resolving, which would make Continue fire
+    // with a stale (missing "a.md") selection.
+    await waitFor(() => expect(button?.textContent).toContain("3 files"));
     if (button && !button.hasAttribute("disabled")) {
       await userEvent.click(button);
     }
@@ -879,6 +896,7 @@ describe("GROUP DEEP10 — Determinism & Idempotency", () => {
     await toggle("nested/aa.md");
 
     const button2 = screen.queryByRole("button", { name: /continue/i });
+    await waitFor(() => expect(button2?.textContent).toContain("3 files"));
     if (button2 && !button2.hasAttribute("disabled")) {
       await userEvent.click(button2);
     }

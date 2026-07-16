@@ -46,7 +46,7 @@ class ProposalItem implements HierarchyNode {
   id: string;
   title: string;
   description: string;
-  type: "item" = "item";
+  type = "item" as const;
   children: HierarchyNode[] = [];
   parent?: HierarchyNode;
 
@@ -77,7 +77,7 @@ class ProposalFolder implements HierarchyNode {
   id: string;
   title: string;
   description: string;
-  type: "folder" = "folder";
+  type = "folder" as const;
   children: HierarchyNode[] = [];
   parent?: HierarchyNode;
 

@@ -20,6 +20,7 @@ from loregarden.agents.registry import get_agent
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, WorkflowStageDef, Workspace
 from loregarden.services.cli_settings import get_ticket_orchestration_runtime
+from loregarden.services.compatibility_posture import resolve_compatibility_posture
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_errors import agent_timeout_message
 from loregarden.services.run_log_stream import RunLogStreamer
@@ -302,14 +303,21 @@ class CliAgentExecutor:
         self.session.add(ticket)
         self.session.commit()
 
-    def _resolve_stage_def(self, ticket: Ticket, run: AgentRun) -> WorkflowStageDef | None:
+    def _resolve_template_stages(self, ticket: Ticket) -> list[WorkflowStageDef]:
         template = self.orchestration.get_template_for_ticket(ticket)
         if not template:
-            return None
+            return []
         from loregarden.core.workflow_loader import get_template_stages
 
+        return list(get_template_stages(template))
+
+    def _resolve_stage_def(self, ticket: Ticket, run: AgentRun) -> WorkflowStageDef | None:
         return next(
-            (stage for stage in get_template_stages(template) if stage.key == run.stage_key),
+            (
+                stage
+                for stage in self._resolve_template_stages(ticket)
+                if stage.key == run.stage_key
+            ),
             None,
         )
 
@@ -340,6 +348,8 @@ class CliAgentExecutor:
             ticket=ticket,
             run=run,
             stage_def=stage_def,
+            stages=self._resolve_template_stages(ticket),
+            posture=resolve_compatibility_posture(self.session, ticket, workspace),
         )
         mcp_context = build_mcp_run_context(ticket=ticket, run=run, workspace=workspace)
         mcp_doc = load_loregarden_mcp_doc(agent_context_dir)

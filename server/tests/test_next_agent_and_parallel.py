@@ -97,10 +97,20 @@ def test_resolve_stage_execution_honors_next_agent_on_implementation():
     assert skill == "apply_patch"
 
 
-def test_parallel_stage_runs_all_agents(client: TestClient, db_session: Session, tmp_path):
+def test_parallel_stage_runs_all_agents(
+    client: TestClient, db_session: Session, tmp_path, monkeypatch
+):
     import subprocess
 
     subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+
+    # Orchestration profiles resolve from settings.repo_root, not from this
+    # workspace's repo_path — redirect it to an empty tmp dir so profile lookup
+    # falls through to the hardcoded default (builtin_autopilot, gates
+    # disabled) instead of loregarden's own real profile, whose gate commands
+    # (`cd server && ruff check .`, etc.) assume a real checkout and would
+    # always fail against this throwaway repo.
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
 
     template = WorkflowTemplate(
         slug="test-parallel-review",
@@ -132,11 +142,10 @@ def test_parallel_stage_runs_all_agents(client: TestClient, db_session: Session,
         slug="parallel-test-ws",
         name="Parallel Test",
         repo_path=str(tmp_path),
-        # Orchestration profiles resolve from loregarden's own repo tree by slug,
-        # not from repo_path — this ad-hoc workspace has no profile of its own,
-        # so it must opt into loregarden's synchronous builtin_autopilot profile
-        # explicitly, or it'd fall to default.yaml's external_mcp driver instead.
-        orchestration_profile_slug="loregarden",
+        # No profile file exists for this slug (or any slug) under the
+        # redirected repo_root above, so profile resolution falls through to
+        # the hardcoded default: builtin_autopilot driver, gates disabled.
+        orchestration_profile_slug="parallel-test-ws",
     )
     db_session.add(ws)
     db_session.commit()

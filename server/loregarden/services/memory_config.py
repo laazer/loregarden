@@ -23,6 +23,7 @@ CONFIG_KEYS = (
     "obsidian_memory_subdir",
     "obsidian_learnings_subdir",
     "obsidian_blogposts_subdir",
+    "obsidian_checkpoints_subdir",
     "memory_sqlite_url",
     "database_url",
 )
@@ -50,6 +51,8 @@ def read_local_memory_config(repo_root: Path | None = None) -> dict[str, str]:
             out[key] = value.strip()
     if not out.get("obsidian_blogposts_subdir"):
         out["obsidian_blogposts_subdir"] = settings.obsidian_blogposts_subdir
+    if not out.get("obsidian_checkpoints_subdir"):
+        out["obsidian_checkpoints_subdir"] = settings.obsidian_checkpoints_subdir
     return out
 
 
@@ -65,6 +68,8 @@ def current_memory_config() -> dict[str, str]:
     out = {key: str(getattr(settings, key, "") or "").strip() for key in CONFIG_KEYS}
     if not out.get("obsidian_blogposts_subdir"):
         out["obsidian_blogposts_subdir"] = "Loregarden/BlogPosts"
+    if not out.get("obsidian_checkpoints_subdir"):
+        out["obsidian_checkpoints_subdir"] = "Loregarden/Checkpoints"
     return out
 
 
@@ -110,6 +115,7 @@ def _validate_memory_config(payload: dict[str, Any]) -> dict[str, str]:
         "obsidian_memory_subdir",
         "obsidian_learnings_subdir",
         "obsidian_blogposts_subdir",
+        "obsidian_checkpoints_subdir",
     ):
         subdir = cleaned[subdir_key]
         if not subdir:

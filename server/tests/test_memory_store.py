@@ -69,6 +69,79 @@ def test_obsidian_upsert_blog_post_writes_workspace_subdir(vault_dir):
     assert "feat-blog" in text
 
 
+def test_obsidian_append_checkpoint_writes_workspace_subdir(vault_dir):
+    store = ObsidianMemoryStore(vault_dir)
+    result = store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-checkpoint",
+        run_id="2026-06-16T10-00-00Z-spec",
+        entry="### [feat-checkpoint] Spec — ambiguous field\n**Confidence:** Medium",
+    )
+    path = vault_dir / result["path"]
+    assert path.is_file()
+    assert "Checkpoints" in str(path)
+    assert "loregarden" in str(path)
+    assert "feat-checkpoint" in str(path)
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("---\n")
+    assert 'type: "checkpoint"' in text
+    assert "ambiguous field" in text
+
+
+def test_obsidian_append_checkpoint_accumulates_entries_in_one_file(vault_dir):
+    store = ObsidianMemoryStore(vault_dir)
+    first = store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-checkpoint",
+        run_id="run-1",
+        entry="First entry.",
+    )
+    second = store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-checkpoint",
+        run_id="run-1",
+        entry="Second entry.",
+    )
+    assert first["path"] == second["path"]
+    path = vault_dir / first["path"]
+    text = path.read_text(encoding="utf-8")
+    assert "First entry." in text
+    assert "Second entry." in text
+    # A different run_id for the same ticket gets its own file.
+    other_run = store.append_checkpoint(
+        workspace_slug="loregarden",
+        ticket_id="feat-checkpoint",
+        run_id="run-2",
+        entry="Other run entry.",
+    )
+    assert other_run["path"] != first["path"]
+
+
+def test_agent_memory_service_append_checkpoint_obsidian_only(vault_dir):
+    service = AgentMemoryService(obsidian=ObsidianMemoryStore(vault_dir))
+    result = service.append_checkpoint(
+        ticket_id="feat-checkpoint",
+        workspace_slug="loregarden",
+        run_id="run-1",
+        entry="Checkpoint via facade.",
+    )
+    assert "obsidian" in result
+    assert "graph" not in result
+    path = vault_dir / result["obsidian"]["path"]
+    assert "Checkpoint via facade." in path.read_text(encoding="utf-8")
+
+
+def test_agent_memory_service_append_checkpoint_requires_obsidian():
+    service = AgentMemoryService(obsidian=None)
+    with pytest.raises(ValueError, match="Obsidian vault"):
+        service.append_checkpoint(
+            ticket_id="feat-checkpoint",
+            workspace_slug="loregarden",
+            run_id="run-1",
+            entry="No backend configured.",
+        )
+
+
 def test_obsidian_search_scoped_to_workspace(vault_dir):
     store = ObsidianMemoryStore(vault_dir)
     store.upsert_note(
@@ -182,11 +255,12 @@ def test_mcp_memory_tools(client, vault_dir, tmp_path, monkeypatch):
         assert scoped["obsidian_memory_dir"].endswith("Loregarden/Memory/loregarden")
         assert scoped["obsidian_learnings_dir"].endswith("Loregarden/Learnings/loregarden")
         assert scoped["obsidian_blogposts_dir"].endswith("Loregarden/BlogPosts/loregarden")
+        assert scoped["obsidian_checkpoints_dir"].endswith("Loregarden/Checkpoints/loregarden")
         assert "loregarden" in scoped["memory_sqlite_path"]
         assert scoped["memory_sqlite_path"].endswith("mcp-memory.db")
         assert scoped["memory_graph_tables"] == ["memory_nodes", "memory_relations"]
         assert scoped["memory_graph_node_types"] == ["memory", "learning"]
-        assert scoped["memory_graph_excludes"] == ["blog_post"]
+        assert scoped["memory_graph_excludes"] == ["blog_post", "checkpoint"]
 
         blog = json.loads(
             execute_tool(
@@ -227,6 +301,45 @@ def test_mcp_memory_tools(client, vault_dir, tmp_path, monkeypatch):
         )
         assert len(search["obsidian"]) >= 1
         assert len(search["graph"]) >= 1
+
+        checkpoint = json.loads(
+            execute_tool(
+                session,
+                "loregarden_append_checkpoint",
+                {
+                    "ticket_id": "feat-memory",
+                    "workspace_slug": "loregarden",
+                    "run_id": "2026-06-16T10-00-00Z-spec",
+                    "entry": "### [feat-memory] Spec — ambiguous field name\n"
+                    "**Would have asked:** singular or plural?\n"
+                    "**Assumption made:** plural\n"
+                    "**Confidence:** Medium",
+                },
+            )
+        )
+        assert "obsidian" in checkpoint
+        assert "Checkpoints" in checkpoint["obsidian"]["path"]
+        # A second entry for the same ticket+run appends to the same file.
+        checkpoint2 = json.loads(
+            execute_tool(
+                session,
+                "loregarden_append_checkpoint",
+                {
+                    "ticket_id": "feat-memory",
+                    "workspace_slug": "loregarden",
+                    "run_id": "2026-06-16T10-00-00Z-spec",
+                    "entry": "### [feat-memory] Spec — second ambiguity\n"
+                    "**Would have asked:** another question\n"
+                    "**Assumption made:** conservative default\n"
+                    "**Confidence:** High",
+                },
+            )
+        )
+        assert checkpoint["obsidian"]["path"] == checkpoint2["obsidian"]["path"]
+        checkpoint_path = vault_dir / checkpoint["obsidian"]["path"]
+        checkpoint_text = checkpoint_path.read_text(encoding="utf-8")
+        assert "ambiguous field name" in checkpoint_text
+        assert "second ambiguity" in checkpoint_text
 
 
 def test_memory_api_status(client, vault_dir, monkeypatch):

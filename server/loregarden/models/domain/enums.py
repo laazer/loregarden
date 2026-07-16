@@ -49,6 +49,57 @@ VALID_HIERARCHY: dict[WorkItemType, list[WorkItemType]] = {
 WORKFLOW_WORK_ITEM_TYPES = frozenset(WorkItemType)
 
 
+class CompatibilityPosture(str, Enum):
+    """How much freedom an agent has to change existing interfaces and tests.
+
+    Agents used to be told, unconditionally, to "maintain backward compatibility"
+    — so they defended consumers that do not exist and contorted code around tests
+    that encoded the wrong behaviour, rather than fixing the design. This makes the
+    obligation an explicit, per-work-item decision instead of a hardcoded default.
+    """
+
+    GREENFIELD = "greenfield"
+    INTERNAL = "internal"
+    PUBLIC = "public"
+
+
+DEFAULT_COMPATIBILITY_POSTURE = CompatibilityPosture.INTERNAL
+
+# Agent-facing contract for each posture. This text is injected verbatim into the run
+# context, so it is the operative instruction — keep it imperative and unambiguous.
+COMPATIBILITY_POSTURE_CONTRACT: dict[CompatibilityPosture, str] = {
+    CompatibilityPosture.GREENFIELD: (
+        "This work has no consumers outside this repository, and nothing depends on its "
+        "current interfaces.\n"
+        "- Delete, rename and reshape freely. Prefer the correct design over the compatible one.\n"
+        "- Do NOT add compatibility shims, deprecation windows, aliases, or dual code paths.\n"
+        "- Do NOT preserve an interface merely because it exists.\n"
+        "- Tests: an existing test has no special authority here. If a test encodes behaviour "
+        "the spec no longer wants, change or delete it and say so — do not contort the "
+        "implementation to satisfy it."
+    ),
+    CompatibilityPosture.INTERNAL: (
+        "This work has consumers, but every one of them lives in this repository.\n"
+        "- Break interfaces freely when the design is better for it — but migrate EVERY caller "
+        "in the same change. Leave nothing behind.\n"
+        "- Do NOT add compatibility shims, deprecation windows, or dual code paths to avoid "
+        "updating a caller. Update the caller.\n"
+        "- Tests: update every test the change affects, in the same change. If a test encodes "
+        "behaviour the spec no longer wants, change it and say so — do not contort the "
+        "implementation to satisfy it.\n"
+        "- A change that leaves a caller or a test broken is incomplete, not compatible."
+    ),
+    CompatibilityPosture.PUBLIC: (
+        "This work has consumers outside this repository that you cannot update.\n"
+        "- Preserve existing behaviour and interfaces. Deprecate before removing.\n"
+        "- Compatibility shims are appropriate here.\n"
+        "- Tests: existing tests encode the contract those consumers rely on. Do not weaken or "
+        "delete them to make a change pass; if one genuinely must change, call it out explicitly "
+        "as a breaking change."
+    ),
+}
+
+
 class CycleStatus(str, Enum):
     PLANNED = "planned"
     ACTIVE = "active"

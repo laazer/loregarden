@@ -16,6 +16,7 @@ class MemoryConfigBody(BaseModel):
     obsidian_memory_subdir: str = Field(default="Loregarden/Memory", min_length=1)
     obsidian_learnings_subdir: str = Field(default="Loregarden/Learnings", min_length=1)
     obsidian_blogposts_subdir: str = Field(default="Loregarden/BlogPosts", min_length=1)
+    obsidian_checkpoints_subdir: str = Field(default="Loregarden/Checkpoints", min_length=1)
     memory_sqlite_url: str = ""
     database_url: str = ""
 

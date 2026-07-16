@@ -108,31 +108,146 @@ def _coerce_optional_bool(value: Any) -> bool:
     return bool(value)
 
 
-def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
-    """Coerce Claude MCP bridge quirks (aliases, stringified JSON, camelCase)."""
-    args = _coerce_mapping(arguments)
-
-    alias_map = {
-        "ticket_id": ("ticketId", "id"),
-        "workspace_slug": ("workspaceSlug", "workspace"),
-        "external_id": ("externalId", "slug"),
-        "run_id": ("runId",),
-        "stage_key": ("stageKey", "stage"),
-        "agent_id": ("agentId",),
-        "skill_name": ("skillName",),
-        "content_json": ("contentJson", "content"),
-        "next_agent": ("nextAgent",),
-        "next_stage_key": ("nextStageKey", "route_to_stage"),
-        "blocking_issues": ("blockingIssues",),
-        "outcome": ("routeOutcome",),
+_MEMORY_TOOL_NAMES = frozenset(
+    {
+        "loregarden_memory_status",
+        "loregarden_append_learning",
+        "loregarden_upsert_memory",
+        "loregarden_upsert_blog_post",
+        "loregarden_append_checkpoint",
+        "loregarden_search_memory",
+        "loregarden_create_memory_relation",
     }
-    for canonical, aliases in alias_map.items():
+)
+
+
+def _coerce_tags(args: dict[str, Any], payload: dict[str, Any]) -> None:
+    tags = args.get("tags")
+    if tags is None:
+        return
+    if isinstance(tags, str):
+        payload["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
+    elif isinstance(tags, list):
+        payload["tags"] = [str(t).strip() for t in tags if str(t).strip()]
+
+
+def _normalize_memory_tool_args(name: str, args: dict[str, Any]) -> dict[str, Any] | None:
+    """Normalize arguments for loregarden's memory/learnings/blog-post/checkpoint
+    tools. Returns None if `name` isn't one of these (caller falls through)."""
+    if name not in _MEMORY_TOOL_NAMES:
+        return None
+
+    if name == "loregarden_append_learning":
+        payload = {
+            "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
+            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
+            "content": _coerce_string(args.get("content"), field="content"),
+        }
+        _coerce_tags(args, payload)
+        return payload
+
+    if name == "loregarden_upsert_memory":
+        payload = {
+            "title": _coerce_string(args.get("title"), field="title"),
+            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
+        }
+        for field in ("node_id", "body", "ticket_id"):
+            if args.get(field) is not None:
+                payload[field] = _coerce_optional_string(args.get(field))
+        _coerce_tags(args, payload)
+        return payload
+
+    if name == "loregarden_upsert_blog_post":
+        payload = {
+            "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
+            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
+            "title": _coerce_string(args.get("title"), field="title"),
+            "body": _coerce_string(args.get("body"), field="body"),
+        }
+        if args.get("note_id") is not None:
+            payload["note_id"] = _coerce_optional_string(args.get("note_id"))
+        _coerce_tags(args, payload)
+        return payload
+
+    if name == "loregarden_append_checkpoint":
+        return {
+            "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
+            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
+            "run_id": _coerce_string(args.get("run_id"), field="run_id"),
+            "entry": _coerce_string(args.get("entry"), field="entry"),
+        }
+
+    if name == "loregarden_search_memory":
+        payload = {
+            "query": _coerce_string(args.get("query"), field="query"),
+            "limit": _coerce_optional_int(args.get("limit")) or 20,
+        }
+        if args.get("workspace_slug") is not None:
+            payload["workspace_slug"] = _coerce_optional_string(args.get("workspace_slug")) or ""
+        return payload
+
+    if name == "loregarden_create_memory_relation":
+        return {
+            "source_id": _coerce_string(args.get("source_id"), field="source_id"),
+            "target_id": _coerce_string(args.get("target_id"), field="target_id"),
+            "relation_type": _coerce_optional_string(args.get("relation_type")) or "related",
+            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
+        }
+
+    # loregarden_memory_status
+    payload: dict[str, Any] = {}
+    if args.get("workspace_slug") is not None:
+        payload["workspace_slug"] = _coerce_optional_string(args.get("workspace_slug")) or ""
+    return payload
+
+
+_ALIAS_MAP: dict[str, tuple[str, ...]] = {
+    "ticket_id": ("ticketId", "id"),
+    "workspace_slug": ("workspaceSlug", "workspace"),
+    "external_id": ("externalId", "slug"),
+    "run_id": ("runId",),
+    "stage_key": ("stageKey", "stage"),
+    "agent_id": ("agentId",),
+    "skill_name": ("skillName",),
+    "content_json": ("contentJson", "content"),
+    "next_agent": ("nextAgent",),
+    "next_stage_key": ("nextStageKey", "route_to_stage"),
+    "blocking_issues": ("blockingIssues",),
+    "outcome": ("routeOutcome",),
+}
+
+
+def _declared_properties(name: str) -> frozenset[str]:
+    """Argument names `name`'s own schema declares."""
+    for tool in TOOL_DEFINITIONS:
+        if tool["name"] == name:
+            return frozenset(tool.get("inputSchema", {}).get("properties", {}))
+    return frozenset()
+
+
+def _apply_aliases(name: str, args: dict[str, Any]) -> None:
+    """Rewrite bridge aliases to canonical names, in place.
+
+    The alias map is global but the tools do not share a vocabulary: one tool's alias is
+    another's real argument. `content` is an alias for `content_json` on attach_artifact and
+    is also append_learning's own required field, so aliasing it blindly popped `content`
+    away and left append_learning reporting it missing on every correct call. Never rewrite
+    an argument the target tool declares itself.
+    """
+    declared = _declared_properties(name)
+    for canonical, aliases in _ALIAS_MAP.items():
         if canonical in args:
             continue
         for alias in aliases:
-            if alias in args:
+            if alias in args and alias not in declared:
                 args[canonical] = args.pop(alias)
                 break
+
+
+def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
+    """Coerce Claude MCP bridge quirks (aliases, stringified JSON, camelCase)."""
+    args = _coerce_mapping(arguments)
+    _apply_aliases(name, args)
 
     if name == "loregarden_get_ticket":
         payload: dict[str, Any] = {}
@@ -245,77 +360,34 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             raise ValueError("state is required")
         return payload
 
-    if name == "loregarden_append_learning":
-        payload = {
+    if name == "loregarden_write_handoff":
+        checklist = args.get("checklist")
+        if isinstance(checklist, str):
+            stripped = checklist.strip()
+            if stripped:
+                try:
+                    checklist = json.loads(stripped)
+                except json.JSONDecodeError:
+                    pass  # leave as string; the service reports the parse error
+        return {
             "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
             "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
-            "content": _coerce_string(args.get("content"), field="content"),
+            "from_agent": _coerce_string(
+                args.get("from_agent")
+                if args.get("from_agent") is not None
+                else args.get("fromAgent"),
+                field="from_agent",
+            ),
+            "to_agent": _coerce_string(
+                args.get("to_agent") if args.get("to_agent") is not None else args.get("toAgent"),
+                field="to_agent",
+            ),
+            "checklist": checklist,
         }
-        tags = args.get("tags")
-        if tags is not None:
-            if isinstance(tags, str):
-                payload["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
-            elif isinstance(tags, list):
-                payload["tags"] = [str(t).strip() for t in tags if str(t).strip()]
-        return payload
 
-    if name == "loregarden_upsert_memory":
-        payload = {
-            "title": _coerce_string(args.get("title"), field="title"),
-            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
-        }
-        for field in ("node_id", "body", "ticket_id"):
-            if args.get(field) is not None:
-                payload[field] = _coerce_optional_string(args.get(field))
-        tags = args.get("tags")
-        if tags is not None:
-            if isinstance(tags, str):
-                payload["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
-            elif isinstance(tags, list):
-                payload["tags"] = [str(t).strip() for t in tags if str(t).strip()]
-        return payload
-
-    if name == "loregarden_upsert_blog_post":
-        payload = {
-            "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
-            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
-            "title": _coerce_string(args.get("title"), field="title"),
-            "body": _coerce_string(args.get("body"), field="body"),
-        }
-        for field in ("note_id",):
-            if args.get(field) is not None:
-                payload[field] = _coerce_optional_string(args.get(field))
-        tags = args.get("tags")
-        if tags is not None:
-            if isinstance(tags, str):
-                payload["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
-            elif isinstance(tags, list):
-                payload["tags"] = [str(t).strip() for t in tags if str(t).strip()]
-        return payload
-
-    if name == "loregarden_search_memory":
-        payload = {
-            "query": _coerce_string(args.get("query"), field="query"),
-            "limit": _coerce_optional_int(args.get("limit")) or 20,
-        }
-        if args.get("workspace_slug") is not None:
-            payload["workspace_slug"] = _coerce_optional_string(args.get("workspace_slug")) or ""
-        return payload
-
-    if name == "loregarden_create_memory_relation":
-        payload = {
-            "source_id": _coerce_string(args.get("source_id"), field="source_id"),
-            "target_id": _coerce_string(args.get("target_id"), field="target_id"),
-            "relation_type": _coerce_optional_string(args.get("relation_type")) or "related",
-            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
-        }
-        return payload
-
-    if name == "loregarden_memory_status":
-        payload: dict[str, Any] = {}
-        if args.get("workspace_slug") is not None:
-            payload["workspace_slug"] = _coerce_optional_string(args.get("workspace_slug")) or ""
-        return payload
+    memory_payload = _normalize_memory_tool_args(name, args)
+    if memory_payload is not None:
+        return memory_payload
 
     return args
 
@@ -624,6 +696,81 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": "loregarden_append_checkpoint",
+        "description": (
+            "Append a checkpoint entry (assumption/ambiguity log) for a ticket+run to the "
+            "workspace-scoped Checkpoints Obsidian dir — same vault as memory/learnings, "
+            "not the workspace repo. Multiple entries accumulate in one ticket+run file."
+        ),
+        "inputSchema": _tool_schema(
+            properties={
+                "ticket_id": _string_prop("Ticket external id or UUID."),
+                "workspace_slug": _string_prop(
+                    "Workspace slug (required — scopes checkpoint dir)."
+                ),
+                "run_id": _string_prop("Run id for this ticket+run's checkpoint log."),
+                "entry": _string_prop(
+                    "Checkpoint entry markdown block "
+                    "(### [TICKET_ID] Stage — label / Would have asked / Assumption made / Confidence)."
+                ),
+            },
+            required=["ticket_id", "workspace_slug", "run_id", "entry"],
+        ),
+    },
+    {
+        "name": "loregarden_write_handoff",
+        "description": (
+            "Write a ticket's project_board/checkpoints/<ticket>/handoff-latest.yaml from a "
+            "STRUCTURED checklist, then validate it against the workspace's own handoff gate and "
+            "return any violations. Use this instead of hand-writing the YAML: it renders canonical "
+            "schema, auto-computes the required/met counters, and on validation FAIL rolls the file "
+            "back and returns violations so you can fix and retry in the same turn. Use the exact "
+            "item_key/item labels from the frozen catalog for the (from_agent → to_agent) pair "
+            "(see mandatory_workflow_gates_v1.md)."
+        ),
+        "inputSchema": _tool_schema(
+            properties={
+                "ticket_id": _string_prop("Ticket external id slug or UUID."),
+                "workspace_slug": _string_prop("Workspace slug (scopes the repo + gate)."),
+                "from_agent": _string_prop("Finishing (upstream) agent, e.g. test_designer."),
+                "to_agent": _string_prop("Next (downstream) agent, e.g. test_breaker."),
+                "checklist": {
+                    "type": "array",
+                    "description": (
+                        "Checklist items for the pair. Counters are computed for you; do not send "
+                        "required_items_met/total_required_items."
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "item_key": _string_prop(
+                                "Frozen catalog key, e.g. test_suite_complete."
+                            ),
+                            "item": _string_prop(
+                                "Catalog label text (must match the key's catalog text)."
+                            ),
+                            "status": _enum_string_prop(
+                                "Item status.",
+                                ["complete", "incomplete", "deferred", "blocked"],
+                            ),
+                            "evidence": _string_prop("Evidence (path or attestation text)."),
+                            "evidence_type": _string_prop(
+                                "Optional 'path' or 'attestation'; defaults to the catalog's type."
+                            ),
+                            "required": {
+                                "type": "boolean",
+                                "description": "Optional; defaults true. Match the catalog default.",
+                            },
+                        },
+                        "required": ["item_key", "item", "status"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            required=["ticket_id", "workspace_slug", "from_agent", "to_agent", "checklist"],
+        ),
+    },
+    {
         "name": "loregarden_search_memory",
         "description": "Search Obsidian notes and memory graph nodes, optionally scoped to a workspace.",
         "inputSchema": _tool_schema(
@@ -658,6 +805,77 @@ def _get_run(session: Session, run_id: str):
     if not run:
         raise ValueError(f"Orchestration run not found: {run_id}")
     return run
+
+
+def _execute_memory_tool(name: str, arguments: dict[str, Any]) -> str | None:
+    """Dispatch loregarden's memory/learnings/blog-post/checkpoint tools.
+    Returns None if `name` isn't one of these (caller falls through)."""
+    if name not in _MEMORY_TOOL_NAMES:
+        return None
+
+    memory = AgentMemoryService.from_settings()
+
+    if name == "loregarden_memory_status":
+        return json.dumps(
+            memory.status(workspace_slug=arguments.get("workspace_slug", "")), indent=2
+        )
+
+    if name == "loregarden_append_learning":
+        result = memory.append_learning(
+            ticket_id=arguments["ticket_id"],
+            workspace_slug=arguments["workspace_slug"],
+            content=arguments["content"],
+            tags=arguments.get("tags"),
+        )
+        return json.dumps(result, indent=2)
+
+    if name == "loregarden_upsert_memory":
+        result = memory.upsert_memory(
+            node_id=arguments.get("node_id", ""),
+            title=arguments["title"],
+            body=arguments.get("body", ""),
+            tags=arguments.get("tags"),
+            ticket_id=arguments.get("ticket_id", ""),
+            workspace_slug=arguments["workspace_slug"],
+        )
+        return json.dumps(result, indent=2)
+
+    if name == "loregarden_upsert_blog_post":
+        result = memory.upsert_blog_post(
+            ticket_id=arguments["ticket_id"],
+            workspace_slug=arguments["workspace_slug"],
+            title=arguments["title"],
+            body=arguments["body"],
+            tags=arguments.get("tags"),
+            note_id=arguments.get("note_id", ""),
+        )
+        return json.dumps(result, indent=2)
+
+    if name == "loregarden_append_checkpoint":
+        result = memory.append_checkpoint(
+            ticket_id=arguments["ticket_id"],
+            workspace_slug=arguments["workspace_slug"],
+            run_id=arguments["run_id"],
+            entry=arguments["entry"],
+        )
+        return json.dumps(result, indent=2)
+
+    if name == "loregarden_search_memory":
+        result = memory.search(
+            arguments["query"],
+            workspace_slug=arguments.get("workspace_slug", ""),
+            limit=int(arguments.get("limit") or 20),
+        )
+        return json.dumps(result, indent=2)
+
+    # loregarden_create_memory_relation
+    result = memory.create_relation(
+        source_id=arguments["source_id"],
+        target_id=arguments["target_id"],
+        relation_type=arguments.get("relation_type", "related"),
+        workspace_slug=arguments["workspace_slug"],
+    )
+    return json.dumps(result, indent=2)
 
 
 def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -> str:
@@ -734,60 +952,22 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
         orch.update_ticket_manual(ticket, body)
         return json.dumps(_ticket_state_payload(session, ticket.id), indent=2)
 
-    memory = AgentMemoryService.from_settings()
-    if name == "loregarden_memory_status":
-        return json.dumps(
-            memory.status(workspace_slug=arguments.get("workspace_slug", "")),
-            indent=2,
-        )
+    if name == "loregarden_write_handoff":
+        from loregarden.services.handoff_writer import write_handoff
 
-    if name == "loregarden_append_learning":
-        result = memory.append_learning(
+        result = write_handoff(
+            session,
             ticket_id=arguments["ticket_id"],
             workspace_slug=arguments["workspace_slug"],
-            content=arguments["content"],
-            tags=arguments.get("tags"),
+            from_agent=arguments["from_agent"],
+            to_agent=arguments["to_agent"],
+            checklist=arguments["checklist"],
         )
         return json.dumps(result, indent=2)
 
-    if name == "loregarden_upsert_memory":
-        result = memory.upsert_memory(
-            node_id=arguments.get("node_id", ""),
-            title=arguments["title"],
-            body=arguments.get("body", ""),
-            tags=arguments.get("tags"),
-            ticket_id=arguments.get("ticket_id", ""),
-            workspace_slug=arguments["workspace_slug"],
-        )
-        return json.dumps(result, indent=2)
-
-    if name == "loregarden_upsert_blog_post":
-        result = memory.upsert_blog_post(
-            ticket_id=arguments["ticket_id"],
-            workspace_slug=arguments["workspace_slug"],
-            title=arguments["title"],
-            body=arguments["body"],
-            tags=arguments.get("tags"),
-            note_id=arguments.get("note_id", ""),
-        )
-        return json.dumps(result, indent=2)
-
-    if name == "loregarden_search_memory":
-        result = memory.search(
-            arguments["query"],
-            workspace_slug=arguments.get("workspace_slug", ""),
-            limit=int(arguments.get("limit") or 20),
-        )
-        return json.dumps(result, indent=2)
-
-    if name == "loregarden_create_memory_relation":
-        result = memory.create_relation(
-            source_id=arguments["source_id"],
-            target_id=arguments["target_id"],
-            relation_type=arguments.get("relation_type", "related"),
-            workspace_slug=arguments["workspace_slug"],
-        )
-        return json.dumps(result, indent=2)
+    memory_result = _execute_memory_tool(name, arguments)
+    if memory_result is not None:
+        return memory_result
 
     run_id = arguments.get("run_id")
     if not run_id:

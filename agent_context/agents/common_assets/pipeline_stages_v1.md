@@ -42,12 +42,13 @@ After Stage 1 completes and before the Human Design Gate, check whether the tick
 
 | Condition | Agent | Role file |
 |---|---|---|
-| New gameplay mechanics, elemental combinations, or player-facing systems | Game Designer | `agent_context/agents/misc_agents/game_designer_v1.md` |
-| Movement formulas, collision logic, fixed-timestep, or physics determinism | Physics Engineer | `agent_context/agents/misc_agents/physics_engineer_v1.md` |
-| Particle systems, shaders, elemental VFX, or combat visual feedback | VFX Engineer | `agent_context/agents/misc_agents/vfx_engineer_v1.md` |
-| Unfamiliar Godot API surface, scene architecture, or engine lifecycle | Godot Engineer | `agent_context/agents/misc_agents/godot_engineer_v1.md` |
-| Blender `bpy` scripting, asset pipeline, or 3D art production decisions | Technical Artist | `agent_context/agents/misc_agents/technical_artist_v1.md` |
-| Novel mechanic requiring evidence-gathering before spec | Research Librarian | `agent_context/agents/misc_agents/research_librarian_v1.md` |
+| Unfamiliar subsystem or novel approach needing evidence before spec | Research Librarian | `agent_context/agents/misc_agents/research_librarian_v1.md` |
+
+> Consultants are per-project. This is Loregarden's table; each workspace resolves
+> `agent_context/` from its own repo root, so a workspace with domain specialists (e.g.
+> Blobert's Godot and Blender consultants) declares them in its own copy of this file. Only
+> list a role file that exists in *this* repo — a row pointing at a missing file sends the
+> agent hunting for it.
 
 If multiple conditions match, **invoke all matching consultants in parallel** — they each read the same ticket independently and produce advisory output.
 
@@ -55,15 +56,17 @@ If multiple conditions match, **invoke all matching consultants in parallel** �
 
 > **CONSULTATION MODE — NO IMPLEMENTATION**
 >
-> Read your role definition at `<AGENT_ROLE_FILE>`. Read the ticket at `<TICKET_PATH>`.
+> Read your role definition at `<AGENT_ROLE_FILE>`. Read the ticket with `loregarden_get_ticket`
+> — there is no ticket file.
 >
 > Provide validated, source-backed guidance relevant to this ticket. Cite sources. Apply your Analysis Framework to every recommendation.
 >
 > Do NOT write implementation code or tests. Do NOT modify the ticket.
 >
-> Return a structured consultation report the Spec Agent can use as input.
+> Return a structured consultation report the Spec Agent can use as input. Return it in your
+> response or via `loregarden_attach_artifact` — never as a markdown file.
 
-After all consultants complete, append one-line summaries to the scoped checkpoint log (`project_board/checkpoints/<ticket-id>/<run-id>.md`): `- Consultation [Agent Name]: <key finding or "no blocking concerns">`.
+After all consultants complete, record one-line summaries with `loregarden_append_checkpoint` — never by writing a checkpoint file: `Consultation [Agent Name]: <key finding or "no blocking concerns">`.
 
 If no condition matches, skip this stage entirely.
 
@@ -382,7 +385,7 @@ Invoke a `learning` subagent:
 >
 > Focus on: bugs or regressions that occurred, rework cycles (GDScript/Architecture review fix iterations), test failures that revealed implementation gaps, incorrect spec assumptions, and workflow inefficiencies.
 >
-> Append output to `project_board/LEARNINGS.md`. If no meaningful insights exist, append: `## [<TICKET_ID>] — No significant learnings identified.`
+> Persist output with `loregarden_append_learning`. If no meaningful insights exist, record: `No significant learnings identified.` Never write a learnings file to the repo.
 >
 > Do not write code. Do not stop for human input.
 
@@ -394,7 +397,7 @@ Invoke a `learning` subagent:
 
 **Background behavior (autopilot only):** Fire this stage in the background after Stage 7 starts. Do not wait for it before starting the next ticket.
 
-Prepare a **blog context capsule** (5–12 lines): ticket id, one-line goal, outcome, git commit SHAs for this ticket's work, path to the scoped checkpoint log, 2–4 bullets on rework, surprises, or corrections. Optionally write to `project_board/checkpoints/<ticket-id>/blog-context-<run-stub>.md`.
+Prepare a **blog context capsule** (5–12 lines): ticket id, one-line goal, outcome, git commit SHAs for this ticket's work, 2–4 bullets on rework, surprises, or corrections. Pass it inline; do not write it to a file.
 
 Invoke a `general-purpose` subagent:
 

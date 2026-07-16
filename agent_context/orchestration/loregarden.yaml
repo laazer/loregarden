@@ -6,8 +6,21 @@ orchestrator:
   skill: autopilot
   pipeline: agents/common_assets/pipeline_stages_v1.md
 gates:
-  enabled: false
-  commands: []
+  enabled: true
+  # Static-analysis gate: each check is paired with a fixer of the same name in
+  # autofix_commands below, so a failure the fixer can resolve never reaches a
+  # human. Commands run from the workspace root via `bash -c` so they find the
+  # per-subproject tooling (uv-managed venv for server/, node_modules for client/).
+  commands:
+    - bash -c "cd server && uv run ruff check ."
+    - bash -c "cd server && uv run ruff format --check ."
+    - bash -c "cd client && npx oxlint ."
+  autofix_commands:
+    - bash -c "cd server && uv run ruff check --fix ."
+    - bash -c "cd server && uv run ruff format ."
+    - bash -c "cd client && npx oxlint --fix ."
+  autofix_agent_fallback: true
+  autofix_max_agent_attempts: 2
 subagents:
   spawn_via: cli
 callbacks:

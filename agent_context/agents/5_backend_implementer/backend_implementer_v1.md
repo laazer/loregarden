@@ -20,11 +20,11 @@ alwaysApply: false
 
 ## Core Responsibilities
 - Implement **business logic, data models, and API endpoints** exactly as specified.  
-- Ensure all implementations **pass existing tests** and **any newly added tests**. Tests are the **primary source of truth**.  
 - Follow **existing architecture, design patterns, and code style** conventions.  
-- Maintain **backward compatibility**; do not break existing functionality unless explicitly instructed.  
-- **Ask clarifying questions immediately** if any spec, requirement, or test is ambiguous. Never make assumptions.  
-- Implement and validate APIs for both **REST and gRPC**, including request validation, error handling, and proper status codes.  
+- Honour the **Compatibility posture** in your Loregarden run context — it is the authoritative answer to how freely you may change existing interfaces, callers, and tests. Do not assume you must preserve existing behaviour; the posture tells you whether you must. If the run context somehow carries no posture, treat the work as `internal`: break interfaces where the design is better for it, but migrate every caller and test in the same change.  
+- Tests encode intent, not law. A test that contradicts the spec is a bug in the test — fix it under the posture's rules and say so. Never contort an implementation to satisfy a test the spec no longer wants. Your change must leave the suite passing and every affected caller migrated.  
+- **Ask clarifying questions immediately** if any spec or requirement is ambiguous. Never make assumptions.  
+- Implement and validate APIs, including request validation, error handling, and proper status codes.  
 - Optimize for **performance, scalability, and security**.  
 - Document non-obvious logic inline with clear comments.  
 

@@ -585,3 +585,119 @@ def test_studio_generate_workflow_endpoint(client: TestClient, monkeypatch):
 def test_studio_generate_requires_description(client: TestClient):
     res = client.post("/api/studio/agents/generate", json={"description": "   "})
     assert res.status_code == 400
+
+
+def _two_stage_workflow(slug: str) -> dict:
+    return {
+        "slug": slug,
+        "name": slug,
+        "description": "",
+        "stages": [
+            {"key": "implement", "name": "Implement", "stage_type": "agent", "order": 1},
+            {"key": "gate", "name": "Gate", "stage_type": "agent", "order": 2},
+        ],
+    }
+
+
+def test_studio_stage_edit_preserves_reject_transitions(client: TestClient):
+    """Editing a stage must not wipe hand-authored rework routes.
+
+    This regenerated a bare linear chain on every stage edit, silently dropping every
+    `when: reject` edge — which is why studio templates had none, and why a rejected
+    gate could only ever rewind one stage instead of routing where it asked.
+    """
+    body = _two_stage_workflow("reject-preserve")
+    body["transitions"] = [
+        {"from": "implement", "to": "gate", "when": "pass"},
+        {"from": "gate", "to": "implement", "when": "reject"},
+    ]
+    assert client.post("/api/studio/workflows", json=body).status_code in (200, 201)
+
+    # A stage-only edit — exactly what the Studio editor sends.
+    updated = client.patch(
+        "/api/studio/workflows/reject-preserve",
+        json={
+            "stages": [
+                {
+                    "key": "implement",
+                    "name": "Implement (renamed)",
+                    "stage_type": "agent",
+                    "order": 1,
+                },
+                {"key": "gate", "name": "Gate", "stage_type": "agent", "order": 2},
+            ]
+        },
+    )
+    assert updated.status_code == 200
+    transitions = updated.json()["transitions"]
+    assert {"from": "gate", "to": "implement", "when": "reject"} in transitions
+    assert {"from": "implement", "to": "gate", "when": "pass"} in transitions
+
+
+def test_studio_stage_edit_prunes_transitions_to_removed_stages(client: TestClient):
+    """A route to a deleted stage is a phantom target — drop it rather than keep
+    a key apply_stage_route can't resolve."""
+    body = _two_stage_workflow("reject-prune")
+    body["transitions"] = [
+        {"from": "implement", "to": "gate", "when": "pass"},
+        {"from": "gate", "to": "implement", "when": "reject"},
+    ]
+    assert client.post("/api/studio/workflows", json=body).status_code in (200, 201)
+
+    updated = client.patch(
+        "/api/studio/workflows/reject-prune",
+        json={"stages": [{"key": "gate", "name": "Gate", "stage_type": "agent", "order": 1}]},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["transitions"] == []
+
+
+def test_studio_stage_edit_seeds_linear_chain_only_when_none_exist(client: TestClient):
+    """The bootstrap branch: a workflow with no routes of its own gets a linear
+    chain. create_workflow auto-seeds, so reaching this needs an explicit clear."""
+    assert client.post(
+        "/api/studio/workflows", json=_two_stage_workflow("reject-seed")
+    ).status_code in (200, 201)
+    assert (
+        client.patch("/api/studio/workflows/reject-seed", json={"transitions": []}).status_code
+        == 200
+    )
+
+    updated = client.patch(
+        "/api/studio/workflows/reject-seed",
+        json={
+            "stages": [
+                {"key": "implement", "name": "Implement", "stage_type": "agent", "order": 1},
+                {"key": "gate", "name": "Gate", "stage_type": "agent", "order": 2},
+            ]
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["transitions"] == [{"from": "implement", "to": "gate"}]
+
+
+def test_studio_adding_a_stage_preserves_routes_without_inventing_edges(client: TestClient):
+    """Adding a stage no longer re-links the chain — preserving authored routes wins
+    over auto-wiring, and an unrouted forward hop still resolves via stage order
+    (StateMachine.resolve_next_stage_key falls back to next_stage_key)."""
+    body = _two_stage_workflow("reject-add")
+    body["transitions"] = [
+        {"from": "implement", "to": "gate", "when": "pass"},
+        {"from": "gate", "to": "implement", "when": "reject"},
+    ]
+    assert client.post("/api/studio/workflows", json=body).status_code in (200, 201)
+
+    updated = client.patch(
+        "/api/studio/workflows/reject-add",
+        json={
+            "stages": [
+                {"key": "implement", "name": "Implement", "stage_type": "agent", "order": 1},
+                {"key": "gate", "name": "Gate", "stage_type": "agent", "order": 2},
+                {"key": "done", "name": "Done", "stage_type": "agent", "order": 3},
+            ]
+        },
+    )
+    assert updated.status_code == 200
+    transitions = updated.json()["transitions"]
+    assert {"from": "gate", "to": "implement", "when": "reject"} in transitions
+    assert not [item for item in transitions if item["to"] == "done"]

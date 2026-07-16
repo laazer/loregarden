@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef
+from loregarden.services.compatibility_posture import ResolvedPosture
 
 # Legacy ticket / workflow-enforcement stage names agents recognize.
 LEGACY_STAGE_ALIASES: dict[str, str] = {
@@ -24,6 +25,8 @@ def build_orchestration_context(
     ticket: Ticket,
     run: AgentRun,
     stage_def: WorkflowStageDef | None,
+    stages: list[WorkflowStageDef] | None = None,
+    posture: ResolvedPosture | None = None,
 ) -> str:
     stage_key = run.stage_key or ticket.workflow_stage_key
     display_name = stage_def.name if stage_def else stage_key
@@ -32,8 +35,8 @@ def build_orchestration_context(
 
     lines = [
         "## Loregarden run context (authoritative for this run)",
-        "This stage was started by the Loregarden control plane. Execute the work below even if",
-        "the project_board ticket markdown WORKFLOW STATE section shows a different legacy Stage.",
+        "This stage was started by the Loregarden control plane. The values below are the truth",
+        "for this run — they override any other stage or agent you infer from elsewhere.",
         "",
         f"- Loregarden stage key: `{stage_key}`",
         f"- Display name: {display_name}",
@@ -41,10 +44,42 @@ def build_orchestration_context(
         f"- Assigned agent: {run.agent_id}",
         f"- Skill: {skill or '—'}",
         "",
-        "Do not refuse work because the ticket file still says IMPLEMENTATION or names a different",
-        "next agent. Complete this Loregarden stage, then update the ticket file only if your",
-        "role requires it.",
+        "This ticket has no markdown file. Ticket data — description, acceptance criteria, stage",
+        "cursor — lives in Loregarden's database and is reachable only via the MCP tools. Do not",
+        "search the repo for a ticket file, and do not write ticket content to one; `project_board/`",
+        "holds checkpoint and handoff artifacts only. Complete this stage, then record changes",
+        "through MCP.",
     ]
+
+    # Without the real key list, `reroute_to_stage` is a guess — and a plausible
+    # invented key (e.g. "implementation" where this workflow says "implement")
+    # gets dropped, sending rework to the wrong stage.
+    upstream = [stage.key for stage in sorted(stages or [], key=lambda s: s.order)]
+    if stage_key in upstream:
+        upstream = upstream[: upstream.index(stage_key)]
+    if upstream:
+        lines += [
+            "",
+            "### Valid `reroute_to_stage` values for this workflow",
+            "If your stage report rejects this work, `reroute_to_stage` MUST be one of these exact",
+            "keys (upstream of your own stage) — anything else is discarded and the rework is routed",
+            "to the immediately preceding stage instead. Use `null` if none applies.",
+            "",
+            ", ".join(f"`{key}`" for key in upstream),
+        ]
+
+    if posture is not None:
+        lines += [
+            "",
+            "### Compatibility posture — how freely you may change existing code",
+            f"**{posture.posture.value}** (source: {posture.source})",
+            "",
+            "This is the authoritative answer to 'am I allowed to break this?' for this work item.",
+            "It overrides any general instinct — or any role/module text — telling you to preserve",
+            "existing behaviour by default.",
+            "",
+            posture.contract,
+        ]
 
     if ticket.blocking_issues:
         lines += [

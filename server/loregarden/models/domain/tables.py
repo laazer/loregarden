@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from loregarden.models.domain.enums import (
+    DEFAULT_COMPATIBILITY_POSTURE,
     ApprovalKind,
     ApprovalStatus,
     AutoFixStatus,
@@ -45,6 +46,8 @@ class Workspace(SQLModel, table=True):
     lmstudio_base_url: str = ""
     lmstudio_model: str = ""
     permission_allowlist_json: str = "[]"
+    # Workspace-wide default; a ticket or any of its ancestors may override it.
+    compatibility_posture: str = DEFAULT_COMPATIBILITY_POSTURE.value
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -107,6 +110,9 @@ class Ticket(SQLModel, table=True):
     triage_runtime_json: str = "{}"
     orchestration_runtime_json: str = "{}"
     permission_allowlist_json: str = "[]"
+    # Blank = inherit from the nearest ancestor that sets one, else the workspace.
+    # Milestones are tickets, so this one column covers milestone- and ticket-level.
+    compatibility_posture: str = ""
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

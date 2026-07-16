@@ -5,7 +5,31 @@ alwaysApply: true
 ---
 # LOREGARDEN MCP
 
-When Loregarden orchestrates work (IDE, API, or autopilot), **use Loregarden MCP tools** for ticket workflow state instead of editing `WORKFLOW STATE` in project_board markdown.
+When Loregarden orchestrates work (IDE, API, or autopilot), **use Loregarden MCP tools** for all ticket data. Tickets live in Loregarden's database and are reachable only through MCP — they are not files in the repo.
+
+## No markdown deliverables in the repo
+
+**Never create a markdown file to report your work.** No `TEST_*_FINDINGS.md`, no
+`*_STAGE_COMPLETION.md`, no `TICKET_*_REPORT.md`, no summary, analysis, sign-off, or
+verification file — not at the repo root, not in `server/tests/`, not anywhere. Loregarden
+reads none of them, so a report written to disk is invisible to the control plane; it only
+gets swept into an unrelated ticket's commit by the orchestrator.
+
+If your role says to "produce a report", "document your findings", or "provide a summary" and
+names no destination, the destination is **MCP** — never a new file:
+
+| You want to record… | Use | Not |
+|---|---|---|
+| Findings, analysis, test output, review report | `loregarden_attach_artifact` | a `*.md` file |
+| Stage outcome / approve / reject decision | `loregarden_complete_stage` | a `*_COMPLETION.md` file |
+| Assumption or ambiguity you resolved alone | `loregarden_append_checkpoint` | a checkpoint `.md` |
+| Ticket learnings, anti-patterns | `loregarden_append_learning` | `LEARNINGS.md` / `learning-output.md` |
+| Spec, description, acceptance criteria | `loregarden_update_ticket` | a spec `.md` |
+| Handoff to the next stage | `loregarden_write_handoff` | a hand-written YAML |
+
+Short findings belong **in your response text**. Long ones belong in
+`loregarden_attach_artifact`. Writing real source code and real test files is of course still
+your job — this rule is about *reports about* the work, not the work.
 
 ## Transport
 
@@ -35,9 +59,10 @@ Use `"type": "stdio"` or `"type": "http"` in MCP config — never bare `url` alo
 | Finish orchestration run | `loregarden_complete_orchestration` |
 | Persist learnings / memory (Obsidian + iCloud SQLite) | `loregarden_append_learning`, `loregarden_upsert_memory`, `loregarden_search_memory` |
 | Persist blog post markdown | `loregarden_upsert_blog_post` |
+| Log a checkpoint (assumption/ambiguity, see `checkpoint_protocol_v1.md`) | `loregarden_append_checkpoint` |
 | Inspect memory backend config | `loregarden_memory_status` |
 
-## Memory, learnings, and blog posts (workspace-scoped)
+## Memory, learnings, blog posts, and checkpoints (workspace-scoped)
 
 Agent artifacts are **per workspace**. Loregarden resolves Obsidian and SQLite paths — agents must **not** write vault files directly.
 
@@ -50,6 +75,7 @@ Agent artifacts are **per workspace**. Loregarden resolves Obsidian and SQLite p
 | Durable memory | `loregarden_upsert_memory` | `obsidian_memory_dir` + `memory_sqlite_path` (`memory_nodes`) |
 | Ticket learnings | `loregarden_append_learning` | `obsidian_learnings_dir` + `memory_sqlite_path` (`memory_nodes`) |
 | Blog posts | `loregarden_upsert_blog_post` | `obsidian_blogposts_dir` only (not in SQLite) |
+| Checkpoints | `loregarden_append_checkpoint` | `obsidian_checkpoints_dir` only (not in SQLite) |
 | Graph links | `loregarden_create_memory_relation` | `memory_sqlite_path` (`memory_relations`) |
 | Prior context | `loregarden_search_memory` | searches Obsidian notes + SQLite `memory_nodes` |
 
@@ -57,13 +83,20 @@ Agent artifacts are **per workspace**. Loregarden resolves Obsidian and SQLite p
 
 Loregarden **stage runs** (started from the IDE or `POST /api/tickets/{id}/start`) already update workflow state when the CLI run completes. During a stage run:
 
-1. **Read** ticket state with `loregarden_get_ticket` — do not trust stale project_board markdown alone.
+1. **Read** ticket state with `loregarden_get_ticket`. MCP is the **only** source of ticket
+   data — title, description, acceptance criteria, and stage cursor all live in Loregarden's
+   database. There is no ticket markdown to read; do not go looking for one.
    - UUID: `{"ticket_id": "<uuid>"}`
    - Slug: `{"ticket_id": "03-wire-cli-agent-runner", "workspace_slug": "loregarden"}`
    - Or `loregarden_get_ticket_by_external` / `loregarden_list_tickets` for discovery
-2. **Do not** edit project_board `WORKFLOW STATE` / `NEXT ACTION` for stage cursor changes Loregarden owns.
-3. **Do** use MCP to attach extra artifacts (`loregarden_attach_artifact`) or request human approval (`loregarden_request_approval`) when your role requires it.
-4. **Do** still edit the repo and project_board ticket **content** (description, acceptance criteria, checkpoints) when your role requires it.
+2. **Do not** search the repo for a ticket file. `project_board/` is not a ticket store — it
+   holds only checkpoint and handoff artifacts. A grep for the ticket there finds nothing and
+   wastes the run. If `loregarden_get_ticket` does not have what you need, the data does not
+   exist anywhere else.
+3. **Do not** write ticket content to disk. Update the ticket via `loregarden_update_ticket`;
+   never mirror description or acceptance criteria into a markdown file. Files written under
+   `project_board/` get swept into unrelated commits by the orchestrator.
+4. **Do** use MCP to attach extra artifacts (`loregarden_attach_artifact`) or request human approval (`loregarden_request_approval`) when your role requires it.
 
 ## Orchestrator / autopilot
 

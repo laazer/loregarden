@@ -18,7 +18,17 @@ When Loregarden orchestrates tickets (IDE, API, SQLite control plane):
 - Read and follow `agent_context/agents/common_assets/loregarden_mcp_v1.md`
 - Read and follow `agent_context/agents/common_assets/memory_protocol_v1.md` when persisting or searching memory, learnings, or blog posts
 - Use Loregarden MCP tools for workflow state, stage transitions, approvals, and artifacts
-- Do **not** edit project_board ticket `WORKFLOW STATE` for stage cursor changes Loregarden owns
+- Tickets live in Loregarden's database, not in the repo. Do not search for a ticket file
+
+**Never write a markdown file to report your work.** No findings, summary, analysis,
+sign-off, verification, spec, or stage-completion file — anywhere in the repo. Loregarden
+reads none of them; they only get swept into an unrelated ticket's commit. When your role
+says to produce a report or document findings and names no destination, the destination is
+MCP: `loregarden_attach_artifact` for reports and test output, `loregarden_complete_stage`
+for stage outcomes, `loregarden_append_checkpoint` for assumptions, `loregarden_append_learning`
+for learnings, `loregarden_update_ticket` for spec and acceptance criteria. Short findings go
+in your response text. Writing real source code and real test files remains your job — this
+rule covers *reports about* the work.
 - MCP endpoint: `POST http://127.0.0.1:8000/mcp` (or `LOREGARDEN_MCP_URL` / `./scripts/mcp-server.sh`)
 
 ------------------------------------------------------------
@@ -127,7 +137,7 @@ inferring your outcome from prose or exit code alone.
 Field rules:
 - `status`: `pass` if this stage's work is complete and correct; `fail` or `needs_rework` if it is not (e.g. static QA found real violations, a reviewer rejected the diff, tests could not be made to pass); `blocked` if you cannot proceed at all (e.g. missing credentials, an ambiguous requirement only a human can resolve) — unlike `fail`/`needs_rework`, this halts the ticket for human review rather than rerouting for automatic rework.
 - `confidence`: your honest confidence (0.0–1.0) that `status` is correct. Do not default to 1.0 — if you are uncertain, say so.
-- `reroute_to_stage`: when `status` is `fail` or `needs_rework` and you know which upstream stage should redo the work (e.g. `implementation_backend`, `spec`), name its stage key. Use `null` if you don't know — the orchestrator will fall back to the workflow template's rework route, or the immediately preceding stage. Ignored when `status` is `blocked`.
+- `reroute_to_stage`: when `status` is `fail` or `needs_rework` and you know which upstream stage should redo the work, name its stage key **exactly as it appears in the "Valid `reroute_to_stage` values for this workflow" list in your run context** — do not guess or invent a plausible-sounding key, and do not use a stage's display name. A key that isn't in that list is discarded, and the rework falls back to the immediately preceding stage — which is rarely where you wanted it. Use `null` if you don't know or none applies: the orchestrator will then fall back to the workflow template's rework route, or the immediately preceding stage. Ignored when `status` is `blocked`.
 - `reroute_context`: when rerouting, a specific, actionable description of what the target stage missed or must fix. This is delivered to that stage's agent as prior-stage feedback — write it for that reader, not for a human audit log. When `status` is `blocked`, use this field instead to explain the blocker for the human who picks this up.
 
 If you emit no report, or a malformed one, the orchestrator falls back to today's exit-code-only behavior — but that means a stage that only *looks* successful (clean exit, buggy work) silently advances. Always emit the report.
@@ -166,7 +176,7 @@ No handoff or completion without the required Git steps (commits on the feature 
 TESTING DISCIPLINE
 ------------------------------------------------------------
 
-**Baseline before edits:** Any agent that runs tests must execute the relevant test command **once before making any code or test changes** to record which tests already fail. This first run is the pre-existing failure baseline. Document it in the scoped checkpoint log.
+**Baseline before edits:** Any agent that runs tests must execute the relevant test command **once before making any code or test changes** to record which tests already fail. This first run is the pre-existing failure baseline. Record it with `loregarden_append_checkpoint` — do not write a results file.
 
 **Never use `git stash` to establish a baseline.** `git stash` is destructive, unsafe in worktrees (stashes are not branch-scoped and can be applied to the wrong tree), and unnecessary. The correct pattern is:
 1. Run tests at session start (before any edits) → record failures as "pre-existing".

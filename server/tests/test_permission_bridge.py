@@ -113,8 +113,44 @@ def test_is_ask_user_question():
 
 def test_auto_approved_mcp_tools():
     assert is_auto_approved_mcp_tool("mcp__loregarden__loregarden_get_ticket") is True
-    assert is_auto_approved_mcp_tool("mcp__loregarden__loregarden_attach_artifact") is False
     assert bare_mcp_tool_name("mcp__loregarden__loregarden_get_ticket") == "loregarden_get_ticket"
+    assert is_auto_approved_mcp_tool("Bash") is False
+    assert is_auto_approved_mcp_tool("mcp__other__something") is False
+
+
+def test_memory_and_checkpoint_writes_are_auto_approved():
+    """Bookkeeping writes must not need a human click.
+
+    They land only in Loregarden's own stores (vault, memory graph, artifacts
+    table), and agents are told to route every report through them rather than
+    writing markdown into the repo — so gating them just spends the run timeout.
+    """
+    for tool in (
+        "loregarden_append_checkpoint",
+        "loregarden_append_learning",
+        "loregarden_upsert_memory",
+        "loregarden_create_memory_relation",
+        "loregarden_upsert_blog_post",
+        "loregarden_attach_artifact",
+        "loregarden_search_memory",
+        "loregarden_memory_status",
+    ):
+        assert is_auto_approved_mcp_tool(f"mcp__loregarden__{tool}") is True, tool
+
+
+def test_workflow_mutating_mcp_tools_stay_gated():
+    """Tools that move workflow state or write repo files keep the human gate."""
+    for tool in (
+        "loregarden_complete_stage",
+        "loregarden_skip_stage",
+        "loregarden_block_ticket",
+        "loregarden_update_ticket",
+        "loregarden_write_handoff",
+        "loregarden_request_approval",
+        "loregarden_start_orchestration",
+        "loregarden_complete_orchestration",
+    ):
+        assert is_auto_approved_mcp_tool(f"mcp__loregarden__{tool}") is False, tool
 
 
 def test_enrich_mcp_tool_input_fills_ticket_id():

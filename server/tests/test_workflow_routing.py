@@ -401,3 +401,100 @@ def test_blobert_template_includes_reject_transitions(client: TestClient, db_ses
     assert ("script_review", "implementation") in reject_targets
     assert ("ac_gate", "implementation") in reject_targets
     assert ("test_design", "specification") in reject_targets
+
+
+def test_apply_stage_route_reject_ignores_unknown_explicit_stage_key():
+    """An agent naming a stage this workflow doesn't have (the real case: a
+    gatekeeper asking for `implementation` where the key is `implement`) must
+    not park the cursor on a phantom stage — reset_upstream_stages no-ops on an
+    unknown target and reconcile then snaps the cursor to the first PENDING
+    stage, so the rework silently goes nowhere."""
+    from loregarden.models.domain import WorkflowStageDef
+
+    stages = [
+        WorkflowStageDef(key="spec", name="Spec", order=1),
+        WorkflowStageDef(key="implement", name="Implement", order=2),
+        WorkflowStageDef(key="review", name="Review", order=3),
+        WorkflowStageDef(key="gate", name="Quality Gate", order=4),
+    ]
+    transitions = [{"from": "review", "to": "gate", "when": "pass"}]  # no reject route
+
+    ticket = Ticket(
+        external_id="unknown-reroute-test",
+        workspace_id="ws",
+        title="Unknown reroute test",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+        workflow_stage_key="gate",
+        workflow_stage_status=StageStatus.RUNNING,
+    )
+    instance = WorkflowInstance(
+        ticket_id="t1",
+        template_id="tpl1",
+        current_stage_key="gate",
+        stages_json=initial_stages_json(stages),
+    )
+
+    plan = apply_stage_route(
+        ticket,
+        instance,
+        stages,
+        transitions,
+        from_key="gate",
+        outcome="reject",
+        next_stage_key="implementation",  # not a stage key in this workflow
+        blocking_issues="receptionist NPC is missing",
+    )
+
+    assert plan.to_key == "review"
+    assert plan.upstream is True
+    assert ticket.workflow_stage_key == "review"
+    assert ticket.workflow_stage_status == StageStatus.PENDING
+    assert "receptionist NPC is missing" in ticket.blocking_issues
+    assert "implementation" in ticket.blocking_issues
+
+
+def test_apply_stage_route_reject_honors_known_explicit_stage_key():
+    """The valid-key path must keep working: a real upstream key routes there
+    directly and reopens the intervening stages."""
+    from loregarden.models.domain import WorkflowStageDef
+
+    stages = [
+        WorkflowStageDef(key="spec", name="Spec", order=1),
+        WorkflowStageDef(key="implement", name="Implement", order=2),
+        WorkflowStageDef(key="review", name="Review", order=3),
+        WorkflowStageDef(key="gate", name="Quality Gate", order=4),
+    ]
+
+    ticket = Ticket(
+        external_id="known-reroute-test",
+        workspace_id="ws",
+        title="Known reroute test",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+        workflow_stage_key="gate",
+        workflow_stage_status=StageStatus.RUNNING,
+    )
+    instance = WorkflowInstance(
+        ticket_id="t1",
+        template_id="tpl1",
+        current_stage_key="gate",
+        stages_json=initial_stages_json(stages),
+    )
+
+    plan = apply_stage_route(
+        ticket,
+        instance,
+        stages,
+        [],  # no transitions at all — the explicit key is the only route
+        from_key="gate",
+        outcome="reject",
+        next_stage_key="implement",
+        blocking_issues="receptionist NPC is missing",
+    )
+    assert plan.to_key == "implement"
+    assert ticket.workflow_stage_key == "implement"
+    stage_map = parse_stage_map(instance, stages)
+    assert stage_map["implement"] == StageStatus.PENDING
+    assert stage_map["review"] == StageStatus.PENDING
+    assert ticket.blocking_issues == "receptionist NPC is missing"

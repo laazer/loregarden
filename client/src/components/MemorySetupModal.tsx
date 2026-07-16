@@ -23,6 +23,7 @@ function configEqual(a: MemoryConfigSettings, b: MemoryConfigSettings): boolean 
     a.obsidian_memory_subdir === b.obsidian_memory_subdir &&
     a.obsidian_learnings_subdir === b.obsidian_learnings_subdir &&
     a.obsidian_blogposts_subdir === b.obsidian_blogposts_subdir &&
+    a.obsidian_checkpoints_subdir === b.obsidian_checkpoints_subdir &&
     a.memory_sqlite_url === b.memory_sqlite_url &&
     a.database_url === b.database_url
   );
@@ -334,6 +335,19 @@ export function MemorySetupModal({
               </div>
 
               <div className="modal-field">
+                <div className="modal-field-label">Checkpoints subfolder</div>
+                <input
+                  className="btn-secondary filter-select"
+                  style={{ width: "100%", fontSize: 12, fontFamily: "var(--mono)" }}
+                  value={draft.obsidian_checkpoints_subdir}
+                  disabled={isSaving}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, obsidian_checkpoints_subdir: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="modal-field">
                 <div className="modal-field-label">Memory graph SQLite URL (optional)</div>
                 <input
                   className="btn-secondary filter-select"
@@ -379,6 +393,9 @@ export function MemorySetupModal({
                   {status.obsidian_memory_dir && <div>Memory dir: {status.obsidian_memory_dir}</div>}
                   {status.obsidian_learnings_dir && <div>Learnings dir: {status.obsidian_learnings_dir}</div>}
                   {status.obsidian_blogposts_dir && <div>Blog posts dir: {status.obsidian_blogposts_dir}</div>}
+                  {status.obsidian_checkpoints_dir && (
+                    <div>Checkpoints dir: {status.obsidian_checkpoints_dir}</div>
+                  )}
                   {status.memory_sqlite_path && <div>Graph DB: {status.memory_sqlite_path}</div>}
                   {status.memory_graph_node_types?.length ? (
                     <div>SQLite stores: {status.memory_graph_node_types.join(", ")} nodes</div>
@@ -421,6 +438,7 @@ function emptyConfig(): MemoryConfigSettings {
     obsidian_memory_subdir: "Loregarden/Memory",
     obsidian_learnings_subdir: "Loregarden/Learnings",
     obsidian_blogposts_subdir: "Loregarden/BlogPosts",
+    obsidian_checkpoints_subdir: "Loregarden/Checkpoints",
     memory_sqlite_url: "",
     database_url: "sqlite:///data/loregarden.db",
   };

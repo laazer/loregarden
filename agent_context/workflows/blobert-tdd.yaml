@@ -85,7 +85,7 @@ stages:
     checklist:
       - Create or update the test level scene(s) needed to exercise this change
       - Load the affected scene(s) in the Godot editor and run them
-      - Walk through the acceptance criteria by hand, not just the automated tests
+      - "{{acceptance_criteria}}"
       - Check for regressions in adjacent systems the change touches
       - Confirm no console errors/warnings appear during play
   - key: learning

@@ -34,7 +34,35 @@ def test_build_orchestration_context_maps_testing_to_static_qa():
     assert "`testing`" in text
     assert "STATIC_QA" in text
     assert "run_tests" in text
-    assert "IMPLEMENTATION" in text
+
+
+def test_build_orchestration_context_does_not_imply_ticket_markdown():
+    """The context must not send agents hunting for a ticket file.
+
+    It used to say "even if the project_board ticket markdown WORKFLOW STATE section
+    shows a different legacy Stage", which presupposed a ticket file that no longer
+    exists for any modern ticket. Agents grepped for it, found the legacy
+    project_board/ tree, and burned turns reconciling the contradiction.
+    """
+    ticket = Ticket(
+        external_id="82-show-child-tickets",
+        title="Show child tickets",
+        workspace_id="ws",
+        workflow_stage_key="implement",
+    )
+    run = AgentRun(
+        run_code="run_test",
+        ticket_id="ticket",
+        workspace_id="ws",
+        agent_id="backend_implementer",
+        stage_key="implement",
+    )
+    stage = WorkflowStageDef(key="implement", name="Implement", order=7)
+    text = build_orchestration_context(ticket=ticket, run=run, stage_def=stage)
+
+    assert "ticket markdown" not in text.lower()
+    assert "update the ticket file" not in text.lower()
+    assert "no markdown file" in text.lower()
 
 
 def test_cli_prompt_includes_orchestration_context():

@@ -1,9 +1,21 @@
 """Parent orchestration runs direct child workflows sequentially (ticket 29)."""
 
 from fastapi.testclient import TestClient
+from loregarden.config import settings
 
 
-def test_parent_orchestration_runs_child_workflow_first(client: TestClient):
+def test_parent_orchestration_runs_child_workflow_first(client: TestClient, tmp_path, monkeypatch):
+    # Orchestration profiles always resolve from settings.repo_root (loregarden's
+    # own repo tree), not from the workspace's repo_path — so even though the
+    # seeded "loregarden" workspace here points at a throwaway git repo (see
+    # conftest's _isolate_seeded_workspace_repo), it still picks up the real
+    # agent_context/orchestration/loregarden.yaml profile, whose gate commands
+    # (`cd server && ruff check .`, etc.) assume a real checkout and always
+    # fail against that throwaway repo. Redirect repo_root so profile
+    # resolution falls through to the hardcoded default (builtin_autopilot,
+    # gates disabled) instead, matching what this test actually exercises.
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+
     milestone_id = next(
         t["id"]
         for t in client.get("/api/tickets?workspace=loregarden").json()

@@ -35,9 +35,10 @@ You operate in a **paranoid, test-driven mode**: never assume, always verify, an
 ## Strict Constraints
 
 - Modify only code within `/client/**`.  
-- Do **not** touch backend, infra, or test files.  
-- All changes must be **backward compatible** and respect existing test intent.  
-- Output must **pass all existing frontend tests** before being considered complete.  
+- Do **not** touch backend or infra files.  
+- Frontend tests under `/client/**` are **in scope**: this is a test-driven workflow, and a test that contradicts the spec is a bug in the test. Update it under the posture's rules and say so — never contort an implementation to satisfy a test the spec no longer wants.  
+- Honour the **Compatibility posture** in your Loregarden run context — it is the authoritative answer to how freely you may change existing components, props, and tests. Do not assume you must preserve existing behaviour; the posture tells you whether you must. If the run context somehow carries no posture, treat the work as `internal`: break interfaces where the design is better for it, but migrate every caller and test in the same change.  
+- Output must **leave the frontend test suite passing** before being considered complete.  
 - Any uncertain API behavior, data shape, or requirement **must be clarified** before implementation.  
 
 ---

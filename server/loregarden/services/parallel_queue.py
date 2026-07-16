@@ -314,13 +314,16 @@ class ParallelQueueService:
             logger.error(f"Error getting queued runs: {e}", exc_info=True)
             return []
 
-    async def promote_from_queue(self, workspace_id: str) -> dict | None:
+    async def promote_from_queue(self, workspace_id: str, run_id: str | None = None) -> dict | None:
         """
         Check if queue has items and slots available.
         If yes, promote next queued run to active slot.
 
         Args:
             workspace_id: Workspace ID
+            run_id: Promote this specific queued run instead of the head of the
+                queue. Used by the manual-promote endpoint; when None the
+                longest-waiting run is promoted.
 
         Returns:
             {
@@ -341,15 +344,15 @@ class ParallelQueueService:
                 logger.info(f"No available slots in workspace {workspace_id}")
                 return None
 
-            # Find first queued run
-            queue_stmt = (
-                select(QueuedRun)
-                .where(
-                    (QueuedRun.workspace_id == workspace_id)
-                    & (QueuedRun.status == QueuePosition.QUEUED)
-                )
-                .order_by(QueuedRun.position)
-            )
+            # Find the requested queued run, or the first one if unspecified
+            conditions = [
+                QueuedRun.workspace_id == workspace_id,
+                QueuedRun.status == QueuePosition.QUEUED,
+            ]
+            if run_id is not None:
+                conditions.append(QueuedRun.run_id == run_id)
+
+            queue_stmt = select(QueuedRun).where(*conditions).order_by(QueuedRun.position)
 
             queued_run = self.session.exec(queue_stmt).first()
 

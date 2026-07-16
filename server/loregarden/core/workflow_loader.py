@@ -3,8 +3,39 @@ from pathlib import Path
 
 import yaml
 from loregarden.config import settings
-from loregarden.models.domain import WorkflowStageDef, WorkflowTemplate
+from loregarden.models.domain import Ticket, WorkflowStageDef, WorkflowTemplate
 from sqlmodel import Session, select
+
+AC_CHECKLIST_PLACEHOLDER = "{{acceptance_criteria}}"
+
+
+def expand_gate_checklist(ticket: Ticket, checklist: list[str]) -> list[str]:
+    """Expand a stage's static checklist into ticket-specific items.
+
+    An ``{{acceptance_criteria}}`` entry is replaced by one concrete play-test
+    item per acceptance criterion, so each gate lists what actually needs
+    exercising for this change instead of the same generic bullet every time.
+    Every other entry passes through unchanged, and a ticket with no acceptance
+    criteria simply drops the placeholder.
+
+    Idempotent: an already-expanded checklist contains no placeholder and is
+    returned as-is. Callers apply this on both the write and read path so a raw
+    token can never reach the UI, even if a gate was recorded while the workflow
+    yaml and this code were out of sync.
+    """
+    try:
+        criteria = json.loads(ticket.acceptance_criteria_json or "[]")
+    except json.JSONDecodeError:
+        criteria = []
+    expanded: list[str] = []
+    for item in checklist:
+        if item.strip() == AC_CHECKLIST_PLACEHOLDER:
+            expanded.extend(
+                f"Play-test by hand — {str(c).strip()}" for c in criteria if str(c).strip()
+            )
+        else:
+            expanded.append(item)
+    return expanded
 
 
 def load_workflow_yaml(path: Path) -> dict:

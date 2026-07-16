@@ -73,6 +73,7 @@ import type {
   StudioGeneratedWorkflow,
   StudioWorkflowStage,
   StudioWorkflow,
+  WorkflowTransition,
   CreateTicketRequest,
   TicketImportFile,
   TicketImportItem,
@@ -218,6 +219,7 @@ export const api = {
       workflow_stage_status?: StageStatus;
       workflow_template_slug?: string;
       branch?: string;
+      compatibility_posture?: string;
       stage_key?: string;
       stage_status?: StageStatus;
       stage_updates?: Record<string, StageStatus>;
@@ -364,11 +366,11 @@ export const api = {
     name: string;
     description?: string;
     stages: StudioWorkflowStage[];
-    transitions?: { from: string; to: string }[];
+    transitions?: WorkflowTransition[];
   }) => request<StudioWorkflow>("/api/studio/workflows", { method: "POST", body: JSON.stringify(body) }),
   updateStudioWorkflow: (
     slug: string,
-    body: Partial<{ name: string; description: string; stages: StudioWorkflowStage[]; transitions: { from: string; to: string }[] }>,
+    body: Partial<{ name: string; description: string; stages: StudioWorkflowStage[]; transitions: WorkflowTransition[] }>,
   ) =>
     request<StudioWorkflow>(`/api/studio/workflows/${slug}`, {
       method: "PATCH",

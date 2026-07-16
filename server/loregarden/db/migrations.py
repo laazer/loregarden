@@ -11,6 +11,7 @@ semantics.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 
 from sqlalchemy import text
@@ -442,8 +443,93 @@ def _m_approval_checklist(conn: Connection) -> None:
     )
 
 
+def _m_clear_classify_next_agent_backfill(conn: Connection) -> None:
+    """Drop next_agent values that reconcile_workflow_state backfilled onto classify stages.
+
+    reconcile_workflow_state used to copy a stage's static agent_id into
+    ticket.next_agent for every stage type. On a classify stage that agent_id is
+    only the route table's fallback, but resolve_classify_route reads next_agent
+    back as a deliberate routing hint and returns before scoring any route --
+    pinning the ticket to the fallback agent and making the other routes
+    unreachable. The backfill is fixed in workflow_state.py, but tickets that
+    already have the value persisted stay pinned, so clear it here and let the
+    classifier score them again.
+
+    Only clears where next_agent still equals the classify stage's static
+    agent_id (the backfill's signature). A hint pointing anywhere else was set
+    deliberately -- by a reject/rework route -- and is left alone.
+    """
+    for table in ("tickets", "workflow_instances", "workflow_templates"):
+        if not _table_exists(conn, table):
+            return
+    ticket_columns = _columns(conn, "tickets")
+    if not {"next_agent", "workflow_stage_key"} <= ticket_columns:
+        return
+
+    rows = conn.execute(
+        text(
+            """
+            SELECT t.id, t.workflow_stage_key, t.next_agent, tpl.stages_json
+            FROM tickets t
+            JOIN workflow_instances inst ON inst.ticket_id = t.id
+            JOIN workflow_templates tpl ON tpl.id = inst.template_id
+            WHERE COALESCE(t.next_agent, '') != ''
+              AND COALESCE(t.workflow_stage_key, '') != ''
+            """
+        )
+    ).fetchall()
+
+    stale: set[str] = set()
+    for ticket_id, stage_key, next_agent, stages_json in rows:
+        try:
+            stages = json.loads(stages_json or "[]")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(stages, list):
+            continue
+        stage = next(
+            (s for s in stages if isinstance(s, dict) and s.get("key") == stage_key),
+            None,
+        )
+        if not stage or stage.get("stage_type") != "classify":
+            continue
+        if next_agent == (stage.get("agent_id") or ""):
+            stale.add(ticket_id)
+
+    for ticket_id in stale:
+        conn.execute(
+            text("UPDATE tickets SET next_agent = '' WHERE id = :id"),
+            {"id": ticket_id},
+        )
+
+
 # Ordered registry. Append new migrations here with the next id; never reorder or
 # rewrite an id that may already be recorded in a deployed database.
+def _m_compatibility_posture(conn: Connection) -> None:
+    """Two levels of storage give three levels of control: a ticket's own value, any
+    ancestor's (milestones are tickets), else the workspace default. Blank = inherit.
+    """
+    _add_columns_if_missing(
+        conn,
+        "workspaces",
+        {
+            "compatibility_posture": (
+                "ALTER TABLE workspaces ADD COLUMN compatibility_posture "
+                "TEXT NOT NULL DEFAULT 'internal'"
+            )
+        },
+    )
+    _add_columns_if_missing(
+        conn,
+        "tickets",
+        {
+            "compatibility_posture": (
+                "ALTER TABLE tickets ADD COLUMN compatibility_posture TEXT NOT NULL DEFAULT ''"
+            )
+        },
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -463,6 +549,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0016_triage_message_run_id", _m_triage_message_run_id),
     ("0017_agent_run_timeout_override", _m_agent_run_timeout_override),
     ("0018_approval_checklist", _m_approval_checklist),
+    ("0019_clear_classify_next_agent_backfill", _m_clear_classify_next_agent_backfill),
+    ("0020_compatibility_posture", _m_compatibility_posture),
 ]
 
 

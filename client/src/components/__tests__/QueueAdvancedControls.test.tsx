@@ -161,26 +161,26 @@ describe('QueueAdvancedControls', () => {
       fireEvent.click(toggleButtons[0]);
 
       await waitFor(() => {
-        expect(screen.getByText(/Pause/)).toBeInTheDocument();
+        expect(screen.getByText(/Promote/)).toBeInTheDocument();
       });
     });
 
-    test('active run shows pause/cancel actions', async () => {
+    test('active run is read-only', () => {
+      // Suspending or stopping an in-flight agent needs process control the
+      // runtime doesn't have, so active runs expose no actions at all.
       render(
         <QueueAdvancedControls
           workspaceId="ws-1"
           activeRuns={mockActiveRuns}
-          queuedRuns={mockQueuedRuns}
+          queuedRuns={[]}
         />
       );
 
-      const toggleButtons = screen.getAllByLabelText('Toggle controls');
-      fireEvent.click(toggleButtons[0]); // Active run
-
-      await waitFor(() => {
-        expect(screen.getByText(/Pause/)).toBeInTheDocument();
-        expect(screen.getByText(/Cancel/)).toBeInTheDocument();
-      });
+      expect(screen.getByText('feature-123')).toBeInTheDocument();
+      expect(screen.queryByText(/Pause/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Cancel/)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Toggle controls')).not.toBeInTheDocument();
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     });
 
     test('queued run shows promote/cancel actions', async () => {
@@ -193,7 +193,7 @@ describe('QueueAdvancedControls', () => {
       );
 
       const toggleButtons = screen.getAllByLabelText('Toggle controls');
-      fireEvent.click(toggleButtons[1]); // Queued run
+      fireEvent.click(toggleButtons[0]); // Queued run
 
       await waitFor(() => {
         expect(screen.getByText(/Promote/)).toBeInTheDocument();
@@ -218,11 +218,11 @@ describe('QueueAdvancedControls', () => {
       const toggleButtons = screen.getAllByLabelText('Toggle controls');
       fireEvent.click(toggleButtons[0]);
 
-      const pauseButton = screen.getByText(/Pause/);
-      fireEvent.click(pauseButton);
+      const promoteButton = screen.getByText(/Promote/);
+      fireEvent.click(promoteButton);
 
       await waitFor(() => {
-        expect(pauseButton).toBeDisabled();
+        expect(promoteButton).toBeDisabled();
       });
     });
   });
@@ -290,7 +290,7 @@ describe('QueueAdvancedControls', () => {
     test('displays error message on action failure', async () => {
       const mockOnRunControl = jest
         .fn()
-        .mockRejectedValue(new Error('Failed to pause'));
+        .mockRejectedValue(new Error('Failed to promote'));
 
       render(
         <QueueAdvancedControls
@@ -304,12 +304,12 @@ describe('QueueAdvancedControls', () => {
       const toggleButtons = screen.getAllByLabelText('Toggle controls');
       fireEvent.click(toggleButtons[0]);
 
-      const pauseButton = screen.getByText(/Pause/);
-      fireEvent.click(pauseButton);
+      const promoteButton = screen.getByText(/Promote/);
+      fireEvent.click(promoteButton);
 
       await waitFor(() => {
         // Component surfaces the underlying error's own message verbatim
-        expect(screen.getByText('Failed to pause')).toBeInTheDocument();
+        expect(screen.getByText('Failed to promote')).toBeInTheDocument();
       });
     });
 
@@ -330,14 +330,17 @@ describe('QueueAdvancedControls', () => {
       const toggleButtons = screen.getAllByLabelText('Toggle controls');
       fireEvent.click(toggleButtons[0]);
 
-      const pauseButton = screen.getByText(/Pause/);
-      fireEvent.click(pauseButton);
+      fireEvent.click(screen.getByText(/Promote/));
 
       await waitFor(() => {
         expect(screen.getByText(/Failed/)).toBeInTheDocument();
       });
 
-      // Error should be dismissible (in actual implementation)
+      fireEvent.click(screen.getByLabelText('Dismiss error'));
+
+      await waitFor(() => {
+        expect(screen.queryByText(/Failed/)).not.toBeInTheDocument();
+      });
     });
   });
 
@@ -357,11 +360,10 @@ describe('QueueAdvancedControls', () => {
       const toggleButtons = screen.getAllByLabelText('Toggle controls');
       fireEvent.click(toggleButtons[0]);
 
-      const pauseButton = screen.getByText(/Pause/);
-      fireEvent.click(pauseButton);
+      fireEvent.click(screen.getByText(/Promote/));
 
       await waitFor(() => {
-        expect(mockOnRunControl).toHaveBeenCalledWith('pause', 'run-1');
+        expect(mockOnRunControl).toHaveBeenCalledWith('promote', 'run-2');
       });
     });
 
@@ -383,12 +385,11 @@ describe('QueueAdvancedControls', () => {
       const toggleButtons = screen.getAllByLabelText('Toggle controls');
       fireEvent.click(toggleButtons[0]);
 
-      const pauseButton = screen.getByText(/Pause/);
-      fireEvent.click(pauseButton);
+      fireEvent.click(screen.getByText(/Promote/));
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith(
-          '/api/parallel/queue/run-1/pause',
+          '/api/parallel/queue/run-2/promote',
           expect.any(Object)
         );
       });

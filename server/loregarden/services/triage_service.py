@@ -13,6 +13,7 @@ from loregarden.agents.cli_adapters import build_triage_invocation
 from loregarden.agents.mcp_context import build_mcp_triage_context
 from loregarden.agents.registry import get_agent
 from loregarden.config import settings
+from loregarden.core.workflow_loader import expand_gate_checklist
 from loregarden.models.domain import (
     AgentRun,
     Approval,
@@ -316,7 +317,7 @@ def build_gate_triage_sections(session: Session, ticket: Ticket) -> list[str]:
         "that verification: reproduce what they see, diagnose issues, and fix what you can.",
         _gate_focus_guidance(stage),
     ]
-    checklist = list(stage.checklist or [])
+    checklist = expand_gate_checklist(ticket, list(stage.checklist or []))
     if checklist:
         sections.append("Verification checklist for this gate:")
         sections.extend(f"- {item}" for item in checklist)
