@@ -52,17 +52,47 @@ def _branch_entry(session: Session, workspace: Workspace, branch: str) -> dict |
 def list_branch_triage_messages(
     session: Session, workspace_id: str, branch: str, *, limit: int = 200
 ) -> list[BranchTriageMessage]:
+    """Settled messages only. A pending assistant row has no content yet — it is a
+    turn in flight, surfaced through ``branch_triage_run_status`` instead.
+    """
     return list(
         session.exec(
             select(BranchTriageMessage)
             .where(
                 BranchTriageMessage.workspace_id == workspace_id,
                 BranchTriageMessage.branch == branch,
+                BranchTriageMessage.status != "pending",
             )
             .order_by(BranchTriageMessage.created_at.asc())
             .limit(limit)
         ).all()
     )
+
+
+def latest_pending_turn(
+    session: Session, workspace_id: str, branch: str
+) -> BranchTriageMessage | None:
+    """The branch's in-flight turn, if any."""
+    return session.exec(
+        select(BranchTriageMessage)
+        .where(
+            BranchTriageMessage.workspace_id == workspace_id,
+            BranchTriageMessage.branch == branch,
+            BranchTriageMessage.status == "pending",
+        )
+        .order_by(BranchTriageMessage.created_at.desc())
+        .limit(1)
+    ).first()
+
+
+def branch_triage_run_status(
+    session: Session, workspace_id: str, branch: str
+) -> tuple[str, str | None]:
+    """Return (run_status, active_turn_id) for the branch's latest triage turn."""
+    pending = latest_pending_turn(session, workspace_id, branch)
+    if pending:
+        return "running", pending.id
+    return "idle", None
 
 
 def _runtime_for_branch(
@@ -83,6 +113,7 @@ def _runtime_for_branch(
 def branch_chat_snapshot(session: Session, workspace: Workspace, branch: str) -> dict:
     ticket = _linked_ticket(session, workspace.id, branch)
     messages = list_branch_triage_messages(session, workspace.id, branch)
+    run_status, active_turn_id = branch_triage_run_status(session, workspace.id, branch)
     return {
         "workspace_id": workspace.id,
         "branch": branch,
@@ -98,54 +129,8 @@ def branch_chat_snapshot(session: Session, workspace: Workspace, branch: str) ->
             for msg in messages
         ],
         "runtime": _runtime_for_branch(session, workspace, ticket).model_dump(),
-    }
-
-
-def send_branch_triage_message(
-    session: Session, workspace: Workspace, branch: str, content: str
-) -> dict:
-    text = content.strip()
-    if not text:
-        raise ValueError("Message cannot be empty")
-
-    user_message = BranchTriageMessage(
-        workspace_id=workspace.id,
-        branch=branch,
-        role="user",
-        content=text,
-    )
-    session.add(user_message)
-    session.commit()
-    session.refresh(user_message)
-
-    try:
-        reply = invoke_branch_triage_model(session, workspace, branch, text)
-    except Exception as exc:
-        reply = f"{TRIAGE_AGENT_NAME} unavailable: {exc}"
-
-    assistant_message = BranchTriageMessage(
-        workspace_id=workspace.id,
-        branch=branch,
-        role="assistant",
-        content=reply,
-    )
-    session.add(assistant_message)
-    session.commit()
-    session.refresh(assistant_message)
-
-    return {
-        "user_message": {
-            "id": user_message.id,
-            "role": user_message.role,
-            "content": user_message.content,
-            "created_at": user_message.created_at.isoformat(),
-        },
-        "assistant_message": {
-            "id": assistant_message.id,
-            "role": assistant_message.role,
-            "content": assistant_message.content,
-            "created_at": assistant_message.created_at.isoformat(),
-        },
+        "run_status": run_status,
+        "active_turn_id": active_turn_id,
     }
 
 

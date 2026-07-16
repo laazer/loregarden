@@ -95,6 +95,8 @@ export interface BranchTriageChatSnapshot {
     lmstudio_base_url: string;
     lmstudio_model: string;
   };
+  run_status: "idle" | "running";
+  active_turn_id: string | null;
 }
 
 async function branchTriageRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -231,7 +233,8 @@ export async function sendBranchChatMessage(
   content: string,
 ): Promise<{
   user_message: BranchTriageChatMessage;
-  assistant_message: BranchTriageChatMessage;
+  active_turn_id: string;
+  status: string;
 }> {
   return branchTriageRequest(branchQueryPath(slug, branch, "/chat/messages"), {
     method: "POST",

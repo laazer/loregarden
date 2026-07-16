@@ -38,7 +38,6 @@ export function BranchTriageChatPanel({
   const [draft, setDraft] = useState("");
   const [modelModalOpen, setModelModalOpen] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [isSending, setIsSending] = useState(false);
 
   const runtimeOptions = useQuery({
     queryKey: ["runtime-options"],
@@ -54,7 +53,13 @@ export function BranchTriageChatPanel({
     queryKey: chatQueryKey,
     queryFn: () => fetchBranchChat(workspaceSlug, branch),
     enabled: Boolean(workspaceSlug && branch),
+    refetchInterval: (query) =>
+      query.state.data && query.state.data.run_status !== "idle" ? 2000 : 5000,
   });
+
+  // Server-derived, not promise-derived: a turn outlives the request that started it,
+  // so a dropped connection or a reload must not strand the composer.
+  const isSending = chat.data ? chat.data.run_status !== "idle" : false;
 
   const linkedTicketId = chat.data?.linked_ticket_id ?? null;
   const savedRuntime = chat.data?.runtime ?? DEFAULT_RUNTIME;
@@ -82,7 +87,6 @@ export function BranchTriageChatPanel({
   const sendMessage = useMutation({
     mutationFn: (content: string) => sendBranchChatMessage(workspaceSlug, branch, content),
     onMutate: async (content) => {
-      setIsSending(true);
       await qc.cancelQueries({ queryKey: chatQueryKey });
       const previous = qc.getQueryData<BranchTriageChatSnapshot>(chatQueryKey);
       const optimisticMessage = {
@@ -93,7 +97,11 @@ export function BranchTriageChatPanel({
       };
       qc.setQueryData<BranchTriageChatSnapshot>(chatQueryKey, (current) => {
         if (current) {
-          return { ...current, messages: [...current.messages, optimisticMessage] };
+          return {
+            ...current,
+            messages: [...current.messages, optimisticMessage],
+            run_status: "running",
+          };
         }
         return {
           workspace_id: "",
@@ -102,6 +110,8 @@ export function BranchTriageChatPanel({
           linked_ticket_external_id: null,
           messages: [optimisticMessage],
           runtime: DEFAULT_RUNTIME,
+          run_status: "running",
+          active_turn_id: null,
         };
       });
       return { previous };
@@ -111,34 +121,32 @@ export function BranchTriageChatPanel({
         qc.setQueryData(chatQueryKey, context.previous);
       }
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       setDraft("");
-      qc.setQueryData<BranchTriageChatSnapshot>(chatQueryKey, (current) => {
-        if (!current) return current;
-        const base = current.messages.filter((message) => !message.id.startsWith("pending-"));
-        return {
-          ...current,
-          messages: [...base, data.user_message, data.assistant_message],
-        };
-      });
       qc.invalidateQueries({ queryKey: ["branch-triage", workspaceSlug] });
     },
-    onSettled: () => setIsSending(false),
+    // The reply lands via polling, not this response — resync with the server either way.
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: chatQueryKey });
+    },
   });
 
   useEffect(() => {
     setAutoScroll(true);
   }, [branch]);
 
+  // Cover the gap between the POST resolving and the next poll reporting "running".
+  const busy = isSending || sendMessage.isPending;
+
   const submitChat = () => {
     const text = draft.trim();
-    if (!text || sendMessage.isPending) return;
+    if (!text || busy) return;
     setDraft("");
     sendMessage.mutate(text);
   };
 
   const sendQuickMessage = (content: string) => {
-    if (sendMessage.isPending || chat.isLoading) return;
+    if (busy || chat.isLoading) return;
     sendMessage.mutate(content);
   };
 
@@ -203,7 +211,7 @@ export function BranchTriageChatPanel({
             thinkingActivity="typing"
             autoScroll={autoScroll}
             emptyMessage={`Ask ${TRIAGE_AGENT_NAME} to commit, push, merge, or clean up this branch. ${TRIAGE_AGENT_NAME} runs git in your workspace and reports results.`}
-            isThinking={isSending || chat.isLoading}
+            isThinking={busy || chat.isLoading}
             thinkingMessage={`${TRIAGE_AGENT_NAME} is working…`}
           />
         </section>
@@ -214,7 +222,7 @@ export function BranchTriageChatPanel({
         onChange={setDraft}
         onSubmit={submitChat}
         placeholder="Ask about this branch's state, risks, or cleanup plan…"
-        isSending={sendMessage.isPending}
+        isSending={busy}
         sendLabel={`Ask ${TRIAGE_AGENT_NAME}`}
         error={composerError}
         optionsRow={
@@ -230,10 +238,10 @@ export function BranchTriageChatPanel({
             <button
               type="button"
               className="btn-secondary btn-compact chat-composer-quick-action"
-              disabled={sendMessage.isPending || chat.isLoading}
+              disabled={busy || chat.isLoading}
               onClick={() => sendQuickMessage("commit and push")}
             >
-              {sendMessage.isPending ? "Sending…" : "Commit & push"}
+              {busy ? "Sending…" : "Commit & push"}
             </button>
           </div>
         }

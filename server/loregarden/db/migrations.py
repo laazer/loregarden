@@ -530,6 +530,23 @@ def _m_compatibility_posture(conn: Connection) -> None:
     )
 
 
+def _m_branch_triage_message_status(conn: Connection) -> None:
+    """Branch triage turns run in the background, so a message row carries its own
+    lifecycle. Existing rows predate async execution and are all settled: default
+    'complete' backfills them correctly.
+    """
+    _add_columns_if_missing(
+        conn,
+        "branch_triage_messages",
+        {
+            "status": (
+                "ALTER TABLE branch_triage_messages ADD COLUMN status "
+                "TEXT NOT NULL DEFAULT 'complete'"
+            )
+        },
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -551,6 +568,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0018_approval_checklist", _m_approval_checklist),
     ("0019_clear_classify_next_agent_backfill", _m_clear_classify_next_agent_backfill),
     ("0020_compatibility_posture", _m_compatibility_posture),
+    ("0021_branch_triage_message_status", _m_branch_triage_message_status),
 ]
 
 
