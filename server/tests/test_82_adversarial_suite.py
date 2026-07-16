@@ -157,8 +157,11 @@ class TestBoundaryConditions:
                     flat_filtered = _flatten_tree_nodes(filtered)
                     found = _find_node_by_id(flat_filtered, node["id"])
                     # Node matching filter should be present
-                    assert found is not None or node["work_item_type"] not in ["task", "bug", "feature"], \
-                        "Nodes matching filter should appear in results"
+                    assert found is not None or node["work_item_type"] not in [
+                        "task",
+                        "bug",
+                        "feature",
+                    ], "Nodes matching filter should appear in results"
                     break
 
     def test_parent_with_one_child_only(self, client: TestClient):
@@ -195,7 +198,9 @@ class TestInvalidAndCorruptInputs:
         """
         ROBUSTNESS: Filter with non-existent work_item_type should handle gracefully.
         """
-        tree = client.get("/api/tickets/tree?workspace=loregarden&work_item_type=invalid_type_xyz").json()
+        tree = client.get(
+            "/api/tickets/tree?workspace=loregarden&work_item_type=invalid_type_xyz"
+        ).json()
 
         # Should return empty or valid empty tree
         flat = _flatten_tree_nodes(tree)
@@ -233,8 +238,9 @@ class TestParentChildRelationshipIntegrity:
 
         seen_ids = set()
         for node in flat:
-            assert node["id"] not in seen_ids, \
+            assert node["id"] not in seen_ids, (
                 f"Node {node['id']} appears multiple times in tree (should appear exactly once)"
+            )
             seen_ids.add(node["id"])
 
     def test_duplicate_nodes_across_filters(self, client: TestClient):
@@ -243,7 +249,9 @@ class TestParentChildRelationshipIntegrity:
         different parent branches.
         """
         types_filter = "task"
-        tree = client.get(f"/api/tickets/tree?workspace=loregarden&work_item_type={types_filter}").json()
+        tree = client.get(
+            f"/api/tickets/tree?workspace=loregarden&work_item_type={types_filter}"
+        ).json()
         flat = _flatten_tree_nodes(tree)
 
         # Count each ID and ensure it appears exactly once
@@ -278,8 +286,9 @@ class TestParentChildRelationshipIntegrity:
 
                 # If parent itself doesn't match, it should have a matching child
                 if node["work_item_type"] != type_filter:
-                    assert has_matching_child, \
+                    assert has_matching_child, (
                         f"Parent {node['id']} doesn't match filter and has no matching children"
+                    )
 
 
 class TestCombinatoricalFilters:
@@ -314,6 +323,7 @@ class TestCombinatoricalFilters:
                 if node["work_item_type"] != target_type and node["state"] != target_state:
                     # Must be a parent of matching nodes
                     has_matching_descendant = False
+
                     def check_descendants(n):
                         if n["work_item_type"] == target_type and n["state"] == target_state:
                             return True
@@ -323,8 +333,9 @@ class TestCombinatoricalFilters:
                         return False
 
                     has_matching_descendant = check_descendants(node)
-                    assert has_matching_descendant or (node["work_item_type"] == target_type or node["state"] == target_state), \
-                        f"Node {node['id']} should match filter or have matching descendant"
+                    assert has_matching_descendant or (
+                        node["work_item_type"] == target_type or node["state"] == target_state
+                    ), f"Node {node['id']} should match filter or have matching descendant"
 
     def test_search_with_type_filter(self, client: TestClient):
         """
@@ -334,7 +345,9 @@ class TestCombinatoricalFilters:
         all_tickets = client.get("/api/tickets?workspace=loregarden").json()
         if all_tickets:
             # Use a search term from an existing ticket
-            search_term = all_tickets[0].get("title", "").split()[0] if all_tickets[0].get("title") else None
+            search_term = (
+                all_tickets[0].get("title", "").split()[0] if all_tickets[0].get("title") else None
+            )
 
             if search_term and len(search_term) > 2:
                 tree = client.get(
@@ -382,8 +395,9 @@ class TestMutationTesting:
         # They should not overlap much (only parents that don't match but have children)
         overlap = ids_task & ids_not_task
         # Overlap should be minimal (only ancestor relationships)
-        assert len(overlap) < len(ids_task) + len(ids_not_task) * 0.5, \
+        assert len(overlap) < len(ids_task) + len(ids_not_task) * 0.5, (
             "Filters should not have excessive overlap"
+        )
 
     def test_state_filter_inversion(self, client: TestClient):
         """
@@ -461,13 +475,14 @@ class TestEdgeCasesAndAssumptions:
         LOGICAL CONSISTENCY: Filtered results should be subset of unfiltered.
         """
         all_tree = client.get("/api/tickets/tree?workspace=loregarden").json()
-        filtered_tree = client.get("/api/tickets/tree?workspace=loregarden&work_item_type=task").json()
+        filtered_tree = client.get(
+            "/api/tickets/tree?workspace=loregarden&work_item_type=task"
+        ).json()
 
         all_ids = _get_all_ids(all_tree)
         filtered_ids = _get_all_ids(filtered_tree)
 
-        assert filtered_ids.issubset(all_ids), \
-            "Filtered results should be subset of unfiltered"
+        assert filtered_ids.issubset(all_ids), "Filtered results should be subset of unfiltered"
 
 
 class TestCountAccuracy:
@@ -497,8 +512,9 @@ class TestCountAccuracy:
 
             if parent_ticket:
                 # Child count should at least be consistent
-                assert parent_ticket.get("child_count", 0) >= 0, \
+                assert parent_ticket.get("child_count", 0) >= 0, (
                     "child_count should be non-negative"
+                )
 
 
 class TestSpecificBugRegression:

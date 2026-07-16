@@ -226,7 +226,9 @@ def _apply_ticket_query_filters(
     return query
 
 
-def _collect_ancestors_for_tree(session: Session, parent_tickets: list[Ticket], all_tickets_ids: set[str]) -> list[Ticket]:
+def _collect_ancestors_for_tree(
+    session: Session, parent_tickets: list[Ticket], all_tickets_ids: set[str]
+) -> list[Ticket]:
     """Recursively collect ancestors of parent tickets for full hierarchy."""
     ancestors_to_include: set[str] = set()
     for parent in parent_tickets:
@@ -245,8 +247,11 @@ def _collect_ancestors_for_tree(session: Session, parent_tickets: list[Ticket], 
     return []
 
 
-def _has_matching_descendant(session: Session, ancestor_id: str, filtered_ids: set[str], all_tickets_map: dict[str, Ticket]) -> bool:
+def _has_matching_descendant(
+    session: Session, ancestor_id: str, filtered_ids: set[str], all_tickets_map: dict[str, Ticket]
+) -> bool:
     """Check if an ancestor has any descendants in the filtered set."""
+
     def _check_descendants(ticket_id: str) -> bool:
         if ticket_id in filtered_ids:
             return True
@@ -259,10 +264,16 @@ def _has_matching_descendant(session: Session, ancestor_id: str, filtered_ids: s
     return _check_descendants(ancestor_id)
 
 
-def _filter_ancestors_by_matching_descendants(session: Session, ancestors: list[Ticket], filtered_ids: set[str], all_tickets: list[Ticket]) -> list[Ticket]:
+def _filter_ancestors_by_matching_descendants(
+    session: Session, ancestors: list[Ticket], filtered_ids: set[str], all_tickets: list[Ticket]
+) -> list[Ticket]:
     """Remove ancestors that have no descendants in the filtered set."""
     all_tickets_map = {t.id: t for t in all_tickets}
-    return [a for a in ancestors if _has_matching_descendant(session, a.id, filtered_ids, all_tickets_map)]
+    return [
+        a
+        for a in ancestors
+        if _has_matching_descendant(session, a.id, filtered_ids, all_tickets_map)
+    ]
 
 
 def _normalize_filter_list(values: list[str] | None, enum_class: type) -> list | None:
@@ -293,7 +304,9 @@ def _collect_parent_tickets(
         next_batch = session.exec(select(Ticket).where(Ticket.id.in_(parents_to_check))).all()
 
         for parent in next_batch:
-            has_filtered_child = any(t.parent_ticket_id == parent.id for t in tickets if t.id in filtered_ids)
+            has_filtered_child = any(
+                t.parent_ticket_id == parent.id for t in tickets if t.id in filtered_ids
+            )
             if has_filtered_child and parent.id not in added_ticket_ids:
                 all_tickets.append(parent)
                 added_ticket_ids.add(parent.id)
@@ -318,7 +331,9 @@ def _build_stage_names(session: Session, all_tickets: list[Ticket]) -> dict[str,
     return stage_names
 
 
-def _create_pruned_node(node: TicketTreeNode, pruned_children: list[TicketTreeNode]) -> TicketTreeNode:
+def _create_pruned_node(
+    node: TicketTreeNode, pruned_children: list[TicketTreeNode]
+) -> TicketTreeNode:
     """Create a pruned node with updated child count."""
     return TicketTreeNode(
         id=node.id,
