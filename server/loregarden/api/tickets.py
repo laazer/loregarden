@@ -226,6 +226,25 @@ def _apply_ticket_query_filters(
     return query
 
 
+def _collect_ancestors_for_tree(session: Session, parent_tickets: list[Ticket], all_tickets_ids: set[str]) -> list[Ticket]:
+    """Recursively collect ancestors of parent tickets for full hierarchy."""
+    ancestors_to_include: set[str] = set()
+    for parent in parent_tickets:
+        current = parent
+        while current.parent_ticket_id:
+            ancestor_id = current.parent_ticket_id
+            if ancestor_id in ancestors_to_include or ancestor_id in all_tickets_ids:
+                break
+            ancestors_to_include.add(ancestor_id)
+            ancestor = session.get(Ticket, ancestor_id)
+            if not ancestor:
+                break
+            current = ancestor
+    if ancestors_to_include:
+        return session.exec(select(Ticket).where(Ticket.id.in_(ancestors_to_include))).all()
+    return []
+
+
 @router.get("/tree", response_model=list[TicketTreeNode])
 def ticket_tree(
     *,
@@ -252,31 +271,21 @@ def ticket_tree(
     )
 
     tickets = session.exec(query).all()
+    filtered_ids = {t.id for t in tickets}
 
-    # Collect all ancestors of filtered tickets to maintain hierarchy
-    ancestors_to_include: set[str] = set()
-    for ticket in tickets:
-        current = ticket
-        while current.parent_ticket_id:
-            ancestor_id = current.parent_ticket_id
-            if ancestor_id in ancestors_to_include:
-                break
-            ancestors_to_include.add(ancestor_id)
-            ancestor = session.get(Ticket, ancestor_id)
-            if not ancestor:
-                break
-            current = ancestor
+    # Collect immediate parents of filtered tickets
+    parents_to_include = {t.parent_ticket_id for t in tickets if t.parent_ticket_id}
+    parent_ids_to_fetch = parents_to_include - filtered_ids
+    parent_tickets = []
+    if parent_ids_to_fetch:
+        parent_tickets = session.exec(select(Ticket).where(Ticket.id.in_(parent_ids_to_fetch))).all()
 
-    # Fetch ancestor tickets
-    ancestor_tickets = []
-    if ancestors_to_include:
-        ancestor_tickets = session.exec(
-            select(Ticket).where(Ticket.id.in_(ancestors_to_include))
-        ).all()
+    # Collect ancestors and build complete ticket list
+    all_tickets = list(tickets) + parent_tickets
+    ancestor_tickets = _collect_ancestors_for_tree(session, parent_tickets, {t.id for t in all_tickets})
+    all_tickets.extend(ancestor_tickets)
 
-    # Combine filtered tickets with ancestors
-    all_tickets = list(tickets) + ancestor_tickets
-
+    # Build stage names for display
     stage_names: dict[str, str] = {}
     orch = OrchestrationService(session)
     for t in all_tickets:
@@ -285,7 +294,52 @@ def ticket_tree(
             from loregarden.core.workflow_loader import stage_display_name
 
             stage_names[t.id] = stage_display_name(template, t.workflow_stage_key)
-    return build_tree(session, all_tickets, stage_names=stage_names)
+
+    tree = build_tree(session, all_tickets, stage_names=stage_names)
+
+    # Prune nodes: keep if matches filter or has any surviving descendants
+    def prune_node(node: TicketTreeNode) -> TicketTreeNode | None:
+        # Recursively prune children first
+        pruned_children = []
+        for child in node.children:
+            pruned_child = prune_node(child)
+            if pruned_child:
+                pruned_children.append(pruned_child)
+
+        # Keep node if it matches the filter or has any pruned children
+        if node.id in filtered_ids or pruned_children:
+            return TicketTreeNode(
+                id=node.id,
+                external_id=node.external_id,
+                title=node.title,
+                state=node.state,
+                priority=node.priority,
+                work_item_type=node.work_item_type,
+                workspace_slug=node.workspace_slug,
+                workflow_stage_name=node.workflow_stage_name,
+                workflow_stage_status=node.workflow_stage_status,
+                child_count=len(pruned_children),
+                children=pruned_children,
+            )
+        return None
+
+    pruned_tree = []
+    for node in tree:
+        pruned_node = prune_node(node)
+        if pruned_node:
+            pruned_tree.append(pruned_node)
+
+    # Debug
+    if work_item_type and len(pruned_tree) < len(tree):
+        import sys
+        print(f"DEBUG: Pruned {len(tree) - len(pruned_tree)} root nodes", file=sys.stderr)
+        print(f"DEBUG: filtered_ids count: {len(filtered_ids)}", file=sys.stderr)
+        for node in tree:
+            if node not in pruned_tree:
+                direct_matching = [c for c in node.children if c.id in filtered_ids]
+                print(f"DEBUG: Removed {node.external_id}, direct matching children: {len(direct_matching)}", file=sys.stderr)
+
+    return pruned_tree
 
 
 @router.get("", response_model=list[TicketSummary])
