@@ -11,6 +11,7 @@ import {
   type StudioHandoffCheck,
   type StudioWorkflow,
   type StudioWorkflowStage,
+  type WorkflowTransition,
 } from "../api/client";
 import { AppTopbarActions } from "../components/AppTopbarActions";
 import { AgentPreviewPanel } from "../components/studio/AgentPreviewPanel";
@@ -104,12 +105,16 @@ export function StudioPage() {
   const [agentDraft, setAgentDraft] = useState({ ...EMPTY_AGENT });
   const [agentDescribePrompt, setAgentDescribePrompt] = useState("");
   const [workflowDescribePrompt, setWorkflowDescribePrompt] = useState("");
+  // `transitions` round-trips through the editor untouched: the editor cannot author
+  // routes yet, but dropping them here made every save regenerate a bare linear chain
+  // server-side, silently destroying `when: reject` edges.
   const [workflowDraft, setWorkflowDraft] = useState<{
     slug: string;
     name: string;
     description: string;
     stages: StudioWorkflowStage[];
-  }>({ slug: "", name: "", description: "", stages: [emptyStage(1)] });
+    transitions: WorkflowTransition[];
+  }>({ slug: "", name: "", description: "", stages: [emptyStage(1)], transitions: [] });
 
   const mcpGuides = useQuery({ queryKey: ["studio-mcp-tool-guides"], queryFn: api.studioMcpToolGuides });
   const studioDefaults = useQuery({ queryKey: ["studio-defaults"], queryFn: api.studioDefaults });
@@ -246,16 +251,22 @@ export function StudioPage() {
         name: generated.name,
         description: generated.description,
         stages: generated.stages.length ? generated.stages : [emptyStage(1)],
+        transitions: [],
       });
     },
   });
 
   const saveWorkflow = useMutation({
     mutationFn: async () => {
+      const { transitions, ...rest } = workflowDraft;
       const payload = {
-        ...workflowDraft,
+        ...rest,
         slug: workflowDraft.slug || workflowDraft.name,
         stages: workflowDraft.stages.map((stage, idx) => ({ ...stage, order: idx + 1 })),
+        // Omit rather than send []: the server reads an explicit empty array as "delete
+        // every route", which is the wipe this change exists to prevent. Omitting lets it
+        // preserve what's there (or seed a linear chain for a workflow with none).
+        ...(transitions.length ? { transitions } : {}),
       };
       if (selectedWorkflowSlug && !isWorkflowReadOnly) {
         return api.updateStudioWorkflow(selectedWorkflowSlug, payload);
@@ -282,7 +293,7 @@ export function StudioPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["studio-workflows"] });
       navigateToStudio("workflows", true);
-      setWorkflowDraft({ slug: "", name: "", description: "", stages: [emptyStage(1)] });
+      setWorkflowDraft({ slug: "", name: "", description: "", stages: [emptyStage(1)], transitions: [] });
     },
   });
 
@@ -315,6 +326,7 @@ export function StudioPage() {
       name: workflow.name,
       description: workflow.description,
       stages: workflow.stages.length ? workflow.stages : [emptyStage(1)],
+      transitions: workflow.transitions ?? [],
     });
   }, [selectedWorkflowSlug, workflows.data]);
 
