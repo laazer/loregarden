@@ -5,9 +5,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loregarden.db.session import get_session
 from loregarden.models.domain import BranchDiffComment, Ticket, Workspace
-from loregarden.services.branch_triage_chat_service import (
-    branch_chat_snapshot,
-    send_branch_triage_message,
+from loregarden.services.branch_triage_chat_service import branch_chat_snapshot
+from loregarden.services.branch_triage_run_service import (
+    BranchTriageConflictError,
+    schedule_branch_triage_turn,
+    start_branch_triage_run,
 )
 from loregarden.services.branch_triage_service import (
     branch_diff_snapshot,
@@ -174,7 +176,7 @@ def get_branch_chat(
     return branch_chat_snapshot(session, ws, branch)
 
 
-@router.post("/{slug}/branch-triage/chat/messages")
+@router.post("/{slug}/branch-triage/chat/messages", status_code=202)
 def post_branch_chat_message(
     slug: str,
     body: BranchChatMessageCreate,
@@ -183,9 +185,22 @@ def post_branch_chat_message(
 ) -> dict:
     ws = _workspace_or_404(session, slug)
     try:
-        return send_branch_triage_message(session, ws, branch, body.content)
+        user_message, assistant_message = start_branch_triage_run(session, ws, branch, body.content)
+    except BranchTriageConflictError as exc:
+        raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    schedule_branch_triage_turn(assistant_message.id)
+    return {
+        "user_message": {
+            "id": user_message.id,
+            "role": user_message.role,
+            "content": user_message.content,
+            "created_at": user_message.created_at.isoformat(),
+        },
+        "active_turn_id": assistant_message.id,
+        "status": "queued",
+    }
 
 
 @router.get("/{slug}/branch-triage/diff-comments")

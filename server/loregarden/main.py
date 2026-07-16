@@ -33,6 +33,7 @@ from loregarden.api import (
 from loregarden.config import settings
 from loregarden.core.auth import TokenAuthMiddleware
 from loregarden.db.session import engine, init_db
+from loregarden.services.branch_triage_run_service import fail_interrupted_branch_triage_turns
 from loregarden.services.run_service import (
     fail_interrupted_orchestration_runs,
     fail_interrupted_runs,
@@ -55,6 +56,7 @@ async def lifespan(app: FastAPI):
         seed_database(session)
         fail_interrupted_runs(session)
         fail_interrupted_orchestration_runs(session)
+        fail_interrupted_branch_triage_turns(session)
     yield
 
 

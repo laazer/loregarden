@@ -22,6 +22,7 @@ _ENGINE_BINDINGS = (
     "loregarden.services.builtin_orchestrator.engine",
     "loregarden.agents.executors.permission_bridge.engine",
     "loregarden.services.triage_run_service.engine",
+    "loregarden.services.branch_triage_run_service.engine",
 )
 
 # The TestStateConsistencyUnderConcurrency tests drive many ticket creations

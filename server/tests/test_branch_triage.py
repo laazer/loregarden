@@ -2,11 +2,13 @@
 
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 from loregarden.config import settings
-from loregarden.models.domain import Ticket, Workspace
+from loregarden.models.domain import BranchTriageMessage, Ticket, Workspace
+from loregarden.services.branch_triage_run_service import fail_interrupted_branch_triage_turns
 from loregarden.services.branch_triage_service import (
     PR_STATUS_TERMINAL_TTL_SECONDS,
     PR_STATUS_TTL_SECONDS,
@@ -553,18 +555,126 @@ def test_branch_chat_messages(client: TestClient, triage_repo, db_session: Sessi
     assert empty.status_code == 200
     assert empty.json()["messages"] == []
 
+    assert empty.json()["run_status"] == "idle"
+
     monkeypatch.setenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", "Checkout main and delete this branch.")
     sent = client.post(
         "/api/workspaces/loregarden/branch-triage/chat/messages",
         params={"branch": "feature/chat"},
         json={"content": "Should I delete this branch?"},
     )
-    assert sent.status_code == 200
-    assert "assistant_message" in sent.json()
+    assert sent.status_code == 202
+    payload = sent.json()
+    assert "assistant_message" not in payload
+    assert payload["status"] == "queued"
 
     snapshot = client.get(
         "/api/workspaces/loregarden/branch-triage/chat",
         params={"branch": "feature/chat"},
     )
     assert snapshot.status_code == 200
-    assert len(snapshot.json()["messages"]) == 2
+    body = snapshot.json()
+    assert len(body["messages"]) == 2
+    assert body["run_status"] == "idle"
+    assert "Checkout main and delete this branch." in body["messages"][-1]["content"]
+
+
+def test_branch_chat_send_does_not_run_the_turn_on_the_request_thread(
+    client: TestClient, triage_repo, db_session: Session
+):
+    """The POST hands off and returns: the turn is queued, not executed inline.
+
+    Patching the scheduler proves the request path never invokes the CLI — the
+    property that kept the old blocking endpoint hostage to a 600s subprocess.
+    """
+    subprocess.run(
+        ["git", "branch", "feature/async"], cwd=triage_repo, check=True, capture_output=True
+    )
+
+    with patch("loregarden.api.branch_triage.schedule_branch_triage_turn") as scheduled:
+        sent = client.post(
+            "/api/workspaces/loregarden/branch-triage/chat/messages",
+            params={"branch": "feature/async"},
+            json={"content": "async please"},
+        )
+
+    assert sent.status_code == 202
+    payload = sent.json()
+    assert payload["status"] == "queued"
+    assert "assistant_message" not in payload
+    scheduled.assert_called_once_with(payload["active_turn_id"])
+
+    # The turn is durably queued, so the UI reports "running" from server state alone.
+    body = client.get(
+        "/api/workspaces/loregarden/branch-triage/chat",
+        params={"branch": "feature/async"},
+    ).json()
+    assert body["run_status"] == "running"
+    assert body["active_turn_id"] == payload["active_turn_id"]
+    assert [m["role"] for m in body["messages"]] == ["user"]
+
+
+def test_branch_chat_rejects_a_second_turn_while_one_is_in_flight(
+    client: TestClient, triage_repo, db_session: Session
+):
+    ws = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+    assert ws is not None
+    subprocess.run(
+        ["git", "branch", "feature/busy"], cwd=triage_repo, check=True, capture_output=True
+    )
+    db_session.add(
+        BranchTriageMessage(
+            workspace_id=ws.id,
+            branch="feature/busy",
+            role="assistant",
+            content="",
+            status="pending",
+        )
+    )
+    db_session.commit()
+
+    res = client.post(
+        "/api/workspaces/loregarden/branch-triage/chat/messages",
+        params={"branch": "feature/busy"},
+        json={"content": "second message"},
+    )
+    assert res.status_code == 409
+
+    snapshot = client.get(
+        "/api/workspaces/loregarden/branch-triage/chat",
+        params={"branch": "feature/busy"},
+    ).json()
+    assert snapshot["run_status"] == "running"
+    # A pending turn has no content yet, so it must not surface as an empty reply.
+    assert snapshot["messages"] == []
+
+
+def test_interrupted_branch_chat_turn_is_settled_so_the_composer_recovers(
+    client: TestClient, triage_repo, db_session: Session
+):
+    """A restart mid-turn must not leave the branch stuck 'running' forever."""
+    ws = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+    assert ws is not None
+    subprocess.run(
+        ["git", "branch", "feature/orphan"], cwd=triage_repo, check=True, capture_output=True
+    )
+    db_session.add(
+        BranchTriageMessage(
+            workspace_id=ws.id,
+            branch="feature/orphan",
+            role="assistant",
+            content="",
+            status="pending",
+        )
+    )
+    db_session.commit()
+
+    settled = fail_interrupted_branch_triage_turns(db_session)
+    assert len(settled) == 1
+
+    snapshot = client.get(
+        "/api/workspaces/loregarden/branch-triage/chat",
+        params={"branch": "feature/orphan"},
+    ).json()
+    assert snapshot["run_status"] == "idle"
+    assert len(snapshot["messages"]) == 1

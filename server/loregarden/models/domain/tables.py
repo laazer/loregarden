@@ -380,6 +380,10 @@ class BranchTriageMessage(SQLModel, table=True):
     branch: str = Field(index=True)
     role: str = Field(index=True)  # user | assistant | system
     content: str = ""
+    # pending | complete | failed. An assistant row is written as `pending` before the
+    # turn runs and settled by the background worker, so an interrupted turn is
+    # recoverable from the database rather than lost with the request.
+    status: str = Field(default="complete", index=True)
     created_at: datetime = Field(default_factory=utcnow)
 
 
