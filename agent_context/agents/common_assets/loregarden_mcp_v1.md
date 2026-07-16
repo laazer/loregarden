@@ -5,7 +5,7 @@ alwaysApply: true
 ---
 # LOREGARDEN MCP
 
-When Loregarden orchestrates work (IDE, API, or autopilot), **use Loregarden MCP tools** for ticket workflow state instead of editing `WORKFLOW STATE` in project_board markdown.
+When Loregarden orchestrates work (IDE, API, or autopilot), **use Loregarden MCP tools** for all ticket data. Tickets live in Loregarden's database and are reachable only through MCP — they are not files in the repo.
 
 ## Transport
 
@@ -59,13 +59,20 @@ Agent artifacts are **per workspace**. Loregarden resolves Obsidian and SQLite p
 
 Loregarden **stage runs** (started from the IDE or `POST /api/tickets/{id}/start`) already update workflow state when the CLI run completes. During a stage run:
 
-1. **Read** ticket state with `loregarden_get_ticket` — do not trust stale project_board markdown alone.
+1. **Read** ticket state with `loregarden_get_ticket`. MCP is the **only** source of ticket
+   data — title, description, acceptance criteria, and stage cursor all live in Loregarden's
+   database. There is no ticket markdown to read; do not go looking for one.
    - UUID: `{"ticket_id": "<uuid>"}`
    - Slug: `{"ticket_id": "03-wire-cli-agent-runner", "workspace_slug": "loregarden"}`
    - Or `loregarden_get_ticket_by_external` / `loregarden_list_tickets` for discovery
-2. **Do not** edit project_board `WORKFLOW STATE` / `NEXT ACTION` for stage cursor changes Loregarden owns.
-3. **Do** use MCP to attach extra artifacts (`loregarden_attach_artifact`) or request human approval (`loregarden_request_approval`) when your role requires it.
-4. **Do** still edit the repo and project_board ticket **content** (description, acceptance criteria, checkpoints) when your role requires it.
+2. **Do not** search the repo for a ticket file. `project_board/` is not a ticket store — it
+   holds only checkpoint and handoff artifacts. A grep for the ticket there finds nothing and
+   wastes the run. If `loregarden_get_ticket` does not have what you need, the data does not
+   exist anywhere else.
+3. **Do not** write ticket content to disk. Update the ticket via `loregarden_update_ticket`;
+   never mirror description or acceptance criteria into a markdown file. Files written under
+   `project_board/` get swept into unrelated commits by the orchestrator.
+4. **Do** use MCP to attach extra artifacts (`loregarden_attach_artifact`) or request human approval (`loregarden_request_approval`) when your role requires it.
 
 ## Orchestrator / autopilot
 

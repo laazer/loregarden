@@ -33,8 +33,8 @@ def build_orchestration_context(
 
     lines = [
         "## Loregarden run context (authoritative for this run)",
-        "This stage was started by the Loregarden control plane. Execute the work below even if",
-        "the project_board ticket markdown WORKFLOW STATE section shows a different legacy Stage.",
+        "This stage was started by the Loregarden control plane. The values below are the truth",
+        "for this run — they override any other stage or agent you infer from elsewhere.",
         "",
         f"- Loregarden stage key: `{stage_key}`",
         f"- Display name: {display_name}",
@@ -42,9 +42,11 @@ def build_orchestration_context(
         f"- Assigned agent: {run.agent_id}",
         f"- Skill: {skill or '—'}",
         "",
-        "Do not refuse work because the ticket file still says IMPLEMENTATION or names a different",
-        "next agent. Complete this Loregarden stage, then update the ticket file only if your",
-        "role requires it.",
+        "This ticket has no markdown file. Ticket data — description, acceptance criteria, stage",
+        "cursor — lives in Loregarden's database and is reachable only via the MCP tools. Do not",
+        "search the repo for a ticket file, and do not write ticket content to one; `project_board/`",
+        "holds checkpoint and handoff artifacts only. Complete this stage, then record changes",
+        "through MCP.",
     ]
 
     # Without the real key list, `reroute_to_stage` is a guess — and a plausible

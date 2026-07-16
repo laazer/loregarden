@@ -126,8 +126,9 @@ def build_mcp_run_context(
     lines.extend(
         [
             "",
-            "Use MCP tools for ticket workflow state — see Loregarden MCP module below.",
-            "Do not update project_board WORKFLOW STATE for stage cursor Loregarden owns.",
+            "Use MCP tools for all ticket data — see Loregarden MCP module below.",
+            "Tickets live in Loregarden's database, not in the repo. Do not search for a ticket",
+            "markdown file, and do not write ticket content to one.",
             "",
             "## Loregarden artifacts (memory, learnings, blog posts, checkpoints)",
             "Workspace-scoped **Obsidian markdown** + optional **SQLite memory graph**. **Never write files or SQL directly.**",
