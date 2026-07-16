@@ -24,6 +24,7 @@ def build_orchestration_context(
     ticket: Ticket,
     run: AgentRun,
     stage_def: WorkflowStageDef | None,
+    stages: list[WorkflowStageDef] | None = None,
 ) -> str:
     stage_key = run.stage_key or ticket.workflow_stage_key
     display_name = stage_def.name if stage_def else stage_key
@@ -45,6 +46,23 @@ def build_orchestration_context(
         "next agent. Complete this Loregarden stage, then update the ticket file only if your",
         "role requires it.",
     ]
+
+    # Without the real key list, `reroute_to_stage` is a guess — and a plausible
+    # invented key (e.g. "implementation" where this workflow says "implement")
+    # gets dropped, sending rework to the wrong stage.
+    upstream = [stage.key for stage in sorted(stages or [], key=lambda s: s.order)]
+    if stage_key in upstream:
+        upstream = upstream[: upstream.index(stage_key)]
+    if upstream:
+        lines += [
+            "",
+            "### Valid `reroute_to_stage` values for this workflow",
+            "If your stage report rejects this work, `reroute_to_stage` MUST be one of these exact",
+            "keys (upstream of your own stage) — anything else is discarded and the rework is routed",
+            "to the immediately preceding stage instead. Use `null` if none applies.",
+            "",
+            ", ".join(f"`{key}`" for key in upstream),
+        ]
 
     if ticket.blocking_issues:
         lines += [
