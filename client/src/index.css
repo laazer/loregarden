@@ -1501,6 +1501,7 @@ button {
 }
 
 .ticket-studio-workspace-card {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -1512,6 +1513,10 @@ button {
 }
 
 .ticket-studio-workspace-mark {
+  position: relative;
+  z-index: 1;
+  /* Decorative: let clicks fall through to the full-card <select> beneath. */
+  pointer-events: none;
   width: 22px;
   height: 22px;
   flex: none;
@@ -1526,9 +1531,15 @@ button {
   justify-content: center;
 }
 
+/* Fill the whole card so a click anywhere on it opens the menu — not just the thin
+   line-height-tall strip a statically-placed <select> would occupy. The mark and chevron
+   render on top as pointer-events:none overlays; the padding clears them. */
 .ticket-studio-workspace-select {
-  flex: 1;
-  min-width: 0;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0 32px 0 42px;
   border: none;
   background: transparent;
   color: var(--tx);
@@ -1540,7 +1551,11 @@ button {
 }
 
 .ticket-studio-workspace-chevron {
+  position: relative;
+  z-index: 1;
   flex: none;
+  /* Select is out of flow, so push the chevron to the right edge on its own. */
+  margin-left: auto;
   pointer-events: none;
 }
 
