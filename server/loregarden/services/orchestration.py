@@ -32,6 +32,7 @@ from loregarden.services.stage_report import (
     parse_stage_report,
     stage_report_artifact_content,
 )
+from loregarden.services.triage_question_log import record_triage_question_exchange
 from loregarden.services.workflow_service import resolve_ticket_stages, resolve_workspace_stages
 from loregarden.services.workflow_state import (
     build_stage_views,
@@ -1140,6 +1141,15 @@ class ApprovalService:
                 response=response_text,
             )
             approval.response_json = json.dumps({"updated_input": updated_input})
+            # The answer reaches the agent as a tool result; mirror it into the chat so the
+            # operator's transcript shows the exchange rather than jumping over it.
+            record_triage_question_exchange(
+                self.session,
+                approval,
+                tool_input,
+                answers=answers,
+                response=response_text,
+            )
         elif approval.kind == ApprovalKind.CLI_PERMISSION and approved:
             tool_input = parse_stored_tool_input(approval.tool_input_json)
             approval.response_json = json.dumps({"updated_input": tool_input})

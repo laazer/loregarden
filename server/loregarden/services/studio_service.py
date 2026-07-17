@@ -3,14 +3,9 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import subprocess
-import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
 
-from loregarden.agents.cli_adapters import build_triage_invocation
 from loregarden.agents.registry import AGENTS, get_agent
 from loregarden.agents.registry import list_agents as list_builtin_agents
 from loregarden.config import settings
@@ -39,10 +34,13 @@ from loregarden.models.domain import (
     WorkflowTemplate,
     Workspace,
 )
-from loregarden.services.cli_output import extract_triage_reply
+from loregarden.services.cli_agent_runner import (
+    CliAgentProfile,
+    run_cli_agent_turn,
+    stub_response,
+)
 from loregarden.services.ticket_studio_service import extract_json_block
 from loregarden.services.workflow_service import WorkflowService
-from loregarden.services.workspace_paths import resolve_workspace_root
 from loregarden.skills.registry import list_skills
 from sqlmodel import Session, select
 
@@ -76,6 +74,16 @@ STUDIO_ROLE_PREAMBLE = """**Loregarden MCP:** Use MCP tools per `agent_context/a
 
 STUDIO_GENERATE_AGENT_ID = "planner"
 MAX_STUDIO_GENERATE_CHARS = 4000
+
+STUDIO_GENERATE_CLI_PROFILE = CliAgentProfile(
+    agent_id=STUDIO_GENERATE_AGENT_ID,
+    assistant_label="Studio generate assistant",
+    cli_label="Studio generate",
+    stub_env="LOREGARDEN_STUDIO_GENERATE_STUB_RESPONSE",
+    timeout_env="LOREGARDEN_STUDIO_GENERATE_TIMEOUT",
+    tmp_prefix="loregarden-studio-generate-",
+    reply_cap=12000,
+)
 
 AGENT_GENERATE_JSON_SCHEMA = """```json
 {
@@ -728,8 +736,6 @@ def _resolve_next_agent_from_routes(
     if not next_agent:
         return None
 
-    from loregarden.agents.registry import get_agent
-
     if not get_agent(next_agent):
         return None
 
@@ -753,8 +759,6 @@ def _resolve_next_agent_override(ticket: Ticket, stage: WorkflowStageDef) -> tup
     next_agent = (ticket.next_agent or "").strip()
     if not next_agent or stage.stage_type in {"parallel", "gate"}:
         return None
-
-    from loregarden.agents.registry import get_agent
 
     if not get_agent(next_agent):
         return None
@@ -791,13 +795,6 @@ def _default_studio_workspace(session: Session) -> Workspace:
     if not workspace:
         raise ValueError("No workspace available for studio generation")
     return workspace
-
-
-def resolve_studio_generate_timeout(agent: dict) -> int:
-    env = os.environ.get("LOREGARDEN_STUDIO_GENERATE_TIMEOUT")
-    if env:
-        return max(30, int(env))
-    return int(agent.get("timeout", settings.triage_timeout_seconds))
 
 
 def _available_agent_ids(session: Session) -> list[str]:
@@ -887,60 +884,15 @@ def build_workflow_generate_prompt(
 
 
 def invoke_studio_generate_model(session: Session, prompt: str) -> str:
-    stub = os.environ.get("LOREGARDEN_STUDIO_GENERATE_STUB_RESPONSE")
+    stub = stub_response(STUDIO_GENERATE_CLI_PROFILE)
     if stub is not None:
         return stub
 
-    workspace = _default_studio_workspace(session)
-    repo_root = resolve_workspace_root(workspace)
-    if not repo_root.is_dir():
-        raise ValueError(f"Workspace repo path does not exist: {repo_root}")
-
-    agent = get_agent(STUDIO_GENERATE_AGENT_ID)
-    if not agent:
-        raise ValueError(f"Unknown studio generate agent: {STUDIO_GENERATE_AGENT_ID}")
-
-    with tempfile.TemporaryDirectory(prefix="loregarden-studio-generate-") as tmp:
-        prompt_file = Path(tmp) / "prompt.md"
-        prompt_file.write_text(prompt, encoding="utf-8")
-        invocation = build_triage_invocation(
-            agent_id=STUDIO_GENERATE_AGENT_ID,
-            adapter=agent.get("adapter", "claude"),
-            prompt=prompt,
-            prompt_file=prompt_file,
-            skill_name="",
-            workspace_root=repo_root,
-            workspace=workspace,
-        )
-        timeout = resolve_studio_generate_timeout(agent)
-        proc = subprocess.Popen(
-            invocation.argv,
-            cwd=invocation.cwd or str(repo_root),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.PIPE if invocation.stdin_prompt else None,
-            bufsize=0,
-        )
-        if invocation.stdin_prompt and proc.stdin:
-            proc.stdin.write(invocation.stdin_prompt.encode("utf-8"))
-            proc.stdin.close()
-        try:
-            stdout, stderr = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            raise TimeoutError(f"Studio generate assistant timed out after {timeout}s") from None
-
-        if proc.returncode != 0:
-            detail = (
-                stderr.decode("utf-8", errors="replace").strip()
-                or stdout.decode("utf-8", errors="replace").strip()
-            )
-            raise RuntimeError(detail or f"Studio generate CLI exited with code {proc.returncode}")
-
-        reply = extract_triage_reply(stdout.decode("utf-8", errors="replace"))
-        if not reply:
-            raise RuntimeError("Studio generate assistant returned an empty response")
-        return reply[:12000]
+    return run_cli_agent_turn(
+        STUDIO_GENERATE_CLI_PROFILE,
+        workspace=_default_studio_workspace(session),
+        prompt=prompt,
+    )
 
 
 def parse_agent_generate_payload(text: str) -> StudioGeneratedAgent | None:

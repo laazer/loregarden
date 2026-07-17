@@ -64,6 +64,32 @@ CLARIFY_STUB = """I need a bit more context before scoping.
 """
 
 
+SECOND_ROUND_STUB = """One more thing before I scope.
+
+```json
+{
+  "summary": "Persistence settled; rollout still open.",
+  "clarifying_questions": [
+    "Which environments get this first?",
+    "Who approves the rollout?"
+  ],
+  "tickets": []
+}
+```
+"""
+
+READY_STUB = """That covers it.
+
+```json
+{
+  "summary": "I have everything I need to generate tickets.",
+  "clarifying_questions": [],
+  "tickets": []
+}
+```
+"""
+
+
 def test_format_studio_reply_for_display_strips_json():
     display = format_studio_reply_for_display(SCOPE_STUB)
     assert "Ticket Studio MVP" in display
@@ -214,7 +240,7 @@ def test_ticket_studio_scope_surfaces_root_milestone_in_draft(client: TestClient
 
 def test_ticket_studio_scope_survives_large_json_payload(client: TestClient, monkeypatch):
     from loregarden.agents.cli_adapters import _local_invocation
-    from loregarden.services import ticket_studio_service
+    from loregarden.services import cli_agent_runner
 
     tickets = [
         {
@@ -254,10 +280,8 @@ def test_ticket_studio_scope_survives_large_json_payload(client: TestClient, mon
             prompt_file=kwargs["prompt_file"],
         )
 
-    monkeypatch.setattr(ticket_studio_service, "build_triage_invocation", fake_resolve)
-    monkeypatch.setattr(
-        ticket_studio_service.subprocess, "Popen", lambda *args, **kwargs: FakeProc()
-    )
+    monkeypatch.setattr(cli_agent_runner, "build_triage_invocation", fake_resolve)
+    monkeypatch.setattr(cli_agent_runner.subprocess, "Popen", lambda *args, **kwargs: FakeProc())
     monkeypatch.delenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", raising=False)
 
     create = client.post(
@@ -274,9 +298,14 @@ def test_ticket_studio_scope_survives_large_json_payload(client: TestClient, mon
     scope = client.post(f"/api/ticket-studio/sessions/{session_id}/scope")
     assert scope.status_code == 200, scope.text
     draft = scope.json()["draft"]
-    # 60 model-proposed tasks + 1 milestone synthesized as their legal root parent.
-    assert len(draft) == 61
+    # Every model-proposed task survives the large payload...
     assert sum(1 for item in draft if item["work_item_type"] == "task") == 60
+    # ...under one synthesized milestone → feature → capability spine, since a task may
+    # not hang off a milestone directly.
+    assert len(draft) == 63
+    assert [item["work_item_type"] for item in draft[:3]] == ["milestone", "feature", "capability"]
+    commit = client.post(f"/api/ticket-studio/sessions/{session_id}/commit")
+    assert commit.status_code == 200, commit.text
 
 
 def test_ticket_studio_clarify_then_scope(client: TestClient, monkeypatch):
@@ -314,6 +343,85 @@ def test_ticket_studio_clarify_then_scope(client: TestClient, monkeypatch):
     assert scope.status_code == 200, scope.text
     # 3 model-proposed tickets + 1 milestone synthesized for the parentless root feature
     assert len(scope.json()["draft"]) == 4
+
+
+def _clarified_session(client: TestClient, title: str) -> str:
+    create = client.post(
+        "/api/ticket-studio/sessions",
+        json={"workspace_slug": "loregarden", "title": title, "brief": "Ambiguous brief."},
+    )
+    session_id = create.json()["id"]
+    client.post(f"/api/ticket-studio/sessions/{session_id}/clarify")
+    return session_id
+
+
+def test_saving_answers_hands_straight_back_to_the_scoper(client: TestClient, monkeypatch):
+    """The operator answers; the scoper picks it up without another button press."""
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", CLARIFY_STUB)
+    session_id = _clarified_session(client, "Auto-continue")
+
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", READY_STUB)
+    saved = client.patch(
+        f"/api/ticket-studio/sessions/{session_id}/clarifications",
+        json={"answers": ["Yes, keep them.", "Manual only."]},
+    )
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+
+    # The scoper had nothing left to ask, so the round is closed out rather than left
+    # on screen, and it says so.
+    assert body["clarifying_questions"] == []
+    assert body["clarifying_resolved"] is True
+    assert "everything I need" in body["summary"]
+
+    # The answers and the reply are both in the conversation, newest last.
+    roles = [message["role"] for message in body["messages"]]
+    assert roles[-2:] == ["user", "assistant"]
+    answers_message = body["messages"][-2]["content"]
+    assert "Yes, keep them." in answers_message
+    assert "Should scope sessions persist after commit?" in answers_message
+
+    # Generation is unblocked without a further round trip.
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", SCOPE_STUB)
+    assert client.post(f"/api/ticket-studio/sessions/{session_id}/scope").status_code == 200
+
+
+def test_a_follow_up_round_of_questions_starts_blank(client: TestClient, monkeypatch):
+    """Answers used to carry over by position onto entirely different questions."""
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", CLARIFY_STUB)
+    session_id = _clarified_session(client, "Second round")
+
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", SECOND_ROUND_STUB)
+    saved = client.patch(
+        f"/api/ticket-studio/sessions/{session_id}/clarifications",
+        json={"answers": ["Yes, keep them.", "Manual only."]},
+    )
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+
+    assert body["clarifying_questions"] == [
+        "Which environments get this first?",
+        "Who approves the rollout?",
+    ]
+    assert body["clarifying_answers"] == ["", ""]
+    assert body["clarifying_resolved"] is False
+
+    # The first round's answers survive in the conversation rather than being dropped.
+    assert any("Manual only." in message["content"] for message in body["messages"])
+
+
+def test_a_repeated_question_keeps_its_answer(client: TestClient, monkeypatch):
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", CLARIFY_STUB)
+    session_id = _clarified_session(client, "Same round again")
+
+    # The stub replies with the very same questions, so the answers still apply.
+    saved = client.patch(
+        f"/api/ticket-studio/sessions/{session_id}/clarifications",
+        json={"answers": ["Yes, keep them.", "Manual only."]},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["clarifying_answers"] == ["Yes, keep them.", "Manual only."]
+    assert saved.json()["clarifying_resolved"] is True
 
 
 def test_ticket_studio_chat_applies_scope_from_stub(client: TestClient, monkeypatch):

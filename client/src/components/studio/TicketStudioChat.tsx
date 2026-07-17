@@ -1,10 +1,11 @@
+import { TRIAGE_AGENT_NAME } from "../../lib/triageAgent";
 import { StudioChatComposer, StudioChatMessages } from "./StudioChat";
 
 export function TicketStudioChatMessages({
   messages,
   emptyMessage,
   isThinking,
-  thinkingMessage = "Scoper is thinking…",
+  thinkingMessage = `${TRIAGE_AGENT_NAME} is thinking…`,
 }: {
   messages: Parameters<typeof StudioChatMessages>[0]["messages"];
   emptyMessage?: string;
@@ -18,7 +19,7 @@ export function TicketStudioChatMessages({
       isThinking={isThinking}
       thinkingMessage={thinkingMessage}
       thinkingActivity="thinking"
-      assistantLabel="Scoper"
+      assistantLabel={TRIAGE_AGENT_NAME}
     />
   );
 }

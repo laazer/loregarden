@@ -3,15 +3,9 @@
 from __future__ import annotations
 
 import os
-import subprocess
-import tempfile
-from pathlib import Path
+from dataclasses import replace
 
-from loregarden.agents.cli_adapters import (
-    DEFAULT_BRANCH_TRIAGE_USER_PROMPT,
-    build_triage_invocation,
-)
-from loregarden.agents.registry import get_agent
+from loregarden.agents.cli_adapters import DEFAULT_BRANCH_TRIAGE_USER_PROMPT
 from loregarden.models.domain import (
     BranchTriageMessage,
     Ticket,
@@ -19,19 +13,20 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
 )
 from loregarden.services.branch_triage_service import branch_triage_snapshot
-from loregarden.services.cli_output import extract_triage_reply
+from loregarden.services.cli_agent_runner import run_cli_agent_turn, stub_response
 from loregarden.services.triage_service import (
-    TRIAGE_AGENT_ID,
     TRIAGE_AGENT_NAME,
+    TRIAGE_CLI_PROFILE,
     apply_triage_runtime_overrides,
     get_triage_runtime,
-    resolve_triage_timeout,
 )
-from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
 MAX_BRANCH_TRIAGE_HISTORY = 12
 MAX_BRANCH_TRIAGE_MESSAGE_CHARS = 2000
+
+# Same agent and limits as ticket triage; only the scratch directory differs.
+BRANCH_TRIAGE_CLI_PROFILE = replace(TRIAGE_CLI_PROFILE, tmp_prefix="loregarden-branch-triage-")
 
 
 def _linked_ticket(session: Session, workspace_id: str, branch: str) -> Ticket | None:
@@ -200,21 +195,11 @@ def build_branch_triage_prompt(
 def invoke_branch_triage_model(
     session: Session, workspace: Workspace, branch: str, latest_user_message: str
 ) -> str:
-    stub = os.environ.get("LOREGARDEN_TRIAGE_STUB_RESPONSE")
+    stub = stub_response(BRANCH_TRIAGE_CLI_PROFILE)
     if stub is not None:
         return stub
 
     ticket = _linked_ticket(session, workspace.id, branch)
-    effective_workspace = apply_triage_runtime_overrides(workspace, ticket) if ticket else workspace
-
-    repo_root = resolve_workspace_root(effective_workspace)
-    if not repo_root.is_dir():
-        raise ValueError(f"Workspace repo path does not exist: {repo_root}")
-
-    agent = get_agent(TRIAGE_AGENT_ID)
-    if not agent:
-        raise ValueError(f"Unknown triage agent: {TRIAGE_AGENT_ID}")
-
     history = list_branch_triage_messages(session, workspace.id, branch)
     branch_entry = _branch_entry(session, workspace, branch)
     prompt = build_branch_triage_prompt(
@@ -225,48 +210,11 @@ def invoke_branch_triage_model(
         latest_user_message,
         ticket=ticket,
     )
-
-    with tempfile.TemporaryDirectory(prefix="loregarden-branch-triage-") as tmp:
-        prompt_file = Path(tmp) / "prompt.md"
-        prompt_file.write_text(prompt, encoding="utf-8")
-        invocation = build_triage_invocation(
-            agent_id=TRIAGE_AGENT_ID,
-            adapter=agent.get("adapter", "claude"),
-            prompt=prompt,
-            prompt_file=prompt_file,
-            skill_name="",
-            workspace_root=repo_root,
-            workspace=effective_workspace,
-            user_prompt=os.environ.get(
-                "LOREGARDEN_BRANCH_TRIAGE_USER_PROMPT", DEFAULT_BRANCH_TRIAGE_USER_PROMPT
-            ),
-        )
-        timeout = resolve_triage_timeout(agent)
-        proc = subprocess.Popen(
-            invocation.argv,
-            cwd=invocation.cwd or str(repo_root),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.PIPE if invocation.stdin_prompt else None,
-            bufsize=0,
-        )
-        if invocation.stdin_prompt and proc.stdin:
-            proc.stdin.write(invocation.stdin_prompt.encode("utf-8"))
-            proc.stdin.close()
-        try:
-            stdout, stderr = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            raise TimeoutError(f"{TRIAGE_AGENT_NAME} timed out after {timeout}s") from None
-
-        if proc.returncode != 0:
-            detail = (
-                stderr.decode("utf-8", errors="replace").strip()
-                or stdout.decode("utf-8", errors="replace").strip()
-            )
-            raise RuntimeError(detail or f"Triage CLI exited with code {proc.returncode}")
-
-        reply = extract_triage_reply(stdout.decode("utf-8", errors="replace"))
-        if not reply:
-            raise RuntimeError(f"{TRIAGE_AGENT_NAME} returned an empty response")
-        return reply[:8000]
+    return run_cli_agent_turn(
+        BRANCH_TRIAGE_CLI_PROFILE,
+        workspace=apply_triage_runtime_overrides(workspace, ticket) if ticket else workspace,
+        prompt=prompt,
+        user_prompt=os.environ.get(
+            "LOREGARDEN_BRANCH_TRIAGE_USER_PROMPT", DEFAULT_BRANCH_TRIAGE_USER_PROMPT
+        ),
+    )

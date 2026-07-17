@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 function useSafeQueryClient() {
   try {
@@ -20,6 +20,7 @@ import {
   type WorkspaceSummary,
 } from "../../api/client";
 import { isStudioNewResource } from "../../lib/appNavigation";
+import { TRIAGE_AGENT_NAME } from "../../lib/triageAgent";
 import {
   navigateToStudio,
   navigateToStudioTicketSession,
@@ -94,6 +95,7 @@ export function TicketStudioPanel({
   const [draftDirty, setDraftDirty] = useState(false);
   const [answerDraft, setAnswerDraft] = useState<string[]>([]);
   const [expandedDraftIndex, setExpandedDraftIndex] = useState<number | null>(null);
+  const clarifyCardRef = useRef<HTMLDivElement | null>(null);
   const [isPreview, setIsPreview] = useState(propsIsPreview ?? false);
   const [importedTickets, setImportedTickets] = useState<ImportedTicket[]>(propsImportedTickets ?? []);
   const [previewConfirmed, setPreviewConfirmed] = useState(false);
@@ -167,6 +169,18 @@ export function TicketStudioPanel({
       onPreviewChange(selectedSession.is_preview ?? false);
     }
   }, [selectedSession?.id, selectedSession?.draft, selectedSession?.updated_at, selectedSession?.clarifying_answers, selectedSession?.is_preview, selectedSession?.imported_tickets, onPreviewChange, propsIsPreview, propsImportedTickets?.length]);
+
+  // The message list scrolls to its own tail, which now sits above the questions. Land on the
+  // open round instead, so a new round is what the operator sees. Re-asserts on message count
+  // as well as the questions, because messages arrive a commit later and re-run that scroll.
+  const openQuestionsKey = (selectedSession?.clarifying_questions ?? []).join(" ");
+  const messageCount = selectedSession?.messages.length ?? 0;
+  useEffect(() => {
+    if (!openQuestionsKey) return;
+    // "end", not "nearest": the card can be taller than the chat body, and landing on its
+    // foot keeps the newest question and the save control on screen.
+    clarifyCardRef.current?.scrollIntoView?.({ block: "end" });
+  }, [openQuestionsKey, messageCount]);
 
   const requestClarifications = useMutation({
     mutationFn: () => api.requestTicketStudioClarifications(selectedSessionId!),
@@ -307,8 +321,13 @@ export function TicketStudioPanel({
   const answersComplete =
     !hasOpenQuestions ||
     (selectedSession?.clarifying_questions.every((_, index) => answerDraft[index]?.trim()) ?? false);
-  const isScoperThinking =
-    sendMessage.isPending || requestClarifications.isPending || generateScope.isPending || createSession.isPending;
+  // Saving answers hands straight back to the scoper, so it is a thinking turn like any other.
+  const isAssistantThinking =
+    sendMessage.isPending ||
+    requestClarifications.isPending ||
+    generateScope.isPending ||
+    createSession.isPending ||
+    saveClarifications.isPending;
 
   const updateDraftItem = (index: number, patch: Partial<TicketStudioDraftItem>) => {
     setLocalDraft((items) => items.map((item, idx) => (idx === index ? { ...item, ...patch } : item)));
@@ -664,51 +683,10 @@ export function TicketStudioPanel({
               <div className="ticket-studio-chat-body">
                 {selectedSession.summary && (
                   <div className="ticket-studio-msg-row">
-                    <BaxterAvatar state="idle" label="Scoper" />
+                    <BaxterAvatar state="idle" label={TRIAGE_AGENT_NAME} />
                     <div className="ticket-studio-msg ticket-studio-msg-assistant">
                       <div className="ticket-studio-msg-body">{selectedSession.summary}</div>
                     </div>
-                  </div>
-                )}
-
-                {hasOpenQuestions && !isReadOnly && (
-                  <div className="ticket-studio-clarify-card">
-                    <div className="studio-card-title" style={{ marginBottom: 8 }}>
-                      Clarifying questions
-                    </div>
-                    <p className="studio-card-hint" style={{ marginTop: 0 }}>
-                      Answer these before generating tickets.
-                    </p>
-                    {selectedSession.clarifying_questions.map((question, index) => (
-                      <div key={question} className="studio-field" style={{ marginBottom: 10 }}>
-                        <div className="studio-field-label">{question}</div>
-                        <textarea
-                          className="studio-textarea"
-                          style={{ minHeight: 56 }}
-                          value={answerDraft[index] ?? ""}
-                          onChange={(e) =>
-                            setAnswerDraft((current) => {
-                              const next = [...current];
-                              next[index] = e.target.value;
-                              return next;
-                            })
-                          }
-                        />
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      className="btn-secondary btn-compact"
-                      disabled={!answersComplete || saveClarifications.isPending || !answersDirty}
-                      onClick={() => saveClarifications.mutate()}
-                    >
-                      {saveClarifications.isPending ? "Saving…" : "Save answers"}
-                    </button>
-                    {!clarifyingResolved && (
-                      <p className="modal-hint" style={{ margin: "8px 0 0", color: "var(--amb)" }}>
-                        Save your answers to unlock ticket generation.
-                      </p>
-                    )}
                   </div>
                 )}
 
@@ -733,9 +711,53 @@ export function TicketStudioPanel({
                 <TicketStudioChatMessages
                   messages={selectedSession.messages}
                   emptyMessage="Review the brief for questions, then generate tickets."
-                  isThinking={isScoperThinking}
-                  thinkingMessage="Scoper is thinking…"
+                  isThinking={isAssistantThinking}
+                  thinkingMessage={`${TRIAGE_AGENT_NAME} is thinking…`}
                 />
+
+                {/* Last in the chat body: an open round of questions is the newest thing
+                    the scoper said, so it reads — and scrolls to — as the latest event. */}
+                {hasOpenQuestions && !isReadOnly && (
+                  <div ref={clarifyCardRef} className="ticket-studio-clarify-card" data-testid="clarify-card">
+                    <div className="studio-card-title" style={{ marginBottom: 8 }}>
+                      Clarifying questions
+                    </div>
+                    <p className="studio-card-hint" style={{ marginTop: 0 }}>
+                      Answer these before generating tickets.
+                    </p>
+                    {selectedSession.clarifying_questions.map((question, index) => (
+                      <div key={question} className="studio-field" style={{ marginBottom: 10 }}>
+                        <div className="studio-field-label">{question}</div>
+                        <textarea
+                          className="studio-textarea"
+                          style={{ minHeight: 56 }}
+                          value={answerDraft[index] ?? ""}
+                          disabled={saveClarifications.isPending}
+                          onChange={(e) =>
+                            setAnswerDraft((current) => {
+                              const next = [...current];
+                              next[index] = e.target.value;
+                              return next;
+                            })
+                          }
+                        />
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="btn-secondary btn-compact"
+                      disabled={!answersComplete || saveClarifications.isPending || !answersDirty}
+                      onClick={() => saveClarifications.mutate()}
+                    >
+                      {saveClarifications.isPending ? "Saving…" : "Save answers"}
+                    </button>
+                    {!clarifyingResolved && (
+                      <p className="modal-hint" style={{ margin: "8px 0 0", color: "var(--amb)" }}>
+                        Answers go straight back to the scoper.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {!isReadOnly && (
@@ -745,7 +767,7 @@ export function TicketStudioPanel({
                     onSubmit={() => sendMessage.mutate(chatDraft.trim())}
                     placeholder="Ask to refine scope, split work, or tighten acceptance criteria…"
                     isSending={sendMessage.isPending}
-                    disabled={isScoperThinking}
+                    disabled={isAssistantThinking}
                     modelLabel={`Model · ${modelLabel}`}
                     modelDisabled={!runtimeOptions}
                     onModelClick={() => setModelModalOpen(true)}
@@ -753,7 +775,7 @@ export function TicketStudioPanel({
                     onGenerateTickets={() => generateScope.mutate()}
                     reviewPending={requestClarifications.isPending}
                     generatePending={generateScope.isPending}
-                    generateDisabled={!clarifyingResolved || isScoperThinking}
+                    generateDisabled={!clarifyingResolved || isAssistantThinking}
                     generateTitle={!clarifyingResolved ? "Answer clarifying questions first" : undefined}
                 />
               )}

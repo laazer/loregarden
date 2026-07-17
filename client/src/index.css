@@ -1668,12 +1668,16 @@ button {
   cursor: default;
 }
 
+/* Every chat surface — ticket studio, triage, branch triage — renders this list, and each
+   nests it in a flex column whose scrolling is done by an ancestor. The list itself does not
+   scroll (overflow stays visible), so it must never be shrunk below its content: flexbox would
+   spill the conversation outside the box, where the ancestor's scrollport cannot reach it and
+   later siblings paint over it. Grow to fill a short conversation, never shrink a long one. */
 .ticket-studio-messages {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  flex: 1;
-  min-height: 0;
+  flex: 1 0 auto;
 }
 
 .ticket-studio-messages-empty {

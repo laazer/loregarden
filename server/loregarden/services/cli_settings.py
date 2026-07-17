@@ -149,8 +149,12 @@ def resolve_lmstudio_model(workspace: Workspace | None) -> str:
     return ws.lmstudio_model or settings.lmstudio_model
 
 
-def get_ticket_orchestration_runtime(ticket: Ticket) -> WorkspaceRuntimeSettings:
-    data = json.loads(ticket.orchestration_runtime_json or "{}")
+RUNTIME_MODEL_FIELDS = ("claude_model", "cursor_model", "lmstudio_base_url", "lmstudio_model")
+
+
+def parse_runtime_settings(runtime_json: str) -> WorkspaceRuntimeSettings:
+    """Read one of the `*_runtime_json` override blobs (orchestration, triage, studio…)."""
+    data = json.loads(runtime_json or "{}")
     return WorkspaceRuntimeSettings(
         cli_adapter=str(data.get("cli_adapter") or "default"),
         claude_model=str(data.get("claude_model") or ""),
@@ -158,6 +162,30 @@ def get_ticket_orchestration_runtime(ticket: Ticket) -> WorkspaceRuntimeSettings
         lmstudio_base_url=str(data.get("lmstudio_base_url") or ""),
         lmstudio_model=str(data.get("lmstudio_model") or ""),
     )
+
+
+def apply_runtime_overrides(workspace: Workspace, runtime_json: str) -> Workspace:
+    """Layer a runtime override blob onto a workspace, ignoring unset fields.
+
+    Returns a copy: callers pass the result to an agent invocation rather than persisting it,
+    so the stored workspace defaults stay intact.
+    """
+    overrides = json.loads(runtime_json or "{}")
+    if not overrides:
+        return workspace
+    data = workspace.model_dump()
+    adapter = str(overrides.get("cli_adapter") or "default")
+    if adapter != "default":
+        data["cli_adapter"] = adapter
+    for field in RUNTIME_MODEL_FIELDS:
+        value = str(overrides.get(field) or "").strip()
+        if value:
+            data[field] = value
+    return Workspace.model_validate(data)
+
+
+def get_ticket_orchestration_runtime(ticket: Ticket) -> WorkspaceRuntimeSettings:
+    return parse_runtime_settings(ticket.orchestration_runtime_json)
 
 
 def set_ticket_orchestration_runtime(

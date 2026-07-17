@@ -62,7 +62,7 @@ def test_triage_runtime_rejects_invalid_adapter(client: TestClient):
 def test_triage_invoke_uses_runtime_override(client: TestClient, monkeypatch):
     from loregarden.db.session import engine
     from loregarden.models.domain import Ticket
-    from loregarden.services import triage_service
+    from loregarden.services import cli_agent_runner
     from loregarden.services.triage_service import apply_triage_runtime_overrides
 
     ticket_id = _ticket_id(client)
@@ -106,8 +106,8 @@ def test_triage_invoke_uses_runtime_override(client: TestClient, monkeypatch):
         def kill(self):
             return None
 
-    monkeypatch.setattr(triage_service, "build_triage_invocation", fake_resolve)
-    monkeypatch.setattr(triage_service.subprocess, "Popen", lambda *args, **kwargs: FakeProc())
+    monkeypatch.setattr(cli_agent_runner, "build_triage_invocation", fake_resolve)
+    monkeypatch.setattr(cli_agent_runner.subprocess, "Popen", lambda *args, **kwargs: FakeProc())
     monkeypatch.delenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", raising=False)
     monkeypatch.setenv("LOREGARDEN_LMSTUDIO_STUB_RESPONSE", "runtime override ok")
 

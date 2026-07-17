@@ -3,16 +3,9 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import subprocess
-import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
 
-from loregarden.agents.cli_adapters import build_triage_invocation
-from loregarden.agents.registry import get_agent
-from loregarden.config import settings
 from loregarden.models.domain import (
     VALID_HIERARCHY,
     Ticket,
@@ -29,17 +22,40 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
 )
-from loregarden.services.cli_output import extract_triage_reply
-from loregarden.services.cli_settings import VALID_CLI_ADAPTERS
-from loregarden.services.hierarchy_service import validate_parent_child
+from loregarden.services.cli_agent_runner import (
+    CliAgentProfile,
+    run_cli_agent_turn,
+    stub_response,
+)
+from loregarden.services.cli_settings import (
+    VALID_CLI_ADAPTERS,
+    apply_runtime_overrides,
+    parse_runtime_settings,
+)
+from loregarden.services.draft_hierarchy import (
+    DraftHierarchyError,
+    find_hierarchy_violations,
+    repair_draft_hierarchy,
+    topo_sort_draft_items,
+)
 from loregarden.services.ticket_service import TicketService
-from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
 TICKET_STUDIO_AGENT_ID = "ticket_scoper"
 MAX_STUDIO_HISTORY_MESSAGES = 16
 MAX_STUDIO_MESSAGE_CHARS = 3000
 MAX_STUDIO_BRIEF_CHARS = 8000
+SCOPE_REPLY_CAP = 200_000
+
+TICKET_STUDIO_CLI_PROFILE = CliAgentProfile(
+    agent_id=TICKET_STUDIO_AGENT_ID,
+    assistant_label="Ticket studio assistant",
+    cli_label="Ticket studio",
+    stub_env="LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE",
+    timeout_env="LOREGARDEN_TICKET_STUDIO_TIMEOUT",
+    tmp_prefix="loregarden-ticket-studio-",
+    reply_cap=12000,
+)
 
 SCOPE_JSON_SCHEMA = """```json
 {
@@ -71,39 +87,14 @@ SCOPE_JSON_SCHEMA = """```json
 ```"""
 
 
-def resolve_ticket_studio_timeout(agent: dict) -> int:
-    env = os.environ.get("LOREGARDEN_TICKET_STUDIO_TIMEOUT")
-    if env:
-        return max(30, int(env))
-    return int(agent.get("timeout", settings.triage_timeout_seconds))
-
-
 def get_studio_runtime(session_row: TicketStudioSession) -> WorkspaceRuntimeSettings:
-    data = json.loads(session_row.runtime_json or "{}")
-    return WorkspaceRuntimeSettings(
-        cli_adapter=str(data.get("cli_adapter") or "default"),
-        claude_model=str(data.get("claude_model") or ""),
-        cursor_model=str(data.get("cursor_model") or ""),
-        lmstudio_base_url=str(data.get("lmstudio_base_url") or ""),
-        lmstudio_model=str(data.get("lmstudio_model") or ""),
-    )
+    return parse_runtime_settings(session_row.runtime_json)
 
 
 def apply_studio_runtime_overrides(
     workspace: Workspace, session_row: TicketStudioSession
 ) -> Workspace:
-    overrides = json.loads(session_row.runtime_json or "{}")
-    if not overrides:
-        return workspace
-    data = workspace.model_dump()
-    adapter = str(overrides.get("cli_adapter") or "default")
-    if adapter != "default":
-        data["cli_adapter"] = adapter
-    for field in ("claude_model", "cursor_model", "lmstudio_base_url", "lmstudio_model"):
-        value = str(overrides.get(field) or "").strip()
-        if value:
-            data[field] = value
-    return Workspace.model_validate(data)
+    return apply_runtime_overrides(workspace, session_row.runtime_json)
 
 
 def extract_json_block(text: str) -> dict | None:
@@ -207,6 +198,14 @@ def format_studio_reply_for_display(content: str) -> str:
     if parts:
         return "\n\n".join(parts)
     return "Updated scope."
+
+
+def _format_answers_message(questions: list[str], answers: list[str]) -> str:
+    lines = ["Answers to your clarifying questions:"]
+    for index, question in enumerate(questions):
+        lines.append(f"- {question}")
+        lines.append(f"  {answers[index] if index < len(answers) else ''}")
+    return "\n".join(lines)
 
 
 def _clarifications_block(questions: list[str], answers: list[str]) -> list[str]:
@@ -330,10 +329,14 @@ def build_studio_prompt(
         "Help the operator break a feature or initiative into a hierarchy of Loregarden work items.",
         "Respond in concise prose. When emitting structured scope, use a single fenced JSON block only — no markdown tables.",
         "",
-        "Valid hierarchy:",
+        "Valid hierarchy — the only parent each type may have:",
         "- milestone → feature | bug",
         "- feature → capability | bug",
         "- capability → task | bug",
+        "",
+        "Never skip a layer. A task's parent must be a capability, a capability's parent must",
+        "be a feature, and a feature's parent must be a milestone. A task hanging directly off",
+        "a feature or milestone is rejected, as is any ticket parented to a task or a bug.",
         "",
         f"Workspace: {workspace.slug}",
         f"Session title: {session_row.title}",
@@ -375,6 +378,10 @@ def build_studio_prompt(
                 "Do not propose tickets yet.",
                 "If the brief is already clear (or answerable from the codebase), return an empty "
                 "`clarifying_questions` array.",
+                "The operator's answers may appear above. Re-ask only what they genuinely left "
+                "unresolved. Once nothing material is outstanding, return an empty "
+                "`clarifying_questions` array and use `summary` to say you have what you need to "
+                "generate tickets.",
                 SCOPE_JSON_SCHEMA,
             ]
         )
@@ -389,10 +396,11 @@ def build_studio_prompt(
                 "",
                 "Rules:",
                 "- Size the hierarchy to the brief: a small, self-contained change should be a single",
-                "  task or bug ticket. Do not add feature/capability layers just to fill the hierarchy.",
-                "- Only use feature → capabilities → tasks for work that genuinely has multiple",
-                "  independent slices; scoped-under-an-existing-parent work should stay as flat as the",
-                "  parent's hierarchy allows.",
+                "  task or bug ticket rather than a deep tree, and work scoped under an existing parent",
+                "  should start as close to that parent as the hierarchy allows.",
+                "- Keeping it small means fewer siblings, never a skipped layer. Do not invent extra",
+                "  capabilities to fill out the tree — but every task you emit still needs a capability",
+                "  parent, and every capability a feature parent, up to the root.",
                 "- Use unique `ref` values and `parent_ref` pointers (null for roots).",
                 "- Each ticket needs testable acceptance_criteria.",
                 "- Keep tasks small enough for one agent run.",
@@ -425,22 +433,13 @@ def invoke_ticket_studio_model(
     *,
     mode: str = "chat",
 ) -> str:
-    stub = os.environ.get("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE")
+    stub = stub_response(TICKET_STUDIO_CLI_PROFILE)
     if stub is not None:
         return stub
 
     workspace = session.get(Workspace, session_row.workspace_id)
     if not workspace:
         raise ValueError("Session workspace not found")
-
-    effective_workspace = apply_studio_runtime_overrides(workspace, session_row)
-    repo_root = resolve_workspace_root(effective_workspace)
-    if not repo_root.is_dir():
-        raise ValueError(f"Workspace repo path does not exist: {repo_root}")
-
-    agent = get_agent(TICKET_STUDIO_AGENT_ID)
-    if not agent:
-        raise ValueError(f"Unknown ticket studio agent: {TICKET_STUDIO_AGENT_ID}")
 
     history = list_studio_messages(session, session_row.id)
     prompt = build_studio_prompt(
@@ -451,85 +450,46 @@ def invoke_ticket_studio_model(
         session=session,
         mode=mode,
     )
-
-    with tempfile.TemporaryDirectory(prefix="loregarden-ticket-studio-") as tmp:
-        prompt_file = Path(tmp) / "prompt.md"
-        prompt_file.write_text(prompt, encoding="utf-8")
-        invocation = build_triage_invocation(
-            agent_id=TICKET_STUDIO_AGENT_ID,
-            adapter=agent.get("adapter", "claude"),
-            prompt=prompt,
-            prompt_file=prompt_file,
-            skill_name="",
-            workspace_root=repo_root,
-            workspace=effective_workspace,
-        )
-        timeout = resolve_ticket_studio_timeout(agent)
-        proc = subprocess.Popen(
-            invocation.argv,
-            cwd=invocation.cwd or str(repo_root),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.PIPE if invocation.stdin_prompt else None,
-            bufsize=0,
-        )
-        if invocation.stdin_prompt and proc.stdin:
-            proc.stdin.write(invocation.stdin_prompt.encode("utf-8"))
-            proc.stdin.close()
-        try:
-            stdout, stderr = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            raise TimeoutError(f"Ticket studio assistant timed out after {timeout}s") from None
-
-        if proc.returncode != 0:
-            detail = (
-                stderr.decode("utf-8", errors="replace").strip()
-                or stdout.decode("utf-8", errors="replace").strip()
-            )
-            raise RuntimeError(detail or f"Ticket studio CLI exited with code {proc.returncode}")
-
-        reply = extract_triage_reply(stdout.decode("utf-8", errors="replace"))
-        if not reply:
-            raise RuntimeError("Ticket studio assistant returned an empty response")
+    return run_cli_agent_turn(
+        TICKET_STUDIO_CLI_PROFILE,
+        workspace=apply_studio_runtime_overrides(workspace, session_row),
+        prompt=prompt,
         # "clarify"/"scope" replies carry a JSON block whose size scales with ticket count;
         # truncating those mid-JSON breaks parsing, so only guard against runaway output.
-        cap = 12000 if mode == "chat" else 200_000
-        return reply[:cap]
-
-
-def _ensure_root_milestone(
-    session_row: TicketStudioSession, items: list[TicketStudioDraftItem]
-) -> list[TicketStudioDraftItem]:
-    """Surface the parentless-root milestone requirement in the draft itself.
-
-    TicketService.create_ticket rejects a parentless feature/capability/task/bug
-    (only milestones may be root). When the session has no parent ticket and the
-    model proposed a non-milestone root, add an explicit milestone draft item so
-    the operator sees and can edit it, rather than one appearing invisibly at commit.
-    """
-    if session_row.parent_ticket_id:
-        return items
-    roots = [item for item in items if not item.parent_ref]
-    non_milestone_roots = [item for item in roots if item.work_item_type != WorkItemType.MILESTONE]
-    if not non_milestone_roots:
-        return items
-
-    existing_refs = {item.ref for item in items}
-    milestone_ref = "milestone-root"
-    while milestone_ref in existing_refs:
-        milestone_ref += "-1"
-
-    milestone_item = TicketStudioDraftItem(
-        ref=milestone_ref,
-        work_item_type=WorkItemType.MILESTONE,
-        parent_ref=None,
-        title=session_row.title or "Untitled scope",
-        description=session_row.brief,
+        reply_cap=None if mode == "chat" else SCOPE_REPLY_CAP,
     )
-    for item in non_milestone_roots:
-        item.parent_ref = milestone_ref
-    return [milestone_item, *items]
+
+
+def _repair_draft_for_session(
+    session_row: TicketStudioSession,
+    items: list[TicketStudioDraftItem],
+    *,
+    parent_type: WorkItemType | None,
+) -> list[TicketStudioDraftItem]:
+    """Make a proposed draft legal before it reaches the session."""
+    return repair_draft_hierarchy(
+        items,
+        parent_type=parent_type,
+        root_title=session_row.title or "Untitled scope",
+        root_description=session_row.brief,
+    )
+
+
+def _carry_over_answers(session_row: TicketStudioSession, questions: list[str]) -> list[str]:
+    """Answers for a new round of questions, keeping only the ones still being asked.
+
+    Answers used to be carried over by position, so a fresh round arrived pre-filled with
+    the previous round's answers to entirely different questions.
+    """
+    previous_questions = json.loads(session_row.clarifying_questions_json or "[]")
+    previous_answers = _load_clarifying_answers(session_row)
+    answers: list[str] = []
+    for index, question in enumerate(questions):
+        unchanged = index < len(previous_questions) and previous_questions[index] == question
+        answers.append(
+            previous_answers[index] if unchanged and index < len(previous_answers) else ""
+        )
+    return answers
 
 
 def _apply_scope_to_session(
@@ -537,6 +497,8 @@ def _apply_scope_to_session(
     reply: str,
     *,
     apply_tickets: bool = True,
+    parent_type: WorkItemType | None = None,
+    clear_questions_when_empty: bool = False,
 ) -> bool:
     summary, questions, items = parse_scope_payload(reply)
     if not items and not summary and not questions:
@@ -544,13 +506,19 @@ def _apply_scope_to_session(
     if summary:
         session_row.summary = summary
     if questions:
+        # Read the carry-over before overwriting the questions it is compared against.
+        answers = _carry_over_answers(session_row, questions)
         session_row.clarifying_questions_json = json.dumps(questions)
-        existing = _load_clarifying_answers(session_row)
-        session_row.clarifying_answers_json = json.dumps(
-            [existing[index] if index < len(existing) else "" for index in range(len(questions))]
-        )
+        session_row.clarifying_answers_json = json.dumps(answers)
+    elif clear_questions_when_empty:
+        # The scoper asked nothing this round: close the open round out rather than
+        # leaving an answered card on screen blocking generation forever.
+        session_row.clarifying_questions_json = "[]"
+        session_row.clarifying_answers_json = "[]"
     if items and apply_tickets:
-        items = _ensure_root_milestone(session_row, items)
+        # An unrepairable proposal never becomes the draft: keep the previous one and
+        # report why, rather than storing tickets that every later save would reject.
+        items = _repair_draft_for_session(session_row, items, parent_type=parent_type)
         session_row.draft_json = json.dumps([item.model_dump(mode="json") for item in items])
         session_row.clarifying_questions_json = "[]"
         session_row.clarifying_answers_json = "[]"
@@ -562,52 +530,12 @@ def _validate_draft_hierarchy(
     *,
     parent_ticket: Ticket | None,
 ) -> None:
-    refs = {item.ref for item in items}
-    for item in items:
-        if item.parent_ref and item.parent_ref not in refs:
-            raise ValueError(
-                f"Draft item {item.ref} references unknown parent_ref: {item.parent_ref}"
-            )
-
-    roots = [item for item in items if not item.parent_ref]
-    if parent_ticket:
-        for root in roots:
-            validate_parent_child(parent_ticket.work_item_type, root.work_item_type)
-    else:
-        for root in roots:
-            if root.work_item_type not in {WorkItemType.MILESTONE, WorkItemType.FEATURE}:
-                raise ValueError(
-                    f"Root item {root.ref} must be milestone or feature when no parent is set"
-                )
-
-    for item in items:
-        if not item.parent_ref:
-            continue
-        parent_item = next((p for p in items if p.ref == item.parent_ref), None)
-        if not parent_item:
-            continue
-        validate_parent_child(parent_item.work_item_type, item.work_item_type)
-
-
-def _topo_sort_items(items: list[TicketStudioDraftItem]) -> list[TicketStudioDraftItem]:
-    by_ref = {item.ref: item for item in items}
-    ordered: list[TicketStudioDraftItem] = []
-    seen: set[str] = set()
-
-    def visit(ref: str) -> None:
-        if ref in seen:
-            return
-        item = by_ref.get(ref)
-        if not item:
-            return
-        if item.parent_ref:
-            visit(item.parent_ref)
-        seen.add(ref)
-        ordered.append(item)
-
-    for item in items:
-        visit(item.ref)
-    return ordered
+    violations = find_hierarchy_violations(
+        items,
+        parent_type=parent_ticket.work_item_type if parent_ticket else None,
+    )
+    if violations:
+        raise DraftHierarchyError(violations)
 
 
 class TicketStudioService:
@@ -660,7 +588,7 @@ class TicketStudioService:
                     TicketStudioDraftItem(
                         ref=ticket.get("external_id", f"imported-{idx}"),
                         work_item_type=ticket.get("work_item_type", WorkItemType.TASK),
-                        parent_ref=ticket.get("parent_external_id"),
+                        parent_ref=ticket.get("parent_external_id") or None,
                         title=ticket.get("title", "Imported ticket"),
                         description=ticket.get("description", ""),
                         acceptance_criteria=ticket.get("acceptance_criteria", []),
@@ -668,6 +596,14 @@ class TicketStudioService:
                         selected=True,
                     )
                 )
+            # Imports arrive as a flat batch of tasks far more often than as a hierarchy;
+            # give them their milestone/feature/capability spine up front.
+            draft_items = repair_draft_hierarchy(
+                draft_items,
+                parent_type=parent.work_item_type if parent else None,
+                root_title=title,
+                root_description=body.brief.strip(),
+            )
 
         row = TicketStudioSession(
             workspace_id=ws.id,
@@ -825,7 +761,7 @@ class TicketStudioService:
 
         assistant_message = TicketStudioMessage(session_id=row.id, role="assistant", content=reply)
         self.session.add(assistant_message)
-        _apply_scope_to_session(row, reply, apply_tickets=False)
+        _apply_scope_to_session(row, reply, apply_tickets=False, clear_questions_when_empty=True)
         row.updated_at = datetime.now(timezone.utc)
         self.session.add(row)
         self.session.commit()
@@ -851,11 +787,30 @@ class TicketStudioService:
             raise ValueError("Answer every clarifying question before generating tickets")
 
         row.clarifying_answers_json = json.dumps(normalized)
+        # The answers join the conversation so that a follow-up round can replace the open
+        # questions without discarding what the operator already told the scoper.
+        transcript = _format_answers_message(questions, normalized)
+        self.session.add(TicketStudioMessage(session_id=row.id, role="user", content=transcript))
         row.updated_at = datetime.now(timezone.utc)
         self.session.add(row)
         self.session.commit()
+
+        # Answering is the operator's turn; hand straight back to the scoper rather than
+        # making them press a button to find out whether anything is still unclear.
+        try:
+            reply = invoke_ticket_studio_model(self.session, row, transcript, mode="clarify")
+        except Exception as exc:
+            reply = f"Ticket studio assistant unavailable: {exc}"
+
+        self.session.add(TicketStudioMessage(session_id=row.id, role="assistant", content=reply))
+        _apply_scope_to_session(row, reply, apply_tickets=False, clear_questions_when_empty=True)
+        row.updated_at = datetime.now(timezone.utc)
+        self.session.add(row)
+        self.session.commit()
+
+        messages = list_studio_messages(self.session, row.id)
         self.session.refresh(row)
-        return _session_view(self.session, row)
+        return _session_view(self.session, row, messages=messages)
 
     def generate_scope(self, session_id: str) -> TicketStudioSessionView:
         row = self.session.get(TicketStudioSession, session_id)
@@ -883,7 +838,23 @@ class TicketStudioService:
 
         assistant_message = TicketStudioMessage(session_id=row.id, role="assistant", content=reply)
         self.session.add(assistant_message)
-        if not _apply_scope_to_session(row, reply, apply_tickets=True):
+        parent = self.session.get(Ticket, row.parent_ticket_id) if row.parent_ticket_id else None
+        applied = False
+        try:
+            applied = _apply_scope_to_session(
+                row,
+                reply,
+                apply_tickets=True,
+                parent_type=parent.work_item_type if parent else None,
+            )
+        except DraftHierarchyError as exc:
+            row.summary = (
+                "Scope generation returned a ticket hierarchy that cannot be repaired, so the "
+                "draft was left unchanged. Generate again, or fix the brief:\n"
+                + "\n".join(f"- {violation}" for violation in exc.violations)
+            )
+            applied = True
+        if not applied:
             row.summary = (
                 row.summary
                 or "Scope generation did not return structured tickets — refine the brief or chat further."
@@ -921,7 +892,7 @@ class TicketStudioService:
         synthetic_milestone_id: str | None = None
         root_ticket_id: str | None = row.parent_ticket_id
 
-        for item in _topo_sort_items(draft):
+        for item in topo_sort_draft_items(draft):
             parent_id: str | None
             if item.parent_ref:
                 parent_id = ref_to_id.get(item.parent_ref)

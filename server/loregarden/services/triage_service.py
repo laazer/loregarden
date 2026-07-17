@@ -3,16 +3,9 @@
 from __future__ import annotations
 
 import json
-import os
-import subprocess
-import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
 
-from loregarden.agents.cli_adapters import build_triage_invocation
 from loregarden.agents.mcp_context import build_mcp_triage_context
-from loregarden.agents.registry import get_agent
-from loregarden.config import settings
 from loregarden.core.workflow_loader import expand_gate_checklist
 from loregarden.models.domain import (
     AgentRun,
@@ -26,10 +19,17 @@ from loregarden.models.domain import (
     WorkspaceRuntimeUpdate,
 )
 from loregarden.services.approval_views import approval_to_view
-from loregarden.services.cli_output import extract_triage_reply
-from loregarden.services.cli_settings import VALID_CLI_ADAPTERS
+from loregarden.services.cli_agent_runner import (
+    CliAgentProfile,
+    run_cli_agent_turn,
+    stub_response,
+)
+from loregarden.services.cli_settings import (
+    VALID_CLI_ADAPTERS,
+    apply_runtime_overrides,
+    parse_runtime_settings,
+)
 from loregarden.services.hierarchy_service import collect_ticket_scope_ids
-from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
 
 TRIAGE_AGENT_ID = "triage"
@@ -38,23 +38,19 @@ MAX_TRIAGE_HISTORY_MESSAGES = 12
 MAX_TRIAGE_MESSAGE_CHARS = 2000
 MAX_TRIAGE_DESCRIPTION_CHARS = 4000
 
-
-def resolve_triage_timeout(agent: dict) -> int:
-    env = os.environ.get("LOREGARDEN_TRIAGE_TIMEOUT")
-    if env:
-        return max(30, int(env))
-    return int(agent.get("timeout", settings.triage_timeout_seconds))
+TRIAGE_CLI_PROFILE = CliAgentProfile(
+    agent_id=TRIAGE_AGENT_ID,
+    assistant_label=TRIAGE_AGENT_NAME,
+    cli_label="Triage",
+    stub_env="LOREGARDEN_TRIAGE_STUB_RESPONSE",
+    timeout_env="LOREGARDEN_TRIAGE_TIMEOUT",
+    tmp_prefix="loregarden-triage-",
+    reply_cap=8000,
+)
 
 
 def get_triage_runtime(ticket: Ticket) -> WorkspaceRuntimeSettings:
-    data = json.loads(ticket.triage_runtime_json or "{}")
-    return WorkspaceRuntimeSettings(
-        cli_adapter=str(data.get("cli_adapter") or "default"),
-        claude_model=str(data.get("claude_model") or ""),
-        cursor_model=str(data.get("cursor_model") or ""),
-        lmstudio_base_url=str(data.get("lmstudio_base_url") or ""),
-        lmstudio_model=str(data.get("lmstudio_model") or ""),
-    )
+    return parse_runtime_settings(ticket.triage_runtime_json)
 
 
 def set_triage_runtime(
@@ -80,18 +76,7 @@ def set_triage_runtime(
 
 
 def apply_triage_runtime_overrides(workspace: Workspace, ticket: Ticket) -> Workspace:
-    overrides = json.loads(ticket.triage_runtime_json or "{}")
-    if not overrides:
-        return workspace
-    data = workspace.model_dump()
-    adapter = str(overrides.get("cli_adapter") or "default")
-    if adapter != "default":
-        data["cli_adapter"] = adapter
-    for field in ("claude_model", "cursor_model", "lmstudio_base_url", "lmstudio_model"):
-        value = str(overrides.get(field) or "").strip()
-        if value:
-            data[field] = value
-    return Workspace.model_validate(data)
+    return apply_runtime_overrides(workspace, ticket.triage_runtime_json)
 
 
 def list_triage_messages(
@@ -206,7 +191,7 @@ def send_triage_message(session: Session, ticket: Ticket, content: str) -> dict:
 
 
 def invoke_triage_model(session: Session, ticket: Ticket, latest_user_message: str) -> str:
-    stub = os.environ.get("LOREGARDEN_TRIAGE_STUB_RESPONSE")
+    stub = stub_response(TRIAGE_CLI_PROFILE)
     if stub is not None:
         return stub
 
@@ -214,60 +199,13 @@ def invoke_triage_model(session: Session, ticket: Ticket, latest_user_message: s
     if not workspace:
         raise ValueError("Ticket workspace not found")
 
-    effective_workspace = apply_triage_runtime_overrides(workspace, ticket)
-
-    repo_root = resolve_workspace_root(effective_workspace)
-    if not repo_root.is_dir():
-        raise ValueError(f"Workspace repo path does not exist: {repo_root}")
-
-    agent = get_agent(TRIAGE_AGENT_ID)
-    if not agent:
-        raise ValueError(f"Unknown triage agent: {TRIAGE_AGENT_ID}")
-
     history = list_triage_messages(session, ticket.id)
     prompt = build_triage_prompt(ticket, history, latest_user_message, session=session)
-
-    with tempfile.TemporaryDirectory(prefix="loregarden-triage-") as tmp:
-        prompt_file = Path(tmp) / "prompt.md"
-        prompt_file.write_text(prompt, encoding="utf-8")
-        invocation = build_triage_invocation(
-            agent_id=TRIAGE_AGENT_ID,
-            adapter=agent.get("adapter", "claude"),
-            prompt=prompt,
-            prompt_file=prompt_file,
-            skill_name="",
-            workspace_root=repo_root,
-            workspace=effective_workspace,
-        )
-        timeout = resolve_triage_timeout(agent)
-        proc = subprocess.Popen(
-            invocation.argv,
-            cwd=invocation.cwd or str(repo_root),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.PIPE if invocation.stdin_prompt else None,
-            bufsize=0,
-        )
-        if invocation.stdin_prompt and proc.stdin:
-            proc.stdin.write(invocation.stdin_prompt.encode("utf-8"))
-            proc.stdin.close()
-        try:
-            stdout, stderr = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            raise TimeoutError(f"{TRIAGE_AGENT_NAME} timed out after {timeout}s") from None
-
-        if proc.returncode != 0:
-            detail = (
-                stderr.decode("utf-8", errors="replace").strip()
-                or stdout.decode("utf-8", errors="replace").strip()
-            )
-            raise RuntimeError(detail or f"Triage CLI exited with code {proc.returncode}")
-
-        reply = extract_triage_reply(stdout.decode("utf-8", errors="replace"))
-        if not reply:
-            raise RuntimeError(f"{TRIAGE_AGENT_NAME} returned an empty response")
-        return reply[:8000]
+    return run_cli_agent_turn(
+        TRIAGE_CLI_PROFILE,
+        workspace=apply_triage_runtime_overrides(workspace, ticket),
+        prompt=prompt,
+    )
 
 
 def current_human_gate_stage(session: Session, ticket: Ticket):

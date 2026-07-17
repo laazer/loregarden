@@ -401,4 +401,10 @@ class TestSmartImportEndToEnd:
         assert session_res.status_code in [200, 201]
         session = session_res.json()
         assert session.get("is_preview") is True
-        assert len(session.get("draft", [])) == 2
+        draft = session.get("draft", [])
+        # Both files land in the one draft, under the milestone root the repair pass adds
+        # so the imported features have a legal parent.
+        assert {item["ref"] for item in draft} == {"f1", "f2", "root-milestone"}
+        assert {item["parent_ref"] for item in draft if item["ref"] in {"f1", "f2"}} == {
+            "root-milestone"
+        }

@@ -1,20 +1,11 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import { TRIAGE_AGENT_NAME } from "../../lib/triageAgent";
 import { BaxterAvatar, type BaxterAvatarState } from "../chat/BaxterAvatar";
 import { MarkdownContent } from "../chat/MarkdownContent";
 import { chatMessageBody, isUserChatRole, type ChatMessageView } from "../chat/chatUtils";
 
 export type StudioAssistantActivity = "thinking" | "typing";
-
-export function StudioScoperAvatar({ state = "idle" }: { state?: BaxterAvatarState }) {
-  return <BaxterAvatar state={state} label="Scoper" />;
-}
-
-export function StudioTriageAvatar({ state = "idle" }: { state?: BaxterAvatarState }) {
-  return <BaxterAvatar state={state} label={TRIAGE_AGENT_NAME} />;
-}
 
 function latestAssistantMessageId(messages: ChatMessageView[]): string | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {

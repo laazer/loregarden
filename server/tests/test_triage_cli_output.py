@@ -1,19 +1,29 @@
 from fastapi.testclient import TestClient
 from loregarden.agents.cli_adapters import build_triage_invocation
 from loregarden.models.domain import Ticket, TriageMessage
+from loregarden.services.cli_agent_runner import resolve_agent_timeout
 from loregarden.services.cli_output import extract_triage_reply
-from loregarden.services.triage_service import build_triage_prompt, resolve_triage_timeout
+from loregarden.services.triage_service import TRIAGE_CLI_PROFILE, build_triage_prompt
 from sqlmodel import Session
 
 
+def _triage_timeout(agent: dict) -> int:
+    return resolve_agent_timeout(agent, TRIAGE_CLI_PROFILE.timeout_env)
+
+
 def test_resolve_triage_timeout_defaults_to_settings():
-    assert resolve_triage_timeout({}) == 300
-    assert resolve_triage_timeout({"timeout": 180}) == 180
+    assert _triage_timeout({}) == 300
+    assert _triage_timeout({"timeout": 180}) == 180
 
 
 def test_resolve_triage_timeout_env_override(monkeypatch):
     monkeypatch.setenv("LOREGARDEN_TRIAGE_TIMEOUT", "600")
-    assert resolve_triage_timeout({"timeout": 120}) == 600
+    assert _triage_timeout({"timeout": 120}) == 600
+
+
+def test_resolve_agent_timeout_floors_a_too_small_env_override(monkeypatch):
+    monkeypatch.setenv("LOREGARDEN_TRIAGE_TIMEOUT", "5")
+    assert _triage_timeout({"timeout": 120}) == 30
 
 
 def test_build_triage_prompt_omits_full_mcp_module(client: TestClient):
