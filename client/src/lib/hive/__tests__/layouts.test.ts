@@ -1,19 +1,28 @@
 import { getHiveLayout } from "../layouts";
-import { OFFICEPLACE_MAP } from "../layouts/officeplaceLayout";
+import {
+  OFFICEPLACE_MAP,
+  OFFICEPLACE_STATIONS,
+  OFFICEPLACE_WAITING,
+} from "../layouts/officeplaceLayout";
 
 describe("hive layouts", () => {
   it("uses officeplace office coordinates for officeplace skin", () => {
     const layout = getHiveLayout("officeplace");
     expect(layout.map).toEqual(OFFICEPLACE_MAP);
-    expect(layout.stationPositions.planner_hq).toEqual({ x: 3, y: 4 });
-    expect(layout.stationPositions.coding).toEqual({ x: 12, y: 13 });
-    expect(layout.waitingPosition).toEqual({ x: 26, y: 20 });
+    expect(layout.stationPositions.planner_hq).toEqual(OFFICEPLACE_STATIONS.planner_hq);
+    expect(layout.stationPositions.coding).toEqual(OFFICEPLACE_STATIONS.coding);
+    expect(layout.waitingPosition).toEqual(OFFICEPLACE_WAITING);
     expect(layout.deskRow).toHaveLength(6);
-    expect(layout.scenery).toBe("officeplace/scenery.png");
     expect(layout.errands.length).toBeGreaterThan(0);
-    expect(layout.walkGrid.isWalkable(2, 13)).toBe(true);
     expect(layout.hideStationSprites).toBe(true);
-    expect(layout.zones.some((z) => z.label === "Conference room")).toBe(true);
+  });
+
+  it("draws the Scranton floor plan from data instead of baked scenery", () => {
+    const layout = getHiveLayout("officeplace");
+    expect(layout.scenery).toBeUndefined();
+    expect(layout.rooms.some((r) => r.id === "reception")).toBe(true);
+    expect(layout.rooms.some((r) => r.id === "annex")).toBe(true);
+    expect(layout.floorDesks.some((d) => d.id === "pam")).toBe(true);
   });
 
   it("keeps generic layout for other skins", () => {

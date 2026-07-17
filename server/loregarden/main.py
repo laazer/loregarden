@@ -39,6 +39,7 @@ from loregarden.services.run_service import (
     fail_interrupted_runs,
 )
 from loregarden.services.seed import seed_database
+from loregarden.services.triage_run_service import fail_interrupted_triage_turns
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ async def lifespan(app: FastAPI):
         seed_database(session)
         fail_interrupted_runs(session)
         fail_interrupted_orchestration_runs(session)
+        fail_interrupted_triage_turns(session)
         fail_interrupted_branch_triage_turns(session)
     yield
 

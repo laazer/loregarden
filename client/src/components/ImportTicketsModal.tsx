@@ -19,6 +19,8 @@ export interface ImportTicketsModalProps {
   onClose: () => void;
   onContinue: (filePaths: string[], mode: ImportMode) => void | Promise<void>;
   initialMode?: ImportMode;
+  /** Hide the Regular/Smart selector and lock the modal to `initialMode`. */
+  lockMode?: boolean;
 }
 
 function normalizeInitialMode(mode: unknown): ImportMode {
@@ -34,6 +36,7 @@ export function ImportTicketsModal({
   onClose,
   onContinue,
   initialMode = "regular",
+  lockMode = false,
 }: ImportTicketsModalProps) {
   const normalizedInitialMode = normalizeInitialMode(initialMode);
   const [selectedFiles, setSelectedFiles] = useState<Map<string, SelectedImportFile>>(new Map());
@@ -83,6 +86,20 @@ export function ImportTicketsModal({
     });
   };
 
+  const toggleFiles = (files: SelectedImportFile[], checked: boolean) => {
+    setSelectedFiles((current) => {
+      const next = new Map(current);
+      for (const file of files) {
+        if (checked) {
+          next.set(file.path, file);
+        } else {
+          next.delete(file.path);
+        }
+      }
+      return next;
+    });
+  };
+
   const handleContinue = () => {
     if (!canContinue) return;
     // Guard synchronously so rapid/duplicate clicks before a re-render can't
@@ -111,13 +128,16 @@ export function ImportTicketsModal({
               Import work items
             </h2>
             <p className="modal-subtitle">
-              Select ticket files to import from the repository.
+              {lockMode && mode === "smart"
+                ? "Select ticket files to open as a scoping session in Ticket Studio."
+                : "Select ticket files to import from the repository."}
             </p>
           </div>
           <IconCloseButton disabled={isLoading} onClick={onClose} />
         </div>
 
         <div className="modal-body">
+          {!lockMode && (
           <div className="modal-field">
             <div
               role="radiogroup"
@@ -157,6 +177,7 @@ export function ImportTicketsModal({
               Smart import includes Studio-style metadata; Regular import uses standard fields only.
             </p>
           </div>
+          )}
 
           {errorMessage && (
             <p className="modal-hint" style={{ color: "var(--rdl)" }}>
@@ -168,6 +189,7 @@ export function ImportTicketsModal({
             explorerKey={`import-tickets-${workspaceSlug}`}
             selectedFiles={selectedFiles}
             onToggleFile={toggleFile}
+            onToggleFiles={toggleFiles}
             disabled={isLoading}
             startPath={initialBrowsePath}
           />
@@ -177,7 +199,10 @@ export function ImportTicketsModal({
               <div className="modal-field-label">
                 Selected ({selected.length})
               </div>
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--txm)" }}>
+              <ul
+                className="import-selected-list"
+                style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--txm)" }}
+              >
                 {selected.map((file) => (
                   <li key={file.path}>{file.repo_path}</li>
                 ))}

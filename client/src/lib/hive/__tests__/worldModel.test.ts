@@ -1,4 +1,5 @@
 import type { WorkflowStageView } from "../../../api/client";
+import { OFFICEPLACE_STATIONS } from "../layouts/officeplaceLayout";
 import { agentStatusSnapshot, buildHiveWorld } from "../worldModel";
 
 const stage = (
@@ -45,7 +46,7 @@ describe("buildHiveWorld", () => {
     const coder = model.agents.find((a) => a.id === "backend_implementer");
     expect(coder?.station).toBe("coding");
     expect(coder?.motion).toBe("working");
-    expect(coder?.target).toEqual({ x: 12, y: 13 });
+    expect(coder?.target).toEqual(OFFICEPLACE_STATIONS.coding);
     expect(coder?.showTool).toBe(true);
 
     const codingStation = model.stations.find((s) => s.id === "coding");

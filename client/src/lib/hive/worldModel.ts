@@ -99,6 +99,7 @@ export interface HiveWorldModel {
   orchestratorActive: boolean;
   orchestratorLabel: string;
   waitingProp: { x: number; y: number; label: string; visible: boolean };
+  receptionist: { id: string; x: number; y: number; label: string } | null;
   idle: boolean;
 }
 
@@ -304,6 +305,7 @@ export function buildHiveWorld(
       label: skinLabel(skin, "waiting"),
       visible: hasWaiting,
     },
+    receptionist: layout.receptionist ? { ...layout.receptionist } : null,
     idle: agents.length === 0,
   };
 }

@@ -104,7 +104,7 @@ The top-level orchestrator (autopilot skill or external MCP driver) **must** dri
 
 - `loregarden_start_stage` before each sub-agent
 - `loregarden_complete_stage` / `loregarden_skip_stage` / `loregarden_block_ticket` after gates
-- To route **back to an upstream agent** (Blobert-style rework), call `loregarden_complete_stage` with `outcome: "reject"`, `next_stage_key` (e.g. `implementation`), and `next_agent` — workflow templates may also declare `when: reject` transitions
+- To route **back to an upstream agent** for rework, call `loregarden_complete_stage` with `outcome: "reject"`, `next_stage_key` (e.g. `implementation`), and `next_agent` — workflow templates may also declare `when: reject` transitions
 - Never advance Stage in markdown while Loregarden SQLite is authoritative
 
 ## Identifiers

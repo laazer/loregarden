@@ -12,6 +12,7 @@ export function ArtifactView({
   isOpeningPr = false,
   onCommitPush,
   isCommittingPush = false,
+  onOpenRunLog,
 }: {
   tab: string;
   ticket?: TicketDetail;
@@ -30,6 +31,7 @@ export function ArtifactView({
   isOpeningPr?: boolean;
   onCommitPush?: () => void;
   isCommittingPush?: boolean;
+  onOpenRunLog?: (runId: string) => void;
 }) {
   if (!ticket) {
     return <div style={{ padding: 40, color: "var(--txl)", textAlign: "center" }}>No ticket selected</div>;
@@ -67,6 +69,10 @@ export function ArtifactView({
     const failedRuns = runs.filter((r) => r.status === "failed");
     const hasContent = Boolean(ticket.blocking_issues || errorArt || failedRuns.length);
     if (!hasContent) return <EmptyArtifacts label="No errors recorded" />;
+    // The error artifact records a run_code, not an id — the log fetch needs an id.
+    const errorRunId = errorArt
+      ? runs.find((r) => r.run_code === errorArt.run_code)?.id
+      : undefined;
 
     return (
       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
@@ -97,7 +103,12 @@ export function ArtifactView({
         )}
         {errorArt && (
           <div className="state-card">
-            <div className="state-label">Failed run</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div className="state-label">Failed run</div>
+              {onOpenRunLog && errorRunId && (
+                <ViewLogButton onClick={() => onOpenRunLog(errorRunId)} />
+              )}
+            </div>
             <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--txm)", marginTop: 6 }}>
               {errorArt.run_code} · {errorArt.agent_id} · {errorArt.stage_key}
             </div>
@@ -110,7 +121,10 @@ export function ArtifactView({
         )}
         {failedRuns.map((run) => (
           <div key={run.id} className="state-card">
-            <div className="state-label">{run.run_code}</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div className="state-label">{run.run_code}</div>
+              {onOpenRunLog && <ViewLogButton onClick={() => onOpenRunLog(run.id)} />}
+            </div>
             <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--txm)", marginTop: 6 }}>
               {run.agent_id ?? "—"} · {run.stage_key ?? "—"}
             </div>
@@ -246,11 +260,12 @@ export function ArtifactView({
   const reportsByStage = new Map<string, ContextSection[]>();
   const otherSections: ContextSection[] = [];
   for (const sec of sections) {
-    if (sec.stage_key) {
+    // A stage_key alone does not make a section a report — only a status does.
+    if (sec.stage_key && sec.status) {
       const list = reportsByStage.get(sec.stage_key) ?? [];
       list.push(sec);
       reportsByStage.set(sec.stage_key, list);
-    } else {
+    } else if (sec.rows?.length) {
       otherSections.push(sec);
     }
   }
@@ -261,9 +276,24 @@ export function ArtifactView({
         <div style={{ marginBottom: 16 }}>
           <div className="state-label">Agent runs</div>
           {runRows.map((r) => (
-            <div key={r.id} className="list-btn" style={{ marginBottom: 4, fontFamily: "var(--mono)", fontSize: 11 }}>
+            <button
+              key={r.id}
+              type="button"
+              className="list-btn"
+              disabled={!onOpenRunLog}
+              onClick={() => onOpenRunLog?.(r.id)}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                marginBottom: 4,
+                fontFamily: "var(--mono)",
+                fontSize: 11,
+                cursor: onOpenRunLog ? "pointer" : "default",
+              }}
+            >
               {r.run_code} · {r.status} · {r.command.slice(0, 60)}
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -322,6 +352,14 @@ export function ArtifactView({
         </div>
       ))}
     </div>
+  );
+}
+
+function ViewLogButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" className="btn-secondary" style={{ fontSize: 11 }} onClick={onClick}>
+      View log
+    </button>
   );
 }
 

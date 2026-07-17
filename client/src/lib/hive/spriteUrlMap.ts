@@ -14,6 +14,7 @@ import a12 from "../../assets/hive/runeplace/artifacts/diff.png";
 import a13 from "../../assets/hive/runeplace/events/waiting.png";
 import a14 from "../../assets/hive/runeplace/events/error.png";
 import a15 from "../../assets/hive/officeplace/floor.png";
+import a15b from "../../assets/hive/officeplace/floor-bg.png";
 import a16 from "../../assets/hive/officeplace/agents/worker.png";
 import a17 from "../../assets/hive/officeplace/agents/planner.png";
 import a18 from "../../assets/hive/officeplace/agents/implementer.png";
@@ -28,7 +29,6 @@ import a26 from "../../assets/hive/officeplace/artifacts/context.png";
 import a27 from "../../assets/hive/officeplace/artifacts/diff.png";
 import a28 from "../../assets/hive/officeplace/events/waiting.png";
 import a29 from "../../assets/hive/officeplace/events/error.png";
-import a60 from "../../assets/hive/officeplace/scenery.png";
 import a30 from "../../assets/hive/netplace/floor.png";
 import a31 from "../../assets/hive/netplace/agents/worker.png";
 import a32 from "../../assets/hive/netplace/agents/planner.png";
@@ -77,6 +77,7 @@ export const HIVE_SPRITE_URL_MAP: Record<string, string> = {
   "runeplace/events/waiting.png": a13,
   "runeplace/events/error.png": a14,
   "officeplace/floor.png": a15,
+  "officeplace/floor-bg.png": a15b,
   "officeplace/agents/worker.png": a16,
   "officeplace/agents/planner.png": a17,
   "officeplace/agents/implementer.png": a18,
@@ -91,7 +92,6 @@ export const HIVE_SPRITE_URL_MAP: Record<string, string> = {
   "officeplace/artifacts/diff.png": a27,
   "officeplace/events/waiting.png": a28,
   "officeplace/events/error.png": a29,
-  "officeplace/scenery.png": a60,
   "netplace/floor.png": a30,
   "netplace/agents/worker.png": a31,
   "netplace/agents/planner.png": a32,

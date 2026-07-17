@@ -33,6 +33,7 @@ import { ParentTicketSelector } from "../ParentTicketSelector";
 import { workItemTypeLabel } from "../../lib/workItemHierarchy";
 import { runtimeSummaryLabel } from "../WorkspaceRuntimeFields";
 import { TriageModelModal } from "../TriageModelModal";
+import { ImportTicketsModal } from "../ImportTicketsModal";
 import { TicketStudioChatMessages, TicketStudioComposer } from "./TicketStudioChat";
 import { TicketStudioDraftModal } from "./TicketStudioDraftModal";
 
@@ -91,6 +92,7 @@ export function TicketStudioPanel({
   const [newDraft, setNewDraft] = useState(emptySessionDraft);
   const [chatDraft, setChatDraft] = useState("");
   const [modelModalOpen, setModelModalOpen] = useState(false);
+  const [smartImportOpen, setSmartImportOpen] = useState(false);
   const [localDraft, setLocalDraft] = useState<TicketStudioDraftItem[]>([]);
   const [draftDirty, setDraftDirty] = useState(false);
   const [answerDraft, setAnswerDraft] = useState<string[]>([]);
@@ -236,6 +238,58 @@ export function TicketStudioPanel({
       setNewDraft(emptySessionDraft());
     },
   });
+
+  const startSmartImport = useMutation({
+    mutationFn: async (filePaths: string[]) => {
+      const preview = await api.previewTicketImportPaths({
+        workspace_slug: workspaceSlug,
+        file_paths: filePaths,
+      });
+      if (preview.tickets.length === 0) {
+        throw new Error(
+          preview.errors[0] || "No importable tickets found in the selected files.",
+        );
+      }
+      const created = await api.createTicketStudioSession({
+        workspace_slug: workspaceSlug,
+        title:
+          preview.tickets.length === 1
+            ? preview.tickets[0].title
+            : `Smart import (${preview.tickets.length} tickets)`,
+        brief: `Imported from ${filePaths.length} file${filePaths.length === 1 ? "" : "s"} via smart import.`,
+        is_preview: true,
+        imported_tickets: preview.tickets,
+      });
+      try {
+        const clarified = await api.requestTicketStudioClarifications(created.id);
+        if (clarified.clarifying_resolved && clarified.clarifying_questions.length === 0) {
+          return api.generateTicketStudioScope(clarified.id);
+        }
+        return clarified;
+      } catch {
+        return created;
+      }
+    },
+    onSuccess: (session) => {
+      if (qc) {
+        qc.invalidateQueries({ queryKey: ["ticket-studio-sessions", workspaceSlug] });
+      }
+      setSmartImportOpen(false);
+      navigateToStudioTicketSession(session.id);
+    },
+  });
+
+  const smartImportError =
+    startSmartImport.error instanceof Error
+      ? (() => {
+          try {
+            const parsed = JSON.parse(startSmartImport.error.message) as { detail?: string };
+            return parsed.detail ?? startSmartImport.error.message;
+          } catch {
+            return startSmartImport.error.message;
+          }
+        })()
+      : null;
 
   const sendMessage = useMutation({
     mutationFn: (content: string) => api.sendTicketStudioMessage(selectedSessionId!, content),
@@ -556,13 +610,28 @@ export function TicketStudioPanel({
           <button
             type="button"
             className="studio-library-cta"
-            style={{ marginBottom: 16 }}
+            style={{ marginBottom: 8 }}
             onClick={() => navigateToStudioTicketSessionNew()}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
               <path d="M12 5v14M5 12h14" />
             </svg>
             New scope
+          </button>
+
+          <button
+            type="button"
+            className="btn-secondary ticket-studio-smart-import-btn"
+            style={{ marginBottom: 16 }}
+            onClick={() => {
+              startSmartImport.reset();
+              setSmartImportOpen(true);
+            }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" />
+            </svg>
+            Smart import
           </button>
 
           <div className="studio-library-section-label">Sessions</div>
@@ -801,6 +870,24 @@ export function TicketStudioPanel({
                 updateDraftItem(expandedDraftIndex, updated);
               }
         }
+      />
+
+      <ImportTicketsModal
+        open={smartImportOpen}
+        workspaceSlug={workspaceSlug}
+        initialBrowsePath={selectedWorkspace?.repo_path?.trim() || "."}
+        initialMode="smart"
+        lockMode
+        isLoading={startSmartImport.isPending}
+        errorMessage={smartImportError}
+        onClose={() => {
+          if (startSmartImport.isPending) return;
+          setSmartImportOpen(false);
+          startSmartImport.reset();
+        }}
+        onContinue={async (filePaths) => {
+          await startSmartImport.mutateAsync(filePaths);
+        }}
       />
 
       <TriageModelModal

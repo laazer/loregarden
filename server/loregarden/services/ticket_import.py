@@ -13,6 +13,7 @@ from loregarden.models.domain import TicketImportItem, WorkItemType
 
 _MD_TICKET_RE = re.compile(r"^#\s*TICKET:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
 _MD_TITLE_RE = re.compile(r"^Title:\s*(.+)$", re.MULTILINE)
+_MD_HEADING_RE = re.compile(r"^#\s+(?!TICKET:)(.+)$", re.MULTILINE | re.IGNORECASE)
 _MD_TYPE_RE = re.compile(
     r"^(?:Work item type|Work Item Type|Type):\s*(.+)$",
     re.MULTILINE | re.IGNORECASE,
@@ -96,11 +97,18 @@ def _extract_md_section(content: str, heading: str) -> str:
 def _parse_markdown_ticket(content: str, *, source_label: str) -> TicketImportItem:
     ticket_match = _MD_TICKET_RE.search(content)
     title_match = _MD_TITLE_RE.search(content)
-    if not title_match:
+    heading_match = _MD_HEADING_RE.search(content)
+    title_section = _extract_md_section(content, "Title")
+    if not title_match and not heading_match and not title_section:
         raise ValueError("Markdown ticket is missing a Title: line")
 
     external_id = (ticket_match.group(1).strip() if ticket_match else "").strip()
-    title = title_match.group(1).strip()
+    if title_match:
+        title = title_match.group(1).strip()
+    elif heading_match:
+        title = heading_match.group(1).strip()
+    else:
+        title = title_section
     if not title:
         raise ValueError("Markdown ticket title is empty")
 

@@ -778,13 +778,27 @@ def _test_artifact_is_valid(content: dict[str, Any]) -> bool:
     return bool(content.get("summary"))
 
 
-def _log_text_for_run(session: Session, run_id: str) -> str:
+def load_run_log(session: Session, run_id: str) -> dict[str, Any] | None:
+    """The rendered `{lines, live}` log body for a run, or None if it has none.
+
+    This is the capped artifact the log streamer maintains — not `AgentRun.stdout`,
+    which holds the raw multi-megabyte stream-json transcript.
+    """
     artifact = session.exec(
         select(Artifact).where(Artifact.run_id == run_id, Artifact.kind == "log")
     ).first()
     if not artifact:
-        return ""
+        return None
     body = json.loads(artifact.content_json or "{}")
+    if not isinstance(body, dict):
+        return None
+    return body
+
+
+def _log_text_for_run(session: Session, run_id: str) -> str:
+    body = load_run_log(session, run_id)
+    if not body:
+        return ""
     lines = body.get("lines") or []
     return "\n".join(str(line.get("text") or "") for line in lines if line.get("tag") == "OUT")
 

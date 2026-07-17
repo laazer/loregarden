@@ -3,16 +3,27 @@ import { createOpenWalkGrid } from "../pathfinding";
 import type { HiveSkinId, HiveStationId } from "../skins";
 import {
   OFFICEPLACE_DESKS,
+  OFFICEPLACE_DOORS,
   OFFICEPLACE_ERRANDS,
+  OFFICEPLACE_FLOOR_DESKS,
   OFFICEPLACE_MAP,
-  OFFICEPLACE_SCENERY,
+  OFFICEPLACE_MDR_STAFF,
+  OFFICEPLACE_PROPS,
+  OFFICEPLACE_RECEPTIONIST,
+  OFFICEPLACE_ROOMS,
   OFFICEPLACE_STATIONS,
   OFFICEPLACE_WAITING,
   OFFICEPLACE_ZONES,
+  type FloorDesk,
+  type FloorDoor,
+  type FloorProp,
+  type FloorRoom,
   type HiveLayoutZone,
   type HiveOfficeErrand,
+  type HiveOfficeReceptionist,
+  type HiveOfficeResident,
 } from "./officeplaceLayout";
-import { createOfficeplaceWalkGrid } from "./walkGrid";
+import { createOfficeplaceOpenWalkGrid } from "./walkGrid";
 
 export interface HiveLayout {
   map: { tileSize: number; width: number; height: number };
@@ -22,8 +33,16 @@ export interface HiveLayout {
   scenery?: string;
   zones: HiveLayoutZone[];
   errands: HiveOfficeErrand[];
+  receptionist: HiveOfficeReceptionist | null;
+  /** Static placeholder NPCs pinned to a room (e.g. MDR QA staff). */
+  mdrStaff: HiveOfficeResident[];
   hideStationSprites: boolean;
   walkGrid: WalkGrid;
+  /** Drawn floor plan — empty for skins that use baked scenery art. */
+  rooms: FloorRoom[];
+  floorDesks: FloorDesk[];
+  floorProps: FloorProp[];
+  doors: FloorDoor[];
 }
 
 const DEFAULT_MAP = { tileSize: 16, width: 40, height: 28 } as const;
@@ -54,8 +73,14 @@ const DEFAULT_LAYOUT: HiveLayout = {
   deskRow: DEFAULT_DESKS,
   zones: [],
   errands: [],
+  receptionist: null,
+  mdrStaff: [],
   hideStationSprites: false,
   walkGrid: createOpenWalkGrid(DEFAULT_MAP.width, DEFAULT_MAP.height),
+  rooms: [],
+  floorDesks: [],
+  floorProps: [],
+  doors: [],
 };
 
 const OFFICEPLACE_LAYOUT: HiveLayout = {
@@ -63,11 +88,16 @@ const OFFICEPLACE_LAYOUT: HiveLayout = {
   stationPositions: OFFICEPLACE_STATIONS,
   waitingPosition: OFFICEPLACE_WAITING,
   deskRow: OFFICEPLACE_DESKS,
-  scenery: OFFICEPLACE_SCENERY,
   zones: OFFICEPLACE_ZONES,
   errands: OFFICEPLACE_ERRANDS,
+  receptionist: OFFICEPLACE_RECEPTIONIST,
+  mdrStaff: OFFICEPLACE_MDR_STAFF,
   hideStationSprites: true,
-  walkGrid: createOfficeplaceWalkGrid(),
+  walkGrid: createOfficeplaceOpenWalkGrid(),
+  rooms: OFFICEPLACE_ROOMS,
+  floorDesks: OFFICEPLACE_FLOOR_DESKS,
+  floorProps: OFFICEPLACE_PROPS,
+  doors: OFFICEPLACE_DOORS,
 };
 
 export function getWalkGridForSkin(skin: HiveSkinId): WalkGrid {
@@ -79,5 +109,14 @@ export function getHiveLayout(skin: HiveSkinId): HiveLayout {
   return DEFAULT_LAYOUT;
 }
 
-export { type HiveLayoutZone, type HiveOfficeErrand } from "./officeplaceLayout";
-export { createOfficeplaceWalkGrid } from "./walkGrid";
+export {
+  type FloorDesk,
+  type FloorDoor,
+  type FloorProp,
+  type FloorRoom,
+  type HiveLayoutZone,
+  type HiveOfficeErrand,
+  type HiveOfficeReceptionist,
+  type HiveOfficeResident,
+} from "./officeplaceLayout";
+export { createOfficeplaceOpenWalkGrid, createOfficeplaceWalkGrid } from "./walkGrid";

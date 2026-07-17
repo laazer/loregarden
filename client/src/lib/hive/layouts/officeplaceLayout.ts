@@ -1,31 +1,32 @@
 import type { HiveStationId } from "../skins";
+import { OFFICEPLACE_FLOOR } from "./officeplaceFloorPlan";
 
-/** officeplace office.tmj — 34×22 tiles @ 16px */
-export const OFFICEPLACE_MAP = {
-  tileSize: 16,
-  width: 34,
-  height: 22,
-} as const;
+/** Office grid — 60×50 tiles, matching the floor-bg.png office image. */
+export const OFFICEPLACE_MAP = OFFICEPLACE_FLOOR;
 
-/** Spawn points and zones from office.tmj / themeRegistry */
+/**
+ * NPC positions are aligned to the floor-bg.png office image, in 60×50 tile space
+ * (tile ≈ image px / 16.6 horizontally, / 10.4 vertically). Read off a tile-grid
+ * overlay on the image and verified in the running app.
+ */
 export const OFFICEPLACE_STATIONS: Record<HiveStationId, { x: number; y: number }> = {
-  planner_hq: { x: 3, y: 4 }, // desk-ceo
-  research: { x: 13, y: 5 }, // boardroom zone center
-  coding: { x: 12, y: 13 }, // bullpen pc row
-  testing: { x: 23, y: 7 }, // war room
-  deploy: { x: 16, y: 20 }, // entrance / shipping
+  planner_hq: { x: 43, y: 15 }, // Michael's office (upper right)
+  research: { x: 26, y: 37 }, // conference room (long table, lower centre)
+  coding: { x: 28, y: 21 }, // bullpen (central desk clusters)
+  testing: { x: 52, y: 5 }, // the annex desk cluster (green room, top right)
+  deploy: { x: 42, y: 26 }, // entrance, below reception
 };
 
-export const OFFICEPLACE_WAITING = { x: 26, y: 20 }; // café coffee machine
+export const OFFICEPLACE_WAITING = { x: 41, y: 4 }; // break room / kitchen (top centre)
 
-/** Agent desk seats — pc-1 … pc-6 bullpen row */
+/** Agent desk seats — the sales bullpen clusters in the image. */
 export const OFFICEPLACE_DESKS = [
-  { x: 2, y: 13 },
-  { x: 6, y: 13 },
-  { x: 10, y: 13 },
-  { x: 14, y: 13 },
-  { x: 18, y: 13 },
-  { x: 22, y: 13 },
+  { x: 24, y: 19 },
+  { x: 28, y: 19 },
+  { x: 32, y: 20 },
+  { x: 26, y: 24 },
+  { x: 30, y: 24 },
+  { x: 34, y: 22 },
 ] as const;
 
 export interface HiveLayoutZone {
@@ -35,15 +36,42 @@ export interface HiveLayoutZone {
   label: string;
 }
 
-/** Zone labels for baked office scenery (furniture is in scenery.png). */
-export const OFFICEPLACE_ZONES: HiveLayoutZone[] = [
-  { id: "boardroom", x: 13, y: 3, label: "Conference room" },
-  { id: "reception", x: 16, y: 19, label: "Reception" },
-  { id: "break-room", x: 28, y: 14, label: "Break room" },
-  { id: "bullpen", x: 12, y: 11, label: "Bullpen" },
-];
+/** Rooms draw their own name plates, so the officeplace skin needs no zone overlays. */
+export const OFFICEPLACE_ZONES: HiveLayoutZone[] = [];
 
-export const OFFICEPLACE_SCENERY = "officeplace/scenery.png";
+export interface HiveOfficeReceptionist {
+  id: string;
+  x: number;
+  y: number;
+  label: string;
+}
+
+/** Pam, at the curved reception desk in the centre-right of the image. */
+export const OFFICEPLACE_RECEPTIONIST: HiveOfficeReceptionist = {
+  id: "receptionist",
+  x: 45,
+  y: 25,
+  label: "Receptionist",
+};
+
+export interface HiveOfficeResident {
+  id: string;
+  x: number;
+  y: number;
+  label: string;
+}
+
+/**
+ * Placeholder QA staff who live in the MDR room (green, top-right). Roaming office
+ * agents never path here; these are static stand-ins until dedicated QA NPCs land.
+ * Seated at the four MDR desks around the testing station.
+ */
+export const OFFICEPLACE_MDR_STAFF: HiveOfficeResident[] = [
+  { id: "mdr-1", x: 50, y: 4, label: "QA" },
+  { id: "mdr-2", x: 54, y: 4, label: "QA" },
+  { id: "mdr-3", x: 50, y: 7, label: "QA" },
+  { id: "mdr-4", x: 54, y: 7, label: "QA" },
+];
 
 export interface HiveOfficeErrand {
   id: string;
@@ -51,17 +79,25 @@ export interface HiveOfficeErrand {
   label: string;
 }
 
-/** Idle errands from office themeRegistry (worker-accessible). */
+/** Idle errands — each stands on an open floor tile in the image. */
 export const OFFICEPLACE_ERRANDS: HiveOfficeErrand[] = [
-  { id: "plant-left", stand: { x: 2, y: 20 }, label: "Watering plant" },
-  { id: "plant-right", stand: { x: 22, y: 20 }, label: "Watering plant" },
-  { id: "plant-cafe", stand: { x: 30, y: 20 }, label: "Watering plant" },
-  { id: "window-left", stand: { x: 10, y: 3 }, label: "Staring out the window" },
-  { id: "window-right", stand: { x: 15, y: 3 }, label: "Staring out the window" },
-  { id: "cooler", stand: { x: 16, y: 3 }, label: "At the water cooler" },
-  { id: "coffee", stand: { x: 26, y: 20 }, label: "Coffee run" },
-  { id: "fridge", stand: { x: 29, y: 20 }, label: "Raiding the fridge" },
-  { id: "shelf", stand: { x: 30, y: 20 }, label: "Snack shelf" },
-  { id: "bin-entrance", stand: { x: 18, y: 20 }, label: "Trash toss" },
-  { id: "bin-cafe", stand: { x: 31, y: 16 }, label: "Trash toss" },
+  { id: "lobby", stand: { x: 10, y: 4 }, label: "In the lobby" },
+  { id: "kitchen", stand: { x: 44, y: 4 }, label: "In the kitchen" },
+  { id: "lounge", stand: { x: 4, y: 40 }, label: "In the lounge" },
+  { id: "bullpen-walk", stand: { x: 30, y: 22 }, label: "Crossing the bullpen" },
+  { id: "conference", stand: { x: 24, y: 38 }, label: "Leaving the conference room" },
+  { id: "annex", stand: { x: 50, y: 40 }, label: "Waiting on the elevator" },
+  { id: "reception-chat", stand: { x: 39, y: 24 }, label: "Loitering at reception" },
+  { id: "corridor", stand: { x: 10, y: 20 }, label: "Down the corridor" },
 ];
+
+export {
+  OFFICEPLACE_DOORS,
+  OFFICEPLACE_FLOOR_DESKS,
+  OFFICEPLACE_PROPS,
+  OFFICEPLACE_ROOMS,
+  type FloorDesk,
+  type FloorDoor,
+  type FloorProp,
+  type FloorRoom,
+} from "./officeplaceFloorPlan";

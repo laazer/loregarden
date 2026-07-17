@@ -1,0 +1,22 @@
+handoff:
+  schema_version: '1.0'
+  ticket_id: 85-markdown-ticket-is-missing-a-title-line
+  from_agent: backend_implementer
+  to_agent: architecture_reviewer
+  validated_at: '2026-07-16T18:09:21Z'
+  required_items_met: 2
+  total_required_items: 2
+  checklist:
+  - item_key: implementation_complete
+    item: Implementation complete
+    required: true
+    status: complete
+    evidence: 'server/loregarden/services/ticket_import.py: _parse_markdown_ticket now falls back to the
+      first H1 (# Heading) as the ticket title when no explicit `Title:` line is present; explicit Title:
+      still takes precedence.'
+  - item_key: test_suite_passing
+    item: Test suite passing
+    required: true
+    status: complete
+    evidence: 'server/tests/test_ticket_import_parser.py and server/tests/test_smart_import_adversarial.py::TestTitleFallback
+      pass (7/7 relevant tests); full backend suite: 916 passed, 34 skipped (pre-existing), 0 failed.'

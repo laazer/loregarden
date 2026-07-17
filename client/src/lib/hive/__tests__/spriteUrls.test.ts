@@ -8,6 +8,8 @@ describe("resolveSkinSprites", () => {
       const sprites = resolveSkinSprites(skin);
       expect(sprites.floor).toBeTruthy();
       if (skin === "officeplace") {
+        // The office renders from a baked background image; the drawn floor-plan
+        // layer is suppressed when scenery is present.
         expect(sprites.scenery).toBeTruthy();
       }
       expect(sprites.agent.implementer).toBeTruthy();

@@ -24,6 +24,7 @@ import { WorkflowPreviewPanel } from "../components/studio/WorkflowPreviewPanel"
 import { WorkspaceGatesPanel } from "../components/studio/WorkspaceGatesPanel";
 import { navigateToStudio, navigateToStudioAgent, navigateToStudioAgentNew, navigateToStudioWorkflow, navigateToStudioWorkflowNew, useStudioResourceFromRoute, useStudioSectionFromRoute } from "../lib/useAppNavigation";
 import { isStudioNewResource, studioPath } from "../lib/appNavigation";
+import { useUiStore } from "../state/uiStore";
 
 const ADAPTERS = [
   { id: "claude", label: "Claude Code" },
@@ -123,6 +124,15 @@ export function StudioPage() {
   const skills = useQuery({ queryKey: ["agent-skills"], queryFn: api.skills });
   const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
   const runtimeOptions = useQuery({ queryKey: ["runtime-options"], queryFn: api.runtimeOptions });
+
+  // Inherit the app-wide active workspace so Ticket Studio (and its Smart import)
+  // opens on the workspace the user is already working in, not the first in the list.
+  // "all" has no single active workspace, so fall back to the first one.
+  const activeWorkspace = useUiStore((s) => s.workspace);
+  const activeWorkspaceSlug =
+    activeWorkspace && activeWorkspace !== "all"
+      ? activeWorkspace
+      : workspaces.data?.[0]?.slug;
 
   const customAgents = useMemo(
     () => (agents.data ?? []).filter((agent) => !agent.built_in),
@@ -578,6 +588,7 @@ export function StudioPage() {
             <TicketStudioPanel
               workspaces={workspaces.data ?? []}
               runtimeOptions={runtimeOptions.data}
+              workspaceSlug={activeWorkspaceSlug}
             />
           </div>
         ) : tab === "gates" ? (

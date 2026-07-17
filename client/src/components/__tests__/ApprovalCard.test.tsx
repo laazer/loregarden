@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 
 import type { Approval } from "../../api/client";
+import { renderWithRouter } from "../../test/renderWithRouter";
 import { ApprovalCard } from "../ApprovalCard";
 
 const GATE_APPROVAL: Approval = {
@@ -33,7 +34,7 @@ const PERMISSION_APPROVAL: Approval = {
 describe("ApprovalCard reject flow", () => {
   it("opens the reject modal for a workflow-gate approval instead of rejecting immediately", () => {
     const onReject = jest.fn();
-    render(
+    renderWithRouter(
       <ApprovalCard
         approval={GATE_APPROVAL}
         onApprove={() => {}}
@@ -59,7 +60,7 @@ describe("ApprovalCard reject flow", () => {
 
   it("denies a CLI permission approval immediately, without a modal", () => {
     const onReject = jest.fn();
-    render(
+    renderWithRouter(
       <ApprovalCard
         approval={PERMISSION_APPROVAL}
         onApprove={() => {}}

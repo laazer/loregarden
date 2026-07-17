@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { tilePercent } from "../../../lib/hive/coords";
 import { floorBackgroundStyle, resolveSkinSprites } from "../../../lib/hive/spriteUrls";
@@ -10,6 +10,7 @@ import {
 } from "../../../lib/hive/speed";
 import type { HiveWorldModel } from "../../../lib/hive/worldModel";
 import { HiveCssAgent } from "./HiveCssAgent";
+import { HiveCssRooms } from "./HiveCssRooms";
 
 interface HiveCssFloorProps {
   model: HiveWorldModel;
@@ -47,8 +48,33 @@ export function HiveCssFloor({ model, speedMultiplier = 1 }: HiveCssFloorProps) 
   const sprites = useMemo(() => resolveSkinSprites(model.skin), [model.skin]);
   const { layout } = model;
   const map = layout.map;
+  const hasRooms = layout.rooms.length > 0;
   const hasScenery = Boolean(sprites.scenery);
-  const hideStationSprites = layout.hideStationSprites && hasScenery;
+  // A background image IS the floor: it replaces the drawn rooms/desks/props, but
+  // the NPC data layer (agents, stations, receptionist) still renders on top.
+  const drawFloorPlan = hasRooms && !hasScenery;
+  const hideStationSprites = layout.hideStationSprites && (hasScenery || hasRooms);
+
+  // Letterbox to the background image's own aspect so it fills without stretching,
+  // re-reading whenever the image (or skin) changes.
+  const [bgAspect, setBgAspect] = useState<number | null>(null);
+  useEffect(() => {
+    if (!sprites.scenery) {
+      setBgAspect(null);
+      return;
+    }
+    let live = true;
+    const img = new Image();
+    img.onload = () => {
+      if (live && img.naturalHeight > 0) setBgAspect(img.naturalWidth / img.naturalHeight);
+    };
+    img.src = sprites.scenery;
+    return () => {
+      live = false;
+    };
+  }, [sprites.scenery]);
+
+  const floorAspect = hasScenery && bgAspect ? bgAspect : map.width / map.height;
 
   const flyerMotionMs = hiveScaledMs(HIVE_FLYER_MOTION_MS, speedMultiplier);
   const flyerFadeMs = hiveScaledMs(HIVE_FLYER_FADE_MS, speedMultiplier);
@@ -56,8 +82,11 @@ export function HiveCssFloor({ model, speedMultiplier = 1 }: HiveCssFloorProps) 
     () =>
       ({
         "--hive-flyer-ms": `${flyerMotionMs}ms`,
+        "--hive-map-aspect": `${floorAspect}`,
+        "--hive-map-w": `${map.width}`,
+        "--hive-map-h": `${map.height}`,
       }) as CSSProperties,
-    [flyerMotionMs],
+    [flyerMotionMs, floorAspect, map.width, map.height],
   );
 
   useEffect(() => {
@@ -106,10 +135,20 @@ export function HiveCssFloor({ model, speedMultiplier = 1 }: HiveCssFloorProps) 
 
   return (
     <div
-      className={`hive-css hive-css--${model.skin}${hasScenery ? " hive-css--scenery" : sprites.floor ? " hive-css--has-floor" : ""}`}
+      className={`hive-css hive-css--${model.skin}${hasScenery ? " hive-css--scenery" : sprites.floor ? " hive-css--has-floor" : ""}${hasRooms ? " hive-css--rooms" : ""}`}
       style={floorStyle}
       aria-label={`${model.floorTitle} simulation`}
     >
+      {drawFloorPlan ? (
+        <HiveCssRooms
+          rooms={layout.rooms}
+          desks={layout.floorDesks}
+          props={layout.floorProps}
+          doors={layout.doors}
+          map={map}
+        />
+      ) : null}
+
       {model.stations
         .filter((station) => station.id !== "planner_hq")
         .map((station) => {
@@ -177,6 +216,40 @@ export function HiveCssFloor({ model, speedMultiplier = 1 }: HiveCssFloorProps) 
           />
         )}
       </div>
+
+      {model.receptionist ? (
+        <div
+          className="hive-css__resident"
+          data-testid="hive-receptionist"
+          style={tilePercent(model.receptionist, map)}
+          title={model.receptionist.label}
+        >
+          <SpriteOrFallback
+            src={sprites.agent.worker}
+            className="hive-css__resident-sprite"
+            alt={model.receptionist.label}
+            fallback={model.receptionist.label}
+          />
+        </div>
+      ) : null}
+
+      {/* Placeholder QA staff who live in the MDR room; roaming agents never come here. */}
+      {layout.mdrStaff.map((staff) => (
+        <div
+          key={staff.id}
+          className="hive-css__resident"
+          data-testid={`hive-mdr-${staff.id}`}
+          style={tilePercent(staff, map)}
+          title={staff.label}
+        >
+          <SpriteOrFallback
+            src={sprites.agent.tester}
+            className="hive-css__resident-sprite"
+            alt={staff.label}
+            fallback={staff.label}
+          />
+        </div>
+      ))}
 
       {model.waitingProp.visible && !hasScenery ? (
         <div className="hive-css__waiting" style={wait} title={model.waitingProp.label}>

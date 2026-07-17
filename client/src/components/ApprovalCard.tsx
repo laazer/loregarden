@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { AgentQuestion, Approval } from "../api/client";
+import { BringInChangesButton } from "./BringInChangesButton";
 import { PermissionDetails } from "./PermissionDetails";
 import { RejectApprovalModal } from "./RejectApprovalModal";
 
@@ -401,6 +402,7 @@ export function ApprovalCard({
           </>
         )}
       </div>
+      {isGate && <BringInChangesButton workspaceSlug={approval.workspace_slug} />}
       <div style={{ display: "flex", borderTop: "1px solid var(--bd)" }}>
         {isQuestion ? (
           <button

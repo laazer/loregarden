@@ -13,6 +13,7 @@ export interface SelectedImportFile {
 interface ImportTicketFileExplorerProps {
   selectedFiles: Map<string, SelectedImportFile>;
   onToggleFile: (file: SelectedImportFile, checked: boolean) => void;
+  onToggleFiles?: (files: SelectedImportFile[], checked: boolean) => void;
   disabled?: boolean;
   startPath?: string;
   navigateTo?: string;
@@ -22,6 +23,7 @@ interface ImportTicketFileExplorerProps {
 export function ImportTicketFileExplorer({
   selectedFiles,
   onToggleFile,
+  onToggleFiles,
   disabled = false,
   startPath = ".",
   navigateTo = "",
@@ -49,6 +51,25 @@ export function ImportTicketFileExplorer({
     [data?.entries],
   );
 
+  const folderFiles = useMemo<SelectedImportFile[]>(
+    () => files.map((entry) => ({ path: entry.path, name: entry.name, repo_path: entry.repo_path })),
+    [files],
+  );
+  const selectedInFolder = folderFiles.filter((file) => selectedFiles.has(file.path)).length;
+  const allSelected = folderFiles.length > 0 && selectedInFolder === folderFiles.length;
+
+  const setFolderSelection = (checked: boolean) => {
+    if (onToggleFiles) {
+      onToggleFiles(folderFiles, checked);
+      return;
+    }
+    for (const file of folderFiles) {
+      if (selectedFiles.has(file.path) !== checked) {
+        onToggleFile(file, checked);
+      }
+    }
+  };
+
   return (
     <div className="repo-path-explorer import-file-explorer">
       <PathExplorerToolbar
@@ -75,6 +96,30 @@ export function ImportTicketFileExplorer({
         <p className="modal-hint" style={{ color: "var(--rdl)", margin: "6px 10px 0" }}>
           {error instanceof Error ? error.message : "Failed to browse directory"}
         </p>
+      )}
+
+      {!loading && folderFiles.length > 0 && (
+        <div className="import-file-bulk-actions">
+          <button
+            type="button"
+            className="btn-secondary btn-compact"
+            disabled={disabled || allSelected}
+            onClick={() => setFolderSelection(true)}
+          >
+            Select all
+          </button>
+          <button
+            type="button"
+            className="btn-secondary btn-compact"
+            disabled={disabled || selectedInFolder === 0}
+            onClick={() => setFolderSelection(false)}
+          >
+            Clear all
+          </button>
+          <span className="import-file-bulk-count">
+            {selectedInFolder}/{folderFiles.length} selected in this folder
+          </span>
+        </div>
       )}
 
       <div className="repo-path-explorer-list import-file-explorer-list" aria-label="Import files">

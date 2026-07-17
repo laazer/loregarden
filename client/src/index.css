@@ -547,6 +547,22 @@ button {
   background: var(--ac2);
 }
 
+.ticket-studio-smart-import-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.ticket-studio-smart-import-btn svg {
+  flex: none;
+}
+
 .studio-library-section-label {
   font-size: 9.5px;
   letter-spacing: 0.1em;
@@ -2752,6 +2768,24 @@ button {
   max-height: 240px;
 }
 
+.import-file-bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+
+.import-file-bulk-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--txl);
+}
+
+.import-selected-list {
+  max-height: 132px;
+  overflow-y: auto;
+}
+
 .import-file-row {
   display: flex;
   align-items: center;
@@ -4822,4 +4856,19 @@ button {
 .import-mode-option:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.bring-in-changes {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--bd);
+  background: var(--bg1);
+}
+
+.bring-in-changes-hint {
+  color: var(--txm);
+  font-size: 11px;
+  line-height: 1.4;
 }

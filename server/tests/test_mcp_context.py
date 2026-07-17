@@ -3,10 +3,11 @@ from loregarden.agents.mcp_context import (
     build_mcp_run_context,
     load_loregarden_mcp_doc,
     load_memory_protocol_doc,
+    load_stage_report_contract_doc,
     loregarden_mcp_cli_config_json,
     resolve_mcp_url,
 )
-from loregarden.models.domain import AgentRun, Ticket, Workspace
+from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef, Workspace
 from loregarden.services.seed import seed_database
 from loregarden.services.workspace_paths import resolve_agent_context_dir
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -51,6 +52,43 @@ def test_build_mcp_run_context_includes_ids():
     assert 'workspace_slug="loregarden"' in text
 
 
+def _handoff_run(stage_type: str) -> str:
+    ticket = Ticket(id="t", external_id="ext", title="T", workspace_id="ws")
+    run = AgentRun(
+        run_code="run_h",
+        ticket_id="t",
+        workspace_id="ws",
+        agent_id="architecture_reviewer",
+        stage_key="script_review",
+    )
+    workspace = Workspace(id="ws", slug="blobert", name="Blobert")
+    stage_def = WorkflowStageDef(key="script_review", name="Script Review", stage_type=stage_type)
+    return build_mcp_run_context(ticket=ticket, run=run, workspace=workspace, stage_def=stage_def)
+
+
+def test_handoff_instruction_linear_stage_tells_agent_to_write_handoff():
+    text = _handoff_run("agent")
+    assert "**Finishing agents:**" in text
+    assert "loregarden_write_handoff" in text
+
+
+def test_handoff_instruction_parallel_stage_suppresses_write_handoff():
+    """A parallel reviewer has no `(from → to)` pair; telling it to write a handoff
+    makes it invent an uncataloged downstream the strict gate then rejects."""
+    text = _handoff_run("parallel")
+    assert "parallel review stage" in text
+    assert "Do **not** call" in text
+    assert "**Finishing agents:**" not in text
+
+
+def test_handoff_instruction_defaults_to_linear_when_stage_unknown():
+    ticket = Ticket(id="t", external_id="ext", title="T", workspace_id="ws")
+    run = AgentRun(run_code="run_h", ticket_id="t", workspace_id="ws", agent_id="static_qa")
+    workspace = Workspace(id="ws", slug="loregarden", name="Loregarden")
+    text = build_mcp_run_context(ticket=ticket, run=run, workspace=workspace)
+    assert "**Finishing agents:**" in text
+
+
 def test_cli_prompt_includes_mcp_module():
     engine = create_engine(
         "sqlite://",
@@ -91,6 +129,79 @@ def test_cli_prompt_includes_mcp_module():
         assert "loregarden_get_ticket" in prompt
         assert load_loregarden_mcp_doc(resolve_agent_context_dir(workspace))[:200] in prompt
         assert load_memory_protocol_doc(resolve_agent_context_dir(workspace))[:200] in prompt
+
+
+def test_cli_prompt_includes_stage_report_contract():
+    """Agents only emit a stage report if the prompt carries the contract.
+
+    Nothing loaded it before, so the Context tab's per-stage reports were empty
+    for every run that did not happen to read the module off disk itself.
+    """
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        assert ticket
+        workspace = session.get(Workspace, ticket.workspace_id)
+        run = AgentRun(
+            run_code="run_report",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="static_qa",
+            skill_name="run_tests",
+            stage_key="testing",
+        )
+        executor = CliAgentExecutor(session)
+        prompt = executor._build_prompt(
+            ticket,
+            run,
+            {"role_file": "agents/9_static_qa/static_qa_v1.md"},
+            resolve_agent_context_dir(workspace),
+            workspace,
+            executor._resolve_stage_def(ticket, run),
+        )
+        assert "## Stage report contract" in prompt
+        assert "<<<LOREGARDEN_STAGE_REPORT>>>" in prompt
+        assert "<<<END_STAGE_REPORT>>>" in prompt
+
+
+def test_stage_report_contract_doc_excludes_v1_sections():
+    """The rest of workflow_enforcement_v1.md contradicts the live architecture.
+
+    Injecting the whole module would tell agents to go find a ticket markdown
+    file that does not exist, and pin a stage enum whose values are not the
+    workflow_template keys `reroute_to_stage` is validated against.
+    """
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        assert ticket
+        workspace = session.get(Workspace, ticket.workspace_id)
+        doc = load_stage_report_contract_doc(resolve_agent_context_dir(workspace))
+
+        assert "<<<LOREGARDEN_STAGE_REPORT>>>" in doc
+        assert "reroute_to_stage" in doc
+        assert "TICKET AUTHORITY" not in doc
+        assert "STAGE ENUM (STRICT)" not in doc
+        assert "IMPLEMENTATION_BACKEND" not in doc
+        assert "00_backlog/" not in doc
 
 
 def test_loregarden_mcp_cli_config_uses_http_transport_by_default():

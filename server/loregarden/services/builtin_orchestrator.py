@@ -455,11 +455,14 @@ class BuiltinOrchestrator:
                 kind="context",
                 title=f"Auto-fixed static-analysis gate — {from_stage}",
                 content={
-                    "message": output or "Mechanical fixers cleared the transition gate.",
-                    "run_code": "",
-                    "agent_id": "",
-                    "stage_key": from_stage,
-                    "command": "",
+                    "title": f"Auto-fixed static-analysis gate — {from_stage}",
+                    "rows": [
+                        {"k": "Stage", "v": from_stage},
+                        {
+                            "k": "Message",
+                            "v": output or "Mechanical fixers cleared the transition gate.",
+                        },
+                    ],
                 },
             )
 

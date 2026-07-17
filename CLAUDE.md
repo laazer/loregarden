@@ -22,8 +22,10 @@ exposed over MCP.
 - **Desktop:** Tauri 2
 - **Agents:** Claude Code / Cursor CLI subprocesses, driven over MCP
 
-There is no game engine in this repo. Godot / GDScript / Blender tickets belong to the
-**blobert** workspace, which resolves its own `agent_context/`.
+There is no game engine in this repo — no `.gd`, `.tscn`, `.blend`, or shader sources. Hive
+(`client/src/lib/hive/`, `client/src/components/dashboard/hive/`) is a React/canvas office
+simulation that visualizes agent activity. Despite the tile coordinates, NPCs, and sprites, it
+is ordinary frontend code, and its tickets belong here.
 
 ## The database is the source of truth
 
@@ -101,9 +103,8 @@ in the right place, with the right seams.
 ### GDScript (`gdscript-reviewer`)
 
 **Not applicable in this repo** — loregarden contains no `.gd` files. The `gdscript_reviewer`
-agent exists in the registry to serve the **blobert** workspace, which supplies its own role
-file and its own GDScript rules. If a loregarden ticket routes here, that is a routing bug, not
-a review task.
+agent exists in the registry to serve workspaces that supply their own role file and their own
+GDScript rules. If a loregarden ticket routes here, that is a routing bug, not a review task.
 
 ### Frontend
 

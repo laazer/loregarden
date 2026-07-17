@@ -11,8 +11,10 @@ pipelines by CLI agents (Claude Code / Cursor), gated by an approval inbox, and 
 MCP so external agents participate in the same workflow.
 
 It is a **FastAPI + SQLModel/SQLite** backend and a **React 19 + TypeScript + Vite** frontend,
-packaged with **Tauri 2**. There is no game engine here — if a ticket mentions Godot, GDScript,
-Blender, or shaders, it belongs to the **blobert** workspace, which has its own `agent_context/`.
+packaged with **Tauri 2**. There is no game engine here — no `.gd`, `.tscn`, `.blend`, or shader
+sources. Hive (`client/src/lib/hive/`, `client/src/components/dashboard/hive/`) is a React/canvas
+office simulation that visualizes agent activity; it is ordinary frontend code, not an engine
+project, and its tickets belong here.
 
 The control plane runs *itself*: loregarden's own tickets are executed by loregarden's agents.
 Expect to find the machinery you are editing running while you edit it.
@@ -122,9 +124,9 @@ sqlite3 data/loregarden.db
 
 ## NOTES
 
-- **`agent_context/` is per-workspace.** `resolve_agent_context_dir` reads it from the
-  workspace's `repo_path`, so blobert runs load blobert's prompts, not these. Do not "fix" a
-  loregarden prompt to satisfy a blobert ticket.
+- **`agent_context/` is per-workspace.** `resolve_agent_context_dir` reads it from the ticket's
+  workspace `repo_path`, so a run against another workspace loads that workspace's prompts, not
+  these. Do not "fix" a loregarden prompt to satisfy another workspace's ticket.
 - **The prompt embed is truncated**: the MCP module is cut at 12000 chars and the memory module
   at 8000 (`agents/executors/cli.py`). Content added near the end of those files can silently
   vanish from the prompt. Check the size after editing them.

@@ -140,6 +140,23 @@ export interface LogLine {
   text: string;
 }
 
+/** One run's rendered log, as served by GET /api/runs/{id}/log. */
+export interface RunLog {
+  id: string;
+  run_code: string;
+  agent_id: string;
+  skill_name: string;
+  stage_key: string;
+  status: string;
+  command: string;
+  started_at: string | null;
+  finished_at: string | null;
+  /** Empty for runs that predate the log streamer. */
+  lines: LogLine[];
+  live: string | null;
+  stderr: string;
+}
+
 export interface TestArtifact {
   summary: string;
   color?: string;
@@ -148,8 +165,9 @@ export interface TestArtifact {
 }
 
 export interface ContextSection {
-  title: string;
-  rows: { k: string; v: string }[];
+  // Absent on stage reports, which the Context tab renders per-stage instead.
+  title?: string;
+  rows?: { k: string; v: string }[];
   stage_key?: string;
   status?: string;
   confidence?: number;
@@ -708,4 +726,14 @@ export interface AutoFixAttempt {
 export interface CIStatusResponse {
   ci_status: CIRunResult | null;
   auto_fix_history: AutoFixAttempt[];
+}
+
+export interface ReloadStatus {
+  workspace_slug: string;
+  supported: boolean;
+  ready: boolean;
+  blockers: string[];
+  active_agent_runs: { id: string; run_code: string; stage_key: string }[];
+  active_orchestrations: { id: string; run_code: string }[];
+  running_workflow_tickets: { ticket_id: string; external_id: string }[];
 }

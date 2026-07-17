@@ -15,6 +15,7 @@ from loregarden.agents.mcp_context import (
     build_mcp_run_context,
     load_loregarden_mcp_doc,
     load_memory_protocol_doc,
+    load_stage_report_contract_doc,
 )
 from loregarden.agents.registry import get_agent
 from loregarden.agents.stage_context import build_orchestration_context
@@ -351,9 +352,12 @@ class CliAgentExecutor:
             stages=self._resolve_template_stages(ticket),
             posture=resolve_compatibility_posture(self.session, ticket, workspace),
         )
-        mcp_context = build_mcp_run_context(ticket=ticket, run=run, workspace=workspace)
+        mcp_context = build_mcp_run_context(
+            ticket=ticket, run=run, workspace=workspace, stage_def=stage_def
+        )
         mcp_doc = load_loregarden_mcp_doc(agent_context_dir)
         memory_doc = load_memory_protocol_doc(agent_context_dir)
+        stage_report_doc = load_stage_report_contract_doc(agent_context_dir)
 
         sections = [
             f"# Run: {run.run_code}",
@@ -390,6 +394,9 @@ class CliAgentExecutor:
                 "Do not bypass workspace permission checks.",
             ]
         )
+        # Last, because it governs the last thing the agent emits.
+        if stage_report_doc:
+            sections.extend(["", "## Stage report contract", stage_report_doc])
         return "\n".join(sections)
 
     def _build_context_artifact(

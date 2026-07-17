@@ -181,6 +181,7 @@
   min-height: 440px;
   overflow: hidden;
   background: var(--bg0);
+  container-type: size;
 }
 
 /* ── The Officeplace warm office palette (munder-difflin tokens) ── */
@@ -393,6 +394,34 @@
     var(--hive-floor-url);
 }
 
+/* Drawn floor plan replaces the baked bitmap. */
+.hive-css--rooms {
+  /* One tile, in px. The floor letterboxes, so this is the same on both axes and
+     everything below is expressed as a multiple of it — sprites then stay in
+     proportion to the furniture at any panel size. A tileset cell is 16px: a desk
+     is 3 tiles wide and a person ~1, so agents get ~1.6 tiles to stay legible
+     without towering over the desks. */
+  --hive-tile: min(100cqw / var(--hive-map-w), 100cqh / var(--hive-map-h));
+  --hive-hq-sprite: calc(var(--hive-tile) * 1.8);
+  --hive-station-sprite: calc(var(--hive-tile) * 1.6);
+  --hive-agent-sprite: calc(var(--hive-tile) * 1.6);
+  --hive-prop-sprite: calc(var(--hive-tile) * 1.4);
+  --hive-wall: #e6dcc4;
+  --hive-wall-edge: #6f6350;
+  --hive-room-fill: rgba(247, 240, 228, 0.3);
+  --hive-room-fill-alt: rgba(205, 190, 160, 0.34);
+
+  /* Letterbox to the map's aspect so tiles stay square and rooms keep their
+     proportions, whatever shape the panel is. Every tile overlay is positioned in
+     percentages of this box, so they scale with it. */
+  inset: auto;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(100cqw, calc(100cqh * var(--hive-map-aspect)));
+  height: min(100cqh, calc(100cqw / var(--hive-map-aspect)));
+}
+
 .hive-css--runeplace {
   background-color: #2f4624;
 }
@@ -407,7 +436,8 @@
 
 .hive-css__god,
 .hive-css__station,
-.hive-css__waiting {
+.hive-css__waiting,
+.hive-css__receptionist {
   position: absolute;
   transform: translate(-50%, calc(var(--hive-station-sprite, 48px) * -1));
   z-index: 2;
@@ -416,6 +446,28 @@
   align-items: center;
   gap: 4px;
   pointer-events: none;
+}
+
+/* Static placeholder residents (MDR QA staff). */
+.hive-css__resident {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  pointer-events: none;
+}
+
+.hive-css__resident-sprite {
+  width: var(--hive-agent-sprite, 32px);
+  height: var(--hive-agent-sprite, 32px);
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.hive-css__receptionist {
+  /* Pam sits on her own seat tile inside the wrap-around reception desk, so this
+     anchors on the tile centre rather than offsetting away from a shared station. */
+  transform: translate(-50%, -50%);
+  z-index: 4;
 }
 
 .hive-css__god {
@@ -541,7 +593,8 @@
 
 .hive-css__god-label,
 .hive-css__station-label,
-.hive-css__waiting-label {
+.hive-css__waiting-label,
+.hive-css__receptionist-label {
   margin-bottom: 2px;
 }
 
@@ -666,6 +719,118 @@
 .hive-css--officeplace .hive-css__god-marker {
   background: #c47a2a;
   box-shadow: 0 0 8px rgba(196, 122, 42, 0.55);
+}
+
+.hive-css__receptionist-marker {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #d16fa0;
+  box-shadow: 0 0 8px rgba(209, 111, 160, 0.65);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+}
+
+.hive-css--officeplace .hive-css__receptionist-marker {
+  background: #b4507f;
+  box-shadow: 0 0 6px rgba(180, 80, 127, 0.5);
+  border-color: rgba(247, 240, 228, 0.9);
+}
+
+/* --- Drawn floor plan (officeplace) ------------------------------------- */
+
+.hive-css__rooms {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.hive-css__room {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+/* Walled rooms: the border band IS the wall band the walk grid blocks — one tile
+   thick, so what you see is exactly what agents can't walk through. */
+.hive-css__room--office,
+.hive-css__room--service {
+  border: var(--hive-tile, 3px) solid var(--hive-wall, #e6dcc4);
+  background: var(--hive-room-fill, rgba(247, 240, 228, 0.3));
+  box-shadow:
+    inset 0 0 0 1px var(--hive-wall-edge, #6f6350),
+    0 0 0 1px var(--hive-wall-edge, #6f6350);
+}
+
+.hive-css__room--service {
+  background: var(--hive-room-fill-alt, rgba(200, 185, 158, 0.34));
+}
+
+/* A doorway: floor punched through the wall band, capped by the jambs either side. */
+.hive-css__door {
+  position: absolute;
+  z-index: 1;
+  background: var(--hive-floor-bg, #c8b99e);
+  box-shadow: inset 0 0 0 1px rgba(111, 99, 80, 0.35);
+}
+
+/* Nameplates are chrome, not furniture — at 60×50 the default 132px card is ten
+   tiles wide and buries the room it sits in. Scale them with the tile too. */
+.hive-css--rooms .hive-css__nameplate {
+  font-size: calc(var(--hive-tile) * 0.62);
+  max-width: calc(var(--hive-tile) * 8);
+  padding: calc(var(--hive-tile) * 0.14) calc(var(--hive-tile) * 0.34);
+  border-radius: calc(var(--hive-tile) * 0.3);
+  letter-spacing: 0;
+}
+
+.hive-css--rooms .hive-css__agent-status {
+  font-size: calc(var(--hive-tile) * 0.5);
+}
+
+.hive-css--rooms .hive-css__station-marker,
+.hive-css--rooms .hive-css__god-marker,
+.hive-css--rooms .hive-css__receptionist-marker {
+  width: calc(var(--hive-tile) * 0.7);
+  height: calc(var(--hive-tile) * 0.7);
+  border-width: 1px;
+}
+
+.hive-css--rooms .hive-css__room-name {
+  font-size: calc(var(--hive-tile) * 0.6);
+}
+
+/* Open areas (bullpen, hallway) have no walls — label only. */
+.hive-css__room--open {
+  border: none;
+  background: none;
+}
+
+.hive-css__room-name {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hive-ink-muted, #5c5348);
+  opacity: 0.85;
+}
+
+.hive-css__room--open > .hive-css__room-name {
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Desks and furniture are the same thing: a tileset sprite on a tile rect. */
+.hive-css__prop {
+  position: absolute;
+  z-index: 2;
+  object-fit: contain;
+  image-rendering: pixelated;
+  pointer-events: none;
 }
 
 .hive-css__station--active .hive-css__station-label.hive-css__nameplate {

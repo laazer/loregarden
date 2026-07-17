@@ -84,6 +84,8 @@ import type {
   TicketStudioSession,
   UsageSnapshot,
   CIStatusResponse,
+  ReloadStatus,
+  RunLog,
 } from "./types";
 
 
@@ -119,6 +121,14 @@ function ticketQuery(params?: {
 }
 
 export const api = {
+  reloadStatus: (workspace: string) =>
+    request<ReloadStatus>(`/api/system/reload?workspace=${encodeURIComponent(workspace)}`),
+  reloadServer: (workspace: string) =>
+    request<{ triggered: boolean; at: string }>(
+      `/api/system/reload?workspace=${encodeURIComponent(workspace)}`,
+      { method: "POST" },
+    ),
+  health: () => request<unknown>("/health"),
   workspaces: () => request<WorkspaceSummary[]>("/api/workspaces"),
   createWorkspace: (body: WorkspaceCreateRequest) =>
     request<WorkspaceCreateResponse>("/api/workspaces", {
@@ -176,6 +186,7 @@ export const api = {
       stdout: string;
       stderr: string;
     }>(`/api/runs/${runId}`),
+  runLog: (runId: string) => request<RunLog>(`/api/runs/${runId}/log`),
   tickets: (params?: {
     workspace?: string;
     state?: TicketState | TicketState[];

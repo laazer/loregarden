@@ -1,41 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { api, type Approval, type LogLine, type RuntimeOptions, type TicketDetail, type TriageMessage } from "../api/client";
-import { logTagVariant } from "../lib/logLineStyle";
+import { api, type Approval, type RuntimeOptions, type TicketDetail, type TriageMessage } from "../api/client";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { formatLogExcerpt } from "../utils/logExcerpt";
 import { TRIAGE_AGENT_NAME } from "../lib/triageAgent";
 import { ChatMessageBubble } from "./chat/ChatMessageBubble";
+import { LiveLogLine, LogLineRow } from "./logs/LogLineRow";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { TriageComposer } from "./TriageComposer";
 import "./LogsPanel.css";
-
-function LogLineRow({ line }: { line: LogLine }) {
-  const variant = logTagVariant(line.tag);
-  return (
-    <div className="log-line">
-      <span className="log-line__time">{line.time}</span>
-      <span className={`log-line__tag log-line__tag--${variant}`}>{line.tag}</span>
-      <span className="log-line__text">{line.text}</span>
-    </div>
-  );
-}
-
-function LiveLogLine({ text }: { text: string }) {
-  return (
-    <div className="log-line log-line--live">
-      <span className="log-line__time">now</span>
-      <span className="log-line__tag log-line__tag--run log-line__tag--live">RUN</span>
-      <span className="log-line__text">
-        {text}
-        <span className="log-line__cursor" aria-hidden>
-          ▊
-        </span>
-      </span>
-    </div>
-  );
-}
 
 function mergeApprovals(...lists: Array<Approval[] | undefined>): Approval[] {
   const seen = new Set<string>();

@@ -611,6 +611,38 @@ class TestBoundaryConditions:
 # ===========================================================================
 
 
+class TestTitleFallback:
+    """Ticket 85: markdown tickets that use a plain `# Heading` for the
+    title, instead of the `Title:` key-value convention, must still import
+    successfully via smart import rather than failing every file with
+    "Markdown ticket is missing a Title: line".
+    """
+
+    def test_smart_import_accepts_h1_heading_as_title(self, client: TestClient):
+        content = textwrap.dedent(
+            """\
+            # Heading-only ticket
+
+            ## Description
+            Imported from a tool that only emits an H1 heading, not a
+            `Title:` line.
+            """
+        )
+        res = client.post(
+            "/api/tickets/import/preview",
+            json={
+                "workspace_slug": "loregarden",
+                "files": [{"name": "heading-only.md", "content": content}],
+                "mode": "smart",
+            },
+        )
+        assert res.status_code == 200
+        body = res.json()
+        tickets = body["studio_context"]["imported_tickets"]
+        assert len(tickets) == 1
+        assert tickets[0]["title"] == "Heading-only ticket"
+
+
 class TestErrorHandling:
     """Test error cases and recovery."""
 

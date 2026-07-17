@@ -40,7 +40,7 @@ export const HIVE_MANIFEST_DATA: Record<HiveSkinId, HiveManifestJson> = {
   officeplace: {
     skin: "officeplace",
     floor: "officeplace/floor.png",
-    scenery: "officeplace/scenery.png",
+    scenery: "officeplace/floor-bg.png",
     agents: {
       worker: "officeplace/agents/worker.png",
       planner: "officeplace/agents/planner.png",

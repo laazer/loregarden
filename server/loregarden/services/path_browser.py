@@ -211,5 +211,5 @@ def read_import_files(paths: list[str]) -> list[tuple[str, str]]:
             raise ValueError(f"Not a file: {text}")
         if not _is_importable_file(target.name):
             raise ValueError(f"Unsupported import file type: {target.name}")
-        files.append((target.name, target.read_text(encoding="utf-8")))
+        files.append((target.name, target.read_text(encoding="utf-8-sig")))
     return files

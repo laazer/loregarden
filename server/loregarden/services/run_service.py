@@ -19,6 +19,7 @@ from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -37,9 +38,17 @@ def fail_interrupted_runs(
     exclude_run_id: str | None = None,
     message: str = INTERRUPTED_RUN_MESSAGE,
 ) -> list[AgentRun]:
-    """Mark orphaned in-flight runs as failed so stages do not stay stuck running."""
+    """Mark orphaned in-flight runs as failed so stages do not stay stuck running.
+
+    Skips triage chat turns. They share the ``triage`` stage_key with the workflow
+    stage but are a side channel: routing one through ``complete_run`` would advance
+    the workflow off a chat message — blocking the ticket. ``agent_id`` is the
+    discriminator (see ``triage_service.triage_run_status``); they are reconciled by
+    ``triage_run_service.fail_interrupted_triage_turns`` instead.
+    """
     query = select(AgentRun).where(
-        col(AgentRun.status).in_([RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION])
+        col(AgentRun.status).in_([RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION]),
+        AgentRun.agent_id != TRIAGE_AGENT_ID,
     )
     if ticket_id:
         query = query.where(AgentRun.ticket_id == ticket_id)
@@ -310,8 +319,6 @@ class RunService:
         if ticket_id:
             query = query.where(AgentRun.ticket_id == ticket_id)
         if not include_triage:
-            from loregarden.services.triage_service import TRIAGE_AGENT_ID
-
             query = query.where(AgentRun.agent_id != TRIAGE_AGENT_ID)
         return list(self.session.exec(query).all())
 

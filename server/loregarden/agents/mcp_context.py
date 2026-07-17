@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 from loregarden.config import settings
-from loregarden.models.domain import AgentRun, Ticket, Workspace
+from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef, Workspace
 
 MCP_DOC_REL = Path("agents/common_assets/loregarden_mcp_v1.md")
 MEMORY_DOC_REL = Path("agents/common_assets/memory_protocol_v1.md")
+WORKFLOW_ENFORCEMENT_DOC_REL = Path("agents/common_assets/workflow_enforcement_v1.md")
+STAGE_REPORT_SECTION_TITLE = "STAGE REPORT CONTRACT"
+_SECTION_DIVIDER_RE = re.compile(r"^-{20,}\s*$", re.MULTILINE)
 MCP_SERVER_NAME = "loregarden"
 CLAUDE_MCP_TOOL_PREFIX = f"mcp__{MCP_SERVER_NAME}__"
 
@@ -89,11 +93,32 @@ def load_memory_protocol_doc(agent_context_dir: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def load_stage_report_contract_doc(agent_context_dir: Path) -> str:
+    """Body of the workflow-enforcement module's STAGE REPORT CONTRACT section.
+
+    Only that section is injected. The rest of the module is v1-era and
+    contradicts the run context agents are already given — it points them at
+    ticket markdown files that do not exist, and pins a stage enum that predates
+    `workflow_templates`, whose values would poison `reroute_to_stage`.
+    """
+    path = agent_context_dir / WORKFLOW_ENFORCEMENT_DOC_REL
+    if not path.is_file():
+        return ""
+    # Dividers split the module into alternating title and body chunks, so the
+    # section body is the chunk after the one holding the title.
+    chunks = _SECTION_DIVIDER_RE.split(path.read_text(encoding="utf-8"))
+    for index, chunk in enumerate(chunks[:-1]):
+        if chunk.strip().startswith(STAGE_REPORT_SECTION_TITLE):
+            return chunks[index + 1].strip()
+    return ""
+
+
 def build_mcp_run_context(
     *,
     ticket: Ticket,
     run: AgentRun,
     workspace: Workspace,
+    stage_def: WorkflowStageDef | None = None,
 ) -> str:
     mcp_url = resolve_mcp_url()
     lines = [
@@ -147,16 +172,43 @@ def build_mcp_run_context(
             "See Memory protocol module below.",
             "",
             "## Handoff artifact (workflow gate)",
-            f"**Finishing agents:** write `handoff-latest.yaml` via `{CLAUDE_MCP_TOOL_PREFIX}loregarden_write_handoff` "
-            "(structured `checklist`, not hand-written YAML). It renders canonical schema, computes the "
-            "counters, validates against the workspace handoff gate, and returns violations on FAIL so you "
-            "fix and retry before the orchestrator runs the blocking transition gate. Use the exact "
-            "`item_key`/`item` labels from the frozen catalog for your `(from_agent → to_agent)` pair.",
+            *_handoff_section_lines(stage_def),
             "",
             "Available tools: " + ", ".join(_tool_names()),
         ]
     )
     return "\n".join(lines)
+
+
+def _handoff_section_lines(stage_def: WorkflowStageDef | None) -> list[str]:
+    """Handoff instructions for the run's stage.
+
+    A parallel stage's several agents are co-reviewers of one stage, not a chain
+    of finishing agents — only the stage boundary itself has a handoff, and it is
+    keyed by the stage transition, not by any one reviewer. Telling each parallel
+    reviewer to "write a handoff for your pair" makes them invent a downstream
+    agent that has no frozen catalog entry (e.g. a code reviewer guessing
+    `→ test_breaker`), which the strict handoff gate then rejects. So in a parallel
+    stage, direct reviewers to report via the stage report instead of authoring a
+    handoff.
+    """
+    if stage_def is not None and stage_def.stage_type == "parallel":
+        return [
+            "This is a **parallel review stage** — you are one of several co-reviewers, not the",
+            "stage's finishing agent. Do **not** call "
+            f"`{CLAUDE_MCP_TOOL_PREFIX}loregarden_write_handoff`; a parallel reviewer does not own a",
+            "`(from_agent → to_agent)` handoff pair, and inventing one is rejected by the workspace",
+            "handoff gate. Record your review through the stage report (and "
+            f"`{CLAUDE_MCP_TOOL_PREFIX}loregarden_attach_artifact` for detail); the orchestrator runs",
+            "the stage-boundary transition gate for you.",
+        ]
+    return [
+        f"**Finishing agents:** write `handoff-latest.yaml` via `{CLAUDE_MCP_TOOL_PREFIX}loregarden_write_handoff` "
+        "(structured `checklist`, not hand-written YAML). It renders canonical schema, computes the "
+        "counters, validates against the workspace handoff gate, and returns violations on FAIL so you "
+        "fix and retry before the orchestrator runs the blocking transition gate. Use the exact "
+        "`item_key`/`item` labels from the frozen catalog for your `(from_agent → to_agent)` pair.",
+    ]
 
 
 def build_mcp_triage_context(

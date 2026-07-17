@@ -29,6 +29,7 @@ import { ImportTicketsModal, type ImportMode } from "../components/ImportTickets
 import { ImportTicketsConfirmModal } from "../components/ImportTicketsConfirmModal";
 import { AddWorkspaceModal, type AddWorkspaceDraft } from "../components/AddWorkspaceModal";
 import { DeleteTicketConfirmModal } from "../components/DeleteTicketConfirmModal";
+import { RunLogModal } from "../components/RunLogModal";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { runtimeFromWorkspace, runtimeSettingsEqual, runtimeSummaryLabel } from "../components/WorkspaceRuntimeFields";
 import { TriageModelModal } from "../components/TriageModelModal";
@@ -431,6 +432,7 @@ export function Dashboard() {
   const [runConfirmStageKey, setRunConfirmStageKey] = useState<string | null>(null);
   const [assembleModalOpen, setAssembleModalOpen] = useState(false);
   const [deleteTicketTarget, setDeleteTicketTarget] = useState<TicketDetail | null>(null);
+  const [logRunId, setLogRunId] = useState<string | null>(null);
 
   const saveStateFromModal = useMutation({
     mutationFn: async ({
@@ -1635,6 +1637,7 @@ export function Dashboard() {
                 isOpeningPr={openPr.isPending}
                 onCommitPush={selectedId ? () => commitPush.mutate(selectedId) : undefined}
                 isCommittingPush={commitPush.isPending}
+                onOpenRunLog={setLogRunId}
               />
             )}
           </div>
@@ -1825,6 +1828,8 @@ export function Dashboard() {
         }}
         onConfirm={() => deleteTicketTarget && deleteTicket.mutate(deleteTicketTarget.id)}
       />
+
+      <RunLogModal runId={logRunId} onClose={() => setLogRunId(null)} />
     </div>
   );
 }

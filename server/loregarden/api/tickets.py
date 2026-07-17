@@ -96,8 +96,72 @@ def _ticket_summary(session: Session, ticket: Ticket) -> TicketSummary:
     )
 
 
+def _apply_log_artifacts(
+    session: Session,
+    ticket_id: str,
+    log_artifacts: list[Artifact],
+    grouped: dict,
+) -> bool:
+    """Populate ``grouped['logs']`` / ``grouped['live']`` from a ticket's log
+    artifacts.
+
+    Returns ``True`` when the caller should stop and return immediately — an
+    active run exists but has not emitted its log artifact yet — matching the
+    original early return so the workspace diff/test backfill is skipped.
+    """
+    from loregarden.models.domain import AgentRun
+
+    active_run = session.exec(
+        select(AgentRun)
+        .where(AgentRun.ticket_id == ticket_id, AgentRun.status == RunStatus.RUNNING)
+        .order_by(AgentRun.created_at.desc())
+    ).first()
+    if not active_run:
+        active_run = session.exec(
+            select(AgentRun)
+            .where(
+                AgentRun.ticket_id == ticket_id,
+                AgentRun.status == RunStatus.AWAITING_PERMISSION,
+            )
+            .order_by(AgentRun.created_at.desc())
+        ).first()
+
+    best: Artifact | None = None
+    if active_run:
+        best = next((art for art in log_artifacts if art.run_id == active_run.id), None)
+        if not best:
+            grouped["logs"] = []
+            grouped["live"] = (
+                "Awaiting your approval in Triage or Inbox…"
+                if active_run.status == RunStatus.AWAITING_PERMISSION
+                else "Agent running…"
+            )
+            return True
+
+    if not best:
+        active_log_statuses = {RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION}
+
+        def _log_sort_key(item: Artifact) -> tuple:
+            body = json.loads(item.content_json or "{}")
+            run = session.get(AgentRun, item.run_id) if item.run_id else None
+            is_live = bool(body.get("live")) and run and run.status in active_log_statuses
+            live_rank = 0 if is_live else 1
+            return (live_rank, -item.created_at.timestamp())
+
+        best = sorted(log_artifacts, key=_log_sort_key)[0]
+
+    content = json.loads(best.content_json or "{}")
+    grouped["logs"] = content.get("lines", [])
+    live = content.get("live")
+    run = session.get(AgentRun, best.run_id) if best.run_id else None
+    if live and run and run.status not in {RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION}:
+        live = None
+    grouped["live"] = live
+    return False
+
+
 def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
-    from loregarden.models.domain import AgentRun, Workspace
+    from loregarden.models.domain import Workspace
     from loregarden.services.artifact_service import (
         _diff_artifact_is_valid,
         _test_artifact_is_valid,
@@ -129,7 +193,13 @@ def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
         elif art.kind == "test":
             grouped["tests"] = content
         elif art.kind == "context":
-            grouped["context"].append(content)
+            # Run-context artifacts nest their sections under a `sections` key;
+            # stage reports are already a single flat section.
+            nested = content.get("sections")
+            if isinstance(nested, list):
+                grouped["context"].extend(s for s in nested if isinstance(s, dict))
+            else:
+                grouped["context"].append(content)
         elif art.kind == "pr":
             grouped["pr"] = content
     if error_artifacts:
@@ -139,52 +209,8 @@ def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
         if isinstance(message, str):
             error_content["message"] = normalize_timeout_stderr(message)
         grouped["error"] = error_content
-    if log_artifacts:
-        active_run = session.exec(
-            select(AgentRun)
-            .where(AgentRun.ticket_id == ticket_id, AgentRun.status == RunStatus.RUNNING)
-            .order_by(AgentRun.created_at.desc())
-        ).first()
-        if not active_run:
-            active_run = session.exec(
-                select(AgentRun)
-                .where(
-                    AgentRun.ticket_id == ticket_id,
-                    AgentRun.status == RunStatus.AWAITING_PERMISSION,
-                )
-                .order_by(AgentRun.created_at.desc())
-            ).first()
-
-        best: Artifact | None = None
-        if active_run:
-            best = next((art for art in log_artifacts if art.run_id == active_run.id), None)
-            if not best:
-                grouped["logs"] = []
-                if active_run.status == RunStatus.AWAITING_PERMISSION:
-                    grouped["live"] = "Awaiting your approval in Triage or Inbox…"
-                else:
-                    grouped["live"] = "Agent running…"
-                return grouped
-
-        if not best:
-            active_log_statuses = {RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION}
-
-            def _log_sort_key(item: Artifact) -> tuple:
-                body = json.loads(item.content_json or "{}")
-                run = session.get(AgentRun, item.run_id) if item.run_id else None
-                is_live = bool(body.get("live")) and run and run.status in active_log_statuses
-                live_rank = 0 if is_live else 1
-                return (live_rank, -item.created_at.timestamp())
-
-            best = sorted(log_artifacts, key=_log_sort_key)[0]
-
-        content = json.loads(best.content_json or "{}")
-        grouped["logs"] = content.get("lines", [])
-        live = content.get("live")
-        run = session.get(AgentRun, best.run_id) if best.run_id else None
-        if live and run and run.status not in {RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION}:
-            live = None
-        grouped["live"] = live
+    if log_artifacts and _apply_log_artifacts(session, ticket_id, log_artifacts, grouped):
+        return grouped
 
     workspace = session.get(Workspace, ticket.workspace_id)
     if workspace:

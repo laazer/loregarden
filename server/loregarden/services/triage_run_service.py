@@ -36,11 +36,16 @@ from loregarden.services.triage_service import (
     list_triage_messages,
 )
 from loregarden.services.workspace_paths import resolve_workspace_root
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
 TRIAGE_STAGE_KEY = "triage"
+
+INTERRUPTED_TURN_MESSAGE = (
+    f"{TRIAGE_AGENT_NAME} was interrupted by a server restart and did not finish this turn. "
+    "Send the message again."
+)
 
 
 class TriageConflictError(ValueError):
@@ -245,6 +250,43 @@ def execute_triage_turn_background(run_id: str) -> None:
             logger.exception(
                 "Failed to mark triage run %s as failed after background error", run_id
             )
+
+
+def fail_interrupted_triage_turns(
+    session: Session, *, message: str = INTERRUPTED_TURN_MESSAGE
+) -> list[AgentRun]:
+    """Settle triage turns orphaned by a restart, replying in the chat.
+
+    Deliberately does not call ``OrchestrationService.complete_run()`` — a triage turn
+    must not advance the workflow stage (see this module's docstring). Without the
+    assistant message the operator's turn just goes silent and looks dropped.
+    """
+    orphaned = session.exec(
+        select(AgentRun).where(
+            AgentRun.agent_id == TRIAGE_AGENT_ID,
+            col(AgentRun.status).in_(
+                [RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION]
+            ),
+        )
+    ).all()
+    settled: list[AgentRun] = []
+    for run in orphaned:
+        run.status = RunStatus.FAILED
+        run.stderr = message[:4000]
+        run.finished_at = datetime.now(timezone.utc)
+        session.add(run)
+        session.add(
+            TriageMessage(
+                ticket_id=run.ticket_id,
+                role="assistant",
+                content=message,
+                run_id=run.id,
+            )
+        )
+        settled.append(run)
+    if settled:
+        session.commit()
+    return settled
 
 
 def schedule_triage_turn(run_id: str) -> None:

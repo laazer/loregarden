@@ -1,6 +1,17 @@
 export const API_BASE = "http://127.0.0.1:8000";
 
 export const api = {
+  reloadStatus: jest.fn().mockResolvedValue({
+    workspace_slug: "loregarden",
+    supported: false,
+    ready: false,
+    blockers: [],
+    active_agent_runs: [],
+    active_orchestrations: [],
+    running_workflow_tickets: [],
+  }),
+  reloadServer: jest.fn().mockResolvedValue({ triggered: true, at: "" }),
+  health: jest.fn().mockResolvedValue({}),
   workspaces: jest.fn().mockResolvedValue([]),
   ticketTree: jest.fn().mockResolvedValue([]),
   tickets: jest.fn().mockResolvedValue([]),
@@ -10,6 +21,7 @@ export const api = {
   workspaceWorkflow: jest.fn().mockResolvedValue(null),
   approvals: jest.fn().mockResolvedValue([]),
   runs: jest.fn().mockResolvedValue([]),
+  runLog: jest.fn(),
   triage: jest.fn().mockResolvedValue({
     pending_approvals: [],
     recent_approvals: [],
