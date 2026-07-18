@@ -223,8 +223,7 @@ class OrchestrationCallbackService:
                 next_agent=next_agent,
                 blocking_issues=short_blocking_issues,
                 orch_run=orch_run,
-                # Live agent call: a ValueError comes back as an MCP tool error,
-                # so the agent can correct itself and retry within the same run.
+                # Live call: the ValueError reaches the agent as a tool error.
                 strict=True,
             )
         else:

@@ -26,8 +26,7 @@ logger = logging.getLogger(__name__)
 def routes_forward(stages: list[WorkflowStageDef], from_key: str, to_key: str) -> bool:
     """True when `to_key` sits after `from_key` — the one direction rework may not go.
 
-    Equal keys are deliberately allowed: the gate-autofix path re-routes a stage to
-    itself so the same agent redoes it with the gate errors injected.
+    Equal keys are allowed: gate-autofix re-routes a stage to itself for a redo.
     """
     ordered = [stage.key for stage in sorted(stages, key=lambda s: s.order)]
     if from_key not in ordered or to_key not in ordered:
@@ -40,11 +39,10 @@ def valid_route_targets(
     from_key: str,
     outcome: str = "pass",
 ) -> list[str]:
-    """Stage keys an agent may legally name as a route target from `from_key`.
+    """Stage keys an agent may name as a route target from `from_key`.
 
-    `next_stage_key` is documented as an upstream-rework hint, so on a pass the
-    workflow itself decides the next stage and there is nothing valid to name.
-    Includes `from_key` itself — a stage redoing its own work is a valid route.
+    Empty on a pass: `next_stage_key` is a rework-only hint. Includes `from_key`
+    itself, which is a legal self-redo.
     """
     if outcome != "reject":
         return []
@@ -66,24 +64,19 @@ def _validate_route_target(
 ) -> str:
     """Vet an agent-supplied route target; return why it was discarded ("" if legal).
 
-    An agent naming a stage key this workflow doesn't have (the stage-report
-    contract invites a guess, and models reach for plausible names like
-    "implementation" over the real "implement") used to be taken at face value,
-    parking the cursor on a phantom stage: reset_upstream_stages no-ops on an
-    unknown target, then reconcile_workflow_state quietly snaps the cursor to the
-    first PENDING stage — so the rework silently went nowhere.
+    A plausible-but-wrong key ("implementation" for "implement") used to be taken
+    at face value, parking the cursor on a phantom stage.
     """
     if next_stage_key not in stage_keys:
         reason = f"Unknown target stage '{next_stage_key}'"
     elif outcome != "reject":
-        # Honoring a forward target let an agent jump the queue and skip stages
-        # outright; the contract reserves this field for rework.
+        # Honoring a forward target let an agent skip stages outright.
         reason = (
             f"next_stage_key '{next_stage_key}' is only valid with outcome='reject' "
             "(upstream rework); on a pass the workflow decides the next stage"
         )
     elif routes_forward(stages, from_key, next_stage_key):
-        # Mirrors the human workflow-gate check, which has always enforced this.
+        # Mirrors the human workflow-gate check.
         reason = f"Rework stage '{next_stage_key}' must not come after stage '{from_key}'"
     else:
         return ""
@@ -130,11 +123,8 @@ def apply_stage_route(
 ) -> StageRoutePlan:
     """Move the workflow cursor for `ticket`.
 
-    `strict` is for callers whose caller can still react — an agent calling
-    `loregarden_complete_stage` gets the ValueError back as a tool error and can
-    retry with a valid key. Post-run callers (the stdout stage report) leave it
-    off: by then the run is over and nothing can retry, so a bad hint is dropped
-    and logged rather than raised.
+    `strict` raises on a bad target so a live agent can retry; post-run callers
+    (the stdout stage report) leave it off and get the logged fallback instead.
     """
     stage_keys = {stage.key for stage in stages}
     if strict and from_key not in stage_keys:

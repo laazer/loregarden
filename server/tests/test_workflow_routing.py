@@ -508,11 +508,9 @@ def test_apply_stage_route_reject_honors_known_explicit_stage_key():
 
 # --- Constrained stage routing (U5a) ---------------------------------------
 #
-# `next_stage_key` used to be honored for any existing stage in any direction,
-# so an agent could jump forward and skip stages; an unknown key was dropped
-# silently on a pass; and an unknown `from_key` rewound the cursor to stage one.
-# `strict=True` is used by the live agent path, where a ValueError comes back as
-# an MCP tool error the agent can act on.
+# `next_stage_key` was honored for any existing stage in any direction, so an
+# agent could skip forward. `strict=True` marks the live agent path, where the
+# ValueError comes back as a tool error it can act on.
 
 
 def _routing_fixture(current_key: str = "implement"):
@@ -566,8 +564,7 @@ def test_strict_rejects_unknown_next_stage_key_and_lists_valid_targets():
 
 
 def test_strict_rejects_next_stage_key_on_pass():
-    """The field is documented for upstream rework; honoring it on a pass let an
-    agent skip straight past stages."""
+    """The field is rework-only; honoring it on a pass let an agent skip stages."""
     stages, transitions, ticket, instance = _routing_fixture()
     with pytest.raises(ValueError, match="only valid with outcome='reject'"):
         apply_stage_route(
@@ -598,8 +595,7 @@ def test_strict_rejects_forward_rework_target():
 
 
 def test_strict_allows_self_redo_rework():
-    """The gate-autofix path deliberately routes a stage to itself so the same
-    agent redoes it with gate errors injected — that must stay legal."""
+    """Gate-autofix routes a stage to itself for a redo — that must stay legal."""
     stages, transitions, ticket, instance = _routing_fixture()
     plan = apply_stage_route(
         ticket,
@@ -616,8 +612,7 @@ def test_strict_allows_self_redo_rework():
 
 
 def test_strict_rejects_unknown_from_key():
-    """An unknown from-stage used to fall through to keys[0], silently rewinding
-    the whole workflow to stage one."""
+    """An unknown from-stage fell through to keys[0], rewinding to stage one."""
     stages, transitions, ticket, instance = _routing_fixture()
     with pytest.raises(ValueError, match="Unknown stage key: nope"):
         apply_stage_route(
@@ -632,8 +627,7 @@ def test_strict_rejects_unknown_from_key():
 
 
 def test_non_strict_discards_unknown_target_and_notes_it():
-    """Post-run callers can't retry, so a bad hint falls back instead of raising —
-    but it is recorded rather than swallowed."""
+    """Post-run callers can't retry, so a bad hint falls back — but is recorded."""
     stages, transitions, ticket, instance = _routing_fixture()
     plan = apply_stage_route(
         ticket,
