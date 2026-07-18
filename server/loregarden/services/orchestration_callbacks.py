@@ -223,6 +223,8 @@ class OrchestrationCallbackService:
                 next_agent=next_agent,
                 blocking_issues=short_blocking_issues,
                 orch_run=orch_run,
+                # Live call: the ValueError reaches the agent as a tool error.
+                strict=True,
             )
         else:
             set_stage_status(ticket, instance, stages, stage_key, StageStatus.DONE)

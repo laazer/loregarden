@@ -138,6 +138,12 @@ class StateMachine:
         explicit_to: str = "",
     ) -> StageRoutePlan | None:
         if explicit_to:
+            # An unknown target used to be honored verbatim, parking the cursor
+            # on a phantom stage.
+            if explicit_to not in {stage.key for stage in stages}:
+                raise ValueError(
+                    f"Unknown target stage '{explicit_to}' for route from '{current_key}'"
+                )
             return StageRoutePlan(
                 from_key=current_key,
                 to_key=explicit_to,
@@ -197,7 +203,8 @@ class StateMachine:
         try:
             idx = keys.index(current_key)
         except ValueError:
-            return keys[0] if keys else None
+            # Was keys[0], which silently rewound the cursor to stage one.
+            return None
         if idx + 1 < len(keys):
             return keys[idx + 1]
         return None

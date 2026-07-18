@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from loregarden.core.state_machine import StageRoutePlan, StateMachine
 from loregarden.models.domain import (
     OrchestrationRun,
@@ -17,6 +19,74 @@ from loregarden.services.workflow_state import (
     serialize_stage_map,
     set_stage_status,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def routes_forward(stages: list[WorkflowStageDef], from_key: str, to_key: str) -> bool:
+    """True when `to_key` sits after `from_key` — the one direction rework may not go.
+
+    Equal keys are allowed: gate-autofix re-routes a stage to itself for a redo.
+    """
+    ordered = [stage.key for stage in sorted(stages, key=lambda s: s.order)]
+    if from_key not in ordered or to_key not in ordered:
+        return False
+    return ordered.index(to_key) > ordered.index(from_key)
+
+
+def valid_route_targets(
+    stages: list[WorkflowStageDef],
+    from_key: str,
+    outcome: str = "pass",
+) -> list[str]:
+    """Stage keys an agent may name as a route target from `from_key`.
+
+    Empty on a pass: `next_stage_key` is a rework-only hint. Includes `from_key`
+    itself, which is a legal self-redo.
+    """
+    if outcome != "reject":
+        return []
+    ordered = [stage.key for stage in sorted(stages, key=lambda s: s.order)]
+    if from_key not in ordered:
+        return []
+    return ordered[: ordered.index(from_key) + 1]
+
+
+def _validate_route_target(
+    stages: list[WorkflowStageDef],
+    stage_keys: set[str],
+    ticket_id: str,
+    *,
+    from_key: str,
+    outcome: str,
+    next_stage_key: str,
+    strict: bool,
+) -> str:
+    """Vet an agent-supplied route target; return why it was discarded ("" if legal).
+
+    A plausible-but-wrong key ("implementation" for "implement") used to be taken
+    at face value, parking the cursor on a phantom stage.
+    """
+    if next_stage_key not in stage_keys:
+        reason = f"Unknown target stage '{next_stage_key}'"
+    elif outcome != "reject":
+        # Honoring a forward target let an agent skip stages outright.
+        reason = (
+            f"next_stage_key '{next_stage_key}' is only valid with outcome='reject' "
+            "(upstream rework); on a pass the workflow decides the next stage"
+        )
+    elif routes_forward(stages, from_key, next_stage_key):
+        # Mirrors the human workflow-gate check.
+        reason = f"Rework stage '{next_stage_key}' must not come after stage '{from_key}'"
+    else:
+        return ""
+
+    if strict:
+        targets = valid_route_targets(stages, from_key, outcome)
+        hint = ", ".join(targets) if targets else "(none — omit next_stage_key)"
+        raise ValueError(f"{reason}. Valid targets from '{from_key}': {hint}")
+    logger.warning("Discarding invalid next_stage_key on ticket %s: %s", ticket_id, reason)
+    return reason
 
 
 def previous_stage_key(stages: list[WorkflowStageDef], from_key: str) -> str | None:
@@ -49,19 +119,30 @@ def apply_stage_route(
     next_agent: str = "",
     blocking_issues: str = "",
     orch_run: OrchestrationRun | None = None,
+    strict: bool = False,
 ) -> StageRoutePlan:
-    misrouted = ""
-    if next_stage_key and next_stage_key not in {stage.key for stage in stages}:
-        # An agent naming a stage key this workflow doesn't have (the stage-report
-        # contract invites a guess, and models reach for plausible names like
-        # "implementation" over the real "implement"). Taking it at face value
-        # parked the cursor on a phantom stage: reset_upstream_stages no-ops on an
-        # unknown target, then reconcile_workflow_state quietly snaps the cursor to
-        # the first PENDING stage — so the rework silently went nowhere. Drop the
-        # bad hint and fall back to the template's reject route / previous stage,
-        # surfacing the miss in blocking_issues rather than swallowing it.
-        misrouted = next_stage_key
-        next_stage_key = ""
+    """Move the workflow cursor for `ticket`.
+
+    `strict` raises on a bad target so a live agent can retry; post-run callers
+    (the stdout stage report) leave it off and get the logged fallback instead.
+    """
+    stage_keys = {stage.key for stage in stages}
+    if strict and from_key not in stage_keys:
+        raise ValueError(f"Unknown stage key: {from_key}")
+
+    misroute_reason = ""
+    if next_stage_key:
+        misroute_reason = _validate_route_target(
+            stages,
+            stage_keys,
+            ticket.id,
+            from_key=from_key,
+            outcome=outcome,
+            next_stage_key=next_stage_key,
+            strict=strict,
+        )
+        if misroute_reason:
+            next_stage_key = ""
 
     plan = StateMachine.resolve_next_stage_key(
         stages,
@@ -95,11 +176,8 @@ def apply_stage_route(
         instance.stages_json = serialize_stage_map(stage_map, stages)
         ticket.workflow_stage_key = plan.to_key
         ticket.workflow_stage_status = StageStatus.PENDING
-        if misrouted:
-            note = (
-                f"(Requested rework stage '{misrouted}' is not a stage in this "
-                f"workflow; routed to '{plan.to_key}' instead.)"
-            )
+        if misroute_reason:
+            note = f"({misroute_reason}; routed to '{plan.to_key}' instead.)"
             blocking_issues = f"{blocking_issues}\n\n{note}" if blocking_issues else note
         if blocking_issues:
             ticket.blocking_issues = blocking_issues[:2000]

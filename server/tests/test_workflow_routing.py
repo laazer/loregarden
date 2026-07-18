@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 from loregarden.core.state_machine import StateMachine
 from loregarden.core.workflow_loader import sync_workflow_templates
@@ -12,7 +13,12 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from loregarden.services.workflow_routing import apply_stage_route, previous_stage_key
+from loregarden.services.workflow_routing import (
+    apply_stage_route,
+    previous_stage_key,
+    routes_forward,
+    valid_route_targets,
+)
 from loregarden.services.workflow_state import initial_stages_json, parse_stage_map
 from sqlmodel import Session, select
 
@@ -498,3 +504,179 @@ def test_apply_stage_route_reject_honors_known_explicit_stage_key():
     assert stage_map["implement"] == StageStatus.PENDING
     assert stage_map["review"] == StageStatus.PENDING
     assert ticket.blocking_issues == "receptionist NPC is missing"
+
+
+# --- Constrained stage routing (U5a) ---------------------------------------
+#
+# `next_stage_key` was honored for any existing stage in any direction, so an
+# agent could skip forward. `strict=True` marks the live agent path, where the
+# ValueError comes back as a tool error it can act on.
+
+
+def _routing_fixture(current_key: str = "implement"):
+    from loregarden.models.domain import WorkflowStageDef
+
+    stages = [
+        WorkflowStageDef(key="plan", name="Plan", agent_id="planner", order=1),
+        WorkflowStageDef(key="spec", name="Spec", agent_id="spec", order=2),
+        WorkflowStageDef(key="implement", name="Implement", agent_id="backend", order=3),
+        WorkflowStageDef(key="review", name="Review", agent_id="architecture_reviewer", order=4),
+    ]
+    transitions = [
+        {"from": "implement", "to": "review", "when": "pass"},
+        {"from": "implement", "to": "spec", "when": "reject"},
+    ]
+    ticket = Ticket(
+        external_id="u5a-routing",
+        workspace_id="ws",
+        title="Constrained routing",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+        workflow_stage_key=current_key,
+        workflow_stage_status=StageStatus.RUNNING,
+    )
+    instance = WorkflowInstance(
+        ticket_id="t1",
+        template_id="tpl1",
+        current_stage_key=current_key,
+        stages_json=initial_stages_json(stages),
+    )
+    return stages, transitions, ticket, instance
+
+
+def test_strict_rejects_unknown_next_stage_key_and_lists_valid_targets():
+    stages, transitions, ticket, instance = _routing_fixture()
+    with pytest.raises(ValueError) as exc:
+        apply_stage_route(
+            ticket,
+            instance,
+            stages,
+            transitions,
+            from_key="implement",
+            outcome="reject",
+            next_stage_key="implementation",  # plausible-but-wrong name
+            strict=True,
+        )
+    message = str(exc.value)
+    assert "implementation" in message
+    # The agent is told what it *may* say, so it can retry.
+    assert "plan" in message and "spec" in message
+
+
+def test_strict_rejects_next_stage_key_on_pass():
+    """The field is rework-only; honoring it on a pass let an agent skip stages."""
+    stages, transitions, ticket, instance = _routing_fixture()
+    with pytest.raises(ValueError, match="only valid with outcome='reject'"):
+        apply_stage_route(
+            ticket,
+            instance,
+            stages,
+            transitions,
+            from_key="implement",
+            outcome="pass",
+            next_stage_key="review",
+            strict=True,
+        )
+
+
+def test_strict_rejects_forward_rework_target():
+    stages, transitions, ticket, instance = _routing_fixture()
+    with pytest.raises(ValueError, match="must not come after"):
+        apply_stage_route(
+            ticket,
+            instance,
+            stages,
+            transitions,
+            from_key="implement",
+            outcome="reject",
+            next_stage_key="review",
+            strict=True,
+        )
+
+
+def test_strict_allows_self_redo_rework():
+    """Gate-autofix routes a stage to itself for a redo — that must stay legal."""
+    stages, transitions, ticket, instance = _routing_fixture()
+    plan = apply_stage_route(
+        ticket,
+        instance,
+        stages,
+        transitions,
+        from_key="implement",
+        outcome="reject",
+        next_stage_key="implement",
+        strict=True,
+    )
+    assert plan.to_key == "implement"
+    assert ticket.workflow_stage_key == "implement"
+
+
+def test_strict_rejects_unknown_from_key():
+    """An unknown from-stage fell through to keys[0], rewinding to stage one."""
+    stages, transitions, ticket, instance = _routing_fixture()
+    with pytest.raises(ValueError, match="Unknown stage key: nope"):
+        apply_stage_route(
+            ticket,
+            instance,
+            stages,
+            transitions,
+            from_key="nope",
+            outcome="reject",
+            strict=True,
+        )
+
+
+def test_non_strict_discards_unknown_target_and_notes_it():
+    """Post-run callers can't retry, so a bad hint falls back — but is recorded."""
+    stages, transitions, ticket, instance = _routing_fixture()
+    plan = apply_stage_route(
+        ticket,
+        instance,
+        stages,
+        transitions,
+        from_key="implement",
+        outcome="reject",
+        next_stage_key="implementation",
+        blocking_issues="tests fail",
+    )
+    assert plan.to_key == "spec"  # template's reject route
+    assert "implementation" in ticket.blocking_issues
+    assert "tests fail" in ticket.blocking_issues
+
+
+def test_valid_route_targets_includes_self_and_is_empty_on_pass():
+    stages, _, _, _ = _routing_fixture()
+    assert valid_route_targets(stages, "implement", "reject") == ["plan", "spec", "implement"]
+    assert valid_route_targets(stages, "implement", "pass") == []
+
+
+def test_routes_forward_direction():
+    stages, _, _, _ = _routing_fixture()
+    assert routes_forward(stages, "implement", "review") is True
+    assert routes_forward(stages, "implement", "spec") is False
+    assert routes_forward(stages, "implement", "implement") is False
+
+
+def test_next_stage_key_unknown_current_does_not_rewind():
+    from loregarden.models.domain import WorkflowStageDef
+
+    stages = [
+        WorkflowStageDef(key="plan", name="Plan", order=1),
+        WorkflowStageDef(key="implement", name="Implement", order=2),
+    ]
+    assert StateMachine.next_stage_key(stages, "ghost") is None
+    # An empty current key still legitimately means "start at the beginning".
+    assert StateMachine.next_stage_key(stages, "") == "plan"
+
+
+def test_resolve_next_stage_key_rejects_unknown_explicit_target():
+    from loregarden.models.domain import WorkflowStageDef
+
+    stages = [
+        WorkflowStageDef(key="plan", name="Plan", order=1),
+        WorkflowStageDef(key="implement", name="Implement", order=2),
+    ]
+    with pytest.raises(ValueError, match="Unknown target stage 'ghost'"):
+        StateMachine.resolve_next_stage_key(
+            stages, [], "implement", outcome="reject", explicit_to="ghost"
+        )
