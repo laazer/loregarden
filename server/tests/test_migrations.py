@@ -110,3 +110,82 @@ def test_backfill_runs_against_a_populated_db(tmp_path):
         assert created_at is not None
         # Round-trips as a real timestamp rather than an empty string.
         datetime.fromisoformat(str(created_at)).astimezone(timezone.utc)
+
+
+def test_rigor_triage_reshapes_the_v3_template(tmp_path):
+    """0023 scales rigor by change risk on a populated template.
+
+    Seeded rather than run against an empty schema: the migration only acts when
+    the template row exists, so an empty database would exercise nothing.
+    """
+    import json
+
+    from loregarden.models.domain import WorkflowTemplate
+    from sqlmodel import Session
+
+    linear = [
+        {
+            "key": "triage",
+            "name": "Triage",
+            "agent_id": "ticket_scoper",
+            "order": 1,
+            "stage_type": "agent",
+            "classify_routes": [],
+        },
+        {"key": "plan", "name": "Plan", "agent_id": "planner", "order": 2, "stage_type": "agent"},
+        {"key": "spec", "name": "Spec", "agent_id": "spec", "order": 3, "stage_type": "agent"},
+        {
+            "key": "test-design",
+            "name": "TD",
+            "agent_id": "test_designer",
+            "order": 4,
+            "stage_type": "agent",
+        },
+    ]
+    engine = create_engine(f"sqlite:///{tmp_path / 'rigor.db'}")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            WorkflowTemplate(
+                id="tpl-v3",
+                slug="studio-loregarden-tdd-v3",
+                name="TDD V3",
+                stages_json=json.dumps(linear),
+                transitions_json="[]",
+                source_path="studio:studio-loregarden-tdd-v3",
+            )
+        )
+        session.commit()
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        version, stages_json = conn.execute(
+            text("SELECT version, stages_json FROM workflow_templates WHERE id='tpl-v3'")
+        ).fetchone()
+    stages = {s["key"]: s for s in json.loads(stages_json)}
+
+    assert stages["triage"]["stage_type"] == "classify"
+    routes = stages["triage"]["classify_routes"]
+    light = next(r for r in routes if not r["default"])
+    heavy = next(r for r in routes if r["default"])
+    # Light work branches past planning; everything else keeps the full pipeline.
+    assert light["to_stage"] == "test-design"
+    assert "typo" in light["specialties"]
+    assert heavy["to_stage"] == ""
+    # The routing agent is preserved, not replaced by the reshape.
+    assert light["agent_id"] == heavy["agent_id"] == "ticket_scoper"
+    assert stages["spec"]["skip_when"] == "has_acceptance_criteria"
+    # Untouched stages stay exactly as they were.
+    assert stages["plan"]["stage_type"] == "agent"
+    assert version == 2
+
+    # Re-running must not stack a second set of routes onto the template.
+    assert apply_migrations(engine) == []
+    with engine.connect() as conn:
+        again = json.loads(
+            conn.execute(
+                text("SELECT stages_json FROM workflow_templates WHERE id='tpl-v3'")
+            ).scalar()
+        )
+    assert len({s["key"]: s for s in again}["triage"]["classify_routes"]) == 2
