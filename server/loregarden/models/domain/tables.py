@@ -197,6 +197,9 @@ class AgentRun(SQLModel, table=True):
     stage_key: str = ""
     status: RunStatus = Field(default=RunStatus.QUEUED)
     command: str = ""
+    # Paths this run left dirty, so its commit can be scoped to its own work
+    # instead of sweeping unrelated edits out of the workspace.
+    changed_paths_json: str = "[]"
     stdout: str = ""
     stderr: str = ""
     auto_approve: bool = Field(default=False)
