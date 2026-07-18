@@ -432,6 +432,7 @@ class StudioAgentUpdate(SQLModel):
     mcp_tools: list[str] | None = None
     gate_checks: list[StudioGateCheck] | None = None
     handoff_checks: list[StudioHandoffCheck] | None = None
+    change_note: str | None = None
 
 
 class StudioAgentView(SQLModel):
@@ -451,8 +452,17 @@ class StudioAgentView(SQLModel):
     handoff_checks: list[StudioHandoffCheck]
     built_in: bool = False
     read_only: bool = False
+    version: int = 1
     created_at: datetime
     updated_at: datetime
+
+
+class StudioAgentVersionView(SQLModel):
+    version: int
+    created_by: str = ""
+    change_note: str = ""
+    created_at: datetime
+    snapshot: StudioAgentView | None = None
 
 
 class StudioMcpToolGuide(SQLModel):
@@ -522,6 +532,7 @@ class StudioWorkflowUpdate(SQLModel):
     description: str | None = None
     stages: list[StudioWorkflowStage] | None = None
     transitions: list[dict[str, str]] | None = None
+    change_note: str | None = None
 
 
 class StudioWorkflowView(SQLModel):
@@ -536,8 +547,17 @@ class StudioWorkflowView(SQLModel):
     built_in: bool = False
     source_path: str = ""
     read_only: bool = False
+    version: int = 1
     created_at: datetime
     updated_at: datetime
+
+
+class StudioWorkflowVersionView(SQLModel):
+    version: int
+    created_by: str = ""
+    change_note: str = ""
+    created_at: datetime
+    snapshot: StudioWorkflowView | None = None
 
 
 class StudioGenerateRequest(SQLModel):

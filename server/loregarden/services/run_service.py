@@ -277,7 +277,7 @@ class RunService:
         timeout_seconds: int | None = None,
     ) -> AgentRun | None:
         """Start an agent CLI run, or enter a human approval gate for agentless stages."""
-        from loregarden.services.studio_service import is_agentless_stage
+        from loregarden.services.studio_routing import is_agentless_stage
 
         template = self.orchestration.get_template_for_ticket(ticket)
         if not template:

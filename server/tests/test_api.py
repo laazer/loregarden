@@ -171,7 +171,11 @@ def test_agents_registry(client: TestClient):
     res = client.get("/api/agents")
     assert res.status_code == 200
     agents = res.json()
-    assert any(a["id"] == "planner" for a in agents)
+    # Agents are now DB-backed views keyed by slug (id is a uuid); the seeded
+    # built-in planner is present and flagged built_in.
+    planner = next((a for a in agents if a["slug"] == "planner"), None)
+    assert planner is not None
+    assert planner["built_in"] is True
 
 
 def test_approvals_inbox(client: TestClient):

@@ -132,15 +132,24 @@ AGENTS: dict[str, dict] = {
 
 
 def get_agent(agent_id: str) -> dict | None:
-    from loregarden.services.studio_service import load_studio_agent_config
+    from loregarden.services.studio_service import load_role_body, load_studio_agent_config
 
+    # The DB (studio_agents) is the source of truth. seed_builtin_agents seeds every
+    # registry built-in on startup, so in production this always resolves here.
     studio = load_studio_agent_config(agent_id)
     if studio:
         return studio
+    # Legacy seed-data fallback: an un-seeded built-in (e.g. a test DB that never
+    # ran the seeder). Load the role body from disk here — the one place that still
+    # reads a role_file — so the executor's prompt builder never touches the FS.
     cfg = AGENTS.get(agent_id)
     if not cfg:
         return None
-    return cfg.copy()
+    cfg = cfg.copy()
+    if "role_body" not in cfg:
+        body, _ = load_role_body(str(cfg.get("role_file", "")))
+        cfg["role_body"] = body
+    return cfg
 
 
 def list_agents() -> list[dict]:

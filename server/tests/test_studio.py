@@ -2,11 +2,13 @@ import json
 
 from fastapi.testclient import TestClient
 from loregarden.models.domain import ClassifyRoute, Ticket, WorkflowStageDef
-from loregarden.services.studio_service import (
+from loregarden.services.studio_generation import (
     parse_agent_generate_payload,
-    parse_markdown_frontmatter,
     parse_workflow_generate_payload,
-    resolve_classify_route,
+)
+from loregarden.services.studio_routing import resolve_classify_route
+from loregarden.services.studio_service import (
+    parse_markdown_frontmatter,
     strip_markdown_frontmatter,
 )
 
@@ -480,8 +482,11 @@ def test_builtin_agent_has_role_body(client: TestClient):
     res = client.get("/api/studio/agents/planner")
     assert res.status_code == 200
     body = res.json()
+    # Built-ins are now seeded DB rows: flagged built_in for provenance, but
+    # editable (read_only False) and versioned.
     assert body["built_in"] is True
-    assert body["read_only"] is True
+    assert body["read_only"] is False
+    assert body["version"] >= 1
     assert len(body["role_body"]) > 20
     assert "memory_protocol_v1.md" in body["role_body"]
 

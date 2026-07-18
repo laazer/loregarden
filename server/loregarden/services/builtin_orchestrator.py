@@ -35,7 +35,7 @@ from loregarden.services.stage_report import (
     parse_stage_report,
     stage_report_artifact_content,
 )
-from loregarden.services.studio_service import is_agentless_stage
+from loregarden.services.studio_routing import is_agentless_stage
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session, select

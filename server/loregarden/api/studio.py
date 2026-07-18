@@ -92,6 +92,34 @@ def delete_studio_agent(slug: str, session: Session = Depends(get_session)) -> d
     return {"ok": True}
 
 
+@router.get("/agents/{slug}/versions")
+def list_studio_agent_versions(slug: str, session: Session = Depends(get_session)) -> list[dict]:
+    try:
+        return [v.model_dump() for v in StudioService(session).list_agent_versions(slug)]
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/agents/{slug}/versions/{version}")
+def get_studio_agent_version(
+    slug: str, version: int, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        return StudioService(session).get_agent_version(slug, version).model_dump()
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/agents/{slug}/versions/{version}/restore")
+def restore_studio_agent_version(
+    slug: str, version: int, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        return StudioService(session).restore_agent_version(slug, version).model_dump()
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/workflows")
 def list_studio_workflows(session: Session = Depends(get_session)) -> list[dict]:
     return [item.model_dump() for item in StudioService(session).list_workflows()]
@@ -156,3 +184,31 @@ def publish_studio_workflow(slug: str, session: Session = Depends(get_session)) 
         return StudioService(session).publish_workflow(slug).model_dump()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/workflows/{slug}/versions")
+def list_studio_workflow_versions(slug: str, session: Session = Depends(get_session)) -> list[dict]:
+    try:
+        return [v.model_dump() for v in StudioService(session).list_workflow_versions(slug)]
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/workflows/{slug}/versions/{version}")
+def get_studio_workflow_version(
+    slug: str, version: int, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        return StudioService(session).get_workflow_version(slug, version).model_dump()
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/workflows/{slug}/versions/{version}/restore")
+def restore_studio_workflow_version(
+    slug: str, version: int, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        return StudioService(session).restore_workflow_version(slug, version).model_dump()
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

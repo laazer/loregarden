@@ -12,7 +12,7 @@ from loregarden.models.domain import (
     WorkflowInstance,
     WorkflowStageDef,
 )
-from loregarden.services.studio_service import resolve_stage_execution
+from loregarden.services.studio_routing import resolve_stage_execution
 from loregarden.services.workflow_state import (
     parse_stage_map,
     reconcile_workflow_state,

@@ -107,6 +107,26 @@ def resolve_claude_model(
     return ws.claude_model or settings.claude_model
 
 
+# Models too weak to reliably drive Loregarden MCP tool calls. run_43ea0c: a
+# haiku learning agent could not invoke the loregarden_* tools (tried them as
+# shell commands, then fell back to hand-writing a LEARNINGS.md file).
+WEAK_MCP_CLAUDE_MODELS = ("haiku",)
+
+
+def weak_mcp_model_warning(model: str, adapter: str) -> str | None:
+    """Return a warning if a claude agent that must drive MCP tools is pinned to a
+    model too weak to call them reliably; otherwise None."""
+    if adapter != "claude" or not model:
+        return None
+    lowered = model.lower()
+    if any(weak in lowered for weak in WEAK_MCP_CLAUDE_MODELS):
+        return (
+            f"Model '{model}' may be too weak to reliably drive Loregarden MCP tools "
+            "(loregarden_* calls). Consider sonnet or stronger for stages that call MCP tools."
+        )
+    return None
+
+
 def resolve_cursor_model(
     workspace: Workspace | None,
     *,

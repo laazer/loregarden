@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from uuid import uuid4
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
@@ -547,6 +548,158 @@ def _m_branch_triage_message_status(conn: Connection) -> None:
     )
 
 
+def _m_definition_versioning(conn: Connection) -> None:
+    """Agents (studio_agents) and workflow templates become DB-authoritative and
+    versioned. Adds a head `version` + `built_in` flag to each, append-only
+    `*_versions` snapshot tables, and per-run/per-ticket version pins. Existing
+    rows are backfilled to version 1 with a v1 snapshot so history is complete.
+    """
+    _add_columns_if_missing(
+        conn,
+        "studio_agents",
+        {
+            "version": "ALTER TABLE studio_agents ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+            "built_in": "ALTER TABLE studio_agents ADD COLUMN built_in INTEGER NOT NULL DEFAULT 0",
+        },
+    )
+    _add_columns_if_missing(
+        conn,
+        "workflow_templates",
+        {
+            "version": (
+                "ALTER TABLE workflow_templates ADD COLUMN version INTEGER NOT NULL DEFAULT 1"
+            ),
+            "built_in": (
+                "ALTER TABLE workflow_templates ADD COLUMN built_in INTEGER NOT NULL DEFAULT 0"
+            ),
+        },
+    )
+    _add_columns_if_missing(
+        conn,
+        "agent_runs",
+        {"agent_version": "ALTER TABLE agent_runs ADD COLUMN agent_version INTEGER"},
+    )
+    _add_columns_if_missing(
+        conn,
+        "workflow_instances",
+        {"template_version": "ALTER TABLE workflow_instances ADD COLUMN template_version INTEGER"},
+    )
+
+    if not _table_exists(conn, "studio_agent_versions"):
+        conn.execute(
+            text(
+                """
+                CREATE TABLE studio_agent_versions (
+                    id TEXT PRIMARY KEY,
+                    agent_id TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    created_by TEXT NOT NULL DEFAULT '',
+                    change_note TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY(agent_id) REFERENCES studio_agents(id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX ix_studio_agent_versions_agent_version "
+                "ON studio_agent_versions (agent_id, version)"
+            )
+        )
+    if not _table_exists(conn, "workflow_template_versions"):
+        conn.execute(
+            text(
+                """
+                CREATE TABLE workflow_template_versions (
+                    id TEXT PRIMARY KEY,
+                    template_id TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    created_by TEXT NOT NULL DEFAULT '',
+                    change_note TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY(template_id) REFERENCES workflow_templates(id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX ix_workflow_template_versions_template_version "
+                "ON workflow_template_versions (template_id, version)"
+            )
+        )
+
+    # Backfill a v1 snapshot for every pre-existing row so version history is
+    # complete from the migration forward (mirrors _m_clear_classify... row work).
+    # Guarded: an old-schema DB may not have these tables yet.
+    agent_cols = [
+        "slug",
+        "name",
+        "description",
+        "role_body",
+        "adapter",
+        "default_model",
+        "timeout",
+        "default_skill",
+        "mcp_enabled",
+        "mcp_tools_json",
+        "gate_checks_json",
+        "handoff_checks_json",
+        "built_in",
+    ]
+    agent_rows = (
+        conn.execute(text(f"SELECT id, {', '.join(agent_cols)} FROM studio_agents")).mappings()
+        if _table_exists(conn, "studio_agents")
+        else []
+    )
+    for row in agent_rows:
+        if conn.execute(
+            text("SELECT 1 FROM studio_agent_versions WHERE agent_id=:aid AND version=1"),
+            {"aid": row["id"]},
+        ).fetchone():
+            continue
+        snapshot = {col: row[col] for col in agent_cols}
+        conn.execute(
+            text(
+                "INSERT INTO studio_agent_versions "
+                "(id, agent_id, version, snapshot_json, created_by) "
+                "VALUES (:id, :aid, 1, :snap, 'migration')"
+            ),
+            {"id": str(uuid4()), "aid": row["id"], "snap": json.dumps(snapshot)},
+        )
+
+    tpl_cols = ["slug", "name", "description", "stages_json", "transitions_json", "source_path"]
+    tpl_rows = (
+        conn.execute(text(f"SELECT id, {', '.join(tpl_cols)} FROM workflow_templates")).mappings()
+        if _table_exists(conn, "workflow_templates")
+        else []
+    )
+    for row in tpl_rows:
+        built_in = 0 if str(row["source_path"] or "").startswith("studio:") else 1
+        conn.execute(
+            text("UPDATE workflow_templates SET built_in=:b WHERE id=:id"),
+            {"b": built_in, "id": row["id"]},
+        )
+        if conn.execute(
+            text("SELECT 1 FROM workflow_template_versions WHERE template_id=:tid AND version=1"),
+            {"tid": row["id"]},
+        ).fetchone():
+            continue
+        snapshot = {col: row[col] for col in tpl_cols}
+        snapshot["built_in"] = built_in
+        conn.execute(
+            text(
+                "INSERT INTO workflow_template_versions "
+                "(id, template_id, version, snapshot_json, created_by) "
+                "VALUES (:id, :tid, 1, :snap, 'migration')"
+            ),
+            {"id": str(uuid4()), "tid": row["id"], "snap": json.dumps(snapshot)},
+        )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -569,6 +722,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0019_clear_classify_next_agent_backfill", _m_clear_classify_next_agent_backfill),
     ("0020_compatibility_posture", _m_compatibility_posture),
     ("0021_branch_triage_message_status", _m_branch_triage_message_status),
+    ("0022_definition_versioning", _m_definition_versioning),
 ]
 
 
