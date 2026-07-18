@@ -28,6 +28,8 @@ from loregarden.services.cli_settings import (
     weak_mcp_model_warning,
 )
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
+from loregarden.services.git_branch import ensure_ticket_branch
+from loregarden.services.git_commit_push_service import working_tree_paths
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_errors import agent_timeout_message
 from loregarden.services.run_log_stream import RunLogStreamer
@@ -98,8 +100,6 @@ class CliAgentExecutor:
                 advance_workflow=advance_workflow,
             )
 
-        from loregarden.services.git_branch import ensure_ticket_branch
-
         if not skip_git_branch:
             try:
                 ensure_ticket_branch(repo_root, ticket)
@@ -113,6 +113,11 @@ class CliAgentExecutor:
 
         stage_def = self._resolve_stage_def(ticket, run)
         ticket_runtime = get_ticket_orchestration_runtime(ticket)
+
+        # Bracket the run so its commit can be scoped to what it touched. Paths
+        # already dirty beforehand belong to whatever else is in the workspace
+        # and must not be attributed to this ticket.
+        paths_before = working_tree_paths(repo_root)
 
         prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace, stage_def)
         with tempfile.TemporaryDirectory(prefix="loregarden-run-") as tmp:
@@ -194,6 +199,7 @@ class CliAgentExecutor:
                     )
 
                 streamer.finalize(status=status, stderr=stderr)
+                self._record_changed_paths(run, repo_root, paths_before)
                 artifacts = self._build_context_artifact(ticket, run, status)
                 completed = self.orchestration.complete_run(
                     run,
@@ -434,6 +440,20 @@ class CliAgentExecutor:
             _titled_block("## Stage report contract", stage_report_doc),
         ]
         return "\n".join(line for block in blocks for line in block)
+
+    def _record_changed_paths(self, run: AgentRun, repo_root: Path, before: set[str]) -> None:
+        """Store the paths this run made dirty, so its commit can be scoped.
+
+        Only the delta: a path already dirty when the run started belongs to
+        whatever else is in the workspace, and attributing it here is exactly how
+        unrelated work used to get swept into a ticket's commit.
+        """
+        touched = sorted(working_tree_paths(repo_root) - before)
+        if not touched:
+            return
+        run.changed_paths_json = json.dumps(touched)
+        self.session.add(run)
+        self.session.commit()
 
     def _build_context_artifact(
         self,

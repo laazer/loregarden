@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from enum import Enum
@@ -26,7 +27,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.gate_runner import run_gate_autofix, run_transition_gates, strip_ansi
-from loregarden.services.git_commit_push_service import commit_ticket_working_tree
+from loregarden.services.git_commit_push_service import commit_paths
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
@@ -435,17 +436,33 @@ class BuiltinOrchestrator:
         self._block_after_gate_failure(ticket, instance, stages, orch_run, from_stage, detail)
         return _GateDecision.BLOCKED
 
+    def _ticket_changed_paths(self, ticket: Ticket) -> list[str]:
+        """Every path this ticket's runs have touched.
+
+        Union across runs because a gate fires after several stages have each
+        left work in the tree, and the fix belongs with the work that provoked
+        it. Paths no run recorded are someone else's and stay uncommitted.
+        """
+        rows = self.session.exec(
+            select(AgentRun.changed_paths_json).where(AgentRun.ticket_id == ticket.id)
+        ).all()
+        paths: set[str] = set()
+        for raw in rows:
+            paths.update(json.loads(raw or "[]"))
+        return sorted(paths)
+
     def _commit_autofix(self, ticket: Ticket, from_stage: str, output: str) -> None:
         """Commit the mechanical fixer diff onto the ticket branch and note it as
         a context artifact, so the invisible fix is a first-class commit rather
         than an uncommitted working-tree change."""
         try:
-            committed = commit_ticket_working_tree(
+            committed = commit_paths(
                 self.session,
                 ticket,
                 message=(
                     f"chore({from_stage}): auto-fix static-analysis gate [{ticket.external_id}]"
                 ),
+                paths=self._ticket_changed_paths(ticket),
             )
         except ValueError:
             committed = False
