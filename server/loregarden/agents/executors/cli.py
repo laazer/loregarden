@@ -21,6 +21,7 @@ from loregarden.agents.mcp_context import (
 )
 from loregarden.agents.registry import get_agent
 from loregarden.agents.stage_context import build_orchestration_context
+from loregarden.agents.verify_context import build_verify_context
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, WorkflowStageDef, Workspace
 from loregarden.services.cli_settings import (
     get_ticket_orchestration_runtime,
@@ -33,6 +34,7 @@ from loregarden.services.git_commit_push_service import working_tree_paths
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_errors import agent_timeout_message
 from loregarden.services.run_log_stream import RunLogStreamer
+from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
 from loregarden.services.studio_service import build_studio_prompt_sections
 from loregarden.services.subprocess_lines import SubprocessLineReader
 from loregarden.services.workspace_paths import resolve_agent_context_dir, resolve_workspace_root
@@ -400,6 +402,7 @@ class CliAgentExecutor:
         mcp_doc = load_loregarden_mcp_doc(agent_context_dir)
         memory_doc = load_memory_protocol_doc(agent_context_dir)
         stage_report_doc = load_stage_report_contract_doc(agent_context_dir)
+        is_verify = stage_def is not None and stage_def.stage_type == VERIFY_STAGE_TYPE
 
         # Ordered prompt blocks. Add a section by inserting a block here rather
         # than threading another conditional through the assembly; each block
@@ -421,9 +424,17 @@ class CliAgentExecutor:
                 "## Acceptance Criteria",
                 *[f"- {item}" for item in ac],
             ],
+            # A verifier is deliberately starved of inherited context. Handing it
+            # the prior stage's settled decisions ("do not re-derive") would make
+            # it a reader of that reasoning rather than an independent check, and
+            # a verifier that agrees because it was told to proves nothing.
             _titled_block(
                 "## Inherited context (already decided — do not re-derive)",
-                build_inherited_wisdom(ticket, workspace.slug),
+                "" if is_verify else build_inherited_wisdom(ticket, workspace.slug),
+            ),
+            _titled_block(
+                "## Claim under review",
+                build_verify_context(self.session, ticket, workspace) if is_verify else "",
             ),
             _titled_block("## Skill", skill_body, cap=3000),
             _titled_block("## Agent Role", role_body),
