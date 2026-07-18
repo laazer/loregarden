@@ -45,6 +45,7 @@ from loregarden.services.studio_generation import (
     slugify,
     tool_names,
 )
+from loregarden.services.studio_routing import SKIP_CONDITIONS
 from loregarden.services.workflow_service import WorkflowService
 from loregarden.skills.registry import list_skills
 from sqlmodel import Session, select
@@ -794,6 +795,9 @@ class StudioService:
             "memory_mcp_tools": DEFAULT_MEMORY_MCP_TOOLS,
             "handoff_checks": [item.model_dump() for item in DEFAULT_HANDOFF_CHECKS],
             "gate_checks": [item.model_dump() for item in DEFAULT_GATE_CHECKS],
+            # Served rather than mirrored in the client so the vocabulary has one
+            # source of truth; a hardcoded TS copy would drift from the resolver.
+            "skip_conditions": list(SKIP_CONDITIONS),
         }
 
     def preview_agent(self, body: StudioAgentPreviewRequest) -> StudioAgentPreview:

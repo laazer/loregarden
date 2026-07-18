@@ -62,6 +62,8 @@ function emptyStage(order: number): StudioWorkflowStage {
     optional: false,
     order,
     gate_required: false,
+    terminal: false,
+    skip_when: "",
     classify_routes: [],
     parallel_agents: [],
     model: "",
@@ -1595,6 +1597,34 @@ export function StudioPage() {
                           />
                           Require gate approval before leaving this stage
                         </label>
+
+                        <label style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 8, fontSize: 12, color: "var(--txm)", cursor: "pointer", width: "fit-content" }}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(stage.terminal)}
+                            disabled={isWorkflowReadOnly}
+                            onChange={(e) => updateStage(index, { terminal: e.target.checked })}
+                            style={{ accentColor: "var(--ac)" }}
+                          />
+                          Ends the workflow when reached
+                        </label>
+
+                        <div style={{ marginTop: 10 }}>
+                          <div className="studio-stage-field-label">Skip this stage when</div>
+                          <select
+                            className="studio-stage-select mono"
+                            value={stage.skip_when ?? ""}
+                            disabled={isWorkflowReadOnly}
+                            onChange={(e) => updateStage(index, { skip_when: e.target.value })}
+                          >
+                            <option value="">Never skip</option>
+                            {(studioDefaults.data?.skip_conditions ?? []).map((condition) => (
+                              <option key={condition} value={condition}>
+                                {condition}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                     );
                   })}

@@ -503,6 +503,8 @@ export interface StudioDefaults {
   mcp_tools: string[];
   gate_checks: StudioGateCheck[];
   handoff_checks: StudioHandoffCheck[];
+  /** Allowed `skip_when` values, served so the client never mirrors the vocabulary. */
+  skip_conditions?: string[];
 }
 
 export interface StudioGeneratedAgent {
@@ -546,6 +548,10 @@ export interface StudioWorkflowStage {
   optional: boolean;
   order: number;
   gate_required: boolean;
+  /** Reaching this stage ends the workflow. */
+  terminal?: boolean;
+  /** Condition under which this stage is passed over; values from StudioDefaults.skip_conditions. */
+  skip_when?: string;
   classify_routes: ClassifyRoute[];
   parallel_agents: ParallelAgentSpec[];
   model: string;
