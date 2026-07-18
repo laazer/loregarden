@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import text
@@ -664,11 +665,21 @@ def _m_definition_versioning(conn: Connection) -> None:
         snapshot = {col: row[col] for col in agent_cols}
         conn.execute(
             text(
+                # change_note is written explicitly rather than left to the column
+                # DEFAULT: init_db runs SQLModel.create_all before migrations, so
+                # these tables are usually created from the model, where the Python
+                # default renders as NOT NULL with no DDL default. The CREATE TABLE
+                # below is then a no-op and an omitted column violates NOT NULL.
                 "INSERT INTO studio_agent_versions "
-                "(id, agent_id, version, snapshot_json, created_by) "
-                "VALUES (:id, :aid, 1, :snap, 'migration')"
+                "(id, agent_id, version, snapshot_json, created_by, change_note, created_at) "
+                "VALUES (:id, :aid, 1, :snap, 'migration', '', :now)"
             ),
-            {"id": str(uuid4()), "aid": row["id"], "snap": json.dumps(snapshot)},
+            {
+                "id": str(uuid4()),
+                "aid": row["id"],
+                "snap": json.dumps(snapshot),
+                "now": datetime.now(timezone.utc),
+            },
         )
 
     tpl_cols = ["slug", "name", "description", "stages_json", "transitions_json", "source_path"]
@@ -692,11 +703,17 @@ def _m_definition_versioning(conn: Connection) -> None:
         snapshot["built_in"] = built_in
         conn.execute(
             text(
+                # Explicit change_note, same reason as the agent backfill above.
                 "INSERT INTO workflow_template_versions "
-                "(id, template_id, version, snapshot_json, created_by) "
-                "VALUES (:id, :tid, 1, :snap, 'migration')"
+                "(id, template_id, version, snapshot_json, created_by, change_note, created_at) "
+                "VALUES (:id, :tid, 1, :snap, 'migration', '', :now)"
             ),
-            {"id": str(uuid4()), "tid": row["id"], "snap": json.dumps(snapshot)},
+            {
+                "id": str(uuid4()),
+                "tid": row["id"],
+                "snap": json.dumps(snapshot),
+                "now": datetime.now(timezone.utc),
+            },
         )
 
 
