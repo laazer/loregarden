@@ -742,6 +742,171 @@ def _m_artifact_evidence(conn: Connection) -> None:
     )
 
 
+def _snapshot_template_version(
+    conn: Connection, template_id: str, version: int, change_note: str
+) -> None:
+    """Record a template version snapshot, matching what a Studio edit writes.
+
+    Columns are listed explicitly rather than relying on defaults: create_all
+    builds these tables from the models, where a Python default renders as NOT
+    NULL with no DDL default.
+    """
+    if not _table_exists(conn, "workflow_template_versions"):
+        return
+    snapshot = (
+        conn.execute(
+            text(
+                "SELECT slug, name, description, stages_json, transitions_json, source_path, "
+                "built_in FROM workflow_templates WHERE id=:id"
+            ),
+            {"id": template_id},
+        )
+        .mappings()
+        .fetchone()
+    )
+    conn.execute(
+        text(
+            "INSERT INTO workflow_template_versions "
+            "(id, template_id, version, snapshot_json, created_by, change_note, created_at) "
+            "VALUES (:id, :tid, :v, :snap, 'migration', :note, :now)"
+        ),
+        {
+            "id": str(uuid4()),
+            "tid": template_id,
+            "v": version,
+            "snap": json.dumps(dict(snapshot)),
+            "note": change_note,
+            "now": datetime.now(timezone.utc),
+        },
+    )
+
+
+_VERIFY_TEMPLATE = "studio-loregarden-tdd-v3"
+_VERIFY_AFTER = "implement"
+_VERIFY_KEY = "verify"
+
+
+def _m_verify_stage_in_v3(conn: Connection) -> None:
+    """Put an independent verify stage between implement and review on v3.
+
+    A stage closing on its own outcome=pass is what verify exists to check, so it
+    sits directly after the stage that makes the claim and routes back to it on a
+    refusal. Both the light and heavy triage paths converge on implement, so one
+    stage covers both.
+    """
+    if not _table_exists(conn, "workflow_templates"):
+        return
+    row = (
+        conn.execute(
+            text(
+                "SELECT id, version, stages_json, transitions_json FROM workflow_templates WHERE slug=:s"
+            ),
+            {"s": _VERIFY_TEMPLATE},
+        )
+        .mappings()
+        .fetchone()
+    )
+    if not row:
+        return
+
+    stages = json.loads(row["stages_json"] or "[]")
+    by_key = {s.get("key"): s for s in stages}
+    if _VERIFY_KEY in by_key or _VERIFY_AFTER not in by_key:
+        return  # already wired, or this template does not have the anchor stage
+
+    anchor_order = int(by_key[_VERIFY_AFTER].get("order") or 0)
+    for stage in stages:
+        if int(stage.get("order") or 0) > anchor_order:
+            stage["order"] = int(stage["order"]) + 1
+    stages.append(
+        {
+            "key": _VERIFY_KEY,
+            "name": "Verify",
+            "agent_id": "verifier",
+            "skill_name": "verify",
+            "optional": False,
+            "order": anchor_order + 1,
+            "stage_type": "verify",
+            "classify_routes": [],
+            "parallel_agents": [],
+            "gate_commands": [],
+            "gate_required": False,
+            "model": "",
+        }
+    )
+    stages.sort(key=lambda s: int(s.get("order") or 0))
+
+    # Re-point whatever implement used to advance to, then add the verdict edges.
+    transitions = json.loads(row["transitions_json"] or "[]")
+    downstream = ""
+    for item in transitions:
+        if item.get("from") == _VERIFY_AFTER and item.get("when", "") in {"", "pass", "default"}:
+            downstream = item.get("to", "")
+            item["to"] = _VERIFY_KEY
+    if downstream:
+        transitions.append({"from": _VERIFY_KEY, "to": downstream, "when": "pass"})
+    transitions.append({"from": _VERIFY_KEY, "to": _VERIFY_AFTER, "when": "reject"})
+
+    new_version = int(row["version"] or 1) + 1
+    conn.execute(
+        text(
+            "UPDATE workflow_templates SET stages_json=:st, transitions_json=:tr, version=:v "
+            "WHERE id=:id"
+        ),
+        {
+            "st": json.dumps(stages),
+            "tr": json.dumps(transitions),
+            "v": new_version,
+            "id": row["id"],
+        },
+    )
+    _snapshot_template_version(conn, row["id"], new_version, "Verify stage after implement")
+    _backfill_verify_into_instances(
+        conn, row["id"], {s["key"]: int(s.get("order") or 0) for s in stages}
+    )
+
+
+def _backfill_verify_into_instances(
+    conn: Connection, template_id: str, stage_orders: dict[str, int]
+) -> None:
+    """Add the new stage to live instances without stranding or rewinding them.
+
+    A required stage inserted mid-pipeline is PENDING for every in-flight ticket,
+    which both blocks DONE (nothing ever resolves it) and pulls the cursor
+    backwards, since the orchestrator runs the earliest pending stage.
+
+    Whether a ticket has already passed the insertion point is decided by where
+    its cursor sits, not by one stage's recorded status: a ticket can reach
+    review with implement left un-marked after a reroute, and keying off that
+    would hand it a pending verify it should never run.
+    """
+    if not _table_exists(conn, "workflow_instances"):
+        return
+    verify_order = stage_orders.get(_VERIFY_KEY, 0)
+    rows = (
+        conn.execute(
+            text(
+                "SELECT id, stages_json, current_stage_key FROM workflow_instances "
+                "WHERE template_id=:tid"
+            ),
+            {"tid": template_id},
+        )
+        .mappings()
+        .fetchall()
+    )
+    for row in rows:
+        entries = json.loads(row["stages_json"] or "[]")
+        if any(e.get("key") == _VERIFY_KEY for e in entries):
+            continue
+        cursor_order = stage_orders.get(row["current_stage_key"] or "", 0)
+        already_past = cursor_order > verify_order
+        entries.append({"key": _VERIFY_KEY, "status": "wont_do" if already_past else "pending"})
+        conn.execute(
+            text("UPDATE workflow_instances SET stages_json=:st WHERE id=:id"),
+            {"st": json.dumps(entries), "id": row["id"]},
+        )
+
+
 # Keywords that mark a ticket trivial enough to skip planning. Deliberately rare
 # words: the classifier is a bag-of-words match over title + description +
 # acceptance criteria, so a term that shows up incidentally in a risky ticket
@@ -820,33 +985,7 @@ def _m_light_heavy_rigor_triage(conn: Connection) -> None:
         text("UPDATE workflow_templates SET stages_json=:stages, version=:v WHERE id=:id"),
         {"stages": json.dumps(stages), "v": new_version, "id": row["id"]},
     )
-    if _table_exists(conn, "workflow_template_versions"):
-        snapshot = (
-            conn.execute(
-                text(
-                    "SELECT slug, name, description, stages_json, transitions_json, source_path, "
-                    "built_in FROM workflow_templates WHERE id=:id"
-                ),
-                {"id": row["id"]},
-            )
-            .mappings()
-            .fetchone()
-        )
-        conn.execute(
-            text(
-                "INSERT INTO workflow_template_versions "
-                "(id, template_id, version, snapshot_json, created_by, change_note, created_at) "
-                "VALUES (:id, :tid, :v, :snap, 'migration', :note, :now)"
-            ),
-            {
-                "id": str(uuid4()),
-                "tid": row["id"],
-                "v": new_version,
-                "snap": json.dumps(dict(snapshot)),
-                "note": "LIGHT/HEAVY rigor triage",
-                "now": datetime.now(timezone.utc),
-            },
-        )
+    _snapshot_template_version(conn, row["id"], new_version, "LIGHT/HEAVY rigor triage")
 
 
 MIGRATIONS: list[tuple[str, Migration]] = [
@@ -875,6 +1014,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0023_light_heavy_rigor_triage", _m_light_heavy_rigor_triage),
     ("0024_agent_run_changed_paths", _m_agent_run_changed_paths),
     ("0025_artifact_evidence", _m_artifact_evidence),
+    ("0026_verify_stage_in_v3", _m_verify_stage_in_v3),
 ]
 
 
