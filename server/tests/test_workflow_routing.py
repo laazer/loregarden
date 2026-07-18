@@ -1000,3 +1000,71 @@ def test_pre_scoped_ticket_skips_spec_even_on_the_heavy_path():
     plan = apply_stage_route(ticket, instance, stages, [], from_key="ui-design", outcome="pass")
     assert plan.to_key == "test-design"
     assert parse_stage_map(instance, stages)["spec"] == StageStatus.WONT_DO
+
+
+# --- Light work skips verification -----------------------------------------
+
+
+def _verify_stages():
+    from loregarden.models.domain import ClassifyRoute, WorkflowStageDef
+
+    return [
+        WorkflowStageDef(
+            key="triage",
+            name="Triage",
+            order=1,
+            stage_type="classify",
+            classify_routes=[
+                ClassifyRoute(specialties=["typo"], agent_id="ticket_scoper", to_stage="implement"),
+                ClassifyRoute(agent_id="ticket_scoper", default=True),
+            ],
+        ),
+        WorkflowStageDef(key="plan", name="Plan", agent_id="planner", order=2),
+        WorkflowStageDef(key="implement", name="Implement", agent_id="backend", order=3),
+        WorkflowStageDef(
+            key="verify",
+            name="Verify",
+            agent_id="verifier",
+            order=4,
+            stage_type="verify",
+            skip_when="routed_as_light_work",
+        ),
+        WorkflowStageDef(key="review", name="Review", agent_id="reviewer", order=5),
+    ]
+
+
+def test_light_work_skips_verification():
+    """Triage already judged the ticket trivial; runtime proof of a typo costs
+    more than the check is worth."""
+    stages = _verify_stages()
+    ticket, instance = _rigor_ticket(stages, "Fix typo in the header", from_key="implement")
+    plan = apply_stage_route(ticket, instance, stages, [], from_key="implement", outcome="pass")
+    assert plan.to_key == "review"
+    assert parse_stage_map(instance, stages)["verify"] == StageStatus.WONT_DO
+
+
+def test_heavy_work_still_verifies():
+    stages = _verify_stages()
+    ticket, instance = _rigor_ticket(
+        stages, "Rotate auth tokens with a schema migration", from_key="implement"
+    )
+    plan = apply_stage_route(ticket, instance, stages, [], from_key="implement", outcome="pass")
+    assert plan.to_key == "verify"
+    assert parse_stage_map(instance, stages)["verify"] == StageStatus.PENDING
+
+
+def test_light_route_is_read_from_the_template_not_a_second_keyword_list():
+    """The condition follows whatever the template's route says.
+
+    Retuning the route in Studio must retune the skip with it; a copy of the
+    keywords in code would drift from the decision it describes.
+    """
+    from loregarden.services.studio_routing import took_light_route
+
+    stages = _verify_stages()
+    ticket, _ = _rigor_ticket(stages, "Fix typo in the header")
+    assert took_light_route(ticket, stages) is True
+
+    # Retune the route's keywords: the same ticket is no longer light.
+    stages[0].classify_routes[0].specialties = ["changelog"]
+    assert took_light_route(ticket, stages) is False

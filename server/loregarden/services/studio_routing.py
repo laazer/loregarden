@@ -240,10 +240,32 @@ def find_terminal_stage(stages: list[WorkflowStageDef]) -> WorkflowStageDef | No
 # Conditions a stage may declare via `skip_when`. Deliberately a closed, named
 # vocabulary rather than an expression language: these are checked structurally
 # against ticket fields, which the classify keyword matcher cannot express.
-SKIP_CONDITIONS = ("has_description", "has_acceptance_criteria")
+SKIP_CONDITIONS = ("has_description", "has_acceptance_criteria", "routed_as_light_work")
 
 
-def should_skip_stage(ticket: Ticket, stage: WorkflowStageDef) -> bool:
+def took_light_route(ticket: Ticket, stages: list[WorkflowStageDef]) -> bool:
+    """Whether triage routed this ticket down a shortened path.
+
+    Read off the classify route that actually made the decision rather than
+    re-testing the ticket text: the keywords live in the template and are
+    editable in Studio, so a second copy in code would drift from the routing it
+    is meant to describe. A route naming a `to_stage` is one that branches past
+    stages, which is what "light" means here.
+    """
+    for stage in stages:
+        if stage.stage_type != "classify":
+            continue
+        route = _select_classify_route(ticket, stage)
+        if route is not None and (route.to_stage or "").strip():
+            return True
+    return False
+
+
+def should_skip_stage(
+    ticket: Ticket,
+    stage: WorkflowStageDef,
+    stages: list[WorkflowStageDef] | None = None,
+) -> bool:
     """Whether `stage` declares a skip condition this ticket already satisfies.
 
     Motivating case: a ticket that arrived already scoped skips plan/spec rather
@@ -260,6 +282,8 @@ def should_skip_stage(ticket: Ticket, stage: WorkflowStageDef) -> bool:
         except (TypeError, ValueError):
             return False
         return bool(criteria)
+    if condition == "routed_as_light_work":
+        return took_light_route(ticket, stages or [])
     return False
 
 

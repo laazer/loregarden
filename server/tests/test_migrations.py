@@ -189,3 +189,99 @@ def test_rigor_triage_reshapes_the_v3_template(tmp_path):
             ).scalar()
         )
     assert len({s["key"]: s for s in again}["triage"]["classify_routes"]) == 2
+
+
+def test_verify_stage_is_wired_between_implement_and_review(tmp_path):
+    """0026 inserts verify without stranding or rewinding live tickets."""
+    import json
+
+    from loregarden.models.domain import WorkflowInstance, WorkflowTemplate
+    from sqlmodel import Session
+
+    stages = [
+        {
+            "key": "implement",
+            "name": "Impl",
+            "agent_id": "backend",
+            "order": 7,
+            "stage_type": "agent",
+        },
+        {
+            "key": "review",
+            "name": "Review",
+            "agent_id": "architecture_reviewer",
+            "order": 8,
+            "stage_type": "agent",
+        },
+        {"key": "gate", "name": "Gate", "agent_id": "gatekeeper", "order": 9, "stage_type": "gate"},
+    ]
+    transitions = [
+        {"from": "implement", "to": "review"},
+        {"from": "review", "to": "gate", "when": "pass"},
+    ]
+    engine = create_engine(f"sqlite:///{tmp_path / 'verify.db'}")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            WorkflowTemplate(
+                id="tpl-v3",
+                slug="studio-loregarden-tdd-v3",
+                name="V3",
+                stages_json=json.dumps(stages),
+                transitions_json=json.dumps(transitions),
+                source_path="studio:studio-loregarden-tdd-v3",
+            )
+        )
+        # One ticket still upstream, one already past the insertion point.
+        session.add(
+            WorkflowInstance(
+                id="wi-early",
+                ticket_id="t-early",
+                template_id="tpl-v3",
+                current_stage_key="implement",
+                stages_json=json.dumps([{"key": "implement", "status": "running"}]),
+            )
+        )
+        session.add(
+            WorkflowInstance(
+                id="wi-late",
+                ticket_id="t-late",
+                template_id="tpl-v3",
+                current_stage_key="gate",
+                stages_json=json.dumps([{"key": "implement", "status": "pending"}]),
+            )
+        )
+        session.commit()
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        stages_json, transitions_json = conn.execute(
+            text("SELECT stages_json, transitions_json FROM workflow_templates WHERE id='tpl-v3'")
+        ).fetchone()
+        by_key = {s["key"]: s for s in json.loads(stages_json)}
+        edges = {
+            (t.get("from"), t.get("to"), t.get("when", "")) for t in json.loads(transitions_json)
+        }
+
+    # Sits between the claim and the review of it, and downstream stages shift.
+    assert by_key["verify"]["order"] == 8
+    assert by_key["verify"]["stage_type"] == "verify"
+    assert by_key["review"]["order"] == 9
+    assert by_key["gate"]["order"] == 10
+    # implement no longer advances straight to review; refusal routes back to it.
+    assert ("implement", "verify", "") in edges
+    assert ("verify", "review", "pass") in edges
+    assert ("verify", "implement", "reject") in edges
+    assert ("implement", "review", "") not in edges
+
+    with engine.connect() as conn:
+        rows = dict(conn.execute(text("SELECT id, stages_json FROM workflow_instances")).fetchall())
+    early = {e["key"]: e["status"] for e in json.loads(rows["wi-early"])}
+    late = {e["key"]: e["status"] for e in json.loads(rows["wi-late"])}
+    # Upstream ticket will run it; one already past must not be pulled backwards,
+    # even though its implement stage was never marked done.
+    assert early["verify"] == "pending"
+    assert late["verify"] == "wont_do"
+
+    assert apply_migrations(engine) == []
