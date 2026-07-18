@@ -185,6 +185,21 @@ MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
         stage_agent=False,
     ),
     StudioMcpToolGuide(
+        name="loregarden_attach_evidence",
+        description="Attach proof that the work behaves as claimed, stamped with the commit it proves.",
+        when_to_use=(
+            "When you can show the change working, not just that tests pass: a red-to-green "
+            "test, output from the real surface (HTTP response, screenshot, DB row), or a "
+            "verifier's verdict."
+        ),
+        example=(
+            'tools/call loregarden_attach_evidence {"run_id": "<run id>", '
+            '"evidence_kind": "real_surface", "title": "POST /api/tickets returns 201", '
+            '"content_json": "{"status": 201}"}'
+        ),
+        stage_agent=True,
+    ),
+    StudioMcpToolGuide(
         name="loregarden_attach_artifact",
         description="Attach log, diff, test output, or other artifact to the ticket.",
         when_to_use="After producing logs, diffs, or structured output the operator should see in the IDE.",

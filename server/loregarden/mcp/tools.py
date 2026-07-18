@@ -15,6 +15,13 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+from loregarden.services.evidence import (
+    ARTIFACT_KIND as EVIDENCE_ARTIFACT_KIND,
+)
+from loregarden.services.evidence import (
+    EVIDENCE_KINDS,
+    resolve_head_sha,
+)
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -244,6 +251,49 @@ def _apply_aliases(name: str, args: dict[str, Any]) -> None:
                 break
 
 
+_STAGE_SCOPED_TOOLS = frozenset(
+    {
+        "loregarden_start_stage",
+        "loregarden_complete_stage",
+        "loregarden_skip_stage",
+        "loregarden_request_approval",
+    }
+)
+
+
+def _normalize_stage_scoped(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Coerce the run+stage tools, which share a run_id/stage_key core."""
+    payload = {
+        "run_id": _coerce_string(args.get("run_id"), field="run_id"),
+        "stage_key": _coerce_string(args.get("stage_key"), field="stage_key"),
+    }
+    if name == "loregarden_start_stage":
+        payload["agent_id"] = _coerce_optional_string(args.get("agent_id"))
+    if name == "loregarden_complete_stage":
+        payload["next_agent"] = _coerce_optional_string(args.get("next_agent"))
+        payload["next_stage_key"] = _coerce_optional_string(args.get("next_stage_key"))
+        payload["outcome"] = _coerce_optional_string(args.get("outcome")) or "pass"
+        payload["blocking_issues"] = _coerce_optional_string(args.get("blocking_issues"))
+    if name == "loregarden_skip_stage":
+        payload["reason"] = _coerce_optional_string(args.get("reason"))
+    if name == "loregarden_request_approval":
+        payload["title"] = _coerce_optional_string(args.get("title"))
+        payload["impact"] = _coerce_optional_string(args.get("impact"))
+    return payload
+
+
+def _normalize_attach_evidence(args: dict[str, Any]) -> dict[str, Any]:
+    content_json = args.get("content_json")
+    if content_json is not None and not isinstance(content_json, str):
+        content_json = json.dumps(content_json)
+    return {
+        "run_id": _coerce_string(args.get("run_id"), field="run_id"),
+        "evidence_kind": _coerce_string(args.get("evidence_kind"), field="evidence_kind"),
+        "title": _coerce_string(args.get("title"), field="title"),
+        "content_json": _coerce_optional_string(content_json),
+    }
+
+
 def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
     """Coerce Claude MCP bridge quirks (aliases, stringified JSON, camelCase)."""
     args = _coerce_mapping(arguments)
@@ -299,29 +349,8 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             payload["max_stages"] = max_stages
         return payload
 
-    if name in {
-        "loregarden_start_stage",
-        "loregarden_complete_stage",
-        "loregarden_skip_stage",
-        "loregarden_request_approval",
-    }:
-        payload = {
-            "run_id": _coerce_string(args.get("run_id"), field="run_id"),
-            "stage_key": _coerce_string(args.get("stage_key"), field="stage_key"),
-        }
-        if name == "loregarden_start_stage":
-            payload["agent_id"] = _coerce_optional_string(args.get("agent_id"))
-        if name == "loregarden_complete_stage":
-            payload["next_agent"] = _coerce_optional_string(args.get("next_agent"))
-            payload["next_stage_key"] = _coerce_optional_string(args.get("next_stage_key"))
-            payload["outcome"] = _coerce_optional_string(args.get("outcome")) or "pass"
-            payload["blocking_issues"] = _coerce_optional_string(args.get("blocking_issues"))
-        if name == "loregarden_skip_stage":
-            payload["reason"] = _coerce_optional_string(args.get("reason"))
-        if name == "loregarden_request_approval":
-            payload["title"] = _coerce_optional_string(args.get("title"))
-            payload["impact"] = _coerce_optional_string(args.get("impact"))
-        return payload
+    if name in _STAGE_SCOPED_TOOLS:
+        return _normalize_stage_scoped(name, args)
 
     if name == "loregarden_block_ticket":
         return {
@@ -329,6 +358,9 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             "message": _coerce_string(args.get("message"), field="message"),
             "stage_key": _coerce_optional_string(args.get("stage_key")),
         }
+
+    if name == "loregarden_attach_evidence":
+        return _normalize_attach_evidence(args)
 
     if name == "loregarden_attach_artifact":
         content_json = args.get("content_json")
@@ -575,6 +607,27 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "stage_key": _string_prop("Optional stage key context."),
             },
             required=["run_id", "message"],
+        ),
+    },
+    {
+        "name": "loregarden_attach_evidence",
+        "description": (
+            "Attach proof that the work behaves as claimed. The commit it proves is "
+            "stamped server-side, so evidence captured before your last edit is "
+            "distinguishable from proof of the current code."
+        ),
+        "inputSchema": _tool_schema(
+            properties={
+                "run_id": _string_prop("Agent or orchestration run UUID."),
+                "evidence_kind": _enum_string_prop(
+                    "What this proves: a red-to-green test, output captured from the "
+                    "real surface a user touches, or a verifier's verdict.",
+                    list(EVIDENCE_KINDS),
+                ),
+                "title": _string_prop("Short description of what was captured."),
+                "content_json": _string_prop("Captured output as a JSON string."),
+            },
+            required=["run_id", "evidence_kind", "title"],
         ),
     },
     {
@@ -878,6 +931,52 @@ def _execute_memory_tool(name: str, arguments: dict[str, Any]) -> str | None:
     return json.dumps(result, indent=2)
 
 
+def _start_orchestration(session: Session, svc, arguments: dict[str, Any]) -> str:
+    """Start a run on whichever driver the workspace profile selects."""
+    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
+    ws = session.get(Workspace, ticket.workspace_id)
+    if not ws:
+        raise ValueError("Workspace not found")
+    profile = resolve_orchestration_profile(ws)
+    driver_name = arguments.get("driver") or profile.driver.value
+    driver = OrchestrationDriver(driver_name)
+
+    if driver == OrchestrationDriver.BUILTIN_AUTOPILOT:
+        run = BuiltinOrchestrator(session).execute(
+            ticket, profile, max_stages=arguments.get("max_stages")
+        )
+    elif driver == OrchestrationDriver.EXTERNAL_MCP:
+        run = svc.start_orchestration_run(ticket, driver=driver, profile_slug=profile.slug)
+    else:
+        raise ValueError(f"Unsupported driver for MCP start: {driver_name}")
+    return json.dumps(_run_view(run), indent=2)
+
+
+def _attach_evidence(session: Session, svc, ticket, arguments: dict[str, Any]) -> str:
+    """Record proof of behaviour, stamped with the commit it proves."""
+    evidence_kind = arguments["evidence_kind"]
+    if evidence_kind not in EVIDENCE_KINDS:
+        raise ValueError(
+            f"Unknown evidence_kind '{evidence_kind}'. Valid kinds: {', '.join(EVIDENCE_KINDS)}"
+        )
+    content = {}
+    if arguments.get("content_json"):
+        content = json.loads(arguments["content_json"])
+    # Stamped here, not taken from the agent: an agent choosing its own sha can
+    # claim proof against a commit its work predates.
+    artifact = svc.attach_artifact(
+        ticket,
+        kind=EVIDENCE_ARTIFACT_KIND,
+        title=arguments.get("title", ""),
+        content=content,
+        evidence_kind=evidence_kind,
+        commit_sha=resolve_head_sha(session, ticket),
+    )
+    return json.dumps(
+        {"ok": True, "artifact_id": artifact.id, "commit_sha": artifact.commit_sha}, indent=2
+    )
+
+
 def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -> str:
     svc = OrchestrationCallbackService(session)
     arguments = normalize_tool_arguments(name, arguments)
@@ -920,30 +1019,7 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
         )
 
     if name == "loregarden_start_orchestration":
-        ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-        ws = session.get(Workspace, ticket.workspace_id)
-        if not ws:
-            raise ValueError("Workspace not found")
-        profile = resolve_orchestration_profile(ws)
-        driver_name = arguments.get("driver") or profile.driver.value
-        driver = OrchestrationDriver(driver_name)
-        max_stages = arguments.get("max_stages")
-
-        if driver == OrchestrationDriver.BUILTIN_AUTOPILOT:
-            run = BuiltinOrchestrator(session).execute(
-                ticket,
-                profile,
-                max_stages=max_stages,
-            )
-        elif driver == OrchestrationDriver.EXTERNAL_MCP:
-            run = svc.start_orchestration_run(
-                ticket,
-                driver=driver,
-                profile_slug=profile.slug,
-            )
-        else:
-            raise ValueError(f"Unsupported driver for MCP start: {driver_name}")
-        return json.dumps(_run_view(run), indent=2)
+        return _start_orchestration(session, svc, arguments)
 
     if name == "loregarden_update_ticket":
         ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
@@ -1034,6 +1110,9 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
             content=content,
         )
         return json.dumps({"ok": True, "artifact_id": artifact.id}, indent=2)
+
+    if name == "loregarden_attach_evidence":
+        return _attach_evidence(session, svc, ticket, arguments)
 
     if name == "loregarden_request_approval":
         approval = svc.request_approval(
