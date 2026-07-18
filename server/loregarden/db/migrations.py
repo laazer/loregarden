@@ -717,6 +717,113 @@ def _m_definition_versioning(conn: Connection) -> None:
         )
 
 
+# Keywords that mark a ticket trivial enough to skip planning. Deliberately rare
+# words: the classifier is a bag-of-words match over title + description +
+# acceptance criteria, so a term that shows up incidentally in a risky ticket
+# would skip planning for it. HEAVY is the default, so an unmatched ticket keeps
+# the full pipeline — rigor ratchets up, never quietly down.
+_LIGHT_WORK_KEYWORDS = [
+    "typo",
+    "docs",
+    "documentation",
+    "changelog",
+    "comment",
+    "formatting",
+    "lint",
+]
+
+_RIGOR_TRIAGE_TEMPLATE = "studio-loregarden-tdd-v3"
+_RIGOR_LIGHT_TARGET = "test-design"
+
+
+def _m_light_heavy_rigor_triage(conn: Connection) -> None:
+    """Scale pipeline rigor by change risk on the loregarden TDD v3 template.
+
+    Turns `triage` into a classify stage whose light route branches past
+    plan/ui-design/spec, and lets `spec` skip itself when the ticket already
+    carries acceptance criteria. Composed from the route `to_stage` and stage
+    `skip_when` primitives; no engine change.
+    """
+    if not _table_exists(conn, "workflow_templates"):
+        return
+    row = (
+        conn.execute(
+            text("SELECT id, version, stages_json FROM workflow_templates WHERE slug=:slug"),
+            {"slug": _RIGOR_TRIAGE_TEMPLATE},
+        )
+        .mappings()
+        .fetchone()
+    )
+    if not row:
+        return
+
+    stages = json.loads(row["stages_json"] or "[]")
+    by_key = {stage.get("key"): stage for stage in stages}
+    triage, spec = by_key.get("triage"), by_key.get("spec")
+    if not triage or not spec or _RIGOR_LIGHT_TARGET not in by_key:
+        return
+    if triage.get("stage_type") == "classify":
+        return  # already reshaped
+
+    agent_id = triage.get("agent_id") or "ticket_scoper"
+    skill_name = triage.get("skill_name", "")
+    triage["stage_type"] = "classify"
+    triage["classify_routes"] = [
+        {
+            "languages": [],
+            "specialties": _LIGHT_WORK_KEYWORDS,
+            "agent_id": agent_id,
+            "skill_name": skill_name,
+            "default": False,
+            "to_stage": _RIGOR_LIGHT_TARGET,
+        },
+        {
+            "languages": [],
+            "specialties": [],
+            "agent_id": agent_id,
+            "skill_name": skill_name,
+            "default": True,
+            "to_stage": "",
+        },
+    ]
+    spec["skip_when"] = "has_acceptance_criteria"
+
+    # Bump the version so this reshape is auditable alongside Studio edits. The
+    # pre-existing v1 snapshot still holds the linear shape, so history is intact.
+    new_version = int(row["version"] or 1) + 1
+    conn.execute(
+        text("UPDATE workflow_templates SET stages_json=:stages, version=:v WHERE id=:id"),
+        {"stages": json.dumps(stages), "v": new_version, "id": row["id"]},
+    )
+    if _table_exists(conn, "workflow_template_versions"):
+        snapshot = (
+            conn.execute(
+                text(
+                    "SELECT slug, name, description, stages_json, transitions_json, source_path, "
+                    "built_in FROM workflow_templates WHERE id=:id"
+                ),
+                {"id": row["id"]},
+            )
+            .mappings()
+            .fetchone()
+        )
+        conn.execute(
+            text(
+                "INSERT INTO workflow_template_versions "
+                "(id, template_id, version, snapshot_json, created_by, change_note, created_at) "
+                "VALUES (:id, :tid, :v, :snap, 'migration', :note, :now)"
+            ),
+            {
+                "id": str(uuid4()),
+                "tid": row["id"],
+                "v": new_version,
+                "snap": json.dumps(dict(snapshot)),
+                "note": "LIGHT/HEAVY rigor triage",
+                "now": datetime.now(timezone.utc),
+            },
+        )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -740,6 +847,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0020_compatibility_posture", _m_compatibility_posture),
     ("0021_branch_triage_message_status", _m_branch_triage_message_status),
     ("0022_definition_versioning", _m_definition_versioning),
+    ("0023_light_heavy_rigor_triage", _m_light_heavy_rigor_triage),
 ]
 
 
