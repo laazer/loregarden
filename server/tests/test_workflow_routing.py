@@ -898,3 +898,105 @@ def test_should_skip_stage_conditions():
     )
     assert should_skip_stage(bare, stage("has_description")) is False
     assert should_skip_stage(bare, stage("has_acceptance_criteria")) is False
+
+
+# --- LIGHT/HEAVY rigor triage (#8) ------------------------------------------
+#
+# Composed entirely from U5b (a route's `to_stage`) and U5c (`skip_when`) — no
+# engine change. Locked here because it is the first template shape that relies
+# on both, so a regression in either would silently stop scaling rigor.
+#
+# The default route is HEAVY: a ticket must positively look trivial to skip
+# planning. Rigor ratchets up, never quietly down.
+
+
+def _rigor_stages():
+    from loregarden.models.domain import ClassifyRoute, WorkflowStageDef
+
+    return [
+        WorkflowStageDef(
+            key="triage",
+            name="Triage",
+            order=1,
+            stage_type="classify",
+            classify_routes=[
+                ClassifyRoute(
+                    specialties=["typo", "rename", "copy"],
+                    agent_id="ticket_scoper",
+                    to_stage="test-design",
+                ),
+                ClassifyRoute(agent_id="ticket_scoper", default=True),
+            ],
+        ),
+        WorkflowStageDef(key="plan", name="Plan", agent_id="planner", order=2),
+        WorkflowStageDef(key="ui-design", name="UI Design", agent_id="planner", order=3),
+        WorkflowStageDef(
+            key="spec",
+            name="Spec",
+            agent_id="spec",
+            order=4,
+            skip_when="has_acceptance_criteria",
+        ),
+        WorkflowStageDef(key="test-design", name="Test Design", agent_id="test_designer", order=5),
+        WorkflowStageDef(key="implement", name="Implement", agent_id="backend", order=6),
+    ]
+
+
+def _rigor_ticket(stages, title, *, criteria=None, from_key="triage"):
+    ticket = Ticket(
+        external_id="rigor",
+        workspace_id="ws",
+        title=title,
+        acceptance_criteria_json=json.dumps(criteria or []),
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+        workflow_stage_key=from_key,
+        workflow_stage_status=StageStatus.RUNNING,
+    )
+    instance = WorkflowInstance(
+        ticket_id="t1",
+        template_id="tpl1",
+        current_stage_key=from_key,
+        stages_json=initial_stages_json(stages),
+    )
+    return ticket, instance
+
+
+def test_light_ticket_branches_past_the_planning_stages():
+    stages = _rigor_stages()
+    ticket, instance = _rigor_ticket(stages, "Fix typo in the settings header")
+    plan = apply_stage_route(ticket, instance, stages, [], from_key="triage", outcome="pass")
+    assert plan.to_key == "test-design"
+    stage_map = parse_stage_map(instance, stages)
+    for key in ("plan", "ui-design", "spec"):
+        assert stage_map[key] == StageStatus.WONT_DO
+
+
+def test_heavy_ticket_keeps_the_full_pipeline():
+    stages = _rigor_stages()
+    ticket, instance = _rigor_ticket(stages, "Add auth token rotation with schema migration")
+    plan = apply_stage_route(ticket, instance, stages, [], from_key="triage", outcome="pass")
+    assert plan.to_key == "plan"
+    assert parse_stage_map(instance, stages)["spec"] == StageStatus.PENDING
+
+
+def test_unrecognised_work_defaults_to_heavy():
+    """Rigor ratchets up: an unclassifiable ticket takes the full path."""
+    stages = _rigor_stages()
+    ticket, instance = _rigor_ticket(stages, "Something nobody wrote a keyword for")
+    plan = apply_stage_route(ticket, instance, stages, [], from_key="triage", outcome="pass")
+    assert plan.to_key == "plan"
+
+
+def test_pre_scoped_ticket_skips_spec_even_on_the_heavy_path():
+    """The two axes are independent: risk picks the path, evidence skips the stage."""
+    stages = _rigor_stages()
+    ticket, instance = _rigor_ticket(
+        stages,
+        "Add auth token rotation",
+        criteria=["AC-1 rotates"],
+        from_key="ui-design",
+    )
+    plan = apply_stage_route(ticket, instance, stages, [], from_key="ui-design", outcome="pass")
+    assert plan.to_key == "test-design"
+    assert parse_stage_map(instance, stages)["spec"] == StageStatus.WONT_DO
