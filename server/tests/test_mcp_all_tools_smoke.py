@@ -102,6 +102,12 @@ def _args_for(
             "title": "smoke artifact",
             "content_json": json.dumps({"lines": []}),
         },
+        "loregarden_attach_evidence": {
+            "run_id": run_id,
+            "evidence_kind": "real_surface",
+            "title": "smoke evidence",
+            "content_json": json.dumps({"status": 200}),
+        },
         "loregarden_update_ticket": {"ticket_id": ticket_id, "state": "in_progress"},
         "loregarden_request_approval": {
             "run_id": run_id,
@@ -174,6 +180,7 @@ def test_every_advertised_tool_is_callable(client: TestClient):
         "loregarden_append_checkpoint",
         "loregarden_upsert_blog_post",
         "loregarden_attach_artifact",
+        "loregarden_attach_evidence",
         "loregarden_update_ticket",
         "loregarden_request_approval",
         "loregarden_write_handoff",

@@ -215,9 +215,14 @@ class Artifact(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     ticket_id: str = Field(foreign_key="tickets.id", index=True)
     run_id: str | None = Field(default=None, foreign_key="agent_runs.id")
-    kind: str = Field(index=True)  # diff | log | test | context
+    kind: str = Field(index=True)  # diff | log | test | context | evidence
     title: str = ""
     content_json: str = "{}"
+    # What an `evidence` artifact proves, and the commit it proves it against.
+    # Evidence regenerated before the last source edit is stale, so the sha is
+    # what lets a verifier tell proof from a leftover.
+    evidence_kind: str = ""
+    commit_sha: str = ""
     created_at: datetime = Field(default_factory=utcnow)
 
 

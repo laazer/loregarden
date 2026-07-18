@@ -142,3 +142,21 @@ def client_fixture(isolated_db, tmp_path):
 def db_session_fixture(client, isolated_db):
     with Session(isolated_db) as session:
         yield session
+
+
+@pytest.fixture(name="git_repo")
+def git_repo_fixture(tmp_path):
+    """A throwaway git repo with one commit, for tests that assert on staging."""
+    root = tmp_path / "repo"
+    root.mkdir()
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Test")
+    (root / "seed.txt").write_text("seed\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "seed")
+    return root

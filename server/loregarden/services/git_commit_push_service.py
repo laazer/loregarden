@@ -49,6 +49,22 @@ def working_tree_paths(repo_root: Path) -> set[str]:
     return paths
 
 
+def head_commit_sha(repo_root: Path) -> str:
+    """Current HEAD, or "" when the workspace has no commits or is not a repo.
+
+    Evidence is stamped with this server-side rather than taken from the agent:
+    an agent that picks its own sha can claim proof against a commit its work
+    predates.
+    """
+    proc = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
 def commit_paths(session: Session, ticket: Ticket, message: str, paths: Iterable[str]) -> bool:
     """Commit only `paths` on the checked-out branch. Returns False if nothing staged.
 

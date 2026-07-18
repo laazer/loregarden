@@ -125,6 +125,7 @@ _CONTROL_PLANE_WRITE_MCP_TOOLS = frozenset(
         "loregarden_create_memory_relation",
         "loregarden_upsert_blog_post",
         "loregarden_attach_artifact",
+        "loregarden_attach_evidence",
     }
 )
 

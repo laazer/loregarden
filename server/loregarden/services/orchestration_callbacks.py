@@ -322,6 +322,8 @@ class OrchestrationCallbackService:
         title: str,
         content: dict,
         run_id: str | None = None,
+        evidence_kind: str = "",
+        commit_sha: str = "",
     ) -> Artifact:
         artifact = Artifact(
             ticket_id=ticket.id,
@@ -329,6 +331,8 @@ class OrchestrationCallbackService:
             kind=kind,
             title=title,
             content_json=json.dumps(content),
+            evidence_kind=evidence_kind,
+            commit_sha=commit_sha,
         )
         self.session.add(artifact)
         self.session.commit()

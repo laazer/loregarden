@@ -729,6 +729,19 @@ def _m_agent_run_changed_paths(conn: Connection) -> None:
     )
 
 
+def _m_artifact_evidence(conn: Connection) -> None:
+    _add_columns_if_missing(
+        conn,
+        "artifacts",
+        {
+            "evidence_kind": (
+                "ALTER TABLE artifacts ADD COLUMN evidence_kind TEXT NOT NULL DEFAULT ''"
+            ),
+            "commit_sha": "ALTER TABLE artifacts ADD COLUMN commit_sha TEXT NOT NULL DEFAULT ''",
+        },
+    )
+
+
 # Keywords that mark a ticket trivial enough to skip planning. Deliberately rare
 # words: the classifier is a bag-of-words match over title + description +
 # acceptance criteria, so a term that shows up incidentally in a risky ticket
@@ -861,6 +874,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0022_definition_versioning", _m_definition_versioning),
     ("0023_light_heavy_rigor_triage", _m_light_heavy_rigor_triage),
     ("0024_agent_run_changed_paths", _m_agent_run_changed_paths),
+    ("0025_artifact_evidence", _m_artifact_evidence),
 ]
 
 
