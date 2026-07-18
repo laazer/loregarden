@@ -118,7 +118,7 @@ def _advance_past_skipped(
     # template with a transition cycle would otherwise spin here.
     for _ in range(len(stages)):
         target = by_key.get(plan.to_key)
-        if target is None or not should_skip_stage(ticket, target):
+        if target is None or not should_skip_stage(ticket, target, stages):
             break
         if is_terminal_stage(target):
             break

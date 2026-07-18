@@ -827,6 +827,10 @@ def _m_verify_stage_in_v3(conn: Connection) -> None:
             "optional": False,
             "order": anchor_order + 1,
             "stage_type": "verify",
+            # Light work skips verification. Triage already decided the ticket was
+            # trivial enough to branch past planning; demanding runtime proof of a
+            # typo fix spends more than the check is worth.
+            "skip_when": "routed_as_light_work",
             "classify_routes": [],
             "parallel_agents": [],
             "gate_commands": [],
