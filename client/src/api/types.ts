@@ -528,6 +528,8 @@ export interface ClassifyRoute {
   agent_id: string;
   skill_name: string;
   default: boolean;
+  /** Stage this route branches to. Empty means continue to the next stage in order. */
+  to_stage?: string;
 }
 
 export interface ParallelAgentSpec {

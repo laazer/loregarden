@@ -1228,6 +1228,7 @@ export function StudioPage() {
                                             agent_id: "backend_implementer",
                                             skill_name: "apply_patch",
                                             default: true,
+                                            to_stage: "",
                                           },
                                         ]
                                       : stage.classify_routes,
@@ -1377,6 +1378,26 @@ export function StudioPage() {
                                     Default
                                   </label>
                                 </div>
+                                <div style={{ marginTop: 8 }}>
+                                  <div className="studio-stage-field-label">Branches to</div>
+                                  <select
+                                    className="studio-stage-select mono"
+                                    value={route.to_stage ?? ""}
+                                    disabled={isWorkflowReadOnly}
+                                    onChange={(e) =>
+                                      updateRoute(index, routeIndex, { to_stage: e.target.value })
+                                    }
+                                  >
+                                    <option value="">Continue to the next stage</option>
+                                    {workflowDraft.stages
+                                      .filter((candidate) => candidate.key && candidate.key !== stage.key)
+                                      .map((candidate) => (
+                                        <option key={candidate.key} value={candidate.key}>
+                                          {candidate.key}
+                                        </option>
+                                      ))}
+                                  </select>
+                                </div>
                               </div>
                             ))}
                             {!isWorkflowReadOnly && (
@@ -1394,6 +1415,7 @@ export function StudioPage() {
                                         agent_id: "backend_implementer",
                                         skill_name: "apply_patch",
                                         default: false,
+                                        to_stage: "",
                                       },
                                     ],
                                   })
