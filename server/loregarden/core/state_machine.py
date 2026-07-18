@@ -138,6 +138,12 @@ class StateMachine:
         explicit_to: str = "",
     ) -> StageRoutePlan | None:
         if explicit_to:
+            # Validate here rather than trusting the caller: an unknown target used
+            # to be honored verbatim, parking the cursor on a phantom stage.
+            if explicit_to not in {stage.key for stage in stages}:
+                raise ValueError(
+                    f"Unknown target stage '{explicit_to}' for route from '{current_key}'"
+                )
             return StageRoutePlan(
                 from_key=current_key,
                 to_key=explicit_to,
@@ -197,7 +203,10 @@ class StateMachine:
         try:
             idx = keys.index(current_key)
         except ValueError:
-            return keys[0] if keys else None
+            # An unknown current stage used to fall back to keys[0], silently
+            # rewinding the workflow cursor to stage one. Report "no route" so
+            # callers surface the bad key instead of resetting the ticket.
+            return None
         if idx + 1 < len(keys):
             return keys[idx + 1]
         return None

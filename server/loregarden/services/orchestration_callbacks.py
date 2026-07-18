@@ -223,6 +223,9 @@ class OrchestrationCallbackService:
                 next_agent=next_agent,
                 blocking_issues=short_blocking_issues,
                 orch_run=orch_run,
+                # Live agent call: a ValueError comes back as an MCP tool error,
+                # so the agent can correct itself and retry within the same run.
+                strict=True,
             )
         else:
             set_stage_status(ticket, instance, stages, stage_key, StageStatus.DONE)
