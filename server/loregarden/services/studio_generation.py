@@ -199,7 +199,7 @@ def _normalize_generated_stage(
     key = slugify(str(raw.get("key") or f"stage_{order}"))
     name = str(raw.get("name") or key.replace("-", " ").title()).strip()
     stage_type = str(raw.get("stage_type") or "agent").strip().lower()
-    if stage_type not in {"agent", "classify", "gate", "parallel"}:
+    if stage_type not in {"agent", "classify", "gate", "parallel", "verify"}:
         stage_type = "agent"
     agent_id = str(raw.get("agent_id") or "").strip()
     skill_name = str(raw.get("skill_name") or "").strip()

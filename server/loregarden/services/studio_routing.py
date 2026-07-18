@@ -202,9 +202,16 @@ def _resolve_next_agent_override(ticket: Ticket, stage: WorkflowStageDef) -> tup
     return None
 
 
+VERIFY_STAGE_TYPE = "verify"
+
+# The agent a verify stage runs when the template names none. Kept separate from
+# the reviewers: a reviewer reads the change, a verifier has to exercise it.
+DEFAULT_VERIFIER_AGENT = "verifier"
+
+
 def is_agentless_stage(stage: WorkflowStageDef) -> bool:
     """Stages with no CLI agent (human gates, terminal markers)."""
-    if stage.stage_type in {"classify", "gate", "parallel"}:
+    if stage.stage_type in {"classify", "gate", "parallel", VERIFY_STAGE_TYPE}:
         return False
     return not (stage.agent_id or "").strip()
 
@@ -263,6 +270,8 @@ def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[st
         return stage.agent_id or "gatekeeper", stage.skill_name or "ac_gate"
     if stage.stage_type == "parallel":
         return "", ""
+    if stage.stage_type == VERIFY_STAGE_TYPE:
+        return stage.agent_id or DEFAULT_VERIFIER_AGENT, stage.skill_name or "verify"
     routed = _resolve_next_agent_override(ticket, stage)
     if routed:
         return routed
