@@ -12,7 +12,12 @@ from loregarden.models.domain import (
     WorkflowInstance,
     WorkflowStageDef,
 )
-from loregarden.services.studio_routing import resolve_classify_branch, resolve_stage_execution
+from loregarden.services.studio_routing import (
+    is_terminal_stage,
+    resolve_classify_branch,
+    resolve_stage_execution,
+    should_skip_stage,
+)
 from loregarden.services.workflow_state import (
     parse_stage_map,
     reconcile_workflow_state,
@@ -87,6 +92,73 @@ def _validate_route_target(
         raise ValueError(f"{reason}. Valid targets from '{from_key}': {hint}")
     logger.warning("Discarding invalid next_stage_key on ticket %s: %s", ticket_id, reason)
     return reason
+
+
+def _advance_past_skipped(
+    stages: list[WorkflowStageDef],
+    transitions: list[dict[str, str]],
+    ticket: Ticket,
+    plan: StageRoutePlan,
+    outcome: str,
+) -> tuple[StageRoutePlan, list[str]]:
+    """Walk forward past stages whose `skip_when` this ticket already satisfies.
+
+    Returns the settled plan and the keys passed over. Those must be recorded
+    WONT_DO by the caller: _next_executable_stage scans for any PENDING stage, so
+    steering the cursor past one is not enough to keep it from running.
+
+    Only forward moves skip — rework must land on the stage it was sent back to.
+    """
+    if outcome != "pass":
+        return plan, []
+
+    by_key = {stage.key: stage for stage in stages}
+    skipped: list[str] = []
+    # Bounded by the stage count: every hop consumes a distinct stage, and a
+    # template with a transition cycle would otherwise spin here.
+    for _ in range(len(stages)):
+        target = by_key.get(plan.to_key)
+        if target is None or not should_skip_stage(ticket, target):
+            break
+        if is_terminal_stage(target):
+            break
+        onward = StateMachine.resolve_next_stage_key(
+            stages, transitions, plan.to_key, outcome="pass"
+        )
+        if onward is None or onward.to_key in skipped:
+            break
+        skipped.append(plan.to_key)
+        plan = onward
+    return plan, skipped
+
+
+def _record_passed_over(
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    stage_map: dict[str, StageStatus],
+    *,
+    skipped_keys: list[str],
+    branch_from: str,
+    branch_to: str,
+) -> dict[str, StageStatus]:
+    """Mark stages this advance stepped over as WONT_DO and persist the map.
+
+    Covers both a `skip_when` skip and a classify branch's jumped-over span.
+    Left PENDING they would hold the ticket short of DONE and still be picked up
+    to run.
+    """
+    changed = False
+    for key in skipped_keys:
+        stage_map[key] = StageStatus.WONT_DO
+        changed = True
+    if branch_to:
+        stage_map = StateMachine.skip_intermediate_stages(
+            stage_map, stages, from_key=branch_from, to_key=branch_to
+        )
+        changed = True
+    if changed:
+        instance.stages_json = serialize_stage_map(stage_map, stages)
+    return stage_map
 
 
 def _classify_branch_target(
@@ -190,6 +262,8 @@ def apply_stage_route(
             f"No workflow route defined from stage '{from_key}' with outcome '{outcome}'"
         )
 
+    plan, skipped_keys = _advance_past_skipped(stages, transitions, ticket, plan, outcome)
+
     stage_map = parse_stage_map(instance, stages)
     if plan.upstream or outcome == "reject":
         stage_map = StateMachine.reset_upstream_stages(
@@ -210,16 +284,14 @@ def apply_stage_route(
             ticket.blocking_issues = ""
         ticket.next_status = "Proceed"
     else:
-        if branch_to:
-            # Stages the branch jumped over would stay PENDING, and a ticket with
-            # unresolved stages never reaches DONE.
-            stage_map = StateMachine.skip_intermediate_stages(
-                stage_map,
-                stages,
-                from_key=from_key,
-                to_key=plan.to_key,
-            )
-            instance.stages_json = serialize_stage_map(stage_map, stages)
+        stage_map = _record_passed_over(
+            instance,
+            stages,
+            stage_map,
+            skipped_keys=skipped_keys,
+            branch_from=from_key if branch_to else "",
+            branch_to=plan.to_key if branch_to else "",
+        )
         if stage_map.get(from_key) != StageStatus.WONT_DO:
             set_stage_status(ticket, instance, stages, from_key, StageStatus.DONE)
         ticket.workflow_stage_key = plan.to_key

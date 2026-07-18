@@ -790,3 +790,111 @@ def test_skip_intermediate_stages_is_a_noop_for_adjacent_stages():
         StateMachine.skip_intermediate_stages(stage_map, stages, from_key="a", to_key="b")
         == stage_map
     )
+
+
+# --- Declarative stage skipping (U5c) ---------------------------------------
+#
+# `optional` was only a completion-quorum flag: the cursor still walked into
+# optional stages. A stage may now declare `skip_when`, and a matching stage is
+# recorded WONT_DO — steering the cursor past it is not enough, because
+# _next_executable_stage picks up any stage left PENDING.
+
+
+def _skip_fixture(*, description: str = "", criteria: list[str] | None = None):
+    from loregarden.models.domain import WorkflowStageDef
+
+    stages = [
+        WorkflowStageDef(key="plan", name="Plan", agent_id="planner", order=1),
+        WorkflowStageDef(
+            key="spec",
+            name="Spec",
+            agent_id="spec",
+            order=2,
+            optional=True,
+            skip_when="has_acceptance_criteria",
+        ),
+        WorkflowStageDef(key="implement", name="Implement", agent_id="backend", order=3),
+    ]
+    ticket = Ticket(
+        external_id="u5c-skip",
+        workspace_id="ws",
+        title="Skip test",
+        description=description,
+        acceptance_criteria_json=json.dumps(criteria or []),
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+        workflow_stage_key="plan",
+        workflow_stage_status=StageStatus.RUNNING,
+    )
+    instance = WorkflowInstance(
+        ticket_id="t1",
+        template_id="tpl1",
+        current_stage_key="plan",
+        stages_json=initial_stages_json(stages),
+    )
+    return stages, ticket, instance
+
+
+def test_stage_is_skipped_when_its_condition_already_holds():
+    stages, ticket, instance = _skip_fixture(criteria=["AC-1 renders", "AC-2 persists"])
+    plan = apply_stage_route(ticket, instance, stages, [], from_key="plan", outcome="pass")
+    assert plan.to_key == "implement"
+
+
+def test_skipped_stage_is_recorded_wont_do_not_left_pending():
+    """PENDING would be picked up by _next_executable_stage and run anyway."""
+    stages, ticket, instance = _skip_fixture(criteria=["AC-1 renders"])
+    apply_stage_route(ticket, instance, stages, [], from_key="plan", outcome="pass")
+    assert parse_stage_map(instance, stages)["spec"] == StageStatus.WONT_DO
+
+
+def test_stage_runs_when_its_condition_does_not_hold():
+    stages, ticket, instance = _skip_fixture(criteria=[])
+    plan = apply_stage_route(ticket, instance, stages, [], from_key="plan", outcome="pass")
+    assert plan.to_key == "spec"
+    assert parse_stage_map(instance, stages)["spec"] == StageStatus.PENDING
+
+
+def test_rework_lands_on_its_target_even_if_that_stage_is_skippable():
+    """A skip must not bounce rework past the stage it was sent back to."""
+    stages, ticket, instance = _skip_fixture(criteria=["AC-1 renders"])
+    plan = apply_stage_route(
+        ticket,
+        instance,
+        stages,
+        [],
+        from_key="implement",
+        outcome="reject",
+        next_stage_key="spec",
+        strict=True,
+    )
+    assert plan.to_key == "spec"
+
+
+def test_should_skip_stage_conditions():
+    from loregarden.models.domain import WorkflowStageDef
+    from loregarden.services.studio_routing import should_skip_stage
+
+    ticket = Ticket(
+        external_id="u5c-cond",
+        workspace_id="ws",
+        title="t",
+        description="a description",
+        acceptance_criteria_json=json.dumps(["AC-1"]),
+        work_item_type=WorkItemType.TASK,
+    )
+
+    def stage(cond):
+        return WorkflowStageDef(key="s", name="S", order=1, skip_when=cond)
+
+    assert should_skip_stage(ticket, stage("has_description")) is True
+    assert should_skip_stage(ticket, stage("has_acceptance_criteria")) is True
+    assert should_skip_stage(ticket, stage("")) is False
+    # An unrecognised condition must never silently skip a stage.
+    assert should_skip_stage(ticket, stage("something_invented")) is False
+
+    bare = Ticket(
+        external_id="u5c-bare", workspace_id="ws", title="t", work_item_type=WorkItemType.TASK
+    )
+    assert should_skip_stage(bare, stage("has_description")) is False
+    assert should_skip_stage(bare, stage("has_acceptance_criteria")) is False

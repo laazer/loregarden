@@ -482,3 +482,64 @@ def test_done_stage_completes_ticket_without_agent(client: TestClient, monkeypat
     assert body["workflow_stage_key"] == "done"
     assert body["workflow_stage_status"] == "done"
     assert _stage_statuses(body)["done"] == "done"
+
+
+def test_reaching_terminal_resolves_stages_the_ticket_never_reached(
+    client: TestClient, monkeypatch
+):
+    """Regression: a branch that leaves stages PENDING stranded the ticket.
+
+    Template `order` was standing in for reachability, so a stage on a path the
+    ticket never took stayed PENDING forever — holding the ticket short of DONE
+    and getting picked up by _next_executable_stage, which ran the untaken
+    branch anyway. Arrival at the terminal stage now settles them.
+    """
+    from loregarden.db.session import engine
+
+    ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
+    with Session(engine) as session:
+        ticket = session.get(Ticket, ticket_id)
+        instance = session.exec(
+            select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)
+        ).first()
+        ws = session.get(Workspace, ticket.workspace_id)
+        _, stages = resolve_workspace_stages(session, ws)
+        keys = [s.key for s in sorted(stages, key=lambda s: s.order) if s.key != "done"]
+        # Everything resolved except one mid-workflow stage, as if a branch had
+        # routed around it.
+        stranded = keys[len(keys) // 2]
+        for key in keys:
+            if key != stranded:
+                set_stage_status(ticket, instance, stages, key, StageStatus.DONE)
+        set_stage_status(ticket, instance, stages, stranded, StageStatus.PENDING)
+        ticket.workflow_stage_key = "done"
+        ticket.workflow_stage_status = StageStatus.PENDING
+        set_stage_status(ticket, instance, stages, "done", StageStatus.PENDING)
+        session.add(ticket)
+        session.add(instance)
+        session.commit()
+
+    monkeypatch.setattr("loregarden.api.tickets.schedule_agent_run", lambda run_id: None)
+    res = client.post(f"/api/tickets/{ticket_id}/start", json={"manual": True, "stage_key": "done"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["state"] == "done"
+    assert _stage_statuses(body)[stranded] == "wont_do"
+
+
+def test_terminal_flag_ends_a_workflow_whose_last_stage_is_not_named_done():
+    """`terminal` is authoritative; `key == "done"` is only the back-compat path."""
+    from loregarden.models.domain import WorkflowStageDef
+    from loregarden.services.studio_routing import find_terminal_stage, is_terminal_stage
+
+    stages = [
+        WorkflowStageDef(key="implement", name="Implement", agent_id="backend", order=1),
+        WorkflowStageDef(key="shipped", name="Shipped", order=2, terminal=True),
+    ]
+    assert is_terminal_stage(stages[1]) is True
+    assert is_terminal_stage(stages[0]) is False
+    assert find_terminal_stage(stages).key == "shipped"
+
+    legacy = [WorkflowStageDef(key="done", name="Done", order=1)]
+    assert is_terminal_stage(legacy[0]) is True
+    assert find_terminal_stage(legacy).key == "done"

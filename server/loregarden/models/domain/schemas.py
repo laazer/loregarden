@@ -47,6 +47,11 @@ class WorkflowStageDef(SQLModel):
     parallel_agents: list[ParallelAgentSpec] = Field(default_factory=list)
     gate_commands: list[str] = Field(default_factory=list)
     gate_required: bool = False
+    # Ends the workflow when reached. Falls back to `key == "done"` for templates
+    # authored before this flag existed, including version-pinned instances.
+    terminal: bool = False
+    # Condition under which this stage is passed over; see SKIP_CONDITIONS.
+    skip_when: str = ""
     model: str = ""
     checklist: list[str] = Field(default_factory=list)
 
@@ -517,6 +522,8 @@ class StudioWorkflowStage(SQLModel):
     optional: bool = False
     order: int = 0
     gate_required: bool = False
+    terminal: bool = False
+    skip_when: str = ""
     classify_routes: list[ClassifyRoute] = Field(default_factory=list)
     parallel_agents: list[ParallelAgentSpec] = Field(default_factory=list)
     gate_commands: list[str] = Field(default_factory=list)
