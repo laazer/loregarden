@@ -237,3 +237,31 @@ def _stage_agent_refs(stage: WorkflowStageDef) -> list[ParallelAgentSpec]:
         seen.add(ref.agent_id)
         unique.append(ref)
     return unique
+
+
+def settle_unreached_stages(
+    ticket: Ticket,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    *,
+    terminal_key: str,
+) -> list[str]:
+    """Mark stages still PENDING at the terminal stage as WONT_DO; return their keys.
+
+    Reaching the terminal stage settles the workflow: anything still PENDING is
+    on a path this ticket never took. Left PENDING it would both hold the ticket
+    short of DONE (_derive_ticket_state needs every non-optional stage resolved)
+    and be picked up by _next_executable_stage, running a branch that was never
+    chosen. Template order cannot tell us what was reachable, so settle by
+    arrival instead.
+    """
+    stage_map = parse_stage_map(instance, stages)
+    unreached = [
+        stage.key
+        for stage in stages
+        if stage.key != terminal_key
+        and stage_map.get(stage.key, StageStatus.PENDING) == StageStatus.PENDING
+    ]
+    for key in unreached:
+        set_stage_status(ticket, instance, stages, key, StageStatus.WONT_DO)
+    return unreached

@@ -33,6 +33,7 @@ from loregarden.services.stage_report import (
     parse_stage_report,
     stage_report_artifact_content,
 )
+from loregarden.services.studio_routing import find_terminal_stage, is_terminal_stage
 from loregarden.services.triage_question_log import record_triage_question_exchange
 from loregarden.services.workflow_service import resolve_ticket_stages, resolve_workspace_stages
 from loregarden.services.workflow_state import (
@@ -42,6 +43,7 @@ from loregarden.services.workflow_state import (
     reconcile_workflow_state,
     serialize_stage_map,
     set_stage_status,
+    settle_unreached_stages,
 )
 from sqlmodel import Session, select
 
@@ -431,7 +433,7 @@ class OrchestrationService:
         if not instance or not stages:
             raise ValueError("Ticket has no workflow instance")
 
-        done_def = next((s for s in stages if s.key == "done"), None)
+        done_def = find_terminal_stage(stages)
         if not done_def:
             raise ValueError("Workflow has no done stage")
 
@@ -444,7 +446,7 @@ class OrchestrationService:
         current = ticket.workflow_stage_key
         if (
             current
-            and current != "done"
+            and current != done_def.key
             and ticket.workflow_stage_status
             not in (
                 StageStatus.DONE,
@@ -453,8 +455,9 @@ class OrchestrationService:
         ):
             raise ValueError("Advance to the Done stage before completing the ticket")
 
-        ticket.workflow_stage_key = "done"
-        set_stage_status(ticket, instance, stages, "done", StageStatus.DONE)
+        settle_unreached_stages(ticket, instance, stages, terminal_key=done_def.key)
+        ticket.workflow_stage_key = done_def.key
+        set_stage_status(ticket, instance, stages, done_def.key, StageStatus.DONE)
         ticket.blocking_issues = ""
         reconcile_workflow_state(ticket, instance, stages)
         self.session.add(ticket)
@@ -491,7 +494,7 @@ class OrchestrationService:
         if not stage_def:
             raise ValueError(f"Unknown stage key: {target_key}")
 
-        if stage_def.key == "done":
+        if is_terminal_stage(stage_def):
             self.finalize_workflow(ticket)
             return ticket
 

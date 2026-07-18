@@ -209,6 +209,53 @@ def is_agentless_stage(stage: WorkflowStageDef) -> bool:
     return not (stage.agent_id or "").strip()
 
 
+TERMINAL_STAGE_KEY = "done"
+
+
+def is_terminal_stage(stage: WorkflowStageDef) -> bool:
+    """Whether reaching this stage ends the workflow.
+
+    The `terminal` flag is authoritative; `key == "done"` remains a fallback so
+    templates authored before the flag — including version-pinned instances —
+    keep terminating.
+    """
+    return bool(stage.terminal) or stage.key == TERMINAL_STAGE_KEY
+
+
+def find_terminal_stage(stages: list[WorkflowStageDef]) -> WorkflowStageDef | None:
+    """First stage by order that ends the workflow, or None."""
+    for stage in sorted(stages, key=lambda s: s.order):
+        if is_terminal_stage(stage):
+            return stage
+    return None
+
+
+# Conditions a stage may declare via `skip_when`. Deliberately a closed, named
+# vocabulary rather than an expression language: these are checked structurally
+# against ticket fields, which the classify keyword matcher cannot express.
+SKIP_CONDITIONS = ("has_description", "has_acceptance_criteria")
+
+
+def should_skip_stage(ticket: Ticket, stage: WorkflowStageDef) -> bool:
+    """Whether `stage` declares a skip condition this ticket already satisfies.
+
+    Motivating case: a ticket that arrived already scoped skips plan/spec rather
+    than paying for work Ticket Studio has done.
+    """
+    condition = (stage.skip_when or "").strip()
+    if not condition:
+        return False
+    if condition == "has_description":
+        return bool((ticket.description or "").strip())
+    if condition == "has_acceptance_criteria":
+        try:
+            criteria = json.loads(ticket.acceptance_criteria_json or "[]")
+        except (TypeError, ValueError):
+            return False
+        return bool(criteria)
+    return False
+
+
 def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
     if stage.stage_type == "classify":
         return resolve_classify_route(ticket, stage)
