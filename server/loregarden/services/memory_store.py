@@ -27,7 +27,7 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def _slugify(text: str, *, max_len: int = 80) -> str:
+def slugify(text: str, *, max_len: int = 80) -> str:
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", text.strip().lower()).strip("-")
     if not slug:
         slug = "note"
@@ -84,7 +84,7 @@ class ObsidianMemoryStore:
         return cls(vault)
 
     def _workspace_segment(self, workspace_slug: str) -> str:
-        return _slugify(workspace_slug.strip()) if workspace_slug.strip() else ""
+        return slugify(workspace_slug.strip()) if workspace_slug.strip() else ""
 
     def memory_dir(self, workspace_slug: str = "") -> Path:
         base = self.vault_dir / self._memory_subdir
@@ -122,7 +122,7 @@ class ObsidianMemoryStore:
         workspace_slug: str = "",
     ) -> Path:
         base = self._dir_for_note_type(note_type, workspace_slug)
-        filename = f"{_slugify(title)}-{note_id[:8]}.md"
+        filename = f"{slugify(title)}-{note_id[:8]}.md"
         return base / filename
 
     def upsert_note(
@@ -234,8 +234,8 @@ class ObsidianMemoryStore:
         a run — matching the checkpoint protocol's <ticket-id>/<run-id>.md log.
         """
         base = self.checkpoints_dir(workspace_slug)
-        ticket_slug = _slugify(ticket_id) if ticket_id.strip() else "ticket"
-        run_slug = _slugify(run_id) if run_id.strip() else "run"
+        ticket_slug = slugify(ticket_id) if ticket_id.strip() else "ticket"
+        run_slug = slugify(run_id) if run_id.strip() else "run"
         path = base / ticket_slug / f"{run_slug}.md"
         path.parent.mkdir(parents=True, exist_ok=True)
 

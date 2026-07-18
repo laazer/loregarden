@@ -101,3 +101,70 @@ def test_cli_prompt_includes_orchestration_context():
         )
         assert "Loregarden run context (authoritative for this run)" in prompt
         assert "STATIC_QA" in prompt
+
+
+def test_prompt_block_order_is_declarative(tmp_path):
+    """The prompt is assembled from ordered blocks (S2), each dropping out when
+    empty, so a new section is one entry rather than another conditional threaded
+    through the assembly."""
+    from loregarden.agents.executors.cli import _raw_block, _titled_block
+
+    assert _titled_block("## T", "") == []
+    assert _titled_block("## T", "body") == ["", "## T", "body"]
+    # The cap applies to the body, never to the title.
+    assert _titled_block("## T", "abcdef", cap=3) == ["", "## T", "abc"]
+    assert _raw_block("") == []
+    assert _raw_block("body") == ["", "body"]
+
+
+def test_inherited_context_section_reaches_the_stage_prompt(tmp_path, monkeypatch):
+    """#5: an earlier stage's checkpoint shows up without the agent searching."""
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    SQLModel.metadata.create_all(engine)
+
+    from loregarden.services.memory_store import AgentMemoryService, ObsidianMemoryStore
+
+    memory = AgentMemoryService(obsidian=ObsidianMemoryStore(tmp_path), graph_sqlite_base=None)
+
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        workspace = session.get(Workspace, ticket.workspace_id)
+        memory.append_checkpoint(
+            ticket_id=ticket.external_id,
+            workspace_slug=workspace.slug,
+            run_id="run_earlier",
+            entry="Assumed the runner streams stdout line-by-line.",
+        )
+        monkeypatch.setattr(
+            "loregarden.agents.inherited_wisdom.AgentMemoryService.from_settings",
+            classmethod(lambda cls: memory),
+        )
+
+        run = AgentRun(
+            run_code="run_wisdom",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="static_qa",
+            skill_name="run_tests",
+            stage_key="testing",
+        )
+        executor = CliAgentExecutor(session)
+        prompt = executor._build_prompt(
+            ticket,
+            run,
+            {"role_file": "agents/9_static_qa/static_qa_v1.md"},
+            resolve_agent_context_dir(workspace),
+            workspace,
+            executor._resolve_stage_def(ticket, run),
+        )
+
+    assert "## Inherited context (already decided — do not re-derive)" in prompt
+    assert "streams stdout line-by-line" in prompt
+    # Sits with the ticket's own context, ahead of the reference modules.
+    assert prompt.index("Inherited context") < prompt.index("## Loregarden MCP module")
+    assert prompt.index("## Acceptance Criteria") < prompt.index("Inherited context")
