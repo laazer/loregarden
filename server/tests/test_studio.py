@@ -706,3 +706,26 @@ def test_studio_adding_a_stage_preserves_routes_without_inventing_edges(client: 
     transitions = updated.json()["transitions"]
     assert {"from": "gate", "to": "implement", "when": "reject"} in transitions
     assert not [item for item in transitions if item["to"] == "done"]
+
+
+def test_workflow_rejects_classify_branch_to_unknown_stage():
+    """A phantom branch target must fail on save, not mid-run at routing time."""
+    import pytest
+    from loregarden.models.domain import StudioWorkflowStage
+    from loregarden.services.studio_service import _validate_stage_route_targets
+
+    stages = [
+        StudioWorkflowStage(
+            key="triage",
+            name="Triage",
+            stage_type="classify",
+            order=1,
+            classify_routes=[ClassifyRoute(agent_id="backend_implementer", to_stage="nonexistent")],
+        ),
+        StudioWorkflowStage(key="implement", name="Implement", agent_id="backend", order=2),
+    ]
+    with pytest.raises(ValueError, match="branch to unknown stage"):
+        _validate_stage_route_targets(stages)
+
+    stages[0].classify_routes[0].to_stage = "implement"
+    _validate_stage_route_targets(stages)  # valid target: no raise

@@ -744,6 +744,24 @@ def _validate_stage_agent_ids(session: Session, stages: list[StudioWorkflowStage
         raise ValueError(f"Workflow references unknown agent(s): {', '.join(unknown)}")
 
 
+def _validate_stage_route_targets(stages: list[StudioWorkflowStage]) -> None:
+    """Reject a classify branch pointing at a stage the workflow doesn't have.
+
+    A phantom target would otherwise raise at routing time, mid-run, not on save.
+    """
+    keys = {stage.key for stage in stages}
+    unknown = sorted(
+        {
+            route.to_stage
+            for stage in stages
+            for route in stage.classify_routes or []
+            if route.to_stage and route.to_stage not in keys
+        }
+    )
+    if unknown:
+        raise ValueError(f"Workflow routes branch to unknown stage(s): {', '.join(unknown)}")
+
+
 def _available_skills() -> list[str]:
     return list_skills()
 
@@ -1028,6 +1046,7 @@ class StudioService:
             raise ValueError(f"Studio workflow already exists: {slug}")
         stages = sorted(body.stages, key=lambda stage: stage.order)
         _validate_stage_agent_ids(self.session, stages)
+        _validate_stage_route_targets(stages)
         transitions = body.transitions or _auto_transitions(stages)
         now = datetime.now(timezone.utc)
         workflow = StudioWorkflow(
@@ -1057,6 +1076,7 @@ class StudioService:
         if body.stages is not None:
             stages = sorted(body.stages, key=lambda stage: stage.order)
             _validate_stage_agent_ids(self.session, stages)
+            _validate_stage_route_targets(stages)
             workflow.stages_json = json.dumps([stage.model_dump() for stage in stages])
             if body.transitions is None:
                 # Editing a stage must not destroy hand-authored routes. This used to
@@ -1099,6 +1119,7 @@ class StudioService:
         if not stages:
             raise ValueError("Workflow must have at least one stage")
         _validate_stage_agent_ids(self.session, stages)
+        _validate_stage_route_targets(stages)
 
         published_slug = f"studio-{workflow.slug}"
         stage_defs: list[dict] = []

@@ -680,3 +680,113 @@ def test_resolve_next_stage_key_rejects_unknown_explicit_target():
         StateMachine.resolve_next_stage_key(
             stages, [], "implement", outcome="reject", explicit_to="ghost"
         )
+
+
+# --- Template-declared stage branching (U5b) --------------------------------
+#
+# A classify route may name a `to_stage`, letting one template carry several
+# paths to completion. This is declared by the template, so it bypasses the
+# U5a agent guards, which only vet the agent-supplied `next_stage_key`.
+
+
+def _branching_fixture(title: str):
+    from loregarden.models.domain import ClassifyRoute, WorkflowStageDef
+
+    stages = [
+        WorkflowStageDef(
+            key="triage",
+            name="Triage",
+            order=1,
+            stage_type="classify",
+            classify_routes=[
+                ClassifyRoute(
+                    specialties=["bugfix"], agent_id="backend_implementer", to_stage="implement"
+                ),
+                ClassifyRoute(
+                    specialties=["frontend"], agent_id="frontend_implementer", default=True
+                ),
+            ],
+        ),
+        WorkflowStageDef(key="design", name="Design", agent_id="planner", order=2),
+        WorkflowStageDef(key="spec", name="Spec", agent_id="spec", order=3),
+        WorkflowStageDef(key="implement", name="Implement", agent_id="backend", order=4),
+    ]
+    ticket = Ticket(
+        external_id="u5b-branch",
+        workspace_id="ws",
+        title=title,
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+        workflow_stage_key="triage",
+        workflow_stage_status=StageStatus.RUNNING,
+    )
+    instance = WorkflowInstance(
+        ticket_id="t1",
+        template_id="tpl1",
+        current_stage_key="triage",
+        stages_json=initial_stages_json(stages),
+    )
+    return stages, ticket, instance
+
+
+def test_classify_route_branches_forward_past_skipped_stages():
+    stages, ticket, instance = _branching_fixture("Fix bugfix crash on save")
+    plan = apply_stage_route(ticket, instance, stages, [], from_key="triage", outcome="pass")
+    assert plan.to_key == "implement"
+    assert ticket.workflow_stage_key == "implement"
+
+
+def test_branch_marks_skipped_stages_wont_do_so_the_ticket_can_finish():
+    """Left PENDING they never resolve and the ticket could never reach DONE."""
+    stages, ticket, instance = _branching_fixture("Fix bugfix crash on save")
+    apply_stage_route(ticket, instance, stages, [], from_key="triage", outcome="pass")
+    stage_map = parse_stage_map(instance, stages)
+    assert stage_map["design"] == StageStatus.WONT_DO
+    assert stage_map["spec"] == StageStatus.WONT_DO
+
+
+def test_route_without_to_stage_still_advances_linearly():
+    stages, ticket, instance = _branching_fixture("Restyle the frontend header")
+    plan = apply_stage_route(ticket, instance, stages, [], from_key="triage", outcome="pass")
+    assert plan.to_key == "design"
+    assert parse_stage_map(instance, stages)["spec"] == StageStatus.PENDING
+
+
+def test_branch_does_not_reopen_the_agent_forward_jump_guard():
+    """U5b must not become a way for an agent to skip stages: the agent-facing
+    parameter is still rejected on a pass."""
+    stages, ticket, instance = _branching_fixture("Fix bugfix crash on save")
+    with pytest.raises(ValueError, match="only valid with outcome='reject'"):
+        apply_stage_route(
+            ticket,
+            instance,
+            stages,
+            [],
+            from_key="triage",
+            outcome="pass",
+            next_stage_key="implement",
+            strict=True,
+        )
+
+
+def test_resolve_classify_branch_and_agent_come_from_the_same_route():
+    from loregarden.services.studio_routing import resolve_classify_branch, resolve_classify_route
+
+    stages, ticket, _ = _branching_fixture("Fix bugfix crash on save")
+    triage = stages[0]
+    assert resolve_classify_branch(ticket, triage) == "implement"
+    assert resolve_classify_route(ticket, triage)[0] == "backend_implementer"
+
+
+def test_skip_intermediate_stages_is_a_noop_for_adjacent_stages():
+    from loregarden.models.domain import WorkflowStageDef
+
+    stages = [
+        WorkflowStageDef(key="a", name="A", order=1),
+        WorkflowStageDef(key="b", name="B", order=2),
+    ]
+    stage_map = {"a": StageStatus.DONE, "b": StageStatus.PENDING}
+    assert (
+        StateMachine.skip_intermediate_stages(stage_map, stages, from_key="a", to_key="b")
+        == stage_map
+    )

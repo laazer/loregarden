@@ -83,21 +83,14 @@ def _route_match_score(route: ClassifyRoute, haystack: str) -> int | None:
     return len(spec_hits) + len(lang_hits)
 
 
-def resolve_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
-    if stage.stage_type != "classify" or not stage.classify_routes:
-        return stage.agent_id, stage.skill_name
-
-    routed = _resolve_next_agent_from_routes(ticket, stage)
-    if routed:
-        return routed
-
+def _classify_haystack(ticket: Ticket) -> str:
     acceptance_criteria = ""
     try:
         acceptance_criteria = " ".join(json.loads(ticket.acceptance_criteria_json or "[]"))
     except (TypeError, ValueError):
         pass
 
-    haystack = " ".join(
+    return " ".join(
         [
             ticket.title or "",
             ticket.description or "",
@@ -105,6 +98,25 @@ def resolve_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str
             acceptance_criteria,
         ]
     ).lower()
+
+
+def _select_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> ClassifyRoute | None:
+    """Pick the winning route, or None when the stage isn't classify-routed.
+
+    Shared by the agent and branch resolvers so a stage's agent and its branch
+    always come from the same route.
+    """
+    if stage.stage_type != "classify" or not stage.classify_routes:
+        return None
+
+    # A sticky next_agent hint pins the route naming that agent.
+    next_agent = (ticket.next_agent or "").strip()
+    if next_agent and get_agent(next_agent):
+        for route in stage.classify_routes:
+            if route.agent_id == next_agent:
+                return route
+
+    haystack = _classify_haystack(ticket)
 
     default_route: ClassifyRoute | None = None
     best_route: ClassifyRoute | None = None
@@ -118,14 +130,20 @@ def resolve_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str
             best_route = route
             best_score = score
 
-    if best_route:
-        return best_route.agent_id, best_route.skill_name or stage.skill_name
+    return best_route or default_route or stage.classify_routes[0]
 
-    if default_route:
-        return default_route.agent_id, default_route.skill_name or stage.skill_name
 
-    first = stage.classify_routes[0]
-    return first.agent_id, first.skill_name or stage.skill_name
+def resolve_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
+    route = _select_classify_route(ticket, stage)
+    if route is None:
+        return stage.agent_id, stage.skill_name
+    return route.agent_id, route.skill_name or stage.skill_name
+
+
+def resolve_classify_branch(ticket: Ticket, stage: WorkflowStageDef) -> str:
+    """Stage key this ticket's classify route branches to, or "" for linear flow."""
+    route = _select_classify_route(ticket, stage)
+    return route.to_stage if route else ""
 
 
 def _resolve_next_agent_from_routes(

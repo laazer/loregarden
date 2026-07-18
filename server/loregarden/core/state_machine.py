@@ -195,6 +195,32 @@ class StateMachine:
         return updated
 
     @staticmethod
+    def skip_intermediate_stages(
+        stage_map: dict[str, StageStatus],
+        stages: list[WorkflowStageDef],
+        *,
+        from_key: str,
+        to_key: str,
+    ) -> dict[str, StageStatus]:
+        """Mark stages a forward branch jumped over as WONT_DO.
+
+        Left PENDING they never resolve, so _derive_ticket_state could never
+        reach DONE and the ticket would hang after finishing its branch.
+        """
+        ordered = sorted(stages, key=lambda s: s.order)
+        from_idx = StateMachine._stage_index(stages, from_key)
+        to_idx = StateMachine._stage_index(stages, to_key)
+        if from_idx is None or to_idx is None or to_idx <= from_idx + 1:
+            return stage_map
+
+        updated = dict(stage_map)
+        for index in range(from_idx + 1, to_idx):
+            key = ordered[index].key
+            if updated.get(key, StageStatus.PENDING) == StageStatus.PENDING:
+                updated[key] = StageStatus.WONT_DO
+        return updated
+
+    @staticmethod
     def next_stage_key(stages: list[WorkflowStageDef], current_key: str) -> str | None:
         ordered = sorted(stages, key=lambda s: s.order)
         keys = [s.key for s in ordered]

@@ -24,6 +24,10 @@ class ClassifyRoute(SQLModel):
     agent_id: str
     skill_name: str = ""
     default: bool = False
+    # Stage this route branches to, so one template can carry several paths to
+    # completion. Distinct from the agent-facing `next_stage_key`, which is
+    # rework-only: this branch is declared by the template, not chosen by an agent.
+    to_stage: str = ""
 
 
 class ParallelAgentSpec(SQLModel):
