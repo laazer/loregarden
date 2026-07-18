@@ -12,7 +12,7 @@ from loregarden.models.domain import (
     WorkflowInstance,
     WorkflowStageDef,
 )
-from loregarden.services.studio_service import resolve_stage_execution
+from loregarden.services.studio_routing import resolve_classify_branch, resolve_stage_execution
 from loregarden.services.workflow_state import (
     parse_stage_map,
     reconcile_workflow_state,
@@ -89,6 +89,27 @@ def _validate_route_target(
     return reason
 
 
+def _classify_branch_target(
+    stages: list[WorkflowStageDef],
+    ticket: Ticket,
+    *,
+    from_key: str,
+    outcome: str,
+    next_stage_key: str,
+) -> str:
+    """Stage the completing classify route branches to, or "" for linear flow.
+
+    Template-declared, so it deliberately bypasses _validate_route_target — that
+    guard vets the agent-supplied next_stage_key, which may not jump forward.
+    """
+    if outcome != "pass" or next_stage_key:
+        return ""
+    from_stage = next((stage for stage in stages if stage.key == from_key), None)
+    if from_stage is None or from_stage.stage_type != "classify":
+        return ""
+    return resolve_classify_branch(ticket, from_stage)
+
+
 def previous_stage_key(stages: list[WorkflowStageDef], from_key: str) -> str | None:
     """Immediately preceding stage by `order` — last-resort reject-reroute target.
 
@@ -144,12 +165,16 @@ def apply_stage_route(
         if misroute_reason:
             next_stage_key = ""
 
+    branch_to = _classify_branch_target(
+        stages, ticket, from_key=from_key, outcome=outcome, next_stage_key=next_stage_key
+    )
+
     plan = StateMachine.resolve_next_stage_key(
         stages,
         transitions,
         from_key,
         outcome=outcome,
-        explicit_to=next_stage_key,
+        explicit_to=next_stage_key or branch_to,
     )
     if not plan and outcome == "reject":
         fallback_key = previous_stage_key(stages, from_key)
@@ -185,6 +210,16 @@ def apply_stage_route(
             ticket.blocking_issues = ""
         ticket.next_status = "Proceed"
     else:
+        if branch_to:
+            # Stages the branch jumped over would stay PENDING, and a ticket with
+            # unresolved stages never reaches DONE.
+            stage_map = StateMachine.skip_intermediate_stages(
+                stage_map,
+                stages,
+                from_key=from_key,
+                to_key=plan.to_key,
+            )
+            instance.stages_json = serialize_stage_map(stage_map, stages)
         if stage_map.get(from_key) != StageStatus.WONT_DO:
             set_stage_status(ticket, instance, stages, from_key, StageStatus.DONE)
         ticket.workflow_stage_key = plan.to_key

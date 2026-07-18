@@ -191,6 +191,7 @@ class TicketService:
             instance = WorkflowInstance(
                 ticket_id=ticket.id,
                 template_id=template.id,
+                template_version=template.version,
                 current_stage_key=ticket.workflow_stage_key,
                 stages_json=initial_stages_json(stages),
             )

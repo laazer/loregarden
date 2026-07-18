@@ -13,7 +13,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from loregarden.services.studio_service import resolve_classify_route, resolve_stage_execution
+from loregarden.services.studio_routing import resolve_classify_route, resolve_stage_execution
 from sqlmodel import Session, select
 
 
@@ -95,6 +95,29 @@ def test_resolve_stage_execution_honors_next_agent_on_implementation():
     agent_id, skill = resolve_stage_execution(ticket, stage)
     assert agent_id == "frontend_implementer"
     assert skill == "apply_patch"
+
+
+def test_resolve_stage_execution_ignores_stale_next_agent_on_linear_stage():
+    """A fully-specified linear stage keeps its template agent even when a stale
+    ticket.next_agent (left over from a previous stage, e.g. on a standalone
+    start with no advance/reconcile to refresh it) names a different agent.
+    Regression for run_43ea0c: the `learning` stage ran under `ac_gatekeeper`."""
+    ticket = Ticket(
+        id="t1",
+        external_id="17-learning",
+        workspace_id="ws",
+        title="Learning stage",
+        next_agent="ac_gatekeeper",  # stale hint from the prior AC-gate stage
+    )
+    stage = WorkflowStageDef(
+        key="learning",
+        name="Learning",
+        agent_id="learning",
+        skill_name="learning",
+    )
+    agent_id, skill = resolve_stage_execution(ticket, stage)
+    assert agent_id == "learning"
+    assert skill == "learning"
 
 
 def test_parallel_stage_runs_all_agents(

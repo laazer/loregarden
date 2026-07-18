@@ -3,21 +3,24 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime, timezone
+from uuid import uuid4
 
-from loregarden.agents.registry import AGENTS, get_agent
+from loregarden.agents.registry import AGENTS
 from loregarden.agents.registry import list_agents as list_builtin_agents
 from loregarden.config import settings
+from loregarden.core.workflow_loader import write_template_version
 from loregarden.models.domain import (
-    ClassifyRoute,
-    ParallelAgentSpec,
     StudioAgent,
     StudioAgentCreate,
     StudioAgentPreview,
     StudioAgentPreviewProfile,
     StudioAgentPreviewRequest,
     StudioAgentUpdate,
+    StudioAgentVersion,
+    StudioAgentVersionView,
     StudioAgentView,
     StudioGateCheck,
     StudioGeneratedAgent,
@@ -28,28 +31,23 @@ from loregarden.models.domain import (
     StudioWorkflowCreate,
     StudioWorkflowStage,
     StudioWorkflowUpdate,
+    StudioWorkflowVersionView,
     StudioWorkflowView,
-    Ticket,
-    WorkflowStageDef,
     WorkflowTemplate,
-    Workspace,
+    WorkflowTemplateVersion,
 )
-from loregarden.services.cli_agent_runner import (
-    CliAgentProfile,
-    run_cli_agent_turn,
-    stub_response,
+from loregarden.services.studio_generation import (
+    build_agent_generate_prompt,
+    build_workflow_generate_prompt,
+    invoke_studio_generate_model,
+    parse_agent_generate_payload,
+    parse_workflow_generate_payload,
+    slugify,
+    tool_names,
 )
-from loregarden.services.ticket_studio_service import extract_json_block
 from loregarden.services.workflow_service import WorkflowService
 from loregarden.skills.registry import list_skills
 from sqlmodel import Session, select
-
-
-def _tool_names() -> list[str]:
-    from loregarden.mcp.tools import tool_names
-
-    return tool_names()
-
 
 DEFAULT_STAGE_MCP_TOOLS = [
     "loregarden_get_ticket",
@@ -71,52 +69,6 @@ STUDIO_ROLE_PREAMBLE = """**Loregarden MCP:** Use MCP tools per `agent_context/a
 
 **Memory protocol:** Read `agent_context/agents/common_assets/memory_protocol_v1.md` — use MCP for memory, learnings, and blog posts (Obsidian + SQLite graph); always pass `workspace_slug`; never write vault or SQLite files directly.
 """
-
-STUDIO_GENERATE_AGENT_ID = "planner"
-MAX_STUDIO_GENERATE_CHARS = 4000
-
-STUDIO_GENERATE_CLI_PROFILE = CliAgentProfile(
-    agent_id=STUDIO_GENERATE_AGENT_ID,
-    assistant_label="Studio generate assistant",
-    cli_label="Studio generate",
-    stub_env="LOREGARDEN_STUDIO_GENERATE_STUB_RESPONSE",
-    timeout_env="LOREGARDEN_STUDIO_GENERATE_TIMEOUT",
-    tmp_prefix="loregarden-studio-generate-",
-    reply_cap=12000,
-)
-
-AGENT_GENERATE_JSON_SCHEMA = """```json
-{
-  "name": "Localization Reviewer",
-  "slug": "localization-reviewer",
-  "description": "One line — when the orchestrator should reach for this agent",
-  "role_body": "Detailed role instructions, constraints, and output expectations",
-  "adapter": "claude",
-  "default_skill": "review",
-  "mcp_tools": ["loregarden_get_ticket", "loregarden_attach_artifact"]
-}
-```"""
-
-WORKFLOW_GENERATE_JSON_SCHEMA = """```json
-{
-  "name": "Quick Review",
-  "slug": "quick-review",
-  "description": "Plan then review with optional gate",
-  "stages": [
-    {
-      "key": "plan",
-      "name": "Plan",
-      "stage_type": "agent",
-      "agent_id": "planner",
-      "skill_name": "plan",
-      "optional": false,
-      "order": 1,
-      "gate_required": false,
-      "classify_routes": []
-    }
-  ]
-}
-```"""
 
 
 def _merge_tool_lists(*groups: list[str]) -> list[str]:
@@ -298,11 +250,6 @@ MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
 ]
 
 
-def _slugify(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
-    return slug or "agent"
-
-
 _FRONTMATTER_RE = re.compile(r"^---\s*\n.*?\n---\s*(?:\n|$)", re.DOTALL)
 
 
@@ -352,20 +299,112 @@ def _parse_json_list(raw: str, model_cls):
     return [model_cls.model_validate(item) for item in data]
 
 
-def _load_role_body(role_file: str) -> tuple[str, str]:
+def load_role_body(role_file: str) -> tuple[str, str]:
     if not role_file:
         return "", ""
     path = settings.agent_context_dir / role_file
     if not path.is_file():
         return "", role_file
     text = path.read_text(encoding="utf-8")
-    description = ""
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
-            description = stripped[:240]
-            break
+    # Prefer the frontmatter `description:`; otherwise the first prose line of the
+    # body (frontmatter fences stripped so `---` never becomes the description).
+    description = parse_markdown_frontmatter(text).get("description", "")
+    if not description:
+        for line in strip_markdown_frontmatter(text).splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                description = stripped[:240]
+                break
     return text, description
+
+
+logger = logging.getLogger(__name__)
+
+# Fields captured verbatim in each StudioAgentVersion snapshot. Must match the
+# migration backfill (0022) so restore round-trips cleanly.
+_AGENT_SNAPSHOT_FIELDS = (
+    "slug",
+    "name",
+    "description",
+    "role_body",
+    "adapter",
+    "default_model",
+    "timeout",
+    "default_skill",
+    "mcp_enabled",
+    "mcp_tools_json",
+    "gate_checks_json",
+    "handoff_checks_json",
+    "built_in",
+)
+
+
+def _agent_snapshot(agent: StudioAgent) -> dict:
+    return agent.model_dump(include=set(_AGENT_SNAPSHOT_FIELDS))
+
+
+def _write_agent_version(
+    session: Session, agent: StudioAgent, *, created_by: str, change_note: str = ""
+) -> None:
+    session.add(
+        StudioAgentVersion(
+            id=str(uuid4()),
+            agent_id=agent.id,
+            version=agent.version,
+            snapshot_json=json.dumps(_agent_snapshot(agent)),
+            created_by=created_by,
+            change_note=change_note or "",
+        )
+    )
+
+
+def seed_builtin_agents(session: Session) -> list[str]:
+    """Idempotently seed the registry built-ins into ``studio_agents`` so the DB is
+    the single source of truth. Seed-WHEN-MISSING by slug — an existing row (edited
+    or not) is never overwritten, preserving user edits and version history. Returns
+    the slugs newly seeded.
+    """
+    existing = {a.slug for a in session.exec(select(StudioAgent)).all()}
+    seeded: list[str] = []
+    for slug, cfg in AGENTS.items():
+        if slug in existing:
+            continue
+        role_file = str(cfg.get("role_file", ""))
+        role_body, excerpt = load_role_body(role_file)
+        if not role_body:
+            logger.warning(
+                "seed_builtin_agents: role file missing/empty for agent %r (%s); "
+                "seeding with an empty role body",
+                slug,
+                role_file,
+            )
+        agent = StudioAgent(
+            id=str(uuid4()),
+            slug=slug,
+            name=str(cfg.get("name", slug)),
+            description=excerpt or "",
+            role_body=role_body,
+            adapter=str(cfg.get("adapter", "claude")),
+            # Registry pins model under `claude_model` (e.g. triage→haiku); wire it
+            # into default_model, which is the key the executor actually reads.
+            default_model=str(cfg.get("claude_model", "") or cfg.get("default_model", "")),
+            timeout=int(cfg.get("timeout", 600)),
+            default_skill="",
+            mcp_enabled=True,
+            # Preserve the prior built-in behavior of listing all MCP tools.
+            mcp_tools_json=json.dumps(tool_names()),
+            gate_checks_json="[]",
+            handoff_checks_json="[]",
+            version=1,
+            built_in=True,
+        )
+        session.add(agent)
+        session.flush()
+        _write_agent_version(session, agent, created_by="seed")
+        seeded.append(slug)
+    if seeded:
+        session.commit()
+    return seeded
 
 
 def _agent_view(agent: StudioAgent) -> StudioAgentView:
@@ -385,8 +424,35 @@ def _agent_view(agent: StudioAgent) -> StudioAgentView:
         mcp_tools=_resolve_studio_mcp_tools(raw_tools, mcp_enabled=agent.mcp_enabled),
         gate_checks=_parse_json_list(agent.gate_checks_json, StudioGateCheck),
         handoff_checks=_parse_json_list(agent.handoff_checks_json, StudioHandoffCheck),
-        built_in=False,
+        built_in=agent.built_in,
         read_only=False,
+        version=agent.version,
+        created_at=agent.created_at,
+        updated_at=agent.updated_at,
+    )
+
+
+def _agent_snapshot_view(agent: StudioAgent, snap: dict) -> StudioAgentView:
+    """Render a historical agent snapshot (read-only) for the version-detail view."""
+    mcp_enabled = bool(snap.get("mcp_enabled", True))
+    raw_tools = json.loads(snap.get("mcp_tools_json") or "[]")
+    return StudioAgentView(
+        id=agent.id,
+        slug=snap.get("slug", agent.slug),
+        name=snap.get("name", ""),
+        description=snap.get("description", ""),
+        role_body=_ensure_studio_role_preamble(snap.get("role_body", "")),
+        role_file="",
+        adapter=snap.get("adapter", "claude"),
+        default_model=snap.get("default_model", ""),
+        timeout=int(snap.get("timeout", 600)),
+        default_skill=snap.get("default_skill", ""),
+        mcp_enabled=mcp_enabled,
+        mcp_tools=_resolve_studio_mcp_tools(raw_tools, mcp_enabled=mcp_enabled),
+        gate_checks=_parse_json_list(snap.get("gate_checks_json", "[]"), StudioGateCheck),
+        handoff_checks=_parse_json_list(snap.get("handoff_checks_json", "[]"), StudioHandoffCheck),
+        built_in=bool(snap.get("built_in", False)),
+        read_only=True,
         created_at=agent.created_at,
         updated_at=agent.updated_at,
     )
@@ -395,7 +461,7 @@ def _agent_view(agent: StudioAgent) -> StudioAgentView:
 def _builtin_agent_view(agent_id: str, cfg: dict) -> StudioAgentView:
     now = datetime.now(timezone.utc)
     role_file = str(cfg.get("role_file", ""))
-    role_body, excerpt = _load_role_body(role_file)
+    role_body, excerpt = load_role_body(role_file)
     return StudioAgentView(
         id=agent_id,
         slug=agent_id,
@@ -408,7 +474,7 @@ def _builtin_agent_view(agent_id: str, cfg: dict) -> StudioAgentView:
         timeout=int(cfg.get("timeout", 600)),
         default_skill="",
         mcp_enabled=True,
-        mcp_tools=_tool_names(),
+        mcp_tools=tool_names(),
         gate_checks=[],
         handoff_checks=[],
         built_in=True,
@@ -420,10 +486,12 @@ def _builtin_agent_view(agent_id: str, cfg: dict) -> StudioAgentView:
 
 def _workflow_view(session: Session, workflow: StudioWorkflow) -> StudioWorkflowView:
     template_slug = ""
+    template_version = 1
     if workflow.published_template_id:
         tpl = session.get(WorkflowTemplate, workflow.published_template_id)
         if tpl:
             template_slug = tpl.slug
+            template_version = tpl.version
     return StudioWorkflowView(
         id=workflow.id,
         slug=workflow.slug,
@@ -439,6 +507,7 @@ def _workflow_view(session: Session, workflow: StudioWorkflow) -> StudioWorkflow
         built_in=False,
         source_path=f"studio:{workflow.slug}",
         read_only=False,
+        version=template_version,
         created_at=workflow.created_at,
         updated_at=workflow.updated_at,
     )
@@ -466,6 +535,36 @@ def _template_workflow_view(template: WorkflowTemplate) -> StudioWorkflowView:
         published_template_slug=template.slug,
         built_in=not template.source_path.startswith("studio:"),
         source_path=template.source_path,
+        read_only=True,
+        version=template.version,
+        created_at=template.created_at,
+        updated_at=template.created_at,
+    )
+
+
+def _template_snapshot_view(template: WorkflowTemplate, snap: dict) -> StudioWorkflowView:
+    """Render a historical template snapshot (read-only) for the version-detail view."""
+    stages: list[StudioWorkflowStage] = []
+    for item in json.loads(snap.get("stages_json") or "[]"):
+        payload = dict(item)
+        payload.setdefault("stage_type", "agent")
+        payload.setdefault("classify_routes", [])
+        payload.setdefault("parallel_agents", [])
+        payload.setdefault("gate_commands", [])
+        payload.setdefault("gate_required", False)
+        stages.append(StudioWorkflowStage.model_validate(payload))
+    source_path = snap.get("source_path", "")
+    return StudioWorkflowView(
+        id=template.id,
+        slug=snap.get("slug", template.slug),
+        name=snap.get("name", ""),
+        description=snap.get("description", ""),
+        stages=stages,
+        transitions=json.loads(snap.get("transitions_json") or "[]"),
+        published_template_id=template.id,
+        published_template_slug=template.slug,
+        built_in=bool(snap.get("built_in", not source_path.startswith("studio:"))),
+        source_path=source_path,
         read_only=True,
         created_at=template.created_at,
         updated_at=template.created_at,
@@ -499,7 +598,7 @@ def _studio_agent_dict(agent: StudioAgent) -> dict:
 def build_studio_prompt_sections(agent_cfg: dict) -> str:
     sections: list[str] = []
     if agent_cfg.get("mcp_enabled", True):
-        tools = agent_cfg.get("mcp_tools") or _tool_names()
+        tools = agent_cfg.get("mcp_tools") or tool_names()
         sections.extend(
             [
                 "## Loregarden MCP tools",
@@ -608,193 +707,6 @@ def preview_agent_markdown(body: StudioAgentPreviewRequest) -> StudioAgentPrevie
 
 # Generic vocabulary that implies a specialty even when the ticket text doesn't
 # use the route's literal keyword (e.g. "modal button" implies frontend work).
-_SPECIALTY_SYNONYMS: dict[str, list[str]] = {
-    "frontend": [
-        "ui",
-        "component",
-        "modal",
-        "button",
-        "page",
-        "screen",
-        "css",
-        "style",
-        "styling",
-        "react",
-        "client",
-        "dialog",
-        "tooltip",
-        "layout",
-        "render",
-        "dom",
-        "browser",
-        "form",
-        "dropdown",
-        "menu",
-        "tab",
-        "widget",
-    ],
-    "backend": [
-        "api",
-        "endpoint",
-        "server",
-        "database",
-        "db",
-        "schema",
-        "migration",
-        "service",
-        "route",
-        "controller",
-        "query",
-        "auth",
-        "middleware",
-        "sql",
-        "orm",
-        "cron",
-        "worker",
-        "queue",
-    ],
-}
-
-
-def _word_in_haystack(word: str, haystack: str) -> bool:
-    pattern = r"\b" + re.escape(word.lower()) + r"\b"
-    return re.search(pattern, haystack) is not None
-
-
-def _route_match_score(route: ClassifyRoute, haystack: str) -> int | None:
-    """Returns the keyword hit count if the route is eligible, else None.
-
-    Specialty is the hard gate: tickets rarely spell out an implementation
-    language, but they do describe the domain (buttons, endpoints, etc.), so
-    a specialty match is required whenever the route declares one. Language
-    only contributes bonus score to break ties between otherwise-eligible
-    routes — requiring it outright meant tickets that never mention
-    "typescript"/"python"/etc. could never match any language-scoped route.
-    """
-    spec_words: list[str] = []
-    for spec in route.specialties:
-        spec_words.append(spec)
-        spec_words.extend(_SPECIALTY_SYNONYMS.get(spec.lower(), []))
-    spec_hits = [word for word in spec_words if _word_in_haystack(word, haystack)]
-    if route.specialties and not spec_hits:
-        return None
-
-    lang_hits = [lang for lang in route.languages if _word_in_haystack(lang, haystack)]
-    return len(spec_hits) + len(lang_hits)
-
-
-def resolve_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
-    if stage.stage_type != "classify" or not stage.classify_routes:
-        return stage.agent_id, stage.skill_name
-
-    routed = _resolve_next_agent_from_routes(ticket, stage)
-    if routed:
-        return routed
-
-    acceptance_criteria = ""
-    try:
-        acceptance_criteria = " ".join(json.loads(ticket.acceptance_criteria_json or "[]"))
-    except (TypeError, ValueError):
-        pass
-
-    haystack = " ".join(
-        [
-            ticket.title or "",
-            ticket.description or "",
-            ticket.external_id or "",
-            acceptance_criteria,
-        ]
-    ).lower()
-
-    default_route: ClassifyRoute | None = None
-    best_route: ClassifyRoute | None = None
-    best_score = -1
-    for route in stage.classify_routes:
-        if route.default:
-            default_route = route
-            continue
-        score = _route_match_score(route, haystack)
-        if score is not None and score > best_score:
-            best_route = route
-            best_score = score
-
-    if best_route:
-        return best_route.agent_id, best_route.skill_name or stage.skill_name
-
-    if default_route:
-        return default_route.agent_id, default_route.skill_name or stage.skill_name
-
-    first = stage.classify_routes[0]
-    return first.agent_id, first.skill_name or stage.skill_name
-
-
-def _resolve_next_agent_from_routes(
-    ticket: Ticket,
-    stage: WorkflowStageDef,
-) -> tuple[str, str] | None:
-    next_agent = (ticket.next_agent or "").strip()
-    if not next_agent:
-        return None
-
-    if not get_agent(next_agent):
-        return None
-
-    if stage.classify_routes:
-        for route in stage.classify_routes:
-            if route.agent_id == next_agent:
-                return next_agent, route.skill_name or stage.skill_name
-        return None
-
-    return next_agent, stage.skill_name or ""
-
-
-def _resolve_next_agent_override(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str] | None:
-    if not (stage.agent_id or "").strip() and stage.stage_type not in {
-        "classify",
-        "gate",
-        "parallel",
-    }:
-        return None
-
-    next_agent = (ticket.next_agent or "").strip()
-    if not next_agent or stage.stage_type in {"parallel", "gate"}:
-        return None
-
-    if not get_agent(next_agent):
-        return None
-
-    if stage.classify_routes:
-        return _resolve_next_agent_from_routes(ticket, stage)
-
-    if stage.stage_type == "classify":
-        return _resolve_next_agent_from_routes(ticket, stage)
-
-    if stage.key in {"implementation", "route_impl", "implement"}:
-        return next_agent, stage.skill_name or "apply_patch"
-
-    if stage.agent_id and next_agent != stage.agent_id:
-        return next_agent, stage.skill_name or ""
-
-    if not stage.agent_id:
-        return next_agent, stage.skill_name or ""
-
-    return None
-
-
-def is_agentless_stage(stage: WorkflowStageDef) -> bool:
-    """Stages with no CLI agent (human gates, terminal markers)."""
-    if stage.stage_type in {"classify", "gate", "parallel"}:
-        return False
-    return not (stage.agent_id or "").strip()
-
-
-def _default_studio_workspace(session: Session) -> Workspace:
-    workspace = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
-    if not workspace:
-        workspace = session.exec(select(Workspace).order_by(Workspace.slug)).first()
-    if not workspace:
-        raise ValueError("No workspace available for studio generation")
-    return workspace
 
 
 def _available_agent_ids(session: Session) -> list[str]:
@@ -809,264 +721,49 @@ def _available_agent_ids(session: Session) -> list[str]:
     return sorted(out, key=str.lower)
 
 
+def _collect_stage_agent_ids(stages: list[StudioWorkflowStage]) -> set[str]:
+    ids: set[str] = set()
+    for stage in stages:
+        if stage.agent_id:
+            ids.add(stage.agent_id)
+        for route in stage.classify_routes or []:
+            if route.agent_id:
+                ids.add(route.agent_id)
+        for spec in stage.parallel_agents or []:
+            if spec.agent_id:
+                ids.add(spec.agent_id)
+    return ids
+
+
+def _validate_stage_agent_ids(session: Session, stages: list[StudioWorkflowStage]) -> None:
+    """Reject a workflow whose stages reference agents that do not exist. Nothing
+    validated this before, which let a template ship pointing at a missing agent."""
+    available = set(_available_agent_ids(session))
+    unknown = sorted(_collect_stage_agent_ids(stages) - available)
+    if unknown:
+        raise ValueError(f"Workflow references unknown agent(s): {', '.join(unknown)}")
+
+
+def _validate_stage_route_targets(stages: list[StudioWorkflowStage]) -> None:
+    """Reject a classify branch pointing at a stage the workflow doesn't have.
+
+    A phantom target would otherwise raise at routing time, mid-run, not on save.
+    """
+    keys = {stage.key for stage in stages}
+    unknown = sorted(
+        {
+            route.to_stage
+            for stage in stages
+            for route in stage.classify_routes or []
+            if route.to_stage and route.to_stage not in keys
+        }
+    )
+    if unknown:
+        raise ValueError(f"Workflow routes branch to unknown stage(s): {', '.join(unknown)}")
+
+
 def _available_skills() -> list[str]:
     return list_skills()
-
-
-def build_agent_generate_prompt(
-    description: str,
-    *,
-    agent_ids: list[str],
-    skills: list[str],
-    mcp_tools: list[str],
-) -> str:
-    trimmed = (description or "").strip()[:MAX_STUDIO_GENERATE_CHARS]
-    return "\n".join(
-        [
-            "# Loregarden Agent Studio",
-            "You help operators draft custom Loregarden agents.",
-            "Respond with a single fenced JSON block only — no markdown tables or prose outside the block.",
-            "",
-            "## Operator description",
-            trimmed or "—",
-            "",
-            "## Available agent slugs (for reference only — do not reuse built-in slugs for new agents)",
-            ", ".join(agent_ids[:40]),
-            "",
-            "## Available skills",
-            ", ".join(skills) or "—",
-            "",
-            "## Available MCP tools",
-            ", ".join(mcp_tools[:40]),
-            "",
-            "## Task",
-            "Draft a custom agent definition from the operator description.",
-            "Choose adapter from: claude, cursor, lmstudio, local.",
-            "Pick MCP tools appropriate to the role; prefer loregarden_get_ticket for stage agents.",
-            "Write concrete role_body instructions with constraints and expected outputs.",
-            "Do not include the Loregarden MCP/memory preamble — the studio adds that automatically.",
-            AGENT_GENERATE_JSON_SCHEMA,
-        ]
-    )
-
-
-def build_workflow_generate_prompt(
-    description: str,
-    *,
-    agent_ids: list[str],
-    skills: list[str],
-) -> str:
-    trimmed = (description or "").strip()[:MAX_STUDIO_GENERATE_CHARS]
-    return "\n".join(
-        [
-            "# Loregarden Workflow Studio",
-            "You help operators draft custom Loregarden workflow pipelines.",
-            "Respond with a single fenced JSON block only — no markdown tables or prose outside the block.",
-            "",
-            "## Operator description",
-            trimmed or "—",
-            "",
-            "## Available agent slugs",
-            ", ".join(agent_ids[:40]),
-            "",
-            "## Available skills",
-            ", ".join(skills) or "—",
-            "",
-            "## Task",
-            "Draft a workflow with ordered stages from the operator description.",
-            "Use stage_type agent | classify | gate.",
-            "For classify stages include classify_routes with languages, specialties, agent_id, skill_name, default.",
-            "Use unique stage keys and sequential order values starting at 1.",
-            "Prefer existing built-in agents (planner, spec, backend_implementer, gatekeeper, etc.) when they fit.",
-            WORKFLOW_GENERATE_JSON_SCHEMA,
-        ]
-    )
-
-
-def invoke_studio_generate_model(session: Session, prompt: str) -> str:
-    stub = stub_response(STUDIO_GENERATE_CLI_PROFILE)
-    if stub is not None:
-        return stub
-
-    return run_cli_agent_turn(
-        STUDIO_GENERATE_CLI_PROFILE,
-        workspace=_default_studio_workspace(session),
-        prompt=prompt,
-    )
-
-
-def parse_agent_generate_payload(text: str) -> StudioGeneratedAgent | None:
-    payload = extract_json_block(text)
-    if not payload:
-        return None
-    name = str(payload.get("name") or "").strip()
-    if not name:
-        return None
-    slug = _slugify(str(payload.get("slug") or name))
-    adapter = str(payload.get("adapter") or "claude").strip().lower()
-    if adapter not in {"claude", "cursor", "lmstudio", "local"}:
-        adapter = "claude"
-    tools_raw = payload.get("mcp_tools") or []
-    mcp_tools = [str(item).strip() for item in tools_raw if str(item).strip()]
-    known_tools = set(_tool_names())
-    mcp_tools = [tool for tool in mcp_tools if tool in known_tools]
-    return StudioGeneratedAgent(
-        name=name,
-        slug=slug,
-        description=str(payload.get("description") or "").strip(),
-        role_body=str(payload.get("role_body") or "").strip(),
-        adapter=adapter,
-        default_skill=str(payload.get("default_skill") or "").strip(),
-        mcp_tools=mcp_tools,
-    )
-
-
-def _normalize_generated_stage(
-    raw: dict, *, order: int, agent_ids: set[str], skills: set[str]
-) -> StudioWorkflowStage | None:
-    key = _slugify(str(raw.get("key") or f"stage_{order}"))
-    name = str(raw.get("name") or key.replace("-", " ").title()).strip()
-    stage_type = str(raw.get("stage_type") or "agent").strip().lower()
-    if stage_type not in {"agent", "classify", "gate", "parallel"}:
-        stage_type = "agent"
-    agent_id = str(raw.get("agent_id") or "").strip()
-    skill_name = str(raw.get("skill_name") or "").strip()
-    if stage_type == "gate" and not agent_id:
-        agent_id = "gatekeeper"
-        skill_name = skill_name or "ac_gate"
-    if stage_type == "agent" and agent_id and agent_id not in agent_ids:
-        agent_id = "planner" if "planner" in agent_ids else next(iter(agent_ids), "planner")
-    if skill_name and skill_name not in skills:
-        skill_name = ""
-    routes: list[ClassifyRoute] = []
-    for route_raw in raw.get("classify_routes") or []:
-        if not isinstance(route_raw, dict):
-            continue
-        route_agent = str(route_raw.get("agent_id") or "").strip()
-        if route_agent and route_agent not in agent_ids:
-            route_agent = "backend_implementer" if "backend_implementer" in agent_ids else agent_id
-        route_skill = str(route_raw.get("skill_name") or "").strip()
-        if route_skill and route_skill not in skills:
-            route_skill = "apply_patch" if "apply_patch" in skills else route_skill
-        routes.append(
-            ClassifyRoute(
-                languages=[
-                    str(item).strip()
-                    for item in (route_raw.get("languages") or [])
-                    if str(item).strip()
-                ],
-                specialties=[
-                    str(item).strip()
-                    for item in (route_raw.get("specialties") or [])
-                    if str(item).strip()
-                ],
-                agent_id=route_agent or "backend_implementer",
-                skill_name=route_skill,
-                default=bool(route_raw.get("default")),
-            )
-        )
-    if stage_type == "classify" and not routes:
-        routes = [
-            ClassifyRoute(
-                languages=["python"],
-                specialties=["backend"],
-                agent_id="backend_implementer"
-                if "backend_implementer" in agent_ids
-                else agent_id or "planner",
-                skill_name="apply_patch" if "apply_patch" in skills else skill_name,
-                default=True,
-            )
-        ]
-    parallel_agents: list[ParallelAgentSpec] = []
-    for member_raw in raw.get("parallel_agents") or []:
-        if not isinstance(member_raw, dict):
-            continue
-        member_agent = str(member_raw.get("agent_id") or "").strip()
-        if member_agent and member_agent not in agent_ids:
-            continue
-        member_skill = str(member_raw.get("skill_name") or "").strip()
-        if member_skill and member_skill not in skills:
-            member_skill = ""
-        if member_agent:
-            parallel_agents.append(
-                ParallelAgentSpec(agent_id=member_agent, skill_name=member_skill)
-            )
-    if stage_type == "parallel" and not parallel_agents:
-        stage_type = "agent"
-    return StudioWorkflowStage(
-        key=key,
-        name=name,
-        stage_type=stage_type,
-        agent_id=agent_id,
-        skill_name=skill_name,
-        optional=bool(raw.get("optional")),
-        order=order,
-        gate_required=bool(raw.get("gate_required")),
-        classify_routes=routes,
-        parallel_agents=parallel_agents,
-    )
-
-
-def parse_workflow_generate_payload(
-    text: str,
-    *,
-    agent_ids: list[str],
-    skills: list[str],
-) -> StudioGeneratedWorkflow | None:
-    payload = extract_json_block(text)
-    if not payload:
-        return None
-    name = str(payload.get("name") or "").strip()
-    if not name:
-        return None
-    slug = _slugify(str(payload.get("slug") or name))
-    agent_id_set = set(agent_ids)
-    skill_set = set(skills)
-    stages: list[StudioWorkflowStage] = []
-    for index, raw in enumerate(payload.get("stages") or [], start=1):
-        if not isinstance(raw, dict):
-            continue
-        stage = _normalize_generated_stage(
-            raw,
-            order=index,
-            agent_ids=agent_id_set,
-            skills=skill_set,
-        )
-        if stage:
-            stages.append(stage)
-    if not stages:
-        stages = [
-            StudioWorkflowStage(
-                key="plan",
-                name="Plan",
-                stage_type="agent",
-                agent_id="planner" if "planner" in agent_id_set else agent_ids[0],
-                skill_name="plan" if "plan" in skill_set else "",
-                optional=False,
-                order=1,
-                gate_required=False,
-                classify_routes=[],
-            )
-        ]
-    return StudioGeneratedWorkflow(
-        name=name,
-        slug=slug,
-        description=str(payload.get("description") or "").strip(),
-        stages=stages,
-    )
-
-
-def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
-    if stage.stage_type == "classify":
-        return resolve_classify_route(ticket, stage)
-    if stage.stage_type == "gate":
-        return stage.agent_id or "gatekeeper", stage.skill_name or "ac_gate"
-    if stage.stage_type == "parallel":
-        return "", ""
-    routed = _resolve_next_agent_override(ticket, stage)
-    if routed:
-        return routed
-    return stage.agent_id, stage.skill_name
 
 
 class StudioService:
@@ -1074,12 +771,12 @@ class StudioService:
         self.session = session
 
     def list_mcp_tools(self) -> list[str]:
-        return _tool_names()
+        return tool_names()
 
     def list_mcp_tool_guides(self) -> list[StudioMcpToolGuide]:
         known = {item.name for item in MCP_TOOL_GUIDES}
         guides = list(MCP_TOOL_GUIDES)
-        for name in _tool_names():
+        for name in tool_names():
             if name not in known:
                 guides.append(
                     StudioMcpToolGuide(
@@ -1110,14 +807,14 @@ class StudioService:
             trimmed,
             agent_ids=_available_agent_ids(self.session),
             skills=_available_skills(),
-            mcp_tools=_tool_names(),
+            mcp_tools=tool_names(),
         )
         reply = invoke_studio_generate_model(self.session, prompt)
         generated = parse_agent_generate_payload(reply)
         if not generated:
             raise ValueError("Could not parse agent draft from assistant response")
         if generated.slug in AGENTS:
-            generated.slug = _slugify(f"{generated.slug}-custom")
+            generated.slug = slugify(f"{generated.slug}-custom")
         return generated
 
     def generate_workflow(self, description: str) -> StudioGeneratedWorkflow:
@@ -1158,7 +855,7 @@ class StudioService:
         return None
 
     def create_agent(self, body: StudioAgentCreate) -> StudioAgentView:
-        slug = _slugify(body.slug)
+        slug = slugify(body.slug)
         if self.session.exec(select(StudioAgent).where(StudioAgent.slug == slug)).first():
             raise ValueError(f"Studio agent already exists: {slug}")
         if slug in AGENTS:
@@ -1179,10 +876,14 @@ class StudioService:
             mcp_tools_json=json.dumps(mcp_tools),
             gate_checks_json=json.dumps([item.model_dump() for item in body.gate_checks]),
             handoff_checks_json=json.dumps([item.model_dump() for item in handoffs]),
+            version=1,
+            built_in=False,
             created_at=now,
             updated_at=now,
         )
         self.session.add(agent)
+        self.session.flush()
+        _write_agent_version(self.session, agent, created_by="studio-ui")
         self.session.commit()
         self.session.refresh(agent)
         return _agent_view(agent)
@@ -1216,7 +917,12 @@ class StudioService:
                 [item.model_dump() for item in body.handoff_checks]
             )
         agent.updated_at = datetime.now(timezone.utc)
+        agent.version += 1
         self.session.add(agent)
+        self.session.flush()
+        _write_agent_version(
+            self.session, agent, created_by="studio-ui", change_note=body.change_note or ""
+        )
         self.session.commit()
         self.session.refresh(agent)
         return _agent_view(agent)
@@ -1225,8 +931,81 @@ class StudioService:
         agent = self.session.exec(select(StudioAgent).where(StudioAgent.slug == slug)).first()
         if not agent:
             raise ValueError(f"Studio agent not found: {slug}")
+        for version in self.session.exec(
+            select(StudioAgentVersion).where(StudioAgentVersion.agent_id == agent.id)
+        ).all():
+            self.session.delete(version)
         self.session.delete(agent)
         self.session.commit()
+
+    def list_agent_versions(self, slug: str) -> list[StudioAgentVersionView]:
+        agent = self.session.exec(select(StudioAgent).where(StudioAgent.slug == slug)).first()
+        if not agent:
+            raise ValueError(f"Studio agent not found: {slug}")
+        rows = self.session.exec(
+            select(StudioAgentVersion)
+            .where(StudioAgentVersion.agent_id == agent.id)
+            .order_by(StudioAgentVersion.version.desc())
+        ).all()
+        return [
+            StudioAgentVersionView(
+                version=row.version,
+                created_by=row.created_by,
+                change_note=row.change_note,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
+    def get_agent_version(self, slug: str, version: int) -> StudioAgentVersionView:
+        agent = self.session.exec(select(StudioAgent).where(StudioAgent.slug == slug)).first()
+        if not agent:
+            raise ValueError(f"Studio agent not found: {slug}")
+        row = self.session.exec(
+            select(StudioAgentVersion).where(
+                StudioAgentVersion.agent_id == agent.id, StudioAgentVersion.version == version
+            )
+        ).first()
+        if not row:
+            raise ValueError(f"Version {version} not found for agent {slug}")
+        snap = json.loads(row.snapshot_json or "{}")
+        return StudioAgentVersionView(
+            version=row.version,
+            created_by=row.created_by,
+            change_note=row.change_note,
+            created_at=row.created_at,
+            snapshot=_agent_snapshot_view(agent, snap),
+        )
+
+    def restore_agent_version(self, slug: str, version: int) -> StudioAgentView:
+        """Apply an old snapshot as a NEW head version. History is never mutated."""
+        agent = self.session.exec(select(StudioAgent).where(StudioAgent.slug == slug)).first()
+        if not agent:
+            raise ValueError(f"Studio agent not found: {slug}")
+        row = self.session.exec(
+            select(StudioAgentVersion).where(
+                StudioAgentVersion.agent_id == agent.id, StudioAgentVersion.version == version
+            )
+        ).first()
+        if not row:
+            raise ValueError(f"Version {version} not found for agent {slug}")
+        snap = json.loads(row.snapshot_json or "{}")
+        restored = {
+            field: snap[field]
+            for field in _AGENT_SNAPSHOT_FIELDS
+            if field != "slug" and field in snap
+        }
+        agent.sqlmodel_update(restored)
+        agent.version += 1
+        agent.updated_at = datetime.now(timezone.utc)
+        self.session.add(agent)
+        self.session.flush()
+        _write_agent_version(
+            self.session, agent, created_by="studio-ui", change_note=f"Restored from v{version}"
+        )
+        self.session.commit()
+        self.session.refresh(agent)
+        return _agent_view(agent)
 
     def list_workflows(self) -> list[StudioWorkflowView]:
         custom = [
@@ -1262,10 +1041,12 @@ class StudioService:
         return None
 
     def create_workflow(self, body: StudioWorkflowCreate) -> StudioWorkflowView:
-        slug = _slugify(body.slug)
+        slug = slugify(body.slug)
         if self.session.exec(select(StudioWorkflow).where(StudioWorkflow.slug == slug)).first():
             raise ValueError(f"Studio workflow already exists: {slug}")
         stages = sorted(body.stages, key=lambda stage: stage.order)
+        _validate_stage_agent_ids(self.session, stages)
+        _validate_stage_route_targets(stages)
         transitions = body.transitions or _auto_transitions(stages)
         now = datetime.now(timezone.utc)
         workflow = StudioWorkflow(
@@ -1294,6 +1075,8 @@ class StudioService:
             workflow.description = body.description.strip()
         if body.stages is not None:
             stages = sorted(body.stages, key=lambda stage: stage.order)
+            _validate_stage_agent_ids(self.session, stages)
+            _validate_stage_route_targets(stages)
             workflow.stages_json = json.dumps([stage.model_dump() for stage in stages])
             if body.transitions is None:
                 # Editing a stage must not destroy hand-authored routes. This used to
@@ -1335,6 +1118,8 @@ class StudioService:
         ]
         if not stages:
             raise ValueError("Workflow must have at least one stage")
+        _validate_stage_agent_ids(self.session, stages)
+        _validate_stage_route_targets(stages)
 
         published_slug = f"studio-{workflow.slug}"
         stage_defs: list[dict] = []
@@ -1378,6 +1163,8 @@ class StudioService:
             template.stages_json = json.dumps(stage_defs)
             template.transitions_json = json.dumps(transitions)
             template.source_path = f"studio:{workflow.slug}"
+            template.built_in = False
+            template.version += 1
         else:
             template = WorkflowTemplate(
                 slug=published_slug,
@@ -1386,9 +1173,12 @@ class StudioService:
                 stages_json=json.dumps(stage_defs),
                 transitions_json=json.dumps(transitions),
                 source_path=f"studio:{workflow.slug}",
+                version=1,
+                built_in=False,
             )
             self.session.add(template)
             self.session.flush()
+        write_template_version(self.session, template, created_by="studio-ui")
 
         workflow.published_template_id = template.id
         workflow.updated_at = datetime.now(timezone.utc)
@@ -1396,6 +1186,95 @@ class StudioService:
         self.session.commit()
         self.session.refresh(workflow)
         return _workflow_view(self.session, workflow)
+
+    def _resolve_workflow_template(self, slug: str) -> WorkflowTemplate | None:
+        """Resolve a workflow slug to its versioned template: a studio draft via its
+        published template, else a template slug directly."""
+        workflow = self.session.exec(
+            select(StudioWorkflow).where(StudioWorkflow.slug == slug)
+        ).first()
+        if workflow and workflow.published_template_id:
+            return self.session.get(WorkflowTemplate, workflow.published_template_id)
+        return self.session.exec(
+            select(WorkflowTemplate).where(WorkflowTemplate.slug == slug)
+        ).first()
+
+    def list_workflow_versions(self, slug: str) -> list[StudioWorkflowVersionView]:
+        template = self._resolve_workflow_template(slug)
+        if not template:
+            raise ValueError(f"Workflow not found or unpublished: {slug}")
+        rows = self.session.exec(
+            select(WorkflowTemplateVersion)
+            .where(WorkflowTemplateVersion.template_id == template.id)
+            .order_by(WorkflowTemplateVersion.version.desc())
+        ).all()
+        return [
+            StudioWorkflowVersionView(
+                version=row.version,
+                created_by=row.created_by,
+                change_note=row.change_note,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
+    def get_workflow_version(self, slug: str, version: int) -> StudioWorkflowVersionView:
+        template = self._resolve_workflow_template(slug)
+        if not template:
+            raise ValueError(f"Workflow not found or unpublished: {slug}")
+        row = self.session.exec(
+            select(WorkflowTemplateVersion).where(
+                WorkflowTemplateVersion.template_id == template.id,
+                WorkflowTemplateVersion.version == version,
+            )
+        ).first()
+        if not row:
+            raise ValueError(f"Version {version} not found for workflow {slug}")
+        snap = json.loads(row.snapshot_json or "{}")
+        return StudioWorkflowVersionView(
+            version=row.version,
+            created_by=row.created_by,
+            change_note=row.change_note,
+            created_at=row.created_at,
+            snapshot=_template_snapshot_view(template, snap),
+        )
+
+    def restore_workflow_version(self, slug: str, version: int) -> StudioWorkflowView:
+        """Apply an old template snapshot as a NEW head version. History is never
+        mutated. Slug/source_path/built_in are identity fields and are preserved."""
+        template = self._resolve_workflow_template(slug)
+        if not template:
+            raise ValueError(f"Workflow not found or unpublished: {slug}")
+        row = self.session.exec(
+            select(WorkflowTemplateVersion).where(
+                WorkflowTemplateVersion.template_id == template.id,
+                WorkflowTemplateVersion.version == version,
+            )
+        ).first()
+        if not row:
+            raise ValueError(f"Version {version} not found for workflow {slug}")
+        snap = json.loads(row.snapshot_json or "{}")
+        template.sqlmodel_update(
+            {
+                field: snap[field]
+                for field in ("name", "description", "stages_json", "transitions_json")
+                if field in snap
+            }
+        )
+        template.version += 1
+        self.session.add(template)
+        self.session.flush()
+        write_template_version(
+            self.session, template, created_by="studio-ui", change_note=f"Restored from v{version}"
+        )
+        self.session.commit()
+        self.session.refresh(template)
+        workflow = self.session.exec(
+            select(StudioWorkflow).where(StudioWorkflow.slug == slug)
+        ).first()
+        if workflow:
+            return _workflow_view(self.session, workflow)
+        return _template_workflow_view(template)
 
 
 def _auto_transitions(stages: list[StudioWorkflowStage]) -> list[dict[str, str]]:

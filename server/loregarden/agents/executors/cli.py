@@ -1,4 +1,5 @@
 import json
+import logging
 import subprocess
 import tempfile
 import time
@@ -20,7 +21,11 @@ from loregarden.agents.mcp_context import (
 from loregarden.agents.registry import get_agent
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, WorkflowStageDef, Workspace
-from loregarden.services.cli_settings import get_ticket_orchestration_runtime
+from loregarden.services.cli_settings import (
+    get_ticket_orchestration_runtime,
+    resolve_claude_model,
+    weak_mcp_model_warning,
+)
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_errors import agent_timeout_message
@@ -30,6 +35,8 @@ from loregarden.services.subprocess_lines import SubprocessLineReader
 from loregarden.services.workspace_paths import resolve_agent_context_dir, resolve_workspace_root
 from loregarden.skills.registry import get_skill
 from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 
 class CliAgentExecutor:
@@ -131,6 +138,19 @@ class CliAgentExecutor:
                 skill_name=run.skill_name,
             )
             streamer.start(run.command)
+
+            resolved_claude_model = resolve_claude_model(
+                workspace,
+                ticket_model=ticket_runtime.claude_model,
+                stage_model=stage_def.model if stage_def else "",
+                agent_model=agent.get("default_model", ""),
+            )
+            model_warning = weak_mcp_model_warning(
+                resolved_claude_model, agent.get("adapter", "local")
+            )
+            if model_warning:
+                logger.warning("run %s (%s): %s", run.run_code, run.agent_id, model_warning)
+                streamer.append("WARN", model_warning, force=True)
 
             timeout = (
                 run.timeout_override_seconds
@@ -331,10 +351,10 @@ class CliAgentExecutor:
         workspace: Workspace,
         stage_def: WorkflowStageDef | None,
     ) -> str:
-        role_path = agent_context_dir / agent.get("role_file", "")
-        role_body = agent.get("role_body") or ""
-        if not role_body and role_path.is_file():
-            role_body = role_path.read_text(encoding="utf-8")[:12000]
+        # Role body comes from the agent config (DB-backed studio agent, or the
+        # registry fallback which loads it in get_agent). The executor no longer
+        # reads role_file from the workspace filesystem — the DB is authoritative.
+        role_body = (agent.get("role_body") or "")[:12000]
 
         skill_body = (
             get_skill(

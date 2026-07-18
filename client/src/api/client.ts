@@ -66,6 +66,7 @@ import type {
   TriageSendResult,
   TriageSnapshot,
   StudioAgent,
+  StudioAgentVersion,
   StudioMcpToolGuide,
   StudioAgentPreview,
   StudioDefaults,
@@ -73,6 +74,7 @@ import type {
   StudioGeneratedWorkflow,
   StudioWorkflowStage,
   StudioWorkflow,
+  StudioWorkflowVersion,
   WorkflowTransition,
   CreateTicketRequest,
   TicketImportFile,
@@ -365,6 +367,14 @@ export const api = {
     request<StudioAgent>(`/api/studio/agents/${slug}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteStudioAgent: (slug: string) =>
     request<{ ok: boolean }>(`/api/studio/agents/${slug}`, { method: "DELETE" }),
+  studioAgentVersions: (slug: string) =>
+    request<StudioAgentVersion[]>(`/api/studio/agents/${slug}/versions`),
+  studioAgentVersion: (slug: string, version: number) =>
+    request<StudioAgentVersion>(`/api/studio/agents/${slug}/versions/${version}`),
+  restoreStudioAgentVersion: (slug: string, version: number) =>
+    request<StudioAgent>(`/api/studio/agents/${slug}/versions/${version}/restore`, {
+      method: "POST",
+    }),
   studioWorkflows: () => request<StudioWorkflow[]>("/api/studio/workflows"),
   generateStudioWorkflow: (description: string) =>
     request<StudioGeneratedWorkflow>("/api/studio/workflows/generate", {
@@ -391,6 +401,14 @@ export const api = {
     request<{ ok: boolean }>(`/api/studio/workflows/${slug}`, { method: "DELETE" }),
   publishStudioWorkflow: (slug: string) =>
     request<StudioWorkflow>(`/api/studio/workflows/${slug}/publish`, { method: "POST" }),
+  studioWorkflowVersions: (slug: string) =>
+    request<StudioWorkflowVersion[]>(`/api/studio/workflows/${slug}/versions`),
+  studioWorkflowVersion: (slug: string, version: number) =>
+    request<StudioWorkflowVersion>(`/api/studio/workflows/${slug}/versions/${version}`),
+  restoreStudioWorkflowVersion: (slug: string, version: number) =>
+    request<StudioWorkflow>(`/api/studio/workflows/${slug}/versions/${version}/restore`, {
+      method: "POST",
+    }),
   ticketStudioSessions: (workspace?: string) => {
     const q = workspace ? `?workspace=${encodeURIComponent(workspace)}` : "";
     return request<TicketStudioSession[]>(`/api/ticket-studio/sessions${q}`);

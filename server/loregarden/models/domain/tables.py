@@ -76,6 +76,26 @@ class WorkflowTemplate(SQLModel, table=True):
     stages_json: str = "[]"
     transitions_json: str = "[]"
     source_path: str = ""
+    # Current head version; every edit/publish bumps this and appends a
+    # WorkflowTemplateVersion snapshot.
+    version: int = Field(default=1)
+    # True for seeded (YAML-origin) templates; a provenance badge, not an edit gate.
+    built_in: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class WorkflowTemplateVersion(SQLModel, table=True):
+    """Append-only snapshot of a workflow template at each edit/publish. History
+    is never mutated; a restore appends a new version equal to an old snapshot."""
+
+    __tablename__ = "workflow_template_versions"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    template_id: str = Field(foreign_key="workflow_templates.id", index=True)
+    version: int
+    snapshot_json: str = "{}"
+    created_by: str = ""  # seed | studio-ui | api
+    change_note: str = ""
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -123,6 +143,10 @@ class WorkflowInstance(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     ticket_id: str = Field(foreign_key="tickets.id", index=True)
     template_id: str = Field(foreign_key="workflow_templates.id")
+    # Template version this ticket is pinned to. Stage definitions resolve from
+    # this version's snapshot, so editing the template does not mutate an
+    # in-flight ticket. Null on rows that predate versioning (fall back to head).
+    template_version: int | None = Field(default=None)
     current_stage_key: str = ""
     stages_json: str = "[]"
     created_at: datetime = Field(default_factory=utcnow)
@@ -167,6 +191,8 @@ class AgentRun(SQLModel, table=True):
         default=None, foreign_key="orchestration_runs.id", index=True
     )
     agent_id: str
+    # Version of the agent definition this run executed under (null pre-versioning).
+    agent_version: int | None = Field(default=None)
     skill_name: str = ""
     stage_key: str = ""
     status: RunStatus = Field(default=RunStatus.QUEUED)
@@ -259,8 +285,27 @@ class StudioAgent(SQLModel, table=True):
     mcp_tools_json: str = "[]"
     gate_checks_json: str = "[]"
     handoff_checks_json: str = "[]"
+    # Current head version; every edit bumps this and appends a StudioAgentVersion.
+    version: int = Field(default=1)
+    # True for seeded (registry-origin) agents; a provenance badge, not an edit gate.
+    built_in: bool = Field(default=False)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+class StudioAgentVersion(SQLModel, table=True):
+    """Append-only snapshot of a studio agent at each edit. History is never
+    mutated; a restore appends a new version equal to an old snapshot."""
+
+    __tablename__ = "studio_agent_versions"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    agent_id: str = Field(foreign_key="studio_agents.id", index=True)
+    version: int
+    snapshot_json: str = "{}"
+    created_by: str = ""  # seed | studio-ui | api
+    change_note: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class StudioWorkflow(SQLModel, table=True):

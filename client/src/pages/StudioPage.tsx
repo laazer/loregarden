@@ -15,6 +15,7 @@ import {
 } from "../api/client";
 import { AppTopbarActions } from "../components/AppTopbarActions";
 import { AgentPreviewPanel } from "../components/studio/AgentPreviewPanel";
+import { AgentVersionHistory } from "../components/studio/AgentVersionHistory";
 import { StageRouteHints } from "../components/StageRouteHints";
 import { McpToolGuideSection } from "../components/studio/McpToolGuideSection";
 import { GateHandoffEditor } from "../components/studio/GateHandoffEditor";
@@ -159,7 +160,10 @@ export function StudioPage() {
     () => workflows.data?.find((item) => item.slug === selectedWorkflowSlug) ?? null,
     [workflows.data, selectedWorkflowSlug],
   );
-  const isAgentReadOnly = Boolean(selectedAgent?.read_only || selectedAgent?.built_in);
+  // Built-in agents are now editable DB rows (every edit is versioned); only an
+  // explicit read_only flag locks an agent. Workflows still gate on built_in
+  // because built-in templates are edited via the draft→publish flow, not inline.
+  const isAgentReadOnly = Boolean(selectedAgent?.read_only);
   const isWorkflowReadOnly = Boolean(selectedWorkflow?.read_only || selectedWorkflow?.built_in);
   const isEditingCustomAgent = Boolean(selectedAgentSlug && !isAgentReadOnly);
 
@@ -216,7 +220,9 @@ export function StudioPage() {
         slug: agentDraft.slug || agentDraft.name,
         mcp_tools: agentDraft.mcp_enabled ? agentDraft.mcp_tools : [],
       };
-      if (selectedAgentSlug && !agents.data?.find((a) => a.slug === selectedAgentSlug)?.built_in) {
+      // Editing any existing agent (built-in or custom) updates it in place and
+      // records a new version; only a brand-new slug creates.
+      if (selectedAgentSlug && agents.data?.find((a) => a.slug === selectedAgentSlug)) {
         return api.updateStudioAgent(selectedAgentSlug, payload);
       }
       return api.createStudioAgent(payload);
@@ -899,7 +905,7 @@ export function StudioPage() {
 
               {!isAgentReadOnly && (
                 <div className="studio-card-actions">
-                  {isEditingCustomAgent && (
+                  {isEditingCustomAgent && !selectedAgent?.built_in && (
                     <button
                       type="button"
                       className="btn-secondary"
@@ -918,6 +924,12 @@ export function StudioPage() {
                     {saveAgent.isPending ? "Saving…" : isEditingCustomAgent ? "Save agent" : "Create agent"}
                   </button>
                 </div>
+              )}
+              {selectedAgentSlug && selectedAgent && (
+                <AgentVersionHistory
+                  slug={selectedAgentSlug}
+                  currentVersion={selectedAgent.version}
+                />
               )}
               </div>
             </div>
@@ -1216,6 +1228,7 @@ export function StudioPage() {
                                             agent_id: "backend_implementer",
                                             skill_name: "apply_patch",
                                             default: true,
+                                            to_stage: "",
                                           },
                                         ]
                                       : stage.classify_routes,
@@ -1365,6 +1378,26 @@ export function StudioPage() {
                                     Default
                                   </label>
                                 </div>
+                                <div style={{ marginTop: 8 }}>
+                                  <div className="studio-stage-field-label">Branches to</div>
+                                  <select
+                                    className="studio-stage-select mono"
+                                    value={route.to_stage ?? ""}
+                                    disabled={isWorkflowReadOnly}
+                                    onChange={(e) =>
+                                      updateRoute(index, routeIndex, { to_stage: e.target.value })
+                                    }
+                                  >
+                                    <option value="">Continue to the next stage</option>
+                                    {workflowDraft.stages
+                                      .filter((candidate) => candidate.key && candidate.key !== stage.key)
+                                      .map((candidate) => (
+                                        <option key={candidate.key} value={candidate.key}>
+                                          {candidate.key}
+                                        </option>
+                                      ))}
+                                  </select>
+                                </div>
                               </div>
                             ))}
                             {!isWorkflowReadOnly && (
@@ -1382,6 +1415,7 @@ export function StudioPage() {
                                         agent_id: "backend_implementer",
                                         skill_name: "apply_patch",
                                         default: false,
+                                        to_stage: "",
                                       },
                                     ],
                                   })

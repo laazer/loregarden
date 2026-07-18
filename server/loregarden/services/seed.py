@@ -270,6 +270,9 @@ def _reconcile_task_workflows(session: Session, ws: Workspace) -> None:
 
 
 def seed_database(session: Session) -> None:
+    from loregarden.services.studio_service import seed_builtin_agents
+
+    seed_builtin_agents(session)
     templates = sync_workflow_templates(session)
     loregarden_tpl = session.exec(
         select(WorkflowTemplate).where(WorkflowTemplate.slug == "loregarden-tdd")
@@ -323,6 +326,7 @@ def seed_database(session: Session) -> None:
             instance = WorkflowInstance(
                 ticket_id=ticket.id,
                 template_id=loregarden_tpl.id,
+                template_version=loregarden_tpl.version,
                 current_stage_key=item["stage_key"],
                 stages_json=stages_up_to_done_json(stages, item["stage_key"]),
             )

@@ -15,6 +15,7 @@ from loregarden.models.domain import (
     EventType,
     RunStatus,
     StageStatus,
+    StudioAgent,
     Ticket,
     TicketState,
     UpdateTicketRequest,
@@ -173,6 +174,7 @@ class OrchestrationService:
             instance = WorkflowInstance(
                 ticket_id=ticket.id,
                 template_id=template.id,
+                template_version=template.version,
                 current_stage_key=ticket.workflow_stage_key,
                 stages_json=initial_stages_json(stages),
             )
@@ -180,6 +182,7 @@ class OrchestrationService:
             changed = True
         elif instance.template_id != template.id:
             instance.template_id = template.id
+            instance.template_version = template.version
             changed = True
 
         if changed:
@@ -473,7 +476,7 @@ class OrchestrationService:
         stage_key: str | None = None,
     ) -> Ticket:
         """Open a human approval gate for agentless workflow stages (e.g. approval)."""
-        from loregarden.services.studio_service import is_agentless_stage, resolve_stage_execution
+        from loregarden.services.studio_routing import is_agentless_stage, resolve_stage_execution
 
         self.ensure_workflow_instance(ticket, commit=True)
         instance, stages = self._resolve_stages(ticket)
@@ -618,7 +621,7 @@ class OrchestrationService:
             self.session.refresh(ticket)
             instance = self.get_workflow_instance(ticket.id) or instance
 
-        from loregarden.services.studio_service import is_agentless_stage, resolve_stage_execution
+        from loregarden.services.studio_routing import is_agentless_stage, resolve_stage_execution
 
         resolved_agent_id, resolved_skill = resolve_stage_execution(ticket, stage_def)
         chosen_agent = agent_id or resolved_agent_id
@@ -635,12 +638,19 @@ class OrchestrationService:
         self.session.add(instance)
         self.session.commit()
 
+        # Pin the agent-definition version this run executes under, for
+        # reproducibility (which definition produced this run's behavior).
+        agent_row = self.session.exec(
+            select(StudioAgent).where(StudioAgent.slug == chosen_agent)
+        ).first()
+
         run = AgentRun(
             run_code=_run_code(),
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             orchestration_run_id=orchestration_run_id,
             agent_id=chosen_agent,
+            agent_version=agent_row.version if agent_row else None,
             skill_name=chosen_skill,
             stage_key=target_key,
             status=RunStatus.RUNNING,

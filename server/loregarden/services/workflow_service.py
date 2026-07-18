@@ -3,7 +3,11 @@ from pathlib import Path
 
 import yaml
 from loregarden.config import settings
-from loregarden.core.workflow_loader import get_template_stages, sync_workflow_templates
+from loregarden.core.workflow_loader import (
+    get_template_stages,
+    get_template_stages_at_version,
+    sync_workflow_templates,
+)
 from loregarden.models.domain import (
     WORKFLOW_WORK_ITEM_TYPES,
     StageStatus,
@@ -74,14 +78,16 @@ def resolve_ticket_stages(
         select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)
     ).first()
     template: WorkflowTemplate | None = None
+    pinned_version: int | None = None
     if instance and instance.template_id:
         template = session.get(WorkflowTemplate, instance.template_id)
+        pinned_version = instance.template_version
     if not template and ws.workflow_template_id:
         template = session.get(WorkflowTemplate, ws.workflow_template_id)
     if not template:
         return None, []
 
-    stages = get_template_stages(template)
+    stages = get_template_stages_at_version(session, template, pinned_version)
     override = load_workspace_override(ws.slug)
     if ws.workflow_override_json and ws.workflow_override_json != "{}":
         override = {**override, **json.loads(ws.workflow_override_json)}
@@ -193,11 +199,13 @@ class WorkflowService:
             instance = WorkflowInstance(
                 ticket_id=ticket.id,
                 template_id=template.id,
+                template_version=template.version,
                 current_stage_key=first_stage.key,
                 stages_json=initial_stages_json(stages),
             )
         else:
             instance.template_id = template.id
+            instance.template_version = template.version
             instance.current_stage_key = first_stage.key
             instance.stages_json = initial_stages_json(stages)
 
@@ -234,11 +242,13 @@ class WorkflowService:
                 instance = WorkflowInstance(
                     ticket_id=ticket.id,
                     template_id=template.id,
+                    template_version=template.version,
                     current_stage_key=ticket.workflow_stage_key,
                     stages_json=initial_stages_json(stages),
                 )
             else:
                 instance.template_id = template.id
+                instance.template_version = template.version
                 instance.stages_json = initial_stages_json(stages)
             reconcile_workflow_state(ticket, instance, stages)
             self.session.add(instance)

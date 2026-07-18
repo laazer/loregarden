@@ -16,7 +16,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.studio_service import is_agentless_stage
+from loregarden.services.studio_routing import is_agentless_stage
 from sqlmodel import Session, col, select
 
 _ACTIVE_AGENT_STATUSES = frozenset({RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION})

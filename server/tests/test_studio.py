@@ -2,11 +2,13 @@ import json
 
 from fastapi.testclient import TestClient
 from loregarden.models.domain import ClassifyRoute, Ticket, WorkflowStageDef
-from loregarden.services.studio_service import (
+from loregarden.services.studio_generation import (
     parse_agent_generate_payload,
-    parse_markdown_frontmatter,
     parse_workflow_generate_payload,
-    resolve_classify_route,
+)
+from loregarden.services.studio_routing import resolve_classify_route
+from loregarden.services.studio_service import (
+    parse_markdown_frontmatter,
     strip_markdown_frontmatter,
 )
 
@@ -480,8 +482,11 @@ def test_builtin_agent_has_role_body(client: TestClient):
     res = client.get("/api/studio/agents/planner")
     assert res.status_code == 200
     body = res.json()
+    # Built-ins are now seeded DB rows: flagged built_in for provenance, but
+    # editable (read_only False) and versioned.
     assert body["built_in"] is True
-    assert body["read_only"] is True
+    assert body["read_only"] is False
+    assert body["version"] >= 1
     assert len(body["role_body"]) > 20
     assert "memory_protocol_v1.md" in body["role_body"]
 
@@ -701,3 +706,26 @@ def test_studio_adding_a_stage_preserves_routes_without_inventing_edges(client: 
     transitions = updated.json()["transitions"]
     assert {"from": "gate", "to": "implement", "when": "reject"} in transitions
     assert not [item for item in transitions if item["to"] == "done"]
+
+
+def test_workflow_rejects_classify_branch_to_unknown_stage():
+    """A phantom branch target must fail on save, not mid-run at routing time."""
+    import pytest
+    from loregarden.models.domain import StudioWorkflowStage
+    from loregarden.services.studio_service import _validate_stage_route_targets
+
+    stages = [
+        StudioWorkflowStage(
+            key="triage",
+            name="Triage",
+            stage_type="classify",
+            order=1,
+            classify_routes=[ClassifyRoute(agent_id="backend_implementer", to_stage="nonexistent")],
+        ),
+        StudioWorkflowStage(key="implement", name="Implement", agent_id="backend", order=2),
+    ]
+    with pytest.raises(ValueError, match="branch to unknown stage"):
+        _validate_stage_route_targets(stages)
+
+    stages[0].classify_routes[0].to_stage = "implement"
+    _validate_stage_route_targets(stages)  # valid target: no raise

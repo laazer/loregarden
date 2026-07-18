@@ -210,7 +210,7 @@ def invoke_triage_model(session: Session, ticket: Ticket, latest_user_message: s
 
 def current_human_gate_stage(session: Session, ticket: Ticket):
     """The ticket's current stage def, if it is an agentless human verification gate."""
-    from loregarden.services.studio_service import is_agentless_stage
+    from loregarden.services.studio_routing import is_agentless_stage
     from loregarden.services.workflow_service import resolve_ticket_stages
 
     if not ticket.workflow_stage_key or ticket.workflow_stage_key == "done":

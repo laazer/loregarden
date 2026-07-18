@@ -453,8 +453,25 @@ export interface StudioAgent {
   handoff_checks: StudioHandoffCheck[];
   built_in: boolean;
   read_only?: boolean;
+  version?: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface StudioAgentVersion {
+  version: number;
+  created_by: string;
+  change_note: string;
+  created_at: string;
+  snapshot?: StudioAgent | null;
+}
+
+export interface StudioWorkflowVersion {
+  version: number;
+  created_by: string;
+  change_note: string;
+  created_at: string;
+  snapshot?: StudioWorkflow | null;
 }
 
 export interface StudioMcpToolGuide {
@@ -511,6 +528,8 @@ export interface ClassifyRoute {
   agent_id: string;
   skill_name: string;
   default: boolean;
+  /** Stage this route branches to. Empty means continue to the next stage in order. */
+  to_stage?: string;
 }
 
 export interface ParallelAgentSpec {
@@ -544,6 +563,7 @@ export interface StudioWorkflow {
   built_in?: boolean;
   source_path?: string;
   read_only?: boolean;
+  version?: number;
   created_at: string;
   updated_at: string;
 }
