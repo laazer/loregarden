@@ -12,6 +12,7 @@ from loregarden.agents.cli_adapters import (
     resolve_terminal_handoff_invocation,
 )
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
+from loregarden.agents.inherited_wisdom import build_inherited_wisdom
 from loregarden.agents.mcp_context import (
     build_mcp_run_context,
     load_loregarden_mcp_doc,
@@ -37,6 +38,21 @@ from loregarden.skills.registry import get_skill
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
+
+
+def _titled_block(title: str, body: str, *, cap: int = 0) -> list[str]:
+    """A titled prompt block, or nothing when the body is empty.
+
+    The leading blank line lives here so callers only declare order.
+    """
+    if not body:
+        return []
+    return ["", title, body[:cap] if cap else body]
+
+
+def _raw_block(body: str) -> list[str]:
+    """An untitled prompt block that supplies its own headings."""
+    return ["", body] if body else []
 
 
 class CliAgentExecutor:
@@ -379,45 +395,45 @@ class CliAgentExecutor:
         memory_doc = load_memory_protocol_doc(agent_context_dir)
         stage_report_doc = load_stage_report_contract_doc(agent_context_dir)
 
-        sections = [
-            f"# Run: {run.run_code}",
-            orchestration_context,
-            "",
-            mcp_context,
-            "",
-            f"Ticket: {ticket.external_id} — {ticket.title}",
-            f"Stage: {run.stage_key}",
-            f"Skill: {run.skill_name or '—'}",
-            "",
-            "## Description",
-            ticket.description,
-            "",
-            "## Acceptance Criteria",
-            *[f"- {item}" for item in ac],
-        ]
-        if skill_body:
-            sections.extend(["", "## Skill", skill_body[:3000]])
-        if role_body:
-            sections.extend(["", "## Agent Role", role_body])
-        studio_sections = build_studio_prompt_sections(agent)
-        if studio_sections:
-            sections.extend(["", studio_sections])
-        if mcp_doc:
-            sections.extend(["", "## Loregarden MCP module", mcp_doc[:12000]])
-        if memory_doc:
-            sections.extend(["", "## Memory protocol module", memory_doc[:8000]])
-        sections.extend(
+        # Ordered prompt blocks. Add a section by inserting a block here rather
+        # than threading another conditional through the assembly; each block
+        # carries its own leading blank line and drops out when empty.
+        blocks: list[list[str]] = [
+            [
+                f"# Run: {run.run_code}",
+                orchestration_context,
+                "",
+                mcp_context,
+                "",
+                f"Ticket: {ticket.external_id} — {ticket.title}",
+                f"Stage: {run.stage_key}",
+                f"Skill: {run.skill_name or '—'}",
+                "",
+                "## Description",
+                ticket.description,
+                "",
+                "## Acceptance Criteria",
+                *[f"- {item}" for item in ac],
+            ],
+            _titled_block(
+                "## Inherited context (already decided — do not re-derive)",
+                build_inherited_wisdom(ticket, workspace.slug),
+            ),
+            _titled_block("## Skill", skill_body, cap=3000),
+            _titled_block("## Agent Role", role_body),
+            _raw_block(build_studio_prompt_sections(agent)),
+            _titled_block("## Loregarden MCP module", mcp_doc, cap=12000),
+            _titled_block("## Memory protocol module", memory_doc, cap=8000),
             [
                 "",
                 "## Permission policy",
                 "Request human approval via Loregarden before destructive or high-risk tool use.",
                 "Do not bypass workspace permission checks.",
-            ]
-        )
-        # Last, because it governs the last thing the agent emits.
-        if stage_report_doc:
-            sections.extend(["", "## Stage report contract", stage_report_doc])
-        return "\n".join(sections)
+            ],
+            # Last, because it governs the last thing the agent emits.
+            _titled_block("## Stage report contract", stage_report_doc),
+        ]
+        return "\n".join(line for block in blocks for line in block)
 
     def _build_context_artifact(
         self,
