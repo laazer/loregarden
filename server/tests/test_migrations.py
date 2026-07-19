@@ -359,3 +359,79 @@ def test_security_reviewer_is_registered_with_a_role():
     assert agent is not None
     # A lane with no role body would run an agent with no instructions.
     assert agent["role_body"].strip()
+
+
+def test_verify_must_record_a_verdict(tmp_path):
+    """0028 makes verify produce its verdict rather than assert one."""
+    import json
+
+    from loregarden.models.domain import StudioAgent, WorkflowTemplate
+    from sqlmodel import Session
+
+    stages = [
+        {
+            "key": "implement",
+            "name": "Impl",
+            "agent_id": "backend",
+            "order": 7,
+            "stage_type": "agent",
+        },
+        {
+            "key": "verify",
+            "name": "Verify",
+            "agent_id": "verifier",
+            "order": 8,
+            "stage_type": "verify",
+        },
+    ]
+    engine = create_engine(f"sqlite:///{tmp_path / 'ev.db'}")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            WorkflowTemplate(
+                id="tpl-v3",
+                slug="studio-loregarden-tdd-v3",
+                name="V3",
+                stages_json=json.dumps(stages),
+                transitions_json="[]",
+                source_path="studio:studio-loregarden-tdd-v3",
+            )
+        )
+        session.add(
+            StudioAgent(
+                id="a1",
+                slug="verifier",
+                name="Verifier",
+                role_body="check it",
+                mcp_tools_json=json.dumps(["loregarden_get_ticket"]),
+            )
+        )
+        session.commit()
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        stages_json = conn.execute(
+            text("SELECT stages_json FROM workflow_templates WHERE id='tpl-v3'")
+        ).scalar()
+        tools = json.loads(
+            conn.execute(text("SELECT mcp_tools_json FROM studio_agents WHERE id='a1'")).scalar()
+        )
+    by_key = {s["key"]: s for s in json.loads(stages_json)}
+
+    assert by_key["verify"]["required_evidence"] == ["verify_verdict"]
+    # A stage required to record evidence without the tool to record it would be
+    # blocked with no way to comply. Grants are stored per row, not read from
+    # the defaults, so existing agents need the backfill.
+    assert "loregarden_attach_evidence" in tools
+    # Nothing else is required yet: real_surface on implement is a behaviour
+    # change to roll out once verify is proven.
+    assert not by_key["implement"].get("required_evidence")
+
+    assert apply_migrations(engine) == []
+
+
+def test_evidence_tool_is_granted_to_new_agents_by_default():
+    from loregarden.services.studio_service import default_mcp_tools
+
+    assert "loregarden_attach_evidence" in default_mcp_tools()

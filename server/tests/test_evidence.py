@@ -266,3 +266,59 @@ def test_missing_proof_blocks_even_when_transition_gates_are_off(session_and_tic
     assert decision is not _GateDecision.PASS
     # The agent is told why, so it can attach the proof and retry.
     assert "real_surface" in (ticket.blocking_issues or "")
+
+
+def test_verify_blocks_until_it_records_a_verdict(session_and_ticket):
+    """The whole point of turning this on: a verify that advances without
+    recording what it found is the unverified pass it was added to prevent."""
+    from loregarden.models.domain import WorkflowStageDef
+
+    session, ticket = session_and_ticket
+    stage = WorkflowStageDef(
+        key="verify",
+        name="Verify",
+        agent_id="verifier",
+        order=8,
+        stage_type="verify",
+        required_evidence=["verify_verdict"],
+    )
+    orchestrator = _orchestrator(session)
+
+    detail = orchestrator._missing_evidence_detail(ticket, stage)
+    assert "verify_verdict" in detail
+
+    from loregarden.services.evidence import resolve_head_sha
+
+    OrchestrationCallbackService(session).attach_artifact(
+        ticket,
+        kind="evidence",
+        title="confirmed against the running app",
+        content={"checked": "POST /api/tickets"},
+        evidence_kind="verify_verdict",
+        commit_sha=resolve_head_sha(session, ticket),
+    )
+    assert orchestrator._missing_evidence_detail(ticket, stage) == ""
+
+
+def test_a_verdict_from_an_earlier_commit_does_not_carry_over(session_and_ticket):
+    """Re-running verify after new edits must not pass on the old verdict."""
+    from loregarden.models.domain import WorkflowStageDef
+
+    session, ticket = session_and_ticket
+    OrchestrationCallbackService(session).attach_artifact(
+        ticket,
+        kind="evidence",
+        title="verdict from before the fix",
+        content={},
+        evidence_kind="verify_verdict",
+        commit_sha="an-earlier-commit",
+    )
+    stage = WorkflowStageDef(
+        key="verify",
+        name="Verify",
+        agent_id="verifier",
+        order=8,
+        stage_type="verify",
+        required_evidence=["verify_verdict"],
+    )
+    assert "verify_verdict" in _orchestrator(session)._missing_evidence_detail(ticket, stage)
