@@ -3,6 +3,7 @@ import threading
 
 import pytest
 from fastapi.testclient import TestClient
+from loregarden.config import settings
 from loregarden.db.session import get_session
 from loregarden.main import app
 from loregarden.models.domain import Workspace
@@ -160,3 +161,26 @@ def git_repo_fixture(tmp_path):
     git("add", "-A")
     git("commit", "-q", "-m", "seed")
     return root
+
+
+@pytest.fixture(autouse=True)
+def isolated_memory_store(tmp_path_factory, monkeypatch):
+    """Keep the suite out of the real Obsidian vault.
+
+    isolated_db redirects the ticket database but not the memory store, so the
+    memory tools and inherited-wisdom read and write the developer's actual
+    iCloud vault while tests run. That makes those tests depend on iCloud being
+    materialised and on per-binary macOS privacy grants rather than on the code
+    — they fail with "unable to open database file" when it is not.
+
+    Allocated outside the test's own tmp_path: tests that list tmp_path would
+    otherwise see this directory, and one that asserts on its contents did.
+    """
+    root = tmp_path_factory.mktemp("memory_store")
+    vault = root / "vault"
+    vault.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(settings, "obsidian_vault_dir", str(vault), raising=False)
+    monkeypatch.setattr(
+        settings, "memory_sqlite_url", f"sqlite:///{root / 'memory.db'}", raising=False
+    )
+    monkeypatch.setattr(settings, "icloud_root", "", raising=False)

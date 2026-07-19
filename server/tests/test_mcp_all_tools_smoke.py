@@ -102,6 +102,10 @@ def _args_for(
             "title": "smoke artifact",
             "content_json": json.dumps({"lines": []}),
         },
+        "loregarden_search_prior_work": {
+            "query": "smoke prior work",
+            "workspace_slug": "loregarden",
+        },
         "loregarden_attach_evidence": {
             "run_id": run_id,
             "evidence_kind": "real_surface",
@@ -181,6 +185,7 @@ def test_every_advertised_tool_is_callable(client: TestClient):
         "loregarden_upsert_blog_post",
         "loregarden_attach_artifact",
         "loregarden_attach_evidence",
+        "loregarden_search_prior_work",
         "loregarden_update_ticket",
         "loregarden_request_approval",
         "loregarden_write_handoff",
