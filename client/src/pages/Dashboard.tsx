@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ApiError, api, API_BASE, type StageStatus, type TicketDetail, type TicketImportPreviewResponse, type TicketTreeNode, type WorkItemType, type WorkflowStageView } from "../api/client";
+import { ApiError, api, API_BASE, type StageStatus, type TicketDetail, type TicketImportPreviewResponse, type TicketTreeNode, type WorkItemType, type WorkflowStageView, type WorkflowReassignmentPreview } from "../api/client";
 import { AppTopbarActions } from "../components/AppTopbarActions";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
 import { PrioBars } from "../components/PrioBars";
@@ -18,6 +18,7 @@ import { StageRouteHints } from "../components/StageRouteHints";
 import { StageOverflowMenu } from "../components/StageOverflowMenu";
 import { WorkflowRunOverflowMenu } from "../components/WorkflowRunOverflowMenu";
 import { WorkflowStageTimeline } from "../components/WorkflowStageTimeline";
+import { WorkflowReassignWarning } from "../components/WorkflowReassignWarning";
 import {
   isHumanGateStage,
   stageKindLabel,
@@ -490,6 +491,11 @@ export function Dashboard() {
     },
   });
 
+  const [pendingWorkflow, setPendingWorkflow] = useState<{
+    template: string;
+    preview: WorkflowReassignmentPreview;
+  } | null>(null);
+
   const setTicketTemplate = useMutation({
     mutationFn: ({ ticketId, template }: { ticketId: string; template: string }) =>
       api.updateTicket(ticketId, { workflow_template_slug: template }),
@@ -497,8 +503,30 @@ export function Dashboard() {
       qc.invalidateQueries({ queryKey: ["ticket", vars.ticketId] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
+      setPendingWorkflow(null);
     },
   });
+
+  // Ask what the change would cost before making it. Only a change that would
+  // discard progress prompts; assigning a workflow to a ticket that has not
+  // started applies straight away.
+  const requestWorkflowChange = async (ticketId: string, template: string) => {
+    if (!template) {
+      setTicketTemplate.mutate({ ticketId, template });
+      return;
+    }
+    try {
+      const preview = await api.previewWorkflowReassignment(ticketId, template);
+      if (preview.destructive) {
+        setPendingWorkflow({ template, preview });
+        return;
+      }
+    } catch {
+      // The preview is advisory. If it cannot be fetched, fall through rather
+      // than blocking a change the operator asked for.
+    }
+    setTicketTemplate.mutate({ ticketId, template });
+  };
 
   const runtimeOptions = useQuery({
     queryKey: ["runtime-options"],
@@ -1228,7 +1256,7 @@ export function Dashboard() {
                       disabled={workflowBusy || setTicketTemplate.isPending}
                       onChange={(e) => {
                         if (!selectedId || e.target.value === sel.workflow_template_slug) return;
-                        setTicketTemplate.mutate({ ticketId: selectedId, template: e.target.value });
+                        void requestWorkflowChange(selectedId, e.target.value);
                       }}
                     >
                       <option value="">No workflow</option>
@@ -1778,6 +1806,19 @@ export function Dashboard() {
         }}
         onCreate={async (draft) => {
           await createWorkspace.mutateAsync(draft);
+        }}
+      />
+
+      <WorkflowReassignWarning
+        preview={pendingWorkflow?.preview ?? null}
+        isPending={setTicketTemplate.isPending}
+        onCancel={() => setPendingWorkflow(null)}
+        onConfirm={() => {
+          if (!selectedId || !pendingWorkflow) return;
+          setTicketTemplate.mutate({
+            ticketId: selectedId,
+            template: pendingWorkflow.template,
+          });
         }}
       />
 

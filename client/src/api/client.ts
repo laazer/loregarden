@@ -40,6 +40,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export type * from "./types";
 import type {
+  WorkflowReassignmentPreview,
   TicketState,
   StageStatus,
   WorkItemType,
@@ -375,6 +376,10 @@ export const api = {
     request<StudioAgent>(`/api/studio/agents/${slug}/versions/${version}/restore`, {
       method: "POST",
     }),
+  previewWorkflowReassignment: (ticketId: string, templateSlug: string) =>
+    request<WorkflowReassignmentPreview>(
+      `/api/tickets/${ticketId}/workflow-reassignment?template_slug=${encodeURIComponent(templateSlug)}`,
+    ),
   studioWorkflows: () => request<StudioWorkflow[]>("/api/studio/workflows"),
   generateStudioWorkflow: (description: string) =>
     request<StudioGeneratedWorkflow>("/api/studio/workflows/generate", {

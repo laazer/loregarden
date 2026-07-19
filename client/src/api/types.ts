@@ -765,3 +765,14 @@ export interface ReloadStatus {
   active_orchestrations: { id: string; run_code: string }[];
   running_workflow_tickets: { ticket_id: string; external_id: string }[];
 }
+
+/** What changing a ticket's workflow would destroy. See U4e. */
+export interface WorkflowReassignmentPreview {
+  destructive: boolean;
+  current_stage_key: string;
+  current_template_slug: string;
+  target_template_slug: string;
+  target_template_name: string;
+  completed_stages: string[];
+  resets_to_stage_key: string;
+}
