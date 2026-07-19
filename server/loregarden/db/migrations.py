@@ -781,6 +781,60 @@ def _snapshot_template_version(
     )
 
 
+_REVIEW_TEMPLATE = "studio-loregarden-tdd-v3"
+_REVIEW_KEY = "review"
+# One lane per lens. They run concurrently and any rejection sends the work back,
+# so these are independent readings of the same diff rather than a chain: a
+# reviewer looking for coupling is not also looking for injection.
+_REVIEW_LANES = [
+    ("architecture_reviewer", ""),
+    ("static_qa", ""),
+    ("security_reviewer", ""),
+]
+
+
+def _m_parallel_review_in_v3(conn: Connection) -> None:
+    """Review the diff from several angles at once instead of one.
+
+    The stage was a classify with a single default route, so every ticket got
+    exactly one reviewer and whatever that reviewer was not looking for went
+    unreviewed.
+    """
+    if not _table_exists(conn, "workflow_templates"):
+        return
+    row = (
+        conn.execute(
+            text("SELECT id, version, stages_json FROM workflow_templates WHERE slug=:s"),
+            {"s": _REVIEW_TEMPLATE},
+        )
+        .mappings()
+        .fetchone()
+    )
+    if not row:
+        return
+
+    stages = json.loads(row["stages_json"] or "[]")
+    review = next((s for s in stages if s.get("key") == _REVIEW_KEY), None)
+    if review is None or review.get("stage_type") == "parallel":
+        return
+
+    review["stage_type"] = "parallel"
+    review["parallel_agents"] = [
+        {"agent_id": agent_id, "skill_name": skill} for agent_id, skill in _REVIEW_LANES
+    ]
+    # A parallel stage resolves its agents from parallel_agents; leaving the old
+    # single route behind would be a second, contradictory answer to the same
+    # question.
+    review["classify_routes"] = []
+
+    new_version = int(row["version"] or 1) + 1
+    conn.execute(
+        text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
+        {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
+    )
+    _snapshot_template_version(conn, row["id"], new_version, "Parallel multi-angle review")
+
+
 _VERIFY_TEMPLATE = "studio-loregarden-tdd-v3"
 _VERIFY_AFTER = "implement"
 _VERIFY_KEY = "verify"
@@ -1019,6 +1073,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0024_agent_run_changed_paths", _m_agent_run_changed_paths),
     ("0025_artifact_evidence", _m_artifact_evidence),
     ("0026_verify_stage_in_v3", _m_verify_stage_in_v3),
+    ("0027_parallel_review_in_v3", _m_parallel_review_in_v3),
 ]
 
 

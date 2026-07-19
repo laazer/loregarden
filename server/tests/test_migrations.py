@@ -285,3 +285,77 @@ def test_verify_stage_is_wired_between_implement_and_review(tmp_path):
     assert late["verify"] == "wont_do"
 
     assert apply_migrations(engine) == []
+
+
+def test_review_becomes_multi_angle(tmp_path):
+    """0027 replaces the single reviewer with independent concurrent lanes."""
+    import json
+
+    from loregarden.models.domain import WorkflowTemplate
+    from sqlmodel import Session
+
+    stages = [
+        {
+            "key": "implement",
+            "name": "Impl",
+            "agent_id": "backend",
+            "order": 7,
+            "stage_type": "agent",
+        },
+        {
+            "key": "review",
+            "name": "Code Review",
+            "agent_id": "architecture_reviewer",
+            "order": 8,
+            "stage_type": "classify",
+            "classify_routes": [
+                {
+                    "languages": [],
+                    "specialties": [],
+                    "agent_id": "architecture_reviewer",
+                    "skill_name": "",
+                    "default": True,
+                }
+            ],
+        },
+    ]
+    engine = create_engine(f"sqlite:///{tmp_path / 'review.db'}")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            WorkflowTemplate(
+                id="tpl-v3",
+                slug="studio-loregarden-tdd-v3",
+                name="V3",
+                stages_json=json.dumps(stages),
+                transitions_json="[]",
+                source_path="studio:studio-loregarden-tdd-v3",
+            )
+        )
+        session.commit()
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        stages_json = conn.execute(
+            text("SELECT stages_json FROM workflow_templates WHERE id='tpl-v3'")
+        ).scalar()
+    review = {s["key"]: s for s in json.loads(stages_json)}["review"]
+
+    assert review["stage_type"] == "parallel"
+    lanes = [a["agent_id"] for a in review["parallel_agents"]]
+    # Distinct lenses: structure, correctness, and exploitability.
+    assert lanes == ["architecture_reviewer", "static_qa", "security_reviewer"]
+    # The old single route would be a second, contradictory answer to "who reviews".
+    assert review["classify_routes"] == []
+
+    assert apply_migrations(engine) == []
+
+
+def test_security_reviewer_is_registered_with_a_role():
+    from loregarden.agents.registry import get_agent
+
+    agent = get_agent("security_reviewer")
+    assert agent is not None
+    # A lane with no role body would run an agent with no instructions.
+    assert agent["role_body"].strip()
