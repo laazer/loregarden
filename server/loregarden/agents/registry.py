@@ -103,6 +103,12 @@ AGENTS: dict[str, dict] = {
         "adapter": "claude",
         "timeout": 600,
     },
+    "security_reviewer": {
+        "name": "Security Reviewer",
+        "role_file": "agents/misc_agents/security_reviewer_v1.md",
+        "adapter": "claude",
+        "timeout": 600,
+    },
     "learning": {
         "name": "Learning Agent",
         "role_file": "agents/9_learning/learning_v1.md",
