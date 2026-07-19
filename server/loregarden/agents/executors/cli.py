@@ -140,6 +140,9 @@ class CliAgentExecutor:
                     ticket_cursor_model=ticket_runtime.cursor_model,
                     stage_model=stage_def.model if stage_def else "",
                     agent_model=agent.get("default_model", ""),
+                    run_id=run.id,
+                    workspace_slug=workspace.slug,
+                    granted_tools=agent.get("mcp_tools") or [],
                 )
             except ValueError as exc:
                 return self.orchestration.complete_run(
