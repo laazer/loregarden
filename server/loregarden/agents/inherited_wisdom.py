@@ -65,6 +65,23 @@ def _memory_hits(memory: AgentMemoryService, ticket: Ticket, workspace_slug: str
     return hits
 
 
+def _safely(
+    fetch, store: AgentMemoryService, ticket: Ticket, workspace_slug: str, *, label: str
+) -> list[str]:
+    """Run one lookup, degrading to nothing rather than taking the section down.
+
+    Memory is optional infrastructure on synced network storage, and its graph
+    lives in a per-workspace SQLite file that may not exist yet.
+    """
+    try:
+        return fetch(store, ticket, workspace_slug)
+    except Exception:  # noqa: BLE001 - optional infrastructure, never fatal
+        logger.warning(
+            "Inherited wisdom: %s unavailable for ticket %s", label, ticket.id, exc_info=True
+        )
+        return []
+
+
 def build_inherited_wisdom(
     ticket: Ticket,
     workspace_slug: str,
@@ -80,11 +97,15 @@ def build_inherited_wisdom(
     """
     try:
         store = memory or AgentMemoryService.from_settings()
-        checkpoints = _checkpoint_entries(store, ticket, workspace_slug)
-        hits = _memory_hits(store, ticket, workspace_slug)
     except Exception:  # noqa: BLE001 - optional infrastructure, never fatal
         logger.warning("Inherited wisdom unavailable for ticket %s", ticket.id, exc_info=True)
         return ""
+
+    # Guarded separately. The two come from different stores — checkpoints from
+    # vault files, hits from a per-workspace SQLite graph — and sharing one guard
+    # meant an unopenable graph silently took the checkpoints down with it.
+    checkpoints = _safely(_checkpoint_entries, store, ticket, workspace_slug, label="checkpoints")
+    hits = _safely(_memory_hits, store, ticket, workspace_slug, label="learnings")
 
     if not checkpoints and not hits:
         return ""

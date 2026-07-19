@@ -26,6 +26,7 @@ from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.prior_work import search_prior_work
 from loregarden.services.ticket_discovery import list_tickets_mcp, ticket_neighbors_mcp
 
 
@@ -261,6 +262,22 @@ _STAGE_SCOPED_TOOLS = frozenset(
 )
 
 
+def _normalize_get_ticket(args: dict[str, Any]) -> dict[str, Any]:
+    """Either identifier will do, but one of them must be present."""
+    payload: dict[str, Any] = {}
+    if args.get("ticket_id") is not None:
+        payload["ticket_id"] = _coerce_string(args.get("ticket_id"), field="ticket_id")
+    if args.get("external_id") is not None:
+        payload["external_id"] = _coerce_string(args.get("external_id"), field="external_id")
+    if args.get("workspace_slug") is not None:
+        payload["workspace_slug"] = _coerce_string(
+            args.get("workspace_slug"), field="workspace_slug"
+        )
+    if not payload.get("ticket_id") and not payload.get("external_id"):
+        raise ValueError("ticket_id or external_id is required")
+    return payload
+
+
 def _normalize_stage_scoped(name: str, args: dict[str, Any]) -> dict[str, Any]:
     """Coerce the run+stage tools, which share a run_id/stage_key core."""
     payload = {
@@ -300,18 +317,7 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
     _apply_aliases(name, args)
 
     if name == "loregarden_get_ticket":
-        payload: dict[str, Any] = {}
-        if args.get("ticket_id") is not None:
-            payload["ticket_id"] = _coerce_string(args.get("ticket_id"), field="ticket_id")
-        if args.get("external_id") is not None:
-            payload["external_id"] = _coerce_string(args.get("external_id"), field="external_id")
-        if args.get("workspace_slug") is not None:
-            payload["workspace_slug"] = _coerce_string(
-                args.get("workspace_slug"), field="workspace_slug"
-            )
-        if not payload.get("ticket_id") and not payload.get("external_id"):
-            raise ValueError("ticket_id or external_id is required")
-        return payload
+        return _normalize_get_ticket(args)
 
     if name == "loregarden_list_tickets":
         payload = {
@@ -357,6 +363,13 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             "run_id": _coerce_string(args.get("run_id"), field="run_id"),
             "message": _coerce_string(args.get("message"), field="message"),
             "stage_key": _coerce_optional_string(args.get("stage_key")),
+        }
+
+    if name == "loregarden_search_prior_work":
+        return {
+            "query": _coerce_string(args.get("query"), field="query"),
+            "workspace_slug": _coerce_optional_string(args.get("workspace_slug")) or "",
+            "ticket_id": _coerce_optional_string(args.get("ticket_id")) or "",
         }
 
     if name == "loregarden_attach_evidence":
@@ -824,6 +837,21 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": "loregarden_search_prior_work",
+        "description": (
+            "Find finished tickets like this one and what they hit on the way. Use "
+            "before starting work to avoid repeating an approach that already failed."
+        ),
+        "inputSchema": _tool_schema(
+            properties={
+                "query": _string_prop("What you are about to work on."),
+                "workspace_slug": _string_prop("Workspace slug to search within."),
+                "ticket_id": _string_prop("Optional current ticket, excluded from results."),
+            },
+            required=["query"],
+        ),
+    },
+    {
         "name": "loregarden_search_memory",
         "description": "Search Obsidian notes and memory graph nodes, optionally scoped to a workspace.",
         "inputSchema": _tool_schema(
@@ -1040,6 +1068,19 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
             checklist=arguments["checklist"],
         )
         return json.dumps(result, indent=2)
+
+    if name == "loregarden_search_prior_work":
+        return json.dumps(
+            {
+                "results": search_prior_work(
+                    session,
+                    arguments["query"],
+                    workspace_slug=arguments.get("workspace_slug", ""),
+                    exclude_ticket_id=arguments.get("ticket_id", ""),
+                )
+            },
+            indent=2,
+        )
 
     memory_result = _execute_memory_tool(name, arguments)
     if memory_result is not None:

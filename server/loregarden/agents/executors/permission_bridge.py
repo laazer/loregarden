@@ -126,10 +126,21 @@ _CONTROL_PLANE_WRITE_MCP_TOOLS = frozenset(
         "loregarden_upsert_blog_post",
         "loregarden_attach_artifact",
         "loregarden_attach_evidence",
+        "loregarden_search_prior_work",
     }
 )
 
 AUTO_APPROVED_MCP_TOOLS = _READ_ONLY_MCP_TOOLS | _CONTROL_PLANE_WRITE_MCP_TOOLS
+
+#: CLI tools approved by policy rather than per call. The stored allowlist keys
+#: on the exact tool input, so every distinct URL would otherwise need its own
+#: rule and an unattended research run stalls on the first fetch. These only
+#: read; they cannot touch the repo or the control plane.
+AUTO_APPROVED_CLI_TOOLS = frozenset({"WebFetch", "WebSearch"})
+
+
+def is_auto_approved_cli_tool(tool_name: str) -> bool:
+    return tool_name in AUTO_APPROVED_CLI_TOOLS
 
 
 def bare_mcp_tool_name(tool_name: str) -> str | None:
@@ -688,6 +699,15 @@ class PermissionBridgeRunner:
             )
             if streamer:
                 streamer.append("TOOL", f"Auto-approved Loregarden MCP: {bare_mcp}", force=True)
+                streamer.set_live("Agent running…")
+            return True
+
+        if is_auto_approved_cli_tool(permission["tool_name"]):
+            self._send_response(proc, build_control_response(request_id=request_id, approved=True))
+            if streamer:
+                streamer.append(
+                    "TOOL", f"Auto-approved read-only: {permission['tool_name']}", force=True
+                )
                 streamer.set_live("Agent running…")
             return True
 
