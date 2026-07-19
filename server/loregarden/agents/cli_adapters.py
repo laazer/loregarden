@@ -5,7 +5,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from loregarden.agents.mcp_context import append_mcp_cli_args
+from loregarden.agents.mcp_context import append_mcp_cli_args, resolve_mcp_url
 from loregarden.config import settings
 from loregarden.services.cli_settings import (
     resolve_claude_model,
@@ -377,6 +377,9 @@ def _lmstudio_invocation(
     workspace_root: Path,
     base_url: str,
     model: str,
+    run_id: str = "",
+    workspace_slug: str = "",
+    granted_tools: list[str] | None = None,
 ) -> CliInvocation:
     argv = [
         sys.executable,
@@ -389,6 +392,16 @@ def _lmstudio_invocation(
     ]
     if model:
         argv.extend(["--model", model])
+    # LM Studio speaks no MCP of its own, so the runner is told where the
+    # endpoint is and which run it belongs to. Passed as argv rather than env:
+    # the subprocess inherits this process's environment, which is shared with
+    # every concurrently running ticket.
+    if run_id:
+        argv.extend(["--mcp-url", resolve_mcp_url(), "--run-id", run_id])
+        if workspace_slug:
+            argv.extend(["--workspace-slug", workspace_slug])
+        if granted_tools:
+            argv.extend(["--tools", ",".join(granted_tools)])
     return CliInvocation(
         argv=argv,
         use_prompt_file=True,
@@ -412,6 +425,9 @@ def resolve_cli_invocation(
     ticket_cursor_model: str = "",
     stage_model: str = "",
     agent_model: str = "",
+    run_id: str = "",
+    workspace_slug: str = "",
+    granted_tools: list[str] | None = None,
 ) -> CliInvocation:
     """Resolve subprocess argv. Agents are adapters — no orchestration logic here."""
     override = _env_command_override(
@@ -480,6 +496,9 @@ def resolve_cli_invocation(
             workspace_root=workspace_root,
             base_url=resolve_lmstudio_base_url(workspace),
             model=resolve_lmstudio_model(workspace),
+            run_id=run_id,
+            workspace_slug=workspace_slug,
+            granted_tools=granted_tools,
         )
 
     raise ValueError(f"Unknown CLI adapter: {selected}")
