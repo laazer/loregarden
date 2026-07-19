@@ -54,6 +54,9 @@ DEFAULT_STAGE_MCP_TOOLS = [
     "loregarden_get_ticket",
     "loregarden_list_tickets",
     "loregarden_attach_artifact",
+    # A stage that must produce evidence needs the tool to record it, or it is
+    # blocked with no way to comply.
+    "loregarden_attach_evidence",
     "loregarden_request_approval",
 ]
 

@@ -781,6 +781,67 @@ def _snapshot_template_version(
     )
 
 
+_EVIDENCE_TEMPLATE = "studio-loregarden-tdd-v3"
+_EVIDENCE_STAGE = "verify"
+_EVIDENCE_TOOL = "loregarden_attach_evidence"
+
+
+def _m_require_verify_evidence(conn: Connection) -> None:
+    """Make the verify stage produce a verdict rather than assert one.
+
+    verify exists to check a stage's done-claim, so a verify that advances
+    without recording what it found is the same unverified pass it was added to
+    prevent. Requiring verify_verdict is the narrowest place to start: it is the
+    one stage whose entire job is producing that artifact.
+
+    Deliberately not requiring real_surface anywhere yet. That would block
+    implement until agents habitually capture output from the running system,
+    which is a behaviour change to roll out once verify is proven.
+    """
+    if not _table_exists(conn, "workflow_templates"):
+        return
+
+    # Grant the tool first. A stage required to record evidence without the tool
+    # to record it is blocked with no way to comply, and agent tool grants are
+    # stored per row rather than read from the defaults.
+    if _table_exists(conn, "studio_agents"):
+        for row in (
+            conn.execute(text("SELECT id, mcp_tools_json FROM studio_agents")).mappings().all()
+        ):
+            tools = json.loads(row["mcp_tools_json"] or "[]")
+            if not isinstance(tools, list) or _EVIDENCE_TOOL in tools:
+                continue
+            tools.append(_EVIDENCE_TOOL)
+            conn.execute(
+                text("UPDATE studio_agents SET mcp_tools_json=:t WHERE id=:id"),
+                {"t": json.dumps(tools), "id": row["id"]},
+            )
+
+    row = (
+        conn.execute(
+            text("SELECT id, version, stages_json FROM workflow_templates WHERE slug=:s"),
+            {"s": _EVIDENCE_TEMPLATE},
+        )
+        .mappings()
+        .fetchone()
+    )
+    if not row:
+        return
+
+    stages = json.loads(row["stages_json"] or "[]")
+    verify = next((s for s in stages if s.get("key") == _EVIDENCE_STAGE), None)
+    if verify is None or verify.get("required_evidence"):
+        return
+    verify["required_evidence"] = ["verify_verdict"]
+
+    new_version = int(row["version"] or 1) + 1
+    conn.execute(
+        text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
+        {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
+    )
+    _snapshot_template_version(conn, row["id"], new_version, "Verify must record a verdict")
+
+
 _REVIEW_TEMPLATE = "studio-loregarden-tdd-v3"
 _REVIEW_KEY = "review"
 # One lane per lens. They run concurrently and any rejection sends the work back,
@@ -1074,6 +1135,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0025_artifact_evidence", _m_artifact_evidence),
     ("0026_verify_stage_in_v3", _m_verify_stage_in_v3),
     ("0027_parallel_review_in_v3", _m_parallel_review_in_v3),
+    ("0028_require_verify_evidence", _m_require_verify_evidence),
 ]
 
 
