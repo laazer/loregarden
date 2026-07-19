@@ -69,4 +69,33 @@ alwaysApply: false
 2. **No silent assumptions** – always clarify ambiguity.  
 3. **Backend integrity first** – preserve existing behavior unless explicitly changed.  
 4. **Expert judgment** – apply best practices in API design, database modeling, and performance.  
-5. **Anticipate failures** – design for edge cases, data consistency, and cross-service reliability.  
+5. **Anticipate failures** – design for edge cases, data consistency, and cross-service reliability.
+
+---
+
+## Show it working
+
+Green tests say the code does what its tests say. They do not say the feature
+works on the surface a user touches — that is a separate claim, and this stage
+cannot pass without it.
+
+Before reporting `pass`, exercise the change against the running system and
+record what came back:
+
+```
+tools/call loregarden_attach_evidence {"run_id": "<run id>", "evidence_kind": "real_surface",
+  "title": "POST /api/tickets returns 201", "content_json": "{\"status\": 201}"}
+```
+
+What counts: an HTTP request and its response, a row read back after a write, a
+CLI invocation and its output, a log line from the running server. Real output
+from a real run.
+
+What does not: a passing test (that is the floor, recorded separately), a
+`--dry-run`, a description of what would happen, or a claim that it should work.
+If you could not exercise it, say so and report `needs_rework` rather than
+attaching something weaker and calling it proof.
+
+Note the sha is stamped for you from HEAD, so capture after your last edit —
+evidence from before your final change proves nothing about the code being
+gated.

@@ -322,3 +322,90 @@ def test_a_verdict_from_an_earlier_commit_does_not_carry_over(session_and_ticket
         required_evidence=["verify_verdict"],
     )
     assert "verify_verdict" in _orchestrator(session)._missing_evidence_detail(ticket, stage)
+
+
+def _light_heavy_stages():
+    """triage routes light work past planning; implement must show it working."""
+    from loregarden.models.domain import ClassifyRoute, WorkflowStageDef
+
+    return [
+        WorkflowStageDef(
+            key="triage",
+            name="Triage",
+            order=1,
+            stage_type="classify",
+            classify_routes=[
+                ClassifyRoute(
+                    specialties=["typo"], agent_id="ticket_scoper", to_stage="test-design"
+                ),
+                ClassifyRoute(agent_id="ticket_scoper", default=True),
+            ],
+        ),
+        WorkflowStageDef(key="test-design", name="TD", agent_id="test_designer", order=5),
+        WorkflowStageDef(
+            key="implement",
+            name="Implement",
+            agent_id="backend",
+            order=7,
+            required_evidence=["real_surface"],
+        ),
+    ]
+
+
+def _implement_stage(stages):
+    return next(s for s in stages if s.key == "implement")
+
+
+def test_heavy_work_must_show_the_change_working(session_and_ticket):
+    session, ticket = session_and_ticket
+    ticket.title = "Add auth token rotation with schema migration"
+    stages = _light_heavy_stages()
+
+    detail = _orchestrator(session)._missing_evidence_detail(
+        ticket, _implement_stage(stages), stages
+    )
+    assert "real_surface" in detail
+
+
+def test_light_work_is_exempt_from_capturing_a_real_surface(session_and_ticket):
+    """Triage already judged the ticket trivial; demanding a captured run for a
+    typo costs more than the proof is worth."""
+    session, ticket = session_and_ticket
+    ticket.title = "Fix typo in the settings header"
+    stages = _light_heavy_stages()
+
+    assert (
+        _orchestrator(session)._missing_evidence_detail(ticket, _implement_stage(stages), stages)
+        == ""
+    )
+
+
+def test_heavy_work_passes_once_the_capture_is_recorded(session_and_ticket):
+    session, ticket = session_and_ticket
+    ticket.title = "Add auth token rotation"
+    stages = _light_heavy_stages()
+    from loregarden.services.evidence import resolve_head_sha
+
+    OrchestrationCallbackService(session).attach_artifact(
+        ticket,
+        kind="evidence",
+        title="POST /api/tokens returns 201",
+        content={"status": 201},
+        evidence_kind="real_surface",
+        commit_sha=resolve_head_sha(session, ticket),
+    )
+    assert (
+        _orchestrator(session)._missing_evidence_detail(ticket, _implement_stage(stages), stages)
+        == ""
+    )
+
+
+def test_without_template_context_the_requirement_still_applies(session_and_ticket):
+    """The waiver needs the template to judge lightness. Absent it, require the
+    evidence rather than skipping the check."""
+    session, ticket = session_and_ticket
+    ticket.title = "Fix typo in the settings header"
+    stages = _light_heavy_stages()
+
+    detail = _orchestrator(session)._missing_evidence_detail(ticket, _implement_stage(stages), None)
+    assert "real_surface" in detail

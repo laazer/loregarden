@@ -39,7 +39,11 @@ from loregarden.services.stage_report import (
     parse_stage_report,
     stage_report_artifact_content,
 )
-from loregarden.services.studio_routing import is_agentless_stage, is_terminal_stage
+from loregarden.services.studio_routing import (
+    is_agentless_stage,
+    is_terminal_stage,
+    took_light_route,
+)
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session, select
@@ -370,7 +374,12 @@ class BuiltinOrchestrator:
             ).all()
         )
 
-    def _missing_evidence_detail(self, ticket: Ticket, stage_def: WorkflowStageDef) -> str:
+    def _missing_evidence_detail(
+        self,
+        ticket: Ticket,
+        stage_def: WorkflowStageDef,
+        stages: list[WorkflowStageDef] | None = None,
+    ) -> str:
         """Why this stage cannot pass yet for want of proof, or "" when satisfied.
 
         Scoped to the current HEAD: evidence carried over from an earlier commit
@@ -380,6 +389,13 @@ class BuiltinOrchestrator:
         """
         required = [kind for kind in (stage_def.required_evidence or []) if kind]
         if not required:
+            return ""
+
+        # Light work is exempt, on the same reasoning that exempts it from
+        # verification: triage already judged the ticket trivial enough to branch
+        # past planning, and demanding a captured real-surface run for a typo
+        # costs more than the proof is worth. Heavy work still has to show it.
+        if stages and took_light_route(ticket, stages):
             return ""
 
         commit_sha = resolve_head_sha(self.session, ticket)
@@ -427,7 +443,7 @@ class BuiltinOrchestrator:
         # bounded number of tries to attach it before a human is pulled in.
         # Checked independently of profile.gates.enabled — a stage only opts in by
         # declaring required_evidence, so nothing that has not asked is affected.
-        detail = self._missing_evidence_detail(ticket, stage_def)
+        detail = self._missing_evidence_detail(ticket, stage_def, stages)
         if not detail and profile.gates.enabled:
             detail = self._run_gates(ticket, profile, workspace, stage_def, from_stage, to_stage)
         if not detail:
