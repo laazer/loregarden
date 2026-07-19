@@ -56,4 +56,34 @@ You operate in a **paranoid, test-driven mode**: never assume, always verify, an
 
 - Code ready for merge that passes **all frontend tests without backend or infra modifications**.  
 - Well-typed, modular, maintainable, and fully documented components and logic.  
-- Explicit clarification logs for **all ambiguities** in the specification **before implementation begins**.  
+- Explicit clarification logs for **all ambiguities** in the specification **before implementation begins**.
+
+---
+
+## Show it working
+
+Green tests say the code does what its tests say. They do not say the feature
+works on the surface a user touches — that is a separate claim, and this stage
+cannot pass without it.
+
+Before reporting `pass`, exercise the change against the running system and
+record what came back:
+
+```
+tools/call loregarden_attach_evidence {"run_id": "<run id>", "evidence_kind": "real_surface",
+  "title": "Queue page renders with no console errors",
+  "content_json": "{\"checked\": 8, \"failing\": 0}"}
+```
+
+What counts: `npm run visual-qa` from `client/` and the contents of its
+`summary.json`, a screenshot of the changed surface, a captured console or
+network trace. Real output from a real render.
+
+What does not: a passing test (that is the floor, recorded separately), a
+`--dry-run`, a description of what would happen, or a claim that it should work.
+If you could not exercise it, say so and report `needs_rework` rather than
+attaching something weaker and calling it proof.
+
+Note the sha is stamped for you from HEAD, so capture after your last edit —
+evidence from before your final change proves nothing about the code being
+gated.

@@ -424,9 +424,8 @@ def test_verify_must_record_a_verdict(tmp_path):
     # blocked with no way to comply. Grants are stored per row, not read from
     # the defaults, so existing agents need the backfill.
     assert "loregarden_attach_evidence" in tools
-    # Nothing else is required yet: real_surface on implement is a behaviour
-    # change to roll out once verify is proven.
-    assert not by_key["implement"].get("required_evidence")
+    # 0029 then adds the other half; see test_implement_must_show_the_change_working.
+    assert by_key["implement"].get("required_evidence") == ["real_surface"]
 
     assert apply_migrations(engine) == []
 
@@ -435,3 +434,70 @@ def test_evidence_tool_is_granted_to_new_agents_by_default():
     from loregarden.services.studio_service import default_mcp_tools
 
     assert "loregarden_attach_evidence" in default_mcp_tools()
+
+
+def test_implement_must_show_the_change_working(tmp_path):
+    """0029 requires a real-surface capture, the claim tests never made."""
+    import json
+
+    from loregarden.models.domain import WorkflowTemplate
+    from sqlmodel import Session
+
+    stages = [
+        {
+            "key": "implement",
+            "name": "Impl",
+            "agent_id": "backend",
+            "order": 7,
+            "stage_type": "agent",
+        },
+        {
+            "key": "verify",
+            "name": "Verify",
+            "agent_id": "verifier",
+            "order": 8,
+            "stage_type": "verify",
+        },
+    ]
+    engine = create_engine(f"sqlite:///{tmp_path / 'rs.db'}")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            WorkflowTemplate(
+                id="tpl-v3",
+                slug="studio-loregarden-tdd-v3",
+                name="V3",
+                stages_json=json.dumps(stages),
+                transitions_json="[]",
+                source_path="studio:studio-loregarden-tdd-v3",
+            )
+        )
+        session.commit()
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        stages_json = conn.execute(
+            text("SELECT stages_json FROM workflow_templates WHERE id='tpl-v3'")
+        ).scalar()
+    by_key = {s["key"]: s for s in json.loads(stages_json)}
+
+    # The floor and the ceiling, on the stages that owe each.
+    assert by_key["implement"]["required_evidence"] == ["real_surface"]
+    assert by_key["verify"]["required_evidence"] == ["verify_verdict"]
+
+    assert apply_migrations(engine) == []
+
+
+def test_implementer_roles_explain_how_to_show_it_working():
+    """A stage required to produce evidence with a role that never mentions it
+    blocks an agent that was never told."""
+    from loregarden.config import settings
+
+    for role in (
+        "agents/5_backend_implementer/backend_implementer_v1.md",
+        "agents/6_frontend_implementer/frontend_implementer_v1.md",
+    ):
+        body = (settings.agent_context_dir / role).read_text(encoding="utf-8")
+        assert "loregarden_attach_evidence" in body
+        assert "real_surface" in body

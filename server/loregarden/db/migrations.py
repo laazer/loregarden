@@ -842,6 +842,47 @@ def _m_require_verify_evidence(conn: Connection) -> None:
     _snapshot_template_version(conn, row["id"], new_version, "Verify must record a verdict")
 
 
+_IMPLEMENT_STAGE = "implement"
+
+
+def _m_require_implement_real_surface(conn: Connection) -> None:
+    """Make implement show the change working, not just that its tests pass.
+
+    Green tests say the code does what its tests say. They do not say the
+    feature works on the surface a user touches, and that second claim is the
+    one nothing has ever checked.
+
+    Light work is exempt at gate time rather than here: triage decides that per
+    ticket, so the requirement stays on the stage and the waiver is applied when
+    it runs.
+    """
+    if not _table_exists(conn, "workflow_templates"):
+        return
+    row = (
+        conn.execute(
+            text("SELECT id, version, stages_json FROM workflow_templates WHERE slug=:s"),
+            {"s": _EVIDENCE_TEMPLATE},
+        )
+        .mappings()
+        .fetchone()
+    )
+    if not row:
+        return
+
+    stages = json.loads(row["stages_json"] or "[]")
+    implement = next((s for s in stages if s.get("key") == _IMPLEMENT_STAGE), None)
+    if implement is None or implement.get("required_evidence"):
+        return
+    implement["required_evidence"] = ["real_surface"]
+
+    new_version = int(row["version"] or 1) + 1
+    conn.execute(
+        text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
+        {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
+    )
+    _snapshot_template_version(conn, row["id"], new_version, "Implement must show it working")
+
+
 _REVIEW_TEMPLATE = "studio-loregarden-tdd-v3"
 _REVIEW_KEY = "review"
 # One lane per lens. They run concurrently and any rejection sends the work back,
@@ -1136,6 +1177,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0026_verify_stage_in_v3", _m_verify_stage_in_v3),
     ("0027_parallel_review_in_v3", _m_parallel_review_in_v3),
     ("0028_require_verify_evidence", _m_require_verify_evidence),
+    ("0029_require_implement_real_surface", _m_require_implement_real_surface),
 ]
 
 
