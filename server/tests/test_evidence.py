@@ -118,3 +118,151 @@ def test_unknown_evidence_kind_is_rejected(session_and_ticket):
 
 def test_evidence_kinds_cover_floor_ceiling_and_verdict():
     assert set(EVIDENCE_KINDS) == {"test_red_green", "real_surface", "verify_verdict"}
+
+
+# --- Two-artifact gate: proof required before a stage advances (#2) ---------
+
+
+def _gate_stage(required):
+    from loregarden.models.domain import WorkflowStageDef
+
+    return WorkflowStageDef(
+        key="implement",
+        name="Implement",
+        agent_id="backend",
+        order=1,
+        required_evidence=required,
+    )
+
+
+def _orchestrator(session):
+    from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+
+    return BuiltinOrchestrator(session)
+
+
+def test_stage_without_a_requirement_is_unaffected(session_and_ticket):
+    """Templates that never asked for proof keep advancing as before."""
+    session, ticket = session_and_ticket
+    detail = _orchestrator(session)._missing_evidence_detail(ticket, _gate_stage([]))
+    assert detail == ""
+
+
+def test_missing_proof_names_what_is_missing(session_and_ticket):
+    session, ticket = session_and_ticket
+    stage = _gate_stage(["test_red_green", "real_surface"])
+    detail = _orchestrator(session)._missing_evidence_detail(ticket, stage)
+    assert "test_red_green" in detail and "real_surface" in detail
+    # The message has to tell the agent how to satisfy it, since this reason is
+    # what gets handed back for the retry.
+    assert "loregarden_attach_evidence" in detail
+
+
+def test_green_tests_alone_do_not_satisfy_a_two_artifact_stage(session_and_ticket):
+    """The floor without the ceiling is the case this gate exists to catch."""
+    session, ticket = session_and_ticket
+    from loregarden.services.evidence import resolve_head_sha
+
+    OrchestrationCallbackService(session).attach_artifact(
+        ticket,
+        kind="evidence",
+        title="tests go green",
+        content={},
+        evidence_kind="test_red_green",
+        commit_sha=resolve_head_sha(session, ticket),
+    )
+    stage = _gate_stage(["test_red_green", "real_surface"])
+    detail = _orchestrator(session)._missing_evidence_detail(ticket, stage)
+    assert "real_surface" in detail
+    assert "test_red_green" not in detail
+
+
+def test_both_artifacts_for_this_commit_let_the_stage_pass(session_and_ticket):
+    session, ticket = session_and_ticket
+    from loregarden.services.evidence import resolve_head_sha
+
+    svc = OrchestrationCallbackService(session)
+    head = resolve_head_sha(session, ticket)
+    for kind in ("test_red_green", "real_surface"):
+        svc.attach_artifact(
+            ticket,
+            kind="evidence",
+            title=kind,
+            content={},
+            evidence_kind=kind,
+            commit_sha=head,
+        )
+    stage = _gate_stage(["test_red_green", "real_surface"])
+    assert _orchestrator(session)._missing_evidence_detail(ticket, stage) == ""
+
+
+def test_proof_from_an_earlier_commit_does_not_count(session_and_ticket):
+    """Evidence carried over from a previous commit says nothing about this one."""
+    session, ticket = session_and_ticket
+    OrchestrationCallbackService(session).attach_artifact(
+        ticket,
+        kind="evidence",
+        title="stale proof",
+        content={},
+        evidence_kind="real_surface",
+        commit_sha="a-commit-from-before",
+    )
+    stage = _gate_stage(["real_surface"])
+    detail = _orchestrator(session)._missing_evidence_detail(ticket, stage)
+    assert "real_surface" in detail
+
+
+def test_missing_proof_blocks_even_when_transition_gates_are_off(session_and_ticket):
+    """A stage opts in by declaring required_evidence, so the requirement holds
+    regardless of whether the profile runs gate commands."""
+    from loregarden.models.domain import (
+        OrchestrationRun,
+        StageStatus,
+        WorkflowInstance,
+        WorkflowStageDef,
+    )
+    from loregarden.services.builtin_orchestrator import _GateDecision
+    from loregarden.services.orchestration_profile import resolve_orchestration_profile
+    from loregarden.services.workflow_state import initial_stages_json
+
+    session, ticket = session_and_ticket
+    stages = [
+        WorkflowStageDef(
+            key="implement",
+            name="Implement",
+            agent_id="backend",
+            order=1,
+            required_evidence=["real_surface"],
+        ),
+        WorkflowStageDef(key="review", name="Review", agent_id="reviewer", order=2),
+    ]
+    instance = WorkflowInstance(
+        ticket_id=ticket.id,
+        template_id="tpl",
+        current_stage_key="implement",
+        stages_json=initial_stages_json(stages),
+    )
+    orch_run = OrchestrationRun(run_code="orun_1", ticket_id=ticket.id, workspace_id="ws")
+    session.add(instance)
+    session.add(orch_run)
+    session.commit()
+
+    ticket.workflow_stage_key = "implement"
+    ticket.workflow_stage_status = StageStatus.RUNNING
+    workspace = session.get(Workspace, "ws")
+    profile = resolve_orchestration_profile(workspace)
+    profile.gates.enabled = False
+
+    decision = _orchestrator(session)._run_gates_with_autofix(
+        ticket,
+        profile,
+        stages[0],
+        instance,
+        stages,
+        orch_run,
+        from_stage="implement",
+        to_stage="review",
+    )
+    assert decision is not _GateDecision.PASS
+    # The agent is told why, so it can attach the proof and retry.
+    assert "real_surface" in (ticket.blocking_issues or "")
