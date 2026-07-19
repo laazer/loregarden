@@ -137,15 +137,19 @@ describe('QueueNotifications', () => {
   });
 
   describe('SSE Integration', () => {
-    test('subscribes to workspace notifications', async () => {
+    test('does not call endpoints that do not exist', async () => {
+      // This asserted a subscription was opened, and passed against a mocked
+      // EventSource while the real endpoints 404'd on every queue load: the SSE
+      // route is written against a ws.subscribe API that does not exist, and the
+      // ws-status probe never existed at all. Delivery has to be built before
+      // this component can subscribe to anything.
       const mockFetch = jest.fn();
       global.fetch = mockFetch;
 
       render(<QueueNotifications workspaceId="ws-1" />);
 
       await waitFor(() => {
-        // Fetch called to get notification stream
-        expect(mockFetch).toHaveBeenCalled();
+        expect(mockFetch).not.toHaveBeenCalled();
       });
     });
 
