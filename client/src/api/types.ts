@@ -681,6 +681,8 @@ export interface TicketStudioDraftItem {
   acceptance_criteria: string[];
   priority: number;
   suggested_agent: string;
+  /** Workflow this item commits onto; "" or absent inherits the workspace default. */
+  workflow_template_slug?: string;
   selected: boolean;
 }
 

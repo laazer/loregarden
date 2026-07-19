@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { IconCloseButton } from "../IconCloseButton";
 
-import type { StudioAgent, TicketStudioDraftItem } from "../../api/client";
+import type { StudioAgent, StudioWorkflow, TicketStudioDraftItem } from "../../api/client";
 import {
   formatAcceptanceCriteriaText,
   parseAcceptanceCriteriaText,
@@ -17,6 +17,7 @@ export interface TicketStudioDraftModalProps {
   item: TicketStudioDraftItem | null;
   allItems: TicketStudioDraftItem[];
   agentOptions: StudioAgent[];
+  workflowOptions: StudioWorkflow[];
   isOpen: boolean;
   readOnly?: boolean;
   onClose: () => void;
@@ -32,6 +33,7 @@ function draftEquals(a: TicketStudioDraftItem, b: TicketStudioDraftItem): boolea
     a.description === b.description &&
     a.priority === b.priority &&
     a.suggested_agent === b.suggested_agent &&
+    (a.workflow_template_slug ?? "") === (b.workflow_template_slug ?? "") &&
     a.selected === b.selected &&
     a.acceptance_criteria.join("\n") === b.acceptance_criteria.join("\n")
   );
@@ -41,6 +43,7 @@ export function TicketStudioDraftModal({
   item,
   allItems,
   agentOptions,
+  workflowOptions,
   isOpen,
   readOnly = false,
   onClose,
@@ -58,7 +61,7 @@ export function TicketStudioDraftModal({
     }
     setDraft({ ...item, acceptance_criteria: [...item.acceptance_criteria] });
     setAcceptanceText(formatAcceptanceCriteriaText(item.acceptance_criteria));
-  }, [item?.ref, item?.title, item?.description, item?.work_item_type, item?.parent_ref, item?.priority, item?.suggested_agent, item?.selected, item?.acceptance_criteria]);
+  }, [item?.ref, item?.title, item?.description, item?.work_item_type, item?.parent_ref, item?.priority, item?.suggested_agent, item?.workflow_template_slug, item?.selected, item?.acceptance_criteria]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -80,6 +83,10 @@ export function TicketStudioDraftModal({
   );
 
   const agentSlugs = useMemo(() => new Set(agentOptions.map((agent) => agent.slug)), [agentOptions]);
+  const workflowSlugs = useMemo(
+    () => new Set(workflowOptions.map((workflow) => workflow.slug)),
+    [workflowOptions],
+  );
 
   if (!isOpen || !item || !draft) {
     return null;
@@ -92,6 +99,12 @@ export function TicketStudioDraftModal({
   const isDirty = !draftEquals(nextDraft, item);
   const canSave = !readOnly && isDirty && nextDraft.title.trim().length > 0 && !!onSave;
   const hasCustomAgent = Boolean(nextDraft.suggested_agent && !agentSlugs.has(nextDraft.suggested_agent));
+  // A slug the workspace no longer offers still shows, so a stale draft never
+  // silently loses its choice on open.
+  const hasCustomWorkflow = Boolean(
+    nextDraft.workflow_template_slug &&
+      !workflowSlugs.has(nextDraft.workflow_template_slug),
+  );
 
   const patch = (patch: Partial<TicketStudioDraftItem>) => {
     setDraft((current) => (current ? { ...current, ...patch } : current));
@@ -221,6 +234,32 @@ export function TicketStudioDraftModal({
                 ))}
                 {hasCustomAgent && (
                   <option value={nextDraft.suggested_agent}>{nextDraft.suggested_agent} (from scope)</option>
+                )}
+              </select>
+            </div>
+
+            <div className="modal-field">
+              <label className="modal-field-label" htmlFor="studio-draft-workflow">
+                Workflow
+              </label>
+              <select
+                id="studio-draft-workflow"
+                className="btn-secondary filter-select"
+                style={{ width: "100%" }}
+                value={draft.workflow_template_slug ?? ""}
+                disabled={readOnly}
+                onChange={(e) => patch({ workflow_template_slug: e.target.value })}
+              >
+                <option value="">Workspace default</option>
+                {workflowOptions.map((workflow) => (
+                  <option key={workflow.slug} value={workflow.slug}>
+                    {workflow.name}
+                  </option>
+                ))}
+                {hasCustomWorkflow && (
+                  <option value={nextDraft.workflow_template_slug}>
+                    {nextDraft.workflow_template_slug} (not found)
+                  </option>
                 )}
               </select>
             </div>

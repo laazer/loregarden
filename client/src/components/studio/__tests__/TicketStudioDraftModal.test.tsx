@@ -32,6 +32,7 @@ describe("TicketStudioDraftModal", () => {
         item={mockItem()}
         allItems={[mockItem()]}
         agentOptions={mockAgents() as never}
+        workflowOptions={[]}
         isOpen={false}
         onClose={() => {}}
       />,
@@ -45,6 +46,7 @@ describe("TicketStudioDraftModal", () => {
         item={mockItem()}
         allItems={[mockItem(), mockItem({ ref: "t2", title: "Parent feature" })]}
         agentOptions={mockAgents() as never}
+        workflowOptions={[]}
         isOpen
         onClose={() => {}}
         onSave={() => {}}
@@ -68,6 +70,7 @@ describe("TicketStudioDraftModal", () => {
         item={mockItem()}
         allItems={[mockItem()]}
         agentOptions={mockAgents() as never}
+        workflowOptions={[]}
         isOpen
         onClose={onClose}
         onSave={onSave}
@@ -93,6 +96,7 @@ describe("TicketStudioDraftModal", () => {
         item={mockItem()}
         allItems={[mockItem()]}
         agentOptions={mockAgents() as never}
+        workflowOptions={[]}
         isOpen
         readOnly
         onClose={() => {}}
@@ -109,6 +113,7 @@ describe("TicketStudioDraftModal", () => {
         item={mockItem({ suggested_agent: "custom_agent" })}
         allItems={[mockItem({ suggested_agent: "custom_agent" })]}
         agentOptions={mockAgents() as never}
+        workflowOptions={[]}
         isOpen
         onClose={() => {}}
         onSave={() => {}}
@@ -116,5 +121,59 @@ describe("TicketStudioDraftModal", () => {
     );
 
     expect(screen.getByRole("option", { name: /custom_agent \(from scope\)/i })).toBeInTheDocument();
+  });
+});
+
+describe("TicketStudioDraftModal workflow picker", () => {
+  const workflows = [
+    { slug: "loregarden-tdd", name: "Loregarden TDD" },
+    { slug: "extended-tdd", name: "Extended TDD" },
+  ] as never;
+
+  function open(onSave = jest.fn(), item = mockItem()) {
+    render(
+      <TicketStudioDraftModal
+        item={item}
+        allItems={[item]}
+        agentOptions={mockAgents() as never}
+        workflowOptions={workflows}
+        isOpen
+        onClose={() => {}}
+        onSave={onSave}
+      />,
+    );
+    return onSave;
+  }
+
+  it("defaults to the workspace default when no workflow is chosen", () => {
+    open();
+    const select = screen.getByLabelText("Workflow") as HTMLSelectElement;
+    expect(select.value).toBe("");
+    expect(screen.getByRole("option", { name: "Workspace default" })).toBeInTheDocument();
+  });
+
+  it("saves the chosen workflow on the draft item", () => {
+    const onSave = open();
+    fireEvent.change(screen.getByLabelText("Workflow"), { target: { value: "extended-tdd" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ workflow_template_slug: "extended-tdd" }),
+    );
+  });
+
+  it("enables save when only the workflow changed", () => {
+    // draftEquals omitted this field, so a workflow-only edit would not enable Save.
+    open();
+    const save = screen.getByRole("button", { name: /save/i });
+    expect(save).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Workflow"), { target: { value: "extended-tdd" } });
+    expect(save).not.toBeDisabled();
+  });
+
+  it("keeps showing a slug the workspace no longer offers", () => {
+    open(jest.fn(), mockItem({ workflow_template_slug: "retired-template" }));
+    const select = screen.getByLabelText("Workflow") as HTMLSelectElement;
+    expect(select.value).toBe("retired-template");
+    expect(screen.getByRole("option", { name: /retired-template \(not found\)/ })).toBeInTheDocument();
   });
 });
