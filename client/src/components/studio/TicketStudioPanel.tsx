@@ -119,6 +119,11 @@ export function TicketStudioPanel({
     queryFn: api.studioAgents,
     enabled: !!qc,
   });
+  const studioWorkflows = useQuery({
+    queryKey: ["studio-workflows"],
+    queryFn: api.studioWorkflows,
+    enabled: !!qc,
+  });
 
   const selectedSession = useMemo(() => {
     if (!selectedSessionId) return null;
@@ -859,6 +864,7 @@ export function TicketStudioPanel({
         item={expandedDraftItem}
         allItems={localDraft}
         agentOptions={studioAgents.data ?? []}
+        workflowOptions={studioWorkflows.data ?? []}
         isOpen={expandedDraftIndex != null}
         readOnly={isReadOnly || isPreview}
         onClose={() => setExpandedDraftIndex(null)}
