@@ -1,0 +1,10 @@
+[
+  { "name": "console", "path": "/" },
+  { "name": "studio-agents", "path": "/studio/agents" },
+  { "name": "studio-workflows", "path": "/studio/workflows" },
+  { "name": "studio-tickets", "path": "/studio/tickets" },
+  { "name": "studio-gates", "path": "/studio/gates" },
+  { "name": "queue", "path": "/queue" },
+  { "name": "branch-triage", "path": "/branch-triage" },
+  { "name": "editor", "path": "/editor" }
+]

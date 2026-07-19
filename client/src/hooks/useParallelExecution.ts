@@ -63,6 +63,16 @@ export function useParallelExecution(
     let isMounted = true;
     let intervalId: ReturnType<typeof setInterval>;
 
+    // No workspace, nothing to ask about. Callers resolve the workspace from a
+    // query, so the first render always has an empty id — and this hook cannot
+    // be called conditionally, so a caller passing useFallback={false} does not
+    // stop it. Without this guard it polled `/api/parallel/status/` with no id
+    // every few seconds, 404ing each time while the page looked fine.
+    if (!workspaceId) {
+      setLoading(false);
+      return;
+    }
+
     const fetchStatus = async () => {
       try {
         const response = await fetch(

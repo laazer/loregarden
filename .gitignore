@@ -30,3 +30,6 @@ htmlcov/
 
 # OS / editor
 .DS_Store
+
+# Visual QA output (screenshots + summary), regenerated per run
+client/.visual-qa/

@@ -3,7 +3,7 @@
  * Displays toast-style alerts for queue events (run complete, promoted, error)
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { forwardRef, useCallback, useImperativeHandle, useState } from 'react';
 import { IconCloseButton } from './IconCloseButton';
 import './QueueNotifications.css';
 
@@ -28,11 +28,21 @@ export interface QueueNotificationsProps {
   workspaceId: string;
 }
 
-export function QueueNotifications({ workspaceId }: QueueNotificationsProps) {
-  const [notifications, setNotifications] = useState<DisplayNotification[]>([]);
-  const [eventSource, setEventSource] = useState<EventSource | null>(null);
+/** Push a notification onto the queue toast stack. */
+export interface QueueNotificationsHandle {
+  notify: (event: NotificationEvent) => void;
+}
 
-  // Add a new notification
+// workspaceId stays in the props: callers already pass it, and it is what a
+// subscription would key on. Not destructured while nothing subscribes.
+export const QueueNotifications = forwardRef<
+  QueueNotificationsHandle,
+  QueueNotificationsProps
+>(function QueueNotifications(_props, ref) {
+  const [notifications, setNotifications] = useState<DisplayNotification[]>([]);
+
+  // The entry point delivery would call. Exposed on the ref so the toast stack
+  // stays reachable rather than being unreachable code waiting on a producer.
   const addNotification = useCallback(
     (event: NotificationEvent) => {
       const id = event.id || `${Date.now()}-${Math.random()}`;
@@ -71,87 +81,19 @@ export function QueueNotifications({ workspaceId }: QueueNotificationsProps) {
     }, 300);
   }, []);
 
-  // Subscribe to WebSocket events for queue updates
-  useEffect(() => {
-    // Check for WebSocket availability
-    const checkWebSocket = async () => {
-      try {
-        // Try to get WebSocket client status
-        const response = await fetch(
-          `/api/parallel/workspace/${workspaceId}/ws-status`
-        ).catch(() => null);
+  // Queue notifications are not wired up.
+  //
+  // This subscribed over SSE to /api/parallel/workspace/:id/notifications, and
+  // first probed a ws-status endpoint. Neither has ever existed: the SSE route
+  // is written against a ws.subscribe API that websocket_events does not
+  // provide, so it cannot even be imported, let alone registered. No event has
+  // ever reached this component — it just 404'd on every queue load.
+  //
+  // The rendering below is kept so notifications work the moment something can
+  // push them; addNotification is the entry point. Delivery needs subscribe /
+  // unsubscribe on the websocket layer first.
 
-        if (!response?.ok) {
-          // Fall back to Server-Sent Events for notifications
-          setupSSE();
-          return;
-        }
-      } catch {
-        setupSSE();
-      }
-    };
-
-    const setupSSE = () => {
-      // Setup Server-Sent Events for notifications
-      const sse = new EventSource(
-        `/api/parallel/workspace/${workspaceId}/notifications`
-      );
-
-      sse.addEventListener('run_completed', (event) => {
-        const data = JSON.parse(event.data);
-        addNotification({
-          id: `run-completed-${data.run_id}`,
-          type: 'success',
-          title: 'Run Completed',
-          message: `${data.ticket_id} finished successfully`,
-          duration: 5000,
-        });
-      });
-
-      sse.addEventListener('run_promoted', (event) => {
-        const data = JSON.parse(event.data);
-        addNotification({
-          id: `run-promoted-${data.run_id}`,
-          type: 'info',
-          title: 'Run Promoted',
-          message: `${data.ticket_id} started (slot ${data.slot_number})`,
-          duration: 5000,
-        });
-      });
-
-      sse.addEventListener('run_failed', (event) => {
-        const data = JSON.parse(event.data);
-        addNotification({
-          id: `run-failed-${data.run_id}`,
-          type: 'error',
-          title: 'Run Failed',
-          message: `${data.ticket_id} failed: ${data.error}`,
-          duration: 10000,
-        });
-      });
-
-      sse.addEventListener('reorder_failed', (event) => {
-        const data = JSON.parse(event.data);
-        addNotification({
-          id: `reorder-failed-${data.run_id}`,
-          type: 'error',
-          title: 'Reorder Failed',
-          message: data.message,
-          duration: 5000,
-        });
-      });
-
-      setEventSource(sse);
-    };
-
-    checkWebSocket();
-
-    return () => {
-      if (eventSource) {
-        eventSource.close();
-      }
-    };
-  }, [workspaceId, addNotification]);
+  useImperativeHandle(ref, () => ({ notify: addNotification }), [addNotification]);
 
   return (
     <div className="queue-notifications-container">
@@ -193,4 +135,4 @@ export function QueueNotifications({ workspaceId }: QueueNotificationsProps) {
       ))}
     </div>
   );
-}
+});
