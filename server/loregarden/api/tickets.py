@@ -52,6 +52,7 @@ from loregarden.services.triage_run_service import (
     start_triage_run,
 )
 from loregarden.services.triage_service import set_triage_runtime, triage_snapshot
+from loregarden.services.workflow_reassignment import describe_reassignment
 from sqlmodel import Session, col, select
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
@@ -519,6 +520,23 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         resolved_compatibility_posture=posture.posture.value,
         compatibility_posture_source=posture.source,
     )
+
+
+@router.get("/{ticket_id}/workflow-reassignment", response_model=dict)
+def preview_workflow_reassignment(
+    ticket_id: str,
+    template_slug: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """What changing this ticket's workflow would cost, before doing it.
+
+    Read-only. The change itself still goes through PATCH — this only lets the
+    caller show what is about to be lost.
+    """
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    return describe_reassignment(session, ticket, template_slug)
 
 
 @router.patch("/{ticket_id}", response_model=TicketDetail)
