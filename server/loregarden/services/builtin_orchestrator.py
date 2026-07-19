@@ -26,6 +26,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.evidence import has_evidence, resolve_head_sha
 from loregarden.services.gate_runner import run_gate_autofix, run_transition_gates, strip_ansi
 from loregarden.services.git_commit_push_service import commit_paths
 from loregarden.services.orchestration import OrchestrationService
@@ -367,6 +368,32 @@ class BuiltinOrchestrator:
             ).all()
         )
 
+    def _missing_evidence_detail(self, ticket: Ticket, stage_def: WorkflowStageDef) -> str:
+        """Why this stage cannot pass yet for want of proof, or "" when satisfied.
+
+        Scoped to the current HEAD: evidence carried over from an earlier commit
+        proves nothing about the code being gated. Note the agent's own work is
+        still uncommitted at gate time, so this catches proof left over from a
+        previous stage or commit rather than proof captured a few edits ago.
+        """
+        required = [kind for kind in (stage_def.required_evidence or []) if kind]
+        if not required:
+            return ""
+
+        commit_sha = resolve_head_sha(self.session, ticket)
+        missing = [
+            kind
+            for kind in required
+            if not has_evidence(self.session, ticket, commit_sha=commit_sha, evidence_kind=kind)
+        ]
+        if not missing:
+            return ""
+        return (
+            f"Stage '{stage_def.key}' requires evidence for the current commit that is "
+            f"missing: {', '.join(missing)}. Attach it with loregarden_attach_evidence "
+            "— green tests alone do not show the change works."
+        )
+
     def _run_gates_with_autofix(
         self,
         ticket: Ticket,
@@ -388,15 +415,19 @@ class BuiltinOrchestrator:
         Only once those are exhausted do we fall back to today's behaviour —
         reroute for rework and pause for a human.
         """
-        if not profile.gates.enabled:
-            return _GateDecision.PASS
-
         workspace = self.session.get(Workspace, ticket.workspace_id)
         if not workspace:
             # Can't run gates without a workspace; don't wedge the pipeline over it.
             return _GateDecision.PASS
 
-        detail = self._run_gates(ticket, profile, workspace, stage_def, from_stage, to_stage)
+        # Missing proof is reported as a gate failure so it inherits the whole
+        # recovery path: the stage's own agent is handed the reason and gets a
+        # bounded number of tries to attach it before a human is pulled in.
+        # Checked independently of profile.gates.enabled — a stage only opts in by
+        # declaring required_evidence, so nothing that has not asked is affected.
+        detail = self._missing_evidence_detail(ticket, stage_def)
+        if not detail and profile.gates.enabled:
+            detail = self._run_gates(ticket, profile, workspace, stage_def, from_stage, to_stage)
         if not detail:
             return _GateDecision.PASS
 

@@ -47,6 +47,9 @@ class WorkflowStageDef(SQLModel):
     parallel_agents: list[ParallelAgentSpec] = Field(default_factory=list)
     gate_commands: list[str] = Field(default_factory=list)
     gate_required: bool = False
+    # Evidence kinds this stage must produce for the current commit before it can
+    # pass. Empty means unproven work advances, which is the old behaviour.
+    required_evidence: list[str] = Field(default_factory=list)
     # Ends the workflow when reached. Falls back to `key == "done"` for templates
     # authored before this flag existed, including version-pinned instances.
     terminal: bool = False
