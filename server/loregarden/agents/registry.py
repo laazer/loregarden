@@ -107,6 +107,12 @@ AGENTS: dict[str, dict] = {
         "adapter": "claude",
         "timeout": 600,
     },
+    "visual_qa": {
+        "name": "Visual QA",
+        "role_file": "agents/misc_agents/visual_qa_v1.md",
+        "adapter": "claude",
+        "timeout": 900,
+    },
     "debugger": {
         "name": "Debugger",
         "role_file": "agents/misc_agents/debugger_v1.md",
