@@ -1,5 +1,9 @@
 """Agent registry — adapters only, no orchestration logic."""
 
+#: Takes over a stage whose tests failed, rather than the agent that just
+#: declared success. Named here so routing does not hardcode the key.
+DEBUGGER_AGENT_ID = "debugger"
+
 AGENTS: dict[str, dict] = {
     "planner": {
         "name": "Planner Agent",
@@ -102,6 +106,12 @@ AGENTS: dict[str, dict] = {
         "role_file": "agents/misc_agents/architecture_reviewer_v1.md",
         "adapter": "claude",
         "timeout": 600,
+    },
+    "debugger": {
+        "name": "Debugger",
+        "role_file": "agents/misc_agents/debugger_v1.md",
+        "adapter": "claude",
+        "timeout": 900,
     },
     "security_reviewer": {
         "name": "Security Reviewer",

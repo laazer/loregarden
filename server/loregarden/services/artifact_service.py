@@ -681,7 +681,7 @@ _VITEST_SUMMARY = re.compile(
 _VALID_TEST_NAME = re.compile(r"^[\w./:-]+(?:::[\w]+)?$")
 
 
-def _looks_like_test_output(text: str) -> bool:
+def looks_like_test_output(text: str) -> bool:
     lower = text.lower()
     return (
         "test session starts" in lower
@@ -727,7 +727,7 @@ def extract_pytest_sections_from_stream_json(text: str) -> list[tuple[str, str]]
             if isinstance(content, list):
                 content = "\n".join(str(part) for part in content)
             content = str(content or "")
-            if not _looks_like_test_output(content):
+            if not looks_like_test_output(content):
                 continue
             tool_id = block.get("tool_use_id") or ""
             command = pending_commands.get(tool_id, "")

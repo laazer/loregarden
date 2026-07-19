@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from enum import Enum
 
 from loregarden.agents.executors.cli import CliAgentExecutor
+from loregarden.agents.registry import DEBUGGER_AGENT_ID
 from loregarden.core.state_machine import StateMachine
 from loregarden.db.session import engine
 from loregarden.models.domain import (
@@ -26,6 +27,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.artifact_service import looks_like_test_output
 from loregarden.services.evidence import has_evidence, resolve_head_sha
 from loregarden.services.gate_runner import run_gate_autofix, run_transition_gates, strip_ansi
 from loregarden.services.git_commit_push_service import commit_paths
@@ -514,6 +516,16 @@ class BuiltinOrchestrator:
                 },
             )
 
+    def _gate_failure_agent(self, detail: str) -> str:
+        """Who should take a failing gate: "" for the stage's own agent.
+
+        A lint or format failure is the stage's own mess and it can clear it. A
+        failing test is a different job — the agent that just declared success is
+        the one whose model of the code is wrong, and asking it again tends to
+        produce the nearest change that makes the red go away.
+        """
+        return DEBUGGER_AGENT_ID if looks_like_test_output(detail) else ""
+
     def _reroute_for_agent_fix(
         self,
         ticket: Ticket,
@@ -542,11 +554,19 @@ class BuiltinOrchestrator:
                 "command": "",
             },
         )
-        blocking = (
-            f"The '{from_stage}' stage passed its agent but failed the static-analysis gate "
-            f"on the way to the next stage, and automatic fixers couldn't resolve it. "
-            f"Fix these issues and report `pass`:\n\n{detail}"
-        )
+        handoff_agent = self._gate_failure_agent(detail)
+        if handoff_agent:
+            blocking = (
+                f"The '{from_stage}' stage reported success, then its tests failed. Find the "
+                f"root cause from observed runtime state and fix that — do not delete, skip, "
+                f"or loosen a test to get a pass. Report `pass` once it is green:\n\n{detail}"
+            )
+        else:
+            blocking = (
+                f"The '{from_stage}' stage passed its agent but failed the static-analysis gate "
+                f"on the way to the next stage, and automatic fixers couldn't resolve it. "
+                f"Fix these issues and report `pass`:\n\n{detail}"
+            )
         apply_stage_route(
             ticket,
             instance,
@@ -555,6 +575,7 @@ class BuiltinOrchestrator:
             from_key=from_stage,
             outcome="reject",
             next_stage_key=from_stage,
+            next_agent=handoff_agent,
             blocking_issues=blocking,
             orch_run=orch_run,
         )
