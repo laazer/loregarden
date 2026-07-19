@@ -39,6 +39,7 @@ from loregarden.services.draft_hierarchy import (
     topo_sort_draft_items,
 )
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.workflow_service import WorkflowService
 from sqlmodel import Session, select
 
 TICKET_STUDIO_AGENT_ID = "ticket_scoper"
@@ -538,6 +539,19 @@ def _validate_draft_hierarchy(
         raise DraftHierarchyError(violations)
 
 
+def _apply_draft_workflow(session: Session, ticket: Ticket, template_slug: str) -> None:
+    """Put the committed ticket on the workflow the draft asked for.
+
+    create_ticket binds the workspace default, so without this a ticket scoped
+    here still runs the full pipeline no matter what it needs. Resetting to the
+    first stage is harmless: the ticket was created moments ago.
+    """
+    slug = (template_slug or "").strip()
+    if not slug:
+        return
+    WorkflowService(session).set_ticket_workflow_template(ticket, slug)
+
+
 class TicketStudioService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -930,6 +944,7 @@ class TicketStudioService:
                 acceptance_criteria=item.acceptance_criteria,
                 priority=item.priority,
             )
+            _apply_draft_workflow(self.session, created, item.workflow_template_slug)
             ref_to_id[item.ref] = created.id
             created_ids.append(created.id)
             breakdown[item.work_item_type.value] = breakdown.get(item.work_item_type.value, 0) + 1
