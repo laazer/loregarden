@@ -214,13 +214,15 @@ export function HiveCssAgent({
       style={{ left: initialPos.left, top: initialPos.top, color: agent.color }}
       title={`${agent.name} · ${agent.statusLabel} · ${agent.stage}`}
     >
-      <div className="hive-css__agent-card">
-        <div className="hive-css__agent-name">{agent.name}</div>
-        <div ref={statusRef} className="hive-css__agent-status">
-          {agent.statusLabel} · {agent.stage}
+      {agent.lead ? (
+        <div className="hive-css__agent-card">
+          <div className="hive-css__agent-name">{agent.name}</div>
+          <div ref={statusRef} className="hive-css__agent-status">
+            {agent.statusLabel} · {agent.stage}
+          </div>
+          {agent.showTool ? <div className="hive-css__agent-skill">▸ {agent.skill}</div> : null}
         </div>
-        {agent.showTool ? <div className="hive-css__agent-skill">▸ {agent.skill}</div> : null}
-      </div>
+      ) : null}
       <SpriteOrFallback
         src={avatarSrc}
         className="hive-css__agent-avatar"

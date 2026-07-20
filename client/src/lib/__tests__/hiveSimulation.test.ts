@@ -31,10 +31,13 @@ describe("buildHiveWorld (legacy hiveSimulation entry)", () => {
     );
 
     expect(model.idle).toBe(false);
-    expect(model.agents).toHaveLength(2);
+    // Two agents, but officeplace crews each station: planner_hq's pair and
+    // coding's trio put five bodies on the floor.
+    expect(model.agents).toHaveLength(5);
     expect(model.agents[0]?.name).toBe("Planner");
-    expect(model.agents[1]?.id).toBe("backend_implementer");
-    expect(model.agents[1]?.showTool).toBe(true);
+
+    const coder = model.agents.find((a) => a.agentId === "backend_implementer");
+    expect(coder?.showTool).toBe(true);
     expect(model.orchestratorActive).toBe(true);
   });
 
