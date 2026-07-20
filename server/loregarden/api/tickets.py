@@ -43,6 +43,7 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.path_browser import read_import_files
 from loregarden.services.run_errors import normalize_timeout_stderr
+from loregarden.services.run_ledger import ledger_payload
 from loregarden.services.run_service import RunService, schedule_agent_run, schedule_orchestration
 from loregarden.services.ticket_import_service import TicketImportService
 from loregarden.services.ticket_service import TicketService
@@ -537,6 +538,25 @@ def preview_workflow_reassignment(
     if not ticket:
         raise HTTPException(404, "Ticket not found")
     return describe_reassignment(session, ticket, template_slug)
+
+
+@router.get("/{ticket_id}/ledger", response_model=dict)
+def get_ticket_ledger(
+    ticket_id: str,
+    limit: int = 200,
+    session: Session = Depends(get_session),
+) -> dict:
+    """What happened to this ticket, in order.
+
+    A higher default limit than the run list: the ledger's whole point is the
+    shape over time, and truncating it to the most recent handful would hide
+    the loops it exists to show.
+    """
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    runs = RunService(session).list_runs(ticket_id=ticket_id, limit=limit)
+    return ledger_payload(runs)
 
 
 @router.patch("/{ticket_id}", response_model=TicketDetail)

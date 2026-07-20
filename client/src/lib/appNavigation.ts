@@ -6,6 +6,7 @@ export type ArtifactTab =
   | "tests"
   | "hive"
   | "context"
+  | "ledger"
   | "errors"
   | "triage"
   | "pr";
@@ -20,6 +21,7 @@ export const ARTIFACT_TABS: ArtifactTab[] = [
   "tests",
   "hive",
   "context",
+  "ledger",
   "pr",
 ];
 

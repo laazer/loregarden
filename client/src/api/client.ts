@@ -90,6 +90,7 @@ import type {
   ReloadStatus,
   RunLog,
   RunMessage,
+  TicketLedger,
 } from "./types";
 
 
@@ -191,6 +192,8 @@ export const api = {
       stderr: string;
     }>(`/api/runs/${runId}`),
   runLog: (runId: string) => request<RunLog>(`/api/runs/${runId}/log`),
+  ticketLedger: (ticketId: string) =>
+    request<TicketLedger>(`/api/tickets/${ticketId}/ledger`),
   runMessages: (runId: string) =>
     request<{ messages: RunMessage[]; refusal: string }>(`/api/runs/${runId}/messages`),
   sendRunMessage: (runId: string, content: string) =>
