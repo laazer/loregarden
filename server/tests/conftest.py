@@ -1,5 +1,4 @@
 import subprocess
-import threading
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,7 +8,6 @@ from loregarden.main import app
 from loregarden.models.domain import Workspace
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, SQLModel, create_engine, select
-from sqlmodel.pool import StaticPool
 
 # Every module that binds the DB engine at import time via
 # `from loregarden.db.session import engine`. The isolated_db fixture redirects
@@ -25,40 +23,6 @@ _ENGINE_BINDINGS = (
     "loregarden.services.triage_run_service.engine",
     "loregarden.services.branch_triage_run_service.engine",
 )
-
-# The TestStateConsistencyUnderConcurrency tests drive many ticket creations
-# concurrently through a single shared SQLite connection (StaticPool), which
-# flakes on lock contention (either test may pass or fail on a given run). They
-# need a genuinely concurrent DB (a WAL file engine with a real pool) or a
-# rewrite to a deterministic barrier; quarantined by class prefix as a tracked
-# follow-up rather than slowing the whole suite with per-connection WAL setup.
-_QUARANTINED_NODEID_PREFIXES = (
-    "tests/test_workflow_deep_adversarial.py::TestStateConsistencyUnderConcurrency::",
-)
-
-
-def pytest_collection_modifyitems(config, items):
-    marker = pytest.mark.xfail(
-        reason="pre-existing flake: concurrent writes over one shared SQLite connection",
-        strict=False,
-    )
-    for item in items:
-        nodeid = item.nodeid.split("[", 1)[0]
-        if nodeid.startswith(_QUARANTINED_NODEID_PREFIXES):
-            item.add_marker(marker)
-
-
-@pytest.fixture(autouse=True)
-def sqlite_commit_lock(monkeypatch):
-    """Serialize SQLite commits in tests — StaticPool + threads otherwise flake."""
-    lock = threading.Lock()
-    original_commit = Session.commit
-
-    def locked_commit(self, *args, **kwargs):
-        with lock:
-            return original_commit(self, *args, **kwargs)
-
-    monkeypatch.setattr(Session, "commit", locked_commit)
 
 
 @pytest.fixture(autouse=True)
@@ -82,9 +46,16 @@ def isolated_db_fixture(tmp_path, monkeypatch):
     """
     engine = create_engine(
         f"sqlite:///{tmp_path / 'pytest.db'}",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+        connect_args={"check_same_thread": False, "timeout": 30},
     )
+    # A real pool, not StaticPool: StaticPool hands every thread the *same* DBAPI
+    # connection, so concurrent sessions share one transaction. One session's
+    # commit ends another's mid-flight transaction — the second then dies with
+    # "cannot commit - no transaction is active", or reads a row a peer already
+    # rolled back (ObjectDeletedError). WAL lets those per-thread connections
+    # write concurrently instead of serialising on the whole file.
+    with engine.connect() as conn:
+        conn.exec_driver_sql("PRAGMA journal_mode=WAL")
     SQLModel.metadata.create_all(engine)
     for target in _ENGINE_BINDINGS:
         monkeypatch.setattr(target, engine)
