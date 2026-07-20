@@ -5,6 +5,15 @@ import { IconCloseButton } from './IconCloseButton';
 export interface TicketDetailsSaveDraft {
   title: string;
   description: string;
+  acceptanceCriteria: string[];
+}
+
+/** One criterion per line, blank lines dropped — mirrors the server's normalization. */
+function parseCriteria(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 }
 
 export interface TicketDetailsModalProps {
@@ -61,14 +70,20 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
 }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [criteriaText, setCriteriaText] = useState('');
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // Joined rather than the array itself: a refetch hands back a new array identity
+  // every time, which would re-seed the textarea and discard an in-progress edit.
+  const criteriaSeed = asStringArray(ticket?.acceptance_criteria).join('\n');
 
   useEffect(() => {
     if (ticket) {
       setTitle(asDisplayString(ticket.title));
       setDescription(asDisplayString(ticket.description));
+      setCriteriaText(criteriaSeed);
     }
-  }, [ticket?.id, ticket?.title, ticket?.description]);
+  }, [ticket?.id, ticket?.title, ticket?.description, criteriaSeed]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -94,16 +109,17 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
     return null;
   }
 
-  const acceptanceCriteria = asStringArray(ticket?.acceptance_criteria);
+  const acceptanceCriteria = parseCriteria(criteriaText);
   const isDirty =
     !!ticket &&
     (title.trim() !== asDisplayString(ticket.title) ||
-      description !== asDisplayString(ticket.description));
+      description !== asDisplayString(ticket.description) ||
+      acceptanceCriteria.join('\n') !== parseCriteria(criteriaSeed).join('\n'));
   const canSave = isDirty && title.trim().length > 0 && !!onSave;
 
   const handleSave = async () => {
     if (!canSave) return;
-    await onSave({ title: title.trim(), description });
+    await onSave({ title: title.trim(), description, acceptanceCriteria });
   };
 
   const diffArtifact = ticket?.artifacts?.diff;
@@ -198,16 +214,24 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
                 />
               </div>
 
-              {acceptanceCriteria.length > 0 && (
-                <div className="state-card">
-                  <div className="state-label">Acceptance Criteria</div>
-                  <ul style={{ fontSize: 13, color: 'var(--tx)', margin: 0, paddingLeft: 20 }}>
-                    {acceptanceCriteria.map((criterion, index) => (
-                      <li key={index}>{criterion}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              <div className="state-card">
+                <div className="state-label">Acceptance Criteria</div>
+                <textarea
+                  aria-label="Acceptance criteria, one per line"
+                  className="btn-secondary filter-select"
+                  style={{ width: '100%', fontSize: 13, minHeight: 96, resize: 'vertical', marginTop: 4 }}
+                  value={criteriaText}
+                  disabled={isSaving}
+                  placeholder="One criterion per line…"
+                  onChange={(e) => setCriteriaText(e.target.value)}
+                />
+                <p className="modal-hint" style={{ marginTop: 4 }}>
+                  {acceptanceCriteria.length === 1
+                    ? '1 criterion'
+                    : `${acceptanceCriteria.length} criteria`}
+                  , one per line
+                </p>
+              </div>
 
               {asDisplayString(ticket.blocking_issues) && (
                 <div className="state-card">

@@ -169,6 +169,56 @@ describe('DashboardTicketDetailsButton - Adversarial Test Suite', () => {
         expect(screen.getByText('Save failed')).toBeInTheDocument();
       });
     });
+
+    it('should send edited acceptance criteria to the API', async () => {
+      jest
+        .mocked(apiClient.api.ticket)
+        .mockResolvedValue(createMockTicket({ acceptance_criteria: ['Original criterion'] }));
+      jest.mocked(apiClient.api.updateTicket).mockResolvedValue(createMockTicket());
+
+      renderButton();
+      fireEvent.click(screen.getByRole('button', { name: /view ticket details/i }));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/acceptance criteria/i)).toHaveValue('Original criterion');
+      });
+
+      fireEvent.change(screen.getByLabelText(/acceptance criteria/i), {
+        target: { value: 'Original criterion\nAdded criterion' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+      await waitFor(() => {
+        expect(apiClient.api.updateTicket).toHaveBeenCalledWith('ticket-123', {
+          acceptance_criteria: ['Original criterion', 'Added criterion'],
+        });
+      });
+    });
+
+    it('should not resend criteria when only the title changed', async () => {
+      // A patch that always carried acceptance_criteria would let an unrelated
+      // title edit overwrite criteria the operator never looked at.
+      jest
+        .mocked(apiClient.api.ticket)
+        .mockResolvedValue(createMockTicket({ title: 'Original', acceptance_criteria: ['Keep'] }));
+      jest.mocked(apiClient.api.updateTicket).mockResolvedValue(createMockTicket());
+
+      renderButton();
+      fireEvent.click(screen.getByRole('button', { name: /view ticket details/i }));
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Original')).toBeInTheDocument();
+      });
+
+      fireEvent.change(screen.getByDisplayValue('Original'), { target: { value: 'Retitled' } });
+      fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+      await waitFor(() => {
+        expect(apiClient.api.updateTicket).toHaveBeenCalledWith('ticket-123', {
+          title: 'Retitled',
+        });
+      });
+    });
   });
 });
 

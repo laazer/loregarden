@@ -177,6 +177,7 @@ describe('TicketDetailsModal', () => {
         expect(onSave).toHaveBeenCalledWith({
           title: 'Updated title',
           description: 'Updated description',
+          acceptanceCriteria: [],
         });
       });
     });
@@ -193,8 +194,8 @@ describe('TicketDetailsModal', () => {
       expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled();
     });
 
-    it('should display acceptance criteria as a list', () => {
-      // SPEC: Modal should display acceptance criteria in a readable format
+    it('should load acceptance criteria into the editor, one per line', () => {
+      // SPEC: Criteria are editable here — the API accepts them but nothing else does.
       const ticket = createMockTicket({
         acceptance_criteria: [
           'Criterion 1: User can click button',
@@ -206,9 +207,54 @@ describe('TicketDetailsModal', () => {
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
       );
 
-      expect(screen.getByText('Criterion 1: User can click button')).toBeInTheDocument();
-      expect(screen.getByText('Criterion 2: Modal appears with details')).toBeInTheDocument();
-      expect(screen.getByText('Criterion 3: Modal can be closed')).toBeInTheDocument();
+      expect(screen.getByLabelText(/acceptance criteria/i)).toHaveValue(
+        'Criterion 1: User can click button\n' +
+          'Criterion 2: Modal appears with details\n' +
+          'Criterion 3: Modal can be closed'
+      );
+    });
+
+    it('should save edited acceptance criteria as a trimmed list', async () => {
+      const onSave = jest.fn().mockResolvedValue(undefined);
+      const ticket = createMockTicket({ acceptance_criteria: ['Original criterion'] });
+      renderWithQueryClient(
+        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} onSave={onSave} />
+      );
+
+      fireEvent.change(screen.getByLabelText(/acceptance criteria/i), {
+        target: { value: '  First  \n\n  Second  \n   \n' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+      await waitFor(() => {
+        expect(onSave).toHaveBeenCalledWith(
+          expect.objectContaining({ acceptanceCriteria: ['First', 'Second'] })
+        );
+      });
+    });
+
+    it('should offer the editor on a ticket that has no criteria yet', () => {
+      // The gap that mattered: criteria were unreachable once a ticket existed
+      // without them, so there was nowhere to add the first one.
+      const ticket = createMockTicket({ acceptance_criteria: [] });
+      renderWithQueryClient(
+        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} onSave={jest.fn()} />
+      );
+
+      expect(screen.getByLabelText(/acceptance criteria/i)).toHaveValue('');
+    });
+
+    it('should not enable save when only whitespace changes in the criteria editor', () => {
+      const ticket = createMockTicket({ acceptance_criteria: ['Only criterion'] });
+      renderWithQueryClient(
+        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} onSave={jest.fn()} />
+      );
+
+      fireEvent.change(screen.getByLabelText(/acceptance criteria/i), {
+        target: { value: '  Only criterion  \n\n' },
+      });
+
+      expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled();
     });
 
     it('should display ticket state badge', () => {
@@ -691,10 +737,11 @@ describe('TicketDetailsModal', () => {
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
       );
 
-      // All criteria should be present (or accessible via scrolling)
-      expect(screen.getByText('Criterion 1: A detailed requirement')).toBeInTheDocument();
-      expect(screen.getByText('Criterion 25: A detailed requirement')).toBeInTheDocument();
-      expect(screen.getByText('Criterion 50: A detailed requirement')).toBeInTheDocument();
+      // All criteria should be present (or accessible by scrolling the editor)
+      const editor = screen.getByLabelText(/acceptance criteria/i);
+      expect(editor).toHaveValue(
+        Array.from({ length: 50 }, (_, i) => `Criterion ${i + 1}: A detailed requirement`).join('\n')
+      );
     });
   });
 
