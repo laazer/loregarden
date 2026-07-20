@@ -13,6 +13,8 @@
 #   - py-organization: file/class size caps, __init__.py minimalism, private-import ban,
 #     getattr/setattr ban (outside tests), DRY duplicate-function-body detection
 #   - py-defensive-normalization: flags str(...).strip().lower() comparisons (code smell)
+#   - py-git-subprocess: git/gh subprocess calls must route through run_git (GIT_DIR
+#     overrides cwd, so an unscrubbed call can hit the wrong repository)
 #   - client-lint: oxlint on staged client/**/*.{ts,tsx,js,jsx}
 #
 # pre-push — full suites, mirrors CI jobs (parallel: true):
@@ -43,6 +45,10 @@ pre-commit:
       name: Python defensive normalization check (code smell)
       glob: "server/**/*.py"
       run: bash .lefthook/scripts/detect-defensive-normalization.sh {staged_files}
+    py-git-subprocess:
+      name: Python git subprocess routing (GIT_DIR safety)
+      glob: "server/**/*.py"
+      run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_git_subprocess_check.py {staged_files}
     client-lint:
       name: Client (oxlint)
       glob: "client/**/*.{ts,tsx,js,jsx}"

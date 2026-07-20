@@ -6,6 +6,7 @@ import json
 import subprocess
 
 from loregarden.models.domain import Artifact, Ticket, Workspace
+from loregarden.services.git_subprocess import scrubbed_git_env
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -63,6 +64,9 @@ def create_ticket_pull_request(session: Session, ticket: Ticket) -> dict:
             branch,
         ],
         cwd=repo_root,
+        # `gh` picks its target repository by shelling out to git, so an
+        # inherited GIT_DIR would open this PR against the wrong repo.
+        env=scrubbed_git_env(),
         capture_output=True,
         text=True,
     )

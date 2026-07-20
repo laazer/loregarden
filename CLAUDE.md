@@ -96,8 +96,13 @@ Applies to `server/**/*.py`. Enforce, beyond the automated gates:
 - Watch the hotspots in `AGENTS.md` → *Notes*: new code in a 1000-line service usually belongs
   in a new module.
 
-The automated gates (Ruff, Pylint diff-scoped, organization, defensive-normalization) run on
-staged files via lefthook. A reviewer adds judgment the gates cannot: is this the right shape,
+- Shell out to git through `loregarden.services.git_subprocess.run_git`, never
+  `subprocess.run(["git", ...])` — `GIT_DIR` overrides `cwd`, so an unscrubbed call can operate
+  on the wrong repository. Same for `gh`, which resolves its repo through git. The
+  `py-git-subprocess` gate enforces this.
+
+The automated gates (Ruff, Pylint diff-scoped, organization, defensive-normalization,
+git-subprocess routing) run on staged files via lefthook. A reviewer adds judgment the gates cannot: is this the right shape,
 in the right place, with the right seams.
 
 ### GDScript (`gdscript-reviewer`)
