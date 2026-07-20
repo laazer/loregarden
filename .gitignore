@@ -33,3 +33,6 @@ htmlcov/
 
 # Visual QA output (screenshots + summary), regenerated per run
 client/.visual-qa/
+
+# Design explorations — kept locally, not part of the repo
+docs/design/
