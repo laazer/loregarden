@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { api } from "../api/client";
 import { IconCloseButton } from "./IconCloseButton";
 import { LiveLogLine, LogLineRow } from "./logs/LogLineRow";
+import { RunSteerComposer } from "./RunSteerComposer";
 import "./LogsPanel.css";
 
 const ACTIVE_STATUSES = new Set(["running", "awaiting_permission"]);
@@ -97,6 +98,13 @@ export function RunLogModal({ runId, onClose }: { runId: string | null; onClose:
               ))}
               {live ? <LiveLogLine text={live} /> : null}
             </div>
+          )}
+
+          {runId && (
+            <RunSteerComposer
+              runId={runId}
+              isActive={ACTIVE_STATUSES.has(data?.status?.toLowerCase() ?? "")}
+            />
           )}
 
           {data?.stderr && (

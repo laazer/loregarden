@@ -595,6 +595,10 @@ class StudioGeneratedWorkflow(SQLModel):
     stages: list[StudioWorkflowStage] = Field(default_factory=list)
 
 
+class RunMessageCreate(SQLModel):
+    content: str
+
+
 class TicketStudioDraftItem(SQLModel):
     ref: str
     work_item_type: WorkItemType

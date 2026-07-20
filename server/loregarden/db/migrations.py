@@ -1368,6 +1368,30 @@ def _m_adversarial_planning(conn: Connection) -> None:
     _snapshot_template_version(conn, row["id"], new_version, "Adversarial planning")
 
 
+def _m_run_messages_table(conn: Connection) -> None:
+    """Queue for operator messages sent to a run already in flight."""
+    if _table_exists(conn, "run_messages"):
+        return
+    conn.execute(
+        text(
+            """
+            CREATE TABLE run_messages (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                ticket_id TEXT NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                delivered_at TEXT,
+                FOREIGN KEY(run_id) REFERENCES agent_runs(id),
+                FOREIGN KEY(ticket_id) REFERENCES tickets(id)
+            )
+            """
+        )
+    )
+    # The bridge polls undelivered messages for one run on every loop pass.
+    conn.execute(text("CREATE INDEX ix_run_messages_run_id ON run_messages (run_id)"))
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1401,6 +1425,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0030_refactor_skill_routes", _m_refactor_skill_routes),
     ("0031_plan_skill_on_plan_stage", _m_plan_skill_on_plan_stage),
     ("0032_adversarial_planning", _m_adversarial_planning),
+    ("0033_run_messages_table", _m_run_messages_table),
 ]
 
 

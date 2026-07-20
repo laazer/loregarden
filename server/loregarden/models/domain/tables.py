@@ -209,6 +209,26 @@ class AgentRun(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class RunMessage(SQLModel, table=True):
+    """An operator's message to a run that is already in flight.
+
+    Written by the API and drained by the permission bridge, which holds the
+    agent's stdin open. `delivered_at` is what stops a message being injected
+    twice, and what lets the UI show whether the agent has actually received it
+    — a steer that was queued but never delivered is worse than none, because
+    the operator believes the run was corrected.
+    """
+
+    __tablename__ = "run_messages"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    run_id: str = Field(foreign_key="agent_runs.id", index=True)
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    content: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+    delivered_at: datetime | None = None
+
+
 class Artifact(SQLModel, table=True):
     __tablename__ = "artifacts"
 

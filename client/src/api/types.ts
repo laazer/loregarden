@@ -157,6 +157,16 @@ export interface RunLog {
   stderr: string;
 }
 
+/** An operator's message to a run that is already in flight. */
+export interface RunMessage {
+  id: string;
+  run_id: string;
+  content: string;
+  created_at: string;
+  /** Null until the bridge has written it into the agent's stdin. */
+  delivered_at: string | null;
+}
+
 export interface TestArtifact {
   summary: string;
   color?: string;

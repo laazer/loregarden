@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -32,9 +33,16 @@ from loregarden.services.agent_scope import check_agent_scope
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.permission_allowlist import is_permission_allowed
 from loregarden.services.run_errors import agent_timeout_message
+from loregarden.services.run_steering import (
+    POLL_INTERVAL_SECONDS,
+    mark_delivered,
+    pending_messages,
+)
 from loregarden.services.subprocess_lines import SubprocessLineReader
 from loregarden.services.workflow_state import set_stage_status
 from loregarden.services.workspace_paths import resolve_workspace_root
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -379,6 +387,7 @@ class _LoopState:
     approval_deadline: float = 0.0
     finished_with_result: bool = False
     result_is_error: bool = False
+    last_steer_poll: float = 0.0
 
 
 @dataclass
@@ -457,6 +466,13 @@ class PermissionBridgeRunner:
                 if proc.poll() is not None:
                     break
 
+                self._deliver_steer_messages(
+                    run_id=run_id,
+                    proc=proc,
+                    state=state,
+                    streamer=streamer,
+                )
+
                 if state.pending_approval is not None:
                     step = self._handle_pending_approval(
                         ticket=ticket,
@@ -506,6 +522,44 @@ class PermissionBridgeRunner:
                 stderr=agent_timeout_message(timeout_seconds),
                 session_id=state.session_id,
             )
+
+    def _deliver_steer_messages(
+        self,
+        *,
+        run_id: str,
+        proc: Any,
+        state: _LoopState,
+        streamer: RunLogStreamer | None,
+    ) -> None:
+        """Write any operator messages for this run into the agent's stdin.
+
+        Uses its own short-lived session: the API commits from a different
+        connection, and the session driving the run may sit in a transaction old
+        enough never to see those rows.
+
+        A failure here is deliberately swallowed. Steering is an extra channel,
+        and a broken write to it must not take down a run that is otherwise
+        proceeding — the message stays undelivered, which is what the UI reports.
+        """
+        now = time.time()
+        if now - state.last_steer_poll < POLL_INTERVAL_SECONDS:
+            return
+        state.last_steer_poll = now
+
+        try:
+            with Session(engine) as session:
+                messages = pending_messages(session, run_id)
+                for message in messages:
+                    payload = build_user_message(
+                        message.content, session_id=state.session_id or None
+                    )
+                    proc.stdin.write((json.dumps(payload) + "\n").encode("utf-8"))
+                    proc.stdin.flush()
+                    mark_delivered(session, message)
+                    if streamer:
+                        streamer.append("STEER", message.content, force=True)
+        except Exception:  # noqa: BLE001 - never let the side channel kill the run
+            logger.warning("Could not deliver steer message for run %s", run_id, exc_info=True)
 
     def _prepare_context(self, ticket: Ticket, run_id: str) -> _RunContext:
         workspace = self.session.get(Workspace, ticket.workspace_id)
