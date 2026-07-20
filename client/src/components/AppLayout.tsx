@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { useAppPage } from "../lib/useAppNavigation";
 import { useUiStore } from "../state/uiStore";
 import { AppIconRail } from "./AppIconRail";
+import { CopilotDock } from "./CopilotDock";
 import { SettingsModal } from "./SettingsModal";
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -61,7 +62,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
     <div className="app-frame">
       <div className="app-ambient" aria-hidden />
       <AppIconRail onOpenSettings={openSettings} />
-      <div className="screen-area">{children}</div>
+      <div className="app-main">
+        <div className="screen-area">{children}</div>
+        <CopilotDock />
+      </div>
 
       <SettingsModal
         open={settingsOpen}

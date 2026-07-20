@@ -14,6 +14,16 @@ export type PaneId = "workspaces" | "tickets" | "workflow" | "artifacts";
 
 export type PaneVisibility = Record<PaneId, boolean>;
 
+export const DEFAULT_COPILOT_HEIGHT = 340;
+const MIN_COPILOT_HEIGHT = 180;
+const MAX_COPILOT_HEIGHT = 720;
+
+/** Keep a restored or dragged height usable, whatever is in storage. */
+export function clampCopilotHeight(value: unknown): number {
+  const height = typeof value === "number" && Number.isFinite(value) ? value : DEFAULT_COPILOT_HEIGHT;
+  return Math.min(MAX_COPILOT_HEIGHT, Math.max(MIN_COPILOT_HEIGHT, height));
+}
+
 interface UiState {
   stateFilters: TicketState[];
   typeFilters: WorkItemType[];
@@ -29,6 +39,14 @@ interface UiState {
   branchTriageWorkspaceSlug: string;
   hiveSkin: HiveSkinId;
   hiveSpeedIndex: number;
+  copilotOpen: boolean;
+  copilotHeight: number;
+  /**
+   * Which branch the branch-triage screen is reviewing. Lifted out of that
+   * page so the dock can bind to its conversation — the dock mounts above the
+   * routes and cannot see a page's local state.
+   */
+  branchTriageBranch: string;
   toggleStateFilter: (state: TicketState) => void;
   clearStateFilters: () => void;
   toggleTypeFilter: (type: WorkItemType) => void;
@@ -47,6 +65,10 @@ interface UiState {
   setEditorFilePath: (path: string | null) => void;
   setQueueWorkspaceSlug: (slug: string) => void;
   setBranchTriageWorkspaceSlug: (slug: string) => void;
+  setBranchTriageBranch: (branch: string) => void;
+  setCopilotOpen: (open: boolean) => void;
+  toggleCopilot: () => void;
+  setCopilotHeight: (height: number) => void;
   setHiveSkin: (skin: HiveSkinId | string) => void;
   setHiveSpeedIndex: (index: number) => void;
   stepHiveSpeed: (delta: -1 | 1) => void;
@@ -66,6 +88,8 @@ type PersistedUiState = Pick<
   | "branchTriageWorkspaceSlug"
   | "hiveSkin"
   | "hiveSpeedIndex"
+  | "copilotOpen"
+  | "copilotHeight"
 >;
 
 export const useUiStore = create<UiState>()(
@@ -90,6 +114,12 @@ export const useUiStore = create<UiState>()(
       branchTriageWorkspaceSlug: "",
       hiveSkin: DEFAULT_HIVE_SKIN,
       hiveSpeedIndex: hiveSpeedIndexFor(DEFAULT_HIVE_SPEED_MULTIPLIER),
+      copilotOpen: false,
+      copilotHeight: DEFAULT_COPILOT_HEIGHT,
+      // Not persisted: which branch is under review is a property of this
+      // visit, and restoring a stale one would bind the dock to a
+      // conversation the screen is not showing.
+      branchTriageBranch: "",
       toggleStateFilter: (state) => {
         const current = get().stateFilters;
         set({
@@ -146,6 +176,11 @@ export const useUiStore = create<UiState>()(
       setQueueWorkspaceSlug: (queueWorkspaceSlug) => set({ queueWorkspaceSlug }),
       setBranchTriageWorkspaceSlug: (branchTriageWorkspaceSlug) =>
         set({ branchTriageWorkspaceSlug }),
+      setBranchTriageBranch: (branchTriageBranch) => set({ branchTriageBranch }),
+      setCopilotOpen: (copilotOpen) => set({ copilotOpen }),
+      toggleCopilot: () => set({ copilotOpen: !get().copilotOpen }),
+      setCopilotHeight: (height) =>
+        set({ copilotHeight: clampCopilotHeight(height) }),
       setHiveSkin: (hiveSkin) => set({ hiveSkin: resolveHiveSkinId(hiveSkin) }),
       setHiveSpeedIndex: (hiveSpeedIndex) =>
         set({ hiveSpeedIndex: clampHiveSpeedIndex(hiveSpeedIndex) }),
@@ -164,9 +199,13 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "loregarden-ui",
-      version: 7,
+      version: 8,
       migrate: (persistedState, version) => {
         const state = { ...(persistedState as Record<string, unknown>) };
+        if (version < 8) {
+          if (typeof state.copilotOpen !== "boolean") state.copilotOpen = false;
+          state.copilotHeight = clampCopilotHeight(state.copilotHeight);
+        }
         if (version < 7 && typeof state.branchTriageWorkspaceSlug !== "string") {
           state.branchTriageWorkspaceSlug = "";
         }
@@ -221,6 +260,8 @@ export const useUiStore = create<UiState>()(
         editorContextRoot: s.editorContextRoot,
         queueWorkspaceSlug: s.queueWorkspaceSlug,
         branchTriageWorkspaceSlug: s.branchTriageWorkspaceSlug,
+        copilotOpen: s.copilotOpen,
+        copilotHeight: s.copilotHeight,
         hiveSkin: s.hiveSkin,
         hiveSpeedIndex: s.hiveSpeedIndex,
       }),
