@@ -19,7 +19,11 @@ from loregarden.agents.mcp_context import (
     load_memory_protocol_doc,
     load_stage_report_contract_doc,
 )
-from loregarden.agents.plan_context import build_plan_context
+from loregarden.agents.plan_context import (
+    SYNTHESIS_SKILL,
+    build_plan_context,
+    build_plan_synthesis_context,
+)
 from loregarden.agents.registry import get_agent
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.agents.verify_context import build_verify_context
@@ -413,6 +417,7 @@ class CliAgentExecutor:
         memory_doc = load_memory_protocol_doc(agent_context_dir)
         stage_report_doc = load_stage_report_contract_doc(agent_context_dir)
         is_verify = stage_def is not None and stage_def.stage_type == VERIFY_STAGE_TYPE
+        is_synthesis = skill_name == SYNTHESIS_SKILL
 
         # Ordered prompt blocks. Add a section by inserting a block here rather
         # than threading another conditional through the assembly; each block
@@ -451,6 +456,12 @@ class CliAgentExecutor:
             _titled_block(
                 "## Plan (settled by the plan stage)",
                 "" if is_verify else build_plan_context(self.session, ticket, run.stage_key),
+            ),
+            # The synthesizer gets the lanes instead of the settled plan — there
+            # is no settled plan yet, producing it is the job.
+            _titled_block(
+                "## Plans to reconcile",
+                build_plan_synthesis_context(self.session, ticket) if is_synthesis else "",
             ),
             # Before the role, so an agent knows the shape of the repo before it
             # is told its job. The implementers run on cursor, which does not

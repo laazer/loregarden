@@ -1264,6 +1264,110 @@ def _m_plan_skill_on_plan_stage(conn: Connection) -> None:
     _snapshot_template_version(conn, row["id"], new_version, "Plan stage attaches its plan")
 
 
+_HYPERPLAN_TEMPLATE = "studio-loregarden-tdd-v3"
+_HYPERPLAN_STAGE = "plan"
+_HYPERPLAN_SYNTHESIS_KEY = "plan-synthesis"
+# Three lenses, one agent. They differ by skill rather than by role because the
+# argument each makes is a way of reading the ticket, not a different job — and
+# three near-identical role bodies would drift apart the moment one is edited.
+_HYPERPLAN_LANES = [
+    ("planner", "plan-simplest"),
+    ("planner", "plan-risk"),
+    ("planner", "plan-seams"),
+]
+
+
+def _m_adversarial_planning(conn: Connection) -> None:
+    """Plan from three angles at once, then reconcile them into one plan.
+
+    A single planner's first plausible approach became the plan, and nothing
+    argued the other side of it. Fanning out costs three runs; the synthesis
+    stage is what makes them worth more than one, by forcing the disagreements
+    to be settled before spec and test-design build on either answer.
+    """
+    if not _table_exists(conn, "workflow_templates"):
+        return
+    row = (
+        conn.execute(
+            text(
+                "SELECT id, version, stages_json, transitions_json "
+                "FROM workflow_templates WHERE slug=:s"
+            ),
+            {"s": _HYPERPLAN_TEMPLATE},
+        )
+        .mappings()
+        .fetchone()
+    )
+    if not row:
+        return
+
+    stages = json.loads(row["stages_json"] or "[]")
+    by_key = {s.get("key"): s for s in stages}
+    plan = by_key.get(_HYPERPLAN_STAGE)
+    if plan is None or _HYPERPLAN_SYNTHESIS_KEY in by_key:
+        return
+    if plan.get("stage_type") == "parallel":
+        return
+
+    plan["stage_type"] = "parallel"
+    plan["parallel_agents"] = [
+        {"agent_id": agent_id, "skill_name": skill} for agent_id, skill in _HYPERPLAN_LANES
+    ]
+    # Each lane names its own lens, so the stage-level skill is now dead weight.
+    # Only the value 0031 set is cleared: anything else was an operator's choice,
+    # and undoing just our own default is the same restraint 0019 used.
+    if (plan.get("skill_name") or "") == _PLAN_SKILL:
+        plan["skill_name"] = ""
+
+    plan_order = int(plan.get("order") or 0)
+    for stage in stages:
+        if int(stage.get("order") or 0) > plan_order:
+            stage["order"] = int(stage["order"]) + 1
+    stages.append(
+        {
+            "key": _HYPERPLAN_SYNTHESIS_KEY,
+            "name": "Plan synthesis",
+            "agent_id": "planner",
+            "skill_name": "plan-synthesis",
+            "optional": False,
+            "order": plan_order + 1,
+            "stage_type": "agent",
+            "classify_routes": [],
+            "parallel_agents": [],
+            "gate_commands": [],
+            "gate_required": False,
+            "model": "",
+        }
+    )
+    stages.sort(key=lambda s: int(s.get("order") or 0))
+
+    # Whatever plan advanced to now sits behind synthesis, so the settled plan
+    # exists before anything downstream reads one.
+    transitions = json.loads(row["transitions_json"] or "[]")
+    downstream = ""
+    for item in transitions:
+        if item.get("from") == _HYPERPLAN_STAGE and item.get("when", "") in {"", "pass", "default"}:
+            downstream = item.get("to", "")
+            item["to"] = _HYPERPLAN_SYNTHESIS_KEY
+    if downstream:
+        transitions.append({"from": _HYPERPLAN_SYNTHESIS_KEY, "to": downstream, "when": "pass"})
+
+    new_version = int(row["version"] or 1) + 1
+    conn.execute(
+        text(
+            "UPDATE workflow_templates SET stages_json=:st, transitions_json=:tr, version=:v "
+            "WHERE id=:id"
+        ),
+        {
+            "st": json.dumps(stages),
+            "tr": json.dumps(transitions),
+            "v": new_version,
+            "id": row["id"],
+        },
+    )
+    _snapshot_template_version(conn, row["id"], new_version, "Adversarial planning")
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1296,6 +1400,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0029_require_implement_real_surface", _m_require_implement_real_surface),
     ("0030_refactor_skill_routes", _m_refactor_skill_routes),
     ("0031_plan_skill_on_plan_stage", _m_plan_skill_on_plan_stage),
+    ("0032_adversarial_planning", _m_adversarial_planning),
 ]
 
 

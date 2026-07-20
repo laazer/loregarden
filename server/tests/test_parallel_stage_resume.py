@@ -81,13 +81,18 @@ def _setup_interrupted_script_review(db_session: Session) -> tuple[Ticket, Orche
 
     # gdscript_reviewer and static_qa already finished successfully before the crash.
     now = datetime.now(timezone.utc)
+    review_stage = next(s for s in stages if s.key == "script_review")
+    lane_skill = {spec.agent_id: spec.skill_name for spec in review_stage.parallel_agents}
     for agent_id in ("gdscript_reviewer", "static_qa"):
         finished = AgentRun(
             run_code=f"prior_{agent_id}",
             ticket_id=ticket.id,
             workspace_id=ws.id,
             agent_id=agent_id,
-            skill_name="review",
+            # Each lane's own skill, as _start_parallel_stage_runs records it.
+            # Hardcoding one skill for every lane made static_qa's prior run
+            # unmatchable, so resume could not tell it had already finished.
+            skill_name=lane_skill[agent_id],
             stage_key="script_review",
             status=RunStatus.SUCCEEDED,
             stdout=_passing_report(agent_id),
@@ -103,7 +108,7 @@ def _setup_interrupted_script_review(db_session: Session) -> tuple[Ticket, Orche
         ticket_id=ticket.id,
         workspace_id=ws.id,
         agent_id="architecture_reviewer",
-        skill_name="review",
+        skill_name=lane_skill["architecture_reviewer"],
         stage_key="script_review",
         status=RunStatus.RUNNING,
         created_at=now - timedelta(minutes=3),

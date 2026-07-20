@@ -176,8 +176,10 @@ def test_rigor_triage_reshapes_the_v3_template(tmp_path):
     # The routing agent is preserved, not replaced by the reshape.
     assert light["agent_id"] == heavy["agent_id"] == "ticket_scoper"
     assert stages["spec"]["skip_when"] == "has_acceptance_criteria"
-    # Untouched stages stay exactly as they were.
-    assert stages["plan"]["stage_type"] == "agent"
+    # A stage outside the reshape is left alone. Checked on test-design rather
+    # than plan: this runs the whole migration list, and later migrations do
+    # legitimately reshape plan.
+    assert stages["test-design"]["stage_type"] == "agent"
     # Recorded as a new version, so the reshape is auditable. Not pinned to an
     # exact number: this seeded template is fair game for later migrations too,
     # and every one of them would otherwise have to edit this line.
