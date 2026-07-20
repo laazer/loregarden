@@ -239,6 +239,7 @@ export const api = {
     body: {
       title?: string;
       description?: string;
+      acceptance_criteria?: string[];
       state?: TicketState;
       workflow_stage_key?: string;
       workflow_stage_status?: StageStatus;

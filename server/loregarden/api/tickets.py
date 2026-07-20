@@ -33,6 +33,7 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
 )
+from loregarden.services.acceptance_criteria import load_criteria, serialize_criteria
 from loregarden.services.cli_settings import (
     get_ticket_orchestration_runtime,
     set_ticket_orchestration_runtime,
@@ -506,7 +507,7 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
     return TicketDetail(
         **summary.model_dump(),
         description=ticket.description,
-        acceptance_criteria=json.loads(ticket.acceptance_criteria_json or "[]"),
+        acceptance_criteria=load_criteria(ticket.acceptance_criteria_json),
         revision=ticket.revision,
         last_updated_by=ticket.last_updated_by,
         next_status=ticket.next_status,
@@ -846,9 +847,7 @@ def finalize_hierarchy(
                 priority=item.priority,
                 work_item_type=item.work_item_type,
                 parent_ticket_id=parent_id,
-                acceptance_criteria_json=json.dumps(
-                    [line.strip() for line in (item.acceptance_criteria or []) if line.strip()]
-                ),
+                acceptance_criteria_json=serialize_criteria(item.acceptance_criteria),
                 last_updated_by="system",
             )
             session.add(new_ticket)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import threading
 from datetime import datetime, timezone
@@ -31,6 +30,7 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.hierarchy_service import child_count, validate_parent_child
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.workflow_service import resolve_workspace_stages
@@ -167,9 +167,7 @@ class TicketService:
             milestone=inherited_milestone,
             work_item_type=work_item_type,
             parent_ticket_id=parent_ticket_id,
-            acceptance_criteria_json=json.dumps(
-                [line.strip() for line in (acceptance_criteria or []) if line.strip()]
-            ),
+            acceptance_criteria_json=serialize_criteria(acceptance_criteria),
             last_updated_by="user",
         )
 

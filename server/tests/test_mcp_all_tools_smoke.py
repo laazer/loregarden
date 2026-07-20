@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from loregarden.mcp.tools import TOOL_DEFINITIONS, normalize_tool_arguments
 
 MCP_TOOLS_SRC = Path(__file__).resolve().parents[1] / "loregarden" / "mcp" / "tools.py"
 
@@ -50,6 +51,48 @@ def test_advertised_tools_all_have_a_dispatch_branch(client: TestClient):
     """A tool in tools/list with no handler is a trap: agents call it and get an error."""
     missing = _advertised(client) - _dispatched()
     assert not missing, f"advertised but never dispatched: {sorted(missing)}"
+
+
+def _dummy_argument(schema: dict) -> object:
+    """A type-appropriate stand-in value for one declared property."""
+    if schema.get("enum"):
+        return schema["enum"][0]
+    kind = schema.get("type")
+    if kind == "integer":
+        return 1
+    if kind == "boolean":
+        return True
+    if kind == "object":
+        return {}
+    if kind == "array":
+        items = schema.get("items", {})
+        if items.get("type") == "object":
+            return [{k: _dummy_argument(v) for k, v in items.get("properties", {}).items()}]
+        return ["dummy"]
+    return "dummy"
+
+
+@pytest.mark.parametrize("tool", sorted(t["name"] for t in TOOL_DEFINITIONS))
+def test_normalizer_preserves_every_declared_argument(tool: str):
+    """A declared argument the normalizer forgets is dropped before the handler runs.
+
+    normalize_tool_arguments rebuilds each payload from a hand-written whitelist, so a
+    field added to a tool's schema but not to its branch vanishes behind a successful
+    call. That is half of how acceptance_criteria went missing: widening the schema
+    changed nothing until the whitelist learned the field too. Nothing tied the two
+    together, so this pins them.
+    """
+    declared = next(t["inputSchema"]["properties"] for t in TOOL_DEFINITIONS if t["name"] == tool)
+    arguments = {name: _dummy_argument(schema) for name, schema in declared.items()}
+
+    normalized = normalize_tool_arguments(tool, arguments)
+
+    dropped = set(declared) - set(normalized)
+    assert not dropped, (
+        f"{tool} declares {sorted(dropped)} but normalize_tool_arguments drops "
+        f"{'it' if len(dropped) == 1 else 'them'} — agents can send the field and "
+        "get a success that changed nothing."
+    )
 
 
 def _seed_ticket(client: TestClient) -> tuple[str, str]:

@@ -305,8 +305,17 @@ class RouteWorkflowRequest(SQLModel):
 
 
 class UpdateTicketRequest(SQLModel):
+    # Rejects unknown fields rather than ignoring them. Pydantic's default of
+    # dropping extras let PATCH answer 200 to a write it had silently discarded,
+    # which cost a debugging session and taught an agent to stash acceptance
+    # criteria in the description instead. A field this model lacks should fail
+    # loudly at the edge.
+    model_config = ConfigDict(extra="forbid")
+
     title: str | None = None
     description: str | None = None
+    #: Replaces the stored list; omit to leave it alone, [] to clear it.
+    acceptance_criteria: list[str] | None = None
     state: TicketState | None = None
     branch: str | None = None
     workflow_stage_key: str | None = None

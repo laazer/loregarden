@@ -253,7 +253,9 @@ describe('Dashboard - Ticket Details Button Integration', () => {
         expect(within(dialog).getByDisplayValue('Complete Feature')).toBeInTheDocument();
         expect(within(dialog).getByText('16-modal-with-ticket-details')).toBeInTheDocument();
         expect(within(dialog).getByDisplayValue('Full description')).toBeInTheDocument();
-        expect(within(dialog).getByText('User can click button')).toBeInTheDocument();
+        expect(within(dialog).getByLabelText(/acceptance criteria/i)).toHaveValue(
+          'User can click button\nModal displays details\nModal can be closed'
+        );
         expect(within(dialog).getByText('Awaiting API review')).toBeInTheDocument();
       });
     });

@@ -26,6 +26,7 @@ from loregarden.models.domain import (
     WorkflowTemplate,
     Workspace,
 )
+from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.compatibility_posture import apply_compatibility_posture
 from loregarden.services.run_log_stream import bootstrap_run_log, finalize_run_log_artifact
@@ -75,7 +76,7 @@ def _blocking_issue_for_stage(
 
 
 def _apply_operator_edits(ticket: Ticket, body: UpdateTicketRequest) -> None:
-    """Apply the fields a human edits directly (title, description, posture).
+    """Apply the fields a human edits directly (title, description, criteria, posture).
 
     Module-level rather than another branch inside update_ticket_manual, which is
     already well past its statement budget.
@@ -93,6 +94,12 @@ def _apply_operator_edits(ticket: Ticket, body: UpdateTicketRequest) -> None:
     if body.description is not None and ticket.description != body.description:
         ticket.description = body.description
         content_updated = True
+
+    if body.acceptance_criteria is not None:
+        criteria_json = serialize_criteria(body.acceptance_criteria)
+        if ticket.acceptance_criteria_json != criteria_json:
+            ticket.acceptance_criteria_json = criteria_json
+            content_updated = True
 
     if body.compatibility_posture is not None:
         apply_compatibility_posture(ticket, body.compatibility_posture)
