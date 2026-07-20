@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { IconCloseButton } from "../IconCloseButton";
 
-import type { StudioAgent, StudioWorkflow, TicketStudioDraftItem } from "../../api/client";
+import type { StudioWorkflow, TicketStudioDraftItem } from "../../api/client";
 import {
   formatAcceptanceCriteriaText,
   parseAcceptanceCriteriaText,
@@ -16,7 +16,6 @@ const PRIORITY_OPTIONS = [1, 2, 3] as const;
 export interface TicketStudioDraftModalProps {
   item: TicketStudioDraftItem | null;
   allItems: TicketStudioDraftItem[];
-  agentOptions: StudioAgent[];
   workflowOptions: StudioWorkflow[];
   isOpen: boolean;
   readOnly?: boolean;
@@ -32,7 +31,6 @@ function draftEquals(a: TicketStudioDraftItem, b: TicketStudioDraftItem): boolea
     a.title === b.title &&
     a.description === b.description &&
     a.priority === b.priority &&
-    a.suggested_agent === b.suggested_agent &&
     (a.workflow_template_slug ?? "") === (b.workflow_template_slug ?? "") &&
     a.selected === b.selected &&
     a.acceptance_criteria.join("\n") === b.acceptance_criteria.join("\n")
@@ -42,7 +40,6 @@ function draftEquals(a: TicketStudioDraftItem, b: TicketStudioDraftItem): boolea
 export function TicketStudioDraftModal({
   item,
   allItems,
-  agentOptions,
   workflowOptions,
   isOpen,
   readOnly = false,
@@ -61,7 +58,7 @@ export function TicketStudioDraftModal({
     }
     setDraft({ ...item, acceptance_criteria: [...item.acceptance_criteria] });
     setAcceptanceText(formatAcceptanceCriteriaText(item.acceptance_criteria));
-  }, [item?.ref, item?.title, item?.description, item?.work_item_type, item?.parent_ref, item?.priority, item?.suggested_agent, item?.workflow_template_slug, item?.selected, item?.acceptance_criteria]);
+  }, [item?.ref, item?.title, item?.description, item?.work_item_type, item?.parent_ref, item?.priority, item?.workflow_template_slug, item?.selected, item?.acceptance_criteria]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -82,7 +79,6 @@ export function TicketStudioDraftModal({
     [allItems, item?.ref],
   );
 
-  const agentSlugs = useMemo(() => new Set(agentOptions.map((agent) => agent.slug)), [agentOptions]);
   const workflowSlugs = useMemo(
     () => new Set(workflowOptions.map((workflow) => workflow.slug)),
     [workflowOptions],
@@ -98,7 +94,6 @@ export function TicketStudioDraftModal({
   };
   const isDirty = !draftEquals(nextDraft, item);
   const canSave = !readOnly && isDirty && nextDraft.title.trim().length > 0 && !!onSave;
-  const hasCustomAgent = Boolean(nextDraft.suggested_agent && !agentSlugs.has(nextDraft.suggested_agent));
   // A slug the workspace no longer offers still shows, so a stale draft never
   // silently loses its choice on open.
   const hasCustomWorkflow = Boolean(
@@ -211,30 +206,6 @@ export function TicketStudioDraftModal({
                     {priorityLabel(priority)}
                   </option>
                 ))}
-              </select>
-            </div>
-
-            <div className="modal-field">
-              <label className="modal-field-label" htmlFor="studio-draft-agent">
-                Suggested agent
-              </label>
-              <select
-                id="studio-draft-agent"
-                className="btn-secondary filter-select"
-                style={{ width: "100%" }}
-                value={draft.suggested_agent}
-                disabled={readOnly}
-                onChange={(e) => patch({ suggested_agent: e.target.value })}
-              >
-                <option value="">None</option>
-                {agentOptions.map((agent) => (
-                  <option key={agent.slug} value={agent.slug}>
-                    {agent.name}
-                  </option>
-                ))}
-                {hasCustomAgent && (
-                  <option value={nextDraft.suggested_agent}>{nextDraft.suggested_agent} (from scope)</option>
-                )}
               </select>
             </div>
 

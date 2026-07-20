@@ -70,8 +70,7 @@ SCOPE_JSON_SCHEMA = """```json
       "title": "Short title",
       "description": "Problem statement and scope",
       "acceptance_criteria": ["Testable criterion"],
-      "priority": 2,
-      "suggested_agent": "planner"
+      "priority": 2
     },
     {
       "ref": "cap-1",
@@ -80,8 +79,7 @@ SCOPE_JSON_SCHEMA = """```json
       "title": "Capability slice",
       "description": "What this slice delivers",
       "acceptance_criteria": ["Criterion"],
-      "priority": 2,
-      "suggested_agent": "spec"
+      "priority": 2
     }
   ]
 }
@@ -150,7 +148,6 @@ def parse_scope_payload(text: str) -> tuple[str, list[str], list[TicketStudioDra
                 description=str(raw.get("description") or "").strip(),
                 acceptance_criteria=acceptance,
                 priority=priority,
-                suggested_agent=str(raw.get("suggested_agent") or "").strip(),
                 selected=bool(raw.get("selected", True)),
             )
         )

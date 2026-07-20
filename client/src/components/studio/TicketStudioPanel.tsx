@@ -52,7 +52,6 @@ function draftSummaryLine(item: TicketStudioDraftItem): string {
     parts.push(`${item.acceptance_criteria.length} AC`);
   }
   if (item.priority !== 3) parts.push(`P${item.priority}`);
-  if (item.suggested_agent) parts.push(item.suggested_agent);
   return parts.join(" · ");
 }
 
@@ -114,11 +113,6 @@ export function TicketStudioPanel({
     enabled: Boolean(selectedSessionId) && !!qc,
   });
 
-  const studioAgents = useQuery({
-    queryKey: ["studio-agents"],
-    queryFn: api.studioAgents,
-    enabled: !!qc,
-  });
   const studioWorkflows = useQuery({
     queryKey: ["studio-workflows"],
     queryFn: api.studioWorkflows,
@@ -863,7 +857,6 @@ export function TicketStudioPanel({
       <TicketStudioDraftModal
         item={expandedDraftItem}
         allItems={localDraft}
-        agentOptions={studioAgents.data ?? []}
         workflowOptions={studioWorkflows.data ?? []}
         isOpen={expandedDraftIndex != null}
         readOnly={isReadOnly || isPreview}

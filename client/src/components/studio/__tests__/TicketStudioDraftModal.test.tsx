@@ -3,13 +3,6 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { TicketStudioDraftItem } from "../../../api/client";
 import { TicketStudioDraftModal } from "../TicketStudioDraftModal";
 
-function mockAgents() {
-  return [
-    { slug: "backend_implementer", name: "Backend Implementer" },
-    { slug: "planner", name: "Planner" },
-  ] as const;
-}
-
 function mockItem(overrides: Partial<TicketStudioDraftItem> = {}): TicketStudioDraftItem {
   return {
     ref: "t1",
@@ -19,7 +12,6 @@ function mockItem(overrides: Partial<TicketStudioDraftItem> = {}): TicketStudioD
     description: "REST endpoints for sessions.",
     acceptance_criteria: ["POST /sessions returns 201"],
     priority: 2,
-    suggested_agent: "backend_implementer",
     selected: true,
     ...overrides,
   };
@@ -31,7 +23,6 @@ describe("TicketStudioDraftModal", () => {
       <TicketStudioDraftModal
         item={mockItem()}
         allItems={[mockItem()]}
-        agentOptions={mockAgents() as never}
         workflowOptions={[]}
         isOpen={false}
         onClose={() => {}}
@@ -45,7 +36,6 @@ describe("TicketStudioDraftModal", () => {
       <TicketStudioDraftModal
         item={mockItem()}
         allItems={[mockItem(), mockItem({ ref: "t2", title: "Parent feature" })]}
-        agentOptions={mockAgents() as never}
         workflowOptions={[]}
         isOpen
         onClose={() => {}}
@@ -55,7 +45,6 @@ describe("TicketStudioDraftModal", () => {
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Build API")).toBeInTheDocument();
-    expect(screen.getByLabelText(/suggested agent/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue("REST endpoints for sessions.")).toBeInTheDocument();
     expect(screen.getByDisplayValue("POST /sessions returns 201")).toBeInTheDocument();
     expect(screen.getByLabelText(/parent/i)).toBeInTheDocument();
@@ -69,7 +58,6 @@ describe("TicketStudioDraftModal", () => {
       <TicketStudioDraftModal
         item={mockItem()}
         allItems={[mockItem()]}
-        agentOptions={mockAgents() as never}
         workflowOptions={[]}
         isOpen
         onClose={onClose}
@@ -95,7 +83,6 @@ describe("TicketStudioDraftModal", () => {
       <TicketStudioDraftModal
         item={mockItem()}
         allItems={[mockItem()]}
-        agentOptions={mockAgents() as never}
         workflowOptions={[]}
         isOpen
         readOnly
@@ -107,21 +94,6 @@ describe("TicketStudioDraftModal", () => {
     expect(screen.getByDisplayValue("Build API")).toHaveAttribute("readonly");
   });
 
-  it("keeps unknown scoped agents selectable", () => {
-    render(
-      <TicketStudioDraftModal
-        item={mockItem({ suggested_agent: "custom_agent" })}
-        allItems={[mockItem({ suggested_agent: "custom_agent" })]}
-        agentOptions={mockAgents() as never}
-        workflowOptions={[]}
-        isOpen
-        onClose={() => {}}
-        onSave={() => {}}
-      />,
-    );
-
-    expect(screen.getByRole("option", { name: /custom_agent \(from scope\)/i })).toBeInTheDocument();
-  });
 });
 
 describe("TicketStudioDraftModal workflow picker", () => {
@@ -135,7 +107,6 @@ describe("TicketStudioDraftModal workflow picker", () => {
       <TicketStudioDraftModal
         item={item}
         allItems={[item]}
-        agentOptions={mockAgents() as never}
         workflowOptions={workflows}
         isOpen
         onClose={() => {}}
