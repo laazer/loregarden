@@ -4,16 +4,10 @@ import { useEffect, useState } from "react";
 import { api, type RuntimeOptions, type WorkspaceRuntimeSettings } from "../api/client";
 import { TRIAGE_AGENT_NAME } from "../lib/triageAgent";
 import { StudioChatComposer } from "./studio/StudioChat";
+import { useTicketChatSession } from "../hooks/useTicketChatSession";
 import { TriageModelModal } from "./TriageModelModal";
 import { runtimeSummaryLabel } from "./WorkspaceRuntimeFields";
-
-const DEFAULT_RUNTIME: WorkspaceRuntimeSettings = {
-  cli_adapter: "default",
-  claude_model: "",
-  cursor_model: "",
-  lmstudio_base_url: "",
-  lmstudio_model: "",
-};
+import { DEFAULT_RUNTIME } from "../lib/runtimeSettings";
 
 const AUTO_APPROVE_STORAGE_KEY = "loregarden.triage.autoApprove";
 
@@ -81,17 +75,10 @@ export function TriageComposer({
     }
   };
 
-  const sendMessage = useMutation({
-    mutationFn: (content: string) =>
-      api.sendTriageMessage(ticketId, content, { auto_approve: autoApprove }),
-    onSuccess: () => {
-      setDraft("");
-      qc.invalidateQueries({ queryKey: ["triage", ticketId] });
-      onSent?.();
-    },
-  });
+  const session = useTicketChatSession(ticketId);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const turnBusy = sendMessage.isPending || (triage.data ? triage.data.run_status !== "idle" : false);
+  const turnBusy = isSubmitting || session.isBusy;
 
   useEffect(() => {
     setAttachLogs(attachLogsDefault);
@@ -110,12 +97,19 @@ export function TriageComposer({
     }
 
     setDraft("");
-    sendMessage.mutate(content);
+    setIsSubmitting(true);
+    session
+      .send(content, { autoApprove })
+      .then(() => onSent?.())
+      // The failure is already on `session.error`; swallowing it here only
+      // stops an unhandled rejection, which mutateAsync would otherwise raise.
+      .catch(() => {})
+      .finally(() => setIsSubmitting(false));
   };
 
   const modelLabel = runtimeSummaryLabel(savedRuntime, runtimeOptions);
   const composerError =
-    (sendMessage.isError ? (sendMessage.error as Error)?.message || "Failed to send message" : null) ??
+    session.error ??
     (saveRuntime.isError
       ? (saveRuntime.error as Error)?.message || "Failed to save triage model settings"
       : null);

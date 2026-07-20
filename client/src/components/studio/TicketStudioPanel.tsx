@@ -36,14 +36,7 @@ import { TriageModelModal } from "../TriageModelModal";
 import { ImportTicketsModal } from "../ImportTicketsModal";
 import { TicketStudioChatMessages, TicketStudioComposer } from "./TicketStudioChat";
 import { TicketStudioDraftModal } from "./TicketStudioDraftModal";
-
-const DEFAULT_RUNTIME: WorkspaceRuntimeSettings = {
-  cli_adapter: "default",
-  claude_model: "",
-  cursor_model: "",
-  lmstudio_base_url: "",
-  lmstudio_model: "",
-};
+import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 
 function draftSummaryLine(item: TicketStudioDraftItem): string {
   const parts: string[] = [];
