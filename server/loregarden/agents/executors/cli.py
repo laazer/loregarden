@@ -19,6 +19,7 @@ from loregarden.agents.mcp_context import (
     load_memory_protocol_doc,
     load_stage_report_contract_doc,
 )
+from loregarden.agents.plan_context import build_plan_context
 from loregarden.agents.registry import get_agent
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.agents.verify_context import build_verify_context
@@ -444,6 +445,12 @@ class CliAgentExecutor:
             _titled_block(
                 "## Claim under review",
                 build_verify_context(self.session, ticket, workspace) if is_verify else "",
+            ),
+            # Alongside inherited context, and withheld from a verifier for the
+            # same reason: the plan is the reasoning a verifier must not inherit.
+            _titled_block(
+                "## Plan (settled by the plan stage)",
+                "" if is_verify else build_plan_context(self.session, ticket, run.stage_key),
             ),
             # Before the role, so an agent knows the shape of the repo before it
             # is told its job. The implementers run on cursor, which does not
