@@ -13,6 +13,7 @@ from loregarden.models.domain import (
     ApprovalStatus,
     Artifact,
     EventType,
+    OrchestrationRun,
     RunStatus,
     StageStatus,
     StudioAgent,
@@ -1290,20 +1291,38 @@ class ApprovalService:
         self.session.add(instance)
         self.session.commit()
 
-        if approved and rework_route_key:
+        if approved:
             self._resume_orchestration(ticket)
 
     def _resume_orchestration(self, ticket: Ticket) -> None:
-        """Auto-continue after an approve-with-rework reroute — otherwise the
-        ticket would sit at the target stage waiting for the operator to
-        separately click Run/Agents Assemble, which defeats the point of
-        routing it back in the same action."""
+        """Carry on after an approval, rather than waiting to be told.
+
+        Approving a gate leaves the ticket pointing at a stage ready to run, so
+        asking the operator to then press Run is a second decision carrying no
+        information beyond the first. Both approval shapes resume: a plain
+        approval and an approve-with-rework reroute.
+
+        A rejection deliberately does not. It means more work is needed, and the
+        operator may want to add guidance — or steer the stage once it starts —
+        before anything spends tokens on the rework.
+
+        `auto_approve` is carried over from the run that reached the gate.
+        Resuming without it would silently downgrade an unattended run into one
+        that stops at the next tool prompt.
+        """
         from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
         from loregarden.services.run_service import schedule_orchestration
 
-        if OrchestrationCallbackService(self.session).get_active_orchestration_run(ticket.id):
+        callbacks = OrchestrationCallbackService(self.session)
+        if callbacks.get_active_orchestration_run(ticket.id):
             return
-        schedule_orchestration(ticket.id)
+
+        previous = self.session.exec(
+            select(OrchestrationRun)
+            .where(OrchestrationRun.ticket_id == ticket.id)
+            .order_by(OrchestrationRun.created_at.desc())
+        ).first()
+        schedule_orchestration(ticket.id, auto_approve=bool(previous and previous.auto_approve))
 
     def list_pending(self) -> list[Approval]:
         return list(

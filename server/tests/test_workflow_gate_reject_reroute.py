@@ -165,10 +165,18 @@ def test_approving_gate_with_rework_route_triggers_resume(db_session: Session, m
     assert calls == [ticket.id]
 
 
-def test_plain_approve_does_not_trigger_resume(db_session: Session, monkeypatch):
-    """Only approve-with-reroute auto-resumes — a plain approve leaves the
-    ticket for the operator to run manually, same as every other stage
-    transition in the app."""
+def test_plain_approve_resumes_the_workflow(db_session: Session, monkeypatch):
+    """Reverses an earlier decision, deliberately.
+
+    This previously asserted the opposite, on the grounds that a plain approve
+    should leave the ticket to be run manually "same as every other stage
+    transition in the app". A gate is not like every other transition: it is
+    already the human decision, so requiring a separate Run afterwards asks for
+    a second decision that carries no new information.
+
+    Rejection still does not resume — see the test below, whose reasoning
+    survives unchanged.
+    """
     calls: list[str] = []
     monkeypatch.setattr(
         "loregarden.services.run_service.schedule_orchestration",
@@ -178,7 +186,7 @@ def test_plain_approve_does_not_trigger_resume(db_session: Session, monkeypatch)
 
     ApprovalService(db_session).resolve(approval.id, approved=True)
 
-    assert calls == []
+    assert calls == [ticket.id]
 
 
 def test_reject_with_explicit_route_does_not_trigger_resume(db_session: Session, monkeypatch):
