@@ -190,7 +190,10 @@ def test_a_verifier_is_not_shown_the_plan():
 
 
 def test_the_migration_sets_the_skill_but_leaves_an_operator_choice_alone(tmp_path):
-    for stage_skill, expected in (("", "plan"), ("custom", "custom")):
+    # Expectations are the end state after the whole migration list: 0032 fans
+    # the plan stage into lanes that name their own lens, and clears only the
+    # skill 0031 set — an operator's own choice survives.
+    for stage_skill, expected in (("", ""), ("custom", "custom")):
         name = stage_skill or "none"
         engine = create_engine(f"sqlite:///{tmp_path / ('tpl-' + name + '.db')}")
         SQLModel.metadata.create_all(engine)

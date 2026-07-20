@@ -665,7 +665,9 @@ class BuiltinOrchestrator:
             return True, ""
 
         pending_specs = (
-            self._incomplete_parallel_specs(ticket, stage_key, specs) if resuming else specs
+            self._incomplete_parallel_specs(ticket, stage_def, stage_key, specs)
+            if resuming
+            else specs
         )
         if not pending_specs:
             # Resuming after an interruption, but every member had already
@@ -698,7 +700,9 @@ class BuiltinOrchestrator:
         self.session.refresh(ticket)
         return True, ""
 
-    def _incomplete_parallel_specs(self, ticket: Ticket, stage_key: str, specs):
+    def _incomplete_parallel_specs(
+        self, ticket: Ticket, stage_def: WorkflowStageDef, stage_key: str, specs
+    ):
         """Filter a parallel stage's members down to those not already done.
 
         Only meaningful when resuming a stage interrupted mid-run (e.g. a server
@@ -716,6 +720,10 @@ class BuiltinOrchestrator:
                     AgentRun.ticket_id == ticket.id,
                     AgentRun.stage_key == stage_key,
                     AgentRun.agent_id == spec.agent_id,
+                    # Lanes may share an agent and differ only by skill — three
+                    # planners under different lenses, say. Matching on agent
+                    # alone would let one finished lane mark its siblings done.
+                    AgentRun.skill_name == (spec.skill_name or stage_def.skill_name),
                 )
                 .order_by(AgentRun.created_at.desc())
             ).first()
