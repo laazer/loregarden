@@ -99,8 +99,10 @@ cd client && npm run lint      # oxlint
 sqlite3 data/loregarden.db
 ```
 
-> **Running pytest from a git worktree** explodes with `git add .` exit-128 errors (a `GIT_DIR`
-> leak in the pre-push suite). Run with the git env unset: `env -u GIT_DIR -u GIT_WORK_TREE …`.
+> **Pushing from a git worktree** used to explode the pre-push suite with `git add .` exit-128
+> errors — git exports an absolute `GIT_DIR` into hooks, and it overrides the `cwd` of the
+> throwaway repos the tests build. `.lefthook/scripts/hook-noninteractive.sh` now unsets
+> `GIT_DIR`/`GIT_WORK_TREE`; the `env -u GIT_DIR -u GIT_WORK_TREE …` workaround is obsolete.
 
 ## CONVENTIONS
 

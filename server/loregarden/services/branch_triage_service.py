@@ -19,6 +19,7 @@ from loregarden.services.artifact_service import (
 )
 from loregarden.services.file_editor import _current_branch, _list_branches, _parse_worktrees
 from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
+from loregarden.services.git_subprocess import run_git, scrubbed_git_env
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -33,8 +34,8 @@ _pr_status_cache: dict[tuple[str, str], tuple[float, dict[str, Any] | None]] = {
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", "-C", str(cwd), *args],
+    return run_git(
+        ["-C", str(cwd), *args],
         capture_output=True,
         text=True,
         timeout=30,
@@ -122,6 +123,9 @@ def _fetch_pr_status_live(repo_root: Path, branch: str) -> dict[str, Any] | None
         proc = subprocess.run(
             ["gh", "pr", "view", branch, "--json", "state,url,number,isDraft,title"],
             cwd=repo_root,
+            # `gh` resolves the repo by shelling out to git, so an inherited
+            # GIT_DIR would have it report the wrong repository's PRs.
+            env=scrubbed_git_env(),
             capture_output=True,
             text=True,
             timeout=10,

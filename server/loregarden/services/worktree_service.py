@@ -11,6 +11,7 @@ from loregarden.models.domain import (
     Worktree,
     WorktreeState,
 )
+from loregarden.services.git_subprocess import run_git
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -58,16 +59,16 @@ class WorktreeService:
 
             # Create worktree: git worktree add <path> <branch>
             logger.info(f"Creating worktree: {worktree_path} from {parent_branch}")
-            subprocess.run(
-                ["git", "worktree", "add", str(worktree_path), parent_branch],
+            run_git(
+                ["worktree", "add", str(worktree_path), parent_branch],
                 cwd=str(self.repo_path),
                 check=True,
                 capture_output=True,
             )
 
             # Get current commit on new worktree (merge base)
-            result = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
+            result = run_git(
+                ["rev-parse", "HEAD"],
                 cwd=str(worktree_path),
                 check=True,
                 capture_output=True,
@@ -114,8 +115,8 @@ class WorktreeService:
             worktree_path = Path(worktree.worktree_path)
 
             # Fetch latest from remote
-            subprocess.run(
-                ["git", "fetch", "origin"],
+            run_git(
+                ["fetch", "origin"],
                 cwd=str(worktree_path),
                 check=False,
                 capture_output=True,
@@ -123,8 +124,8 @@ class WorktreeService:
 
             # Try dry-run merge to detect conflicts
             # git merge --no-commit --no-ff origin/target_branch
-            result = subprocess.run(
-                ["git", "merge", "--no-commit", "--no-ff", f"origin/{target_branch}"],
+            result = run_git(
+                ["merge", "--no-commit", "--no-ff", f"origin/{target_branch}"],
                 cwd=str(worktree_path),
                 capture_output=True,
                 text=True,
@@ -141,8 +142,8 @@ class WorktreeService:
                 logger.warning(f"Conflicts detected in worktree {worktree.id}: {conflict_files}")
             else:
                 # Abort the dry-run merge
-                subprocess.run(
-                    ["git", "merge", "--abort"],
+                run_git(
+                    ["merge", "--abort"],
                     cwd=str(worktree_path),
                     check=False,
                     capture_output=True,
@@ -160,8 +161,8 @@ class WorktreeService:
     def _extract_conflict_files(self, worktree_path: Path) -> list[str]:
         """Extract list of files with merge conflicts."""
         try:
-            result = subprocess.run(
-                ["git", "diff", "--name-only", "--diff-filter=U"],
+            result = run_git(
+                ["diff", "--name-only", "--diff-filter=U"],
                 cwd=str(worktree_path),
                 check=True,
                 capture_output=True,
@@ -198,8 +199,8 @@ class WorktreeService:
             worktree_path = Path(worktree.worktree_path)
 
             # Check if there are changes to commit
-            result = subprocess.run(
-                ["git", "status", "--porcelain"],
+            result = run_git(
+                ["status", "--porcelain"],
                 cwd=str(worktree_path),
                 check=True,
                 capture_output=True,
@@ -235,8 +236,8 @@ class WorktreeService:
                     return False
 
             # Perform the actual merge back to main repo
-            subprocess.run(
-                ["git", "checkout", target_branch],
+            run_git(
+                ["checkout", target_branch],
                 cwd=str(self.repo_path),
                 check=True,
                 capture_output=True,
@@ -244,8 +245,8 @@ class WorktreeService:
 
             # Merge worktree branch into main
             # Validate the worktree HEAD resolves to a branch before merging
-            subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            run_git(
+                ["rev-parse", "--abbrev-ref", "HEAD"],
                 cwd=str(worktree_path),
                 check=True,
                 capture_output=True,
@@ -253,8 +254,8 @@ class WorktreeService:
             )
 
             # Cherry-pick or merge commits from worktree
-            result = subprocess.run(
-                ["git", "merge", f"{worktree_path.name}"],
+            result = run_git(
+                ["merge", f"{worktree_path.name}"],
                 cwd=str(self.repo_path),
                 capture_output=True,
                 text=True,
@@ -289,24 +290,24 @@ class WorktreeService:
             conflict_files = self._extract_conflict_files(worktree_path)
 
             for file_path in conflict_files:
-                subprocess.run(
-                    ["git", "checkout", "--ours", file_path],
+                run_git(
+                    ["checkout", "--ours", file_path],
                     cwd=str(worktree_path),
                     check=True,
                     capture_output=True,
                 )
 
             # Stage resolved files
-            subprocess.run(
-                ["git", "add"] + conflict_files,
+            run_git(
+                ["add"] + conflict_files,
                 cwd=str(worktree_path),
                 check=True,
                 capture_output=True,
             )
 
             # Complete merge
-            subprocess.run(
-                ["git", "commit", "-m", "Auto-resolved merge conflicts"],
+            run_git(
+                ["commit", "-m", "Auto-resolved merge conflicts"],
                 cwd=str(worktree_path),
                 check=True,
                 capture_output=True,
@@ -340,8 +341,8 @@ class WorktreeService:
             # Remove git worktree
             if worktree_path.exists():
                 logger.info(f"Removing worktree: {worktree_path}")
-                subprocess.run(
-                    ["git", "worktree", "remove", "--force", str(worktree_path)],
+                run_git(
+                    ["worktree", "remove", "--force", str(worktree_path)],
                     cwd=str(self.repo_path),
                     check=False,  # Don't fail if worktree already gone
                     capture_output=True,

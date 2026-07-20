@@ -6,6 +6,7 @@ from loregarden.config import settings
 from loregarden.db.session import get_session
 from loregarden.main import app
 from loregarden.models.domain import Workspace
+from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -23,6 +24,23 @@ _ENGINE_BINDINGS = (
     "loregarden.services.triage_run_service.engine",
     "loregarden.services.branch_triage_run_service.engine",
 )
+
+
+@pytest.fixture(autouse=True)
+def scrub_ambient_git_env(monkeypatch):
+    """Keep this suite's own git calls resolving through `cwd`.
+
+    Most tests build a throwaway repo in `tmp_path` and shell out to git
+    directly. An ambient GIT_DIR — which git exports into any hook this suite
+    runs under, e.g. pre-push from a worktree — overrides `cwd` and points those
+    calls at the loregarden repo instead. Scrubbing it here makes the suite
+    hermetic regardless of how it was invoked.
+
+    This does not mask the service-layer scrub: test_git_subprocess.py sets
+    GIT_DIR explicitly inside its own tests to prove `run_git` handles it.
+    """
+    for name in GIT_LOCATION_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)

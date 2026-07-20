@@ -119,9 +119,13 @@ Applies to `client/**/*.{ts,tsx}`. oxlint runs on staged files. Beyond it: no `a
   `git log -p` afterwards.
 - **Backend edits need a reload:** `touch server/.self-improve-restart`. The dev server ignores
   `.py` changes otherwise, and you will test stale code and believe your fix failed.
-- **Run pytest with the git env unset** from a worktree: `env -u GIT_DIR -u GIT_WORK_TREE`.
-  Otherwise the pre-push suite explodes with `git add .` exit-128 errors that have nothing to do
-  with your change.
+- **Pushing from a worktree no longer breaks the pre-push suite.** Git exports an absolute
+  `GIT_DIR` into hooks when you push from a worktree; tests that build throwaway repos in
+  `tmp_path` inherited it (`GIT_DIR` beats `cwd`) and died with `git add .` exit-128.
+  `.lefthook/scripts/hook-noninteractive.sh` now unsets `GIT_DIR`/`GIT_WORK_TREE`, so the
+  `env -u GIT_DIR -u GIT_WORK_TREE` workaround is no longer needed. Still scrub the env if you
+  invoke pytest yourself from a context that already has `GIT_DIR` set (e.g. nested in a hook) —
+  the server's own git helpers pass the ambient environment through.
 - Use `task dev` / `task server` / `task client`. Do not start servers ad-hoc.
 
 ## Anti-patterns

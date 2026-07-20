@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from loregarden.models.domain import AgentRun, Artifact, Ticket, Workspace
+from loregarden.services.git_subprocess import run_git
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -24,8 +25,8 @@ _artifact_upsert_lock = threading.Lock()
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", "-C", str(cwd), *args],
+    return run_git(
+        ["-C", str(cwd), *args],
         capture_output=True,
         text=True,
         timeout=30,

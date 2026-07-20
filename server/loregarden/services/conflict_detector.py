@@ -1,12 +1,12 @@
 """Conflict detection and reporting service."""
 
 import logging
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
 from loregarden.models.domain import ConflictReport, Worktree
+from loregarden.services.git_subprocess import run_git
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -44,16 +44,16 @@ class ConflictDetectorService:
             worktree_path = Path(worktree.worktree_path)
 
             # Fetch latest from remote
-            subprocess.run(
-                ["git", "fetch", "origin"],
+            run_git(
+                ["fetch", "origin"],
                 cwd=str(worktree_path),
                 check=False,
                 capture_output=True,
             )
 
             # Try dry-run merge to detect conflicts
-            result = subprocess.run(
-                ["git", "merge", "--no-commit", "--no-ff", f"origin/{target_branch}"],
+            result = run_git(
+                ["merge", "--no-commit", "--no-ff", f"origin/{target_branch}"],
                 cwd=str(worktree_path),
                 capture_output=True,
                 text=True,
@@ -69,8 +69,8 @@ class ConflictDetectorService:
                 auto_mergeable = self._check_auto_mergeable(worktree_path, conflict_files)
 
                 # Abort the dry-run merge
-                subprocess.run(
-                    ["git", "merge", "--abort"],
+                run_git(
+                    ["merge", "--abort"],
                     cwd=str(worktree_path),
                     check=False,
                     capture_output=True,
@@ -93,8 +93,8 @@ class ConflictDetectorService:
                 }
             else:
                 # No conflicts, abort merge
-                subprocess.run(
-                    ["git", "merge", "--abort"],
+                run_git(
+                    ["merge", "--abort"],
                     cwd=str(worktree_path),
                     check=False,
                     capture_output=True,
@@ -121,8 +121,8 @@ class ConflictDetectorService:
     def _extract_conflict_files(self, worktree_path: Path) -> list[str]:
         """Extract list of files with merge conflicts."""
         try:
-            result = subprocess.run(
-                ["git", "diff", "--name-only", "--diff-filter=U"],
+            result = run_git(
+                ["diff", "--name-only", "--diff-filter=U"],
                 cwd=str(worktree_path),
                 check=True,
                 capture_output=True,
@@ -172,8 +172,8 @@ class ConflictDetectorService:
     def _is_simple_conflict(self, worktree_path: Path, file_path: str) -> bool:
         """Check if conflict is simple (whitespace/formatting only)."""
         try:
-            result = subprocess.run(
-                ["git", "diff", "--", file_path],
+            result = run_git(
+                ["diff", "--", file_path],
                 cwd=str(worktree_path),
                 capture_output=True,
                 text=True,

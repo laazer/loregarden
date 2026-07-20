@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 
 from loregarden.models.domain import Ticket
+from loregarden.services.git_subprocess import run_git
 
 _BRANCH_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -41,8 +41,8 @@ def ensure_ticket_branch(repo_root: Path, ticket: Ticket) -> str:
     if not (repo_root / ".git").exists():
         raise ValueError(f"Workspace repo is not a git repository: {repo_root}")
 
-    subprocess.run(
-        ["git", "checkout", "-B", branch],
+    run_git(
+        ["checkout", "-B", branch],
         cwd=repo_root,
         capture_output=True,
         text=True,
