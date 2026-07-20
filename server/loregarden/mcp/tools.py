@@ -14,6 +14,11 @@ from loregarden.models.domain import (
     UpdateTicketRequest,
     Workspace,
 )
+from loregarden.services.acceptance_criteria import (
+    CRITERIA_MODES,
+    load_criteria,
+    merge_criteria,
+)
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.evidence import (
     ARTIFACT_KIND as EVIDENCE_ARTIFACT_KIND,
@@ -106,6 +111,28 @@ def _coerce_optional_int(value: Any) -> int | None:
             return None
         return int(text)
     raise ValueError("max_stages must be an integer")
+
+
+def _coerce_string_list(value: Any, *, field: str) -> list[str]:
+    """Accept a list, a JSON-encoded list, or newline/bullet text as a list of strings.
+
+    An empty result is preserved rather than treated as absent — clearing a list is
+    a legitimate edit, and the caller decides whether the field was sent at all.
+    """
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        if text.startswith("["):
+            try:
+                value = json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"{field} is not valid JSON") from exc
+        else:
+            value = [line.lstrip("-*").strip() for line in text.splitlines()]
+    if not isinstance(value, list):
+        raise ValueError(f"{field} must be a list of strings")
+    return [str(item).strip() for item in value if str(item).strip()]
 
 
 def _coerce_optional_bool(value: Any) -> bool:
@@ -396,13 +423,19 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
         return payload
 
     if name == "loregarden_update_ticket":
+        # Whitelist, so every field the tool accepts must be listed here too — an
+        # omission drops the argument before the handler sees it, which is exactly
+        # how acceptance_criteria went missing on the HTTP side.
         payload = {
             "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
         }
-        if args.get("state") is not None:
-            payload["state"] = _coerce_string(args.get("state"), field="state")
-        if not payload.get("state"):
-            raise ValueError("state is required")
+        for field in ("state", "title", "description", "mode"):
+            if args.get(field) is not None:
+                payload[field] = _coerce_string(args.get(field), field=field)
+        if args.get("acceptance_criteria") is not None:
+            payload["acceptance_criteria"] = _coerce_string_list(
+                args.get("acceptance_criteria"), field="acceptance_criteria"
+            )
         return payload
 
     if name == "loregarden_write_handoff":
@@ -686,7 +719,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "loregarden_update_ticket",
-        "description": "Manually update ticket state (e.g. mark done after implementation).",
+        "description": (
+            "Update ticket state or content (state, title, description, acceptance "
+            "criteria). Supply at least one field besides ticket_id. Acceptance "
+            "criteria belong here — never append them to the description."
+        ),
         "inputSchema": _tool_schema(
             properties={
                 "ticket_id": _string_prop("Loregarden ticket UUID or external_id slug."),
@@ -694,8 +731,24 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "New ticket state.",
                     ["backlog", "in_progress", "blocked", "done", "wont_do"],
                 ),
+                "title": _string_prop("New ticket title."),
+                "description": _string_prop("New ticket description (replaces the existing one)."),
+                "acceptance_criteria": {
+                    "type": "array",
+                    "description": (
+                        "Acceptance criteria, one per entry. Combined with the stored list "
+                        "per 'mode'. Send [] with mode 'replace' to clear them."
+                    ),
+                    "items": {"type": "string"},
+                },
+                "mode": _enum_string_prop(
+                    "How acceptance_criteria combines with the stored list. 'replace' "
+                    "(default) overwrites it; 'append' adds entries not already present. "
+                    "Read the ticket first if you mean to replace.",
+                    list(CRITERIA_MODES),
+                ),
             },
-            required=["ticket_id", "state"],
+            required=["ticket_id"],
         ),
     },
     {
@@ -959,6 +1012,45 @@ def _execute_memory_tool(name: str, arguments: dict[str, Any]) -> str | None:
     return json.dumps(result, indent=2)
 
 
+def _update_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
+    """Apply an agent's edits to ticket state and content.
+
+    Refuses a call carrying only ticket_id. Reporting success for a request that
+    changed nothing is the failure this tool is being widened to fix.
+    """
+    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
+
+    fields: dict[str, Any] = {}
+    if "state" in arguments:
+        fields["state"] = TicketState(arguments["state"])
+    if "title" in arguments:
+        fields["title"] = arguments["title"]
+    if "description" in arguments:
+        fields["description"] = arguments["description"]
+
+    mode = arguments.get("mode", "replace")
+    if mode not in CRITERIA_MODES:
+        raise ValueError(f"mode must be one of {', '.join(CRITERIA_MODES)} (got {mode!r})")
+
+    if "acceptance_criteria" in arguments:
+        fields["acceptance_criteria"] = merge_criteria(
+            load_criteria(ticket.acceptance_criteria_json),
+            arguments["acceptance_criteria"],
+            mode,
+        )
+    elif "mode" in arguments:
+        raise ValueError("mode was given without acceptance_criteria")
+
+    if not fields:
+        raise ValueError(
+            "Nothing to update — supply at least one of: state, title, "
+            "description, acceptance_criteria."
+        )
+
+    OrchestrationService(session).update_ticket_manual(ticket, UpdateTicketRequest(**fields))
+    return json.dumps(_ticket_state_payload(session, ticket.id), indent=2)
+
+
 def _start_orchestration(session: Session, svc, arguments: dict[str, Any]) -> str:
     """Start a run on whichever driver the workspace profile selects."""
     ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
@@ -1050,11 +1142,7 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
         return _start_orchestration(session, svc, arguments)
 
     if name == "loregarden_update_ticket":
-        ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-        orch = OrchestrationService(session)
-        body = UpdateTicketRequest(state=TicketState(arguments["state"]))
-        orch.update_ticket_manual(ticket, body)
-        return json.dumps(_ticket_state_payload(session, ticket.id), indent=2)
+        return _update_ticket(session, svc, arguments)
 
     if name == "loregarden_write_handoff":
         from loregarden.services.handoff_writer import write_handoff
