@@ -9,6 +9,19 @@ from loregarden.agents.registry import get_agent
 from loregarden.models.domain import ClassifyRoute, Ticket, WorkflowStageDef
 
 _SPECIALTY_SYNONYMS: dict[str, list[str]] = {
+    # Deliberately narrow. Generic structural verbs — move, split, simplify,
+    # clean — appear just as often in feature work, and a route that fires on
+    # them would relabel new features as refactors. These words are the ones
+    # that rarely describe anything else.
+    "refactor": [
+        "refactoring",
+        "rename",
+        "extract",
+        "restructure",
+        "consolidate",
+        "deduplicate",
+        "untangle",
+    ],
     "frontend": [
         "ui",
         "component",

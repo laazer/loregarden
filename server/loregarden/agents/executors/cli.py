@@ -39,7 +39,7 @@ from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
 from loregarden.services.studio_service import build_studio_prompt_sections
 from loregarden.services.subprocess_lines import SubprocessLineReader
 from loregarden.services.workspace_paths import resolve_agent_context_dir, resolve_workspace_root
-from loregarden.skills.registry import get_skill
+from loregarden.skills.registry import SKILL_PROMPT_CAP, get_skill
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -384,13 +384,18 @@ class CliAgentExecutor:
         # reads role_file from the workspace filesystem — the DB is authoritative.
         role_body = (agent.get("role_body") or "")[:12000]
 
-        skill_body = (
-            get_skill(
-                run.skill_name or agent.get("default_skill", ""),
-                agent_context_dir=agent_context_dir,
+        skill_name = run.skill_name or agent.get("default_skill", "")
+        skill_body = get_skill(skill_name, agent_context_dir=agent_context_dir) or ""
+        if skill_name and not skill_body:
+            # A stage naming a skill that has no file used to produce an empty
+            # section and no other trace, so the template kept claiming guidance
+            # the agent never received.
+            logger.warning(
+                "run %s: stage %s declares skill %r, which is not registered",
+                run.run_code,
+                run.stage_key,
+                skill_name,
             )
-            or ""
-        )
         ac = json.loads(ticket.acceptance_criteria_json or "[]")
 
         orchestration_context = build_orchestration_context(
@@ -445,7 +450,7 @@ class CliAgentExecutor:
             # pick up CLAUDE.md the way Claude Code does, so without this they
             # rediscover the layout by grepping on every run.
             _titled_block("## Repository map", render_code_map(resolve_workspace_root(workspace))),
-            _titled_block("## Skill", skill_body, cap=3000),
+            _titled_block("## Skill", skill_body, cap=SKILL_PROMPT_CAP),
             _titled_block("## Agent Role", role_body),
             _raw_block(build_studio_prompt_sections(agent)),
             _titled_block("## Loregarden MCP module", mcp_doc, cap=12000),

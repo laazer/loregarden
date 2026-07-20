@@ -1148,6 +1148,82 @@ def _m_light_heavy_rigor_triage(conn: Connection) -> None:
     _snapshot_template_version(conn, row["id"], new_version, "LIGHT/HEAVY rigor triage")
 
 
+_REFACTOR_TEMPLATE = "studio-loregarden-tdd-v3"
+_REFACTOR_SKILL = "refactor"
+# One route per implementer, because the skill is orthogonal to who runs it: a
+# refactor still belongs to whoever owns that half of the codebase.
+#
+# Backend is listed first on purpose. A route's specialties are OR-matched, so
+# the frontend lane also fires on a bare refactor word and would win every tie
+# on position alone — sending backend refactors to the frontend agent. Ordered
+# this way a tie falls to backend, and a genuinely frontend refactor still wins
+# outright on the extra specialty hit.
+_REFACTOR_ROUTES = [
+    {
+        "languages": [],
+        "specialties": ["refactor"],
+        "agent_id": "backend_implementer",
+        "skill_name": _REFACTOR_SKILL,
+        "default": False,
+        "to_stage": "",
+    },
+    {
+        "languages": ["typescript", "javascript"],
+        "specialties": ["refactor", "frontend"],
+        "agent_id": "frontend_implementer",
+        "skill_name": _REFACTOR_SKILL,
+        "default": False,
+        "to_stage": "",
+    },
+]
+
+
+def _m_refactor_skill_routes(conn: Connection) -> None:
+    """Give restructuring work a method instead of leaving it to improvisation.
+
+    Refactors ran through the plain implementer route, so nothing told an agent
+    to establish a behavior baseline or find every reference before moving code.
+    """
+    if not _table_exists(conn, "workflow_templates"):
+        return
+    row = (
+        conn.execute(
+            text("SELECT id, version, stages_json FROM workflow_templates WHERE slug=:s"),
+            {"s": _REFACTOR_TEMPLATE},
+        )
+        .mappings()
+        .fetchone()
+    )
+    if not row:
+        return
+
+    stages = json.loads(row["stages_json"] or "[]")
+    implement = next((s for s in stages if s.get("key") == _IMPLEMENT_STAGE), None)
+    if implement is None:
+        return
+    routes = implement.get("classify_routes") or []
+    if any(r.get("skill_name") == _REFACTOR_SKILL for r in routes):
+        return
+
+    # Last among the scored lanes, immediately before the fallback. Specialties
+    # are OR-matched, so the frontend refactor lane also fires on a bare "modal"
+    # or "tab" — ahead of the plain frontend lane it would tie on that single
+    # hit and steal ordinary UI work on position alone. Placed behind it, a
+    # refactor lane can only win by matching strictly more, which takes an
+    # actual refactor word.
+    insert_at = next((i for i, r in enumerate(routes) if r.get("default")), len(routes))
+    implement["classify_routes"] = routes[:insert_at] + _REFACTOR_ROUTES + routes[insert_at:]
+
+    new_version = int(row["version"] or 1) + 1
+    conn.execute(
+        text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
+        {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
+    )
+    _snapshot_template_version(
+        conn, row["id"], new_version, "Route refactors to the refactor skill"
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1178,6 +1254,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0027_parallel_review_in_v3", _m_parallel_review_in_v3),
     ("0028_require_verify_evidence", _m_require_verify_evidence),
     ("0029_require_implement_real_surface", _m_require_implement_real_surface),
+    ("0030_refactor_skill_routes", _m_refactor_skill_routes),
 ]
 
 
