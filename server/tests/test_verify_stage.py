@@ -50,8 +50,27 @@ def _seeded_ticket(session):
     ).first()
 
 
-def _prompt_for(session, stage_type):
+def _prompt_for(session, stage_type, tmp_path):
     ticket = _seeded_ticket(session)
+    # The seeded workspace carries repo_path="." — it resolves to the developer's
+    # own checkout, and build_verify_context shells out `git diff main` there. Left
+    # alone, this test would pass on a branch ahead of main and fail on a clean one.
+    # Point it somewhere with no git checkout, and record the claim explicitly, so
+    # the block under test comes from the DB rather than from the working tree.
+    workspace = session.get(Workspace, ticket.workspace_id)
+    workspace.repo_path = str(tmp_path)
+    session.add(workspace)
+    session.add(
+        Artifact(
+            ticket_id=ticket.id,
+            kind="context",
+            title="stage report",
+            content_json=json.dumps(
+                {"stage_key": "implement", "status": "pass", "confidence": 0.9}
+            ),
+        )
+    )
+    session.commit()
     run = AgentRun(
         run_code="run_v",
         ticket_id=ticket.id,
@@ -61,7 +80,6 @@ def _prompt_for(session, stage_type):
         stage_key="verify",
     )
     executor = CliAgentExecutor(session)
-    workspace = session.get(Workspace, ticket.workspace_id)
     stage = WorkflowStageDef(key="verify", name="Verify", order=9, stage_type=stage_type)
     return executor._build_prompt(
         ticket,
@@ -93,12 +111,12 @@ def test_verifier_agent_is_registered_with_a_role():
     assert "Confirm only what you observed" in (agent.get("role_body") or "")
 
 
-def test_verifier_is_not_given_the_inherited_context():
+def test_verifier_is_not_given_the_inherited_context(tmp_path):
     """A verifier told what was 'already decided' is only a reader of the previous
     stage's reasoning, and cannot independently disagree with it."""
     session = _session()
-    verify_prompt = _prompt_for(session, VERIFY_STAGE_TYPE)
-    normal_prompt = _prompt_for(session, "agent")
+    verify_prompt = _prompt_for(session, VERIFY_STAGE_TYPE, tmp_path)
+    normal_prompt = _prompt_for(session, "agent", tmp_path)
 
     assert "already decided — do not re-derive" not in verify_prompt
     # The claim block is what a verifier gets instead, and only it gets one.
