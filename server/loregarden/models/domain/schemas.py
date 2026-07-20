@@ -603,7 +603,6 @@ class TicketStudioDraftItem(SQLModel):
     description: str = ""
     acceptance_criteria: list[str] = Field(default_factory=list)
     priority: int = 3
-    suggested_agent: str = ""
     # Workflow this item should run, "" to inherit the workspace default. Per
     # item so one commit can mix shapes — a feature planned in full while its
     # tasks, already scoped here, take a shorter path.

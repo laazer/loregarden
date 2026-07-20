@@ -69,7 +69,6 @@ function buildSession(overrides: Partial<TicketStudioSession> = {}): TicketStudi
         description: "Email-based authentication",
         acceptance_criteria: ["Accept email/password"],
         priority: 1,
-        suggested_agent: "",
         selected: true,
       },
       {
@@ -80,7 +79,6 @@ function buildSession(overrides: Partial<TicketStudioSession> = {}): TicketStudi
         description: "",
         acceptance_criteria: [],
         priority: 2,
-        suggested_agent: "",
         selected: true,
       },
     ],

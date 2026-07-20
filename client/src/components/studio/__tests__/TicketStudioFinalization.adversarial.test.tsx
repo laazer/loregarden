@@ -63,7 +63,6 @@ function buildSession(overrides: Partial<TicketStudioSession> = {}): TicketStudi
         description: "",
         acceptance_criteria: [],
         priority: 1,
-        suggested_agent: "",
         selected: true,
       },
     ],

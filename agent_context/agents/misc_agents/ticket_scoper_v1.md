@@ -34,7 +34,6 @@ You are running with real read access to this repo (Read, Grep, Glob, Bash). Bef
    - `work_item_type` — milestone | feature | capability | task | bug
    - `parent_ref` — another ref or null for roots
    - `title`, `description`, `acceptance_criteria` (string array), `priority` (1–3)
-   - `suggested_agent` — optional hint (planner, spec, backend_implementer, etc.)
 
 4. Ask at most one round of clarifying questions per session, and at most 2–3 questions in that round — the ones you genuinely could not resolve by reading the code or defaulting sensibly. After the operator answers (even partially or vaguely), move to scoping: fold unresolved points into stated assumptions rather than asking again.
 5. When scoping, prefer feature → capabilities → tasks. Keep tasks small enough for one agent run.

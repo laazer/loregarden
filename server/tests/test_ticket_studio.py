@@ -113,6 +113,28 @@ def test_parse_scope_payload_extracts_tickets():
     assert items[1].parent_ref == "feature-1"
 
 
+def test_parse_scope_payload_tolerates_a_dropped_suggested_agent():
+    """`suggested_agent` was removed because nothing routed on it, but sessions
+    saved before that still carry the key and models still volunteer it."""
+    payload = json.dumps(
+        {
+            "summary": "s",
+            "clarifying_questions": [],
+            "tickets": [
+                {
+                    "ref": "t1",
+                    "work_item_type": "task",
+                    "title": "Build it",
+                    "suggested_agent": "backend_implementer",
+                }
+            ],
+        }
+    )
+    _, _, items = parse_scope_payload(f"```json\n{payload}\n```")
+    assert len(items) == 1
+    assert not hasattr(items[0], "suggested_agent")
+
+
 def test_ticket_studio_session_crud(client: TestClient):
     create = client.post(
         "/api/ticket-studio/sessions",
