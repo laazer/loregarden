@@ -89,6 +89,7 @@ import type {
   CIStatusResponse,
   ReloadStatus,
   RunLog,
+  RunMessage,
 } from "./types";
 
 
@@ -190,6 +191,13 @@ export const api = {
       stderr: string;
     }>(`/api/runs/${runId}`),
   runLog: (runId: string) => request<RunLog>(`/api/runs/${runId}/log`),
+  runMessages: (runId: string) =>
+    request<{ messages: RunMessage[]; refusal: string }>(`/api/runs/${runId}/messages`),
+  sendRunMessage: (runId: string, content: string) =>
+    request<RunMessage>(`/api/runs/${runId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
   tickets: (params?: {
     workspace?: string;
     state?: TicketState | TicketState[];

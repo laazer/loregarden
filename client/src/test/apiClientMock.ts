@@ -22,6 +22,8 @@ export const api = {
   approvals: jest.fn().mockResolvedValue([]),
   runs: jest.fn().mockResolvedValue([]),
   runLog: jest.fn(),
+  runMessages: jest.fn(),
+  sendRunMessage: jest.fn(),
   triage: jest.fn().mockResolvedValue({
     pending_approvals: [],
     recent_approvals: [],

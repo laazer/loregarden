@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loregarden.db.session import get_session
+from loregarden.models.domain import RunMessageCreate
 from loregarden.services.artifact_service import load_run_log
 from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.run_service import RunService
+from loregarden.services.run_steering import list_messages, queue_message, steer_refusal
 from sqlmodel import Session
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -67,6 +69,47 @@ def get_run_log(run_id: str, session: Session = Depends(get_session)) -> dict:
         "live": live if isinstance(live, str) else None,
         "stderr": normalize_timeout_stderr(run.stderr or ""),
     }
+
+
+def _message_payload(message) -> dict:
+    return {
+        "id": message.id,
+        "run_id": message.run_id,
+        "content": message.content,
+        "created_at": message.created_at.isoformat(),
+        "delivered_at": message.delivered_at.isoformat() if message.delivered_at else None,
+    }
+
+
+@router.get("/{run_id}/messages")
+def get_run_messages(run_id: str, session: Session = Depends(get_session)) -> dict:
+    """Steering messages for a run, and whether another can be sent.
+
+    `refusal` is non-empty when the run cannot take one, so the UI can disable
+    the composer and say why instead of accepting input that goes nowhere.
+    """
+    run = RunService(session).get_run(run_id)
+    if not run:
+        raise HTTPException(404, "Run not found")
+    return {
+        "messages": [_message_payload(m) for m in list_messages(session, run_id)],
+        "refusal": steer_refusal(run),
+    }
+
+
+@router.post("/{run_id}/messages")
+def post_run_message(
+    run_id: str, body: RunMessageCreate, session: Session = Depends(get_session)
+) -> dict:
+    """Send a message to a run that is already going."""
+    run = RunService(session).get_run(run_id)
+    if not run:
+        raise HTTPException(404, "Run not found")
+    try:
+        message = queue_message(session, run, body.content)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return _message_payload(message)
 
 
 @router.get("/{run_id}")
