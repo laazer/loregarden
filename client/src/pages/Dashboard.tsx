@@ -44,6 +44,7 @@ import {
   buildOrchestrateTerminalCommand,
   buildStageTerminalHandoffCommand,
 } from "../lib/terminalCommands";
+import { useTriageSession } from "../hooks/useTriageSession";
 
 const DEFAULT_ORCHESTRATION_RUNTIME: import("../api/client").WorkspaceRuntimeSettings = {
   cli_adapter: "default",
@@ -52,19 +53,6 @@ const DEFAULT_ORCHESTRATION_RUNTIME: import("../api/client").WorkspaceRuntimeSet
   lmstudio_base_url: "",
   lmstudio_model: "",
 };
-
-function mergeApprovals(...lists: Array<import("../api/client").Approval[] | undefined>) {
-  const seen = new Set<string>();
-  const merged: import("../api/client").Approval[] = [];
-  for (const list of lists) {
-    for (const item of list ?? []) {
-      if (seen.has(item.id)) continue;
-      seen.add(item.id);
-      merged.push(item);
-    }
-  }
-  return merged;
-}
 
 function formatDeleteTicketError(error: Error): string {
   try {
@@ -913,27 +901,11 @@ export function Dashboard() {
     (sel?.workflow_stage_key === stageKey && workflowBusy) ||
     (startRun.isPending && startRun.variables?.stageKey === stageKey);
 
-  const triage = useQuery({
-    queryKey: ["triage", selectedId],
-    queryFn: () => api.triage(selectedId!),
-    enabled: !!selectedId,
-    retry: 1,
-    refetchInterval: (query) => {
-      const pending = query.state.data?.pending_approvals?.length ?? 0;
-      const busy = query.state.data ? query.state.data.run_status !== "idle" : false;
-      return pending > 0 || busy ? 2000 : 8000;
-    },
-  });
+  // 8000, not the panels' 5000: the dashboard polls an idle ticket less often.
+  // Preserved as-is — collapsing the two would be a behaviour change.
+  const { pending: triagePending } = useTriageSession(selectedId, 8000);
 
-  const ticketApprovals = useQuery({
-    queryKey: ["approvals", selectedId],
-    queryFn: () => api.approvals(selectedId!),
-    enabled: !!selectedId,
-    refetchInterval: 2000,
-  });
-
-  const triagePendingCount =
-    mergeApprovals(triage.data?.pending_approvals, ticketApprovals.data).length;
+  const triagePendingCount = triagePending.length;
 
   const hasRunErrors = Boolean(
     sel?.blocking_issues ||

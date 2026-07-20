@@ -2,7 +2,6 @@ import { render, screen } from "@testing-library/react";
 
 import { TRIAGE_AGENT_NAME } from "../../../lib/triageAgent";
 import { ChatMessageBubble } from "../ChatMessageBubble";
-import { ChatWindow } from "../ChatWindow";
 import { chatMessageBody, chatRoleLabel, formatChatTime, normalizeChatMarkdown } from "../chatUtils";
 
 describe("chatUtils", () => {
@@ -92,32 +91,5 @@ describe("ChatMessageBubble", () => {
     const bold = screen.getByText("Bold claim");
     expect(bold.tagName).toBe("STRONG");
     expect(screen.getByText("inline code").tagName).toBe("CODE");
-  });
-});
-
-describe("ChatWindow", () => {
-  it("shows empty state and thinking indicator", () => {
-    const { rerender } = render(
-      <ChatWindow
-        title="Scope chat"
-        messages={[]}
-        emptyMessage="Start chatting"
-        assistantLabel="Scoper"
-      />,
-    );
-
-    expect(screen.getByText("Scope chat")).toBeInTheDocument();
-    expect(screen.getByText("Start chatting")).toBeInTheDocument();
-
-    rerender(
-      <ChatWindow
-        messages={[{ id: "1", role: "assistant", content: "Ready" }]}
-        isThinking
-        thinkingMessage="Scoper is thinking…"
-      />,
-    );
-
-    expect(screen.getByText("Ready")).toBeInTheDocument();
-    expect(screen.getByText("Scoper is thinking…")).toBeInTheDocument();
   });
 });

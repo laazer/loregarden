@@ -1,7 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { api, type Approval, type RuntimeOptions, type TicketDetail, type TriageMessage } from "../api/client";
+import { api, type RuntimeOptions, type TicketDetail, type TriageMessage } from "../api/client";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { formatLogExcerpt } from "../utils/logExcerpt";
 import { TRIAGE_AGENT_NAME } from "../lib/triageAgent";
@@ -10,19 +10,7 @@ import { LiveLogLine, LogLineRow } from "./logs/LogLineRow";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { TriageComposer } from "./TriageComposer";
 import "./LogsPanel.css";
-
-function mergeApprovals(...lists: Array<Approval[] | undefined>): Approval[] {
-  const seen = new Set<string>();
-  const merged: Approval[] = [];
-  for (const list of lists) {
-    for (const item of list ?? []) {
-      if (seen.has(item.id)) continue;
-      seen.add(item.id);
-      merged.push(item);
-    }
-  }
-  return merged;
-}
+import { useTriageSession } from "../hooks/useTriageSession";
 
 export function LogsPanel({
   ticket,
@@ -38,24 +26,7 @@ export function LogsPanel({
   const [showTriageReplies, setShowTriageReplies] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
 
-  const triage = useQuery({
-    queryKey: ["triage", ticket.id],
-    queryFn: () => api.triage(ticket.id),
-    enabled: !!ticket.id,
-    retry: 1,
-    refetchInterval: (query) => {
-      const pending = query.state.data?.pending_approvals?.length ?? 0;
-      const busy = query.state.data ? query.state.data.run_status !== "idle" : false;
-      return pending > 0 || busy ? 2000 : 5000;
-    },
-  });
-
-  const ticketApprovals = useQuery({
-    queryKey: ["approvals", ticket.id],
-    queryFn: () => api.approvals(ticket.id),
-    enabled: !!ticket.id,
-    refetchInterval: 2000,
-  });
+  const { triage, pending } = useTriageSession(ticket.id);
 
   const resolveApproval = useMutation({
     mutationFn: ({
@@ -86,7 +57,6 @@ export function LogsPanel({
 
   const lines = ticket.artifacts?.logs ?? [];
   const live = ticket.artifacts?.live ?? null;
-  const pending = mergeApprovals(triage.data?.pending_approvals, ticketApprovals.data);
   const messages = triage.data?.messages ?? [];
   const recentReplies = useMemo(
     () => messages.filter((msg: TriageMessage) => msg.role === "assistant").slice(-2),
