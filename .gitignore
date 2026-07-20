@@ -1,7 +1,7 @@
 # Loregarden
-data/
-data/loregarden.db
-data/loregarden.db-*
+/data/
+/data/loregarden.db
+/data/loregarden.db-*
 *.db
 *.db-journal
 *.db-wal
