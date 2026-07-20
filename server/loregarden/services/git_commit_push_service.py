@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 
 from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
+from loregarden.services.git_subprocess import run_git
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -23,8 +23,8 @@ def working_tree_paths(repo_root: Path) -> set[str]:
     touched. `-z` because paths with spaces or non-ASCII are otherwise quoted and
     would not round-trip back into `git add`.
     """
-    proc = subprocess.run(
-        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+    proc = run_git(
+        ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -56,8 +56,8 @@ def head_commit_sha(repo_root: Path) -> str:
     an agent that picks its own sha can claim proof against a commit its work
     predates.
     """
-    proc = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
+    proc = run_git(
+        ["rev-parse", "HEAD"],
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -90,8 +90,8 @@ def commit_paths(session: Session, ticket: Ticket, message: str, paths: Iterable
     if not live:
         return False
 
-    add = subprocess.run(
-        ["git", "add", "--", *sorted(live)],
+    add = run_git(
+        ["add", "--", *sorted(live)],
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -99,8 +99,8 @@ def commit_paths(session: Session, ticket: Ticket, message: str, paths: Iterable
     if add.returncode != 0:
         raise ValueError((add.stderr or add.stdout or "git add failed").strip())
 
-    commit = subprocess.run(
-        ["git", "commit", "--no-verify", "-m", message],
+    commit = run_git(
+        ["commit", "--no-verify", "-m", message],
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -132,8 +132,8 @@ def commit_and_push_ticket_branch(session: Session, ticket: Ticket) -> dict:
     branch = resolve_ticket_branch(ticket)
     validate_branch_name(branch)
 
-    add = subprocess.run(
-        ["git", "add", "-A"],
+    add = run_git(
+        ["add", "-A"],
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -142,8 +142,8 @@ def commit_and_push_ticket_branch(session: Session, ticket: Ticket) -> dict:
         raise ValueError((add.stderr or add.stdout or "git add failed").strip())
 
     message = f"{ticket.external_id}: {ticket.title}"
-    commit = subprocess.run(
-        ["git", "commit", "-m", message],
+    commit = run_git(
+        ["commit", "-m", message],
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -156,8 +156,8 @@ def commit_and_push_ticket_branch(session: Session, ticket: Ticket) -> dict:
             )
         raise ValueError((commit.stderr or commit.stdout or "git commit failed").strip())
 
-    push = subprocess.run(
-        ["git", "push", "-u", "origin", branch],
+    push = run_git(
+        ["push", "-u", "origin", branch],
         cwd=repo_root,
         capture_output=True,
         text=True,

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from loregarden.models.domain import Workspace
 from loregarden.services.git_branch import validate_branch_name
+from loregarden.services.git_subprocess import run_git
 from loregarden.services.path_browser import (
     assert_browse_allowed,
     parent_browse_path,
@@ -60,8 +61,8 @@ TEXT_SUFFIXES = {
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", "-C", str(cwd), *args],
+    return run_git(
+        ["-C", str(cwd), *args],
         capture_output=True,
         text=True,
         timeout=30,
