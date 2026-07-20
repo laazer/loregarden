@@ -18,7 +18,10 @@ export function BranchTriagePage() {
   const setBranchTriageWorkspaceSlug = useUiStore((s) => s.setBranchTriageWorkspaceSlug);
 
   const [activeTab, setActiveTab] = useState<BranchTriageTab>("triage");
-  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
+  // Held in the store rather than locally so the copilot dock — which mounts
+  // above the routes — can bind to this branch's conversation.
+  const selectedBranch = useUiStore((s) => s.branchTriageBranch) || null;
+  const setSelectedBranch = useUiStore((s) => s.setBranchTriageBranch);
 
   const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
 
@@ -51,22 +54,28 @@ export function BranchTriagePage() {
   );
 
   useEffect(() => {
-    setSelectedBranch(null);
+    setSelectedBranch("");
     setActiveTab("triage");
-  }, [activeSlug]);
+  }, [activeSlug, setSelectedBranch]);
 
   useEffect(() => {
     if (!triage.data?.current_branch || selectedBranch) return;
     if (triage.data.workspace_slug !== activeSlug) return;
     setSelectedBranch(triage.data.current_branch);
-  }, [triage.data?.current_branch, triage.data?.workspace_slug, activeSlug, selectedBranch]);
+  }, [
+    triage.data?.current_branch,
+    triage.data?.workspace_slug,
+    activeSlug,
+    selectedBranch,
+    setSelectedBranch,
+  ]);
 
   useEffect(() => {
     if (!selectedBranch || !triage.data?.branches) return;
     if (!triage.data.branches.some((item) => item.name === selectedBranch)) {
-      setSelectedBranch(null);
+      setSelectedBranch("");
     }
-  }, [selectedBranch, triage.data?.branches]);
+  }, [selectedBranch, triage.data?.branches, setSelectedBranch]);
 
   const handleReviewBranch = (branch: string) => {
     setSelectedBranch(branch);
@@ -153,7 +162,7 @@ export function BranchTriagePage() {
                 onSelectBranch={setSelectedBranch}
                 onReviewBranch={handleReviewBranch}
                 onBranchDeleted={(branch) => {
-                  if (selectedBranch === branch) setSelectedBranch(null);
+                  if (selectedBranch === branch) setSelectedBranch("");
                 }}
               />
 

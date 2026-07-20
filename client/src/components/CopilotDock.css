@@ -1,0 +1,90 @@
+.copilot-dock {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--ln);
+  background: var(--bg1, var(--bg));
+  /* The stored height is in pixels, but on a short window 340px swallows the
+     screen it is meant to sit beneath. Cap it against the viewport so the dock
+     stays a dock. */
+  max-height: 44vh;
+}
+
+.copilot-dock--empty {
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+}
+
+.copilot-dock-hint {
+  font-size: 11.5px;
+  color: var(--txl);
+}
+
+.copilot-dock-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 14px;
+  flex: 0 0 auto;
+}
+
+.copilot-dock-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  padding: 3px 0;
+  color: var(--tx);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.copilot-dock-chevron {
+  color: var(--txl);
+  font-size: 10px;
+}
+
+.copilot-dock-label {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.copilot-dock-busy,
+.copilot-dock-error {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txl);
+}
+
+.copilot-dock-error {
+  color: var(--rdl, var(--txl));
+}
+
+.copilot-dock-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 0 14px 10px;
+  gap: 8px;
+}
+
+/* The turns scroll; the composer stays put. Without an explicit min-height:0
+   the flex child refuses to shrink and the composer is pushed off the dock. */
+.copilot-dock-messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.copilot-dock-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--txl);
+}
