@@ -28,6 +28,7 @@ from loregarden.services.cli_settings import (
     resolve_claude_model,
     weak_mcp_model_warning,
 )
+from loregarden.services.code_map import render_code_map
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_commit_push_service import working_tree_paths
@@ -439,6 +440,11 @@ class CliAgentExecutor:
                 "## Claim under review",
                 build_verify_context(self.session, ticket, workspace) if is_verify else "",
             ),
+            # Before the role, so an agent knows the shape of the repo before it
+            # is told its job. The implementers run on cursor, which does not
+            # pick up CLAUDE.md the way Claude Code does, so without this they
+            # rediscover the layout by grepping on every run.
+            _titled_block("## Repository map", render_code_map(resolve_workspace_root(workspace))),
             _titled_block("## Skill", skill_body, cap=3000),
             _titled_block("## Agent Role", role_body),
             _raw_block(build_studio_prompt_sections(agent)),

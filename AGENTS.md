@@ -46,14 +46,14 @@ loregarden/
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Stage routing / classify | `services/studio_service.py` | `resolve_stage_execution`, `resolve_classify_route`, `_route_match_score` |
+| Stage routing / classify | `services/studio_routing.py` | `resolve_stage_execution`, `resolve_classify_route`, `_route_match_score` |
 | Ticket/stage/state sync | `services/workflow_state.py` | `reconcile_workflow_state` is called from many places; mind its side effects |
 | Stage transitions | `services/workflow_routing.py` | `apply_stage_route` — reconcile-then-resolve ordering is deliberate |
 | Running a pipeline | `services/orchestration.py`, `services/builtin_orchestrator.py` | Sweeps and commits the working tree |
-| Prompt assembly | `agents/executors/cli.py` (~line 345) | Builds the full agent prompt; embeds MCP + memory modules |
+| Prompt assembly | `agents/executors/cli.py` | Builds the full agent prompt; embeds MCP + memory modules |
 | Injected run context | `agents/stage_context.py`, `agents/mcp_context.py` | Text every agent sees, before its role file |
 | Approvals / permissions | `agents/executors/permission_bridge.py` | `AUTO_APPROVED_MCP_TOOLS`, agent scope check, auto_approve |
-| MCP tools | `mcp/tools.py` | 20 tools; names and schemas |
+| MCP tools | `mcp/tools.py` | Tool names and schemas |
 | Agent → role file map | `agents/registry.py` | `role_file` is resolved against the **workspace's** `agent_context/` |
 | Migrations | `db/migrations.py` | Append with the next id; never reorder |
 | Schema/stage defs | `models/domain/schemas.py`, `core/state_machine.py` | `WorkflowStageDef`, `ClassifyRoute` |
