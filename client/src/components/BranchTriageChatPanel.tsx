@@ -6,23 +6,15 @@ import { api, type WorkspaceRuntimeSettings } from "../api/client";
 import { ticketPath } from "../lib/appNavigation";
 import { TRIAGE_AGENT_NAME } from "../lib/triageAgent";
 import {
-  fetchBranchChat,
-  sendBranchChatMessage,
   type BranchTriageChatSnapshot,
   type BranchTriageEntry,
 } from "../lib/branchTriageApi";
 import { StudioChatComposer, StudioChatMessages } from "./studio/StudioChat";
+import { useBranchChatSession } from "../hooks/useBranchChatSession";
 import { BranchTriageCurrentTag } from "./BranchTriageCurrentTag";
 import { TriageModelModal } from "./TriageModelModal";
 import { runtimeSummaryLabel } from "./WorkspaceRuntimeFields";
-
-const DEFAULT_RUNTIME: WorkspaceRuntimeSettings = {
-  cli_adapter: "default",
-  claude_model: "",
-  cursor_model: "",
-  lmstudio_base_url: "",
-  lmstudio_model: "",
-};
+import { DEFAULT_RUNTIME } from "../lib/runtimeSettings";
 
 export function BranchTriageChatPanel({
   workspaceSlug,
@@ -44,90 +36,31 @@ export function BranchTriageChatPanel({
     queryFn: api.runtimeOptions,
   });
 
+  const session = useBranchChatSession(workspaceSlug, branch);
   const chatQueryKey = useMemo(
     () => ["branch-triage-chat", workspaceSlug, branch] as const,
     [workspaceSlug, branch],
   );
 
-  const chat = useQuery({
-    queryKey: chatQueryKey,
-    queryFn: () => fetchBranchChat(workspaceSlug, branch),
-    enabled: Boolean(workspaceSlug && branch),
-    refetchInterval: (query) =>
-      query.state.data && query.state.data.run_status !== "idle" ? 2000 : 5000,
-  });
-
-  // Server-derived, not promise-derived: a turn outlives the request that started it,
-  // so a dropped connection or a reload must not strand the composer.
-  const isSending = chat.data ? chat.data.run_status !== "idle" : false;
-
-  const linkedTicketId = chat.data?.linked_ticket_id ?? null;
-  const savedRuntime = chat.data?.runtime ?? DEFAULT_RUNTIME;
+  const linkedTicketId = session.snapshot?.linked_ticket_id ?? null;
+  const savedRuntime = session.snapshot?.runtime ?? DEFAULT_RUNTIME;
 
   const saveTicketRuntime = useMutation({
     mutationFn: (runtime: WorkspaceRuntimeSettings) =>
       api.setTriageRuntime(linkedTicketId!, runtime),
     onSuccess: (saved) => {
-      qc.setQueryData(["branch-triage-chat", workspaceSlug, branch], (current: typeof chat.data) =>
+      qc.setQueryData(chatQueryKey, (current: BranchTriageChatSnapshot | undefined) =>
         current ? { ...current, runtime: saved } : current,
       );
     },
   });
 
   const saveWorkspaceRuntime = useMutation({
-    mutationFn: (runtime: WorkspaceRuntimeSettings) =>
-      api.setWorkspaceRuntime(workspaceSlug, runtime),
+    mutationFn: (runtime: WorkspaceRuntimeSettings) => api.setWorkspaceRuntime(workspaceSlug, runtime),
     onSuccess: (saved) => {
-      qc.setQueryData(["branch-triage-chat", workspaceSlug, branch], (current: typeof chat.data) =>
+      qc.setQueryData(chatQueryKey, (current: BranchTriageChatSnapshot | undefined) =>
         current ? { ...current, runtime: saved } : current,
       );
-    },
-  });
-
-  const sendMessage = useMutation({
-    mutationFn: (content: string) => sendBranchChatMessage(workspaceSlug, branch, content),
-    onMutate: async (content) => {
-      await qc.cancelQueries({ queryKey: chatQueryKey });
-      const previous = qc.getQueryData<BranchTriageChatSnapshot>(chatQueryKey);
-      const optimisticMessage = {
-        id: `pending-${Date.now()}`,
-        role: "user",
-        content,
-        created_at: new Date().toISOString(),
-      };
-      qc.setQueryData<BranchTriageChatSnapshot>(chatQueryKey, (current) => {
-        if (current) {
-          return {
-            ...current,
-            messages: [...current.messages, optimisticMessage],
-            run_status: "running",
-          };
-        }
-        return {
-          workspace_id: "",
-          branch,
-          linked_ticket_id: null,
-          linked_ticket_external_id: null,
-          messages: [optimisticMessage],
-          runtime: DEFAULT_RUNTIME,
-          run_status: "running",
-          active_turn_id: null,
-        };
-      });
-      return { previous };
-    },
-    onError: (_error, _content, context) => {
-      if (context?.previous) {
-        qc.setQueryData(chatQueryKey, context.previous);
-      }
-    },
-    onSuccess: () => {
-      setDraft("");
-      qc.invalidateQueries({ queryKey: ["branch-triage", workspaceSlug] });
-    },
-    // The reply lands via polling, not this response — resync with the server either way.
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: chatQueryKey });
     },
   });
 
@@ -136,23 +69,23 @@ export function BranchTriageChatPanel({
   }, [branch]);
 
   // Cover the gap between the POST resolving and the next poll reporting "running".
-  const busy = isSending || sendMessage.isPending;
+  const busy = session.isBusy;
 
   const submitChat = () => {
     const text = draft.trim();
     if (!text || busy) return;
     setDraft("");
-    sendMessage.mutate(text);
+    session.send(text).catch(() => {});
   };
 
   const sendQuickMessage = (content: string) => {
-    if (busy || chat.isLoading) return;
-    sendMessage.mutate(content);
+    if (busy || session.isLoading) return;
+    session.send(content).catch(() => {});
   };
 
   const modelLabel = runtimeSummaryLabel(savedRuntime, runtimeOptions.data);
   const composerError =
-    (sendMessage.isError ? (sendMessage.error as Error)?.message || "Failed to send message" : null) ??
+    session.error ??
     (saveTicketRuntime.isError
       ? (saveTicketRuntime.error as Error)?.message || "Failed to save model settings"
       : null) ??
@@ -160,7 +93,7 @@ export function BranchTriageChatPanel({
       ? (saveWorkspaceRuntime.error as Error)?.message || "Failed to save model settings"
       : null);
 
-  const messages = chat.data?.messages ?? [];
+  const messages = session.messages;
 
   return (
     <div className="branch-triage-main branch-triage-chat-panel triage-panel-shell">
@@ -190,7 +123,7 @@ export function BranchTriageChatPanel({
       </div>
 
       <div className="triage-panel-body">
-        {chat.isError ? (
+        {session.loadError ? (
           <div className="triage-panel-alert">
             Branch triage chat unavailable. Restart the dev server if this persists.
           </div>
@@ -211,7 +144,7 @@ export function BranchTriageChatPanel({
             thinkingActivity="typing"
             autoScroll={autoScroll}
             emptyMessage={`Ask ${TRIAGE_AGENT_NAME} to commit, push, merge, or clean up this branch. ${TRIAGE_AGENT_NAME} runs git in your workspace and reports results.`}
-            isThinking={busy || chat.isLoading}
+            isThinking={busy || session.isLoading}
             thinkingMessage={`${TRIAGE_AGENT_NAME} is working…`}
           />
         </section>
@@ -238,7 +171,7 @@ export function BranchTriageChatPanel({
             <button
               type="button"
               className="btn-secondary btn-compact chat-composer-quick-action"
-              disabled={busy || chat.isLoading}
+              disabled={busy || session.isLoading}
               onClick={() => sendQuickMessage("commit and push")}
             >
               {busy ? "Sending…" : "Commit & push"}
@@ -249,7 +182,7 @@ export function BranchTriageChatPanel({
           <button
             type="button"
             className="ticket-studio-composer-action"
-            disabled={!runtimeOptions.data || chat.isLoading}
+            disabled={!runtimeOptions.data || session.isLoading}
             onClick={() => setModelModalOpen(true)}
             title="Triage model settings"
           >
