@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { api, type Approval, type RuntimeOptions, type TicketDetail } from "../api/client";
@@ -8,19 +8,7 @@ import { StudioChatMessages } from "./studio/StudioChat";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { TriageComposer } from "./TriageComposer";
-
-function mergeApprovals(...lists: Array<Approval[] | undefined>): Approval[] {
-  const seen = new Set<string>();
-  const merged: Approval[] = [];
-  for (const list of lists) {
-    for (const item of list ?? []) {
-      if (seen.has(item.id)) continue;
-      seen.add(item.id);
-      merged.push(item);
-    }
-  }
-  return merged;
-}
+import { useTriageSession } from "../hooks/useTriageSession";
 
 function approvalKindLabel(kind: Approval["kind"]) {
   switch (kind) {
@@ -81,26 +69,7 @@ export function TriagePanel({
   const [recentExpanded, setRecentExpanded] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
 
-  const triage = useQuery({
-    queryKey: ["triage", ticket?.id],
-    queryFn: () => api.triage(ticket!.id),
-    enabled: !!ticket?.id,
-    retry: 1,
-    refetchInterval: (query) => {
-      const pending = query.state.data?.pending_approvals?.length ?? 0;
-      const busy = query.state.data ? query.state.data.run_status !== "idle" : false;
-      return pending > 0 || busy ? 2000 : 5000;
-    },
-  });
-
-  const isSending = triage.data ? triage.data.run_status !== "idle" : false;
-
-  const ticketApprovals = useQuery({
-    queryKey: ["approvals", ticket?.id],
-    queryFn: () => api.approvals(ticket!.id),
-    enabled: !!ticket?.id,
-    refetchInterval: 2000,
-  });
+  const { triage, pending, isBusy: isSending } = useTriageSession(ticket?.id);
 
   const resolveApproval = useMutation({
     mutationFn: ({
@@ -141,7 +110,6 @@ export function TriagePanel({
   });
 
   const messages = triage.data?.messages ?? [];
-  const pending = mergeApprovals(triage.data?.pending_approvals, ticketApprovals.data);
   const recent = triage.data?.recent_approvals ?? [];
 
   useEffect(() => {
