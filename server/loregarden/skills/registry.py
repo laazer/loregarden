@@ -2,6 +2,11 @@ from pathlib import Path
 
 from loregarden.config import settings
 
+#: How much of a skill reaches an agent. The prompt caps the skill block at this
+#: same number, so loading more only ever produced text nothing would read —
+#: truncation now happens once, here, instead of twice at two different sizes.
+SKILL_PROMPT_CAP = 3000
+
 _SKILL_CACHE: dict[str, str] | None = None
 _SKILL_DIR_CACHE: dict[str, dict[str, str]] = {}
 
@@ -11,7 +16,7 @@ def _load_skills_from_dir(skills_dir: Path) -> dict[str, str]:
     if skills_dir.is_dir():
         for skill_md in skills_dir.glob("*/SKILL.md"):
             name = skill_md.parent.name.replace("-", "_")
-            skills[name] = skill_md.read_text(encoding="utf-8")[:4000]
+            skills[name] = skill_md.read_text(encoding="utf-8")[:SKILL_PROMPT_CAP]
             skills[skill_md.parent.name] = skills[name]
     return skills
 
