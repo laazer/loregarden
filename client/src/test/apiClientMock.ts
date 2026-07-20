@@ -23,6 +23,7 @@ export const api = {
   runs: jest.fn().mockResolvedValue([]),
   runLog: jest.fn(),
   runMessages: jest.fn(),
+  ticketLedger: jest.fn(),
   sendRunMessage: jest.fn(),
   triage: jest.fn().mockResolvedValue({
     pending_approvals: [],

@@ -167,6 +167,36 @@ export interface RunMessage {
   delivered_at: string | null;
 }
 
+/** One agent run inside a ledger visit. */
+export interface LedgerAttempt {
+  run_id: string;
+  run_code: string;
+  agent_id: string;
+  skill_name: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_seconds: number | null;
+}
+
+/** One contiguous stretch of work on a stage. */
+export interface LedgerVisit {
+  stage_key: string;
+  /** Above 1 means the pipeline came back to this stage. */
+  visit_number: number;
+  status: string;
+  /** Distinct lanes rather than repeated attempts. */
+  is_parallel: boolean;
+  attempts: LedgerAttempt[];
+}
+
+export interface TicketLedger {
+  visits: LedgerVisit[];
+  total_runs: number;
+  reworked_stages: string[];
+  total_seconds: number;
+}
+
 export interface TestArtifact {
   summary: string;
   color?: string;

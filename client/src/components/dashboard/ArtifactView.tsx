@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { TicketDetail } from "../../api/client";
 import type { ContextSection } from "../../api/types";
 import { InlineCodeDiffReview } from "../InlineCodeDiffReview";
+import { RunLedgerPanel } from "../RunLedgerPanel";
 
 export function ArtifactView({
   tab,
@@ -37,6 +38,16 @@ export function ArtifactView({
     return <div style={{ padding: 40, color: "var(--txl)", textAlign: "center" }}>No ticket selected</div>;
   }
   const art = ticket.artifacts ?? {};
+
+  if (tab === "ledger") {
+    return (
+      <RunLedgerPanel
+        ticketId={ticket.id}
+        isActive={runs.some((r) => r.status === "running" || r.status === "awaiting_permission")}
+        onOpenRunLog={onOpenRunLog}
+      />
+    );
+  }
 
   if (tab === "diff") {
     const diff = art.diff;

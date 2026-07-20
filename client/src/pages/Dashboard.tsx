@@ -1571,7 +1571,7 @@ export function Dashboard() {
         <section className={`artifacts-pane ${showWorkflow ? "" : "pane-fill"}`.trim()}>
           <div className="tab-bar">
             <div className="tab-bar-scroll" role="tablist" aria-label="Artifact views">
-              {(["diff", "errors", "triage", "logs", "tests", "hive", "context", "pr"] as const).map((t) => (
+              {(["diff", "errors", "triage", "logs", "tests", "hive", "context", "ledger", "pr"] as const).map((t) => (
                 <button
                   key={t}
                   ref={(el) => {
