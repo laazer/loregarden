@@ -178,7 +178,10 @@ def test_rigor_triage_reshapes_the_v3_template(tmp_path):
     assert stages["spec"]["skip_when"] == "has_acceptance_criteria"
     # Untouched stages stay exactly as they were.
     assert stages["plan"]["stage_type"] == "agent"
-    assert version == 2
+    # Recorded as a new version, so the reshape is auditable. Not pinned to an
+    # exact number: this seeded template is fair game for later migrations too,
+    # and every one of them would otherwise have to edit this line.
+    assert version > 1
 
     # Re-running must not stack a second set of routes onto the template.
     assert apply_migrations(engine) == []

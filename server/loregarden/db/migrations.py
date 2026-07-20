@@ -1224,6 +1224,46 @@ def _m_refactor_skill_routes(conn: Connection) -> None:
     )
 
 
+_PLAN_TEMPLATE = "studio-loregarden-tdd-v3"
+_PLAN_STAGE = "plan"
+_PLAN_SKILL = "plan"
+
+
+def _m_plan_skill_on_plan_stage(conn: Connection) -> None:
+    """Point the plan stage at the skill that tells it to attach its plan.
+
+    The stage declared no skill, so nothing told the planner where its output
+    should go, and the plan survived only inside a run-log transcript no later
+    stage reads.
+    """
+    if not _table_exists(conn, "workflow_templates"):
+        return
+    row = (
+        conn.execute(
+            text("SELECT id, version, stages_json FROM workflow_templates WHERE slug=:s"),
+            {"s": _PLAN_TEMPLATE},
+        )
+        .mappings()
+        .fetchone()
+    )
+    if not row:
+        return
+
+    stages = json.loads(row["stages_json"] or "[]")
+    plan = next((s for s in stages if s.get("key") == _PLAN_STAGE), None)
+    # An operator who set their own skill here meant it; only fill the gap.
+    if plan is None or (plan.get("skill_name") or "").strip():
+        return
+    plan["skill_name"] = _PLAN_SKILL
+
+    new_version = int(row["version"] or 1) + 1
+    conn.execute(
+        text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
+        {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
+    )
+    _snapshot_template_version(conn, row["id"], new_version, "Plan stage attaches its plan")
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1255,6 +1295,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0028_require_verify_evidence", _m_require_verify_evidence),
     ("0029_require_implement_real_surface", _m_require_implement_real_surface),
     ("0030_refactor_skill_routes", _m_refactor_skill_routes),
+    ("0031_plan_skill_on_plan_stage", _m_plan_skill_on_plan_stage),
 ]
 
 
