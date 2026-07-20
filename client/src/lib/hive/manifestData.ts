@@ -5,6 +5,8 @@ export type HiveManifestJson = {
   floor: string;
   scenery?: string;
   agents: Record<string, string>;
+  /** Named characters, for skins that staff stations with a crew. */
+  cast?: Record<string, string>;
   stations: Record<string, string>;
   artifacts: Record<string, string>;
   events: Record<string, string>;
@@ -47,6 +49,21 @@ export const HIVE_MANIFEST_DATA: Record<HiveSkinId, HiveManifestJson> = {
       implementer: "officeplace/agents/implementer.png",
       tester: "officeplace/agents/tester.png",
       reviewer: "officeplace/agents/reviewer.png",
+    },
+    cast: {
+      cobel: "officeplace/cast/cobel.png",
+      michael: "officeplace/cast/michael.png",
+      ms_casey: "officeplace/cast/ms_casey.png",
+      oscar: "officeplace/cast/oscar.png",
+      jim: "officeplace/cast/jim.png",
+      pam: "officeplace/cast/pam.png",
+      dwight: "officeplace/cast/dwight.png",
+      mark: "officeplace/cast/mark.png",
+      helly: "officeplace/cast/helly.png",
+      irving: "officeplace/cast/irving.png",
+      dylan: "officeplace/cast/dylan.png",
+      milchick: "officeplace/cast/milchick.png",
+      burt: "officeplace/cast/burt.png",
     },
     stations: {
       planner_hq: "officeplace/stations/planner_hq.png",

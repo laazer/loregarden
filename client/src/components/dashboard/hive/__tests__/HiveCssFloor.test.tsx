@@ -44,3 +44,32 @@ describe("HiveCssFloor — officeplace background", () => {
     expect(queryByTestId("hive-receptionist")).not.toBeNull();
   });
 });
+
+describe("HiveCssFloor — crewed stations", () => {
+  const mdrModel = () =>
+    buildHiveWorld([stage({ key: "test", name: "Testing", agent_id: "static_qa" })], {
+      skin: "officeplace",
+    });
+
+  it("puts the whole MDR crew on the floor for one testing agent", () => {
+    const { container } = render(<HiveCssFloor model={mdrModel()} />);
+    expect(container.querySelectorAll(".hive-css__agent")).toHaveLength(4);
+  });
+
+  it("gives every crew member a sprite", () => {
+    const { container } = render(<HiveCssFloor model={mdrModel()} />);
+    const srcs = [...container.querySelectorAll<HTMLImageElement>(".hive-css__agent-avatar")].map(
+      (img) => img.getAttribute("src"),
+    );
+    // Distinctness is asserted against the manifest instead: jest maps every
+    // .png to one fileMock, so all four srcs are the same string here.
+    expect(srcs).toHaveLength(4);
+    expect(srcs.every(Boolean)).toBe(true);
+  });
+
+  it("shows a single status card for the crew, not one per body", () => {
+    const { container } = render(<HiveCssFloor model={mdrModel()} />);
+    // Four colleagues, one agent — so one card, or the floor reads as four agents.
+    expect(container.querySelectorAll(".hive-css__agent-card")).toHaveLength(1);
+  });
+});

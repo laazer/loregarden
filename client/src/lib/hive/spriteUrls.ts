@@ -1,5 +1,7 @@
 import type { CSSProperties } from "react";
 
+import type { HiveCharacterId } from "./cast";
+import { HIVE_CHARACTER_IDS } from "./cast";
 import type { HiveCastVariant } from "./roleMap";
 import type { HiveArtifactKind, HiveEventKind, HiveSkinId, HiveStationId } from "./skins";
 import { HIVE_SKIN_IDS, HIVE_STATION_IDS } from "./skins";
@@ -10,6 +12,8 @@ export interface HiveCssSpriteUrls {
   floor: string | null;
   scenery: string | null;
   agent: Record<HiveCastVariant, string | null>;
+  /** Named cast, empty for skins that draw a single generic worker per role. */
+  character: Partial<Record<HiveCharacterId, string | null>>;
   station: Record<HiveStationId, string | null>;
   artifact: Record<HiveArtifactKind, string | null>;
   event: Record<HiveEventKind, string | null>;
@@ -31,10 +35,16 @@ export function resolveSkinSprites(skin: HiveSkinId): HiveCssSpriteUrls {
   for (const id of HIVE_STATION_IDS) {
     station[id] = resolveAssetUrl(manifest.stations[id] ?? `${skin}/stations/${id}.png`);
   }
+  const character: Partial<Record<HiveCharacterId, string | null>> = {};
+  for (const id of HIVE_CHARACTER_IDS) {
+    const path = manifest.cast?.[id];
+    if (path) character[id] = resolveAssetUrl(path);
+  }
   return {
     floor: resolveAssetUrl(manifest.floor),
     scenery: manifest.scenery ? resolveAssetUrl(manifest.scenery) : null,
     agent,
+    character,
     station,
     artifact: {
       context: resolveAssetUrl(manifest.artifacts.context),
@@ -67,6 +77,11 @@ export function assertAllSkinSpritesResolve(): void {
     }
     for (const id of HIVE_STATION_IDS) {
       if (!sprites.station[id]) throw new Error(`missing station ${skin}/${id}`);
+    }
+    // A skin need not declare a cast, but anything it does declare must load —
+    // otherwise a typo'd path degrades to an invisible agent at runtime.
+    for (const [id, url] of Object.entries(sprites.character)) {
+      if (!url) throw new Error(`missing character ${skin}/${id}`);
     }
     if (!sprites.artifact.context || !sprites.artifact.diff) {
       throw new Error(`missing artifacts for ${skin}`);

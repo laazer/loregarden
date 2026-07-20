@@ -270,7 +270,10 @@ export function HiveCssFloor({ model, speedMultiplier = 1 }: HiveCssFloorProps) 
           grid={layout.walkGrid}
           errands={layout.errands}
           speedMultiplier={speedMultiplier}
-          avatarSrc={sprites.agent[agent.cast]}
+          avatarSrc={
+            (agent.character ? sprites.character[agent.character] : null) ??
+            sprites.agent[agent.cast]
+          }
           avatarFallback={agent.name.slice(0, 2)}
         />
       ))}

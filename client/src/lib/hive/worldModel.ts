@@ -1,6 +1,7 @@
 import type { StageStatus, WorkflowStageView } from "../../api/client";
 import { stageStatusMeta } from "../stageDisplay";
 import { getHiveLayout, type HiveLayout } from "./layouts";
+import { crewForStation, type HiveCharacterId } from "./cast";
 import { mapAgentToRole, type HiveCastVariant } from "./roleMap";
 import {
   HIVE_SKINS,
@@ -44,7 +45,17 @@ export type HiveAgentMotion =
   | "ghost";
 
 export interface HiveAgentState {
+  /** Unique per body. A crewed agent contributes several bodies. */
   id: string;
+  /** The orchestrator agent this body belongs to; shared across its crew. */
+  agentId: string;
+  /**
+   * Lead body of the crew. Only the lead shows a status card and drives
+   * artifact flights, so a crewed agent still reads as one agent.
+   */
+  lead: boolean;
+  /** Named sprite, when the skin staffs stations with a cast. */
+  character: HiveCharacterId | null;
   name: string;
   status: StageStatus;
   statusLabel: string;
@@ -182,19 +193,23 @@ export function buildHiveWorld(
     }
   }
 
-  const entries = [...agentMap.values()].slice(0, layout.deskRow.length);
+  const entries = [...agentMap.values()];
   const occupation = new Map<HiveStationId, string[]>();
 
-  const agents: HiveAgentState[] = entries.map((entry, index) => {
+  // Desks are a finite row shared by every body on the floor. A crewed agent
+  // claims one per member, so walk a single cursor and stop when the row runs
+  // out rather than letting later bodies collapse onto desk zero.
+  const agents: HiveAgentState[] = [];
+  let deskCursor = 0;
+
+  for (const entry of entries) {
     const role = mapAgentToRole(entry.agentId);
-    const desk = layout.deskRow[index] ?? layout.deskRow[0];
     const meta = stageStatusMeta(entry.status);
     const active =
       entry.status === "running" ||
       entry.status === "blocked" ||
       entry.status === "awaiting";
     const motion = motionForStatus(entry.status);
-    const target = targetForAgent(entry.status, role.station, desk, layout);
 
     if (entry.status === "running") {
       const list = occupation.get(role.station) ?? [];
@@ -202,24 +217,38 @@ export function buildHiveWorld(
       occupation.set(role.station, list);
     }
 
-    return {
-      id: entry.agentId,
-      name: formatAgentName(entry.agentId),
-      status: entry.status,
-      statusLabel: meta.label,
-      stage: entry.stage,
-      skill: entry.skill,
-      station: role.station,
-      cast: role.cast,
-      motion,
-      target,
-      desk: { ...desk },
-      color: meta.dot,
-      showTool: active && Boolean(entry.skill),
-      active,
-      pulsing: entry.status === "running",
-    };
-  });
+    const crew = crewForStation(skin, role.station);
+    const members: (HiveCharacterId | null)[] = crew ?? [null];
+
+    for (const [memberIndex, character] of members.entries()) {
+      const desk = layout.deskRow[deskCursor];
+      if (!desk) break;
+      deskCursor += 1;
+
+      agents.push({
+        id: character ? `${entry.agentId}#${character}` : entry.agentId,
+        agentId: entry.agentId,
+        lead: memberIndex === 0,
+        character,
+        name: formatAgentName(entry.agentId),
+        status: entry.status,
+        statusLabel: meta.label,
+        stage: entry.stage,
+        skill: entry.skill,
+        station: role.station,
+        cast: role.cast,
+        motion,
+        target: targetForAgent(entry.status, role.station, desk, layout),
+        desk: { ...desk },
+        color: meta.dot,
+        showTool: active && Boolean(entry.skill),
+        active,
+        pulsing: entry.status === "running",
+      });
+    }
+
+    if (deskCursor >= layout.deskRow.length) break;
+  }
 
   const stations: HiveStationState[] = HIVE_STATION_IDS.map((id) => {
     const pos = layout.stationPositions[id];
@@ -235,29 +264,33 @@ export function buildHiveWorld(
   });
 
   const flights: HiveArtifactFlight[] = [];
+  // Keyed on agentId, and only for the lead: previousStatuses is a per-agent
+  // snapshot, so iterating every body would fire one duplicate flight per
+  // crew member on the same status change.
   for (const agent of agents) {
-    const prev = previousStatuses[agent.id];
+    if (!agent.lead) continue;
+    const prev = previousStatuses[agent.agentId];
     if (!prev || prev === agent.status) continue;
 
     if (prev === "pending" && agent.status === "running") {
       flights.push({
-        id: `${agent.id}-ctx-${agent.status}`,
+        id: `${agent.agentId}-ctx-${agent.status}`,
         kind: "context",
         label: skinLabel(skin, "context"),
         from: { ...layout.stationPositions.planner_hq },
         to: { ...layout.stationPositions[agent.station] },
-        triggerKey: `${agent.id}:pending->running`,
+        triggerKey: `${agent.agentId}:pending->running`,
       });
     }
 
     if (prev === "running" && (agent.status === "done" || agent.status === "blocked")) {
       flights.push({
-        id: `${agent.id}-diff-${agent.status}`,
+        id: `${agent.agentId}-diff-${agent.status}`,
         kind: "diff",
         label: skinLabel(skin, "diff"),
         from: { ...layout.stationPositions[agent.station] },
         to: { ...layout.stationPositions.planner_hq },
-        triggerKey: `${agent.id}:running->${agent.status}`,
+        triggerKey: `${agent.agentId}:running->${agent.status}`,
       });
     }
   }
@@ -311,10 +344,15 @@ export function buildHiveWorld(
 }
 
 /** Snapshot helper for transition detection across polls. */
+/**
+ * Snapshot for the next frame's flight detection. Keyed by agentId, not by the
+ * per-body id: buildHiveWorld looks transitions up per agent, so keying by body
+ * would make every lookup miss and silently stop all flights on crewed skins.
+ */
 export function agentStatusSnapshot(agents: HiveAgentState[]): Record<string, StageStatus> {
   const out: Record<string, StageStatus> = {};
   for (const agent of agents) {
-    out[agent.id] = agent.status;
+    out[agent.agentId] = agent.status;
   }
   return out;
 }

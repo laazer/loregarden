@@ -40,10 +40,17 @@ describe("buildHiveWorld", () => {
     expect(model.idle).toBe(false);
     expect(model.floorTitle).toBe("Officeplace floor");
     expect(model.orchestratorLabel).toBe("Regional Manager");
-    expect(model.agents).toHaveLength(2);
+    // Officeplace staffs each station with a crew, so the two agents put five
+    // bodies on the floor: planner_hq's pair plus coding's trio.
+    expect(model.agents).toHaveLength(5);
     expect(model.stations).toHaveLength(5);
 
-    const coder = model.agents.find((a) => a.id === "backend_implementer");
+    const coders = model.agents.filter((a) => a.agentId === "backend_implementer");
+    expect(coders.map((a) => a.character)).toEqual(["jim", "pam", "dwight"]);
+    expect(coders.filter((a) => a.lead)).toHaveLength(1);
+    expect(new Set(coders.map((a) => a.id)).size).toBe(3);
+
+    const coder = coders[0];
     expect(coder?.station).toBe("coding");
     expect(coder?.motion).toBe("working");
     expect(coder?.target).toEqual(OFFICEPLACE_STATIONS.coding);
@@ -120,5 +127,44 @@ describe("buildHiveWorld", () => {
       },
     );
     expect(second.flights.some((f) => f.kind === "diff" && f.label === "Stack of Papers")).toBe(true);
+  });
+
+  it("emits one flight per agent, not per crew member", () => {
+    const running = [
+      stage({
+        key: "test",
+        name: "Testing",
+        agent_id: "static_qa",
+        status: "running",
+        skill_name: "run_tests",
+      }),
+    ];
+    const first = buildHiveWorld(running, {
+      skin: "officeplace",
+      previousStatuses: { static_qa: "pending" },
+    });
+
+    // The whole MDR crew stands at testing, but they share one agent.
+    expect(first.agents.filter((a) => a.agentId === "static_qa")).toHaveLength(4);
+    expect(first.flights).toHaveLength(1);
+  });
+
+  it("stops placing bodies when the desk row runs out", () => {
+    const many = Array.from({ length: 12 }, (_, i) =>
+      stage({
+        key: `impl-${i}`,
+        name: `Implementation ${i}`,
+        agent_id: `backend_implementer_${i}`,
+        status: "running",
+        skill_name: "apply_patch",
+      }),
+    );
+    const model = buildHiveWorld(many, { skin: "officeplace" });
+    const deskCount = model.layout.deskRow.length;
+
+    expect(model.agents.length).toBeLessThanOrEqual(deskCount);
+    // Every body gets its own desk rather than collapsing onto desk zero.
+    const desks = model.agents.map((a) => `${a.desk.x},${a.desk.y}`);
+    expect(new Set(desks).size).toBe(desks.length);
   });
 });
