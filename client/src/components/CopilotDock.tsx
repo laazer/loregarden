@@ -47,7 +47,6 @@ export function CopilotDock() {
   const { session, label, ticketId, pendingApprovals } = useActiveChatSession();
   const resolveApproval = useApprovalResolution(ticketId ?? undefined);
   const terminalOpen = useUiStore((s) => s.terminalOpen);
-  const setTerminalOpen = useUiStore((s) => s.setTerminalOpen);
   const terminal = useTerminalTarget();
   // Mounting the panel spawns a shell, so it only mounts once both the dock is
   // expanded and someone asked for one — and never without a workspace to run
@@ -66,12 +65,29 @@ export function CopilotDock() {
     void session.send(content, { autoApprove }).catch(() => {});
   };
 
+  // No conversation on this screen, but a shell does not need one: it is scoped
+  // to the workspace. Returning early here is what made the status bar's
+  // Terminal button appear to do nothing on the console.
   if (!session) {
+    if (!showTerminal) {
+      return (
+        <div className="copilot-dock copilot-dock--empty">
+          <span className="copilot-dock-hint">
+            Open a ticket or a branch to chat about it.
+          </span>
+        </div>
+      );
+    }
     return (
-      <div className="copilot-dock copilot-dock--empty">
-        <span className="copilot-dock-hint">
-          Open a ticket or a branch to chat about it.
-        </span>
+      <div className="copilot-dock copilot-dock--open" style={{ height }}>
+        <div className="copilot-dock-bar">
+          <span className="copilot-dock-label">{terminal.workspaceSlug}</span>
+        </div>
+        <div className="copilot-dock-body">
+          <div className="copilot-dock-terminal">
+            <TerminalPanel key={terminal.workspaceSlug} workspaceSlug={terminal.workspaceSlug} />
+          </div>
+        </div>
       </div>
     );
   }
@@ -104,24 +120,6 @@ export function CopilotDock() {
         )}
         {session.loadError && (
           <span className="copilot-dock-error">conversation unavailable</span>
-        )}
-        {open && (
-          <button
-            type="button"
-            className={`copilot-dock-terminal-toggle${terminalOpen ? " is-on" : ""}`}
-            aria-pressed={terminalOpen}
-            // Disabled rather than hidden: the control staying put explains why
-            // it does nothing, where a vanishing button just looks broken.
-            disabled={!terminal.workspaceSlug}
-            title={
-              terminal.workspaceSlug
-                ? `Shell in ${terminal.workspaceSlug}`
-                : "Pick a workspace to open a shell in"
-            }
-            onClick={() => setTerminalOpen(!terminalOpen)}
-          >
-            Terminal
-          </button>
         )}
       </div>
 

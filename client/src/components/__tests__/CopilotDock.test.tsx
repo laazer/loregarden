@@ -164,18 +164,14 @@ describe("the terminal pane", () => {
     render(<CopilotDock />);
 
     expect(screen.queryByTestId("terminal-panel")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Terminal" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
   });
 
   it("opens a shell in the workspace the screen is showing", () => {
+    // The control lives in the status bar now; the dock follows the store.
     openDock();
-    useUiStore.setState({ copilotOpen: true, terminalOpen: false });
-    render(<CopilotDock />);
+    useUiStore.setState({ copilotOpen: true, terminalOpen: true });
 
-    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+    render(<CopilotDock />);
 
     expect(screen.getByTestId("terminal-panel")).toHaveTextContent("loregarden");
   });
@@ -201,7 +197,6 @@ describe("the terminal pane", () => {
     render(<CopilotDock />);
 
     expect(screen.queryByTestId("terminal-panel")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Terminal" })).toBeDisabled();
   });
 
   it("reaps the shell when the dock collapses", () => {
@@ -217,15 +212,25 @@ describe("the terminal pane", () => {
     expect(screen.queryByTestId("terminal-panel")).not.toBeInTheDocument();
   });
 
-  it("remembers the terminal was open across a remount", () => {
-    openDock();
-    useUiStore.setState({ copilotOpen: true, terminalOpen: false });
-    const { unmount } = render(<CopilotDock />);
-    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
-    unmount();
+  it("hosts a shell on a screen with no conversation", () => {
+    // A shell is scoped to the workspace, not to a chat. Returning early when
+    // no session exists is what made the status bar's button do nothing on the
+    // console screen.
+    mockResolver.mockReturnValue(bind({ session: null, label: "" }));
+    useUiStore.setState({ copilotOpen: true, terminalOpen: true });
 
     render(<CopilotDock />);
 
-    expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("terminal-panel")).toHaveTextContent("loregarden");
+    expect(screen.queryByText(/Open a ticket or a branch/)).not.toBeInTheDocument();
+  });
+
+  it("still explains itself when there is neither a conversation nor a shell", () => {
+    mockResolver.mockReturnValue(bind({ session: null, label: "" }));
+    useUiStore.setState({ copilotOpen: true, terminalOpen: false });
+
+    render(<CopilotDock />);
+
+    expect(screen.getByText(/Open a ticket or a branch/)).toBeInTheDocument();
   });
 });
