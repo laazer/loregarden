@@ -5,8 +5,27 @@ import { useActiveChatSession } from "../../hooks/useActiveChatSession";
 import { useUiStore } from "../../state/uiStore";
 
 jest.mock("../../hooks/useActiveChatSession");
+jest.mock("../../hooks/useApprovalResolution", () => ({
+  useApprovalResolution: () => ({
+    mutate: jest.fn(),
+    isPending: false,
+    isError: false,
+    error: null,
+    variables: undefined,
+  }),
+}));
 
 const mockResolver = useActiveChatSession as jest.MockedFunction<typeof useActiveChatSession>;
+
+function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
+  return {
+    session: null,
+    label: "",
+    ticketId: "t1",
+    pendingApprovals: [],
+    ...overrides,
+  } as ReturnType<typeof useActiveChatSession>;
+}
 
 function session(overrides = {}) {
   return {
@@ -28,14 +47,14 @@ beforeEach(() => {
 });
 
 it("says what to do when no screen owns a conversation", () => {
-  mockResolver.mockReturnValue({ session: null, label: "" });
+  mockResolver.mockReturnValue(bind({ session: null, label: "" }));
 
   render(<CopilotDock />);
   expect(screen.getByText(/open a ticket or a branch/i)).toBeInTheDocument();
 });
 
 it("names the bound conversation while collapsed", () => {
-  mockResolver.mockReturnValue({ session: session(), label: "Ticket triage" });
+  mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
 
   render(<CopilotDock />);
   expect(screen.getByText("Ticket triage")).toBeInTheDocument();
@@ -44,7 +63,7 @@ it("names the bound conversation while collapsed", () => {
 });
 
 it("opens and closes from the bar", () => {
-  mockResolver.mockReturnValue({ session: session(), label: "Ticket triage" });
+  mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
 
   render(<CopilotDock />);
   fireEvent.click(screen.getByRole("button", { name: /expand copilot/i }));
@@ -57,7 +76,7 @@ it("opens and closes from the bar", () => {
 
 it("sends through the bound session, not its own transport", () => {
   const bound = session();
-  mockResolver.mockReturnValue({ session: bound, label: "Ticket triage" });
+  mockResolver.mockReturnValue(bind({ session: bound, label: "Ticket triage" }));
   useUiStore.setState({ copilotOpen: true });
 
   render(<CopilotDock />);
@@ -69,10 +88,10 @@ it("sends through the bound session, not its own transport", () => {
 });
 
 it("shows a send failure without claiming the chat is gone", () => {
-  mockResolver.mockReturnValue({
+  mockResolver.mockReturnValue(bind({
     session: session({ error: "Failed to send message" }),
     label: "Ticket triage",
-  });
+  }));
   useUiStore.setState({ copilotOpen: true });
 
   render(<CopilotDock />);
@@ -82,11 +101,41 @@ it("shows a send failure without claiming the chat is gone", () => {
 
 it("distinguishes an unavailable conversation from a failed send", () => {
   // The distinction U2a's descriptor grew a field for.
-  mockResolver.mockReturnValue({
+  mockResolver.mockReturnValue(bind({
     session: session({ loadError: true }),
     label: "Ticket triage",
-  });
+  }));
 
   render(<CopilotDock />);
   expect(screen.getByText(/conversation unavailable/i)).toBeInTheDocument();
+});
+
+it("surfaces a decision waiting on the operator while collapsed", () => {
+  // An agent question becomes an approval, never a chat message. A dock that
+  // showed only messages would sit on "working…" with nothing to answer.
+  mockResolver.mockReturnValue(
+    bind({
+      session: session(),
+      label: "Ticket triage",
+      pendingApprovals: [{ id: "a1", title: "Which shape?", kind: "cli_question" }] as never,
+    }),
+  );
+
+  render(<CopilotDock />);
+  expect(screen.getByText(/1 waiting on you/i)).toBeInTheDocument();
+});
+
+it("prefers the waiting decision over the busy indicator", () => {
+  // Both are true while an agent waits on an answer; only one is actionable.
+  mockResolver.mockReturnValue(
+    bind({
+      session: session({ isBusy: true }),
+      label: "Ticket triage",
+      pendingApprovals: [{ id: "a1", title: "Which shape?", kind: "cli_question" }] as never,
+    }),
+  );
+
+  render(<CopilotDock />);
+  expect(screen.getByText(/waiting on you/i)).toBeInTheDocument();
+  expect(screen.queryByText(/working…/)).not.toBeInTheDocument();
 });

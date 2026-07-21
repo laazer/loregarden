@@ -1,13 +1,14 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
-import { api, type Approval, type RuntimeOptions, type TicketDetail } from "../api/client";
+import type { Approval, RuntimeOptions, TicketDetail } from "../api/client";
+
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { TRIAGE_AGENT_NAME } from "../lib/triageAgent";
 import { StudioChatMessages } from "./studio/StudioChat";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { TriageComposer } from "./TriageComposer";
+import { useApprovalResolution } from "../hooks/useApprovalResolution";
 import { useTriageSession } from "../hooks/useTriageSession";
 
 function approvalKindLabel(kind: Approval["kind"]) {
@@ -65,49 +66,12 @@ export function TriagePanel({
   runtimeOptions: RuntimeOptions | undefined;
   onResolved?: () => void;
 }) {
-  const qc = useQueryClient();
   const [recentExpanded, setRecentExpanded] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
 
   const { triage, pending, isBusy: isSending } = useTriageSession(ticket?.id);
 
-  const resolveApproval = useMutation({
-    mutationFn: ({
-      id,
-      action,
-      answers,
-      response,
-      always_allow,
-      allow_for_ticket,
-      allow_for_stage,
-      route_to_stage_key,
-    }: {
-      id: string;
-      action: "approve" | "reject";
-      answers?: Record<string, string | string[]>;
-      response?: string;
-      always_allow?: boolean;
-      allow_for_ticket?: boolean;
-      allow_for_stage?: boolean;
-      route_to_stage_key?: string;
-    }) =>
-      api.resolveApproval(id, {
-        action,
-        answers,
-        response,
-        always_allow,
-        allow_for_ticket,
-        allow_for_stage,
-        route_to_stage_key,
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["triage", ticket?.id] });
-      qc.invalidateQueries({ queryKey: ["approvals"] });
-      qc.invalidateQueries({ queryKey: ["ticket", ticket?.id] });
-      qc.invalidateQueries({ queryKey: ["runs", ticket?.id] });
-      onResolved?.();
-    },
-  });
+  const resolveApproval = useApprovalResolution(ticket?.id, onResolved);
 
   const messages = triage.data?.messages ?? [];
   const recent = triage.data?.recent_approvals ?? [];

@@ -1,7 +1,7 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { api, type RuntimeOptions, type TicketDetail, type TriageMessage } from "../api/client";
+import type { RuntimeOptions, TicketDetail, TriageMessage } from "../api/client";
+
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { formatLogExcerpt } from "../utils/logExcerpt";
 import { TRIAGE_AGENT_NAME } from "../lib/triageAgent";
@@ -10,6 +10,7 @@ import { LiveLogLine, LogLineRow } from "./logs/LogLineRow";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { TriageComposer } from "./TriageComposer";
 import "./LogsPanel.css";
+import { useApprovalResolution } from "../hooks/useApprovalResolution";
 import { useTriageSession } from "../hooks/useTriageSession";
 
 export function LogsPanel({
@@ -21,39 +22,13 @@ export function LogsPanel({
   runtimeOptions: RuntimeOptions | undefined;
   onResolved?: () => void;
 }) {
-  const qc = useQueryClient();
   const logScrollRef = useRef<HTMLDivElement | null>(null);
   const [showTriageReplies, setShowTriageReplies] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
 
   const { triage, pending } = useTriageSession(ticket.id);
 
-  const resolveApproval = useMutation({
-    mutationFn: ({
-      id,
-      action,
-      answers,
-      response,
-      always_allow,
-      allow_for_ticket,
-      allow_for_stage,
-    }: {
-      id: string;
-      action: "approve" | "reject";
-      answers?: Record<string, string | string[]>;
-      response?: string;
-      always_allow?: boolean;
-      allow_for_ticket?: boolean;
-      allow_for_stage?: boolean;
-    }) => api.resolveApproval(id, { action, answers, response, always_allow, allow_for_ticket, allow_for_stage }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["triage", ticket.id] });
-      qc.invalidateQueries({ queryKey: ["approvals"] });
-      qc.invalidateQueries({ queryKey: ["ticket", ticket.id] });
-      qc.invalidateQueries({ queryKey: ["runs", ticket.id] });
-      onResolved?.();
-    },
-  });
+  const resolveApproval = useApprovalResolution(ticket.id);
 
   const lines = ticket.artifacts?.logs ?? [];
   const live = ticket.artifacts?.live ?? null;

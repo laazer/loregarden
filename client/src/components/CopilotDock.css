@@ -88,3 +88,39 @@
   font-size: 11px;
   color: var(--txl);
 }
+
+.copilot-dock-waiting {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--amb, var(--tx));
+}
+
+.copilot-dock-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+}
+
+.copilot-dock-chips-label {
+  font-size: 10.5px;
+  color: var(--txl);
+  margin-right: 2px;
+}
+
+.copilot-dock-chip {
+  border: 1px solid var(--ln);
+  background: transparent;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--txm, var(--txl));
+  cursor: pointer;
+}
+
+.copilot-dock-chip:hover {
+  color: var(--tx);
+  border-color: var(--ac, var(--ln));
+}
