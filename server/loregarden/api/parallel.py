@@ -13,6 +13,7 @@ from loregarden.models.domain import (
 from loregarden.services.conflict_detector import ConflictDetectorService
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.parallel_queue import ParallelQueueService
+from loregarden.services.queue_status import build_queue_status
 from loregarden.services.worktree_service import WorktreeService
 from loregarden.websocket_events import (
     emit_conflict_detected,
@@ -66,21 +67,7 @@ async def create_parallel_run(
             max_concurrent=max_concurrent,
         )
 
-        # Emit execution update to WebSocket subscribers
-        try:
-            queue_service = ParallelQueueService(session, max_concurrent=max_concurrent)
-            active_runs = await queue_service.get_active_runs(ticket.workspace_id)
-            queued_runs = await queue_service.get_queued_runs(ticket.workspace_id)
-            stats = queue_service.get_queue_stats(ticket.workspace_id)
-
-            emit_execution_update(
-                workspace_id=ticket.workspace_id,
-                active_runs=active_runs,
-                queued_runs=queued_runs,
-                stats=stats,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to emit execution_update: {e}")
+        emit_execution_update(ticket.workspace_id)
 
         return result
 
@@ -124,25 +111,9 @@ async def get_parallel_status(
         }
     """
     try:
-        queue_service = ParallelQueueService(session, max_concurrent=3)
-
-        # Get active runs
-        active_runs = await queue_service.get_active_runs(workspace_id)
-
-        # Get queued runs
-        queued_runs = await queue_service.get_queued_runs(workspace_id)
-
-        # Get stats
-        stats = queue_service.get_queue_stats(workspace_id)
-
-        return {
-            "active_runs": active_runs,
-            "queued_runs": queued_runs,
-            "available_slots": stats.get("available_slots", 0),
-            "total_slots": stats.get("max_concurrent", 3),
-            "queue_length": len(queued_runs),
-            "stats": stats,
-        }
+        # Shared with the queue websocket, so a client that falls back to
+        # polling sees the identical payload rather than a second dialect.
+        return await build_queue_status(session, workspace_id)
 
     except Exception as e:
         logger.error(f"Error getting parallel status: {e}", exc_info=True)
@@ -178,20 +149,7 @@ async def cancel_queued_run(
         if not cancelled:
             raise HTTPException(status_code=404, detail="Queued run not found")
 
-        # Emit execution update to show updated queue state
-        try:
-            active_runs = await queue_service.get_active_runs(run.workspace_id)
-            queued_runs = await queue_service.get_queued_runs(run.workspace_id)
-            stats = queue_service.get_queue_stats(run.workspace_id)
-
-            emit_execution_update(
-                workspace_id=run.workspace_id,
-                active_runs=active_runs,
-                queued_runs=queued_runs,
-                stats=stats,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to emit execution_update: {e}")
+        emit_execution_update(run.workspace_id)
 
         return {
             "status": "cancelled",

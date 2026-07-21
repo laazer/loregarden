@@ -106,20 +106,7 @@ class ParallelQueueService:
                     f"Run {run_id} started immediately on slot {available_slot.slot_number}"
                 )
 
-                # Emit execution update
-                try:
-                    active_runs = await self.get_active_runs(workspace_id)
-                    queued_runs = await self.get_queued_runs(workspace_id)
-                    stats = self.get_queue_stats(workspace_id)
-
-                    emit_execution_update(
-                        workspace_id=workspace_id,
-                        active_runs=active_runs,
-                        queued_runs=queued_runs,
-                        stats=stats,
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to emit execution_update: {e}")
+                emit_execution_update(workspace_id)
 
                 return {
                     "status": "started",
@@ -153,20 +140,7 @@ class ParallelQueueService:
 
             logger.info(f"Run {run_id} queued at position {position}")
 
-            # Emit execution update
-            try:
-                active_runs = await self.get_active_runs(workspace_id)
-                queued_runs = await self.get_queued_runs(workspace_id)
-                stats = self.get_queue_stats(workspace_id)
-
-                emit_execution_update(
-                    workspace_id=workspace_id,
-                    active_runs=active_runs,
-                    queued_runs=queued_runs,
-                    stats=stats,
-                )
-            except Exception as e:
-                logger.warning(f"Failed to emit execution_update: {e}")
+            emit_execution_update(workspace_id)
 
             return {
                 "status": "queued",
@@ -391,20 +365,7 @@ class ParallelQueueService:
             # Re-order remaining queue
             await self._reorder_queue(workspace_id)
 
-            # Emit execution update with new state
-            try:
-                active_runs = await self.get_active_runs(workspace_id)
-                queued_runs = await self.get_queued_runs(workspace_id)
-                stats = self.get_queue_stats(workspace_id)
-
-                emit_execution_update(
-                    workspace_id=workspace_id,
-                    active_runs=active_runs,
-                    queued_runs=queued_runs,
-                    stats=stats,
-                )
-            except Exception as e:
-                logger.warning(f"Failed to emit execution_update: {e}")
+            emit_execution_update(workspace_id)
 
             return {
                 "run_id": queued_run.run_id,
@@ -485,20 +446,7 @@ class ParallelQueueService:
             # Promote from queue (promote_from_queue already emits events)
             promoted = await self.promote_from_queue(workspace_id)
 
-            # Emit final execution update
-            try:
-                active_runs = await self.get_active_runs(workspace_id)
-                queued_runs = await self.get_queued_runs(workspace_id)
-                stats = self.get_queue_stats(workspace_id)
-
-                emit_execution_update(
-                    workspace_id=workspace_id,
-                    active_runs=active_runs,
-                    queued_runs=queued_runs,
-                    stats=stats,
-                )
-            except Exception as e:
-                logger.warning(f"Failed to emit execution_update: {e}")
+            emit_execution_update(workspace_id)
 
             if promoted:
                 return {

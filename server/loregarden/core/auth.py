@@ -12,10 +12,12 @@ from __future__ import annotations
 import hmac
 import logging
 
+from loregarden.config import settings
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
+from starlette.websockets import WebSocket
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,28 @@ def _extract_token(request: Request) -> str | None:
         return header[7:].strip()
     token = request.headers.get("x-loregarden-token")
     return token.strip() if token else None
+
+
+def websocket_token_ok(websocket: WebSocket) -> bool:
+    """Whether a websocket connection carries the configured token.
+
+    Every websocket endpoint must call this for itself. `TokenAuthMiddleware`
+    extends `BaseHTTPMiddleware`, which only ever sees HTTP scopes — a
+    websocket handshake passes it untouched. Endpoints that forget this are
+    the one part of the API that ignores `LOREGARDEN_API_TOKEN` entirely.
+
+    A query parameter is accepted because browsers cannot set headers on a
+    `new WebSocket(...)` handshake; there is no other way for a page to
+    present a token.
+    """
+    expected = settings.api_token
+    if not expected:
+        # No token configured: the whole API is already open to local
+        # processes, and refusing only websockets would be theatre.
+        return True
+    presented = websocket.query_params.get("token") or ""
+    header = websocket.headers.get("x-loregarden-token") or ""
+    return hmac.compare_digest(presented or header, expected)
 
 
 class TokenAuthMiddleware(BaseHTTPMiddleware):

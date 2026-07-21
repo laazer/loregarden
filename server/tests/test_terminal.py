@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from loregarden.api.terminal import _pump_output, _token_ok
+from loregarden.api.terminal import _pump_output
 from loregarden.services.terminal_session import TerminalSession, _shell_command
 from starlette.websockets import WebSocketDisconnect
 
@@ -113,28 +113,18 @@ def test_resize_is_survivable_after_the_shell_exits(tmp_path: Path):
     session.write("still no crash")
 
 
-def test_a_terminal_without_a_token_configured_is_allowed():
-    """Refusing only the terminal would be theatre while the rest of the API
-    is already open to any local process."""
-    with patch("loregarden.api.terminal.settings") as cfg:
-        cfg.api_token = ""
-        assert _token_ok(MagicMock()) is True
-
-
-def test_a_configured_token_is_enforced_on_the_websocket():
+def test_the_terminal_socket_enforces_the_api_token(client):
     """TokenAuthMiddleware extends BaseHTTPMiddleware and never sees a
-    websocket scope, so without this check the terminal would be the one
-    endpoint that ignores the API token — and it is a shell."""
-    socket = MagicMock()
-    socket.query_params = {"token": "wrong"}
-    socket.headers = {}
+    websocket scope, so without a check in the handler the terminal would be
+    the one endpoint that ignores the API token — and it is a shell.
 
-    with patch("loregarden.api.terminal.settings") as cfg:
+    The shared helper is covered in test_auth.py; this pins that the terminal
+    actually calls it, which is the part that can silently regress."""
+    with patch("loregarden.core.auth.settings") as cfg:
         cfg.api_token = "correct-horse"
-        assert _token_ok(socket) is False
-
-        socket.query_params = {"token": "correct-horse"}
-        assert _token_ok(socket) is True
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/terminal/anything?token=wrong") as socket:
+                socket.receive_text()
 
 
 def test_an_unknown_workspace_is_refused_in_words_the_browser_can_show(client):

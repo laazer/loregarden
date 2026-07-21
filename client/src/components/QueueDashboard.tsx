@@ -18,7 +18,6 @@ import "./QueueDashboard.css";
 export interface QueueDashboardProps {
   workspaceId: string;
   workspaceName?: string;
-  userId?: string;
   showAnalytics?: boolean;
   showControls?: boolean;
   embedded?: boolean;
@@ -27,12 +26,11 @@ export interface QueueDashboardProps {
 export function QueueDashboard({
   workspaceId,
   workspaceName,
-  userId,
   showAnalytics = true,
   showControls = true,
   embedded = false,
 }: QueueDashboardProps) {
-  const { activeRuns, queuedRuns, stats, isWebSocket } = useParallelExecutionWS(workspaceId, userId);
+  const { activeRuns, queuedRuns, stats, isWebSocket } = useParallelExecutionWS(workspaceId);
 
   const [activeSidebarTab, setActiveSidebarTab] = useState<
     "overview" | "controls" | "analytics" | "review"
@@ -173,7 +171,7 @@ export function QueueDashboard({
                 />
               </div>
             ) : (
-              <ParallelQueueVisualization workspaceId={workspaceId} userId={userId} />
+              <ParallelQueueVisualization workspaceId={workspaceId} />
             )}
           </div>
 

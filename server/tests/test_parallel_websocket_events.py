@@ -1,9 +1,11 @@
 """Unit tests for WebSocket event emissions in parallel API endpoints."""
 
+import asyncio
 from unittest.mock import patch
 
 import pytest
 from loregarden.models.domain import AgentRun, Ticket, Workspace, Worktree
+from loregarden.services.event_hub import event_hub
 from loregarden.services.parallel_queue import ParallelQueueService
 
 
@@ -43,11 +45,9 @@ class TestParallelQueueEventEmissions:
             # Queue second run — no slots available now.
             await service.queue_run("ws-1", "ticket-1", "run-1")
 
-            # Verify emit was called
-            mock_emit.assert_called_once()
-            call_args = mock_emit.call_args
-            assert call_args[1]["workspace_id"] == "ws-1"
-            assert len(call_args[1]["queued_runs"]) == 1
+            # The event names the workspace whose queue changed; subscribers
+            # re-read the state rather than trust a payload assembled here.
+            mock_emit.assert_called_once_with("ws-1")
 
     async def test_queue_run_emits_execution_update_when_started(self, db_session):
         """Verify execution_update event emitted when run starts immediately."""
@@ -72,9 +72,7 @@ class TestParallelQueueEventEmissions:
             result = await service.queue_run("ws-1", "ticket-1", "run-1")
 
             assert result["status"] == "started"
-            mock_emit.assert_called_once()
-            call_args = mock_emit.call_args
-            assert len(call_args[1]["active_runs"]) == 1
+            mock_emit.assert_called_once_with("ws-1")
 
     async def test_queue_run_emits_error_on_failure(self, db_session):
         """Verify emit_error called when queue_run fails."""
@@ -153,19 +151,28 @@ class TestParallelQueueEventEmissions:
             # Should be called at least twice (once for queue_run, once for on_run_complete)
             assert mock_update.call_count >= 2
 
-    async def test_event_emission_graceful_failure(self, db_session):
-        """Verify service continues if event emission fails."""
-        with patch("loregarden.services.parallel_queue.emit_execution_update") as mock_emit:
-            mock_emit.side_effect = Exception("WebSocket emit failed")
+    async def test_queueing_survives_a_dead_event_loop(self, db_session):
+        """Publishing is best-effort; the queue operation is not.
 
+        The dev server restarts on every backend edit, so a subscriber's event
+        loop can be closed while a queue operation is still in flight. That
+        must cost the notification, not the run. Driven through the real hub
+        rather than a raising mock of the emit helper — the mock would only
+        prove the mock raised."""
+        hub = event_hub
+        loop = asyncio.new_event_loop()
+        loop.close()
+
+        with (
+            patch.object(hub, "_loop", loop),
+            patch.object(hub, "_topics", {"workspace:ws-1": {asyncio.Queue()}}),
+        ):
             service = ParallelQueueService(db_session, max_concurrent=2)
             service.initialize_slots("ws-1")
 
-            # Should not raise even though emit fails
             result = await service.queue_run("ws-1", "ticket-1", "run-1")
 
             assert result["status"] == "started"
-            mock_emit.assert_called_once()
 
 
 @pytest.mark.asyncio
