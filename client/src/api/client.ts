@@ -192,6 +192,8 @@ export const api = {
 
   mcpServers: () => request<McpServerView[]>("/api/mcp-servers"),
   mcpTelemetry: () => request<McpTelemetry>("/api/mcp-servers/telemetry"),
+  checkMcpServerHealth: (id: string) =>
+    request<McpServerView>(`/api/mcp-servers/${id}/health-check`, { method: "POST" }),
   createMcpServer: (body: McpServerInput) =>
     request<McpServerView>("/api/mcp-servers", { method: "POST", body: JSON.stringify(body) }),
   updateMcpServer: (id: string, body: Partial<McpServerInput>) =>

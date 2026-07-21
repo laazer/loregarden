@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from loregarden.db.session import get_session
-from loregarden.models.domain import McpServerCreate, McpServerUpdate, McpServerView
+from loregarden.models.domain import McpServer, McpServerCreate, McpServerUpdate, McpServerView
+from loregarden.services.mcp_health import check_server, record_health
 from loregarden.services.mcp_registry import (
     McpRegistryError,
     create_server,
@@ -82,3 +83,19 @@ def remove_mcp_server(server_id: str, session: Session = Depends(get_session)) -
     except McpRegistryError as exc:
         raise HTTPException(404, str(exc)) from exc
     return {"deleted": server_id}
+
+
+@router.post("/{server_id}/health-check", response_model=McpServerView)
+def check_mcp_server_health(
+    server_id: str, session: Session = Depends(get_session)
+) -> McpServerView:
+    """Reach this server once and record what happened.
+
+    Synchronous and operator-triggered. The check is bounded by its own timeout,
+    so the worst case is a slow response rather than a hung request, and nothing
+    about it touches the path an agent uses.
+    """
+    server = session.get(McpServer, server_id)
+    if not server:
+        raise HTTPException(404, "Server not found")
+    return to_view(record_health(session, server, check_server(server)))

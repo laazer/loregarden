@@ -223,9 +223,10 @@ class McpServer(SQLModel, table=True):
     dry-runs, into worktrees — and a secret at rest in it would travel with
     every copy. The value is read from the environment when the server is used.
 
-    There is no rate-limit or health column yet. Nothing enforces a limit or
-    performs a check, and a column no code reads is a claim the UI would happily
-    render as fact.
+    The health columns record what an actual `initialize` handshake found, and
+    were added only once something performed one. There is still no rate-limit
+    column: nothing enforces a limit, and a column no code reads is a claim the
+    UI would happily render as fact.
     """
 
     __tablename__ = "mcp_servers"
@@ -249,6 +250,15 @@ class McpServer(SQLModel, table=True):
     #: matches how an operator actually reasons about a third party, and a
     #: per-tool allowlist would have to be maintained for every server added.
     tool_policy: str = "prompt"
+    #: Result of the last health check. `last_checked_at` empty means never
+    #: checked, which is a different thing from checked-and-failing and reads
+    #: differently in the UI.
+    last_checked_at: str = ""
+    last_health_ok: bool = False
+    last_health_latency_ms: int = 0
+    #: Why the last check failed, in terms an operator can act on. Empty when
+    #: the check passed.
+    last_health_error: str = ""
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

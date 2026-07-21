@@ -32,7 +32,7 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _parse_args(raw: str) -> list[str]:
+def parse_args(raw: str) -> list[str]:
     try:
         parsed = json.loads(raw or "[]")
     except (TypeError, ValueError):
@@ -48,10 +48,14 @@ def to_view(server: McpServer) -> McpServerView:
         transport=server.transport,
         url=server.url,
         command=server.command,
-        args=_parse_args(server.args_json),
+        args=parse_args(server.args_json),
         auth_env_var=server.auth_env_var,
         enabled=server.enabled,
         tool_policy=server.tool_policy,
+        last_checked_at=server.last_checked_at,
+        last_health_ok=server.last_health_ok,
+        last_health_latency_ms=server.last_health_latency_ms,
+        last_health_error=server.last_health_error,
         # Presence only. The value never leaves the process it is read in.
         auth_present=bool(server.auth_env_var and os.environ.get(server.auth_env_var)),
         created_at=server.created_at,
@@ -177,7 +181,7 @@ def cli_server_entries(session: Session) -> dict[str, dict]:
             entry = {
                 "type": "stdio",
                 "command": server.command,
-                "args": _parse_args(server.args_json),
+                "args": parse_args(server.args_json),
             }
             if server.auth_env_var:
                 # Pass the variable through by name; the child reads it itself.

@@ -837,6 +837,34 @@ def _m_mcp_tool_calls_table(conn: Connection) -> None:
     conn.execute(text("CREATE INDEX ix_mcp_tool_calls_run ON mcp_tool_calls (run_id)"))
 
 
+def _m_mcp_server_health(conn: Connection) -> None:
+    """Record what the last health check found.
+
+    Added with the check itself rather than ahead of it: until something
+    performed a real handshake these columns would have rendered as fact in the
+    UI while holding nothing.
+    """
+    add_columns_if_missing(
+        conn,
+        "mcp_servers",
+        {
+            "last_checked_at": (
+                "ALTER TABLE mcp_servers ADD COLUMN last_checked_at TEXT NOT NULL DEFAULT ''"
+            ),
+            "last_health_ok": (
+                "ALTER TABLE mcp_servers ADD COLUMN last_health_ok INTEGER NOT NULL DEFAULT 0"
+            ),
+            "last_health_latency_ms": (
+                "ALTER TABLE mcp_servers ADD COLUMN last_health_latency_ms "
+                "INTEGER NOT NULL DEFAULT 0"
+            ),
+            "last_health_error": (
+                "ALTER TABLE mcp_servers ADD COLUMN last_health_error TEXT NOT NULL DEFAULT ''"
+            ),
+        },
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -874,6 +902,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0034_mcp_servers_table", _m_mcp_servers_table),
     ("0035_mcp_server_tool_policy", _m_mcp_server_tool_policy),
     ("0036_mcp_tool_calls_table", _m_mcp_tool_calls_table),
+    ("0037_mcp_server_health", _m_mcp_server_health),
 ]
 
 
