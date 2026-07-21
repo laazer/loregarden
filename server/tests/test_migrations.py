@@ -112,6 +112,44 @@ def test_backfill_runs_against_a_populated_db(tmp_path):
         datetime.fromisoformat(str(created_at)).astimezone(timezone.utc)
 
 
+def test_queued_runs_gets_created_at_and_backfills(tmp_path):
+    """A pre-0039 queued_runs table lacked created_at, breaking every SELECT.
+
+    The model added the column but no migration did, so
+    ``SELECT ... queued_runs.created_at`` raised OperationalError. 0039 adds it
+    and backfills existing rows so they read back as real timestamps.
+    """
+    from datetime import datetime, timezone
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'queue.db'}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE queued_runs ("
+                "id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, "
+                "ticket_id TEXT NOT NULL, run_id TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, "
+                "status TEXT NOT NULL DEFAULT 'queued')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO queued_runs (id, workspace_id, ticket_id, run_id) "
+                "VALUES ('q1', 'ws1', 't1', 'r1')"
+            )
+        )
+
+    assert "created_at" not in _columns(engine, "queued_runs")
+    apply_migrations(engine)
+    assert "created_at" in _columns(engine, "queued_runs")
+
+    with engine.connect() as conn:
+        created_at = conn.execute(
+            text("SELECT created_at FROM queued_runs WHERE id = 'q1'")
+        ).scalar_one()
+    assert created_at is not None
+    datetime.fromisoformat(str(created_at)).astimezone(timezone.utc)
+
+
 def test_rigor_triage_reshapes_the_v3_template(tmp_path):
     """0023 scales rigor by change risk on a populated template.
 
