@@ -68,6 +68,15 @@ export function AppIconRail({ onOpenSettings }: AppIconRailProps) {
         </svg>
       </NavButton>
 
+      <NavButton active={appPage === "mcp"} title="MCP Gateway" to="/mcp">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+          <circle cx="12" cy="12" r="2.5" />
+          <path d="M12 3v6.5M12 14.5V21M3 12h6.5M14.5 12H21" />
+          <circle cx="5" cy="5" r="1.6" />
+          <circle cx="19" cy="19" r="1.6" />
+        </svg>
+      </NavButton>
+
       <NavButton active={appPage === "branch-triage"} title="Branch Triage" to="/branch-triage">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
           <circle cx="6" cy="6" r="3" />

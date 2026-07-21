@@ -1,4 +1,4 @@
-export type AppPage = "dashboard" | "studio" | "editor" | "queue" | "branch-triage";
+export type AppPage = "dashboard" | "studio" | "editor" | "queue" | "branch-triage" | "mcp";
 
 export type ArtifactTab =
   | "diff"
@@ -35,6 +35,7 @@ const PAGE_PATHS: Record<AppPage, string> = {
   editor: "/editor",
   queue: "/queue",
   "branch-triage": "/branch-triage",
+  mcp: "/mcp",
 };
 
 const TICKET_PATH_RE = /^\/tickets\/([^/]+)(?:\/([^/]+))?/;
@@ -127,6 +128,7 @@ export function pageFromPath(pathname: string): AppPage {
   if (pathname === "/branch-triage" || pathname.startsWith("/branch-triage/")) {
     return "branch-triage";
   }
+  if (pathname === "/mcp" || pathname.startsWith("/mcp/")) return "mcp";
   return "dashboard";
 }
 

@@ -24,6 +24,10 @@ export const api = {
   runLog: jest.fn(),
   runMessages: jest.fn(),
   ticketLedger: jest.fn(),
+  mcpServers: jest.fn(),
+  createMcpServer: jest.fn(),
+  updateMcpServer: jest.fn(),
+  deleteMcpServer: jest.fn(),
   sendRunMessage: jest.fn(),
   triage: jest.fn().mockResolvedValue({
     pending_approvals: [],

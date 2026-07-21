@@ -1,0 +1,132 @@
+.screen-view--mcp {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.mcp-page-body {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 18px;
+  padding: 16px 20px 20px;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.mcp-servers-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.mcp-empty {
+  font-size: 12px;
+  color: var(--txl);
+  padding: 10px 2px;
+}
+
+.mcp-detail-empty {
+  padding: 40px 0;
+  text-align: center;
+}
+
+.mcp-server-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--ln);
+  border-radius: 10px;
+  background: transparent;
+  padding: 9px 11px;
+  font: inherit;
+  color: var(--tx);
+  cursor: pointer;
+}
+
+.mcp-server-row.selected {
+  border-color: var(--ac, var(--ln));
+}
+
+/* Not selectable — it is not a registry row, it is always present. */
+.mcp-server-row.builtin {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.mcp-server-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.mcp-server-name {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.mcp-server-row-meta {
+  font-size: 11px;
+  color: var(--txl);
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.mcp-server-auth {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txl);
+  margin-top: 4px;
+}
+
+.mcp-server-auth.missing {
+  color: var(--amb, var(--txl));
+}
+
+.mcp-builtin-label {
+  margin-top: 14px;
+}
+
+.mcp-detail {
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.mcp-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mcp-detail-title {
+  font-size: 16px;
+  margin: 0;
+}
+
+.mcp-form {
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mcp-form-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+}
+
+.mcp-form-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--txm, var(--txl));
+}
+
+.mcp-form-error {
+  font-size: 12px;
+  color: var(--rdl, var(--amb));
+}
