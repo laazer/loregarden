@@ -60,12 +60,12 @@ import a57 from "../../assets/hive/starplace/artifacts/diff.png";
 import a58 from "../../assets/hive/starplace/events/waiting.png";
 import a59 from "../../assets/hive/starplace/events/error.png";
 import c0 from "../../assets/hive/officeplace/cast/cobel.png";
-import c1 from "../../assets/hive/officeplace/cast/michael.png";
+import c1 from "../../assets/hive/officeplace/cast/ryan.png";
 import c2 from "../../assets/hive/officeplace/cast/ms_casey.png";
 import c3 from "../../assets/hive/officeplace/cast/oscar.png";
-import c4 from "../../assets/hive/officeplace/cast/jim.png";
-import c5 from "../../assets/hive/officeplace/cast/pam.png";
-import c6 from "../../assets/hive/officeplace/cast/dwight.png";
+import c4 from "../../assets/hive/officeplace/cast/kevin.png";
+import c5 from "../../assets/hive/officeplace/cast/kelly.png";
+import c6 from "../../assets/hive/officeplace/cast/andy.png";
 import c7 from "../../assets/hive/officeplace/cast/mark.png";
 import c8 from "../../assets/hive/officeplace/cast/helly.png";
 import c9 from "../../assets/hive/officeplace/cast/irving.png";
@@ -136,12 +136,12 @@ export const HIVE_SPRITE_URL_MAP: Record<string, string> = {
   "starplace/events/waiting.png": a58,
   "starplace/events/error.png": a59,
   "officeplace/cast/cobel.png": c0,
-  "officeplace/cast/michael.png": c1,
+  "officeplace/cast/ryan.png": c1,
   "officeplace/cast/ms_casey.png": c2,
   "officeplace/cast/oscar.png": c3,
-  "officeplace/cast/jim.png": c4,
-  "officeplace/cast/pam.png": c5,
-  "officeplace/cast/dwight.png": c6,
+  "officeplace/cast/kevin.png": c4,
+  "officeplace/cast/kelly.png": c5,
+  "officeplace/cast/andy.png": c6,
   "officeplace/cast/mark.png": c7,
   "officeplace/cast/helly.png": c8,
   "officeplace/cast/irving.png": c9,
