@@ -73,8 +73,13 @@ export function TerminalPanel({ workspaceSlug, agent }: TerminalPanelProps) {
     });
 
     const sync = () => {
-      // fit() measures the DOM; a detached or zero-height mount makes it throw
-      // rather than return, and a collapsed dock is an ordinary state here.
+      // Never fit against a surface the browser has not sized. fit() happily
+      // turns a 0px box into a 2-column terminal and xterm keeps it, so every
+      // line wraps after two characters — and nothing re-measures to undo it.
+      const { width, height } = mount.getBoundingClientRect();
+      if (width < 1 || height < 1) return;
+      // fit() measures the DOM; a detached mount makes it throw rather than
+      // return, and a collapsed dock is an ordinary state here.
       try {
         fit.fit();
       } catch {
@@ -85,12 +90,17 @@ export function TerminalPanel({ workspaceSlug, agent }: TerminalPanelProps) {
 
     const typed = term.onData((data) => socket.send(data));
     socket.open();
-    sync();
+    // Fit on the next frame, not in this one. Measuring in the same tick the
+    // mount is created reads a box the browser has not laid out yet: on first
+    // paint with the dock already open that produced a 2-column terminal that
+    // never recovered, because only a remount would measure again.
+    const firstFit = requestAnimationFrame(sync);
 
     const observer = new ResizeObserver(sync);
     observer.observe(mount);
 
     return () => {
+      cancelAnimationFrame(firstFit);
       observer.disconnect();
       typed.dispose();
       socket.close();
