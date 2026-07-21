@@ -197,6 +197,35 @@ export interface TicketLedger {
   total_seconds: number;
 }
 
+/** A third-party MCP server the control plane knows about. */
+export interface McpServerView {
+  id: string;
+  name: string;
+  description: string;
+  transport: string;
+  url: string;
+  command: string;
+  args: string[];
+  /** Name of the env var holding the credential — never the credential. */
+  auth_env_var: string;
+  /** Whether that variable is set where the server runs. */
+  auth_present: boolean;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface McpServerInput {
+  name: string;
+  description?: string;
+  transport: string;
+  url?: string;
+  command?: string;
+  args?: string[];
+  auth_env_var?: string;
+  enabled?: boolean;
+}
+
 export interface TestArtifact {
   summary: string;
   color?: string;

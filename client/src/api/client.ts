@@ -91,6 +91,8 @@ import type {
   RunLog,
   RunMessage,
   TicketLedger,
+  McpServerInput,
+  McpServerView,
 } from "./types";
 
 
@@ -192,6 +194,17 @@ export const api = {
       stderr: string;
     }>(`/api/runs/${runId}`),
   runLog: (runId: string) => request<RunLog>(`/api/runs/${runId}/log`),
+
+  mcpServers: () => request<McpServerView[]>("/api/mcp-servers"),
+  createMcpServer: (body: McpServerInput) =>
+    request<McpServerView>("/api/mcp-servers", { method: "POST", body: JSON.stringify(body) }),
+  updateMcpServer: (id: string, body: Partial<McpServerInput>) =>
+    request<McpServerView>(`/api/mcp-servers/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteMcpServer: (id: string) =>
+    request<{ deleted: string }>(`/api/mcp-servers/${id}`, { method: "DELETE" }),
   ticketLedger: (ticketId: string) =>
     request<TicketLedger>(`/api/tickets/${ticketId}/ledger`),
   runMessages: (runId: string) =>

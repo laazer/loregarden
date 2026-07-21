@@ -6,6 +6,7 @@ import { AppLayout } from "./components/AppLayout";
 import { RouterBridgeSync } from "./components/RouterBridgeSync";
 import { StudioSectionRedirect } from "./components/StudioSectionRedirect";
 import { TicketTabRedirect } from "./components/TicketTabRedirect";
+import { McpGatewayPage } from "./pages/McpGatewayPage";
 import { BranchTriagePage } from "./pages/BranchTriagePage";
 import { Dashboard } from "./pages/Dashboard";
 import { EditorPage } from "./pages/EditorPage";
@@ -75,6 +76,7 @@ function AppShell() {
           <Route path="/studio/:studioSection/*" element={<StudioPage />} />
           <Route path="/editor/*" element={<EditorPage />} />
           <Route path="/queue/*" element={<QueuePage />} />
+          <Route path="/mcp" element={<McpGatewayPage />} />
           <Route path="/branch-triage" element={<BranchTriagePage />} />
           <Route path="/branch-triage/*" element={<BranchTriagePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
