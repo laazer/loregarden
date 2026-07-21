@@ -3,7 +3,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-top: 1px solid var(--ln);
+  border-top: 1px solid var(--bd);
   background: var(--bg1, var(--bg));
   /* So the body can ask how wide the dock is, rather than how wide the window
      is — see the container query below. */
@@ -108,7 +108,7 @@
 .copilot-dock-terminal-toggle {
   margin-left: auto;
   flex: 0 0 auto;
-  border: 1px solid var(--ln);
+  border: 1px solid var(--bd);
   background: transparent;
   border-radius: 999px;
   padding: 2px 10px;
@@ -120,12 +120,12 @@
 
 .copilot-dock-terminal-toggle:hover:not(:disabled) {
   color: var(--tx);
-  border-color: var(--ac, var(--ln));
+  border-color: var(--ac, var(--bd));
 }
 
 .copilot-dock-terminal-toggle.is-on {
   color: var(--tx);
-  border-color: var(--ac, var(--ln));
+  border-color: var(--ac, var(--bd));
   background: var(--bg2, transparent);
 }
 
@@ -171,7 +171,7 @@
 }
 
 .copilot-dock-chip {
-  border: 1px solid var(--ln);
+  border: 1px solid var(--bd);
   background: transparent;
   border-radius: 999px;
   padding: 3px 10px;
@@ -183,5 +183,5 @@
 
 .copilot-dock-chip:hover {
   color: var(--tx);
-  border-color: var(--ac, var(--ln));
+  border-color: var(--ac, var(--bd));
 }

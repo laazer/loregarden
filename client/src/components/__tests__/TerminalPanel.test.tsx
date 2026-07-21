@@ -36,8 +36,27 @@ class FakeSocket {
   }
 }
 
+/**
+ * jsdom reports a 0x0 box for everything, which is exactly the degenerate case
+ * the panel must refuse to fit — so a test wanting a fit has to say how big the
+ * surface is. Leaving this out is what let a 2-column terminal ship.
+ */
+function layOut(width: number, height: number) {
+  Element.prototype.getBoundingClientRect = function () {
+    return {
+      width, height, top: 0, left: 0, right: width, bottom: height, x: 0, y: 0,
+      toJSON: () => ({}),
+    } as DOMRect;
+  };
+}
+
 beforeEach(() => {
   opened.length = 0;
+  layOut(800, 400);
+  // The first fit is deferred to a frame; run it synchronously here.
+  jest
+    .spyOn(globalThis, "requestAnimationFrame")
+    .mockImplementation((cb) => ((cb as FrameRequestCallback)(0), 1));
   (globalThis as unknown as { WebSocket: unknown }).WebSocket = FakeSocket;
   // jsdom implements neither, and the panel observes its own size to fit.
   observed.length = 0;
@@ -183,5 +202,56 @@ describe("re-fitting when the surface changes size", () => {
     render(<TerminalPanel workspaceSlug="loregarden" />).unmount();
 
     expect(disconnects).toHaveLength(1);
+  });
+});
+
+describe("a surface the browser has not laid out yet", () => {
+  it("does not fit against a zero-sized box", () => {
+    // fit() turns a 0px box into a 2-column terminal and xterm keeps it, so
+    // every line wraps after two characters. Nothing re-measures to undo that,
+    // so the terminal stays unusable until it is remounted — which is exactly
+    // what shipped: on first paint with the dock already open, the prompt came
+    // back one or two characters per line.
+    layOut(0, 0);
+    render(<TerminalPanel workspaceSlug="loregarden" />);
+
+    act(() => {
+      opened[0].readyState = 1;
+      opened[0].onopen?.();
+    });
+
+    const resizes = opened[0].sent.map((f) => JSON.parse(f)).filter((m) => m.type === "resize");
+    expect(resizes).toHaveLength(0);
+  });
+
+  it("fits once the box has a size", () => {
+    layOut(0, 0);
+    render(<TerminalPanel workspaceSlug="loregarden" />);
+    act(() => {
+      opened[0].readyState = 1;
+      opened[0].onopen?.();
+    });
+    expect(opened[0].sent).toHaveLength(0);
+
+    // The layout settles, and the observer reports it.
+    layOut(800, 400);
+    act(() => observed[0].fire());
+
+    const resizes = opened[0].sent.map((f) => JSON.parse(f)).filter((m) => m.type === "resize");
+    expect(resizes).toHaveLength(1);
+  });
+
+  it("defers the first fit past the frame the mount is created in", () => {
+    // Measuring in the same tick reads a box that has not been laid out.
+    const frames: FrameRequestCallback[] = [];
+    (globalThis.requestAnimationFrame as jest.Mock).mockImplementation((cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return 1;
+    });
+
+    render(<TerminalPanel workspaceSlug="loregarden" />);
+
+    expect(frames).toHaveLength(1);
+    expect(opened[0].sent).toHaveLength(0);
   });
 });

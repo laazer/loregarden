@@ -37,6 +37,7 @@ import { TriageModelModal } from "../components/TriageModelModal";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
 import { navigateToPage, navigateToStudioTicketSession, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
 import { isArtifactTab } from "../lib/appNavigation";
+import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useUiStore, type PaneId } from "../state/uiStore";
 import { agentsAssembleLabel } from "../lib/workflowHelpers";
 import { PANE_LABELS } from "../lib/appTopbarConfig";
@@ -173,7 +174,11 @@ export function Dashboard() {
     setPaneVisible,
     openEditorFile,
     setBranchTriageWorkspaceSlug,
+    terminalOpen,
+    setTerminalOpen,
   } = useUiStore();
+  // Where a shell opened from the status bar would run.
+  const terminalTarget = useTerminalTarget();
 
   const { workspaces: showWorkspaces, tickets: showTickets, workflow: showWorkflow, artifacts: showArtifacts } =
     paneVisibility;
@@ -1666,6 +1671,25 @@ export function Dashboard() {
           agents online
         </span>
         <div style={{ flex: 1 }} />
+        <button
+          type="button"
+          className={`status-bar-terminal${terminalOpen ? " is-on" : ""}`}
+          aria-pressed={terminalOpen}
+          // Disabled rather than hidden: a control that stays put explains why
+          // it does nothing, where a vanishing one just looks broken.
+          disabled={!terminalTarget.workspaceSlug}
+          title={
+            terminalTarget.workspaceSlug
+              ? `Shell in ${terminalTarget.workspaceSlug}`
+              : "Pick a workspace to open a shell in"
+          }
+          // Only the terminal. The dock shows it whether or not the chat is
+          // expanded, so opening a shell no longer drags a conversation open
+          // with it.
+          onClick={() => setTerminalOpen(!terminalOpen)}
+        >
+          Terminal
+        </button>
         <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}>
           {sel?.workflow_template_slug || "truth layer · execution output"}
         </span>

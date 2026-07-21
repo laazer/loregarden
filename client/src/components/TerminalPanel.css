@@ -7,7 +7,7 @@
      want. Without this xterm keeps its default row count and the panel grows
      past a sized container — the dock hands it min(340px, 44vh). */
   height: 100%;
-  border: 1px solid var(--ln);
+  border: 1px solid var(--bd);
   border-radius: 6px;
   overflow: hidden;
   /* The shell renders on its own dark surface regardless of app theme: xterm
