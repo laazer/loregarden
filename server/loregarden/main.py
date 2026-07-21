@@ -25,6 +25,7 @@ from loregarden.api import (
     runs,
     studio,
     system,
+    terminal,
     ticket_studio,
     tickets,
     usage,
@@ -101,6 +102,7 @@ app.include_router(queue_management.router)
 app.include_router(bulk_queue_operations.router)
 app.include_router(queue_review.router)
 app.include_router(analytics.router)
+app.include_router(terminal.router)
 app.include_router(mcp.router, prefix="/mcp")
 
 

@@ -53,6 +53,9 @@ packages = ["loregarden"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "real_shell_command: opt out of the plain-shell patch and see the real argv",
+]
 
 [tool.ruff]
 target-version = "py310"
