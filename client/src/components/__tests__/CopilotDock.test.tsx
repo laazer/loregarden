@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 
 import { CopilotDock } from "../CopilotDock";
 import { useActiveChatSession } from "../../hooks/useActiveChatSession";
@@ -164,18 +164,14 @@ describe("the terminal pane", () => {
     render(<CopilotDock />);
 
     expect(screen.queryByTestId("terminal-panel")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Terminal" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
   });
 
   it("opens a shell in the workspace the screen is showing", () => {
+    // The control lives in the status bar now; the dock follows the store.
     openDock();
-    useUiStore.setState({ copilotOpen: true, terminalOpen: false });
-    render(<CopilotDock />);
+    useUiStore.setState({ copilotOpen: true, terminalOpen: true });
 
-    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+    render(<CopilotDock />);
 
     expect(screen.getByTestId("terminal-panel")).toHaveTextContent("loregarden");
   });
@@ -201,12 +197,11 @@ describe("the terminal pane", () => {
     render(<CopilotDock />);
 
     expect(screen.queryByTestId("terminal-panel")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Terminal" })).toBeDisabled();
   });
 
-  it("reaps the shell when the dock collapses", () => {
-    // The panel unmounts, which closes the socket and reaps the shell. Leaving
-    // it mounted behind a collapsed dock would keep a login shell per session.
+  it("keeps the shell when the chat collapses", () => {
+    // Collapsing the conversation says nothing about wanting the shell gone.
+    // Reaping it here is what made "just a terminal" impossible.
     openDock();
     useUiStore.setState({ copilotOpen: true, terminalOpen: true });
     render(<CopilotDock />);
@@ -214,18 +209,52 @@ describe("the terminal pane", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse copilot" }));
 
+    expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Message about this ticket…")).not.toBeInTheDocument();
+  });
+
+  it("reaps the shell when the terminal itself is closed", () => {
+    // The panel unmounts, which closes the socket and reaps the shell. Leaving
+    // it mounted would keep a login shell per session.
+    openDock();
+    useUiStore.setState({ copilotOpen: true, terminalOpen: true });
+    const { rerender } = render(<CopilotDock />);
+    expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
+
+    act(() => useUiStore.setState({ terminalOpen: false }));
+    rerender(<CopilotDock />);
+
     expect(screen.queryByTestId("terminal-panel")).not.toBeInTheDocument();
   });
 
-  it("remembers the terminal was open across a remount", () => {
-    openDock();
-    useUiStore.setState({ copilotOpen: true, terminalOpen: false });
-    const { unmount } = render(<CopilotDock />);
-    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
-    unmount();
+  it("shows a shell with the chat collapsed and no conversation at all", () => {
+    mockResolver.mockReturnValue(bind({ session: null, label: "" }));
+    useUiStore.setState({ copilotOpen: false, terminalOpen: true });
 
     render(<CopilotDock />);
 
-    expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("terminal-panel")).toHaveTextContent("loregarden");
+  });
+
+  it("hosts a shell on a screen with no conversation", () => {
+    // A shell is scoped to the workspace, not to a chat. Returning early when
+    // no session exists is what made the status bar's button do nothing on the
+    // console screen.
+    mockResolver.mockReturnValue(bind({ session: null, label: "" }));
+    useUiStore.setState({ copilotOpen: true, terminalOpen: true });
+
+    render(<CopilotDock />);
+
+    expect(screen.getByTestId("terminal-panel")).toHaveTextContent("loregarden");
+    expect(screen.queryByText(/Open a ticket or a branch/)).not.toBeInTheDocument();
+  });
+
+  it("still explains itself when there is neither a conversation nor a shell", () => {
+    mockResolver.mockReturnValue(bind({ session: null, label: "" }));
+    useUiStore.setState({ copilotOpen: true, terminalOpen: false });
+
+    render(<CopilotDock />);
+
+    expect(screen.getByText(/Open a ticket or a branch/)).toBeInTheDocument();
   });
 });

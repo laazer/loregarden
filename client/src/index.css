@@ -4934,3 +4934,33 @@ button {
   font-size: 11px;
   line-height: 1.4;
 }
+
+/* Terminal toggle in the status bar. The shell itself lives in the dock below;
+   this is the way in, kept beside the other run-context readouts. */
+.status-bar-terminal {
+  flex: 0 0 auto;
+  border: 1px solid var(--bd);
+  background: transparent;
+  border-radius: 999px;
+  padding: 1px 10px;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txm, var(--txl));
+  cursor: pointer;
+}
+
+.status-bar-terminal:hover:not(:disabled) {
+  color: var(--tx);
+  border-color: var(--ac, var(--bd));
+}
+
+.status-bar-terminal.is-on {
+  color: var(--tx);
+  border-color: var(--ac, var(--bd));
+}
+
+.status-bar-terminal:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

@@ -47,12 +47,15 @@ export function CopilotDock() {
   const { session, label, ticketId, pendingApprovals } = useActiveChatSession();
   const resolveApproval = useApprovalResolution(ticketId ?? undefined);
   const terminalOpen = useUiStore((s) => s.terminalOpen);
-  const setTerminalOpen = useUiStore((s) => s.setTerminalOpen);
   const terminal = useTerminalTarget();
-  // Mounting the panel spawns a shell, so it only mounts once both the dock is
-  // expanded and someone asked for one — and never without a workspace to run
-  // it in, since a shell needs a cwd more than the header needs a label.
-  const showTerminal = open && terminalOpen && Boolean(terminal.workspaceSlug);
+  // Chat and terminal open independently. A shell is not an accessory to a
+  // conversation: wanting one says nothing about wanting the other, and gating
+  // the terminal on the chat's expanded state meant you could never have just a
+  // terminal. Mounting the panel spawns a real shell, so it still takes an
+  // explicit ask and a workspace to run in.
+  const showTerminal = terminalOpen && Boolean(terminal.workspaceSlug);
+  const showChat = open && Boolean(session);
+  const expanded = showChat || showTerminal;
 
   const [draft, setDraft] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
@@ -66,7 +69,8 @@ export function CopilotDock() {
     void session.send(content, { autoApprove }).catch(() => {});
   };
 
-  if (!session) {
+  // Nothing on this screen to chat about, and no shell asked for.
+  if (!session && !showTerminal) {
     return (
       <div className="copilot-dock copilot-dock--empty">
         <span className="copilot-dock-hint">
@@ -78,55 +82,43 @@ export function CopilotDock() {
 
   return (
     <div
-      className={`copilot-dock${open ? " copilot-dock--open" : ""}`}
-      style={open ? { height } : undefined}
+      className={`copilot-dock${expanded ? " copilot-dock--open" : ""}`}
+      style={expanded ? { height } : undefined}
     >
       <div className="copilot-dock-bar">
-        <button
-          type="button"
-          className="copilot-dock-toggle"
-          aria-expanded={open}
-          aria-label={open ? "Collapse copilot" : "Expand copilot"}
-          onClick={() => setOpen(!open)}
-        >
-          <span className="copilot-dock-chevron" aria-hidden>
-            {open ? "▾" : "▴"}
-          </span>
-          <span className="copilot-dock-label">{label}</span>
-        </button>
+        {session ? (
+          <button
+            type="button"
+            className="copilot-dock-toggle"
+            aria-expanded={showChat}
+            aria-label={showChat ? "Collapse copilot" : "Expand copilot"}
+            onClick={() => setOpen(!open)}
+          >
+            <span className="copilot-dock-chevron" aria-hidden>
+              {showChat ? "▾" : "▴"}
+            </span>
+            <span className="copilot-dock-label">{label}</span>
+          </button>
+        ) : (
+          // No conversation here, so the bar names what the shell is attached to.
+          <span className="copilot-dock-label">{terminal.workspaceSlug}</span>
+        )}
         {pendingApprovals.length > 0 && (
           <span className="copilot-dock-waiting">
             {pendingApprovals.length} waiting on you
           </span>
         )}
-        {session.isBusy && pendingApprovals.length === 0 && (
+        {session?.isBusy && pendingApprovals.length === 0 && (
           <span className="copilot-dock-busy">working…</span>
         )}
-        {session.loadError && (
+        {session?.loadError && (
           <span className="copilot-dock-error">conversation unavailable</span>
-        )}
-        {open && (
-          <button
-            type="button"
-            className={`copilot-dock-terminal-toggle${terminalOpen ? " is-on" : ""}`}
-            aria-pressed={terminalOpen}
-            // Disabled rather than hidden: the control staying put explains why
-            // it does nothing, where a vanishing button just looks broken.
-            disabled={!terminal.workspaceSlug}
-            title={
-              terminal.workspaceSlug
-                ? `Shell in ${terminal.workspaceSlug}`
-                : "Pick a workspace to open a shell in"
-            }
-            onClick={() => setTerminalOpen(!terminalOpen)}
-          >
-            Terminal
-          </button>
         )}
       </div>
 
-      {open && (
+      {expanded && (
         <div className="copilot-dock-body">
+          {showChat && session && (
           <div className="copilot-dock-chat">
           {/* Above the turns: an agent question arrives as an approval, not a
               message, so it would otherwise be invisible here. */}
@@ -187,6 +179,7 @@ export function CopilotDock() {
             }
           />
           </div>
+          )}
 
           {showTerminal && (
             <div className="copilot-dock-terminal">
