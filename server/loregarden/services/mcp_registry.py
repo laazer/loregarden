@@ -52,6 +52,7 @@ def to_view(server: McpServer) -> McpServerView:
         auth_env_var=server.auth_env_var,
         enabled=server.enabled,
         tool_policy=server.tool_policy,
+        rate_limit_per_min=server.rate_limit_per_min,
         last_checked_at=server.last_checked_at,
         last_health_ok=server.last_health_ok,
         last_health_latency_ms=server.last_health_latency_ms,
@@ -103,6 +104,7 @@ def create_server(session: Session, body: McpServerCreate) -> McpServer:
         auth_env_var=body.auth_env_var.strip(),
         enabled=body.enabled,
         tool_policy=body.tool_policy,
+        rate_limit_per_min=body.rate_limit_per_min,
     )
     session.add(server)
     session.commit()
@@ -136,6 +138,8 @@ def update_server(session: Session, server_id: str, body: McpServerUpdate) -> Mc
         server.enabled = body.enabled
     if body.tool_policy is not None:
         server.tool_policy = body.tool_policy.strip()
+    if body.rate_limit_per_min is not None:
+        server.rate_limit_per_min = max(0, body.rate_limit_per_min)
 
     _validate(
         name=server.name,

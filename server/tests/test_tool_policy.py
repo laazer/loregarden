@@ -1,5 +1,6 @@
 """Whether a tool call needs the operator, across every MCP server."""
 
+from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.models.domain import McpServerCreate, McpServerUpdate
 from loregarden.services.mcp_registry import create_server, update_server
 from loregarden.services.tool_policy import (
@@ -118,3 +119,75 @@ def test_loregardens_own_tools_keep_their_finer_allowlist(db_session: Session):
     )
     # Even without it, the server name alone is refused.
     assert bridge._third_party_auto_approved("mcp__loregarden__block_ticket", None) is None
+
+
+def test_a_trusted_servers_calls_are_recorded(db_session: Session):
+    """The gap that shipped in U1d.
+
+    DECISION_TRUSTED_SERVER was defined and listed as valid, but the bridge
+    returned without recording it — so calls to a trusted server, the exact
+    ones an operator granted trust for, never appeared in the feed. Nothing
+    else reports them, since no human sees a prompt.
+    """
+    from unittest.mock import MagicMock
+
+    from loregarden.models.domain import McpToolCall, Ticket
+    from loregarden.services.tool_telemetry import DECISION_TRUSTED_SERVER
+    from sqlmodel import select
+
+    _server(db_session, name="github", tool_policy=POLICY_AUTO)
+    ticket = db_session.exec(select(Ticket)).first()
+
+    bridge = PermissionBridgeRunner(db_session)
+    ctx = MagicMock(agent_id="planner", workspace_slug="loregarden")
+    handled = bridge._try_fast_approve(
+        ctx=ctx,
+        ticket=ticket,
+        run_id="run-1",
+        proc=MagicMock(),
+        request_id="req-1",
+        permission={"tool_name": "mcp__github__create_issue", "tool_input": {}},
+        bare_mcp=None,
+        question=False,
+        streamer=None,
+    )
+
+    assert handled is True
+    recorded = db_session.exec(select(McpToolCall)).all()
+    assert [(c.server_name, c.decision) for c in recorded] == [("github", DECISION_TRUSTED_SERVER)]
+
+
+def test_a_trusted_server_over_its_limit_is_refused(db_session: Session):
+    """Trust removed the human click that was pacing the agent; the ceiling is
+    what is left. A limit that only applied to prompted calls would not bind on
+    exactly the calls that run unattended."""
+    from unittest.mock import MagicMock
+
+    from loregarden.models.domain import McpServerUpdate as _Update
+    from loregarden.models.domain import McpToolCall, Ticket
+    from loregarden.services.tool_telemetry import DECISION_RATE_LIMITED
+    from sqlmodel import select
+
+    server = _server(db_session, name="github", tool_policy=POLICY_AUTO)
+    update_server(db_session, server.id, _Update(rate_limit_per_min=1))
+    ticket = db_session.exec(select(Ticket)).first()
+
+    bridge = PermissionBridgeRunner(db_session)
+    ctx = MagicMock(agent_id="planner", workspace_slug="loregarden")
+    call = {
+        "ctx": ctx,
+        "ticket": ticket,
+        "run_id": "run-1",
+        "proc": MagicMock(),
+        "request_id": "req-1",
+        "permission": {"tool_name": "mcp__github__create_issue", "tool_input": {}},
+        "bare_mcp": None,
+        "question": False,
+        "streamer": None,
+    }
+
+    assert bridge._try_fast_approve(**call) is True  # first call is within the ceiling
+    assert bridge._try_fast_approve(**call) is True  # second is refused, still handled
+
+    decisions = [c.decision for c in db_session.exec(select(McpToolCall)).all()]
+    assert decisions[-1] == DECISION_RATE_LIMITED

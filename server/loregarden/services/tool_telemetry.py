@@ -37,6 +37,7 @@ DECISION_RUN_AUTO = "auto_run"  # the run's own auto_approve flag
 DECISION_SCOPE_ALLOW = "auto_scope"  # a persisted per-ticket/stage allowance
 DECISION_APPROVED = "approved"  # a human said yes
 DECISION_REJECTED = "rejected"  # a human said no
+DECISION_RATE_LIMITED = "rate_limited"  # refused by the server's own ceiling
 
 DECISIONS = (
     DECISION_TRUSTED_SERVER,
@@ -46,6 +47,7 @@ DECISIONS = (
     DECISION_SCOPE_ALLOW,
     DECISION_APPROVED,
     DECISION_REJECTED,
+    DECISION_RATE_LIMITED,
 )
 
 
