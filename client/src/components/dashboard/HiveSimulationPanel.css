@@ -539,6 +539,15 @@
   filter: drop-shadow(0 2px 0 rgba(42, 36, 28, 0.35));
 }
 
+/* Officeplace casts full-body sprites rather than the single-tile figures the
+   other skins use, and a body loses far more to a small box than a blob does:
+   at 1.6 tiles the head lands around 8px and every dark suit reads alike.
+   Needs both classes to outrank .hive-css--rooms, which sets the shared value
+   later in the file. */
+.hive-css--rooms.hive-css--officeplace {
+  --hive-agent-sprite: calc(var(--hive-tile) * 2.6);
+}
+
 .hive-css--officeplace .hive-css__agent--working .hive-css__agent-avatar,
 .hive-css--officeplace .hive-css__agent--pulse .hive-css__agent-avatar {
   filter: drop-shadow(0 2px 0 rgba(42, 36, 28, 0.35))
