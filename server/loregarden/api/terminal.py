@@ -29,6 +29,9 @@ router = APIRouter(prefix="/terminal", tags=["terminal"])
 #: refused connection is.
 POLICY_VIOLATION = 1008
 
+#: A shell that exited is an ordinary ending, not a failure.
+NORMAL_CLOSURE = 1000
+
 
 def _token_ok(websocket: WebSocket) -> bool:
     """Whether this connection may open a shell.
@@ -48,6 +51,23 @@ def _token_ok(websocket: WebSocket) -> bool:
     return hmac.compare_digest(presented or header, expected)
 
 
+async def _refuse(websocket: WebSocket, reason: str) -> None:
+    """Turn a config mistake away in words the operator can read.
+
+    A close sent *before* `accept()` fails the handshake, and a browser reports
+    a failed handshake as code 1006 with an empty reason — so the explanation
+    never arrives. Accepting first costs nothing (no shell is spawned) and buys
+    a message that reaches the screen.
+
+    Authentication failures deliberately do not come through here: a caller
+    without a token gets the opaque pre-accept refusal instead. An operator
+    needs to know their workspace slug is wrong; a stranger does not.
+    """
+    await websocket.accept()
+    await websocket.send_text(f"\r\n{reason}\r\n")
+    await websocket.close(code=POLICY_VIOLATION, reason=reason)
+
+
 async def _pump_output(websocket: WebSocket, session: TerminalSession) -> None:
     """Shell output to the browser, off the event loop.
 
@@ -62,6 +82,16 @@ async def _pump_output(websocket: WebSocket, session: TerminalSession) -> None:
             break
         await websocket.send_text(data.decode("utf-8", errors="replace"))
 
+    # The shell is gone, and nothing else will notice: the handler is parked on
+    # receive_text() waiting for keystrokes that now go nowhere. Without this
+    # close, typing `exit` leaves the socket open on a dead terminal — the
+    # browser shows a frozen screen with no message and no way to recover.
+    try:
+        await websocket.close(code=NORMAL_CLOSURE, reason="The shell exited.")
+    except RuntimeError:
+        # Already closed from the other side; the disconnect is the same event.
+        pass
+
 
 @router.websocket("/{workspace_slug}")
 async def terminal_socket(
@@ -75,12 +105,12 @@ async def terminal_socket(
 
     workspace = db.exec(select(Workspace).where(Workspace.slug == workspace_slug)).first()
     if not workspace:
-        await websocket.close(code=POLICY_VIOLATION, reason="Unknown workspace")
+        await _refuse(websocket, f"No workspace named '{workspace_slug}'.")
         return
 
     root = resolve_workspace_root(workspace)
     if not root.is_dir():
-        await websocket.close(code=POLICY_VIOLATION, reason=f"Workspace path missing: {root}")
+        await _refuse(websocket, f"Workspace path is missing: {root}")
         return
 
     await websocket.accept()
