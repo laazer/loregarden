@@ -710,6 +710,8 @@ class McpServerCreate(SQLModel):
     #: Name of an environment variable holding the credential — never the value.
     auth_env_var: str = ""
     enabled: bool = True
+    #: "prompt" or "auto" — see services.tool_policy.
+    tool_policy: str = "prompt"
 
 
 class McpServerUpdate(SQLModel):
@@ -721,6 +723,7 @@ class McpServerUpdate(SQLModel):
     args: list[str] | None = None
     auth_env_var: str | None = None
     enabled: bool | None = None
+    tool_policy: str | None = None
 
 
 class McpServerView(SQLModel):
@@ -736,6 +739,7 @@ class McpServerView(SQLModel):
     #: Whether that environment variable is actually set in this process. Lets
     #: the UI show "credential missing" without ever reading the value.
     auth_present: bool = False
+    tool_policy: str = "prompt"
     created_at: datetime
     updated_at: datetime
 

@@ -5,7 +5,17 @@ import type { McpServerInput, McpServerView } from "../../api/client";
 const TRANSPORTS = ["http", "stdio"] as const;
 
 function blank(): McpServerInput {
-  return { name: "", description: "", transport: "http", url: "", command: "", args: [], auth_env_var: "", enabled: true };
+  return {
+    name: "",
+    description: "",
+    transport: "http",
+    url: "",
+    command: "",
+    args: [],
+    auth_env_var: "",
+    enabled: true,
+    tool_policy: "prompt",
+  };
 }
 
 /**
@@ -42,6 +52,7 @@ export function McpServerForm({
             args: server.args,
             auth_env_var: server.auth_env_var,
             enabled: server.enabled,
+            tool_policy: server.tool_policy,
           }
         : blank(),
     );
@@ -134,6 +145,25 @@ export function McpServerForm({
         <p className="modal-subtitle mcp-form-hint">
           The variable&rsquo;s name, not its value. Loregarden reads it from the environment
           when it starts an agent, and never stores the token.
+        </p>
+      </div>
+
+      <div className="modal-field">
+        <label className="modal-field-label" htmlFor="mcp-policy">
+          When an agent calls this server
+        </label>
+        <select
+          id="mcp-policy"
+          className="btn-secondary filter-select"
+          value={draft.tool_policy ?? "prompt"}
+          onChange={(e) => set({ tool_policy: e.target.value })}
+        >
+          <option value="prompt">Ask me every time</option>
+          <option value="auto">Run without asking</option>
+        </select>
+        <p className="modal-subtitle mcp-form-hint">
+          Trust applies to the whole server. An unattended run stops on every call
+          while this is set to ask.
         </p>
       </div>
 

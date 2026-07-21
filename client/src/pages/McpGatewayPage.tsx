@@ -30,6 +30,9 @@ function ServerRow({
       <div className="mcp-server-row-head">
         <span className="mcp-server-name">{server.name}</span>
         {!server.enabled && <span className="state-label">disabled</span>}
+        {server.enabled && server.tool_policy === "auto" && (
+          <span className="state-label mcp-server-trusted">trusted</span>
+        )}
       </div>
       <div className="mcp-server-row-meta">
         {server.transport} · {server.transport === "http" ? server.url : server.command}

@@ -791,6 +791,26 @@ def _m_mcp_servers_table(conn: Connection) -> None:
     conn.execute(text("CREATE UNIQUE INDEX ix_mcp_servers_name ON mcp_servers (name)"))
 
 
+def _m_mcp_server_tool_policy(conn: Connection) -> None:
+    """Whether a registered server's tools run without asking the operator.
+
+    U1a made third-party servers reachable, but the auto-approve check only
+    recognised loregarden's own prefix, so every call to a registered server
+    stopped for a human — which stalls an unattended run on its first use.
+    Defaults to "prompt": trusting a third party is a decision the operator
+    makes, not one inherited from being registered.
+    """
+    add_columns_if_missing(
+        conn,
+        "mcp_servers",
+        {
+            "tool_policy": (
+                "ALTER TABLE mcp_servers ADD COLUMN tool_policy TEXT NOT NULL DEFAULT 'prompt'"
+            )
+        },
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -826,6 +846,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0032_adversarial_planning", m_adversarial_planning),
     ("0033_run_messages_table", _m_run_messages_table),
     ("0034_mcp_servers_table", _m_mcp_servers_table),
+    ("0035_mcp_server_tool_policy", _m_mcp_server_tool_policy),
 ]
 
 

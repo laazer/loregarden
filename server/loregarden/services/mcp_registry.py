@@ -16,6 +16,7 @@ import os
 from datetime import datetime, timezone
 
 from loregarden.models.domain import McpServer, McpServerCreate, McpServerUpdate, McpServerView
+from loregarden.services.tool_policy import TOOL_POLICIES
 from sqlmodel import Session, select
 
 #: Transports the CLI config understands. A stdio server is launched by the CLI
@@ -50,6 +51,7 @@ def to_view(server: McpServer) -> McpServerView:
         args=_parse_args(server.args_json),
         auth_env_var=server.auth_env_var,
         enabled=server.enabled,
+        tool_policy=server.tool_policy,
         # Presence only. The value never leaves the process it is read in.
         auth_present=bool(server.auth_env_var and os.environ.get(server.auth_env_var)),
         created_at=server.created_at,
@@ -57,11 +59,13 @@ def to_view(server: McpServer) -> McpServerView:
     )
 
 
-def _validate(*, name: str, transport: str, url: str, command: str) -> None:
+def _validate(*, name: str, transport: str, url: str, command: str, tool_policy: str) -> None:
     if not name.strip():
         raise McpRegistryError("Server name is required")
     if transport not in TRANSPORTS:
         raise McpRegistryError(f"Unknown transport: {transport}")
+    if tool_policy not in TOOL_POLICIES:
+        raise McpRegistryError(f"Unknown tool policy: {tool_policy}")
     # A server missing the field its transport needs would register cleanly and
     # then fail inside an agent subprocess, where the cause is hard to see.
     if transport == "http" and not url.strip():
@@ -75,7 +79,13 @@ def list_servers(session: Session) -> list[McpServer]:
 
 
 def create_server(session: Session, body: McpServerCreate) -> McpServer:
-    _validate(name=body.name, transport=body.transport, url=body.url, command=body.command)
+    _validate(
+        name=body.name,
+        transport=body.transport,
+        url=body.url,
+        command=body.command,
+        tool_policy=body.tool_policy,
+    )
     if session.exec(select(McpServer).where(McpServer.name == body.name.strip())).first():
         raise McpRegistryError(f"A server named '{body.name.strip()}' is already registered")
 
@@ -88,6 +98,7 @@ def create_server(session: Session, body: McpServerCreate) -> McpServer:
         args_json=json.dumps(list(body.args)),
         auth_env_var=body.auth_env_var.strip(),
         enabled=body.enabled,
+        tool_policy=body.tool_policy,
     )
     session.add(server)
     session.commit()
@@ -119,12 +130,15 @@ def update_server(session: Session, server_id: str, body: McpServerUpdate) -> Mc
         server.args_json = json.dumps(list(body.args))
     if body.enabled is not None:
         server.enabled = body.enabled
+    if body.tool_policy is not None:
+        server.tool_policy = body.tool_policy.strip()
 
     _validate(
         name=server.name,
         transport=server.transport,
         url=server.url,
         command=server.command,
+        tool_policy=server.tool_policy,
     )
     server.updated_at = _now()
     session.add(server)
