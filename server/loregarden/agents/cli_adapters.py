@@ -114,6 +114,7 @@ def build_interactive_invocation(
     resume_session_id: str = "",
     claude_model: str = "",
     cursor_model: str = "",
+    db_session=None,
 ) -> CliInvocation:
     """Headless CLIs with permission prompts routed through Loregarden."""
     cwd = str(workspace_root)
@@ -138,7 +139,7 @@ def build_interactive_invocation(
         _append_model_flag(argv, claude_model)
         if resume_session_id:
             argv.extend(["--resume", resume_session_id])
-        append_mcp_cli_args(argv, adapter="claude")
+        append_mcp_cli_args(argv, adapter="claude", session=db_session)
         return CliInvocation(
             argv=argv,
             interactive=True,
@@ -164,7 +165,7 @@ def build_interactive_invocation(
         extra = os.environ.get("LOREGARDEN_CURSOR_AGENT_ARGS")
         if extra:
             argv[2:2] = shlex.split(extra)
-        append_mcp_cli_args(argv, adapter="cursor")
+        append_mcp_cli_args(argv, adapter="cursor", session=db_session)
         return CliInvocation(
             argv=argv,
             interactive=False,
@@ -428,6 +429,7 @@ def resolve_cli_invocation(
     run_id: str = "",
     workspace_slug: str = "",
     granted_tools: list[str] | None = None,
+    db_session=None,
 ) -> CliInvocation:
     """Resolve subprocess argv. Agents are adapters — no orchestration logic here."""
     override = _env_command_override(
@@ -466,6 +468,7 @@ def resolve_cli_invocation(
     if selected in {"claude", "cursor"} and not permission_bypass_enabled():
         return build_interactive_invocation(
             adapter=selected,
+            db_session=db_session,
             prompt_file=prompt_file,
             workspace_root=workspace_root,
             resume_session_id=resume_session_id,

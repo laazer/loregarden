@@ -700,5 +700,45 @@ class FinalizeHierarchyResponse(SQLModel):
     total_created: int
 
 
+class McpServerCreate(SQLModel):
+    name: str
+    description: str = ""
+    transport: str = "http"
+    url: str = ""
+    command: str = ""
+    args: list[str] = Field(default_factory=list)
+    #: Name of an environment variable holding the credential — never the value.
+    auth_env_var: str = ""
+    enabled: bool = True
+
+
+class McpServerUpdate(SQLModel):
+    name: str | None = None
+    description: str | None = None
+    transport: str | None = None
+    url: str | None = None
+    command: str | None = None
+    args: list[str] | None = None
+    auth_env_var: str | None = None
+    enabled: bool | None = None
+
+
+class McpServerView(SQLModel):
+    id: str
+    name: str
+    description: str
+    transport: str
+    url: str
+    command: str
+    args: list[str]
+    auth_env_var: str
+    enabled: bool
+    #: Whether that environment variable is actually set in this process. Lets
+    #: the UI show "credential missing" without ever reading the value.
+    auth_present: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
 HierarchyWorkItem.model_rebuild()
 TicketTreeNode.model_rebuild()
