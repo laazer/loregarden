@@ -12,6 +12,9 @@ from loregarden.models.domain import (
     RunStatus,
     Workspace,
 )
+from loregarden.services.parallel_queue import ParallelQueueService
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, select
 
 
@@ -981,3 +984,31 @@ class TestOnRunCompleteFailureWiring:
         db_session.refresh(queued)
         assert queued.status == QueuePosition.PROMOTED
         assert queued.failure_reason == ""
+
+
+class TestQueueStatsSchemaFaults:
+    """A schema fault must reach the caller, not read as an idle queue."""
+
+    def test_get_queue_stats_raises_on_missing_column(self, db_session: Session):
+        """``get_queue_stats`` used to swallow OperationalError into ``{}``.
+
+        Callers cannot tell that apart from a genuinely empty queue, so a
+        database missing ``queued_runs.created_at`` served zeroed Utilization /
+        Active / Queued metrics indefinitely instead of failing loudly.
+        """
+        db_session.exec(text("DROP TABLE queued_runs"))
+
+        with pytest.raises(OperationalError):
+            ParallelQueueService(db_session, max_concurrent=3).get_queue_stats("ws-1")
+
+    @pytest.mark.asyncio
+    async def test_get_queued_runs_raises_on_missing_column(self, db_session: Session):
+        """The queue list read from the same broken table as the stats.
+
+        Both feed ``/api/parallel/status``, so swallowing the fault here emptied
+        the dashboard's queue list as silently as it zeroed the metrics.
+        """
+        db_session.exec(text("DROP TABLE queued_runs"))
+
+        with pytest.raises(OperationalError):
+            await ParallelQueueService(db_session, max_concurrent=3).get_queued_runs("ws-1")

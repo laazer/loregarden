@@ -50,6 +50,46 @@ def test_old_schema_gets_upgraded(tmp_path):
     assert "permission_allowlist_json" in cols
 
 
+def test_queued_runs_created_at_is_added_and_backfilled(tmp_path):
+    """``QueuedRun.created_at`` shipped on the model with no migration behind it.
+
+    Every SELECT names the column, so on an older database the queue stats query
+    raised and the dashboard read zero. Existing rows must come out non-NULL:
+    the wait-time ``min()`` compares ``created_at`` across rows and a NULL there
+    is a TypeError.
+    """
+    engine = create_engine(f"sqlite:///{tmp_path / 'queued.db'}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE queued_runs (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    ticket_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL,
+                    position INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'queued'
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO queued_runs (id, workspace_id, ticket_id, run_id) "
+                "VALUES ('q1', 'ws-1', 'ticket-1', 'run-1')"
+            )
+        )
+
+    assert "created_at" not in _columns(engine, "queued_runs")
+    apply_migrations(engine)
+
+    assert "created_at" in _columns(engine, "queued_runs")
+    with engine.connect() as conn:
+        backfilled = conn.execute(text("SELECT created_at FROM queued_runs WHERE id='q1'")).scalar()
+    assert backfilled is not None
+
+
 def test_backfill_runs_against_a_populated_db(tmp_path):
     """Migrations must survive a database that actually has rows.
 

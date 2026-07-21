@@ -881,6 +881,29 @@ def _m_mcp_server_rate_limit(conn: Connection) -> None:
     )
 
 
+def _m_queued_run_created_at(conn: Connection) -> None:
+    """Backfill ``queued_runs.created_at``, which the model declared but no migration added.
+
+    Databases created before the column landed on ``QueuedRun`` select it on every
+    query, so ``get_queue_stats`` failed outright and the Queue Dashboard read zero.
+
+    SQLite cannot ADD COLUMN with a non-constant default, so the column arrives
+    nullable and existing rows are backfilled with ``now``. That understates the age
+    of rows already queued — every recoverable proxy (``promoted_at``, ``started_at``)
+    is NULL precisely for the still-queued rows the stats read — but it keeps
+    ``created_at`` non-NULL, which the wait-time ``min()`` requires.
+    """
+    add_columns_if_missing(
+        conn,
+        "queued_runs",
+        {"created_at": "ALTER TABLE queued_runs ADD COLUMN created_at DATETIME"},
+    )
+    if table_exists(conn, "queued_runs"):
+        conn.execute(
+            text("UPDATE queued_runs SET created_at = datetime('now') WHERE created_at IS NULL")
+        )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -920,6 +943,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0036_mcp_tool_calls_table", _m_mcp_tool_calls_table),
     ("0037_mcp_server_health", _m_mcp_server_health),
     ("0038_mcp_server_rate_limit", _m_mcp_server_rate_limit),
+    ("0039_queued_run_created_at", _m_queued_run_created_at),
 ]
 
 

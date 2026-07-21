@@ -17,6 +17,7 @@ from loregarden.websocket_events import (
     emit_queue_promoted,
     emit_run_completed,
 )
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -309,6 +310,13 @@ class ParallelQueueService:
                     )
 
             return queued_runs
+
+        except OperationalError:
+            # Same reasoning as get_queue_stats: an empty list is indistinguishable
+            # from an idle queue, so a schema fault here emptied the dashboard's
+            # queue list silently.
+            logger.error("Schema error getting queued runs", exc_info=True)
+            raise
 
         except Exception as e:
             logger.error(f"Error getting queued runs: {e}", exc_info=True)
@@ -633,6 +641,12 @@ class ParallelQueueService:
                 "total_slots_occupied": active_count,
                 "queue_wait_time_minutes": queue_wait_minutes,
             }
+
+        except OperationalError:
+            # A schema fault is a bug, not a data condition. Returning {} here made
+            # callers read zero utilisation with no signal that anything was wrong.
+            logger.error("Schema error getting queue stats", exc_info=True)
+            raise
 
         except Exception as e:
             logger.error(f"Error getting queue stats: {e}", exc_info=True)
