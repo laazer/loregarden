@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -10,6 +11,10 @@ from typing import Any
 
 from loregarden.config import settings
 from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef, Workspace
+from loregarden.services.mcp_registry import cli_server_entries
+from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 MCP_DOC_REL = Path("agents/common_assets/loregarden_mcp_v1.md")
 MEMORY_DOC_REL = Path("agents/common_assets/memory_protocol_v1.md")
@@ -60,21 +65,37 @@ def loregarden_mcp_server_entry() -> dict[str, Any]:
     }
 
 
-def loregarden_mcp_cli_config_json() -> str:
-    """Claude Code `--mcp-config` payload (full settings shape with mcpServers)."""
-    return json.dumps({"mcpServers": {MCP_SERVER_NAME: loregarden_mcp_server_entry()}})
+def loregarden_mcp_cli_config_json(session: Session | None = None) -> str:
+    """Claude Code `--mcp-config` payload (full settings shape with mcpServers).
+
+    Loregarden's own server plus whatever is registered and enabled. Without a
+    session the payload is loregarden alone, which is what callers outside a
+    request (docs, tests) want and what this always used to return.
+
+    Loregarden's entry is written last on purpose: a registered server may not
+    take its name, because losing the control plane's own tools would break the
+    workflow the agent is running.
+    """
+    servers: dict[str, dict] = {}
+    if session is not None:
+        try:
+            servers.update(cli_server_entries(session))
+        except Exception:  # noqa: BLE001 - a bad registry must not stop a run
+            logger.warning("Could not read the MCP registry; using loregarden only", exc_info=True)
+    servers[MCP_SERVER_NAME] = loregarden_mcp_server_entry()
+    return json.dumps({"mcpServers": servers})
 
 
 def mcp_cli_injection_enabled() -> bool:
     return os.environ.get("LOREGARDEN_DISABLE_MCP_CLI", "").lower() not in {"1", "true", "yes"}
 
 
-def append_mcp_cli_args(argv: list[str], *, adapter: str) -> None:
+def append_mcp_cli_args(argv: list[str], *, adapter: str, session: Session | None = None) -> None:
     """Inject Loregarden MCP into headless Claude/Cursor agent subprocesses."""
     if not mcp_cli_injection_enabled():
         return
     if adapter == "claude":
-        argv.extend(["--mcp-config", loregarden_mcp_cli_config_json()])
+        argv.extend(["--mcp-config", loregarden_mcp_cli_config_json(session)])
     elif adapter == "cursor" and "--approve-mcps" not in argv:
         argv.append("--approve-mcps")
 

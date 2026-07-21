@@ -209,6 +209,45 @@ class AgentRun(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class McpServer(SQLModel, table=True):
+    """A third-party MCP server this control plane knows about.
+
+    Agents reached exactly one server — loregarden's own, hardcoded into the
+    `--mcp-config` payload — so anything else an agent might need had to be
+    configured outside the control plane, where nothing could see or audit it.
+
+    Two departures from a naive "store the config" table:
+
+    `auth_env_var` holds the *name* of an environment variable, never a token.
+    This database is copied around freely — into scratch dirs for migration
+    dry-runs, into worktrees — and a secret at rest in it would travel with
+    every copy. The value is read from the environment when the server is used.
+
+    There is no rate-limit or health column yet. Nothing enforces a limit or
+    performs a check, and a column no code reads is a claim the UI would happily
+    render as fact.
+    """
+
+    __tablename__ = "mcp_servers"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    #: Key under `mcpServers` in the CLI config, so it must be unique.
+    name: str = Field(index=True, unique=True)
+    description: str = ""
+    #: "http" (url) or "stdio" (command + args).
+    transport: str = "http"
+    url: str = ""
+    command: str = ""
+    args_json: str = "[]"
+    #: Name of the env var holding the credential — not the credential.
+    auth_env_var: str = ""
+    #: Disabled servers stay registered but are withheld from agents, so a
+    #: broken server can be parked without losing how it was configured.
+    enabled: bool = True
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 class RunMessage(SQLModel, table=True):
     """An operator's message to a run that is already in flight.
 

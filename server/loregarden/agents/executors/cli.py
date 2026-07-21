@@ -149,6 +149,7 @@ class CliAgentExecutor:
                     run_id=run.id,
                     workspace_slug=workspace.slug,
                     granted_tools=agent.get("mcp_tools") or [],
+                    db_session=self.session,
                 )
             except ValueError as exc:
                 return self.orchestration.complete_run(

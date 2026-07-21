@@ -16,6 +16,7 @@ from loregarden.api import (
     events,
     inbox,
     mcp,
+    mcp_servers,
     memory,
     orchestration,
     parallel,
@@ -87,6 +88,7 @@ app.include_router(inbox.router, prefix="/api")
 app.include_router(events.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
+app.include_router(mcp_servers.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
 app.include_router(orchestration.router, prefix="/api")
 app.include_router(studio.router, prefix="/api")
