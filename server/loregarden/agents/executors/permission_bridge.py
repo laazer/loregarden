@@ -43,6 +43,14 @@ from loregarden.services.tool_policy import (
     server_auto_approves,
     split_mcp_tool,
 )
+from loregarden.services.tool_telemetry import (
+    DECISION_ALLOWLIST,
+    DECISION_APPROVED,
+    DECISION_READ_ONLY_CLI,
+    DECISION_REJECTED,
+    DECISION_RUN_AUTO,
+    record_tool_call,
+)
 from loregarden.services.workflow_state import set_stage_status
 from loregarden.services.workspace_paths import resolve_workspace_root
 
@@ -388,6 +396,8 @@ class _LoopState:
     pending_approval: Approval | None = None
     pending_request_id: str = ""
     pending_tool_input: dict[str, Any] | None = None
+    pending_tool_name: str = ""
+    pending_since: float = 0.0
     approval_deadline: float = 0.0
     finished_with_result: bool = False
     result_is_error: bool = False
@@ -643,7 +653,20 @@ class PermissionBridgeRunner:
             message=resolution.message or "Rejected in Loregarden approval inbox",
             updated_input=allow_input if resolution.approved else None,
         )
+        approving_run = self.session.get(AgentRun, run_id)
+        self._record(
+            approving_run.agent_id if approving_run else "",
+            ticket,
+            run_id,
+            state.pending_tool_name,
+            DECISION_APPROVED if resolution.approved else DECISION_REJECTED,
+            decision_ms=int((time.time() - state.pending_since) * 1000)
+            if state.pending_since
+            else 0,
+        )
         state.pending_tool_input = None
+        state.pending_tool_name = ""
+        state.pending_since = 0.0
         self._send_response(proc, response)
 
         if not resolution.approved:
@@ -724,6 +747,25 @@ class PermissionBridgeRunner:
             session_id=state.session_id,
         )
 
+    def _record(
+        self,
+        agent_id: str,
+        ticket: Ticket,
+        run_id: str,
+        tool_name: str,
+        decision: str,
+        decision_ms: int = 0,
+    ) -> None:
+        record_tool_call(
+            self.session,
+            run_id=run_id,
+            ticket_id=ticket.id,
+            agent_id=agent_id,
+            tool_name=tool_name,
+            decision=decision,
+            decision_ms=decision_ms,
+        )
+
     def _third_party_auto_approved(self, tool_name: str, bare_mcp: str | None) -> str | None:
         """Server name when a *registered* server is trusted to run unattended.
 
@@ -745,6 +787,7 @@ class PermissionBridgeRunner:
         *,
         ctx: _RunContext,
         ticket: Ticket,
+        run_id: str,
         proc: Any,
         request_id: str,
         permission: dict[str, Any],
@@ -783,6 +826,7 @@ class PermissionBridgeRunner:
                     request_id=request_id, approved=True, updated_input=enriched
                 ),
             )
+            self._record(ctx.agent_id, ticket, run_id, permission["tool_name"], DECISION_ALLOWLIST)
             if streamer:
                 streamer.append("TOOL", f"Auto-approved Loregarden MCP: {bare_mcp}", force=True)
                 streamer.set_live("Agent running…")
@@ -790,6 +834,9 @@ class PermissionBridgeRunner:
 
         if is_auto_approved_cli_tool(permission["tool_name"]):
             self._send_response(proc, build_control_response(request_id=request_id, approved=True))
+            self._record(
+                ctx.agent_id, ticket, run_id, permission["tool_name"], DECISION_READ_ONLY_CLI
+            )
             if streamer:
                 streamer.append(
                     "TOOL", f"Auto-approved read-only: {permission['tool_name']}", force=True
@@ -811,6 +858,7 @@ class PermissionBridgeRunner:
                     request_id=request_id, approved=True, updated_input=tool_input
                 ),
             )
+            self._record(ctx.agent_id, ticket, run_id, permission["tool_name"], DECISION_RUN_AUTO)
             if streamer:
                 streamer.append("TOOL", f"Auto-approved: {permission['tool_name']}", force=True)
                 streamer.set_live("Agent running…")
@@ -915,6 +963,7 @@ class PermissionBridgeRunner:
         if self._try_fast_approve(
             ctx=ctx,
             ticket=ticket,
+            run_id=run_id,
             proc=proc,
             request_id=request_id,
             permission=permission,
@@ -972,6 +1021,10 @@ class PermissionBridgeRunner:
         state.pending_tool_input = (
             permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
         )
+        state.pending_tool_name = str(permission["tool_name"])
+        # Stamped when the operator is first asked, so decision_ms is their
+        # thinking time rather than the loop's polling interval.
+        state.pending_since = time.time()
         state.approval_deadline = time.time() + min(
             remaining_for_approval, settings.permission_approval_timeout_seconds
         )

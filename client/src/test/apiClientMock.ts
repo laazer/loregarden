@@ -25,6 +25,7 @@ export const api = {
   runMessages: jest.fn(),
   ticketLedger: jest.fn(),
   mcpServers: jest.fn(),
+  mcpTelemetry: jest.fn(),
   createMcpServer: jest.fn(),
   updateMcpServer: jest.fn(),
   deleteMcpServer: jest.fn(),
