@@ -42,6 +42,14 @@ interface UiState {
   copilotOpen: boolean;
   copilotHeight: number;
   /**
+   * Whether the dock is also showing a shell.
+   *
+   * Off by default and remembered: opening the terminal spawns a real login
+   * shell, so it happens because someone asked for one, not because they
+   * opened the chat.
+   */
+  terminalOpen: boolean;
+  /**
    * Which branch the branch-triage screen is reviewing. Lifted out of that
    * page so the dock can bind to its conversation — the dock mounts above the
    * routes and cannot see a page's local state.
@@ -67,6 +75,7 @@ interface UiState {
   setBranchTriageWorkspaceSlug: (slug: string) => void;
   setBranchTriageBranch: (branch: string) => void;
   setCopilotOpen: (open: boolean) => void;
+  setTerminalOpen: (open: boolean) => void;
   toggleCopilot: () => void;
   setCopilotHeight: (height: number) => void;
   setHiveSkin: (skin: HiveSkinId | string) => void;
@@ -90,6 +99,7 @@ type PersistedUiState = Pick<
   | "hiveSpeedIndex"
   | "copilotOpen"
   | "copilotHeight"
+  | "terminalOpen"
 >;
 
 export const useUiStore = create<UiState>()(
@@ -116,6 +126,7 @@ export const useUiStore = create<UiState>()(
       hiveSpeedIndex: hiveSpeedIndexFor(DEFAULT_HIVE_SPEED_MULTIPLIER),
       copilotOpen: false,
       copilotHeight: DEFAULT_COPILOT_HEIGHT,
+      terminalOpen: false,
       // Not persisted: which branch is under review is a property of this
       // visit, and restoring a stale one would bind the dock to a
       // conversation the screen is not showing.
@@ -179,6 +190,7 @@ export const useUiStore = create<UiState>()(
       setBranchTriageBranch: (branchTriageBranch) => set({ branchTriageBranch }),
       setCopilotOpen: (copilotOpen) => set({ copilotOpen }),
       toggleCopilot: () => set({ copilotOpen: !get().copilotOpen }),
+      setTerminalOpen: (terminalOpen) => set({ terminalOpen }),
       setCopilotHeight: (height) =>
         set({ copilotHeight: clampCopilotHeight(height) }),
       setHiveSkin: (hiveSkin) => set({ hiveSkin: resolveHiveSkinId(hiveSkin) }),
@@ -199,9 +211,12 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "loregarden-ui",
-      version: 8,
+      version: 9,
       migrate: (persistedState, version) => {
         const state = { ...(persistedState as Record<string, unknown>) };
+        if (version < 9 && typeof state.terminalOpen !== "boolean") {
+          state.terminalOpen = false;
+        }
         if (version < 8) {
           if (typeof state.copilotOpen !== "boolean") state.copilotOpen = false;
           state.copilotHeight = clampCopilotHeight(state.copilotHeight);
@@ -262,6 +277,7 @@ export const useUiStore = create<UiState>()(
         branchTriageWorkspaceSlug: s.branchTriageWorkspaceSlug,
         copilotOpen: s.copilotOpen,
         copilotHeight: s.copilotHeight,
+        terminalOpen: s.terminalOpen,
         hiveSkin: s.hiveSkin,
         hiveSpeedIndex: s.hiveSpeedIndex,
       }),

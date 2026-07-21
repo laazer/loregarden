@@ -4,8 +4,10 @@ import { useActiveChatSession } from "../hooks/useActiveChatSession";
 import { useApprovalResolution } from "../hooks/useApprovalResolution";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
+import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useUiStore } from "../state/uiStore";
 import { StudioChatComposer, StudioChatMessages } from "./studio/StudioChat";
+import { TerminalPanel } from "./TerminalPanel";
 import "./CopilotDock.css";
 
 /**
@@ -44,6 +46,13 @@ export function CopilotDock() {
   const height = useUiStore((s) => s.copilotHeight);
   const { session, label, ticketId, pendingApprovals } = useActiveChatSession();
   const resolveApproval = useApprovalResolution(ticketId ?? undefined);
+  const terminalOpen = useUiStore((s) => s.terminalOpen);
+  const setTerminalOpen = useUiStore((s) => s.setTerminalOpen);
+  const terminal = useTerminalTarget();
+  // Mounting the panel spawns a shell, so it only mounts once both the dock is
+  // expanded and someone asked for one — and never without a workspace to run
+  // it in, since a shell needs a cwd more than the header needs a label.
+  const showTerminal = open && terminalOpen && Boolean(terminal.workspaceSlug);
 
   const [draft, setDraft] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
@@ -96,10 +105,29 @@ export function CopilotDock() {
         {session.loadError && (
           <span className="copilot-dock-error">conversation unavailable</span>
         )}
+        {open && (
+          <button
+            type="button"
+            className={`copilot-dock-terminal-toggle${terminalOpen ? " is-on" : ""}`}
+            aria-pressed={terminalOpen}
+            // Disabled rather than hidden: the control staying put explains why
+            // it does nothing, where a vanishing button just looks broken.
+            disabled={!terminal.workspaceSlug}
+            title={
+              terminal.workspaceSlug
+                ? `Shell in ${terminal.workspaceSlug}`
+                : "Pick a workspace to open a shell in"
+            }
+            onClick={() => setTerminalOpen(!terminalOpen)}
+          >
+            Terminal
+          </button>
+        )}
       </div>
 
       {open && (
         <div className="copilot-dock-body">
+          <div className="copilot-dock-chat">
           {/* Above the turns: an agent question arrives as an approval, not a
               message, so it would otherwise be invisible here. */}
           <PendingApprovalsSection
@@ -158,6 +186,20 @@ export function CopilotDock() {
               </label>
             }
           />
+          </div>
+
+          {showTerminal && (
+            <div className="copilot-dock-terminal">
+              <TerminalPanel
+                // Remount on a workspace change rather than letting the panel
+                // swap repos under a live shell: the old shell is reaped and a
+                // new one starts in the right place.
+                key={terminal.workspaceSlug}
+                workspaceSlug={terminal.workspaceSlug}
+                agent={terminal.agent}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

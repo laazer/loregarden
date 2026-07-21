@@ -5,6 +5,9 @@ import { TerminalPanel } from "../TerminalPanel";
 /** Sockets opened during a test, so assertions can reach the last one. */
 const opened: FakeSocket[] = [];
 
+/** What the panel asked to watch, and the callback it would get. */
+const observed: { target: Element; fire: () => void }[] = [];
+
 class FakeSocket {
   static readonly OPEN = 1;
   // A real socket starts CONNECTING, and anything sent before the handshake
@@ -37,8 +40,15 @@ beforeEach(() => {
   opened.length = 0;
   (globalThis as unknown as { WebSocket: unknown }).WebSocket = FakeSocket;
   // jsdom implements neither, and the panel observes its own size to fit.
+  observed.length = 0;
   (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-    observe(): void {}
+    callback: () => void;
+    constructor(callback: () => void) {
+      this.callback = callback;
+    }
+    observe(target: Element): void {
+      observed.push({ target, fire: this.callback });
+    }
     disconnect(): void {}
   };
 });
@@ -60,16 +70,26 @@ describe("TerminalPanel", () => {
     expect(screen.queryByText(/sandbox/)).not.toBeInTheDocument();
   });
 
-  it("shows the agent and branch it was handed", () => {
-    render(<TerminalPanel workspaceSlug="loregarden" agent="implementer" branch="u3c-terminal-ui" />);
+  it("names the workspace the shell is actually in", () => {
+    render(<TerminalPanel workspaceSlug="loregarden" agent="implementer" />);
 
-    expect(screen.getByText("▸ implementer — u3c-terminal-ui")).toBeInTheDocument();
+    expect(screen.getByText("▸ implementer — loregarden")).toBeInTheDocument();
   });
 
-  it("falls back to the workspace when there is no agent to name", () => {
-    render(<TerminalPanel workspaceSlug="loregarden" branch="  " />);
+  it("shows the workspace alone when no agent is named", () => {
+    render(<TerminalPanel workspaceSlug="loregarden" agent="  " />);
 
     expect(screen.getByText("▸ loregarden")).toBeInTheDocument();
+  });
+
+  it("never labels the shell with a branch", () => {
+    // The shell opens in the workspace root, so a ticket's branch is true only
+    // by coincidence — observed in the dock reading `feat/bootstrap-ui` over a
+    // prompt on `u3d-terminal-dock`. The prompt is authoritative; it says so.
+    render(<TerminalPanel workspaceSlug="loregarden" agent="implementer" />);
+
+    const header = screen.getByText(/▸/).textContent ?? "";
+    expect(header).toBe("▸ implementer — loregarden");
   });
 
   it("tells the shell its size once the socket is actually open", () => {
@@ -121,5 +141,47 @@ describe("TerminalPanel", () => {
 
     expect(opened).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Start a new shell" })).not.toBeInTheDocument();
+  });
+});
+
+describe("re-fitting when the surface changes size", () => {
+  it("watches the element xterm is mounted into", () => {
+    const { container } = render(<TerminalPanel workspaceSlug="loregarden" />);
+
+    expect(observed).toHaveLength(1);
+    expect(observed[0].target).toBe(container.querySelector(".terminal-panel-surface"));
+  });
+
+  it("tells the shell the new size when the surface resizes", () => {
+    // Asserted here because ResizeObserver cannot be exercised in the preview
+    // browser — it delivers no callbacks there, not even the initial one — so
+    // the wiring is pinned where it can be checked deterministically.
+    render(<TerminalPanel workspaceSlug="loregarden" />);
+    act(() => {
+      opened[0].readyState = 1;
+      opened[0].onopen?.();
+    });
+    opened[0].sent.length = 0;
+
+    act(() => observed[0].fire());
+
+    const resizes = opened[0].sent.map((f) => JSON.parse(f)).filter((m) => m.type === "resize");
+    expect(resizes).toHaveLength(1);
+  });
+
+  it("stops watching on unmount", () => {
+    // The callback fits and writes to a socket; leaving it attached after the
+    // panel is gone means a resize touching a disposed terminal.
+    const disconnects: number[] = [];
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      observe(): void {}
+      disconnect(): void {
+        disconnects.push(1);
+      }
+    };
+
+    render(<TerminalPanel workspaceSlug="loregarden" />).unmount();
+
+    expect(disconnects).toHaveLength(1);
   });
 });
