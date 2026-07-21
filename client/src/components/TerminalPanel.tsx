@@ -14,9 +14,8 @@ import "./TerminalPanel.css";
 
 interface TerminalPanelProps {
   workspaceSlug: string;
-  /** Shown in the title bar for orientation; neither is bound to the shell. */
+  /** Shown in the title bar for orientation; not bound to the shell. */
   agent?: string | null;
-  branch?: string | null;
 }
 
 /**
@@ -26,11 +25,14 @@ interface TerminalPanelProps {
  * same privileges as the process serving the API, and labelling it a sandbox
  * would promise containment that does not exist.
  *
- * The header's agent and branch are orientation only. The shell is scoped to
- * the workspace, not to a run, so it stays usable after a run ends — which is
- * exactly when an operator wants to poke around.
+ * The header names the workspace, never a branch. The comp asked for
+ * `▸ {agent} — {branch}`, which assumed a tty bound to a run; this shell opens
+ * in the workspace root, so the ticket's branch is true only by coincidence.
+ * Observed disagreeing in the dock — header saying `feat/bootstrap-ui` over a
+ * prompt reading `u3d-terminal-dock`. The shell's own prompt is authoritative
+ * about the branch, and it already shows it.
  */
-export function TerminalPanel({ workspaceSlug, agent, branch }: TerminalPanelProps) {
+export function TerminalPanel({ workspaceSlug, agent }: TerminalPanelProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<TerminalStatus>("connecting");
   const [end, setEnd] = useState<TerminalEnd | null>(null);
@@ -105,8 +107,8 @@ export function TerminalPanel({ workspaceSlug, agent, branch }: TerminalPanelPro
           <i className="terminal-light terminal-light--max" />
         </span>
         <span className="terminal-panel-title">
-          ▸ {agent?.trim() || workspaceSlug}
-          {branch?.trim() ? ` — ${branch.trim()}` : ""}
+          ▸ {agent?.trim() ? `${agent.trim()} — ` : ""}
+          {workspaceSlug}
         </span>
         <span
           className="terminal-panel-badge"

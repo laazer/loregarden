@@ -5,6 +5,9 @@
   min-height: 0;
   border-top: 1px solid var(--ln);
   background: var(--bg1, var(--bg));
+  /* So the body can ask how wide the dock is, rather than how wide the window
+     is — see the container query below. */
+  container-type: inline-size;
   /* The stored height is in pixels, but on a short window 340px swallows the
      screen it is meant to sit beneath. Cap it against the viewport so the dock
      stays a dock. */
@@ -66,11 +69,69 @@
 
 .copilot-dock-body {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  /* Clip rather than draw over the page beneath: a pane that cannot shrink any
+     further is cut off at the dock's edge. */
+  overflow: hidden;
   min-height: 0;
   flex: 1 1 auto;
   padding: 0 14px 10px;
   gap: 8px;
+}
+
+.copilot-dock-chat,
+.copilot-dock-terminal {
+  /* Basis 0, not 380px: the panes divide the axis rather than each demanding
+     their content's size. `flex-wrap` was the obvious way to stack these and
+     it is the wrong one — wrapped lines size to content, and `align-content`
+     can only hand out free space, never take it back. Stacked that way a
+     24-row terminal stayed 376px inside a 171px dock and ran 480px past the
+     bottom of the screen. */
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  gap: 8px;
+}
+
+/* Stacked when the dock is too narrow to hold both. Keyed to the dock's own
+   width, not the window's — the icon rail and any open panes take their share
+   first, so the window is the wrong thing to measure. */
+@container (max-width: 780px) {
+  .copilot-dock-body {
+    flex-direction: column;
+  }
+}
+
+
+.copilot-dock-terminal-toggle {
+  margin-left: auto;
+  flex: 0 0 auto;
+  border: 1px solid var(--ln);
+  background: transparent;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--txm, var(--txl));
+  cursor: pointer;
+}
+
+.copilot-dock-terminal-toggle:hover:not(:disabled) {
+  color: var(--tx);
+  border-color: var(--ac, var(--ln));
+}
+
+.copilot-dock-terminal-toggle.is-on {
+  color: var(--tx);
+  border-color: var(--ac, var(--ln));
+  background: var(--bg2, transparent);
+}
+
+.copilot-dock-terminal-toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* The turns scroll; the composer stays put. Without an explicit min-height:0

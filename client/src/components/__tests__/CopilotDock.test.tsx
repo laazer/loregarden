@@ -2,9 +2,18 @@ import { fireEvent, render, screen } from "@testing-library/react";
 
 import { CopilotDock } from "../CopilotDock";
 import { useActiveChatSession } from "../../hooks/useActiveChatSession";
+import { useTerminalTarget } from "../../hooks/useTerminalTarget";
 import { useUiStore } from "../../state/uiStore";
 
 jest.mock("../../hooks/useActiveChatSession");
+jest.mock("../../hooks/useTerminalTarget");
+// The panel opens a real websocket and paints through a canvas; neither exists
+// here, and what these tests are about is the dock's layout around it.
+jest.mock("../TerminalPanel", () => ({
+  TerminalPanel: ({ workspaceSlug }: { workspaceSlug: string }) => (
+    <div data-testid="terminal-panel">{workspaceSlug}</div>
+  ),
+}));
 jest.mock("../../hooks/useApprovalResolution", () => ({
   useApprovalResolution: () => ({
     mutate: jest.fn(),
@@ -16,6 +25,7 @@ jest.mock("../../hooks/useApprovalResolution", () => ({
 }));
 
 const mockResolver = useActiveChatSession as jest.MockedFunction<typeof useActiveChatSession>;
+const mockTerminal = useTerminalTarget as jest.MockedFunction<typeof useTerminalTarget>;
 
 function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
   return {
@@ -43,7 +53,8 @@ function session(overrides = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  useUiStore.setState({ copilotOpen: false, copilotHeight: 340 });
+  useUiStore.setState({ copilotOpen: false, copilotHeight: 340, terminalOpen: false });
+  mockTerminal.mockReturnValue({ workspaceSlug: "loregarden", agent: "implementer" });
 });
 
 it("says what to do when no screen owns a conversation", () => {
@@ -138,4 +149,83 @@ it("prefers the waiting decision over the busy indicator", () => {
   render(<CopilotDock />);
   expect(screen.getByText(/waiting on you/i)).toBeInTheDocument();
   expect(screen.queryByText(/working…/)).not.toBeInTheDocument();
+});
+
+describe("the terminal pane", () => {
+  const openDock = () =>
+    mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+
+  it("spawns no shell until someone asks for one", () => {
+    // Mounting the panel starts a real login shell. Opening the chat is not
+    // asking for one, and a process nobody requested is the wrong default.
+    openDock();
+    useUiStore.setState({ copilotOpen: true, terminalOpen: false });
+
+    render(<CopilotDock />);
+
+    expect(screen.queryByTestId("terminal-panel")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Terminal" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("opens a shell in the workspace the screen is showing", () => {
+    openDock();
+    useUiStore.setState({ copilotOpen: true, terminalOpen: false });
+    render(<CopilotDock />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+
+    expect(screen.getByTestId("terminal-panel")).toHaveTextContent("loregarden");
+  });
+
+  it("keeps the chat when the terminal is open", () => {
+    // Side by side, not instead of — the dock is still the way into the chat.
+    openDock();
+    useUiStore.setState({ copilotOpen: true, terminalOpen: true });
+
+    render(<CopilotDock />);
+
+    expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Message about this ticket…")).toBeInTheDocument();
+  });
+
+  it("will not open a shell with nowhere to run it", () => {
+    // A shell needs a cwd more than the header needs a label, and "all
+    // workspaces" names no directory.
+    openDock();
+    mockTerminal.mockReturnValue({ workspaceSlug: "", agent: "" });
+    useUiStore.setState({ copilotOpen: true, terminalOpen: true });
+
+    render(<CopilotDock />);
+
+    expect(screen.queryByTestId("terminal-panel")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Terminal" })).toBeDisabled();
+  });
+
+  it("reaps the shell when the dock collapses", () => {
+    // The panel unmounts, which closes the socket and reaps the shell. Leaving
+    // it mounted behind a collapsed dock would keep a login shell per session.
+    openDock();
+    useUiStore.setState({ copilotOpen: true, terminalOpen: true });
+    render(<CopilotDock />);
+    expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse copilot" }));
+
+    expect(screen.queryByTestId("terminal-panel")).not.toBeInTheDocument();
+  });
+
+  it("remembers the terminal was open across a remount", () => {
+    openDock();
+    useUiStore.setState({ copilotOpen: true, terminalOpen: false });
+    const { unmount } = render(<CopilotDock />);
+    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+    unmount();
+
+    render(<CopilotDock />);
+
+    expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
+  });
 });
