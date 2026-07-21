@@ -5,32 +5,12 @@
 
 import { useEffect, useState } from 'react';
 
-export interface ActiveRun {
-  run_id: string;
-  ticket_id: string;
-  slot_number: number;
-  elapsed_seconds: number;
-  status: string;
-  agent_id: string;
-}
+import { DEFAULT_PARALLEL_STATS } from '../lib/queueSocket';
+import type { ActiveRun, ParallelStats, QueuedRun } from '../lib/queueSocket';
 
-export interface QueuedRun {
-  run_id: string;
-  ticket_id: string;
-  position: number;
-  estimated_start_at: string;
-  wait_seconds: number;
-  agent_id: string;
-}
-
-export interface ParallelStats {
-  max_concurrent: number;
-  active_count: number;
-  available_slots: number;
-  queued_count: number;
-  total_slots_occupied: number;
-  queue_wait_time_minutes: number;
-}
+// The shapes moved down to lib/queueSocket, where the socket that carries them
+// lives; re-exported so components keep importing them from the hook they use.
+export type { ActiveRun, ParallelStats, QueuedRun };
 
 export interface ParallelExecutionStatus {
   activeRuns: ActiveRun[];
@@ -44,18 +24,18 @@ const DEFAULT_POLL_INTERVAL = 5000; // 5 seconds
 
 export function useParallelExecution(
   workspaceId: string,
-  pollInterval: number = DEFAULT_POLL_INTERVAL
+  pollInterval: number = DEFAULT_POLL_INTERVAL,
+  /**
+   * Off while the queue socket is carrying this data. React forbids calling a
+   * hook conditionally, so the only way for `useParallelExecutionWS` to stop
+   * polling once its socket is up is to say so here — otherwise every
+   * dashboard would poll *and* hold a socket, which is worse than either.
+   */
+  enabled: boolean = true
 ): ParallelExecutionStatus {
   const [activeRuns, setActiveRuns] = useState<ActiveRun[]>([]);
   const [queuedRuns, setQueuedRuns] = useState<QueuedRun[]>([]);
-  const [stats, setStats] = useState<ParallelStats>({
-    max_concurrent: 3,
-    active_count: 0,
-    available_slots: 3,
-    queued_count: 0,
-    total_slots_occupied: 0,
-    queue_wait_time_minutes: 0,
-  });
+  const [stats, setStats] = useState<ParallelStats>(DEFAULT_PARALLEL_STATS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,11 +44,10 @@ export function useParallelExecution(
     let intervalId: ReturnType<typeof setInterval>;
 
     // No workspace, nothing to ask about. Callers resolve the workspace from a
-    // query, so the first render always has an empty id — and this hook cannot
-    // be called conditionally, so a caller passing useFallback={false} does not
-    // stop it. Without this guard it polled `/api/parallel/status/` with no id
-    // every few seconds, 404ing each time while the page looked fine.
-    if (!workspaceId) {
+    // query, so the first render always has an empty id. Without this guard it
+    // polled `/api/parallel/status/` with no id every few seconds, 404ing each
+    // time while the page looked fine.
+    if (!workspaceId || !enabled) {
       setLoading(false);
       return;
     }
@@ -120,7 +99,7 @@ export function useParallelExecution(
       isMounted = false;
       clearInterval(intervalId);
     };
-  }, [workspaceId, pollInterval]);
+  }, [workspaceId, pollInterval, enabled]);
 
   return {
     activeRuns,

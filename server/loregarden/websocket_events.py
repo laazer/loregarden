@@ -1,70 +1,52 @@
+"""Named domain events, published to whatever sockets are listening.
+
+These are *notifications*, not payloads. A subscriber re-reads the state it
+cares about when one arrives, rather than trusting a snapshot assembled by
+whichever service happened to emit — two sources of truth for one screen
+disagree eventually, and the emitter's view is the one computed on a session
+that may already have moved on.
+
+That is why `emit_execution_update` takes only a workspace id. It used to
+demand the active runs, queued runs and stats, so every call site ran three
+queries to build an argument that was then dropped on the floor: nothing ever
+instantiated the Flask-SocketIO server these called into, so `get_ws_server()`
+returned None and every emit was a no-op. Two call sites had been passing the
+wrong arity for long enough to prove nobody noticed.
 """
-WebSocket event emission helpers for parallel execution services.
-Provides easy integration points for emitting real-time updates.
-"""
+
+from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from loregarden.websocket import WebSocketServer
+from loregarden.services.event_hub import event_hub
 
 logger = logging.getLogger(__name__)
-
-# Global WebSocket server instance
-_ws_server: WebSocketServer | None = None
-
-
-def init_websocket(ws_server: WebSocketServer) -> None:
-    """Initialize the global WebSocket server instance."""
-    global _ws_server
-    _ws_server = ws_server
-    logger.info("WebSocket server initialized for event emissions")
-
-
-def get_ws_server() -> WebSocketServer | None:
-    """Get the global WebSocket server instance."""
-    return _ws_server
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def emit_execution_update(
-    workspace_id: str,
-    active_runs: list[dict[str, Any]],
-    queued_runs: list[dict[str, Any]],
-    stats: dict[str, Any],
-) -> None:
-    """
-    Emit execution status update to workspace subscribers.
+def _workspace_topic(workspace_id: str) -> str:
+    return f"workspace:{workspace_id}"
 
-    Called when:
-    - A new run starts
-    - A run completes
-    - A run is promoted from queue
-    - Queue state changes
-    """
-    ws = get_ws_server()
-    if not ws:
-        return
 
-    try:
-        ws.broadcast_execution_update(
-            workspaceId=workspace_id,
-            data={
-                "activeRuns": active_runs,
-                "queuedRuns": queued_runs,
-                "stats": stats,
-            },
-        )
-        logger.debug(
-            f"Emitted execution_update to workspace:{workspace_id}",
-            extra={"active": len(active_runs), "queued": len(queued_runs)},
-        )
-    except Exception as e:
-        logger.warning(f"Failed to emit execution_update: {e}")
+def _worktree_topic(worktree_id: str) -> str:
+    return f"worktree:{worktree_id}"
+
+
+def emit_execution_update(workspace_id: str) -> None:
+    """The queue for this workspace changed.
+
+    Called when a run starts, completes, is promoted out of the queue, or the
+    queue is otherwise reordered.
+    """
+    event_hub.publish(
+        _workspace_topic(workspace_id),
+        {"type": "execution_update", "timestamp": _now_iso()},
+    )
 
 
 def emit_conflict_detected(
@@ -74,121 +56,54 @@ def emit_conflict_detected(
     preview: dict[str, Any],
     severity: str,
 ) -> None:
-    """
-    Emit conflict detection event to worktree subscribers.
-
-    Called when:
-    - Merge conflicts are detected during dry-run merge
-    - Conflict severity assessment completes
-    """
-    ws = get_ws_server()
-    if not ws:
-        return
-
-    try:
-        ws.broadcast_conflict_detected(
-            worktreeId=worktree_id,
-            runId=run_id,
-            data={
-                "conflicts": conflicts,
-                "preview": preview,
-                "severity": severity,
-            },
-        )
-        logger.debug(
-            f"Emitted conflict_detected to worktree:{worktree_id}",
-            extra={"severity": severity, "count": len(conflicts)},
-        )
-    except Exception as e:
-        logger.warning(f"Failed to emit conflict_detected: {e}")
+    """A dry-run merge found conflicts in this worktree."""
+    event_hub.publish(
+        _worktree_topic(worktree_id),
+        {
+            "type": "conflict_detected",
+            "worktreeId": worktree_id,
+            "runId": run_id,
+            "timestamp": _now_iso(),
+            "data": {"conflicts": conflicts, "preview": preview, "severity": severity},
+        },
+    )
 
 
-def emit_conflict_resolved(
-    worktree_id: str,
-    run_id: str,
-) -> None:
-    """
-    Emit conflict resolution event to worktree subscribers.
-
-    Called when:
-    - Conflicts are manually resolved
-    - Auto-merge succeeds and conflicts are cleared
-    """
-    ws = get_ws_server()
-    if not ws:
-        return
-
-    try:
-        ws.broadcast_conflict_resolved(worktree_id, run_id)
-        logger.debug(f"Emitted conflict_resolved to worktree:{worktree_id}")
-    except Exception as e:
-        logger.warning(f"Failed to emit conflict_resolved: {e}")
+def emit_conflict_resolved(worktree_id: str, run_id: str) -> None:
+    """Conflicts in this worktree are gone — resolved by hand or auto-merged."""
+    event_hub.publish(
+        _worktree_topic(worktree_id),
+        {
+            "type": "conflict_resolved",
+            "worktreeId": worktree_id,
+            "runId": run_id,
+            "timestamp": _now_iso(),
+        },
+    )
 
 
-def emit_queue_promoted(
-    workspace_id: str,
-    run_id: str,
-    slot_number: int,
-) -> None:
-    """
-    Emit queue promotion event to workspace subscribers.
-
-    Called when:
-    - An active run completes and a queued run takes its slot
-    - Queue reordering occurs
-    """
-    ws = get_ws_server()
-    if not ws:
-        return
-
-    try:
-        ws.broadcast_queue_promoted(
-            workspaceId=workspace_id,
-            data={
-                "runId": run_id,
-                "slotNumber": slot_number,
-                "timestamp": _now_iso(),
-            },
-        )
-        logger.debug(
-            f"Emitted queue_promoted to workspace:{workspace_id}",
-            extra={"run_id": run_id, "slot": slot_number},
-        )
-    except Exception as e:
-        logger.warning(f"Failed to emit queue_promoted: {e}")
+def emit_queue_promoted(workspace_id: str, run_id: str, slot_number: int) -> None:
+    """A queued run took a freed slot."""
+    event_hub.publish(
+        _workspace_topic(workspace_id),
+        {
+            "type": "queue_promoted",
+            "timestamp": _now_iso(),
+            "data": {"runId": run_id, "slotNumber": slot_number},
+        },
+    )
 
 
-def emit_run_completed(
-    workspace_id: str,
-    run_id: str,
-    status: str,
-) -> None:
-    """
-    Emit run completion event to workspace subscribers.
-
-    Called when:
-    - A run finishes (success, failure, or error)
-    - Run status becomes final
-    """
-    ws = get_ws_server()
-    if not ws:
-        return
-
-    try:
-        ws.broadcast_run_completed(
-            workspaceId=workspace_id,
-            data={
-                "runId": run_id,
-                "status": status,
-                "timestamp": _now_iso(),
-            },
-        )
-        logger.debug(
-            f"Emitted run_completed to workspace:{workspace_id}",
-            extra={"run_id": run_id, "status": status},
-        )
-    except Exception as e:
-        logger.warning(f"Failed to emit run_completed: {e}")
+def emit_run_completed(workspace_id: str, run_id: str, status: str) -> None:
+    """A run reached a final state, whatever that state is."""
+    event_hub.publish(
+        _workspace_topic(workspace_id),
+        {
+            "type": "run_completed",
+            "timestamp": _now_iso(),
+            "data": {"runId": run_id, "status": status},
+        },
+    )
 
 
 def emit_error(
@@ -197,27 +112,12 @@ def emit_error(
     code: str,
     context: dict[str, Any] | None = None,
 ) -> None:
-    """
-    Emit error event to subscribers.
-
-    Called when:
-    - Service-level errors occur during operations
-    - Conflict resolution fails
-    - Queue management errors happen
-    """
-    ws = get_ws_server()
-    if not ws:
-        return
-
-    try:
-        ws.broadcast_error(
-            targetRoom=target_room,
-            data={
-                "message": message,
-                "code": code,
-                "context": context or {},
-            },
-        )
-        logger.debug(f"Emitted error to {target_room}", extra={"code": code, "message": message})
-    except Exception as e:
-        logger.warning(f"Failed to emit error: {e}")
+    """A service-level failure, addressed to an already-formed topic."""
+    event_hub.publish(
+        target_room,
+        {
+            "type": "error",
+            "timestamp": _now_iso(),
+            "data": {"message": message, "code": code, "context": context or {}},
+        },
+    )

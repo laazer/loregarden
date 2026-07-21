@@ -1,5 +1,6 @@
 """Tests for queue management API endpoints."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,6 +13,7 @@ from loregarden.models.domain import (
     RunStatus,
     Workspace,
 )
+from loregarden.services.event_hub import event_hub
 from sqlmodel import Session, select
 
 
@@ -248,11 +250,9 @@ class TestQueueReordering:
             result = await reorder_queued_run("run-2", 1, db_session)
 
             assert result["status"] == "reordered"
-            mock_emit.assert_called_once()
-            call_kwargs = mock_emit.call_args[1]
-            assert call_kwargs["workspace_id"] == "ws-7"
-            assert "queued_runs" in call_kwargs
-            assert "active_runs" in call_kwargs
+            # The event names the workspace whose queue changed; subscribers
+            # re-read it rather than trust a payload assembled here.
+            mock_emit.assert_called_once_with("ws-7")
 
     async def test_reorder_preserves_other_workspace_queues(self, db_session: Session):
         """Test that reordering in one workspace doesn't affect others."""
@@ -639,10 +639,17 @@ class TestQueueErrorHandling:
         db_session.add_all([run1, run2])
         db_session.commit()
 
-        with patch("loregarden.api.queue_management.emit_execution_update") as mock_emit:
-            mock_emit.side_effect = Exception("WebSocket unavailable")
+        # A subscriber whose event loop has gone (the dev server restarts on
+        # every backend edit) must cost the notification, not the reorder.
+        # Driven through the real hub: a raising mock of the emit helper would
+        # only prove the mock raised.
+        loop = asyncio.new_event_loop()
+        loop.close()
 
-            # Should still return success even if emit fails
+        with (
+            patch.object(event_hub, "_loop", loop),
+            patch.object(event_hub, "_topics", {"workspace:ws-16": {asyncio.Queue()}}),
+        ):
             result = await reorder_queued_run("run-2", 1, db_session)
 
             assert result["status"] == "reordered"
@@ -837,18 +844,16 @@ class TestQueueIntegration:
         db_session.add_all([run1, run2])
         db_session.commit()
 
-        with patch("loregarden.api.queue_management.emit_execution_update") as mock_emit:
-            result = await reorder_queued_run("run-2", 1, db_session)
+        result = await reorder_queued_run("run-2", 1, db_session)
 
-            assert result["status"] == "reordered"
-            # Verify emit was called with updated queue state
-            mock_emit.assert_called_once()
-            call_kwargs = mock_emit.call_args[1]
+        assert result["status"] == "reordered"
 
-            # Check that queued_runs are passed and in new order
-            queued_runs = call_kwargs["queued_runs"]
-            assert queued_runs[0]["run_id"] == "run-2"
-            assert queued_runs[1]["run_id"] == "run-1"
+        # Assert the queue itself moved, not that a notification carried a
+        # particular payload — the payload is no longer where the truth lives.
+        reordered = db_session.exec(
+            select(QueuedRun).where(QueuedRun.workspace_id == "ws-22").order_by(QueuedRun.position)
+        ).all()
+        assert [run.run_id for run in reordered] == ["run-2", "run-1"]
 
 
 @pytest.mark.asyncio

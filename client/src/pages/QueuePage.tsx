@@ -33,8 +33,6 @@ export function QueuePage() {
 
   const { stats, isWebSocket } = useParallelExecutionWS(
     activeWorkspace?.id ?? "",
-    undefined,
-    30000,
     Boolean(activeWorkspace?.id),
   );
 

@@ -9,12 +9,11 @@ would have meant reviving a whole second stack first.
 from __future__ import annotations
 
 import asyncio
-import hmac
 import json
 import logging
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
-from loregarden.config import settings
+from loregarden.core.auth import websocket_token_ok
 from loregarden.db.session import get_session
 from loregarden.models.domain import Workspace
 from loregarden.services.terminal_session import TerminalSession
@@ -31,24 +30,6 @@ POLICY_VIOLATION = 1008
 
 #: A shell that exited is an ordinary ending, not a failure.
 NORMAL_CLOSURE = 1000
-
-
-def _token_ok(websocket: WebSocket) -> bool:
-    """Whether this connection may open a shell.
-
-    Checked here rather than left to TokenAuthMiddleware, which extends
-    BaseHTTPMiddleware and therefore never sees a websocket scope. Without this
-    the terminal would be the one endpoint that ignores the API token — and it
-    is the endpoint where that matters most, since it is a shell.
-    """
-    expected = settings.api_token
-    if not expected:
-        # No token configured: the whole API is already open to local
-        # processes, and refusing only the terminal would be theatre.
-        return True
-    presented = websocket.query_params.get("token") or ""
-    header = websocket.headers.get("x-loregarden-token") or ""
-    return hmac.compare_digest(presented or header, expected)
 
 
 async def _refuse(websocket: WebSocket, reason: str) -> None:
@@ -99,7 +80,7 @@ async def terminal_socket(
     workspace_slug: str,
     db: Session = Depends(get_session),
 ) -> None:
-    if not _token_ok(websocket):
+    if not websocket_token_ok(websocket):
         await websocket.close(code=POLICY_VIOLATION, reason="Missing or invalid API token")
         return
 

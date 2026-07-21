@@ -10,7 +10,6 @@ import './ParallelQueueVisualization.css';
 
 export interface ParallelQueueVisualizationProps {
   workspaceId: string;
-  userId?: string;
 }
 
 interface SlotView {
@@ -35,10 +34,9 @@ interface QueueItemView {
 
 export function ParallelQueueVisualization({
   workspaceId,
-  userId,
 }: ParallelQueueVisualizationProps) {
   const { activeRuns, queuedRuns, stats, connectionState, isWebSocket } =
-    useParallelExecutionWS(workspaceId, userId);
+    useParallelExecutionWS(workspaceId);
 
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [hoverPosition, setHoverPosition] = useState<number | null>(null);

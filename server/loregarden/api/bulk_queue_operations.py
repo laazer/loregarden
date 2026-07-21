@@ -66,11 +66,7 @@ async def bulk_cancel_runs(
             successful += 1
 
             if background_tasks:
-                background_tasks.add_task(
-                    emit_execution_update,
-                    workspace_id,
-                    {"type": "bulk_cancel", "run_id": run_id},
-                )
+                background_tasks.add_task(emit_execution_update, workspace_id)
 
         except Exception as e:
             results.append({"run_id": run_id, "status": "error", "message": str(e)})
@@ -127,11 +123,7 @@ async def bulk_pause_runs(
             successful += 1
 
             if background_tasks:
-                background_tasks.add_task(
-                    emit_execution_update,
-                    workspace_id,
-                    {"type": "bulk_pause", "run_id": run_id},
-                )
+                background_tasks.add_task(emit_execution_update, workspace_id)
 
         except Exception as e:
             results.append({"run_id": run_id, "status": "error", "message": str(e)})
@@ -194,11 +186,7 @@ async def bulk_reorder_runs(
         session.commit()
 
         if background_tasks:
-            background_tasks.add_task(
-                emit_execution_update,
-                workspace_id,
-                {"type": "bulk_reorder", "run_ids": run_order},
-            )
+            background_tasks.add_task(emit_execution_update, workspace_id)
 
     except Exception as e:
         session.rollback()
@@ -260,16 +248,7 @@ async def retry_failed_run(
     session.commit()
 
     if background_tasks:
-        background_tasks.add_task(
-            emit_execution_update,
-            workspace_id,
-            {
-                "type": "retry",
-                "run_id": run_id,
-                "retry_count": run.retry_count,
-                "backoff_seconds": backoff_seconds,
-            },
-        )
+        background_tasks.add_task(emit_execution_update, workspace_id)
 
     return {
         "run_id": run_id,
@@ -324,11 +303,7 @@ async def retry_all_failed_runs(
     session.commit()
 
     if background_tasks:
-        background_tasks.add_task(
-            emit_execution_update,
-            workspace_id,
-            {"type": "retry_all_failed", "count": len(results)},
-        )
+        background_tasks.add_task(emit_execution_update, workspace_id)
 
     return {"total": len(failed_runs), "retried": len(results), "results": results}
 
@@ -381,10 +356,6 @@ async def skip_all_failed_runs(
     session.commit()
 
     if background_tasks and skipped_count > 0:
-        background_tasks.add_task(
-            emit_execution_update,
-            workspace_id,
-            {"type": "skip_failed", "count": skipped_count},
-        )
+        background_tasks.add_task(emit_execution_update, workspace_id)
 
     return {"skipped_count": skipped_count}

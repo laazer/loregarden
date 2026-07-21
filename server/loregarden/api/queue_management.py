@@ -92,23 +92,7 @@ async def reorder_queued_run(
             f"in workspace {workspace_id}"
         )
 
-        # Emit execution update to show new queue state
-        try:
-            queue_service = ParallelQueueService(session)
-            active_runs = await queue_service.get_active_runs(workspace_id)
-            queued_runs = await queue_service.get_queued_runs(workspace_id)
-            stats = queue_service.get_queue_stats(workspace_id)
-
-            emit_execution_update(
-                workspace_id=workspace_id,
-                active_runs=active_runs,
-                queued_runs=queued_runs,
-                stats=stats,
-            )
-
-            logger.debug(f"Emitted execution_update after reorder in {workspace_id}")
-        except Exception as e:
-            logger.warning(f"Failed to emit execution_update: {e}")
+        emit_execution_update(workspace_id)
 
         return {
             "status": "reordered",

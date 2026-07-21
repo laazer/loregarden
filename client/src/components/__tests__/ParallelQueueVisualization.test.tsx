@@ -349,13 +349,7 @@ describe('ParallelQueueVisualization', () => {
     test('passes workspaceId to hook', () => {
       render(<ParallelQueueVisualization workspaceId="ws-123" />);
 
-      expect(useHook.useParallelExecutionWS).toHaveBeenCalledWith('ws-123', undefined);
-    });
-
-    test('passes userId to hook when provided', () => {
-      render(<ParallelQueueVisualization workspaceId="ws-1" userId="user-456" />);
-
-      expect(useHook.useParallelExecutionWS).toHaveBeenCalledWith('ws-1', 'user-456');
+      expect(useHook.useParallelExecutionWS).toHaveBeenCalledWith('ws-123');
     });
   });
 

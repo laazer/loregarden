@@ -250,7 +250,7 @@ describe('QueueDashboard E2E Tests', () => {
       render(<QueueDashboard workspaceId="ws-1" />);
 
       // Component receives workspace ID
-      expect(useHook.useParallelExecutionWS).toHaveBeenCalledWith('ws-1', undefined);
+      expect(useHook.useParallelExecutionWS).toHaveBeenCalledWith('ws-1');
     });
 
     test('passes workspace ID to QueueNotifications', () => {

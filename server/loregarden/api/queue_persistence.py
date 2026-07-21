@@ -208,15 +208,7 @@ async def restore_queue_from_snapshot(
         session.commit()
 
         if background_tasks:
-            background_tasks.add_task(
-                emit_execution_update,
-                workspace_id,
-                {
-                    "type": "queue_restored",
-                    "snapshot_id": snapshot_id,
-                    "restored_count": restored_count,
-                },
-            )
+            background_tasks.add_task(emit_execution_update, workspace_id)
 
         return {
             "success": True,
@@ -257,11 +249,7 @@ async def replay_last_n_runs(
         session.commit()
 
         if background_tasks:
-            background_tasks.add_task(
-                emit_execution_update,
-                workspace_id,
-                {"type": "queue_replayed", "replayed_count": replayed_count},
-            )
+            background_tasks.add_task(emit_execution_update, workspace_id)
 
         return {
             "success": True,
