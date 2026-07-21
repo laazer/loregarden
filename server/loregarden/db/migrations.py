@@ -881,6 +881,27 @@ def _m_mcp_server_rate_limit(conn: Connection) -> None:
     )
 
 
+def _m_queued_run_created_at(conn: Connection) -> None:
+    """Add ``created_at`` to ``queued_runs``.
+
+    SQLite forbids a non-constant default (``datetime('now')``) on
+    ``ALTER TABLE ... ADD COLUMN``, so add the column nullable and backfill
+    existing rows; new rows get their timestamp from the model default.
+    """
+    if not table_exists(conn, "queued_runs"):
+        return
+    if "created_at" in table_columns(conn, "queued_runs"):
+        return
+    add_columns_if_missing(
+        conn,
+        "queued_runs",
+        {"created_at": "ALTER TABLE queued_runs ADD COLUMN created_at TEXT"},
+    )
+    conn.execute(
+        text("UPDATE queued_runs SET created_at = datetime('now') WHERE created_at IS NULL")
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -920,6 +941,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0036_mcp_tool_calls_table", _m_mcp_tool_calls_table),
     ("0037_mcp_server_health", _m_mcp_server_health),
     ("0038_mcp_server_rate_limit", _m_mcp_server_rate_limit),
+    ("0039_queued_run_created_at", _m_queued_run_created_at),
 ]
 
 
