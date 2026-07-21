@@ -48,10 +48,14 @@ export function CopilotDock() {
   const resolveApproval = useApprovalResolution(ticketId ?? undefined);
   const terminalOpen = useUiStore((s) => s.terminalOpen);
   const terminal = useTerminalTarget();
-  // Mounting the panel spawns a shell, so it only mounts once both the dock is
-  // expanded and someone asked for one — and never without a workspace to run
-  // it in, since a shell needs a cwd more than the header needs a label.
-  const showTerminal = open && terminalOpen && Boolean(terminal.workspaceSlug);
+  // Chat and terminal open independently. A shell is not an accessory to a
+  // conversation: wanting one says nothing about wanting the other, and gating
+  // the terminal on the chat's expanded state meant you could never have just a
+  // terminal. Mounting the panel spawns a real shell, so it still takes an
+  // explicit ask and a workspace to run in.
+  const showTerminal = terminalOpen && Boolean(terminal.workspaceSlug);
+  const showChat = open && Boolean(session);
+  const expanded = showChat || showTerminal;
 
   const [draft, setDraft] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
@@ -65,66 +69,56 @@ export function CopilotDock() {
     void session.send(content, { autoApprove }).catch(() => {});
   };
 
-  // No conversation on this screen, but a shell does not need one: it is scoped
-  // to the workspace. Returning early here is what made the status bar's
-  // Terminal button appear to do nothing on the console.
-  if (!session) {
-    if (!showTerminal) {
-      return (
-        <div className="copilot-dock copilot-dock--empty">
-          <span className="copilot-dock-hint">
-            Open a ticket or a branch to chat about it.
-          </span>
-        </div>
-      );
-    }
+  // Nothing on this screen to chat about, and no shell asked for.
+  if (!session && !showTerminal) {
     return (
-      <div className="copilot-dock copilot-dock--open" style={{ height }}>
-        <div className="copilot-dock-bar">
-          <span className="copilot-dock-label">{terminal.workspaceSlug}</span>
-        </div>
-        <div className="copilot-dock-body">
-          <div className="copilot-dock-terminal">
-            <TerminalPanel key={terminal.workspaceSlug} workspaceSlug={terminal.workspaceSlug} />
-          </div>
-        </div>
+      <div className="copilot-dock copilot-dock--empty">
+        <span className="copilot-dock-hint">
+          Open a ticket or a branch to chat about it.
+        </span>
       </div>
     );
   }
 
   return (
     <div
-      className={`copilot-dock${open ? " copilot-dock--open" : ""}`}
-      style={open ? { height } : undefined}
+      className={`copilot-dock${expanded ? " copilot-dock--open" : ""}`}
+      style={expanded ? { height } : undefined}
     >
       <div className="copilot-dock-bar">
-        <button
-          type="button"
-          className="copilot-dock-toggle"
-          aria-expanded={open}
-          aria-label={open ? "Collapse copilot" : "Expand copilot"}
-          onClick={() => setOpen(!open)}
-        >
-          <span className="copilot-dock-chevron" aria-hidden>
-            {open ? "▾" : "▴"}
-          </span>
-          <span className="copilot-dock-label">{label}</span>
-        </button>
+        {session ? (
+          <button
+            type="button"
+            className="copilot-dock-toggle"
+            aria-expanded={showChat}
+            aria-label={showChat ? "Collapse copilot" : "Expand copilot"}
+            onClick={() => setOpen(!open)}
+          >
+            <span className="copilot-dock-chevron" aria-hidden>
+              {showChat ? "▾" : "▴"}
+            </span>
+            <span className="copilot-dock-label">{label}</span>
+          </button>
+        ) : (
+          // No conversation here, so the bar names what the shell is attached to.
+          <span className="copilot-dock-label">{terminal.workspaceSlug}</span>
+        )}
         {pendingApprovals.length > 0 && (
           <span className="copilot-dock-waiting">
             {pendingApprovals.length} waiting on you
           </span>
         )}
-        {session.isBusy && pendingApprovals.length === 0 && (
+        {session?.isBusy && pendingApprovals.length === 0 && (
           <span className="copilot-dock-busy">working…</span>
         )}
-        {session.loadError && (
+        {session?.loadError && (
           <span className="copilot-dock-error">conversation unavailable</span>
         )}
       </div>
 
-      {open && (
+      {expanded && (
         <div className="copilot-dock-body">
+          {showChat && session && (
           <div className="copilot-dock-chat">
           {/* Above the turns: an agent question arrives as an approval, not a
               message, so it would otherwise be invisible here. */}
@@ -185,6 +179,7 @@ export function CopilotDock() {
             }
           />
           </div>
+          )}
 
           {showTerminal && (
             <div className="copilot-dock-terminal">
