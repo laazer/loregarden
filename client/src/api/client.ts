@@ -1,12 +1,6 @@
-const getAPIBase = (): string => {
-  try {
-    return (globalThis as any).import?.meta?.env?.VITE_API_BASE ?? "http://127.0.0.1:8000";
-  } catch {
-    return "http://127.0.0.1:8000";
-  }
-};
+import { VITE_API_BASE } from "./viteEnv";
 
-export const API_BASE = getAPIBase();
+export const API_BASE = VITE_API_BASE ?? "http://127.0.0.1:8000";
 
 export class ApiError extends Error {
   status: number;
@@ -92,6 +86,7 @@ import type {
   RunMessage,
   TicketLedger,
   McpServerInput,
+  McpTelemetry,
   McpServerView,
 } from "./types";
 
@@ -196,6 +191,7 @@ export const api = {
   runLog: (runId: string) => request<RunLog>(`/api/runs/${runId}/log`),
 
   mcpServers: () => request<McpServerView[]>("/api/mcp-servers"),
+  mcpTelemetry: () => request<McpTelemetry>("/api/mcp-servers/telemetry"),
   createMcpServer: (body: McpServerInput) =>
     request<McpServerView>("/api/mcp-servers", { method: "POST", body: JSON.stringify(body) }),
   updateMcpServer: (id: string, body: Partial<McpServerInput>) =>

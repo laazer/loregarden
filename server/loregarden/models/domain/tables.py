@@ -253,6 +253,35 @@ class McpServer(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class McpToolCall(SQLModel, table=True):
+    """One tool-permission decision, recorded as it is made.
+
+    The observation point is the permission bridge, which is what makes the
+    columns what they are: it sees the *request* and issues a *decision*, and
+    never sees the result. Tool execution latency and success are therefore not
+    recorded — the CLI runs the tool itself and reports nothing back. Storing
+    them as nullable columns would invite a UI to average over nulls.
+
+    `decision_ms` is how long the decision took, which for a prompted call is
+    how long the operator took to answer.
+    """
+
+    __tablename__ = "mcp_tool_calls"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    run_id: str = Field(index=True)
+    ticket_id: str = Field(index=True)
+    agent_id: str = ""
+    #: Full name as the CLI reported it, e.g. `mcp__github__create_issue`.
+    tool_name: str = ""
+    #: Parsed server, or "" for a non-MCP tool such as Bash.
+    server_name: str = Field(default="", index=True)
+    #: How the call was resolved — see services.tool_telemetry.DECISIONS.
+    decision: str = ""
+    decision_ms: int = 0
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
 class RunMessage(SQLModel, table=True):
     """An operator's message to a run that is already in flight.
 

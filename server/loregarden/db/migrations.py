@@ -811,6 +811,32 @@ def _m_mcp_server_tool_policy(conn: Connection) -> None:
     )
 
 
+def _m_mcp_tool_calls_table(conn: Connection) -> None:
+    """Per-decision record for MCP and CLI tool permissions."""
+    if table_exists(conn, "mcp_tool_calls"):
+        return
+    conn.execute(
+        text(
+            """
+            CREATE TABLE mcp_tool_calls (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                ticket_id TEXT NOT NULL,
+                agent_id TEXT NOT NULL DEFAULT '',
+                tool_name TEXT NOT NULL DEFAULT '',
+                server_name TEXT NOT NULL DEFAULT '',
+                decision TEXT NOT NULL DEFAULT '',
+                decision_ms INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+    )
+    conn.execute(text("CREATE INDEX ix_mcp_tool_calls_created_at ON mcp_tool_calls (created_at)"))
+    conn.execute(text("CREATE INDEX ix_mcp_tool_calls_server ON mcp_tool_calls (server_name)"))
+    conn.execute(text("CREATE INDEX ix_mcp_tool_calls_run ON mcp_tool_calls (run_id)"))
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -847,6 +873,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0033_run_messages_table", _m_run_messages_table),
     ("0034_mcp_servers_table", _m_mcp_servers_table),
     ("0035_mcp_server_tool_policy", _m_mcp_server_tool_policy),
+    ("0036_mcp_tool_calls_table", _m_mcp_tool_calls_table),
 ]
 
 

@@ -9,6 +9,11 @@ from loregarden.services.mcp_registry import (
     to_view,
     update_server,
 )
+from loregarden.services.tool_telemetry import (
+    counts_by_decision,
+    counts_by_server,
+    recent_calls,
+)
 from sqlmodel import Session
 
 router = APIRouter(prefix="/mcp-servers", tags=["mcp-servers"])
@@ -17,6 +22,35 @@ router = APIRouter(prefix="/mcp-servers", tags=["mcp-servers"])
 @router.get("", response_model=list[McpServerView])
 def get_mcp_servers(session: Session = Depends(get_session)) -> list[McpServerView]:
     return [to_view(server) for server in list_servers(session)]
+
+
+@router.get("/telemetry", response_model=dict)
+def get_mcp_telemetry(limit: int = 50, session: Session = Depends(get_session)) -> dict:
+    """What agents asked for and how it was resolved.
+
+    Deliberately no request rate or execution latency: the permission bridge
+    sees the request and the decision, never the result, so those would be
+    invented. `decision_ms` is the wait for a decision, which for a prompted
+    call is how long the operator took.
+    """
+    return {
+        "by_server": counts_by_server(session),
+        "by_decision": counts_by_decision(session),
+        "recent": [
+            {
+                "id": call.id,
+                "run_id": call.run_id,
+                "ticket_id": call.ticket_id,
+                "agent_id": call.agent_id,
+                "tool_name": call.tool_name,
+                "server_name": call.server_name,
+                "decision": call.decision,
+                "decision_ms": call.decision_ms,
+                "created_at": call.created_at.isoformat(),
+            }
+            for call in recent_calls(session, limit=limit)
+        ],
+    }
 
 
 @router.post("", response_model=McpServerView)

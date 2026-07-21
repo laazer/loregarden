@@ -34,5 +34,6 @@ module.exports = {
     "^react-markdown$": "<rootDir>/src/test/reactMarkdownMock.tsx",
     "^remark-gfm$": "<rootDir>/src/test/remarkGfmMock.ts",
     "^pixi\\.js$": "<rootDir>/src/test/pixiMock.ts",
+    "(^|/)viteEnv$": "<rootDir>/src/test/viteEnvMock.ts",
   },
 };

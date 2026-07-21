@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api, type McpServerInput, type McpServerView } from "../api/client";
+import { McpActivityFeed } from "../components/mcp/McpActivityFeed";
 import { McpServerForm } from "../components/mcp/McpServerForm";
 import { PageHeroAppToolbar } from "../components/PageHeroAppToolbar";
 import "./McpGatewayPage.css";
@@ -205,9 +206,10 @@ export function McpGatewayPage() {
               />
             </>
           ) : (
-            <div className="mcp-empty mcp-detail-empty">
-              Select a server to edit it, or register a new one.
-            </div>
+            <>
+              <div className="state-label">Recent tool calls</div>
+              <McpActivityFeed />
+            </>
           )}
         </section>
       </div>

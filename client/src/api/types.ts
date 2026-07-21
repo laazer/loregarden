@@ -217,6 +217,26 @@ export interface McpServerView {
   updated_at: string;
 }
 
+/** One permission decision, as the bridge recorded it. */
+export interface McpToolCallView {
+  id: string;
+  run_id: string;
+  ticket_id: string;
+  agent_id: string;
+  tool_name: string;
+  server_name: string;
+  decision: string;
+  /** How long the decision took; for a prompted call, the operator's wait. */
+  decision_ms: number;
+  created_at: string;
+}
+
+export interface McpTelemetry {
+  by_server: Record<string, number>;
+  by_decision: Record<string, number>;
+  recent: McpToolCallView[];
+}
+
 export interface McpServerInput {
   name: string;
   description?: string;
