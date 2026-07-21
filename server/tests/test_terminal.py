@@ -72,17 +72,36 @@ def test_closing_reaps_the_shell(tmp_path: Path):
 
 
 def test_reading_a_finished_shell_reports_the_end(tmp_path: Path):
-    session = TerminalSession(tmp_path)
-    session.write("exit\n")
-    _drain(session, "", timeout=1.0)
-    time.sleep(0.3)
+    """Reads must *reach* b"", which is how the pump learns to stop.
 
-    # b"" is how the pump learns to stop; an exception here would leak the task.
-    deadline = time.monotonic() + 3
-    while session.alive and time.monotonic() < deadline:
-        time.sleep(0.05)
-    assert session.read() == b""
-    session.close()
+    Not "the next read returns b''". Linux hands back whatever is still sitting
+    in the pty — here the shell's echo of `exit` — before signalling the end,
+    while macOS raises EIO straight away. Asserting the first read passed on a
+    Mac and failed on CI for two merged PRs before anyone looked.
+
+    The Linux ordering cannot be reproduced on macOS — it drops whatever is
+    pending when the slave closes — so the pump's handling of it is pinned
+    platform-independently by test_the_pump_closes_the_socket_when_the_shell_ends,
+    which feeds it exactly that sequence.
+    """
+    session = TerminalSession(tmp_path)
+    try:
+        session.write("exit\n")
+
+        deadline = time.monotonic() + 5
+        while session.alive and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not session.alive, "the shell never exited"
+
+        # Bounded: an unbounded loop here would hang the suite rather than fail
+        # it if the end were never reported.
+        for _ in range(100):
+            if session.read() == b"":
+                break
+        else:
+            raise AssertionError("reads never reported the end, so the pump would never stop")
+    finally:
+        session.close()
 
 
 def test_resize_is_survivable_after_the_shell_exits(tmp_path: Path):
