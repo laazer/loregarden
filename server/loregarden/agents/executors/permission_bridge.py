@@ -14,7 +14,6 @@ from sqlmodel import Session
 
 if TYPE_CHECKING:
     from loregarden.services.run_log_stream import RunLogStreamer
-
 from loregarden.agents.cli_adapters import CliInvocation
 from loregarden.agents.registry import get_agent
 from loregarden.config import settings
@@ -39,6 +38,11 @@ from loregarden.services.run_steering import (
     pending_messages,
 )
 from loregarden.services.subprocess_lines import SubprocessLineReader
+from loregarden.services.tool_policy import (
+    LOREGARDEN_SERVER,
+    server_auto_approves,
+    split_mcp_tool,
+)
 from loregarden.services.workflow_state import set_stage_status
 from loregarden.services.workspace_paths import resolve_workspace_root
 
@@ -720,6 +724,22 @@ class PermissionBridgeRunner:
             session_id=state.session_id,
         )
 
+    def _third_party_auto_approved(self, tool_name: str, bare_mcp: str | None) -> str | None:
+        """Server name when a *registered* server is trusted to run unattended.
+
+        Loregarden's own tools are excluded here: they have their own curated
+        allowlist, which is finer-grained than a whole-server decision.
+        """
+        if bare_mcp:
+            return None
+        split = split_mcp_tool(tool_name)
+        if not split:
+            return None
+        server_name, _ = split
+        if server_name == LOREGARDEN_SERVER:
+            return None
+        return server_name if server_auto_approves(self.session, server_name) else None
+
     def _try_fast_approve(
         self,
         *,
@@ -737,6 +757,18 @@ class PermissionBridgeRunner:
         True if a response was already written (caller should treat the
         permission as handled and move on to the next line)."""
         tool_input = permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
+
+        third_party = self._third_party_auto_approved(permission["tool_name"], bare_mcp)
+        if third_party:
+            # A registered server's tools carry no loregarden enrichment — the
+            # ticket ids that enrichment injects mean nothing to them.
+            self._send_response(proc, build_control_response(request_id=request_id, approved=True))
+            if streamer:
+                streamer.append(
+                    "TOOL", f"Auto-approved {third_party}: {permission['tool_name']}", force=True
+                )
+                streamer.set_live("Agent running…")
+            return True
 
         if bare_mcp and is_auto_approved_mcp_tool(permission["tool_name"]):
             enriched = enrich_mcp_tool_input(

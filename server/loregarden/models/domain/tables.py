@@ -244,6 +244,11 @@ class McpServer(SQLModel, table=True):
     #: Disabled servers stay registered but are withheld from agents, so a
     #: broken server can be parked without losing how it was configured.
     enabled: bool = True
+    #: "prompt" (every call asks the operator) or "auto" (the server is trusted
+    #: and its tools run unattended). Server-level rather than per-tool: it
+    #: matches how an operator actually reasons about a third party, and a
+    #: per-tool allowlist would have to be maintained for every server added.
+    tool_policy: str = "prompt"
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

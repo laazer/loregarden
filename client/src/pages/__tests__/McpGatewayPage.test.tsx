@@ -113,3 +113,19 @@ it("tells the operator the field wants a variable name, not a token", async () =
   fireEvent.click(await screen.findByRole("button", { name: /add server/i }));
   expect(screen.getByText(/name, not its value/i)).toBeInTheDocument();
 });
+
+it("marks a trusted server, since that is the security-relevant state", async () => {
+  mockApi.mcpServers.mockResolvedValue([server({ tool_policy: "auto" })] as never);
+
+  renderPage();
+  expect(await screen.findByText("trusted")).toBeInTheDocument();
+});
+
+it("defaults a new server to asking every time", async () => {
+  renderPage();
+  fireEvent.click(await screen.findByRole("button", { name: /add server/i }));
+
+  // Registering grants reach, not trust.
+  const policy = screen.getByLabelText(/when an agent calls this server/i);
+  expect((policy as HTMLSelectElement).value).toBe("prompt");
+});

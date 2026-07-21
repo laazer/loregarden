@@ -211,6 +211,8 @@ export interface McpServerView {
   /** Whether that variable is set where the server runs. */
   auth_present: boolean;
   enabled: boolean;
+  /** "prompt" — every call asks; "auto" — the server is trusted to run unattended. */
+  tool_policy: string;
   created_at: string;
   updated_at: string;
 }
@@ -224,6 +226,7 @@ export interface McpServerInput {
   args?: string[];
   auth_env_var?: string;
   enabled?: boolean;
+  tool_policy?: string;
 }
 
 export interface TestArtifact {

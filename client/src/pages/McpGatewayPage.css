@@ -130,3 +130,9 @@
   font-size: 12px;
   color: var(--rdl, var(--amb));
 }
+
+/* Trust is the security-relevant state, so it reads as a claim rather than a
+   neutral tag. */
+.mcp-server-trusted {
+  color: var(--amb, var(--txl));
+}
