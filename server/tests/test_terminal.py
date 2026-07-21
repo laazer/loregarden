@@ -2,10 +2,12 @@
 
 import time
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from loregarden.services.terminal_session import TerminalSession
+from loregarden.api.terminal import _pump_output, _token_ok
+from loregarden.services.terminal_session import TerminalSession, _shell_command
+from starlette.websockets import WebSocketDisconnect
 
 
 @pytest.fixture(autouse=True)
@@ -95,10 +97,6 @@ def test_resize_is_survivable_after_the_shell_exits(tmp_path: Path):
 def test_a_terminal_without_a_token_configured_is_allowed():
     """Refusing only the terminal would be theatre while the rest of the API
     is already open to any local process."""
-    from unittest.mock import MagicMock
-
-    from loregarden.api.terminal import _token_ok
-
     with patch("loregarden.api.terminal.settings") as cfg:
         cfg.api_token = ""
         assert _token_ok(MagicMock()) is True
@@ -108,10 +106,6 @@ def test_a_configured_token_is_enforced_on_the_websocket():
     """TokenAuthMiddleware extends BaseHTTPMiddleware and never sees a
     websocket scope, so without this check the terminal would be the one
     endpoint that ignores the API token — and it is a shell."""
-    from unittest.mock import MagicMock
-
-    from loregarden.api.terminal import _token_ok
-
     socket = MagicMock()
     socket.query_params = {"token": "wrong"}
     socket.headers = {}
@@ -124,12 +118,49 @@ def test_a_configured_token_is_enforced_on_the_websocket():
         assert _token_ok(socket) is True
 
 
+def test_an_unknown_workspace_is_refused_in_words_the_browser_can_show(client):
+    """A close sent before `accept()` fails the handshake, and a browser reports
+    that as code 1006 with an empty reason — verified against a live server.
+    Accepting first is the only way the explanation reaches the screen."""
+    with pytest.raises(WebSocketDisconnect) as caught:
+        with client.websocket_connect("/terminal/no-such-workspace") as socket:
+            # Sent as terminal output too, so it lands where the operator is
+            # looking rather than only in a close event they cannot see.
+            assert "no-such-workspace" in socket.receive_text()
+            socket.receive_text()
+
+    assert caught.value.code == 1008
+    assert "no-such-workspace" in caught.value.reason
+
+
+async def test_the_pump_closes_the_socket_when_the_shell_ends():
+    """Found in a browser, not by the unit tests above.
+
+    The pump stops when the pty reports the shell is gone, but the handler is
+    parked on receive_text() and nothing else notices. Before this closed the
+    socket, typing `exit` left the connection open on a dead shell: the
+    terminal froze with no message and no way back. Reading b"" is not the same
+    as telling anyone about it.
+
+    Asserted here rather than end-to-end on purpose. Driven through a real
+    websocket, the regression does not fail — it *hangs*, and then hangs the
+    fixture teardown too, because the open socket blocks the client's shutdown.
+    """
+    websocket = AsyncMock()
+    session = MagicMock()
+    session.read.side_effect = [b"output", b""]  # then the shell is gone
+
+    await _pump_output(websocket, session)
+
+    websocket.send_text.assert_awaited_once_with("output")
+    websocket.close.assert_awaited_once()
+    assert websocket.close.await_args.kwargs["code"] == 1000
+
+
 @pytest.mark.real_shell_command
 def test_the_shell_is_a_login_shell():
     """Asserted on the argv rather than by running it: without `-l` the profile
     that puts nvm and pyenv on PATH never loads, and the terminal fails at
     commands that work in the operator's own window."""
-    from loregarden.services.terminal_session import _shell_command
-
     with patch.dict("os.environ", {"SHELL": "/bin/zsh"}):
         assert _shell_command() == ["/bin/zsh", "-l"]

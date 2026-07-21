@@ -34,6 +34,7 @@ module.exports = {
     "^react-markdown$": "<rootDir>/src/test/reactMarkdownMock.tsx",
     "^remark-gfm$": "<rootDir>/src/test/remarkGfmMock.ts",
     "^pixi\\.js$": "<rootDir>/src/test/pixiMock.ts",
+    "^@xterm/(xterm|addon-fit)$": "<rootDir>/src/test/xtermMock.ts",
     "(^|/)viteEnv$": "<rootDir>/src/test/viteEnvMock.ts",
   },
 };
