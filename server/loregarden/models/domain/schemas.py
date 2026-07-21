@@ -712,6 +712,8 @@ class McpServerCreate(SQLModel):
     enabled: bool = True
     #: "prompt" or "auto" — see services.tool_policy.
     tool_policy: str = "prompt"
+    #: Calls per minute before further calls are refused. 0 means no ceiling.
+    rate_limit_per_min: int = 0
 
 
 class McpServerUpdate(SQLModel):
@@ -724,6 +726,7 @@ class McpServerUpdate(SQLModel):
     auth_env_var: str | None = None
     enabled: bool | None = None
     tool_policy: str | None = None
+    rate_limit_per_min: int | None = None
 
 
 class McpServerView(SQLModel):
@@ -740,6 +743,8 @@ class McpServerView(SQLModel):
     #: the UI show "credential missing" without ever reading the value.
     auth_present: bool = False
     tool_policy: str = "prompt"
+    #: 0 means no ceiling.
+    rate_limit_per_min: int = 0
     #: Empty means never checked — distinct from checked-and-failing, and the
     #: UI says so rather than showing a server as healthy by default.
     last_checked_at: str = ""

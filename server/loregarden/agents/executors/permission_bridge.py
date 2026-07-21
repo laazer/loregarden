@@ -31,6 +31,7 @@ from loregarden.models.domain import (
 from loregarden.services.agent_scope import check_agent_scope
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.permission_allowlist import is_permission_allowed
+from loregarden.services.rate_limit import rate_limit_denial
 from loregarden.services.run_errors import agent_timeout_message
 from loregarden.services.run_steering import (
     POLL_INTERVAL_SECONDS,
@@ -46,9 +47,11 @@ from loregarden.services.tool_policy import (
 from loregarden.services.tool_telemetry import (
     DECISION_ALLOWLIST,
     DECISION_APPROVED,
+    DECISION_RATE_LIMITED,
     DECISION_READ_ONLY_CLI,
     DECISION_REJECTED,
     DECISION_RUN_AUTO,
+    DECISION_TRUSTED_SERVER,
     record_tool_call,
 )
 from loregarden.services.workflow_state import set_stage_status
@@ -803,9 +806,33 @@ class PermissionBridgeRunner:
 
         third_party = self._third_party_auto_approved(permission["tool_name"], bare_mcp)
         if third_party:
+            # Trust removed the only thing pacing this agent — a human clicking
+            # — so the server's own ceiling is what is left to enforce.
+            limited = rate_limit_denial(self.session, third_party)
+            if limited:
+                self._send_response(
+                    proc,
+                    build_control_response(request_id=request_id, approved=False, message=limited),
+                )
+                self._record(
+                    ctx.agent_id,
+                    ticket,
+                    run_id,
+                    permission["tool_name"],
+                    DECISION_RATE_LIMITED,
+                )
+                if streamer:
+                    streamer.append("TOOL", limited, force=True)
+                return True
+
             # A registered server's tools carry no loregarden enrichment — the
             # ticket ids that enrichment injects mean nothing to them.
             self._send_response(proc, build_control_response(request_id=request_id, approved=True))
+            # Recording this was missing: a trusted server's calls are exactly
+            # the ones an operator wants to see, since nothing else reports them.
+            self._record(
+                ctx.agent_id, ticket, run_id, permission["tool_name"], DECISION_TRUSTED_SERVER
+            )
             if streamer:
                 streamer.append(
                     "TOOL", f"Auto-approved {third_party}: {permission['tool_name']}", force=True

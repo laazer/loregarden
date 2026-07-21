@@ -865,6 +865,22 @@ def _m_mcp_server_health(conn: Connection) -> None:
     )
 
 
+def _m_mcp_server_rate_limit(conn: Connection) -> None:
+    """A per-server ceiling on calls per minute.
+
+    Default 0 (no ceiling): a limit nobody set should not start refusing work.
+    """
+    add_columns_if_missing(
+        conn,
+        "mcp_servers",
+        {
+            "rate_limit_per_min": (
+                "ALTER TABLE mcp_servers ADD COLUMN rate_limit_per_min INTEGER NOT NULL DEFAULT 0"
+            ),
+        },
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -903,6 +919,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0035_mcp_server_tool_policy", _m_mcp_server_tool_policy),
     ("0036_mcp_tool_calls_table", _m_mcp_tool_calls_table),
     ("0037_mcp_server_health", _m_mcp_server_health),
+    ("0038_mcp_server_rate_limit", _m_mcp_server_rate_limit),
 ]
 
 

@@ -250,6 +250,10 @@ class McpServer(SQLModel, table=True):
     #: matches how an operator actually reasons about a third party, and a
     #: per-tool allowlist would have to be maintained for every server added.
     tool_policy: str = "prompt"
+    #: Calls per minute this server will accept before further calls are
+    #: refused. 0 means no ceiling, which is the default — a limit nobody set
+    #: should not start refusing work.
+    rate_limit_per_min: int = 0
     #: Result of the last health check. `last_checked_at` empty means never
     #: checked, which is a different thing from checked-and-failing and reads
     #: differently in the UI.
