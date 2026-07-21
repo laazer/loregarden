@@ -3,12 +3,12 @@ import type { HiveSkinId, HiveStationId } from "./skins";
 /** Named character sprites. Only the officeplace skin ships a named cast. */
 export type HiveCharacterId =
   | "cobel"
-  | "michael"
+  | "ryan"
   | "ms_casey"
   | "oscar"
-  | "jim"
-  | "pam"
-  | "dwight"
+  | "kevin"
+  | "kelly"
+  | "andy"
   | "mark"
   | "helly"
   | "irving"
@@ -18,12 +18,12 @@ export type HiveCharacterId =
 
 export const HIVE_CHARACTER_IDS: HiveCharacterId[] = [
   "cobel",
-  "michael",
+  "ryan",
   "ms_casey",
   "oscar",
-  "jim",
-  "pam",
-  "dwight",
+  "kevin",
+  "kelly",
+  "andy",
   "mark",
   "helly",
   "irving",
@@ -42,9 +42,9 @@ export const HIVE_CHARACTER_IDS: HiveCharacterId[] = [
  * still produces exactly one card and one flight.
  */
 const OFFICEPLACE_CREW: Record<HiveStationId, HiveCharacterId[]> = {
-  planner_hq: ["cobel", "michael"],
+  planner_hq: ["cobel", "ryan"],
   research: ["ms_casey", "oscar"],
-  coding: ["jim", "pam", "dwight"],
+  coding: ["kevin", "kelly", "andy"],
   testing: ["mark", "helly", "irving", "dylan"],
   deploy: ["milchick", "burt"],
 };

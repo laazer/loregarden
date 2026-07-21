@@ -46,7 +46,7 @@ describe("buildHiveWorld", () => {
     expect(model.stations).toHaveLength(5);
 
     const coders = model.agents.filter((a) => a.agentId === "backend_implementer");
-    expect(coders.map((a) => a.character)).toEqual(["jim", "pam", "dwight"]);
+    expect(coders.map((a) => a.character)).toEqual(["kevin", "kelly", "andy"]);
     expect(coders.filter((a) => a.lead)).toHaveLength(1);
     expect(new Set(coders.map((a) => a.id)).size).toBe(3);
 
