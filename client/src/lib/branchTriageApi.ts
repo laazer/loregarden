@@ -1,4 +1,5 @@
 import type { DiffArtifact } from "../api/client";
+import { VITE_API_BASE } from "../api/viteEnv";
 
 export interface BranchDiffComment {
   id: string;
@@ -100,16 +101,8 @@ export interface BranchTriageChatSnapshot {
 }
 
 async function branchTriageRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const getBase = (): string => {
-    try {
-      return (globalThis as any).import?.meta?.env?.VITE_API_BASE ??
-        (typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8000");
-    } catch {
-      return typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8000";
-    }
-  };
-
-  const base = getBase();
+  const base = VITE_API_BASE ??
+    (typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8000");
   const res = await fetch(`${base}${path}`, {
     headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
