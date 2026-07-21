@@ -176,7 +176,6 @@ export function Dashboard() {
     setBranchTriageWorkspaceSlug,
     terminalOpen,
     setTerminalOpen,
-    setCopilotOpen,
   } = useUiStore();
   // Where a shell opened from the status bar would run.
   const terminalTarget = useTerminalTarget();
@@ -1684,13 +1683,10 @@ export function Dashboard() {
               ? `Shell in ${terminalTarget.workspaceSlug}`
               : "Pick a workspace to open a shell in"
           }
-          onClick={() => {
-            const next = !terminalOpen;
-            setTerminalOpen(next);
-            // The shell lives in the dock, so opening one has to open the dock
-            // too — otherwise the button toggles something nobody can see.
-            if (next) setCopilotOpen(true);
-          }}
+          // Only the terminal. The dock shows it whether or not the chat is
+          // expanded, so opening a shell no longer drags a conversation open
+          // with it.
+          onClick={() => setTerminalOpen(!terminalOpen)}
         >
           Terminal
         </button>

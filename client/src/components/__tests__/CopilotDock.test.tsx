@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 
 import { CopilotDock } from "../CopilotDock";
 import { useActiveChatSession } from "../../hooks/useActiveChatSession";
@@ -199,9 +199,9 @@ describe("the terminal pane", () => {
     expect(screen.queryByTestId("terminal-panel")).not.toBeInTheDocument();
   });
 
-  it("reaps the shell when the dock collapses", () => {
-    // The panel unmounts, which closes the socket and reaps the shell. Leaving
-    // it mounted behind a collapsed dock would keep a login shell per session.
+  it("keeps the shell when the chat collapses", () => {
+    // Collapsing the conversation says nothing about wanting the shell gone.
+    // Reaping it here is what made "just a terminal" impossible.
     openDock();
     useUiStore.setState({ copilotOpen: true, terminalOpen: true });
     render(<CopilotDock />);
@@ -209,7 +209,31 @@ describe("the terminal pane", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse copilot" }));
 
+    expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Message about this ticket…")).not.toBeInTheDocument();
+  });
+
+  it("reaps the shell when the terminal itself is closed", () => {
+    // The panel unmounts, which closes the socket and reaps the shell. Leaving
+    // it mounted would keep a login shell per session.
+    openDock();
+    useUiStore.setState({ copilotOpen: true, terminalOpen: true });
+    const { rerender } = render(<CopilotDock />);
+    expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
+
+    act(() => useUiStore.setState({ terminalOpen: false }));
+    rerender(<CopilotDock />);
+
     expect(screen.queryByTestId("terminal-panel")).not.toBeInTheDocument();
+  });
+
+  it("shows a shell with the chat collapsed and no conversation at all", () => {
+    mockResolver.mockReturnValue(bind({ session: null, label: "" }));
+    useUiStore.setState({ copilotOpen: false, terminalOpen: true });
+
+    render(<CopilotDock />);
+
+    expect(screen.getByTestId("terminal-panel")).toHaveTextContent("loregarden");
   });
 
   it("hosts a shell on a screen with no conversation", () => {
