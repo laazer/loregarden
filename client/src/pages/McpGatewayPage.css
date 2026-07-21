@@ -196,3 +196,33 @@
   font-size: 10.5px;
   color: var(--txl);
 }
+
+.mcp-detail-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.mcp-health {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  margin-top: 4px;
+}
+
+/* Never checked reads as an open question, not as a verdict. */
+.mcp-health--unknown {
+  color: var(--txl);
+  opacity: 0.7;
+}
+
+.mcp-health--ok {
+  color: var(--ac, var(--txl));
+}
+
+.mcp-health--bad {
+  color: var(--rdl, var(--amb));
+}
+
+.mcp-health-when {
+  color: var(--txl);
+}

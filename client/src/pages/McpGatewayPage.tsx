@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { api, type McpServerInput, type McpServerView } from "../api/client";
 import { McpActivityFeed } from "../components/mcp/McpActivityFeed";
+import { McpHealthBadge } from "../components/mcp/McpHealthBadge";
 import { McpServerForm } from "../components/mcp/McpServerForm";
 import { PageHeroAppToolbar } from "../components/PageHeroAppToolbar";
 import "./McpGatewayPage.css";
@@ -38,6 +39,7 @@ function ServerRow({
       <div className="mcp-server-row-meta">
         {server.transport} · {server.transport === "http" ? server.url : server.command}
       </div>
+      <McpHealthBadge server={server} />
       {server.auth_env_var && (
         <div
           className={`mcp-server-auth${server.auth_present ? "" : " missing"}`}
@@ -83,6 +85,11 @@ export function McpGatewayPage() {
   const update = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Partial<McpServerInput> }) =>
       api.updateMcpServer(id, body),
+    onSuccess: invalidate,
+  });
+
+  const checkHealth = useMutation({
+    mutationFn: (id: string) => api.checkMcpServerHealth(id),
     onSuccess: invalidate,
   });
 
@@ -174,14 +181,24 @@ export function McpGatewayPage() {
                   {adding ? "Register a server" : selected?.name}
                 </h2>
                 {selected && !adding && (
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    disabled={remove.isPending}
-                    onClick={() => remove.mutate(selected.id)}
-                  >
-                    {remove.isPending ? "Removing…" : "Remove"}
-                  </button>
+                  <div className="mcp-detail-actions">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={checkHealth.isPending}
+                      onClick={() => checkHealth.mutate(selected.id)}
+                    >
+                      {checkHealth.isPending ? "Checking…" : "Check now"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={remove.isPending}
+                      onClick={() => remove.mutate(selected.id)}
+                    >
+                      {remove.isPending ? "Removing…" : "Remove"}
+                    </button>
+                  </div>
                 )}
               </div>
               <McpServerForm

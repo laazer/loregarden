@@ -740,6 +740,12 @@ class McpServerView(SQLModel):
     #: the UI show "credential missing" without ever reading the value.
     auth_present: bool = False
     tool_policy: str = "prompt"
+    #: Empty means never checked — distinct from checked-and-failing, and the
+    #: UI says so rather than showing a server as healthy by default.
+    last_checked_at: str = ""
+    last_health_ok: bool = False
+    last_health_latency_ms: int = 0
+    last_health_error: str = ""
     created_at: datetime
     updated_at: datetime
 

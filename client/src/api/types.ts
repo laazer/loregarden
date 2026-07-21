@@ -213,6 +213,11 @@ export interface McpServerView {
   enabled: boolean;
   /** "prompt" — every call asks; "auto" — the server is trusted to run unattended. */
   tool_policy: string;
+  /** Empty means never checked — not the same as checked and failing. */
+  last_checked_at: string;
+  last_health_ok: boolean;
+  last_health_latency_ms: number;
+  last_health_error: string;
   created_at: string;
   updated_at: string;
 }
