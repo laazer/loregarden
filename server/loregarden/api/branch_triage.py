@@ -12,6 +12,7 @@ from loregarden.services.branch_triage_run_service import (
     start_branch_triage_run,
 )
 from loregarden.services.branch_triage_service import (
+    branch_activity,
     branch_diff_snapshot,
     branch_triage_snapshot,
     delete_branch,
@@ -111,6 +112,20 @@ def get_branch_diff(
     if not diff:
         raise HTTPException(404, "No diff for this branch")
     return {"branch": branch, "base": diff.get("base"), "mode": mode, "file": file, "diff": diff}
+
+
+@router.get("/{slug}/branch-triage/activity")
+def get_branch_activity(
+    slug: str,
+    branch: str = Query(..., min_length=1),
+    limit: int = Query(8, ge=1, le=50),
+    session: Session = Depends(get_session),
+) -> dict:
+    ws = _workspace_or_404(session, slug)
+    try:
+        return branch_activity(ws, branch, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/{slug}/branch-triage/checkout")

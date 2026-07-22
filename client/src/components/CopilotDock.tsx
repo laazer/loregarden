@@ -28,6 +28,11 @@ import "./CopilotDock.css";
  * Prompt shortcuts, not suggestions: nothing infers them from the ticket, and
  * clicking one only fills the composer. The operator still sends it.
  */
+const COMPOSER_PLACEHOLDER: Record<string, string> = {
+  "ticket-triage": "Message about this ticket…",
+  "branch-triage": "Message about this branch…",
+};
+
 const TRY_ASKING: Record<string, string[]> = {
   "ticket-triage": [
     "What is blocking this ticket?",
@@ -163,7 +168,7 @@ export function CopilotDock() {
             value={draft}
             onChange={setDraft}
             onSubmit={send}
-            placeholder="Message about this ticket…"
+            placeholder={COMPOSER_PLACEHOLDER[session.kind] ?? "Message this conversation…"}
             isSending={session.isBusy}
             disabled={session.loadError}
             error={session.error}
