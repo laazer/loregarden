@@ -859,5 +859,204 @@ def test_subtree_wide_bound_caps_total_completed_stages_across_all_tickets(
     assert (orch_run.error_message or "").strip()
 
 
+# ---------------------------------------------------------------------------
+# Test Breaker pass 2: the AC says auto-resolved approvals must be
+# *distinguishable* from human ones. Every existing test only checks the
+# auto-resolved side of that; nothing proves a genuinely human-resolved gate
+# does NOT also read as "automation" once the resolved_by column exists (e.g.
+# a naive migration that backfills/defaults resolved_by to "automation" for
+# every resolution path, or a resolve() implementation that hardcodes the
+# string in ApprovalService instead of only in the auto-mode code path, would
+# pass every test above while silently breaking the audit guarantee).
+# ---------------------------------------------------------------------------
+
+
+def test_human_resolved_gate_is_not_labeled_automation(db_session: Session, tmp_path):
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-human-label")
+    ticket = _make_ticket(db_session, ws, external_id="gate-human-1", title="Solo")
+
+    BuiltinOrchestrator(db_session).execute(ticket, _profile(), auto_approve=False)
+    db_session.refresh(ticket)
+    signoff = db_session.exec(
+        select(Approval).where(Approval.ticket_id == ticket.id, Approval.stage_key == "signoff")
+    ).first()
+    assert signoff.status == ApprovalStatus.PENDING
+
+    from loregarden.services.orchestration import ApprovalService
+
+    ApprovalService(db_session).resolve(signoff.id, approved=True)
+    db_session.refresh(signoff)
+
+    assert signoff.status == ApprovalStatus.APPROVED
+    assert signoff.resolved_by != "automation", (
+        "a human clicking approve in the inbox must not be recorded as "
+        "'automation' — the audit trail's whole purpose is to tell the two "
+        "apart, and a hardcoded/defaulted resolved_by would make every row "
+        "look auto-approved regardless of who actually approved it"
+    )
+    assert signoff.resolving_orchestration_run_id is None, (
+        "a manually-resolved approval was not resolved by any orchestration "
+        "run's auto-mode sweep, so this column must stay empty for it"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test Breaker pass 2: a ticket that paused for a human BEFORE auto_approve
+# was ever turned on, then gets swept up by a later top-level auto run (e.g.
+# a parent kicked off in auto mode with a child that already has a stale
+# PENDING gate from a previous manual run). The ticket spec only describes
+# gates encountered *during* an auto_approve run; it says nothing about
+# resuming into a stage that is already AWAITING. An implementation that only
+# auto-resolves gates at the moment orchestration.py:790 creates the Approval
+# row (i.e. only on first entry to the stage) would leave this ticket parked
+# at AWAITING forever even under auto_approve=True on every later call —
+# defeating unattended subtree runs the first time any ticket in the tree was
+# ever touched manually.
+# ---------------------------------------------------------------------------
+
+
+def test_auto_run_resolves_a_stage_that_was_already_awaiting_before_auto_mode(
+    db_session: Session, tmp_path
+):
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-late-adopt")
+    ticket = _make_ticket(db_session, ws, external_id="gate-late-adopt-1", title="Solo")
+
+    # Reach AWAITING the old-fashioned way: no auto_approve at all.
+    BuiltinOrchestrator(db_session).execute(ticket, _profile(), auto_approve=False)
+    db_session.refresh(ticket)
+    assert _stage_status(db_session, ticket, "signoff") == StageStatus.AWAITING
+    pending = db_session.exec(
+        select(Approval).where(
+            Approval.ticket_id == ticket.id,
+            Approval.stage_key == "signoff",
+            Approval.status == ApprovalStatus.PENDING,
+        )
+    ).one()
+
+    # Now someone (or a parent's subtree auto run) re-invokes execute() with
+    # auto_approve=True on the very same, already-paused ticket.
+    orch_run = BuiltinOrchestrator(db_session).execute(ticket, _profile(), auto_approve=True)
+    db_session.refresh(ticket)
+    db_session.refresh(pending)
+
+    assert pending.status == ApprovalStatus.APPROVED, (
+        "re-entering an already-AWAITING gate under auto_approve=True must "
+        "resolve the existing pending approval, not leave the ticket stuck "
+        "at AWAITING forever because the row predates this run"
+    )
+    assert pending.resolved_by == "automation"
+    assert pending.resolving_orchestration_run_id == orch_run.id
+    assert ticket.state == TicketState.DONE
+
+
+# ---------------------------------------------------------------------------
+# Test Breaker pass 2: boundary-exact behavior for the subtree-wide bound.
+# The existing bound tests only prove "some limit less than the total stops
+# the run short." Neither proves the bound is inclusive/correct at the exact
+# edge — an off-by-one (`>` vs `>=`, or counting before vs. after increment)
+# would pass both existing tests while still being wrong by one stage in
+# either direction.
+# ---------------------------------------------------------------------------
+
+
+def test_subtree_bound_exact_stage_count_completes_fully(db_session: Session, tmp_path):
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-bound-exact")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="exact-bound-parent",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    child = _make_ticket(
+        db_session, ws, external_id="exact-bound-child", title="Child", parent_ticket_id=parent.id
+    )
+
+    # Each ticket runs exactly 3 stages to DONE (work, signoff, review) under
+    # this test template; parent + 1 child = 6 stages total, exactly.
+    profile = _profile(max_subtree_stages_per_run=6)
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, profile, auto_approve=True)
+    db_session.refresh(parent)
+    db_session.refresh(child)
+
+    assert child.state == TicketState.DONE, (
+        "a bound exactly equal to the required stage count must not stop the run one stage short"
+    )
+    assert parent.state == TicketState.DONE
+    assert orch_run.status == OrchestrationRunStatus.SUCCEEDED
+
+
+def test_subtree_bound_one_less_than_exact_stops_short(db_session: Session, tmp_path):
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-bound-short")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="short-bound-parent",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    child = _make_ticket(
+        db_session, ws, external_id="short-bound-child", title="Child", parent_ticket_id=parent.id
+    )
+
+    profile = _profile(max_subtree_stages_per_run=5)
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, profile, auto_approve=True)
+    db_session.refresh(parent)
+    db_session.refresh(child)
+
+    assert not (child.state == TicketState.DONE and parent.state == TicketState.DONE), (
+        "one stage short of the exact total must not silently complete the subtree"
+    )
+    assert orch_run.status != OrchestrationRunStatus.FAILED
+    assert (orch_run.error_message or "").strip()
+
+
+# ---------------------------------------------------------------------------
+# Test Breaker pass 2: `max_subtree_stages_per_run` is documented (in the
+# ticket's own spec-gap checkpoint) to mirror `max_stages_per_run`'s existing
+# 0-means-unlimited convention. Nothing currently pins that default/zero
+# value to "unlimited" explicitly — every other e2e test uses the default
+# profile incidentally, so a regression that reinterpreted 0 as "stop
+# immediately" would only be caught by cascading failures across unrelated
+# tests, not a direct assertion of the contract.
+# ---------------------------------------------------------------------------
+
+
+def test_subtree_bound_zero_means_unlimited(db_session: Session, tmp_path):
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-bound-unlimited")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="unlimited-bound-parent",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    child_a = _make_ticket(
+        db_session,
+        ws,
+        external_id="unlimited-bound-child-a",
+        title="Child A",
+        parent_ticket_id=parent.id,
+    )
+    child_b = _make_ticket(
+        db_session,
+        ws,
+        external_id="unlimited-bound-child-b",
+        title="Child B",
+        parent_ticket_id=parent.id,
+    )
+
+    profile = _profile(max_subtree_stages_per_run=0)
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, profile, auto_approve=True)
+    db_session.refresh(parent)
+    db_session.refresh(child_a)
+    db_session.refresh(child_b)
+
+    assert child_a.state == TicketState.DONE
+    assert child_b.state == TicketState.DONE
+    assert parent.state == TicketState.DONE
+    assert orch_run.status == OrchestrationRunStatus.SUCCEEDED
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
