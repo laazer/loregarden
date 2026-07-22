@@ -1,3 +1,4 @@
+import type { HiveCharacterId } from "../cast";
 import type { HiveStationId } from "../skins";
 import { OFFICEPLACE_FLOOR } from "./officeplaceFloorPlan";
 
@@ -49,14 +50,17 @@ export interface HiveOfficeReceptionist {
   x: number;
   y: number;
   label: string;
+  /** Full-body cast sprite. The bust-only Office art (worker.png) is retired. */
+  character: HiveCharacterId;
 }
 
-/** Pam, at the curved reception desk in the centre-right of the image. */
+/** Front desk, at the curved reception counter in the centre-right of the image. */
 export const OFFICEPLACE_RECEPTIONIST: HiveOfficeReceptionist = {
   id: "receptionist",
   x: 43,
   y: 26,
   label: "Receptionist",
+  character: "ms_casey",
 };
 
 export interface HiveOfficeResident {
@@ -64,18 +68,20 @@ export interface HiveOfficeResident {
   x: number;
   y: number;
   label: string;
+  /** Full-body cast sprite. The bust-only Office art (tester.png) is retired. */
+  character: HiveCharacterId;
 }
 
 /**
- * Placeholder QA staff who live in the MDR room (green, top-right). Roaming office
- * agents never path here; these are static stand-ins until dedicated QA NPCs land.
- * Seated at the four MDR desks around the testing station.
+ * The MDR four at their desks in the green room (top-right). These statics keep
+ * the room staffed while no testing agent runs; HiveCssFloor hides any of them
+ * whose character is already walking the floor as a testing-crew body.
  */
 export const OFFICEPLACE_MDR_STAFF: HiveOfficeResident[] = [
-  { id: "mdr-1", x: 50, y: 4, label: "QA" },
-  { id: "mdr-2", x: 54, y: 4, label: "QA" },
-  { id: "mdr-3", x: 50, y: 7, label: "QA" },
-  { id: "mdr-4", x: 54, y: 7, label: "QA" },
+  { id: "mdr-1", x: 50, y: 4, label: "Mark", character: "mark" },
+  { id: "mdr-2", x: 54, y: 4, label: "Helly", character: "helly" },
+  { id: "mdr-3", x: 50, y: 7, label: "Irving", character: "irving" },
+  { id: "mdr-4", x: 54, y: 7, label: "Dylan", character: "dylan" },
 ];
 
 export interface HiveOfficeErrand {

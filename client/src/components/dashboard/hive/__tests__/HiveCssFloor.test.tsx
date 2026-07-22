@@ -73,3 +73,30 @@ describe("HiveCssFloor — crewed stations", () => {
     expect(container.querySelectorAll(".hive-css__agent-card")).toHaveLength(1);
   });
 });
+
+describe("HiveCssFloor — static residents", () => {
+  it("seats the MDR four at their desks when no testing agent is staffed", () => {
+    const { container } = render(<HiveCssFloor model={officeplaceModel()} />);
+    expect(container.querySelectorAll('[data-testid^="hive-mdr-"]')).toHaveLength(4);
+  });
+
+  it("hides the static MDR four while the testing crew works the floor", () => {
+    const model = buildHiveWorld(
+      [stage({ key: "test", name: "Testing", agent_id: "static_qa" })],
+      { skin: "officeplace" },
+    );
+    // The crew bodies ARE mark/helly/irving/dylan — statics step aside so the
+    // same face never appears twice.
+    const { container } = render(<HiveCssFloor model={model} />);
+    expect(container.querySelectorAll('[data-testid^="hive-mdr-"]')).toHaveLength(0);
+  });
+
+  it("hides the receptionist while her character is out as a research crew body", () => {
+    const model = buildHiveWorld(
+      [stage({ key: "res", name: "Research", agent_id: "research_librarian" })],
+      { skin: "officeplace" },
+    );
+    const { queryByTestId } = render(<HiveCssFloor model={model} />);
+    expect(queryByTestId("hive-receptionist")).toBeNull();
+  });
+});
