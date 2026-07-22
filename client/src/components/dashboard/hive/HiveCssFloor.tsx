@@ -11,6 +11,7 @@ import {
 import type { HiveWorldModel } from "../../../lib/hive/worldModel";
 import { HiveCssAgent } from "./HiveCssAgent";
 import { HiveCssRooms } from "./HiveCssRooms";
+import { HiveDebugOverlay } from "./HiveDebugOverlay";
 
 interface HiveCssFloorProps {
   model: HiveWorldModel;
@@ -45,6 +46,18 @@ function SpriteOrFallback({
 export function HiveCssFloor({ model, speedMultiplier = 1 }: HiveCssFloorProps) {
   const flyerSeen = useRef(new Set<string>());
   const flyersRef = useRef<HTMLDivElement>(null);
+  // Calibration overlay for the walk grid + hand-placed positions. Off by default;
+  // enable with ?hiveDebug in the URL, or toggle with Alt+G (handy in the desktop app).
+  const [debug, setDebug] = useState(
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("hiveDebug"),
+  );
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === "g" || e.key === "G")) setDebug((d) => !d);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const sprites = useMemo(() => resolveSkinSprites(model.skin), [model.skin]);
   const { layout } = model;
   const map = layout.map;
@@ -279,6 +292,8 @@ export function HiveCssFloor({ model, speedMultiplier = 1 }: HiveCssFloorProps) 
       ))}
 
       <div ref={flyersRef} className="hive-css__flyers" aria-hidden />
+
+      {debug ? <HiveDebugOverlay layout={layout} /> : null}
     </div>
   );
 }

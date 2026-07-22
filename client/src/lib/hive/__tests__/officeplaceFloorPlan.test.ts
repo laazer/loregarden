@@ -11,7 +11,6 @@ import { OFFICEPLACE_PROP_URLS } from "../layouts/officeplaceProps";
 import {
   OFFICEPLACE_DESKS,
   OFFICEPLACE_ERRANDS,
-  OFFICEPLACE_MDR_STAFF,
   OFFICEPLACE_RECEPTIONIST,
   OFFICEPLACE_STATIONS,
   OFFICEPLACE_WAITING,
@@ -123,14 +122,12 @@ describe("officeplace floor plan", () => {
 
   it("connects every roaming station, agent desk and errand to reception", () => {
     // The sim walks the image-aligned room grid (createOfficeplaceOpenWalkGrid): rooms
-    // bridged by doorways, with the MDR room and foundation excluded. `testing` lives
-    // inside MDR by design (served by static QA staff), so it is not roaming-reachable.
+    // bridged by doorways, with the foundation strip excluded. `testing` lives in the
+    // MDR room, which reaches the floor through the elevator strip down the right edge.
     const openGrid = createOfficeplaceOpenWalkGrid();
     const reachable = reachableFrom(OFFICEPLACE_RECEPTIONIST, openGrid.isWalkable);
     const targets: Array<[string, Tile]> = [
-      ...Object.entries(OFFICEPLACE_STATIONS)
-        .filter(([id]) => id !== "testing")
-        .map(([id, t]): [string, Tile] => [`station:${id}`, t]),
+      ...Object.entries(OFFICEPLACE_STATIONS).map(([id, t]): [string, Tile] => [`station:${id}`, t]),
       ...OFFICEPLACE_DESKS.map((t, i): [string, Tile] => [`desk:${i}`, t]),
       ...OFFICEPLACE_ERRANDS.map((e): [string, Tile] => [`errand:${e.id}`, e.stand]),
       ["waiting", OFFICEPLACE_WAITING],
@@ -142,18 +139,14 @@ describe("officeplace floor plan", () => {
     expect(unreachable).toEqual([]);
   });
 
-  it("keeps the MDR room off the roaming walk grid", () => {
-    // Roaming office agents must never path into MDR; its QA staff are static.
+  it("reaches the MDR room from the floor through the elevator strip", () => {
+    // MDR is on the roaming grid via the right-edge elevator strip, so the tester
+    // agent can path to the testing station where the QA staff sit.
     const openGrid = createOfficeplaceOpenWalkGrid();
-    expect(openGrid.isWalkable(OFFICEPLACE_STATIONS.testing.x, OFFICEPLACE_STATIONS.testing.y)).toBe(
-      false,
+    const reachable = reachableFrom(OFFICEPLACE_RECEPTIONIST, openGrid.isWalkable);
+    expect(reachable.has(`${OFFICEPLACE_STATIONS.testing.x},${OFFICEPLACE_STATIONS.testing.y}`)).toBe(
+      true,
     );
-    for (const staff of OFFICEPLACE_MDR_STAFF) {
-      expect({ id: staff.id, walkable: openGrid.isWalkable(staff.x, staff.y) }).toEqual({
-        id: staff.id,
-        walkable: false,
-      });
-    }
   });
 
   it("keeps every room inside the building shell", () => {

@@ -1081,3 +1081,122 @@
 .hive-css--officeplace .hive-css__flyer-img {
   filter: drop-shadow(0 1px 2px rgba(42, 36, 28, 0.35));
 }
+
+/* ── Pathing calibration overlay (dev-only; ?hiveDebug or Alt+G) ──────────── */
+.hive-debug {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  font-family: monospace;
+}
+
+/* One canvas pixel per tile, stretched over the letterboxed floor: cells land
+   exactly on the same tiles the agents walk, so drift from the image is visible. */
+.hive-debug__grid {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+/* Transparent hit layer above the grid; owns hover/click for the tile readout. */
+.hive-debug__capture {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+}
+
+.hive-debug__marker {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.hive-debug__marker::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  background: var(--hive-debug-dot, #fff);
+}
+
+.hive-debug__marker-label {
+  position: absolute;
+  left: 6px;
+  top: -7px;
+  white-space: nowrap;
+  font-size: 8px;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 3px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.hive-debug__marker--station { --hive-debug-dot: #4b9bff; }
+.hive-debug__marker--desk { --hive-debug-dot: #ff9d3b; }
+.hive-debug__marker--errand { --hive-debug-dot: #c77dff; }
+.hive-debug__marker--waiting { --hive-debug-dot: #ffd84b; }
+.hive-debug__marker--reception { --hive-debug-dot: #ff6fae; }
+.hive-debug__marker--mdr { --hive-debug-dot: #3bd8c8; }
+
+.hive-debug__hud {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.hive-debug__readout,
+.hive-debug__legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  font-size: 10px;
+  color: #f2f4f8;
+  background: rgba(14, 18, 24, 0.82);
+  padding: 3px 7px;
+  border-radius: 5px;
+}
+
+.hive-debug__readout strong { color: #fff; }
+.hive-debug__readout em { color: #9aa4b2; font-style: normal; }
+.hive-debug__ok { color: #6ff0a0; }
+.hive-debug__no { color: #ff8a8a; }
+
+.hive-debug__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hive-debug__key::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--hive-debug-swatch, #fff);
+}
+
+.hive-debug__key--walk { --hive-debug-swatch: rgba(64, 208, 120, 0.9); }
+.hive-debug__key--block { --hive-debug-swatch: rgba(224, 64, 64, 0.9); }
+.hive-debug__key--station { --hive-debug-swatch: #4b9bff; }
+.hive-debug__key--desk { --hive-debug-swatch: #ff9d3b; }
+.hive-debug__key--errand { --hive-debug-swatch: #c77dff; }
+.hive-debug__key--reception { --hive-debug-swatch: #ff6fae; }
+
+.hive-debug__marker--zone { --hive-debug-dot: #ffffff; }

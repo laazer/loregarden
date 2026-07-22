@@ -10,23 +10,23 @@ export const OFFICEPLACE_MAP = OFFICEPLACE_FLOOR;
  * overlay on the image and verified in the running app.
  */
 export const OFFICEPLACE_STATIONS: Record<HiveStationId, { x: number; y: number }> = {
-  planner_hq: { x: 43, y: 15 }, // Michael's office (upper right)
-  research: { x: 26, y: 37 }, // conference room (long table, lower centre)
-  coding: { x: 28, y: 21 }, // bullpen (central desk clusters)
-  testing: { x: 52, y: 5 }, // the annex desk cluster (green room, top right)
-  deploy: { x: 42, y: 26 }, // entrance, below reception
+  planner_hq: { x: 42, y: 44 }, // manager's office, right of the conference room
+  research: { x: 25, y: 44 }, // conference room, below the table
+  coding: { x: 30, y: 20 }, // bullpen aisle, above the desk pods
+  testing: { x: 52, y: 5 }, // MDR green room (now reachable via the elevator strip)
+  deploy: { x: 43, y: 28 }, // front desk, beside the reception counter
 };
 
-export const OFFICEPLACE_WAITING = { x: 41, y: 4 }; // break room / kitchen (top centre)
+export const OFFICEPLACE_WAITING = { x: 43, y: 9 }; // break room, by the coffee counter
 
-/** Agent desk seats — the sales bullpen clusters in the image. */
+/** Agent stand spots — bullpen aisles flanking the desk pods (which are blocked). */
 export const OFFICEPLACE_DESKS = [
-  { x: 24, y: 19 },
-  { x: 28, y: 19 },
-  { x: 32, y: 20 },
-  { x: 26, y: 24 },
-  { x: 30, y: 24 },
-  { x: 34, y: 22 },
+  { x: 26, y: 18 },
+  { x: 30, y: 18 },
+  { x: 34, y: 18 },
+  { x: 26, y: 29 },
+  { x: 30, y: 29 },
+  { x: 34, y: 29 },
 ] as const;
 
 export interface HiveLayoutZone {
@@ -36,8 +36,13 @@ export interface HiveLayoutZone {
   label: string;
 }
 
-/** Rooms draw their own name plates, so the officeplace skin needs no zone overlays. */
-export const OFFICEPLACE_ZONES: HiveLayoutZone[] = [];
+/** Area labels for rooms the baked scenery doesn't name on its own. */
+export const OFFICEPLACE_ZONES: HiveLayoutZone[] = [
+  { id: "kitchen", x: 40, y: 6, label: "Kitchen" },
+  { id: "break-room", x: 4, y: 40, label: "Break Room" },
+  { id: "bathroom", x: 36, y: 43, label: "Bathroom" },
+  { id: "annex", x: 52, y: 41, label: "The Annex" },
+];
 
 export interface HiveOfficeReceptionist {
   id: string;
@@ -49,8 +54,8 @@ export interface HiveOfficeReceptionist {
 /** Pam, at the curved reception desk in the centre-right of the image. */
 export const OFFICEPLACE_RECEPTIONIST: HiveOfficeReceptionist = {
   id: "receptionist",
-  x: 45,
-  y: 25,
+  x: 43,
+  y: 26,
   label: "Receptionist",
 };
 
@@ -81,14 +86,14 @@ export interface HiveOfficeErrand {
 
 /** Idle errands — each stands on an open floor tile in the image. */
 export const OFFICEPLACE_ERRANDS: HiveOfficeErrand[] = [
-  { id: "lobby", stand: { x: 10, y: 4 }, label: "In the lobby" },
-  { id: "kitchen", stand: { x: 44, y: 4 }, label: "In the kitchen" },
-  { id: "lounge", stand: { x: 4, y: 40 }, label: "In the lounge" },
-  { id: "bullpen-walk", stand: { x: 30, y: 22 }, label: "Crossing the bullpen" },
-  { id: "conference", stand: { x: 24, y: 38 }, label: "Leaving the conference room" },
-  { id: "annex", stand: { x: 50, y: 40 }, label: "Waiting on the elevator" },
-  { id: "reception-chat", stand: { x: 39, y: 24 }, label: "Loitering at reception" },
-  { id: "corridor", stand: { x: 10, y: 20 }, label: "Down the corridor" },
+  { id: "lobby", stand: { x: 10, y: 6 }, label: "In the lobby" },
+  { id: "kitchen", stand: { x: 43, y: 8 }, label: "In the kitchen" },
+  { id: "break-room", stand: { x: 4, y: 42 }, label: "In the break room" },
+  { id: "bullpen-walk", stand: { x: 30, y: 27 }, label: "Crossing the bullpen" },
+  { id: "conference", stand: { x: 27, y: 43 }, label: "Leaving the conference room" },
+  { id: "annex", stand: { x: 52, y: 42 }, label: "Waiting on the elevator" },
+  { id: "reception-chat", stand: { x: 42, y: 28 }, label: "Loitering at reception" },
+  { id: "corridor", stand: { x: 13, y: 38 }, label: "Down the stairwell" },
 ];
 
 export {
