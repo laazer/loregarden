@@ -13,6 +13,7 @@ from loregarden.services.branch_triage_service import (
     PR_STATUS_TERMINAL_TTL_SECONDS,
     PR_STATUS_TTL_SECONDS,
     _pr_status_ttl,
+    branch_activity,
     branch_triage_snapshot,
     delete_branch,
     remove_branch_worktree,
@@ -678,3 +679,71 @@ def test_interrupted_branch_chat_turn_is_settled_so_the_composer_recovers(
     ).json()
     assert snapshot["run_status"] == "idle"
     assert len(snapshot["messages"]) == 1
+
+
+def test_branch_activity_marks_unpushed_commits_as_local(triage_workspace, triage_repo, tmp_path):
+    remote = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True
+    )
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(remote)],
+        cwd=triage_repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "push", "-u", "origin", "main"], cwd=triage_repo, check=True, capture_output=True
+    )
+
+    (triage_repo / "local.txt").write_text("local\n", encoding="utf-8")
+    subprocess.run(["git", "add", "local.txt"], cwd=triage_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "local only"], cwd=triage_repo, check=True, capture_output=True
+    )
+
+    activity = branch_activity(triage_workspace, "main")
+
+    assert activity["branch"] == "main"
+    assert activity["upstream"]
+    assert [commit["message"] for commit in activity["commits"]] == ["local only", "init"]
+    pushed_by_message = {c["message"]: c["pushed"] for c in activity["commits"]}
+    assert pushed_by_message["local only"] is False
+    assert pushed_by_message["init"] is True
+
+
+def test_branch_activity_without_upstream_reports_nothing_pushed(triage_workspace):
+    activity = branch_activity(triage_workspace, "loregarden/orphan")
+
+    assert activity["upstream"] is None
+    assert activity["commits"]
+    assert all(commit["pushed"] is False for commit in activity["commits"])
+
+
+def test_branch_activity_endpoint_honours_limit(
+    client: TestClient, triage_repo, db_session: Session
+):
+    ws = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+    assert ws is not None
+    ws.repo_path = "."
+    db_session.add(ws)
+    db_session.commit()
+
+    for index in range(3):
+        (triage_repo / f"f{index}.txt").write_text("x\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=triage_repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", f"commit {index}"],
+            cwd=triage_repo,
+            check=True,
+            capture_output=True,
+        )
+
+    res = client.get(
+        f"/api/workspaces/{ws.slug}/branch-triage/activity",
+        params={"branch": "main", "limit": 2},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert [c["message"] for c in body["commits"]] == ["commit 2", "commit 1"]
+    assert all(c["short_sha"] and c["author"] for c in body["commits"])

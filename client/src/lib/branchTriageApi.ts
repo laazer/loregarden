@@ -75,6 +75,21 @@ export interface BranchTriageSnapshot {
   issue_count: number;
 }
 
+export interface BranchActivityCommit {
+  sha: string;
+  short_sha: string;
+  date: string;
+  author: string;
+  message: string;
+  pushed: boolean;
+}
+
+export interface BranchActivity {
+  branch: string;
+  upstream: string | null;
+  commits: BranchActivityCommit[];
+}
+
 export interface BranchTriageChatMessage {
   id: string;
   role: string;
@@ -180,6 +195,13 @@ export async function fetchBranchDiff(
   return branchTriageRequest(
     `/api/workspaces/${encodeURIComponent(slug)}/branch-triage/diff?${q}`,
   );
+}
+
+export async function fetchBranchActivity(
+  slug: string,
+  branch: string,
+): Promise<BranchActivity> {
+  return branchTriageRequest(branchQueryPath(slug, branch, "/activity"));
 }
 
 export async function checkoutBranchTriage(slug: string, branch: string) {

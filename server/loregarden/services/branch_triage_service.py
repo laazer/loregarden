@@ -24,6 +24,7 @@ from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
 STALE_DAYS = 30
+RECENT_COMMIT_LIMIT = 8
 AGENT_BRANCH_PREFIXES = ("loregarden/", "agent/")
 PR_STATUS_TTL_SECONDS = 120
 PR_STATUS_TERMINAL_TTL_SECONDS = 600
@@ -419,6 +420,62 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
         "branches": branches,
         "issue_count": issue_count,
     }
+
+
+def _unpushed_shas(repo_root: Path, branch: str, upstream: str) -> set[str]:
+    proc = _git(repo_root, "rev-list", f"{upstream}..{branch}")
+    if proc.returncode != 0:
+        return set()
+    return {line.strip() for line in (proc.stdout or "").splitlines() if line.strip()}
+
+
+def branch_activity(
+    workspace: Workspace,
+    branch: str,
+    *,
+    limit: int = RECENT_COMMIT_LIMIT,
+) -> dict[str, Any]:
+    """Recent commits on a branch, each marked as pushed or not.
+
+    Commits are the only branch history git records, so this is what "recent
+    activity" can honestly show: a push is inferred from whether the commit is
+    reachable from the upstream ref. Test runs, stage completions, and other
+    agent events leave no trace in the repository and are absent by design
+    rather than by omission.
+    """
+    validate_branch_name(branch)
+    repo_root = resolve_workspace_root(workspace)
+    if not _is_git_repo(repo_root):
+        return {"branch": branch, "upstream": None, "commits": []}
+
+    upstream = _resolve_upstream_ref(repo_root, branch)
+    # With no upstream nothing has been pushed; an empty unpushed set would
+    # otherwise read as "every commit is on the remote".
+    unpushed = _unpushed_shas(repo_root, branch, upstream) if upstream else None
+
+    proc = _git(
+        repo_root, "log", f"-{max(1, limit)}", "--format=%H%x1f%h%x1f%cI%x1f%an%x1f%s", branch
+    )
+    if proc.returncode != 0:
+        return {"branch": branch, "upstream": upstream, "commits": []}
+
+    commits: list[dict[str, Any]] = []
+    for line in (proc.stdout or "").splitlines():
+        parts = line.split("\x1f")
+        if len(parts) != 5:
+            continue
+        sha, short_sha, date, author, message = parts
+        commits.append(
+            {
+                "sha": sha,
+                "short_sha": short_sha,
+                "date": date,
+                "author": author,
+                "message": message,
+                "pushed": unpushed is not None and sha not in unpushed,
+            }
+        )
+    return {"branch": branch, "upstream": upstream, "commits": commits}
 
 
 def _validate_diff_file_path(file_path: str) -> None:

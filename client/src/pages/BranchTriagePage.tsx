@@ -3,8 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../api/client";
 import { PageHeroAppToolbar } from "../components/PageHeroAppToolbar";
-import { BranchTriageChatPanel } from "../components/BranchTriageChatPanel";
 import { BranchTriageDiffPanel } from "../components/BranchTriageDiffPanel";
+import { BranchTriageOverviewPanel } from "../components/BranchTriageOverviewPanel";
 import { BranchTriageList } from "../components/BranchTriageList";
 import { fetchBranchTriage } from "../lib/branchTriageApi";
 import { useUiStore } from "../state/uiStore";
@@ -174,14 +174,16 @@ export function BranchTriagePage() {
                   branchEntry={selectedBranchEntry ?? undefined}
                 />
               ) : selectedBranch ? (
-                <BranchTriageChatPanel
+                <BranchTriageOverviewPanel
                   workspaceSlug={activeSlug}
                   branch={selectedBranch}
+                  baseBranch={triage.data?.base_branch ?? "main"}
                   branchEntry={selectedBranchEntry ?? undefined}
+                  onReviewDiff={() => setActiveTab("diff")}
                 />
               ) : (
                 <div className="branch-triage-main branch-triage-empty">
-                  Pick a branch to inspect issues and chat with triage.
+                  Pick a branch to inspect its state, then chat about it in the bar below.
                 </div>
               )}
             </div>
