@@ -46,6 +46,12 @@ function SpriteOrFallback({
 export function HiveCssFloor({ model, speedMultiplier = 1 }: HiveCssFloorProps) {
   const flyerSeen = useRef(new Set<string>());
   const flyersRef = useRef<HTMLDivElement>(null);
+  // Characters currently on the floor as crew bodies; statics with the same
+  // face step aside so the cast never appears twice at once.
+  const charactersOnFloor = useMemo(
+    () => new Set(model.agents.map((a) => a.character).filter(Boolean)),
+    [model.agents],
+  );
   // Calibration overlay for the walk grid + hand-placed positions. Off by default;
   // enable with ?hiveDebug in the URL, or toggle with Alt+G (handy in the desktop app).
   const [debug, setDebug] = useState(
@@ -230,7 +236,7 @@ export function HiveCssFloor({ model, speedMultiplier = 1 }: HiveCssFloorProps) 
         )}
       </div>
 
-      {model.receptionist ? (
+      {model.receptionist && !charactersOnFloor.has(model.receptionist.character) ? (
         <div
           className="hive-css__resident"
           data-testid="hive-receptionist"
@@ -238,7 +244,7 @@ export function HiveCssFloor({ model, speedMultiplier = 1 }: HiveCssFloorProps) 
           title={model.receptionist.label}
         >
           <SpriteOrFallback
-            src={sprites.agent.worker}
+            src={sprites.character[model.receptionist.character] ?? sprites.agent.worker}
             className="hive-css__resident-sprite"
             alt={model.receptionist.label}
             fallback={model.receptionist.label}
@@ -246,23 +252,26 @@ export function HiveCssFloor({ model, speedMultiplier = 1 }: HiveCssFloorProps) 
         </div>
       ) : null}
 
-      {/* Placeholder QA staff who live in the MDR room; roaming agents never come here. */}
-      {layout.mdrStaff.map((staff) => (
-        <div
-          key={staff.id}
-          className="hive-css__resident"
-          data-testid={`hive-mdr-${staff.id}`}
-          style={tilePercent(staff, map)}
-          title={staff.label}
-        >
-          <SpriteOrFallback
-            src={sprites.agent.tester}
-            className="hive-css__resident-sprite"
-            alt={staff.label}
-            fallback={staff.label}
-          />
-        </div>
-      ))}
+      {/* The MDR four at their desks. A static hides while its character is out
+          on the floor as a crew body, so the same face never appears twice. */}
+      {layout.mdrStaff
+        .filter((staff) => !charactersOnFloor.has(staff.character))
+        .map((staff) => (
+          <div
+            key={staff.id}
+            className="hive-css__resident"
+            data-testid={`hive-mdr-${staff.id}`}
+            style={tilePercent(staff, map)}
+            title={staff.label}
+          >
+            <SpriteOrFallback
+              src={sprites.character[staff.character] ?? sprites.agent.tester}
+              className="hive-css__resident-sprite"
+              alt={staff.label}
+              fallback={staff.label}
+            />
+          </div>
+        ))}
 
       {model.waitingProp.visible && !hasScenery ? (
         <div className="hive-css__waiting" style={wait} title={model.waitingProp.label}>

@@ -37,7 +37,13 @@ describe("HiveCssFloor — officeplace background", () => {
   });
 
   it("still renders the NPC data layer on top of the background", () => {
-    const { container, queryByTestId } = render(<HiveCssFloor model={officeplaceModel()} />);
+    // A research agent keeps Pam (coding crew) off the floor, so the
+    // receptionist static stays at her desk for this assertion.
+    const model = buildHiveWorld(
+      [stage({ key: "res", name: "Research", agent_id: "research_librarian" })],
+      { skin: "officeplace" },
+    );
+    const { container, queryByTestId } = render(<HiveCssFloor model={model} />);
     // Agents, stations and the receptionist are the "thin data layer" over the image.
     expect(container.querySelectorAll(".hive-css__agent").length).toBeGreaterThan(0);
     expect(container.querySelectorAll(".hive-css__station").length).toBeGreaterThan(0);
@@ -71,5 +77,29 @@ describe("HiveCssFloor — crewed stations", () => {
     const { container } = render(<HiveCssFloor model={mdrModel()} />);
     // Four colleagues, one agent — so one card, or the floor reads as four agents.
     expect(container.querySelectorAll(".hive-css__agent-card")).toHaveLength(1);
+  });
+});
+
+describe("HiveCssFloor — static residents", () => {
+  it("seats the MDR four at their desks when no testing agent is staffed", () => {
+    const { container } = render(<HiveCssFloor model={officeplaceModel()} />);
+    expect(container.querySelectorAll('[data-testid^="hive-mdr-"]')).toHaveLength(4);
+  });
+
+  it("hides the static MDR four while the testing crew works the floor", () => {
+    const model = buildHiveWorld(
+      [stage({ key: "test", name: "Testing", agent_id: "static_qa" })],
+      { skin: "officeplace" },
+    );
+    // The crew bodies ARE mark/helly/irving/dylan — statics step aside so the
+    // same face never appears twice.
+    const { container } = render(<HiveCssFloor model={model} />);
+    expect(container.querySelectorAll('[data-testid^="hive-mdr-"]')).toHaveLength(0);
+  });
+
+  it("hides the receptionist while Pam is out as a coding crew body", () => {
+    // Pam doubles as coding crew, so a staffed coding agent pulls her off the desk.
+    const { queryByTestId } = render(<HiveCssFloor model={officeplaceModel()} />);
+    expect(queryByTestId("hive-receptionist")).toBeNull();
   });
 });
