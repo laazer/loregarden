@@ -41,6 +41,18 @@ def resolve_mcp_url() -> str:
     return settings.mcp_url.rstrip("/")
 
 
+def resolve_api_base_url() -> str:
+    """Base URL of this control plane's HTTP API, for commands run outside it.
+
+    Mirrors ``resolve_mcp_url``'s precedence so a terminal-handoff command and
+    its MCP config always point at the same server instance.
+    """
+    api_base = os.environ.get("LOREGARDEN_API_URL")
+    if api_base:
+        return api_base.rstrip("/")
+    return settings.mcp_url.rstrip("/").removesuffix("/mcp")
+
+
 def _default_mcp_transport() -> str:
     explicit = os.environ.get("LOREGARDEN_MCP_TRANSPORT", "").strip().lower()
     if explicit:

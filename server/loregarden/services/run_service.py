@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from datetime import datetime, timezone
 
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.db.session import engine
@@ -12,6 +13,7 @@ from loregarden.models.domain import (
     OrchestrationRun,
     OrchestrationRunStatus,
     RunStatus,
+    StageStatus,
     Ticket,
     Workspace,
 )
@@ -28,6 +30,121 @@ INTERRUPTED_RUN_MESSAGE = (
     "Agent run interrupted before completion (server reload or worker stopped). "
     "Re-run the stage to continue."
 )
+
+TERMINAL_HANDOFF_COMMAND_PREFIX = "[terminal-handoff]"
+
+STALE_HANDOFF_NEVER_STARTED_MESSAGE = (
+    "Terminal handoff was never started — the copied command did not check in. "
+    "Generate a fresh handoff or re-run the stage to continue."
+)
+
+STALE_HANDOFF_SHELL_DIED_MESSAGE = (
+    "Terminal handoff shell exited without completing the stage. Re-run the stage to continue."
+)
+
+HANDOFF_EXITED_MESSAGE = (
+    "Terminal handoff CLI session ended without completing the stage. Re-run the stage to continue."
+)
+
+
+def _handoff_checkin_grace_seconds() -> int:
+    raw = os.environ.get("LOREGARDEN_HANDOFF_CHECKIN_GRACE_SECONDS", "")
+    return int(raw) if raw.isdigit() else 900
+
+
+def _pid_alive(pid: int) -> bool:
+    """Whether `pid` is a live process on this host.
+
+    Valid only because terminal handoffs are pasted into a shell on the same
+    machine as this control plane — there is no remote-execution path.
+    """
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def settle_dead_handoff_run(
+    session: Session, run: AgentRun, *, message: str, session_ran: bool = True
+) -> None:
+    """Settle a handoff run whose terminal session is gone.
+
+    Nothing settles a handoff AgentRun while its terminal works — the session
+    advances the *workflow* through MCP/UI and the run row just sits RUNNING. So
+    the workflow's own state is the only record of what the session achieved:
+
+    - stage still RUNNING → the dead session was the active work; fail the run
+      and let the advance mark the stage BLOCKED for a re-run.
+    - stage progressed (moved to another key, DONE, or AWAITING a gate) and a
+      session actually ran (``session_ran``) → it did its job before ending; the
+      run succeeded, and re-touching the workflow here would corrupt real state
+      (e.g. re-BLOCK an AWAITING gate). A never-started handoff earns no such
+      credit — a human advancing the stage by hand does not make the run a
+      success — but the workflow is still left alone.
+    - anything else (already BLOCKED, ticket gone) → fail the run, leave the
+      workflow alone.
+    """
+    ticket = session.get(Ticket, run.ticket_id)
+    stage_still_running = bool(
+        ticket
+        and ticket.workflow_stage_key == run.stage_key
+        and ticket.workflow_stage_status == StageStatus.RUNNING
+    )
+    progressed = session_ran and bool(
+        ticket
+        and (
+            ticket.workflow_stage_key != run.stage_key
+            or ticket.workflow_stage_status in (StageStatus.DONE, StageStatus.AWAITING)
+        )
+    )
+    OrchestrationService(session).complete_run(
+        run,
+        status=RunStatus.SUCCEEDED if progressed else RunStatus.FAILED,
+        stderr="" if progressed else message,
+        advance_workflow=stage_still_running,
+    )
+
+
+def fail_stale_handoff_runs(session: Session, *, ticket_id: str | None = None) -> list[AgentRun]:
+    """Reap terminal-handoff runs that are provably dead.
+
+    A handoff run is created RUNNING before any process exists (see
+    ``prepare_terminal_handoff``), so an in-flight status alone proves nothing.
+    Two conditions are decisive: the command never checked in within the grace
+    period (it was never pasted), or it checked in with a shell pid that is no
+    longer alive (the terminal died). Anything else is treated as live.
+    """
+    query = select(AgentRun).where(
+        col(AgentRun.status).in_([RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION]),
+        col(AgentRun.command).startswith(TERMINAL_HANDOFF_COMMAND_PREFIX),
+    )
+    if ticket_id:
+        query = query.where(AgentRun.ticket_id == ticket_id)
+
+    now = datetime.now(timezone.utc)
+    grace = _handoff_checkin_grace_seconds()
+    reaped: list[AgentRun] = []
+    for run in session.exec(query).all():
+        if run.handoff_accepted_at is None:
+            started_at = run.started_at or run.created_at
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+            if (now - started_at).total_seconds() < grace:
+                continue
+            settle_dead_handoff_run(
+                session, run, message=STALE_HANDOFF_NEVER_STARTED_MESSAGE, session_ran=False
+            )
+        elif run.handoff_pid is not None and not _pid_alive(run.handoff_pid):
+            settle_dead_handoff_run(session, run, message=STALE_HANDOFF_SHELL_DIED_MESSAGE)
+        else:
+            continue
+        reaped.append(run)
+    return reaped
 
 
 def fail_interrupted_runs(

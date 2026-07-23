@@ -204,6 +204,12 @@ class AgentRun(SQLModel, table=True):
     stderr: str = ""
     auto_approve: bool = Field(default=False)
     timeout_override_seconds: int | None = Field(default=None)
+    # Terminal-handoff liveness. A handoff run is created RUNNING before any
+    # process exists — the pasted command's check-in records when (and as which
+    # shell pid) it actually started, so a handoff that was never pasted, or
+    # whose terminal died, can be reaped instead of blocking the ticket forever.
+    handoff_accepted_at: datetime | None = None
+    handoff_pid: int | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
@@ -358,6 +364,15 @@ class Approval(SQLModel, table=True):
     status: ApprovalStatus = Field(default=ApprovalStatus.PENDING)
     created_at: datetime = Field(default_factory=utcnow)
     resolved_at: datetime | None = None
+    # Who/what resolved this approval — "automation" for an auto_approve-mode
+    # gate resolution, "" for a human clicking approve in the inbox. Absence of
+    # an approvals row must never be the only record of an auto-approval, so
+    # every auto-resolved gate still gets a row here, distinguishable from a
+    # human sign-off by this column.
+    resolved_by: str = ""
+    resolving_orchestration_run_id: str | None = Field(
+        default=None, foreign_key="orchestration_runs.id", index=True
+    )
 
 
 class TriageMessage(SQLModel, table=True):

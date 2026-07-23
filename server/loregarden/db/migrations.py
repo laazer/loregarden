@@ -902,6 +902,48 @@ def _m_queued_run_created_at(conn: Connection) -> None:
     )
 
 
+def _m_approval_auto_resolution_audit(conn: Connection) -> None:
+    """Add ``resolved_by``/``resolving_orchestration_run_id`` to ``approvals``.
+
+    Ticket 164: auto_approve-mode gate resolutions must still create an
+    Approval row, distinguishable from a human sign-off — absence of a row
+    must never be the record of an auto-approval.
+    """
+    if not table_exists(conn, "approvals"):
+        return
+    add_columns_if_missing(
+        conn,
+        "approvals",
+        {
+            "resolved_by": "ALTER TABLE approvals ADD COLUMN resolved_by TEXT NOT NULL DEFAULT ''",
+            "resolving_orchestration_run_id": (
+                "ALTER TABLE approvals ADD COLUMN resolving_orchestration_run_id TEXT"
+            ),
+        },
+    )
+
+
+def _m_agent_run_handoff_liveness(conn: Connection) -> None:
+    """Add ``handoff_accepted_at``/``handoff_pid`` to ``agent_runs``.
+
+    Terminal-handoff runs are created RUNNING with no supervising process, so
+    nothing could ever prove one was alive — a never-pasted command left a
+    phantom active run that blocked triage chat and the self-improve restart
+    watcher until the next server reload. The pasted command now checks in with
+    its shell pid; these columns record that check-in for the stale-run reaper.
+    """
+    if not table_exists(conn, "agent_runs"):
+        return
+    add_columns_if_missing(
+        conn,
+        "agent_runs",
+        {
+            "handoff_accepted_at": "ALTER TABLE agent_runs ADD COLUMN handoff_accepted_at TEXT",
+            "handoff_pid": "ALTER TABLE agent_runs ADD COLUMN handoff_pid INTEGER",
+        },
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -942,6 +984,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0037_mcp_server_health", _m_mcp_server_health),
     ("0038_mcp_server_rate_limit", _m_mcp_server_rate_limit),
     ("0039_queued_run_created_at", _m_queued_run_created_at),
+    ("0040_approval_auto_resolution_audit", _m_approval_auto_resolution_audit),
+    ("0041_agent_run_handoff_liveness", _m_agent_run_handoff_liveness),
 ]
 
 

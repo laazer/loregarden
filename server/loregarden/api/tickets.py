@@ -707,7 +707,9 @@ def build_terminal_handoff_command(
         raise HTTPException(400, "This stage does not run a CLI agent")
     try:
         invocation, cleanup_path = run_svc.executor.prepare_terminal_handoff(run, ticket)
-        command = render_terminal_handoff_command(invocation, cleanup_path=cleanup_path)
+        command = render_terminal_handoff_command(
+            invocation, cleanup_path=cleanup_path, run_id=run.id
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"run_id": run.id, "adapter": invocation.adapter, "command": command}

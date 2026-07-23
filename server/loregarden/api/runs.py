@@ -1,11 +1,20 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loregarden.db.session import get_session
-from loregarden.models.domain import RunMessageCreate
+from loregarden.models.domain import HandoffCheckinRequest, RunMessageCreate, RunStatus
 from loregarden.services.artifact_service import load_run_log
 from loregarden.services.run_errors import normalize_timeout_stderr
-from loregarden.services.run_service import RunService
+from loregarden.services.run_service import (
+    HANDOFF_EXITED_MESSAGE,
+    TERMINAL_HANDOFF_COMMAND_PREFIX,
+    RunService,
+    settle_dead_handoff_run,
+)
 from loregarden.services.run_steering import list_messages, queue_message, steer_refusal
 from sqlmodel import Session
+
+_IN_FLIGHT_STATUSES = (RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION)
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -110,6 +119,52 @@ def post_run_message(
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return _message_payload(message)
+
+
+@router.post("/{run_id}/handoff-checkin")
+def handoff_checkin(
+    run_id: str, body: HandoffCheckinRequest, session: Session = Depends(get_session)
+) -> dict:
+    """Record that a pasted terminal-handoff command actually started.
+
+    The command is chained with `&&`, so a 409 here stops the CLI from doing
+    stage work against a run that was already reaped as stale.
+    """
+    run = RunService(session).get_run(run_id)
+    if not run:
+        raise HTTPException(404, "Run not found")
+    if not run.command.startswith(TERMINAL_HANDOFF_COMMAND_PREFIX):
+        raise HTTPException(409, "Run is not a terminal handoff")
+    if run.status not in _IN_FLIGHT_STATUSES:
+        raise HTTPException(
+            409,
+            "This handoff is no longer active — generate a fresh handoff command and use that.",
+        )
+    run.handoff_accepted_at = datetime.now(timezone.utc)
+    run.handoff_pid = body.pid
+    session.add(run)
+    session.commit()
+    return {"ok": True}
+
+
+@router.post("/{run_id}/handoff-exited")
+def handoff_exited(run_id: str, session: Session = Depends(get_session)) -> dict:
+    """Settle a terminal-handoff run whose CLI session has ended.
+
+    Nothing supervises a handoff, so without this ping a session that ended
+    without completing its stage would leave the run RUNNING forever. A no-op
+    when the run was already settled (e.g. the stage completed normally).
+    """
+    run = RunService(session).get_run(run_id)
+    if not run:
+        raise HTTPException(404, "Run not found")
+    if (
+        run.command.startswith(TERMINAL_HANDOFF_COMMAND_PREFIX)
+        and run.status in _IN_FLIGHT_STATUSES
+    ):
+        settle_dead_handoff_run(session, run, message=HANDOFF_EXITED_MESSAGE)
+        session.refresh(run)
+    return {"ok": True, "status": run.status.value}
 
 
 @router.get("/{run_id}")

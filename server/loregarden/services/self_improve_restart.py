@@ -16,6 +16,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.run_service import fail_stale_handoff_runs
 from loregarden.services.studio_routing import is_agentless_stage
 from sqlmodel import Session, col, select
 
@@ -77,6 +78,11 @@ def _workspace_or_error(session: Session, workspace_slug: str) -> Workspace:
 
 def _in_flight_state(session: Session, workspace: Workspace, tickets: list[Ticket]) -> dict:
     """Work a restart would kill. Shared by the watcher's poll and the manual reload."""
+    # A dead terminal-handoff run is not work a restart would kill — and left
+    # unreaped it deadlocks the watcher: the restart that would recover it is
+    # blocked by it. The watcher polls this continuously, so reaping here keeps
+    # phantom handoff runs from wedging the whole self-improve loop.
+    fail_stale_handoff_runs(session)
     active_agent_runs = list(
         session.exec(
             select(AgentRun).where(
