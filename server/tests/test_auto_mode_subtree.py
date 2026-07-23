@@ -240,9 +240,14 @@ def test_gate_required_stage_auto_resolves_under_auto_approve(db_session: Sessio
     orch_run = BuiltinOrchestrator(db_session).execute(ticket, _profile(), auto_approve=True)
     db_session.refresh(ticket)
 
+    # Scoped to the signoff stage: the agentless `review` gate later in the
+    # same auto run writes its own (spec-required) WORKFLOW_GATE audit row,
+    # which the agentless test covers — an unscoped count would see both.
     approvals = db_session.exec(
         select(Approval).where(
-            Approval.ticket_id == ticket.id, Approval.kind == ApprovalKind.WORKFLOW_GATE
+            Approval.ticket_id == ticket.id,
+            Approval.kind == ApprovalKind.WORKFLOW_GATE,
+            Approval.stage_key == "signoff",
         )
     ).all()
     assert len(approvals) == 1, "the WORKFLOW_GATE approval row must still be created, not skipped"

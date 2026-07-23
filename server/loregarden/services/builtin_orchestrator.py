@@ -24,7 +24,6 @@ from loregarden.models.domain import (
     TicketState,
     WorkflowInstance,
     WorkflowStageDef,
-    WorkItemType,
     Workspace,
 )
 from loregarden.services.artifact_service import looks_like_test_output
@@ -43,6 +42,12 @@ from loregarden.services.studio_routing import (
     is_agentless_stage,
     is_terminal_stage,
     took_light_route,
+)
+from loregarden.services.subtree_auto_run import (
+    SubtreeBudget,
+    auto_resolve_awaiting_gate,
+    child_sort_key,
+    ticket_workflow_complete,
 )
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
@@ -72,8 +77,14 @@ class BuiltinOrchestrator:
         max_stages: int | None = None,
         stop_at_stage_key: str | None = None,
         auto_approve: bool = False,
+        _subtree_budget: SubtreeBudget | None = None,
     ) -> OrchestrationRun:
         limit = max_stages if max_stages is not None else profile.max_stages_per_run
+        # Only the outermost call in a subtree creates the budget; every
+        # nested execute() this call makes (via _orchestrate_incomplete_children)
+        # receives and shares this same instance, so the cap holds across the
+        # whole tree instead of resetting per ticket.
+        budget = SubtreeBudget.for_root(_subtree_budget, profile)
         orch_run = self.callbacks.start_orchestration_run(
             ticket,
             driver=OrchestrationDriver.BUILTIN_AUTOPILOT,
@@ -89,7 +100,9 @@ class BuiltinOrchestrator:
                 if ticket.state in (TicketState.BLOCKED, TicketState.DONE, TicketState.WONT_DO):
                     break
 
-                child_pause = self._orchestrate_incomplete_children(ticket, profile)
+                child_pause = self._orchestrate_incomplete_children(
+                    ticket, profile, auto_approve=auto_approve, subtree_budget=budget
+                )
                 if child_pause:
                     return self._pause_orchestration(orch_run, ticket, message=child_pause)
 
@@ -108,16 +121,28 @@ class BuiltinOrchestrator:
                     )
 
                 stage_def = next(s for s in stages if s.key == target_key)
+                target_is_terminal = is_terminal_stage(stage_def)
+                bound_pause = budget.pause_message(terminal=target_is_terminal)
+                if bound_pause:
+                    return self._pause_orchestration(orch_run, ticket, message=bound_pause)
+
                 stage_status = stage_map.get(target_key, ticket.workflow_stage_status)
 
                 if stage_status == StageStatus.AWAITING:
+                    if auto_approve and auto_resolve_awaiting_gate(
+                        self.session, ticket, orch_run, target_key
+                    ):
+                        continue
                     return self._pause_orchestration(
                         orch_run, ticket, message="Awaiting human approval"
                     )
 
                 if is_agentless_stage(stage_def):
-                    handled = self._handle_agentless_stage(ticket, orch_run, stage_def, target_key)
+                    handled = self._handle_agentless_stage(
+                        ticket, orch_run, stage_def, target_key, auto_approve=auto_approve
+                    )
                     stages_run += 1
+                    budget.consume(terminal=target_is_terminal)
                     if handled is None:
                         continue
                     return handled
@@ -140,49 +165,16 @@ class BuiltinOrchestrator:
                         stop_at_stage_key=stop_at_stage_key,
                     )
                 stages_run += 1
+                budget.consume(terminal=target_is_terminal)
                 if stopped:
                     self.session.refresh(orch_run)
                     return orch_run
 
-                self.session.refresh(ticket)
-                instance, stages = self.orch._resolve_stages(ticket)
-                stage_map = parse_stage_map(instance, stages) if instance else {}
-                status_after = stage_map.get(target_key, ticket.workflow_stage_status)
-
-                if status_after == StageStatus.AWAITING:
-                    return self._pause_orchestration(
-                        orch_run, ticket, message="Awaiting human approval"
-                    )
-
-                next_route = StateMachine.resolve_next_stage_key(
-                    stages,
-                    self.orch._resolve_transitions(ticket),
-                    target_key,
-                    outcome="pass",
+                advanced = self._advance_after_stage(
+                    ticket, profile, stage_def, orch_run, target_key
                 )
-                next_key = next_route.to_key if next_route else None
-                if next_key:
-                    decision = self._run_gates_with_autofix(
-                        ticket,
-                        profile,
-                        stage_def,
-                        instance,
-                        stages,
-                        orch_run,
-                        from_stage=target_key,
-                        to_stage=next_key,
-                    )
-                    if decision is _GateDecision.BLOCKED:
-                        self.session.refresh(orch_run)
-                        return orch_run
-                    if decision is _GateDecision.REROUTED:
-                        # Stage was routed back to itself for an inline retry;
-                        # let the loop re-run it this same pass.
-                        continue
-                    # _GateDecision.PASS falls through to advance normally.
-
-                if not next_key:
-                    return self._pause_orchestration(orch_run, ticket)
+                if advanced is not None:
+                    return advanced
 
             final_status = (
                 OrchestrationRunStatus.BLOCKED
@@ -198,6 +190,59 @@ class BuiltinOrchestrator:
             )
         self.session.refresh(orch_run)
         return orch_run
+
+    def _advance_after_stage(
+        self,
+        ticket: Ticket,
+        profile: OrchestrationProfile,
+        stage_def: WorkflowStageDef,
+        orch_run: OrchestrationRun,
+        target_key: str,
+    ) -> OrchestrationRun | None:
+        """Post-stage advance: gate checks and routing after a stage ran.
+
+        Returns the orchestration run to hand back to the caller when this
+        pass must stop here (awaiting a human, gate-blocked, or no route
+        forward), or None when the main loop should continue.
+        """
+        self.session.refresh(ticket)
+        instance, stages = self.orch._resolve_stages(ticket)
+        stage_map = parse_stage_map(instance, stages) if instance else {}
+        status_after = stage_map.get(target_key, ticket.workflow_stage_status)
+
+        if status_after == StageStatus.AWAITING:
+            return self._pause_orchestration(orch_run, ticket, message="Awaiting human approval")
+
+        next_route = StateMachine.resolve_next_stage_key(
+            stages,
+            self.orch._resolve_transitions(ticket),
+            target_key,
+            outcome="pass",
+        )
+        next_key = next_route.to_key if next_route else None
+        if next_key:
+            decision = self._run_gates_with_autofix(
+                ticket,
+                profile,
+                stage_def,
+                instance,
+                stages,
+                orch_run,
+                from_stage=target_key,
+                to_stage=next_key,
+            )
+            if decision is _GateDecision.BLOCKED:
+                self.session.refresh(orch_run)
+                return orch_run
+            if decision is _GateDecision.REROUTED:
+                # Stage was routed back to itself for an inline retry; the
+                # main loop re-runs it this same pass.
+                return None
+            # _GateDecision.PASS falls through to advance normally.
+
+        if not next_key:
+            return self._pause_orchestration(orch_run, ticket)
+        return None
 
     def _pause_orchestration(
         self, orch_run: OrchestrationRun, ticket: Ticket, *, message: str = ""
@@ -238,10 +283,13 @@ class BuiltinOrchestrator:
         orch_run: OrchestrationRun,
         stage_def: WorkflowStageDef,
         target_key: str,
+        *,
+        auto_approve: bool = False,
     ) -> OrchestrationRun | None:
         """Handle a stage with no agent to run (the final `done` stage, or a
         human-approval gate). Returns None if the caller should `continue` the
-        loop (workflow just finished), else the `orch_run` to return now.
+        loop (workflow just finished, or the gate auto-resolved), else the
+        `orch_run` to return now.
         """
         if is_terminal_stage(stage_def):
             self.orch.finalize_workflow(ticket)
@@ -249,6 +297,8 @@ class BuiltinOrchestrator:
             return None
         self.orch.enter_human_gate(ticket, stage_key=target_key)
         self.session.refresh(ticket)
+        if auto_approve and auto_resolve_awaiting_gate(self.session, ticket, orch_run, target_key):
+            return None
         return self._pause_orchestration(orch_run, ticket, message="Awaiting human approval")
 
     def _run_parallel_stage_or_stop(
@@ -964,47 +1014,37 @@ class BuiltinOrchestrator:
                 return key
         return None
 
-    def _child_sort_key(self, ticket: Ticket) -> tuple:
-        type_order = {
-            WorkItemType.MILESTONE: 0,
-            WorkItemType.FEATURE: 1,
-            WorkItemType.CAPABILITY: 2,
-            WorkItemType.TASK: 3,
-            WorkItemType.BUG: 4,
-        }
-        return (type_order.get(ticket.work_item_type, 9), ticket.priority, ticket.external_id)
-
-    def _ticket_workflow_complete(self, ticket: Ticket) -> bool:
-        instance, stages = self.orch._resolve_stages(ticket)
-        if not instance or not stages:
-            return True
-        stage_map = parse_stage_map(instance, stages)
-        required = [s for s in stages if not s.optional]
-        return all(
-            stage_map.get(s.key, StageStatus.PENDING) in (StageStatus.DONE, StageStatus.WONT_DO)
-            for s in required
-        )
-
     def _orchestrate_incomplete_children(
         self,
         ticket: Ticket,
         profile: OrchestrationProfile,
+        *,
+        auto_approve: bool = False,
+        subtree_budget: SubtreeBudget | None = None,
     ) -> str | None:
-        """Run direct child workflows sequentially before advancing the parent."""
+        """Run direct child workflows sequentially before advancing the parent.
+
+        `auto_approve` and `subtree_budget` propagate into each nested
+        execute() call, recursively covering the whole descendant subtree
+        (ticket 164) — without this, every child run would default back to
+        auto_approve=False and halt on its first non-allowlisted tool call.
+        """
         children = list(
             self.session.exec(select(Ticket).where(Ticket.parent_ticket_id == ticket.id)).all()
         )
-        children.sort(key=self._child_sort_key)
+        children.sort(key=child_sort_key)
         for child in children:
             if child.work_item_type not in WORKFLOW_WORK_ITEM_TYPES:
                 continue
             self.orch.ensure_workflow_instance(child, commit=True)
-            if self._ticket_workflow_complete(child):
+            if ticket_workflow_complete(self.orch, child):
                 continue
             child_run = BuiltinOrchestrator(self.session).execute(
                 child,
                 profile,
                 max_stages=None,
+                auto_approve=auto_approve,
+                _subtree_budget=subtree_budget,
             )
             self.session.refresh(ticket)
             self.session.refresh(child)
@@ -1012,6 +1052,12 @@ class BuiltinOrchestrator:
                 return f"Child ticket blocked: {child.title}"
             if child_run.status == OrchestrationRunStatus.BLOCKED:
                 return f"Child workflow blocked: {child.title}"
-            if not self._ticket_workflow_complete(child):
-                return f"Child workflow paused: {child.title}"
+            if not ticket_workflow_complete(self.orch, child):
+                # Chain the child's own pause reason so a block deeper in the
+                # subtree stays visible at every level above it — otherwise a
+                # grandparent's run reports only "Child workflow paused" and the
+                # blocked grandchild two levels down is invisible from the top.
+                reason = (child_run.error_message or "").strip()
+                suffix = f" — {reason}" if reason else ""
+                return f"Child workflow paused: {child.title}{suffix}"
         return None

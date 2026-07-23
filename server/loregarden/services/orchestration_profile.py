@@ -58,6 +58,11 @@ class OrchestrationProfile(BaseModel):
     subagents: SubagentsConfig = Field(default_factory=SubagentsConfig)
     callbacks: CallbacksConfig = Field(default_factory=CallbacksConfig)
     max_stages_per_run: int = 0
+    # Subtree-wide cap on stages completed across a top-level auto_approve run
+    # AND every descendant it recurses into (ticket 164) — unlike
+    # max_stages_per_run, which resets per nested execute() call and so cannot
+    # bound a whole unattended subtree run. 0 = unlimited, same convention.
+    max_subtree_stages_per_run: int = 0
 
 
 def orchestration_dir() -> Path:

@@ -78,6 +78,44 @@ def test_resolve_classify_route_ignores_unknown_next_agent():
     assert agent_id == "backend_implementer"
 
 
+def test_resolve_classify_route_prefers_content_over_stale_next_agent():
+    """Regression for #164: a stale next_agent hint from an earlier, unrelated
+    stage must not permanently override a ticket whose text now clearly
+    classifies to a different specialist.
+    """
+    ticket = Ticket(
+        id="t1",
+        external_id="164-test",
+        workspace_id="ws",
+        title="Backend routing fix",
+        description="Fix the server endpoint and database migration for this API route",
+        next_agent="frontend_implementer",
+    )
+    stage = WorkflowStageDef(
+        key="implement",
+        name="Implement",
+        stage_type="classify",
+        classify_routes=[
+            ClassifyRoute(
+                languages=["python"],
+                specialties=["backend"],
+                agent_id="backend_implementer",
+                skill_name="apply_patch",
+                default=True,
+            ),
+            ClassifyRoute(
+                languages=["typescript"],
+                specialties=["frontend"],
+                agent_id="frontend_implementer",
+                skill_name="apply_patch",
+            ),
+        ],
+    )
+    agent_id, skill = resolve_classify_route(ticket, stage)
+    assert agent_id == "backend_implementer"
+    assert skill == "apply_patch"
+
+
 def test_resolve_stage_execution_honors_next_agent_on_implementation():
     ticket = Ticket(
         id="t1",

@@ -749,6 +749,7 @@ class OrchestrationService:
         if not instance or not stages:
             return
 
+        gate_approval: Approval | None = None
         if report and report.status == "blocked":
             # Distinct from fail/needs_rework: the agent isn't reporting bad work to
             # redo upstream, it's reporting it cannot proceed at all (e.g. needs a
@@ -793,7 +794,7 @@ class OrchestrationService:
                 template = self.get_template_for_ticket(ticket)
                 if template:
                     stage_name = stage_display_name(template, run.stage_key)
-                    self._create_workflow_gate_approval(
+                    gate_approval = self._create_workflow_gate_approval(
                         ticket, run.stage_key, stage_name, stage_def=stage_def
                     )
             set_stage_status(ticket, instance, stages, run.stage_key, stage_status)
@@ -806,6 +807,15 @@ class OrchestrationService:
         self.session.add(ticket)
         self.session.add(instance)
         self.session.commit()
+
+        # A gate_required stage reached under auto_approve resolves itself
+        # immediately instead of parking at AWAITING for a human — the
+        # approval row is still created above (audit trail), just pre-resolved.
+        if gate_approval is not None and run.auto_approve:
+            ApprovalService(self.session).auto_resolve(
+                gate_approval.id, orchestration_run_id=run.orchestration_run_id or ""
+            )
+            self.session.refresh(ticket)
 
     def _persist_run_artifacts(
         self,
@@ -1221,6 +1231,51 @@ class ApprovalService:
         )
         return approval
 
+    def auto_resolve(self, approval_id: str, *, orchestration_run_id: str) -> Approval:
+        """Resolve a WORKFLOW_GATE approval on behalf of an auto_approve run.
+
+        Unlike `resolve()`, this never schedules a background resume — the
+        caller (BuiltinOrchestrator) is already mid-loop and continues the
+        same `execute()` pass synchronously. The row is still created/kept
+        (never skipped) and marked `resolved_by="automation"` with the
+        resolving run id, so an auto-approved gate stays distinguishable from
+        a human sign-off in the approvals table.
+        """
+        approval = self.session.get(Approval, approval_id)
+        if not approval:
+            raise ValueError("Approval not found")
+        if approval.status != ApprovalStatus.PENDING:
+            return approval
+        if approval.kind != ApprovalKind.WORKFLOW_GATE:
+            raise ValueError("auto_resolve only applies to workflow-gate approvals")
+
+        approval.status = ApprovalStatus.APPROVED
+        approval.resolved_at = datetime.now(timezone.utc)
+        approval.resolved_by = "automation"
+        approval.resolving_orchestration_run_id = orchestration_run_id
+        self.session.add(approval)
+        self.session.commit()
+
+        ticket = self.session.get(Ticket, approval.ticket_id)
+        if ticket:
+            self._apply_gate_resolution(
+                ticket,
+                approval,
+                approved=True,
+                rework_route_key="",
+                response_text="",
+                resume=False,
+            )
+
+        event_bus.publish(
+            self.session,
+            EventType.APPROVAL_RESOLVED,
+            workspace_id=approval.workspace_id,
+            ticket_id=approval.ticket_id,
+            payload={"approval_id": approval.id, "approved": True, "automated": True},
+        )
+        return approval
+
     def _validate_rework_route(self, approval: Approval, rework_route_key: str) -> None:
         """Validate an explicit stage override up front so a bad target can't
         leave the approval resolved with the ticket never rerouted. Used both
@@ -1249,6 +1304,7 @@ class ApprovalService:
         approved: bool,
         rework_route_key: str,
         response_text: str,
+        resume: bool = True,
     ) -> None:
         instance, stages = self.orchestration._resolve_stages(ticket)
         if not instance or not stages or not approval.stage_key:
@@ -1298,7 +1354,7 @@ class ApprovalService:
         self.session.add(instance)
         self.session.commit()
 
-        if approved:
+        if approved and resume:
             self._resume_orchestration(ticket)
 
     def _resume_orchestration(self, ticket: Ticket) -> None:
