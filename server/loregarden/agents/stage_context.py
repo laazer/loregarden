@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef
 from loregarden.services.compatibility_posture import ResolvedPosture
+from loregarden.services.rework_feedback import render_rework_feedback
+from sqlmodel import Session
 
 # Legacy ticket / workflow-enforcement stage names agents recognize.
 LEGACY_STAGE_ALIASES: dict[str, str] = {
@@ -27,6 +29,7 @@ def build_orchestration_context(
     stage_def: WorkflowStageDef | None,
     stages: list[WorkflowStageDef] | None = None,
     posture: ResolvedPosture | None = None,
+    session: Session | None = None,
 ) -> str:
     stage_key = run.stage_key or ticket.workflow_stage_key
     display_name = stage_def.name if stage_def else stage_key
@@ -81,13 +84,23 @@ def build_orchestration_context(
             posture.contract,
         ]
 
-    if ticket.blocking_issues:
+    # Prefer the full rework-feedback ledger over ticket.blocking_issues: the
+    # latter is capped for the workflow pane (a 200-char pointer for anything
+    # longer), so on a reroute it can carry no actionable detail at all. The
+    # ledger holds every prior round's feedback in full — the union across
+    # rounds, not just the latest framing. Fall back to blocking_issues when no
+    # ledger exists (older tickets, or non-reroute blocks).
+    feedback = render_rework_feedback(session, ticket, stage_key) if session else ""
+    feedback = feedback or ticket.blocking_issues
+    if feedback:
         lines += [
             "",
             "## Why you're here — prior stage feedback",
-            "This ticket was routed back to this stage. Address the following before reporting `pass`:",
+            "This ticket was routed back to this stage. Address every point below before "
+            "reporting `pass` — each is from a prior reviewer or verifier that rejected this "
+            "work. Later rounds do not supersede earlier ones; all must be resolved:",
             "",
-            ticket.blocking_issues,
+            feedback,
         ]
 
     return "\n".join(lines)

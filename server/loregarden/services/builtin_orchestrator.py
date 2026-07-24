@@ -33,6 +33,10 @@ from loregarden.services.git_commit_push_service import commit_paths
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
+from loregarden.services.rework_feedback import (
+    record_reroute_exhausts_budget,
+    rework_reroute_count,
+)
 from loregarden.services.stage_report import (
     StageReport,
     parse_stage_report,
@@ -49,7 +53,7 @@ from loregarden.services.subtree_auto_run import (
     child_sort_key,
     ticket_workflow_complete,
 )
-from loregarden.services.workflow_routing import apply_stage_route
+from loregarden.services.workflow_routing import apply_stage_route, previous_stage_key
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session, select
 
@@ -744,7 +748,9 @@ class BuiltinOrchestrator:
             )
 
         if failures:
-            return self._handle_parallel_stage_failures(ticket, stage_key, failures, reports)
+            return _handle_parallel_stage_failures(
+                self, ticket, orch_run, stage_key, failures, reports
+            )
 
         self.orch.finalize_stage(ticket, stage_key, status=StageStatus.DONE)
         self.session.refresh(ticket)
@@ -897,64 +903,6 @@ class BuiltinOrchestrator:
 
         return failures, reports
 
-    def _handle_parallel_stage_failures(
-        self,
-        ticket: Ticket,
-        stage_key: str,
-        failures: list[str],
-        reports: list[tuple[str, StageReport]],
-    ) -> tuple[bool, str]:
-        message = "; ".join(failures)
-        transitions = self.orch._resolve_transitions(ticket)
-
-        # Prefer an agent-specified reroute target (highest-confidence
-        # among reject/needs_rework reports) over the template's `reject`
-        # transition — apply_stage_route falls back to the template route,
-        # then to the immediately preceding stage, when this is empty.
-        rejecting = [
-            (agent_id, r)
-            for agent_id, r in reports
-            if r.status in ("fail", "needs_rework") and r.reroute_to_stage
-        ]
-        rejecting.sort(key=lambda pair: pair[1].confidence, reverse=True)
-        agent_to_key = rejecting[0][1].reroute_to_stage if rejecting else ""
-        agent_context = rejecting[0][1].reroute_context if rejecting else ""
-
-        template_route = StateMachine.resolve_transition_target(transitions, stage_key, "reject")
-        to_key = agent_to_key or (template_route[0] if template_route else "")
-        transition_agent = template_route[1] if template_route else ""
-
-        instance, stages = self.orch._resolve_stages(ticket)
-        if instance and stages:
-            try:
-                apply_stage_route(
-                    ticket,
-                    instance,
-                    stages,
-                    transitions,
-                    from_key=stage_key,
-                    outcome="reject",
-                    next_stage_key=to_key,
-                    next_agent=transition_agent or ticket.next_agent,
-                    blocking_issues=(agent_context or message)[:2000],
-                )
-                self.session.add(ticket)
-                self.session.add(instance)
-                self.session.commit()
-                self.session.refresh(ticket)
-                return True, message
-            except ValueError:
-                pass  # first-in-order stage, nowhere to fall back to — BLOCKED below
-
-        self.orch.finalize_stage(
-            ticket,
-            stage_key,
-            status=StageStatus.BLOCKED,
-            blocking_message=message[:2000],
-        )
-        self.session.refresh(ticket)
-        return False, message
-
     def _recover_interrupted_stage(self, ticket: Ticket, instance, stages) -> str | None:
         """Clear a stage blocked only by a server restart, not a genuine failure.
 
@@ -1061,3 +1009,95 @@ class BuiltinOrchestrator:
                 suffix = f" — {reason}" if reason else ""
                 return f"Child workflow paused: {child.title}{suffix}"
         return None
+
+
+def _handle_parallel_stage_failures(
+    builtin: BuiltinOrchestrator,
+    ticket: Ticket,
+    orch_run: OrchestrationRun,
+    stage_key: str,
+    failures: list[str],
+    reports: list[tuple[str, StageReport]],
+) -> tuple[bool, str]:
+    """Route a parallel review stage's rework: record the reviewers' feedback for
+    the re-run agent and either reroute upstream or, at the loop cap, block for a
+    human. Module-level (not a method) so BuiltinOrchestrator stays under its size
+    cap; pairs with run_completion._reroute_or_block_for_rework (single-stage).
+    """
+    message = "; ".join(failures)
+    transitions = builtin.orch._resolve_transitions(ticket)
+
+    # Prefer an agent-specified reroute target (highest-confidence among
+    # reject/needs_rework reports) over the template's `reject` transition —
+    # apply_stage_route falls back to the template route, then to the immediately
+    # preceding stage, when this is empty.
+    rejecting = [
+        (agent_id, r)
+        for agent_id, r in reports
+        if r.status in ("fail", "needs_rework") and r.reroute_to_stage
+    ]
+    rejecting.sort(key=lambda pair: pair[1].confidence, reverse=True)
+    agent_to_key = rejecting[0][1].reroute_to_stage if rejecting else ""
+    agent_context = rejecting[0][1].reroute_context if rejecting else ""
+
+    template_route = StateMachine.resolve_transition_target(transitions, stage_key, "reject")
+    to_key = agent_to_key or (template_route[0] if template_route else "")
+    transition_agent = template_route[1] if template_route else ""
+
+    instance, stages = builtin.orch._resolve_stages(ticket)
+    if instance and stages:
+        # Record the reviewers' full feedback for the stage this rework will
+        # re-run, so the re-run agent sees every round in full rather than the
+        # short pointer ticket.blocking_issues keeps for the UI.
+        target_stage = to_key or previous_stage_key(stages, stage_key) or ""
+        if record_reroute_exhausts_budget(
+            builtin.session,
+            ticket,
+            target_stage=target_stage,
+            from_stage=stage_key,
+            context=agent_context or message,
+        ):
+            # Same target rerouted to the loop cap without sticking — stop the
+            # loop and pull in a human instead of bouncing again.
+            count = rework_reroute_count(builtin.session, ticket, target_stage)
+            builtin.callbacks.block_ticket(
+                orch_run,
+                ticket,
+                stage_key=stage_key,
+                message=(
+                    f"Rework loop: '{target_stage}' has been rerouted {count}× from "
+                    f"'{stage_key}' without passing. Paused for a human — see the "
+                    f"accumulated rework feedback before re-running."
+                ),
+            )
+            builtin.session.refresh(ticket)
+            return False, message
+
+        try:
+            apply_stage_route(
+                ticket,
+                instance,
+                stages,
+                transitions,
+                from_key=stage_key,
+                outcome="reject",
+                next_stage_key=to_key,
+                next_agent=transition_agent or ticket.next_agent,
+                blocking_issues=(agent_context or message)[:2000],
+            )
+            builtin.session.add(ticket)
+            builtin.session.add(instance)
+            builtin.session.commit()
+            builtin.session.refresh(ticket)
+            return True, message
+        except ValueError:
+            pass  # first-in-order stage, nowhere to fall back to — BLOCKED below
+
+    builtin.orch.finalize_stage(
+        ticket,
+        stage_key,
+        status=StageStatus.BLOCKED,
+        blocking_message=message[:2000],
+    )
+    builtin.session.refresh(ticket)
+    return False, message

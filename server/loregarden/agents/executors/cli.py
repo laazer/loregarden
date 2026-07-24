@@ -410,6 +410,7 @@ class CliAgentExecutor:
             stage_def=stage_def,
             stages=self._resolve_template_stages(ticket),
             posture=resolve_compatibility_posture(self.session, ticket, workspace),
+            session=self.session,
         )
         mcp_context = build_mcp_run_context(
             ticket=ticket, run=run, workspace=workspace, stage_def=stage_def
