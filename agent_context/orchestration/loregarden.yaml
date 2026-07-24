@@ -20,7 +20,13 @@ gates:
     - bash -c "cd server && uv run ruff format ."
     - bash -c "cd client && npx oxlint --fix ."
   autofix_agent_fallback: true
-  autofix_max_agent_attempts: 2
+  # Every gate here is static analysis whose mechanical fixer (ruff --fix /
+  # oxlint --fix) already ran best-effort before an agent is ever spawned. What
+  # the fixer cannot auto-resolve is almost always a real code issue a single
+  # agent pass either fixes or can't — a second full agent respawn rarely
+  # converts a still-failing lint gate and just re-pays a whole CLI run's usage,
+  # so cap it at one.
+  autofix_max_agent_attempts: 1
 subagents:
   spawn_via: cli
 callbacks:
