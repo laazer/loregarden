@@ -2,6 +2,7 @@ from collections.abc import Generator
 from pathlib import Path
 
 from loregarden.config import settings
+from loregarden.db.enum_integrity import report_unreadable_enum_values
 from loregarden.db.migrations import apply_migrations
 from loregarden.services.path_resolve import (
     is_under_icloud,
@@ -49,6 +50,10 @@ def _configure_sqlite_connection(dbapi_connection, _connection_record) -> None:
 def init_db() -> None:
     SQLModel.metadata.create_all(engine)
     apply_migrations(engine)
+    # After migrations, so a value the migrations were meant to convert is not
+    # reported as corruption. Logs and continues: refusing to boot over one bad
+    # row would take the control plane down harder than the bad row does.
+    report_unreadable_enum_values(engine)
 
 
 def get_session() -> Generator[Session, None, None]:

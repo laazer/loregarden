@@ -17,11 +17,14 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
+from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
+from loregarden.services.workflow_service import resolve_ticket_stages
+from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -29,6 +32,11 @@ logger = logging.getLogger(__name__)
 INTERRUPTED_RUN_MESSAGE = (
     "Agent run interrupted before completion (server reload or worker stopped). "
     "Re-run the stage to continue."
+)
+
+STRANDED_STAGE_MESSAGE = (
+    "Stage was left running with no agent run behind it (the run ended before its "
+    "stage was settled). Re-run the stage to continue."
 )
 
 TERMINAL_HANDOFF_COMMAND_PREFIX = "[terminal-handoff]"
@@ -180,6 +188,73 @@ def fail_interrupted_runs(
         orch.complete_run(run, status=RunStatus.FAILED, stderr=message)
         failed.append(run)
     return failed
+
+
+def settle_stranded_stages(
+    session: Session,
+    *,
+    ticket_id: str | None = None,
+    message: str = STRANDED_STAGE_MESSAGE,
+) -> list[Ticket]:
+    """Settle stages left RUNNING with no live run behind them.
+
+    ``fail_interrupted_runs`` reaps by *run*: it selects runs still in flight and
+    completes them, which settles their stage on the way through. A stage whose run
+    already reached a terminal status without settling it is therefore invisible to
+    it — and permanently so, since no later reap will ever select that run again.
+
+    That state is reachable: ``complete_run`` commits the run's terminal status
+    before it touches the ticket, so any failure in between leaves exactly this
+    residue. It is not cosmetic — a ticket stuck at RUNNING reports itself as an
+    active workflow stage, which deadlocks the self-improve restart watcher, so the
+    reload that would have recovered it can never fire.
+
+    QUEUED counts as live: a stage legitimately reads RUNNING while its run waits in
+    the queue.
+    """
+    live_ticket_ids = select(AgentRun.ticket_id).where(
+        col(AgentRun.status).in_(
+            [RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION]
+        )
+    )
+    query = select(Ticket).where(
+        Ticket.workflow_stage_status == StageStatus.RUNNING,
+        col(Ticket.id).not_in(live_ticket_ids),
+    )
+    if ticket_id:
+        query = query.where(Ticket.id == ticket_id)
+
+    orch = OrchestrationService(session)
+    settled: list[Ticket] = []
+    for ticket in session.exec(query).all():
+        instance, _ = orch.ensure_workflow_instance(ticket, commit=False)
+        _, stages = resolve_ticket_stages(session, ticket)
+        stage_key = ticket.workflow_stage_key
+        if not instance or not stages or not stage_key:
+            continue
+        try:
+            set_stage_status(ticket, instance, stages, stage_key, StageStatus.BLOCKED)
+        except ValueError:
+            # Stage key no longer in the template — nothing coherent to settle.
+            continue
+        ticket.blocking_issues = record_blocking_issue(
+            session,
+            ticket,
+            run_id=None,
+            stage_key=stage_key,
+            message=message,
+        )
+        session.add(ticket)
+        session.add(instance)
+        settled.append(ticket)
+    if settled:
+        session.commit()
+        logger.warning(
+            "Settled %d stage(s) left running with no live run: %s",
+            len(settled),
+            ", ".join(t.external_id for t in settled),
+        )
+    return settled
 
 
 def fail_interrupted_orchestration_runs(

@@ -12,6 +12,7 @@ semantics.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -33,6 +34,8 @@ from loregarden.db.migrations_templates import (
 )
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
+
+logger = logging.getLogger(__name__)
 
 Migration = Callable[[Connection], None]
 
@@ -944,6 +947,126 @@ def _m_agent_run_handoff_liveness(conn: Connection) -> None:
     )
 
 
+def _m_ticket_enum_values(conn: Connection) -> None:
+    """Rewrite ``tickets.state``/``tickets.workflow_stage_status`` from enum *names*
+    to enum *values*.
+
+    Both columns were plain ``Field`` declarations, so SQLAlchemy persisted the member
+    name (``BLOCKED``), while every enum column beside them — ``tickets.work_item_type``,
+    ``orchestration_runs.status`` — uses ``_str_enum_column`` and persists the value
+    (``blocked``). One table, two conventions: anything writing the obvious lowercase
+    form out of band produced a row the ORM could not read back, and because the enum
+    is resolved on load, a *single* such row raised LookupError on every SELECT over
+    tickets — taking down each endpoint that lists them, not just that ticket's.
+
+    Names are hardcoded rather than read off the enums so a later member rename cannot
+    retroactively change what this migration does. The mapping is name -> value only,
+    so rows already stored as values do not match and are left untouched.
+    """
+    if not table_exists(conn, "tickets"):
+        return
+    columns = table_columns(conn, "tickets")
+    renames: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
+        (
+            "state",
+            "UPDATE tickets SET state = :value WHERE state = :name",
+            (
+                ("BACKLOG", "backlog"),
+                ("IN_PROGRESS", "in_progress"),
+                ("BLOCKED", "blocked"),
+                ("DONE", "done"),
+                ("WONT_DO", "wont_do"),
+            ),
+        ),
+        (
+            "workflow_stage_status",
+            "UPDATE tickets SET workflow_stage_status = :value WHERE workflow_stage_status = :name",
+            (
+                ("PENDING", "pending"),
+                ("RUNNING", "running"),
+                ("BLOCKED", "blocked"),
+                ("AWAITING", "awaiting"),
+                ("DONE", "done"),
+                ("WONT_DO", "wont_do"),
+            ),
+        ),
+    )
+    for column, statement, pairs in renames:
+        if column not in columns:
+            continue
+        for name, value in pairs:
+            conn.execute(text(statement), {"name": name, "value": value})
+
+
+def _m_run_approval_event_enum_values(conn: Connection) -> None:
+    """Finish what 0042 started: the last three columns that stored enum *names*.
+
+    ``agent_runs.status``, ``approvals.status`` and ``domain_events.type`` were the
+    remaining plain ``Field`` declarations, so the schema still had two conventions
+    and a reader still could not tell which one a given column used. That ambiguity
+    is the bug — 0042 fixed the two columns that happened to break first.
+
+    ``agent_runs.status`` is the one that mattered: it is the column an operator or
+    agent is most likely to correct by hand ("mark this stuck run failed"), and one
+    unreadable row would fail every SELECT over runs.
+
+    Note ``EventType`` values are PascalCase, so this is a rename rather than a
+    case-fold. As in 0042 the pairs are hardcoded, and the mapping is name -> value
+    only, so already-converted rows do not match and re-running is a no-op. The loop
+    is duplicated from 0042 rather than shared, because an applied migration's code
+    should not change under it.
+    """
+    renames: tuple[tuple[str, str, str, tuple[tuple[str, str], ...]], ...] = (
+        (
+            "agent_runs",
+            "status",
+            "UPDATE agent_runs SET status = :value WHERE status = :name",
+            (
+                ("QUEUED", "queued"),
+                ("RUNNING", "running"),
+                ("AWAITING_PERMISSION", "awaiting_permission"),
+                ("SUCCEEDED", "succeeded"),
+                ("FAILED", "failed"),
+                ("CANCELLED", "cancelled"),
+            ),
+        ),
+        (
+            "approvals",
+            "status",
+            "UPDATE approvals SET status = :value WHERE status = :name",
+            (
+                ("PENDING", "pending"),
+                ("APPROVED", "approved"),
+                ("REJECTED", "rejected"),
+            ),
+        ),
+        (
+            "domain_events",
+            "type",
+            "UPDATE domain_events SET type = :value WHERE type = :name",
+            (
+                ("TICKET_CREATED", "TicketCreated"),
+                ("TICKET_STATE_CHANGED", "TicketStateChanged"),
+                ("WORKFLOW_STARTED", "WorkflowStarted"),
+                ("STAGE_STARTED", "StageStarted"),
+                ("STAGE_COMPLETED", "StageCompleted"),
+                ("AGENT_RUN_STARTED", "AgentRunStarted"),
+                ("AGENT_RUN_COMPLETED", "AgentRunCompleted"),
+                ("ORCHESTRATION_RUN_STARTED", "OrchestrationRunStarted"),
+                ("ORCHESTRATION_RUN_COMPLETED", "OrchestrationRunCompleted"),
+                ("ARTIFACT_CREATED", "ArtifactCreated"),
+                ("APPROVAL_REQUESTED", "ApprovalRequested"),
+                ("APPROVAL_RESOLVED", "ApprovalResolved"),
+            ),
+        ),
+    )
+    for table, column, statement, pairs in renames:
+        if not table_exists(conn, table) or column not in table_columns(conn, table):
+            continue
+        for name, value in pairs:
+            conn.execute(text(statement), {"name": name, "value": value})
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -986,6 +1109,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0039_queued_run_created_at", _m_queued_run_created_at),
     ("0040_approval_auto_resolution_audit", _m_approval_auto_resolution_audit),
     ("0041_agent_run_handoff_liveness", _m_agent_run_handoff_liveness),
+    ("0042_ticket_enum_values", _m_ticket_enum_values),
+    ("0043_run_approval_event_enum_values", _m_run_approval_event_enum_values),
 ]
 
 
@@ -1007,6 +1132,26 @@ def _applied_ids(conn: Connection) -> set[str]:
     return {row[0] for row in rows}
 
 
+def _warn_if_database_is_ahead(applied_ids: set[str]) -> list[str]:
+    """Flag migrations this build has never heard of.
+
+    A migration that rewrites stored values leaves a database only newer code can
+    read — check out an older commit, or revert one, and every query over the
+    rewritten table fails with a LookupError that says nothing about the real cause.
+    The recorded ids say so directly, so name it at startup instead.
+    """
+    unknown = sorted(applied_ids - {migration_id for migration_id, _ in MIGRATIONS})
+    if unknown:
+        logger.error(
+            "Database has migrations this build does not know about: %s. It was "
+            "migrated by newer code, and data those migrations rewrote may not be "
+            "readable here. Check out the matching revision rather than running "
+            "against it.",
+            ", ".join(unknown),
+        )
+    return unknown
+
+
 def apply_migrations(engine: Engine) -> list[str]:
     """Apply pending migrations in order. Returns the ids that ran this call."""
     if not str(engine.url).startswith("sqlite"):
@@ -1015,6 +1160,7 @@ def apply_migrations(engine: Engine) -> list[str]:
     with engine.begin() as conn:
         _ensure_migrations_table(conn)
         already = _applied_ids(conn)
+        _warn_if_database_is_ahead(already)
         for migration_id, migrate in MIGRATIONS:
             if migration_id in already:
                 continue

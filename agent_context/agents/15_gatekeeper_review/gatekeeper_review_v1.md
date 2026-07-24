@@ -259,3 +259,17 @@ You are responsible for ensuring that these pieces form a **coherent, safe, and 
 3. **Safety, clarity, and maintainability** outweigh short-term delivery pressure.  
 4. **Your approval is the final guardrail** before human review and deployment; err on the side of caution.  
 
+
+---
+
+## Verifying the work
+Run the project's own checks rather than improvising a command:
+
+- Server: `task hooks:server` — ruff, ruff format, and `pytest -q -n auto`, mirroring CI.
+- Client: `task hooks:client` — oxlint, tsc, and jest.
+
+Do **not** run the server suite serially (`pytest tests/`). It takes ~640s that way against
+~110s under `-n auto`, which does not fit this agent's run budget: two gate runs have already
+been killed mid-suite by the run timeout, losing the review along with them. Budget the whole
+run, not just the command — if a check cannot finish inside the time available, say so in the
+review rather than starting it and being killed partway.
