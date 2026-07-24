@@ -26,11 +26,16 @@ from loregarden.models.domain import (
     RunStatus,
     StageStatus,
     Ticket,
+    TicketState,
     Workspace,
 )
 from loregarden.services.artifact_service import (
     record_blocking_issue,
     refresh_execution_artifacts,
+)
+from loregarden.services.rework_feedback import (
+    record_reroute_exhausts_budget,
+    rework_reroute_count,
 )
 from loregarden.services.run_log_stream import finalize_run_log_artifact
 from loregarden.services.stage_report import (
@@ -38,7 +43,7 @@ from loregarden.services.stage_report import (
     parse_stage_report,
     stage_report_artifact_content,
 )
-from loregarden.services.workflow_routing import apply_stage_route
+from loregarden.services.workflow_routing import apply_stage_route, previous_stage_key
 from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session, select
 
@@ -61,6 +66,77 @@ def _blocking_issue(session: Session, ticket: Ticket, run: AgentRun, message: st
     return record_blocking_issue(
         session, ticket, run_id=run.id, stage_key=run.stage_key, message=message
     )
+
+
+def _rework_target(stages, from_key: str, reroute_to_stage: str) -> str:
+    """The stage this rework will re-run, for keying the rework-feedback ledger.
+
+    Mirrors ``apply_stage_route``'s reject resolution for the common cases: an
+    explicit, valid ``reroute_to_stage`` wins; otherwise it falls back to the
+    immediately preceding stage. A template ``reject`` route to a non-adjacent
+    stage isn't modelled here, so the ledger key can differ by one in that rare
+    case — the feedback is still recorded, just under the fallback key.
+    """
+    keys = {stage.key for stage in stages}
+    if reroute_to_stage and reroute_to_stage in keys:
+        return reroute_to_stage
+    return previous_stage_key(stages, from_key) or ""
+
+
+def _reroute_or_block_for_rework(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    report: StageReport,
+    instance,
+    stages,
+    stderr: str,
+) -> None:
+    """An agent reported fail/needs_rework. Record the full feedback for the
+    re-run agent (in the durable ledger, not the truncated blocking_issues), then
+    either reroute upstream or — if this target has already been rerouted to the
+    loop cap — block for a human instead of bouncing the work yet again.
+    """
+    full_context = report.reroute_context or stderr[:2000] or "Agent run failed"
+    target_stage = _rework_target(stages, run.stage_key, report.reroute_to_stage or "")
+    exhausted = record_reroute_exhausts_budget(
+        orch.session,
+        ticket,
+        target_stage=target_stage,
+        from_stage=run.stage_key,
+        context=full_context,
+        run_id=run.id,
+    )
+    if exhausted:
+        count = rework_reroute_count(orch.session, ticket, target_stage)
+        ticket.blocking_issues = _blocking_issue(
+            orch.session,
+            ticket,
+            run,
+            f"Rework loop: '{target_stage}' has been rerouted {count}× without passing "
+            f"'{run.stage_key}'. Paused for a human — see the accumulated rework feedback "
+            f"before re-running.",
+        )
+        set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+        ticket.state = TicketState.BLOCKED
+        return
+
+    try:
+        apply_stage_route(
+            ticket,
+            instance,
+            stages,
+            orch._resolve_transitions(ticket),
+            from_key=run.stage_key,
+            outcome="reject",
+            next_stage_key=report.reroute_to_stage or "",
+            blocking_issues=_blocking_issue(orch.session, ticket, run, full_context),
+        )
+    except ValueError:
+        # No reject transition, no agent-specified target, and no preceding
+        # stage to fall back to (already first-in-order).
+        ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, full_context)
+        set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
 
 
 def complete_run_tail(
@@ -160,30 +236,7 @@ def advance_stage_after_run(
         ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, message)
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
     elif report and report.status in ("fail", "needs_rework"):
-        transitions = orch._resolve_transitions(ticket)
-        try:
-            apply_stage_route(
-                ticket,
-                instance,
-                stages,
-                transitions,
-                from_key=run.stage_key,
-                outcome="reject",
-                next_stage_key=report.reroute_to_stage or "",
-                blocking_issues=_blocking_issue(
-                    orch.session, ticket, run, report.reroute_context or stderr[:2000]
-                ),
-            )
-        except ValueError:
-            # No reject transition, no agent-specified target, and no
-            # preceding stage to fall back to (already first-in-order).
-            ticket.blocking_issues = _blocking_issue(
-                orch.session,
-                ticket,
-                run,
-                report.reroute_context or stderr[:2000] or "Agent run failed",
-            )
-            set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+        _reroute_or_block_for_rework(orch, ticket, run, report, instance, stages, stderr)
     elif status == RunStatus.SUCCEEDED:
         stage_status = StageStatus.DONE
         stage_def = next((s for s in stages if s.key == run.stage_key), None)
