@@ -11,6 +11,23 @@ Repository-level operating manual for Claude Code and other coding agents workin
 4. **Flag uncertainty explicitly.** Confidence without certainty causes more damage than admitting a gap. A small, low-risk experiment beats a confident guess.
 5. **Verify before reporting.** This repo will happily let you conclude something false from a plausible-looking query. See *Verify, don't infer* below.
 
+## Output economy
+
+Tokens are the budget here — this control plane pays for every agent turn. Keep output lean
+without dropping rigor:
+
+1. **Be terse.** No preamble, no filler, no restating the request. Answer, show the evidence,
+   stop. Match reply length to the task — a one-line change gets a one-line report.
+2. **Prefer structure over prose.** Return findings, status, and data as tables, lists, or
+   JSON the caller can parse, not paragraphs. Route long reports to
+   `loregarden_attach_artifact`, never the response body (see *The database is the source of
+   truth*).
+3. **Read narrowly.** Fetch the lines and files you need, not whole trees — over-reading
+   inflates input cost more than any verbose reply does. Prefer targeted search and
+   `loregarden_get_ticket` over broad greps.
+
+Never trade correctness, tests, or required evidence for brevity. Cut filler, not substance.
+
 ## Project Overview
 
 An Agent SDLC IDE — a local control plane orchestrating multi-agent development. Tickets in

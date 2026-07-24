@@ -142,6 +142,8 @@ Field rules:
 
 If you emit no report, or a malformed one, the orchestrator falls back to today's exit-code-only behavior — but that means a stage that only *looks* successful (clean exit, buggy work) silently advances. Always emit the report.
 
+**Output economy:** Tokens are the budget — every turn is paid for. Keep prose terse (no preamble or filler), return findings as lists or tables the orchestrator can parse, and route long reports to `loregarden_attach_artifact` rather than the response body. Never trade correctness, tests, or required evidence for brevity — cut filler, not substance.
+
 ------------------------------------------------------------
 REVISION RULE
 ------------------------------------------------------------
