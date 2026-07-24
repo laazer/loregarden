@@ -163,6 +163,20 @@ AUTO_APPROVED_MCP_TOOLS = _READ_ONLY_MCP_TOOLS | _CONTROL_PLANE_WRITE_MCP_TOOLS
 #: human's own terminal Claude Code session, direct operator MCP/HTTP calls)
 #: never go through this runner at all. Recorded here as debt: this must be
 #: superseded, not left to become the de facto permanent policy.
+#:
+#: This predicate is checked in two places, not one: here, in
+#: `_try_fast_approve`, which stops Claude Code from ever placing the call when
+#: `--permission-mode`/`--permission-prompt-tool stdio` is in play; and again at
+#: the real dispatch entrypoint, `mcp.tools.execute_tool`, which is what a
+#: direct HTTP POST to `/mcp` or an `external_mcp`-driven orchestrator actually
+#: hits — this runner is never invoked for those callers, so relying on this
+#: check alone left `loregarden_create_ticket` fully open to them (confirmed by
+#: running `execute_tool` directly with no orchestration context: creation
+#: succeeded unconditionally). `execute_tool` sources its own `orchestrated`
+#: flag from the `X-Loregarden-Orchestrated` header / `LOREGARDEN_MCP_ORCHESTRATED`
+#: env var that only `agents.cli_adapters.resolve_cli_invocation`'s builders
+#: attach — see its docstring for exactly which callers that still misses
+#: (plain curl, an `external_mcp` orchestrator, Ticket Studio chat).
 ORCHESTRATED_DENIED_MCP_TOOLS = frozenset({"loregarden_create_ticket"})
 
 #: CLI tools approved by policy rather than per call. The stored allowlist keys

@@ -143,7 +143,7 @@ def build_interactive_invocation(
         _append_model_flag(argv, claude_model)
         if resume_session_id:
             argv.extend(["--resume", resume_session_id])
-        append_mcp_cli_args(argv, adapter="claude", session=db_session)
+        append_mcp_cli_args(argv, adapter="claude", session=db_session, orchestrated=True)
         return CliInvocation(
             argv=argv,
             interactive=True,
@@ -169,7 +169,7 @@ def build_interactive_invocation(
         extra = os.environ.get("LOREGARDEN_CURSOR_AGENT_ARGS")
         if extra:
             argv[2:2] = shlex.split(extra)
-        append_mcp_cli_args(argv, adapter="cursor", session=db_session)
+        append_mcp_cli_args(argv, adapter="cursor", session=db_session, orchestrated=True)
         return CliInvocation(
             argv=argv,
             interactive=False,
@@ -347,7 +347,7 @@ def _claude_print_invocation(
         os.environ.get("LOREGARDEN_CLAUDE_USER_PROMPT", DEFAULT_CLAUDE_USER_PROMPT),
     ]
     _append_model_flag(argv, claude_model)
-    append_mcp_cli_args(argv, adapter="claude")
+    append_mcp_cli_args(argv, adapter="claude", orchestrated=True)
     return CliInvocation(argv=argv, use_prompt_file=True, adapter="claude", cwd=str(workspace_root))
 
 
@@ -356,7 +356,11 @@ def _cursor_print_invocation(
     prompt: str,
     workspace_root: Path,
     cursor_model: str = "",
+    orchestrated: bool = False,
 ) -> CliInvocation:
+    """Shared by a stage run's print-mode fallback (`orchestrated=True`) and a human
+    terminal handoff (`orchestrated=False`, the default) — see `resolve_cli_invocation`
+    vs `resolve_terminal_handoff_invocation`."""
     argv = [
         _bin("cursor-agent", "LOREGARDEN_CURSOR_BIN"),
         "agent",
@@ -373,7 +377,7 @@ def _cursor_print_invocation(
     extra = os.environ.get("LOREGARDEN_CURSOR_AGENT_ARGS")
     if extra:
         argv[2:2] = shlex.split(extra)
-    append_mcp_cli_args(argv, adapter="cursor")
+    append_mcp_cli_args(argv, adapter="cursor", orchestrated=orchestrated)
     return CliInvocation(argv=argv, adapter="cursor", cwd=str(workspace_root))
 
 
@@ -510,6 +514,7 @@ def resolve_cli_invocation(
             prompt=prompt,
             workspace_root=workspace_root,
             cursor_model=cursor_model,
+            orchestrated=True,
         )
 
     if selected == "codex":

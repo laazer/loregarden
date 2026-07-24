@@ -23,7 +23,9 @@ Expected to fail red (ImportError) until permission_bridge.py grows:
 
 from __future__ import annotations
 
+import pytest
 from loregarden.agents.executors.permission_bridge import AUTO_APPROVED_MCP_TOOLS
+from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
 
 
 def test_create_ticket_is_registered_but_never_auto_approved():
@@ -61,3 +63,50 @@ def test_read_only_and_bookkeeping_tools_are_not_denied_for_orchestrated_agents(
         "loregarden_write_handoff",
     ):
         assert is_orchestrated_agent_denied_mcp_tool(f"mcp__loregarden__{tool}") is False, tool
+
+
+# --- real dispatch entrypoint ----------------------------------------------
+#
+# The predicate above is necessary but not sufficient: `PermissionBridgeRunner`
+# (where `_try_fast_approve` consults it) is only reached via the CLI-subprocess
+# permission-request stream. A direct HTTP `/mcp` call or an `external_mcp`-driven
+# orchestrator calls `mcp.tools.execute_tool` directly and skips that runner
+# entirely — these tests pin the second, independent check that closes that gap.
+
+
+def test_execute_tool_denies_create_ticket_when_orchestrated(db_session):
+    args = normalize_tool_arguments(
+        "loregarden_create_ticket",
+        {
+            "workspace_slug": "loregarden",
+            "title": "Should not be created",
+            "work_item_type": "task",
+        },
+    )
+    with pytest.raises(ValueError, match="(?i)orchestrated"):
+        execute_tool(db_session, "loregarden_create_ticket", args, orchestrated=True)
+
+
+def test_execute_tool_allows_create_ticket_when_not_orchestrated(db_session):
+    args = normalize_tool_arguments(
+        "loregarden_create_ticket",
+        {
+            "workspace_slug": "loregarden",
+            "title": "Interactive call",
+            "work_item_type": "milestone",
+        },
+    )
+    # orchestrated defaults to False — the interactive/operator case.
+    execute_tool(db_session, "loregarden_create_ticket", args)
+
+
+def test_execute_tool_orchestrated_flag_does_not_affect_undenied_tools(db_session):
+    """The orchestrated check must be narrow — it must not block a tool that isn't
+    in ORCHESTRATED_DENIED_MCP_TOOLS, even when orchestrated=True."""
+    result = execute_tool(
+        db_session,
+        "loregarden_list_tickets",
+        {"workspace_slug": "loregarden"},
+        orchestrated=True,
+    )
+    assert result

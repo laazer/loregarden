@@ -371,3 +371,60 @@ def test_http_layer_happy_path_returns_created_ticket(client):
     assert payload["title"] == "HTTP layer milestone"
     assert payload["id"]
     assert payload["external_id"]
+
+
+# --- HTTP/JSON-RPC layer: the real dispatch entrypoint enforces the interim
+# orchestrated-agent deny too, not just the CLI-subprocess permission bridge ---
+
+
+def test_http_layer_denies_create_ticket_when_orchestrated_header_set(client):
+    """A run Loregarden's own CLI invocation builders mark as orchestrated (see
+    agents/mcp_context.py) must be denied here even though it reaches `/mcp` directly,
+    bypassing the CLI-subprocess permission bridge entirely."""
+    res = client.post(
+        "/mcp",
+        headers={"X-Loregarden-Orchestrated": "1"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "loregarden_create_ticket",
+                "arguments": {
+                    "workspace_slug": "loregarden",
+                    "title": "Should never be created",
+                    "work_item_type": "task",
+                },
+            },
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    result = body["result"]
+    assert result.get("isError"), result
+    assert "orchestrated" in result["content"][0]["text"].lower()
+
+
+def test_http_layer_allows_create_ticket_without_orchestrated_header(client):
+    """A direct operator/HTTP call — no `X-Loregarden-Orchestrated` header — is the
+    interactive case the ticket's triage decision allows by default."""
+    res = client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "loregarden_create_ticket",
+                "arguments": {
+                    "workspace_slug": "loregarden",
+                    "title": "Direct operator call",
+                    "work_item_type": "milestone",
+                },
+            },
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    result = body["result"]
+    assert not result.get("isError"), result

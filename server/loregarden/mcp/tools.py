@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlmodel import Session, select
 
+from loregarden.agents.executors.permission_bridge import is_orchestrated_agent_denied_mcp_tool
 from loregarden.models.domain import (
     OrchestrationDriver,
     OrchestrationRunStatus,
@@ -1201,7 +1202,33 @@ def _attach_evidence(session: Session, svc, ticket, arguments: dict[str, Any]) -
     )
 
 
-def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -> str:
+def execute_tool(
+    session: Session,
+    name: str,
+    arguments: dict[str, Any] | Any,
+    *,
+    orchestrated: bool = False,
+) -> str:
+    """Dispatch a tool call.
+
+    `orchestrated=True` marks a call made by an agent CLI subprocess Loregarden itself
+    supervises (any run built via `agents.cli_adapters.resolve_cli_invocation` — builtin
+    autopilot or a manually-started single stage alike; see `ORCHESTRATED_DENIED_MCP_TOOLS`).
+    It is threaded down from the MCP transport: the HTTP endpoint sets it from the
+    `X-Loregarden-Orchestrated` header, which only Loregarden's own CLI invocation
+    builders attach to a run's `--mcp-config`/stdio env. A caller that never sets that
+    header — a human's own terminal `claude` session, Ticket Studio chat, a direct
+    operator `curl` against `/mcp`, or an `external_mcp`-driven orchestrator calling
+    tools/call directly — is NOT covered by this check; `orchestrated` defaults to False
+    for exactly that reason. That gap is recorded debt (a9-create-ticket-mcp-tool),
+    pending a2-per-agent-server-policy's real per-agent x per-server policy table.
+    """
+    if orchestrated and is_orchestrated_agent_denied_mcp_tool(name):
+        raise ValueError(
+            f"{name} is not available to orchestrated pipeline agents (interim policy, "
+            "a9-create-ticket-mcp-tool). Use the REST API or an interactive session instead."
+        )
+
     svc = OrchestrationCallbackService(session)
     arguments = normalize_tool_arguments(name, arguments)
 

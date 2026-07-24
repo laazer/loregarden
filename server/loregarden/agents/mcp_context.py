@@ -61,23 +61,31 @@ def _default_mcp_transport() -> str:
     return "http"
 
 
-def loregarden_mcp_server_entry() -> dict[str, Any]:
+def loregarden_mcp_server_entry(*, orchestrated: bool = False) -> dict[str, Any]:
     transport = _default_mcp_transport()
     if transport == "http":
-        return {"type": "http", "url": resolve_mcp_url()}
+        entry: dict[str, Any] = {"type": "http", "url": resolve_mcp_url()}
+        if orchestrated:
+            entry["headers"] = {"X-Loregarden-Orchestrated": "1"}
+        return entry
     script = settings.repo_root / "scripts" / "mcp-server.sh"
+    env = {
+        "LOREGARDEN_MCP_INPROCESS": "1",
+        "LOREGARDEN_REPO_ROOT": str(settings.repo_root),
+    }
+    if orchestrated:
+        env["LOREGARDEN_MCP_ORCHESTRATED"] = "1"
     return {
         "type": "stdio",
         "command": str(script),
         "args": [],
-        "env": {
-            "LOREGARDEN_MCP_INPROCESS": "1",
-            "LOREGARDEN_REPO_ROOT": str(settings.repo_root),
-        },
+        "env": env,
     }
 
 
-def loregarden_mcp_cli_config_json(session: Session | None = None) -> str:
+def loregarden_mcp_cli_config_json(
+    session: Session | None = None, *, orchestrated: bool = False
+) -> str:
     """Claude Code `--mcp-config` payload (full settings shape with mcpServers).
 
     Loregarden's own server plus whatever is registered and enabled. Without a
@@ -87,6 +95,11 @@ def loregarden_mcp_cli_config_json(session: Session | None = None) -> str:
     Loregarden's entry is written last on purpose: a registered server may not
     take its name, because losing the control plane's own tools would break the
     workflow the agent is running.
+
+    `orchestrated` marks this config as belonging to a run Loregarden itself
+    supervises (see `execute_tool`'s docstring in `mcp/tools.py`) — set it only for
+    invocations built by `agents.cli_adapters.resolve_cli_invocation`, never for a
+    human terminal handoff or Ticket Studio chat.
     """
     servers: dict[str, dict] = {}
     if session is not None:
@@ -94,7 +107,7 @@ def loregarden_mcp_cli_config_json(session: Session | None = None) -> str:
             servers.update(cli_server_entries(session))
         except Exception:  # noqa: BLE001 - a bad registry must not stop a run
             logger.warning("Could not read the MCP registry; using loregarden only", exc_info=True)
-    servers[MCP_SERVER_NAME] = loregarden_mcp_server_entry()
+    servers[MCP_SERVER_NAME] = loregarden_mcp_server_entry(orchestrated=orchestrated)
     return json.dumps({"mcpServers": servers})
 
 
@@ -102,12 +115,20 @@ def mcp_cli_injection_enabled() -> bool:
     return os.environ.get("LOREGARDEN_DISABLE_MCP_CLI", "").lower() not in {"1", "true", "yes"}
 
 
-def append_mcp_cli_args(argv: list[str], *, adapter: str, session: Session | None = None) -> None:
+def append_mcp_cli_args(
+    argv: list[str],
+    *,
+    adapter: str,
+    session: Session | None = None,
+    orchestrated: bool = False,
+) -> None:
     """Inject Loregarden MCP into headless Claude/Cursor agent subprocesses."""
     if not mcp_cli_injection_enabled():
         return
     if adapter == "claude":
-        argv.extend(["--mcp-config", loregarden_mcp_cli_config_json(session)])
+        argv.extend(
+            ["--mcp-config", loregarden_mcp_cli_config_json(session, orchestrated=orchestrated)]
+        )
     elif adapter == "cursor" and "--approve-mcps" not in argv:
         argv.append("--approve-mcps")
 

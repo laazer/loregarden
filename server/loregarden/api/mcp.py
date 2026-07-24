@@ -29,5 +29,10 @@ async def mcp_post(
     session: Session = Depends(get_session),
 ) -> JSONResponse:
     body = await request.json()
-    result = handle_message(session, body)
+    # Set only by Loregarden's own CLI invocation builders for a run they supervise
+    # (see agents/mcp_context.py) — a plain curl or an external_mcp-driven orchestrator
+    # never sends it, so this covers the CLI-subprocess path only. See the
+    # `orchestrated` docstring on mcp.tools.execute_tool for the known gap.
+    orchestrated = request.headers.get("X-Loregarden-Orchestrated", "") == "1"
+    result = handle_message(session, body, orchestrated=orchestrated)
     return JSONResponse(content=result)

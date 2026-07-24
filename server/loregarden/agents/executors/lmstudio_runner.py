@@ -38,6 +38,7 @@ class McpBridge:
         response = self._client.post(
             self._url,
             json={"jsonrpc": "2.0", "id": self._next_id, "method": method, "params": params},
+            headers={"X-Loregarden-Orchestrated": "1"},
             timeout=DEFAULT_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
