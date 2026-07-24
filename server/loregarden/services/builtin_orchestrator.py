@@ -14,7 +14,6 @@ from loregarden.db.session import engine
 from loregarden.models.domain import (
     WORKFLOW_WORK_ITEM_TYPES,
     AgentRun,
-    Artifact,
     OrchestrationDriver,
     OrchestrationRun,
     OrchestrationRunStatus,
@@ -37,6 +36,11 @@ from loregarden.services.stage_report import (
     StageReport,
     parse_stage_report,
     stage_report_artifact_content,
+)
+from loregarden.services.stage_retry_budget import (
+    count_gate_fix_attempts,
+    enforce_stage_retry_budget,
+    gate_failure_artifact_title,
 )
 from loregarden.services.studio_routing import (
     is_agentless_stage,
@@ -125,6 +129,17 @@ class BuiltinOrchestrator:
                 bound_pause = budget.pause_message(terminal=target_is_terminal)
                 if bound_pause:
                     return self._pause_orchestration(orch_run, ticket, message=bound_pause)
+
+                budget_block = enforce_stage_retry_budget(
+                    self.session,
+                    self.callbacks,
+                    orch_run,
+                    ticket,
+                    target_key,
+                    profile.retry_budget,
+                )
+                if budget_block is not None:
+                    return budget_block
 
                 stage_status = stage_map.get(target_key, ticket.workflow_stage_status)
 
@@ -401,29 +416,6 @@ class BuiltinOrchestrator:
             detail = f"{detail} (command: {result.command})"
         return strip_ansi(detail)
 
-    def _gate_failure_artifact_title(self, stage_key: str) -> str:
-        return f"Transition gate failed — {stage_key}"
-
-    def _persisted_gate_fix_attempts(self, ticket: Ticket, stage_key: str) -> int:
-        """Count prior automatic gate-fix retries for this stage, persisted via
-        the error artifacts _reroute_for_agent_fix/_block_after_gate_failure
-        attach — so the retry budget holds across separate orchestration runs,
-        not just within a single `execute()` call. A function-local counter
-        resets every time a new run starts (e.g. an operator or auto-resume
-        re-triggers orchestration after a pause), letting a stage that can
-        never pass its gate (a persistent environment issue, not something an
-        agent can fix by editing code) cycle indefinitely instead of ever
-        durably giving up.
-        """
-        return len(
-            self.session.exec(
-                select(Artifact)
-                .where(Artifact.ticket_id == ticket.id)
-                .where(Artifact.kind == "error")
-                .where(Artifact.title == self._gate_failure_artifact_title(stage_key))
-            ).all()
-        )
-
     def _missing_evidence_detail(
         self,
         ticket: Ticket,
@@ -521,9 +513,9 @@ class BuiltinOrchestrator:
 
         # Fixers didn't (or couldn't) clear it. Route back to the stage's own
         # agent with the gate errors in context, up to a bounded number of
-        # tries — counted durably (see _persisted_gate_fix_attempts) so the
+        # tries — counted durably (see count_gate_fix_attempts) so the
         # budget can't be refreshed just by starting a new orchestration run.
-        attempts = self._persisted_gate_fix_attempts(ticket, from_stage)
+        attempts = count_gate_fix_attempts(self.session, ticket.id, from_stage)
         if (
             profile.gates.autofix_agent_fallback
             and attempts < profile.gates.autofix_max_agent_attempts
@@ -611,7 +603,7 @@ class BuiltinOrchestrator:
         self.callbacks.attach_artifact(
             ticket,
             kind="error",
-            title=self._gate_failure_artifact_title(from_stage),
+            title=gate_failure_artifact_title(from_stage),
             content={
                 "message": detail,
                 "run_code": "",
@@ -666,7 +658,7 @@ class BuiltinOrchestrator:
         self.callbacks.attach_artifact(
             ticket,
             kind="error",
-            title=self._gate_failure_artifact_title(from_stage),
+            title=gate_failure_artifact_title(from_stage),
             content={
                 "message": detail,
                 "run_code": "",
