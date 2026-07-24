@@ -5,13 +5,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from loregarden.agents.executors.permission_bridge import is_orchestrated_agent_denied_mcp_tool
 from loregarden.models.domain import (
     OrchestrationDriver,
     OrchestrationRunStatus,
-    Ticket,
     TicketState,
     UpdateTicketRequest,
     WorkItemType,
@@ -1115,31 +1114,27 @@ def _update_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
     return json.dumps(_ticket_state_payload(session, ticket.id), indent=2)
 
 
-def _resolve_parent_ticket_id(session: Session, parent: str) -> str | None:
-    """UUID or external_id slug, resolved the same way loregarden_get_ticket resolves
-    ticket_id. Deliberately not workspace-scoped here: TicketService.create_ticket
+def _create_ticket(
+    session: Session, svc: OrchestrationCallbackService, arguments: dict[str, Any]
+) -> str:
+    """`parent` is resolved via `svc.resolve_ticket` — the same UUID/external_id
+    resolution `loregarden_get_ticket` uses — rather than a second lookup, so the two
+    never disagree. Deliberately not workspace-scoped here: TicketService.create_ticket
     already rejects a parent from another workspace ("Parent work item not found in
     workspace"), so scoping twice would only risk the two checks disagreeing."""
-    parent = (parent or "").strip()
-    if not parent:
-        return None
-    ticket = session.get(Ticket, parent)
-    if ticket:
-        return ticket.id
-    ticket = session.exec(select(Ticket).where(Ticket.external_id == parent)).first()
-    if ticket:
-        return ticket.id
-    raise ValueError(f"Parent ticket not found: {parent}")
-
-
-def _create_ticket(session: Session, arguments: dict[str, Any]) -> str:
     work_item_type_raw = arguments.get("work_item_type") or "task"
     try:
         work_item_type = WorkItemType(work_item_type_raw)
     except ValueError as exc:
         raise ValueError(f"Unknown work_item_type: {work_item_type_raw}") from exc
 
-    parent_ticket_id = _resolve_parent_ticket_id(session, arguments.get("parent", ""))
+    parent = (arguments.get("parent") or "").strip()
+    parent_ticket_id = None
+    if parent:
+        try:
+            parent_ticket_id = svc.resolve_ticket(ticket_id=parent).id
+        except ValueError as exc:
+            raise ValueError(f"Parent ticket not found: {parent}") from exc
 
     ticket = TicketService(session).create_ticket(
         workspace_slug=arguments["workspace_slug"],
@@ -1276,7 +1271,7 @@ def execute_tool(
         return _update_ticket(session, svc, arguments)
 
     if name == "loregarden_create_ticket":
-        return _create_ticket(session, arguments)
+        return _create_ticket(session, svc, arguments)
 
     if name == "loregarden_write_handoff":
         from loregarden.services.handoff_writer import write_handoff

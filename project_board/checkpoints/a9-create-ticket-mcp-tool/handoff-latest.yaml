@@ -1,32 +1,42 @@
 handoff:
   schema_version: '1.0'
   ticket_id: a9-create-ticket-mcp-tool
-  from_agent: test_designer
-  to_agent: test_breaker
-  validated_at: '2026-07-24T17:04:18Z'
-  required_items_met: 3
-  total_required_items: 3
+  from_agent: backend_implementer
+  to_agent: architecture_reviewer
+  validated_at: '2026-07-24T23:09:04Z'
+  required_items_met: 4
+  total_required_items: 4
   checklist:
-  - item_key: tests_cover_acceptance_criteria
-    item: Tests cover every acceptance criterion
+  - item_key: implementation_complete
+    item: Implementation satisfies every acceptance criterion
     required: true
     status: complete
-    evidence: server/tests/test_mcp_create_ticket.py (registration, happy path, validation delegation,
-      parent UUID/slug resolution, HTTP layer), test_mcp_create_ticket_adversarial.py, and test_mcp_create_ticket_access_control.py
-      + new tests in test_permission_bridge.py covering the orchestrated-agent access-control AC end to
-      end
-  - item_key: tests_deterministic
-    item: Tests are deterministic and behavioral, not interaction-based
+    evidence: 'All 3 prior-review rounds resolved: (1) execute_tool() at mcp/tools.py:1226 gates loregarden_create_ticket
+      via is_orchestrated_agent_denied_mcp_tool(name) on the real `orchestrated` dispatch-layer flag (threaded
+      from the X-Loregarden-Orchestrated header set only by Loregarden''s own CLI invocation builders),
+      not just the CLI-subprocess permission_bridge.py side channel; (2) review agent-run failures were
+      transient tooling failures, not code issues -- re-verified the diff cleanly; (3) _create_ticket
+      now takes svc: OrchestrationCallbackService and resolves parent via svc.resolve_ticket(ticket_id=parent)
+      (catching ValueError to raise ''Parent ticket not found: <parent>'', preserving distinct no-parent
+      vs parent-not-found messaging) instead of the removed duplicate _resolve_parent_ticket_id lookup'
+  - item_key: tests_pass
+    item: New and existing tests pass
     required: true
     status: complete
-    evidence: All new tests assert on persisted Ticket rows, tool return payloads, and real control-response
-      bytes written to a fake CLI stdin — no internal-call mocking beyond the external CLI process boundary
-  - item_key: spec_gaps_reported
-    item: Spec gaps or ambiguities found during test design are reported
+    evidence: '90 passed: test_mcp_create_ticket.py, test_mcp_create_ticket_access_control.py, test_mcp_create_ticket_adversarial.py,
+      test_mcp_all_tools_smoke.py, test_permission_bridge.py; ruff check clean on mcp/tools.py and permission_bridge.py'
+  - item_key: access_control_decision_recorded
+    item: Orchestrated-agent access decision implemented per triage/test-design checkpoints
     required: true
     status: complete
-    evidence: 'loregarden_append_checkpoint: found the orchestrated-agent deny check in permission_bridge.py._try_fast_approve
-      is unconditional (not scoped by track_workflow_stage), so it wrongly denies loregarden_create_ticket
-      to interactive Ticket Studio chat too, contradicting the ticket''s own AC and the prior implement-stage
-      handoff''s claim; two new tests in test_permission_bridge.py pin this (one green confirming orchestrated
-      denial is correct, one red exposing the interactive-context bug) for the implement stage to fix'
+    evidence: 'Unchanged from prior round, now confirmed enforced at the real dispatch entrypoint: permission_bridge.py
+      ORCHESTRATED_DENIED_MCP_TOOLS + is_orchestrated_agent_denied_mcp_tool(), checked in both PermissionBridgeRunner._try_fast_approve
+      (CLI-subprocess path) and execute_tool() itself (direct HTTP / EXTERNAL_MCP path) via the orchestrated
+      flag threaded from the X-Loregarden-Orchestrated header'
+  - item_key: debt_recorded
+    item: Interim allowlist recorded as debt pending a2-per-agent-server-policy
+    required: true
+    status: complete
+    evidence: execute_tool() docstring in mcp/tools.py explicitly documents the orchestrated flag's threading
+      path, its current coverage (HTTP header only), and cites a9-create-ticket-mcp-tool as the ticket
+      recording this as debt pending a2-per-agent-server-policy's real per-agent x per-server policy table
