@@ -1,34 +1,38 @@
 handoff:
   schema_version: '1.0'
   ticket_id: a9-create-ticket-mcp-tool
-  from_agent: test_designer
-  to_agent: test_breaker
-  validated_at: '2026-07-24T15:47:49Z'
+  from_agent: backend_implementer
+  to_agent: architecture_reviewer
+  validated_at: '2026-07-24T16:57:49Z'
   required_items_met: 4
   total_required_items: 4
   checklist:
-  - item_key: test_suite_complete
-    item: Test suite covers all acceptance criteria
+  - item_key: implementation_complete
+    item: Implementation satisfies every acceptance criterion
     required: true
     status: complete
-    evidence: server/tests/test_mcp_create_ticket.py (happy path, defaults, parent resolution by UUID/external_id,
-      delegated validation error messages, HTTP/JSON-RPC layer) + server/tests/test_mcp_create_ticket_access_control.py
-      (orchestrated-agent deny / interactive allow)
-  - item_key: tests_are_deterministic
-    item: Tests are deterministic, no flaky waits
+    evidence: loregarden_create_ticket registered in mcp/tools.py TOOL_DEFINITIONS + normalize_tool_arguments
+      + execute_tool dispatch (_create_ticket); mirrors TicketCreate schema; parent resolves via UUID
+      or external_id (_resolve_parent_ticket_id); delegates to TicketService.create_ticket for all validation
+      (no reimplementation)
+  - item_key: tests_pass
+    item: New and existing tests pass
     required: true
     status: complete
-    evidence: Pure DB-session and TestClient calls, no sleeps/timing, no network
-  - item_key: spec_gaps_reported
-    item: Spec gaps or ambiguities reported, not silently assumed
+    evidence: '57 passed: test_mcp_create_ticket.py, test_mcp_create_ticket_access_control.py, test_mcp_create_ticket_adversarial.py,
+      test_mcp_all_tools_smoke.py; ruff check clean on modified files'
+  - item_key: access_control_decision_recorded
+    item: Orchestrated-agent access decision implemented per triage/test-design checkpoints
     required: true
     status: complete
-    evidence: 'Checkpoint appended: exact enforcement interface for the orchestrated-vs-interactive access-control
-      gate is a design proposal (new permission_bridge.py predicate), not a confirmed decision -- flagged
-      for implement stage to confirm or rename'
-  - item_key: baseline_failure_captured
-    item: Pre-existing failure baseline captured before editing tests
+    evidence: 'permission_bridge.py: ORCHESTRATED_DENIED_MCP_TOOLS frozenset + is_orchestrated_agent_denied_mcp_tool()
+      predicate, checked first (ahead of auto-approve and human-approval paths) in PermissionBridgeRunner;
+      loregarden_create_ticket denied to orchestrated pipeline agents, allowed for interactive/copilot
+      contexts which never route through this runner'
+  - item_key: debt_recorded
+    item: Interim allowlist recorded as debt pending a2-per-agent-server-policy
     required: true
     status: complete
-    evidence: 'Ran full suite before/after touching the shared test_mcp_all_tools_smoke.py tables: 1361
-      passed / 34 skipped both times, confirming the shared-file edit is inert until the tool is implemented'
+    evidence: Inline comment above ORCHESTRATED_DENIED_MCP_TOOLS in permission_bridge.py explicitly documents
+      this as interim/debt, superseded once a2-per-agent-server-policy's real per-agent x per-server policy
+      table lands
