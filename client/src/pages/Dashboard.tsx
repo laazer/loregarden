@@ -1499,7 +1499,6 @@ export function Dashboard() {
                 </>
                 )}
               </div>
-              {sel.child_count === 0 && (
               <div className="run-controls">
                 <button
                   className="btn-primary"
@@ -1515,28 +1514,28 @@ export function Dashboard() {
                   )}
                 </button>
                 <div style={{ flex: 1 }} />
-                {(() => {
-                  const cursorStage = sel.stages.find((s) => s.key === sel.workflow_stage_key);
-                  const cursorRun = cursorStage ? canRunStage(sel, cursorStage) : { allowed: false, reason: "No cursor stage" };
-                  const runningCursor = isStageRunning(sel.workflow_stage_key);
-                  return (
-                    <WorkflowRunOverflowMenu
-                      ticket={sel}
-                      orchestrateCommand={buildOrchestrateTerminalCommand(sel, API_BASE)}
-                      cursorStage={cursorStage}
-                      cursorRun={cursorRun}
-                      runningCursor={runningCursor}
-                      workflowBusy={workflowBusy}
-                      startRunPending={startRun.isPending}
-                      advancePending={advance.isPending}
-                      onRunCurrentStage={() => requestStageRun(sel.workflow_stage_key)}
-                      onAdvance={() => advance.mutate()}
-                      onDelete={() => setDeleteTicketTarget(sel)}
-                    />
-                  );
-                })()}
+                {sel.child_count === 0 &&
+                  (() => {
+                    const cursorStage = sel.stages.find((s) => s.key === sel.workflow_stage_key);
+                    const cursorRun = cursorStage ? canRunStage(sel, cursorStage) : { allowed: false, reason: "No cursor stage" };
+                    const runningCursor = isStageRunning(sel.workflow_stage_key);
+                    return (
+                      <WorkflowRunOverflowMenu
+                        ticket={sel}
+                        orchestrateCommand={buildOrchestrateTerminalCommand(sel, API_BASE)}
+                        cursorStage={cursorStage}
+                        cursorRun={cursorRun}
+                        runningCursor={runningCursor}
+                        workflowBusy={workflowBusy}
+                        startRunPending={startRun.isPending}
+                        advancePending={advance.isPending}
+                        onRunCurrentStage={() => requestStageRun(sel.workflow_stage_key)}
+                        onAdvance={() => advance.mutate()}
+                        onDelete={() => setDeleteTicketTarget(sel)}
+                      />
+                    );
+                  })()}
               </div>
-              )}
             </>
           ) : (
             <div style={{ padding: 40, color: "var(--txl)" }}>Select a ticket</div>
