@@ -29,6 +29,7 @@ import pytest
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments, tool_names
 from loregarden.models.domain import Ticket, WorkItemType, Workspace
 from loregarden.services.acceptance_criteria import load_criteria
+from loregarden.services.ticket_service import TicketService
 from sqlmodel import select
 
 
@@ -269,19 +270,36 @@ def test_unresolvable_parent_is_a_structured_error_not_a_stack_trace(client, db_
 
 
 def test_parent_in_a_different_workspace_is_not_resolved(client, db_session):
-    """A parent external_id that exists only in another workspace must not silently
-    resolve — TicketService's own workspace-scoping check (`parent.workspace_id != ws.id`)
-    is the source of truth here; the MCP layer's `parent` resolution must respect
-    `workspace_slug` scoping the same way `loregarden_get_ticket` does."""
-    milestone = _milestone(db_session)
-    with pytest.raises(ValueError):
+    """A parent external_id that exists only in another *valid* workspace must not
+    silently resolve when creating in a different valid workspace — the MCP layer's
+    `parent` resolution must respect `workspace_slug` scoping the same way
+    `loregarden_get_ticket` does, not just reject because the target workspace itself
+    doesn't exist.
+
+    Deliberately uses two *real* workspaces (not an unknown workspace_slug, which the
+    original version of this test used): TicketService.create_ticket raises
+    "Workspace not found" before ever reaching parent resolution, so an unknown-workspace
+    setup would pass for the wrong reason. Worse, with no `loregarden_create_ticket` tool
+    registered at all, `execute_tool` raises a bare `ValueError("Unknown tool: ...")` —
+    which satisfies an unqualified `pytest.raises(ValueError)` too. Both made this test
+    pass red-suite-wide with zero implementation. Pinning `match="(?i)parent"` and using
+    a genuinely different workspace closes both gaps."""
+    other_ws = Workspace(slug="other-workspace-for-parent-scoping", name="Other Workspace")
+    db_session.add(other_ws)
+    db_session.commit()
+    other_milestone = TicketService(db_session).create_ticket(
+        workspace_slug=other_ws.slug,
+        title="Milestone in the other workspace",
+        work_item_type=WorkItemType.MILESTONE,
+    )
+    with pytest.raises(ValueError, match="(?i)parent"):
         _create(
             db_session,
             {
-                "workspace_slug": "does-not-exist-for-scoping",
+                "workspace_slug": "loregarden",
                 "title": "Cross-workspace parent",
                 "work_item_type": "feature",
-                "parent": milestone.id,
+                "parent": other_milestone.external_id,
             },
         )
 
@@ -313,6 +331,13 @@ def test_http_layer_reports_unresolvable_parent_as_isError_not_a_crash(client):
         "loregarden_create_ticket must surface an unresolvable parent as a clean "
         "tool error, not a raw 500/stack trace"
     )
+    # A bare "or isError" check passes vacuously if the tool isn't registered at all
+    # (execute_tool raises "Unknown tool: ..." -> isError True for the wrong reason).
+    # Pin the error text to the actual parent-resolution failure so this test can only
+    # pass once loregarden_create_ticket really rejects the bogus parent reference.
+    message = json.dumps(body).lower()
+    assert "unknown tool" not in message, body
+    assert "parent" in message, body
 
 
 def test_http_layer_happy_path_returns_created_ticket(client):
