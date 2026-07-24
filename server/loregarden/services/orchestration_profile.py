@@ -40,6 +40,11 @@ class GatesConfig(BaseModel):
     autofix_max_agent_attempts: int = 2
 
 
+class RetryBudgetConfig(BaseModel):
+    enabled: bool = True
+    max_attempts_per_stage: int = 5
+
+
 class SubagentsConfig(BaseModel):
     spawn_via: str = "cli"
 
@@ -55,6 +60,7 @@ class OrchestrationProfile(BaseModel):
     workflow_template: str = "loregarden-tdd"
     orchestrator: OrchestratorConfig = Field(default_factory=OrchestratorConfig)
     gates: GatesConfig = Field(default_factory=GatesConfig)
+    retry_budget: RetryBudgetConfig = Field(default_factory=RetryBudgetConfig)
     subagents: SubagentsConfig = Field(default_factory=SubagentsConfig)
     callbacks: CallbacksConfig = Field(default_factory=CallbacksConfig)
     max_stages_per_run: int = 0

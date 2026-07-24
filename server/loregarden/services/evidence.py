@@ -9,8 +9,10 @@ can tell proof from a leftover.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from loregarden.models.domain import Artifact, Ticket, Workspace
-from loregarden.services.git_commit_push_service import head_commit_sha
+from loregarden.services.git_commit_push_service import head_commit_sha, working_tree_paths
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -26,7 +28,12 @@ EVIDENCE_KINDS = (
     "real_surface",
     # An independent verifier's confirm/refute of a stage's done-claim.
     "verify_verdict",
+    # The full regression suite, green at a specific commit. Lets a later stage
+    # (e.g. the gatekeeper review) trust it was already run rather than re-run it.
+    "full_suite_green",
 )
+
+FULL_SUITE_EVIDENCE_KIND = "full_suite_green"
 
 
 def resolve_head_sha(session: Session, ticket: Ticket) -> str:
@@ -71,3 +78,29 @@ def has_evidence(
     return bool(
         evidence_for_commit(session, ticket, commit_sha=commit_sha, evidence_kind=evidence_kind)
     )
+
+
+def evidence_kinds_at_head(session: Session, ticket: Ticket, repo_root: Path) -> set[str]:
+    """The evidence kinds proven for the *exact current tree*: recorded at the
+    current HEAD with a clean working tree.
+
+    The clean-tree requirement closes the gap the commit stamp alone leaves:
+    evidence is keyed only to HEAD, so an uncommitted edit would leave HEAD (and
+    the evidence) unchanged while the tree a downstream stage sees is no longer
+    the one that was proven. Empty when HEAD is unresolved or anything is dirty —
+    the proof no longer covers what's there.
+    """
+    head = resolve_head_sha(session, ticket)
+    if not head or working_tree_paths(repo_root):
+        return set()
+    return {
+        artifact.evidence_kind
+        for artifact in evidence_for_commit(session, ticket, commit_sha=head)
+        if artifact.evidence_kind
+    }
+
+
+def full_suite_green_at_head(session: Session, ticket: Ticket, repo_root: Path) -> bool:
+    """Whether the full suite is already proven green for the exact tree a stage
+    is about to test — `full_suite_green` recorded at HEAD with a clean tree."""
+    return FULL_SUITE_EVIDENCE_KIND in evidence_kinds_at_head(session, ticket, repo_root)
