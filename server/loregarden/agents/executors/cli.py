@@ -11,6 +11,7 @@ from loregarden.agents.cli_adapters import (
     resolve_cli_invocation,
     resolve_terminal_handoff_invocation,
 )
+from loregarden.agents.evidence_context import build_evidence_ledger
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.inherited_wisdom import build_inherited_wisdom
 from loregarden.agents.mcp_context import (
@@ -35,6 +36,7 @@ from loregarden.services.cli_settings import (
 )
 from loregarden.services.code_map import render_code_map
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
+from loregarden.services.evidence import FULL_SUITE_EVIDENCE_KIND
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_commit_push_service import working_tree_paths
 from loregarden.services.orchestration import OrchestrationService
@@ -48,6 +50,19 @@ from loregarden.skills.registry import SKILL_PROMPT_CAP, get_skill
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
+
+# A run's configured timeout is treated as an *idle* budget — the longest the
+# agent may go producing no output before it is presumed hung and killed (the
+# same moment the old fixed wall-clock deadline would have fired). As long as it
+# keeps streaming, it may run until an absolute ceiling of this multiple of that
+# budget, so a long-but-progressing test run is no longer killed mid-progress
+# while a chatty runaway is still bounded.
+_TIMEOUT_HARD_CAP_MULTIPLIER = 4
+
+# The skill whose stage runs the full regression suite; it is told to record its
+# green result as commit-scoped evidence. Consumers reuse that via the general
+# evidence ledger (build_evidence_ledger), so only the producer is keyed on skill.
+_FULL_SUITE_SKILL = "run_tests"
 
 
 def _titled_block(title: str, body: str, *, cap: int = 0) -> list[str]:
@@ -223,13 +238,14 @@ class CliAgentExecutor:
                 )
                 self._touch_ticket_agent(ticket, agent.get("name", run.agent_id), status)
                 return completed
-            except subprocess.TimeoutExpired:
-                msg = agent_timeout_message(timeout)
-                streamer.finalize(status=RunStatus.FAILED, stderr=msg)
-                return self.orchestration.complete_run(
+            except subprocess.TimeoutExpired as exc:
+                return self._complete_timed_out_run(
                     run,
-                    status=RunStatus.FAILED,
-                    stderr=msg,
+                    exc,
+                    fallback_timeout=timeout,
+                    repo_root=repo_root,
+                    paths_before=paths_before,
+                    streamer=streamer,
                     advance_workflow=advance_workflow,
                 )
             except OSError as exc:
@@ -240,6 +256,36 @@ class CliAgentExecutor:
                     stderr=f"Failed to spawn agent CLI: {exc}",
                     advance_workflow=advance_workflow,
                 )
+
+    def _complete_timed_out_run(
+        self,
+        run: AgentRun,
+        exc: subprocess.TimeoutExpired,
+        *,
+        fallback_timeout: int,
+        repo_root: Path,
+        paths_before: set[str],
+        streamer: RunLogStreamer,
+        advance_workflow: bool,
+    ) -> AgentRun:
+        """Complete a run the agent was killed for exceeding its budget.
+
+        Preserves the work done before the kill: the changed files are recorded
+        (so they are scoped to this run's commit rather than lost or swept into
+        an unrelated ticket) and the partial stdout is kept for the run log. A
+        FAILED run can never advance the stage, so preserving output cannot
+        mis-mark the stage done.
+        """
+        msg = agent_timeout_message(exc.timeout or fallback_timeout)
+        streamer.finalize(status=RunStatus.FAILED, stderr=msg)
+        self._record_changed_paths(run, repo_root, paths_before)
+        return self.orchestration.complete_run(
+            run,
+            status=RunStatus.FAILED,
+            stdout=exc.output if isinstance(exc.output, str) else "",
+            stderr=msg,
+            advance_workflow=advance_workflow,
+        )
 
     def prepare_terminal_handoff(
         self, run: AgentRun, ticket: Ticket
@@ -318,14 +364,23 @@ class CliAgentExecutor:
         stdout_lines: list[str] = []
         assert proc.stdout is not None
         reader = SubprocessLineReader(proc.stdout)
-        deadline = time.time() + timeout
+        # Two independent limits. `idle_deadline` fires after `timeout` seconds
+        # with no output — a presumed hang, killed exactly when the old fixed
+        # deadline would have. `hard_deadline` is a generous absolute ceiling so
+        # an agent that keeps streaming (e.g. a long test run emitting progress)
+        # survives past `timeout`, yet a runaway that streams forever is still
+        # bounded.
+        start = time.time()
+        idle_deadline = start + timeout
+        hard_deadline = start + timeout * _TIMEOUT_HARD_CAP_MULTIPLIER
         try:
             while True:
                 if proc.poll() is not None and reader.readline(timeout=0) is None:
                     break
-                if time.time() >= deadline:
+                now = time.time()
+                if now >= idle_deadline or now >= hard_deadline:
                     proc.kill()
-                    raise subprocess.TimeoutExpired(invocation.argv, timeout)
+                    raise self._timeout_expired(invocation.argv, start, stdout_lines)
                 line = reader.readline(timeout=0.5)
                 if line is None:
                     if proc.poll() is not None:
@@ -334,18 +389,30 @@ class CliAgentExecutor:
                 line = line.rstrip("\n")
                 stdout_lines.append(line)
                 streamer.append_stream_line(line)
+                # Output is progress: extend the idle budget. The hard cap never
+                # moves.
+                idle_deadline = time.time() + timeout
         finally:
             if proc.poll() is None:
                 try:
-                    proc.wait(timeout=max(0.1, deadline - time.time()))
+                    proc.wait(timeout=max(0.1, hard_deadline - time.time()))
                 except subprocess.TimeoutExpired:
                     proc.kill()
-                    raise subprocess.TimeoutExpired(invocation.argv, timeout) from None
+                    raise self._timeout_expired(invocation.argv, start, stdout_lines) from None
 
         stderr = proc.stderr.read().decode("utf-8", errors="replace") if proc.stderr else ""
         stdout = "\n".join(stdout_lines)
         status = RunStatus.SUCCEEDED if proc.returncode == 0 else RunStatus.FAILED
         return stdout, stderr, status
+
+    @staticmethod
+    def _timeout_expired(argv, start: float, stdout_lines: list[str]) -> subprocess.TimeoutExpired:
+        """A TimeoutExpired carrying the real elapsed time and whatever the agent
+        streamed before it was killed, so the caller can report an accurate
+        duration and preserve the partial output."""
+        return subprocess.TimeoutExpired(
+            argv, int(time.time() - start), output="\n".join(stdout_lines)
+        )
 
     def _touch_ticket_agent(self, ticket: Ticket, agent_name: str, status: RunStatus) -> None:
         ticket.last_updated_by = agent_name
@@ -374,6 +441,23 @@ class CliAgentExecutor:
                 if stage.key == run.stage_key
             ),
             None,
+        )
+
+    def _full_suite_producer_note(self, skill_name: str) -> str:
+        """Tell the stage that runs the full suite to record a green run as
+        reusable, commit-scoped evidence, or "" for any other stage.
+
+        The *consumer* side — a later stage reusing this instead of re-running —
+        lives in the general evidence ledger (`build_evidence_ledger`), not here.
+        """
+        if skill_name != _FULL_SUITE_SKILL:
+            return ""
+        return (
+            "When the full suite passes, record it as reusable proof so a later stage "
+            "need not re-run it: call `loregarden_attach_evidence` with "
+            f"`evidence_kind: {FULL_SUITE_EVIDENCE_KIND}` (the commit is stamped "
+            "server-side). Do this only for a genuinely green full run — not a partial "
+            "or scoped one."
         )
 
     def _build_prompt(
@@ -419,6 +503,10 @@ class CliAgentExecutor:
         stage_report_doc = load_stage_report_contract_doc(agent_context_dir)
         is_verify = stage_def is not None and stage_def.stage_type == VERIFY_STAGE_TYPE
         is_synthesis = skill_name == SYNTHESIS_SKILL
+        full_suite_note = self._full_suite_producer_note(skill_name)
+        evidence_ledger = build_evidence_ledger(
+            self.session, ticket, resolve_workspace_root(workspace), is_verify=is_verify
+        )
 
         # Ordered prompt blocks. Add a section by inserting a block here rather
         # than threading another conditional through the assembly; each block
@@ -440,6 +528,10 @@ class CliAgentExecutor:
                 "## Acceptance Criteria",
                 *[f"- {item}" for item in ac],
             ],
+            # High in the prompt: these govern whether the agent runs or re-runs
+            # work, so they must land before the role text that tells it to.
+            _titled_block("## Full test suite", full_suite_note),
+            _titled_block("## Already-established evidence (reuse, don't redo)", evidence_ledger),
             # A verifier is deliberately starved of inherited context. Handing it
             # the prior stage's settled decisions ("do not re-derive") would make
             # it a reader of that reasoning rather than an independent check, and

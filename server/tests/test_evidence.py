@@ -116,8 +116,73 @@ def test_unknown_evidence_kind_is_rejected(session_and_ticket):
         )
 
 
-def test_evidence_kinds_cover_floor_ceiling_and_verdict():
-    assert set(EVIDENCE_KINDS) == {"test_red_green", "real_surface", "verify_verdict"}
+def test_evidence_kinds_cover_floor_ceiling_verdict_and_full_suite():
+    assert set(EVIDENCE_KINDS) == {
+        "test_red_green",
+        "real_surface",
+        "verify_verdict",
+        "full_suite_green",
+    }
+
+
+# --- full_suite_green_at_head: the reuse predicate ---------------------------
+
+
+def test_full_suite_reuse_true_when_green_at_head_and_tree_clean(session_and_ticket, git_repo):
+    session, ticket = session_and_ticket
+    from loregarden.services.evidence import full_suite_green_at_head, resolve_head_sha
+
+    OrchestrationCallbackService(session).attach_artifact(
+        ticket,
+        kind="evidence",
+        title="full suite green",
+        content={},
+        evidence_kind="full_suite_green",
+        commit_sha=resolve_head_sha(session, ticket),
+    )
+    assert full_suite_green_at_head(session, ticket, git_repo) is True
+
+
+def test_full_suite_reuse_false_without_evidence(session_and_ticket, git_repo):
+    session, ticket = session_and_ticket
+    from loregarden.services.evidence import full_suite_green_at_head
+
+    assert full_suite_green_at_head(session, ticket, git_repo) is False
+
+
+def test_full_suite_reuse_false_when_evidence_is_for_an_earlier_commit(
+    session_and_ticket, git_repo
+):
+    session, ticket = session_and_ticket
+    from loregarden.services.evidence import full_suite_green_at_head
+
+    OrchestrationCallbackService(session).attach_artifact(
+        ticket,
+        kind="evidence",
+        title="stale full suite",
+        content={},
+        evidence_kind="full_suite_green",
+        commit_sha="an-earlier-commit",
+    )
+    assert full_suite_green_at_head(session, ticket, git_repo) is False
+
+
+def test_full_suite_reuse_false_when_tree_is_dirty(session_and_ticket, git_repo):
+    """Uncommitted edits leave HEAD unchanged but move the tree off what was
+    tested, so the proof no longer covers the current state."""
+    session, ticket = session_and_ticket
+    from loregarden.services.evidence import full_suite_green_at_head, resolve_head_sha
+
+    OrchestrationCallbackService(session).attach_artifact(
+        ticket,
+        kind="evidence",
+        title="full suite green",
+        content={},
+        evidence_kind="full_suite_green",
+        commit_sha=resolve_head_sha(session, ticket),
+    )
+    (git_repo / "uncommitted_change.txt").write_text("drift", encoding="utf-8")
+    assert full_suite_green_at_head(session, ticket, git_repo) is False
 
 
 # --- Two-artifact gate: proof required before a stage advances (#2) ---------
