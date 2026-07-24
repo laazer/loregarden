@@ -150,7 +150,9 @@ def test_full_suite_reuse_false_without_evidence(session_and_ticket, git_repo):
     assert full_suite_green_at_head(session, ticket, git_repo) is False
 
 
-def test_full_suite_reuse_false_when_evidence_is_for_an_earlier_commit(session_and_ticket, git_repo):
+def test_full_suite_reuse_false_when_evidence_is_for_an_earlier_commit(
+    session_and_ticket, git_repo
+):
     session, ticket = session_and_ticket
     from loregarden.services.evidence import full_suite_green_at_head
 
