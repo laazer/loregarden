@@ -122,13 +122,6 @@ def _select_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> ClassifyR
     if stage.stage_type != "classify" or not stage.classify_routes:
         return None
 
-    # A sticky next_agent hint pins the route naming that agent.
-    next_agent = (ticket.next_agent or "").strip()
-    if next_agent and get_agent(next_agent):
-        for route in stage.classify_routes:
-            if route.agent_id == next_agent:
-                return route
-
     haystack = _classify_haystack(ticket)
 
     default_route: ClassifyRoute | None = None
@@ -137,11 +130,26 @@ def _select_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> ClassifyR
     for route in stage.classify_routes:
         if route.default:
             default_route = route
-            continue
         score = _route_match_score(route, haystack)
         if score is not None and score > best_score:
             best_route = route
             best_score = score
+
+    # Content classification wins whenever the ticket's current text gives a
+    # real keyword signal (best_score > 0). Only fall back to the sticky
+    # next_agent hint when the text is ambiguous — otherwise a stale hint
+    # left over from an earlier, unrelated stage (e.g. next_agent stuck on
+    # "frontend_implementer" from a prior route) permanently overrides a
+    # ticket that has since been correctly reclassified to a different
+    # specialist. See loregarden #164 / stale-next_agent classify loop.
+    if best_route is not None and best_score > 0:
+        return best_route
+
+    next_agent = (ticket.next_agent or "").strip()
+    if next_agent and get_agent(next_agent):
+        for route in stage.classify_routes:
+            if route.agent_id == next_agent:
+                return route
 
     return best_route or default_route or stage.classify_routes[0]
 

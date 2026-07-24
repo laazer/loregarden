@@ -107,7 +107,10 @@ class Ticket(SQLModel, table=True):
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
     title: str
     description: str = ""
-    state: TicketState = Field(default=TicketState.BACKLOG)
+    state: TicketState = Field(
+        default=TicketState.BACKLOG,
+        sa_column=_str_enum_column(TicketState, TicketState.BACKLOG),
+    )
     priority: int = Field(default=3, ge=1, le=3)
     branch: str = ""
     milestone: str = ""
@@ -119,7 +122,10 @@ class Ticket(SQLModel, table=True):
     cycle_id: str | None = Field(default=None, foreign_key="cycles.id", index=True)
     acceptance_criteria_json: str = "[]"
     workflow_stage_key: str = ""
-    workflow_stage_status: StageStatus = Field(default=StageStatus.PENDING)
+    workflow_stage_status: StageStatus = Field(
+        default=StageStatus.PENDING,
+        sa_column=_str_enum_column(StageStatus, StageStatus.PENDING),
+    )
     revision: int = Field(default=0)
     last_updated_by: str = ""
     next_agent: str = ""
@@ -195,7 +201,10 @@ class AgentRun(SQLModel, table=True):
     agent_version: int | None = Field(default=None)
     skill_name: str = ""
     stage_key: str = ""
-    status: RunStatus = Field(default=RunStatus.QUEUED)
+    status: RunStatus = Field(
+        default=RunStatus.QUEUED,
+        sa_column=_str_enum_column(RunStatus, RunStatus.QUEUED),
+    )
     command: str = ""
     # Paths this run left dirty, so its commit can be scoped to its own work
     # instead of sweeping unrelated edits out of the workspace.
@@ -204,6 +213,12 @@ class AgentRun(SQLModel, table=True):
     stderr: str = ""
     auto_approve: bool = Field(default=False)
     timeout_override_seconds: int | None = Field(default=None)
+    # Terminal-handoff liveness. A handoff run is created RUNNING before any
+    # process exists — the pasted command's check-in records when (and as which
+    # shell pid) it actually started, so a handoff that was never pasted, or
+    # whose terminal died, can be reaped instead of blocking the ticket forever.
+    handoff_accepted_at: datetime | None = None
+    handoff_pid: int | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
@@ -355,9 +370,21 @@ class Approval(SQLModel, table=True):
     cli_adapter: str = ""
     cli_session_id: str = ""
     response_json: str = "{}"
-    status: ApprovalStatus = Field(default=ApprovalStatus.PENDING)
+    status: ApprovalStatus = Field(
+        default=ApprovalStatus.PENDING,
+        sa_column=_str_enum_column(ApprovalStatus, ApprovalStatus.PENDING),
+    )
     created_at: datetime = Field(default_factory=utcnow)
     resolved_at: datetime | None = None
+    # Who/what resolved this approval — "automation" for an auto_approve-mode
+    # gate resolution, "" for a human clicking approve in the inbox. Absence of
+    # an approvals row must never be the only record of an auto-approval, so
+    # every auto-resolved gate still gets a row here, distinguishable from a
+    # human sign-off by this column.
+    resolved_by: str = ""
+    resolving_orchestration_run_id: str | None = Field(
+        default=None, foreign_key="orchestration_runs.id", index=True
+    )
 
 
 class TriageMessage(SQLModel, table=True):
@@ -375,7 +402,8 @@ class DomainEvent(SQLModel, table=True):
     __tablename__ = "domain_events"
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    type: EventType
+    # No default: every event states its own type.
+    type: EventType = Field(sa_column=_str_enum_column(EventType))
     workspace_id: str | None = Field(default=None, foreign_key="workspaces.id")
     ticket_id: str | None = Field(default=None, foreign_key="tickets.id")
     run_id: str | None = Field(default=None, foreign_key="agent_runs.id")

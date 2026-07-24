@@ -27,6 +27,7 @@ from loregarden.services.cli_settings import (
     resolve_effective_adapter,
 )
 from loregarden.services.run_concurrency import find_active_run
+from loregarden.services.run_service import fail_stale_handoff_runs
 from loregarden.services.triage_service import (
     TRIAGE_AGENT_ID,
     TRIAGE_AGENT_NAME,
@@ -66,6 +67,11 @@ def start_triage_run(
     text = content.strip()
     if not text:
         raise ValueError("Message cannot be empty")
+
+    # A terminal-handoff run that was never pasted (or whose terminal died) sits
+    # RUNNING forever with no process behind it — reap provably dead ones so a
+    # phantom run cannot lock the operator out of chat.
+    fail_stale_handoff_runs(session, ticket_id=ticket.id)
 
     if find_active_run(session, ticket.id):
         raise TriageConflictError(

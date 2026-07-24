@@ -40,6 +40,7 @@ from loregarden.services.branch_triage_run_service import fail_interrupted_branc
 from loregarden.services.run_service import (
     fail_interrupted_orchestration_runs,
     fail_interrupted_runs,
+    settle_stranded_stages,
 )
 from loregarden.services.seed import seed_database
 from loregarden.services.triage_run_service import fail_interrupted_triage_turns
@@ -62,6 +63,9 @@ async def lifespan(app: FastAPI):
         fail_interrupted_orchestration_runs(session)
         fail_interrupted_triage_turns(session)
         fail_interrupted_branch_triage_turns(session)
+        # Last: the reaps above settle stages as they complete their runs, so this
+        # only sees stages no run will ever account for.
+        settle_stranded_stages(session)
     yield
 
 

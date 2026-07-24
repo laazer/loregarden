@@ -211,6 +211,13 @@ class StartRunRequest(SQLModel):
     timeout_seconds: int | None = None
 
 
+class HandoffCheckinRequest(SQLModel):
+    """Sent by a pasted terminal-handoff command when it starts. The pid is the
+    pasting shell's, used for local liveness checks by the stale-run reaper."""
+
+    pid: int
+
+
 class StartOrchestrationRequest(SQLModel):
     driver: OrchestrationDriver | None = None
     max_stages: int | None = None

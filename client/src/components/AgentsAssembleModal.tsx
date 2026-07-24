@@ -145,7 +145,7 @@ export function AgentsAssembleModal({
               disabled={busy}
               onChange={(e) => setAutoApprove(e.target.checked)}
             />
-            Auto-approve CLI tool permissions during this run
+            Auto-approve CLI tool permissions and workflow gates for this ticket and its subtree
           </label>
         </div>
 

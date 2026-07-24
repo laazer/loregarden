@@ -7,11 +7,22 @@ from sqlalchemy import Column
 from sqlalchemy import Enum as SAEnum
 
 
-def _str_enum_column(enum_cls: type[Enum], default: Enum, *, index: bool = False) -> Column:
+def _str_enum_column(
+    enum_cls: type[Enum], default: Enum | None = None, *, index: bool = False
+) -> Column:
+    """Store the enum's *value*, not its member name.
+
+    SQLAlchemy defaults to persisting names, which leaves a schema where one column
+    reads ``blocked`` and its neighbour ``BLOCKED``. Every enum column here goes
+    through this helper so the convention is uniform — a mixed schema is what let a
+    single hand-written row take down every endpoint that listed tickets.
+
+    ``default`` is omitted for columns the caller must always supply.
+    """
     return Column(
         SAEnum(enum_cls, values_callable=lambda choices: [c.value for c in choices]),
         nullable=False,
-        default=default.value,
+        default=default.value if default is not None else None,
         index=index,
     )
 

@@ -1,4 +1,5 @@
 import json
+import logging
 import secrets
 from datetime import datetime, timezone
 
@@ -11,7 +12,6 @@ from loregarden.models.domain import (
     Approval,
     ApprovalKind,
     ApprovalStatus,
-    Artifact,
     EventType,
     OrchestrationRun,
     RunStatus,
@@ -29,12 +29,11 @@ from loregarden.models.domain import (
 from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.compatibility_posture import apply_compatibility_posture
-from loregarden.services.run_log_stream import bootstrap_run_log, finalize_run_log_artifact
-from loregarden.services.stage_report import (
-    StageReport,
-    parse_stage_report,
-    stage_report_artifact_content,
+from loregarden.services.run_completion import (
+    complete_run_tail,
+    settle_stage_after_failed_completion,
 )
+from loregarden.services.run_log_stream import bootstrap_run_log
 from loregarden.services.studio_routing import find_terminal_stage, is_terminal_stage
 from loregarden.services.triage_question_log import record_triage_question_exchange
 from loregarden.services.workflow_service import resolve_ticket_stages, resolve_workspace_stages
@@ -49,24 +48,11 @@ from loregarden.services.workflow_state import (
 )
 from sqlmodel import Session, select
 
+logger = logging.getLogger(__name__)
+
 
 def _run_code() -> str:
     return f"run_{secrets.token_hex(3)}"
-
-
-def _stage_report_artifact(stage_key: str, report: StageReport) -> dict:
-    """Build a `context`-kind artifact payload from a parsed stage report."""
-    return {
-        "kind": "context",
-        "title": f"Stage report — {stage_key}",
-        "content": stage_report_artifact_content(stage_key, report),
-    }
-
-
-def _blocking_issue(session: Session, ticket: Ticket, run: AgentRun, message: str) -> str:
-    return record_blocking_issue(
-        session, ticket, run_id=run.id, stage_key=run.stage_key, message=message
-    )
 
 
 def _blocking_issue_for_stage(
@@ -705,163 +691,44 @@ class OrchestrationService:
         self.session.add(run)
         self.session.commit()
 
-        ticket = self.get_ticket(run.ticket_id)
-        if not ticket:
+        # The run's terminal status is durable as of the commit above; everything
+        # below needs the ticket. That split is what stranded a stage once: the run
+        # reached FAILED, loading the ticket then raised, and the stage stayed
+        # RUNNING with nothing alive behind it — invisible to the reaper, which only
+        # looks at in-flight runs. So a failure here is logged and left for
+        # `settle_stranded_stages` rather than escaping into the executor. It is not
+        # recoverable in-process: a ticket whose row will not load cannot be settled
+        # through the ORM at all.
+        try:
+            return complete_run_tail(
+                self,
+                run,
+                status=status,
+                stdout=stdout,
+                stderr=stderr,
+                artifacts=artifacts,
+                advance_workflow=advance_workflow,
+            )
+        except Exception as exc:
+            self.session.rollback()
+            logger.exception(
+                "Run %s recorded as %s but completing it raised; attempting to settle "
+                "its stage directly",
+                run.id,
+                status.value,
+            )
+            settle_stage_after_failed_completion(self, run, exc)
             return run
 
-        report = parse_stage_report(stdout)
-        if advance_workflow:
-            self._advance_stage_after_run(ticket, run, report, status, stderr)
+    def auto_resolve_gate_approval(self, approval: Approval, run: AgentRun) -> None:
+        """Pre-resolve a gate approval raised under auto_approve.
 
-        self._persist_run_artifacts(ticket, run, status, stderr, report, artifacts)
-
-        event_bus.publish(
-            self.session,
-            EventType.AGENT_RUN_COMPLETED,
-            workspace_id=ticket.workspace_id,
-            ticket_id=ticket.id,
-            run_id=run.id,
-            payload={"status": status.value},
+        Lives here rather than in ``run_completion`` only because ``ApprovalService``
+        is defined in this module; importing it there would close a cycle.
+        """
+        ApprovalService(self.session).auto_resolve(
+            approval.id, orchestration_run_id=run.orchestration_run_id or ""
         )
-        if advance_workflow:
-            workspace = self.session.get(Workspace, ticket.workspace_id)
-            if workspace:
-                from loregarden.services.artifact_service import refresh_execution_artifacts
-
-                refresh_execution_artifacts(
-                    self.session,
-                    ticket=ticket,
-                    run=run,
-                    workspace=workspace,
-                )
-        finalize_run_log_artifact(run, status=status, stderr=stderr)
-        return run
-
-    def _advance_stage_after_run(
-        self,
-        ticket: Ticket,
-        run: AgentRun,
-        report,
-        status: RunStatus,
-        stderr: str,
-    ) -> None:
-        instance, stages = self._resolve_stages(ticket)
-        if not instance or not stages:
-            return
-
-        if report and report.status == "blocked":
-            # Distinct from fail/needs_rework: the agent isn't reporting bad work to
-            # redo upstream, it's reporting it cannot proceed at all (e.g. needs a
-            # human decision) — reroute-for-rework would just waste a cycle, so this
-            # halts the ticket directly instead.
-            fallback = "Agent reported this stage as blocked"
-            message = report.reroute_context or stderr[:2000] or fallback
-            ticket.blocking_issues = _blocking_issue(self.session, ticket, run, message)
-            set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
-        elif report and report.status in ("fail", "needs_rework"):
-            from loregarden.services.workflow_routing import apply_stage_route
-
-            transitions = self._resolve_transitions(ticket)
-            try:
-                apply_stage_route(
-                    ticket,
-                    instance,
-                    stages,
-                    transitions,
-                    from_key=run.stage_key,
-                    outcome="reject",
-                    next_stage_key=report.reroute_to_stage or "",
-                    blocking_issues=_blocking_issue(
-                        self.session, ticket, run, report.reroute_context or stderr[:2000]
-                    ),
-                )
-            except ValueError:
-                # No reject transition, no agent-specified target, and no
-                # preceding stage to fall back to (already first-in-order).
-                ticket.blocking_issues = _blocking_issue(
-                    self.session,
-                    ticket,
-                    run,
-                    report.reroute_context or stderr[:2000] or "Agent run failed",
-                )
-                set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
-        elif status == RunStatus.SUCCEEDED:
-            stage_status = StageStatus.DONE
-            stage_def = next((s for s in stages if s.key == run.stage_key), None)
-            if stage_def and stage_def.gate_required:
-                stage_status = StageStatus.AWAITING
-                template = self.get_template_for_ticket(ticket)
-                if template:
-                    stage_name = stage_display_name(template, run.stage_key)
-                    self._create_workflow_gate_approval(
-                        ticket, run.stage_key, stage_name, stage_def=stage_def
-                    )
-            set_stage_status(ticket, instance, stages, run.stage_key, stage_status)
-            ticket.blocking_issues = ""
-        else:
-            ticket.blocking_issues = _blocking_issue(
-                self.session, ticket, run, stderr[:2000] or "Agent run failed"
-            )
-            set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
-        self.session.add(ticket)
-        self.session.add(instance)
-        self.session.commit()
-
-    def _persist_run_artifacts(
-        self,
-        ticket: Ticket,
-        run: AgentRun,
-        status: RunStatus,
-        stderr: str,
-        report,
-        artifacts: list[dict] | None,
-    ) -> None:
-        artifacts = list(artifacts or [])
-        if status != RunStatus.SUCCEEDED:
-            artifacts.append(
-                {
-                    "kind": "error",
-                    "title": f"Run {run.run_code} failed",
-                    "content": {
-                        "message": stderr[:4000] or ticket.blocking_issues or "Agent run failed",
-                        "run_code": run.run_code,
-                        "agent_id": run.agent_id,
-                        "stage_key": run.stage_key,
-                        "command": run.command or "",
-                    },
-                }
-            )
-        if report:
-            artifacts.append(_stage_report_artifact(run.stage_key, report))
-
-        for item in artifacts:
-            if item.get("kind") == "log":
-                existing = self.session.exec(
-                    select(Artifact).where(
-                        Artifact.run_id == run.id,
-                        Artifact.kind == "log",
-                    )
-                ).first()
-                if existing:
-                    continue
-            artifact = Artifact(
-                ticket_id=ticket.id,
-                run_id=run.id,
-                kind=item.get("kind", "log"),
-                title=item.get("title", ""),
-                content_json=json.dumps(item.get("content", {})),
-            )
-            self.session.add(artifact)
-            self.session.commit()
-            event_bus.publish(
-                self.session,
-                EventType.ARTIFACT_CREATED,
-                workspace_id=ticket.workspace_id,
-                ticket_id=ticket.id,
-                run_id=run.id,
-                artifact_id=artifact.id,
-                payload={"kind": artifact.kind},
-            )
 
     def finalize_stage(
         self,
@@ -1221,6 +1088,51 @@ class ApprovalService:
         )
         return approval
 
+    def auto_resolve(self, approval_id: str, *, orchestration_run_id: str) -> Approval:
+        """Resolve a WORKFLOW_GATE approval on behalf of an auto_approve run.
+
+        Unlike `resolve()`, this never schedules a background resume — the
+        caller (BuiltinOrchestrator) is already mid-loop and continues the
+        same `execute()` pass synchronously. The row is still created/kept
+        (never skipped) and marked `resolved_by="automation"` with the
+        resolving run id, so an auto-approved gate stays distinguishable from
+        a human sign-off in the approvals table.
+        """
+        approval = self.session.get(Approval, approval_id)
+        if not approval:
+            raise ValueError("Approval not found")
+        if approval.status != ApprovalStatus.PENDING:
+            return approval
+        if approval.kind != ApprovalKind.WORKFLOW_GATE:
+            raise ValueError("auto_resolve only applies to workflow-gate approvals")
+
+        approval.status = ApprovalStatus.APPROVED
+        approval.resolved_at = datetime.now(timezone.utc)
+        approval.resolved_by = "automation"
+        approval.resolving_orchestration_run_id = orchestration_run_id
+        self.session.add(approval)
+        self.session.commit()
+
+        ticket = self.session.get(Ticket, approval.ticket_id)
+        if ticket:
+            self._apply_gate_resolution(
+                ticket,
+                approval,
+                approved=True,
+                rework_route_key="",
+                response_text="",
+                resume=False,
+            )
+
+        event_bus.publish(
+            self.session,
+            EventType.APPROVAL_RESOLVED,
+            workspace_id=approval.workspace_id,
+            ticket_id=approval.ticket_id,
+            payload={"approval_id": approval.id, "approved": True, "automated": True},
+        )
+        return approval
+
     def _validate_rework_route(self, approval: Approval, rework_route_key: str) -> None:
         """Validate an explicit stage override up front so a bad target can't
         leave the approval resolved with the ticket never rerouted. Used both
@@ -1249,6 +1161,7 @@ class ApprovalService:
         approved: bool,
         rework_route_key: str,
         response_text: str,
+        resume: bool = True,
     ) -> None:
         instance, stages = self.orchestration._resolve_stages(ticket)
         if not instance or not stages or not approval.stage_key:
@@ -1298,7 +1211,7 @@ class ApprovalService:
         self.session.add(instance)
         self.session.commit()
 
-        if approved:
+        if approved and resume:
             self._resume_orchestration(ticket)
 
     def _resume_orchestration(self, ticket: Ticket) -> None:

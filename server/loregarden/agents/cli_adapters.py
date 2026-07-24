@@ -5,7 +5,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from loregarden.agents.mcp_context import append_mcp_cli_args, resolve_mcp_url
+from loregarden.agents.mcp_context import (
+    append_mcp_cli_args,
+    resolve_api_base_url,
+    resolve_mcp_url,
+)
 from loregarden.config import settings
 from loregarden.services.cli_settings import (
     resolve_claude_model,
@@ -288,7 +292,7 @@ def _claude_oauth_env_prefix() -> str:
 
 
 def render_terminal_handoff_command(
-    invocation: CliInvocation, *, cleanup_path: Path | None = None
+    invocation: CliInvocation, *, cleanup_path: Path | None = None, run_id: str | None = None
 ) -> str:
     """Render an invocation as a short, paste-ready shell command.
 
@@ -296,11 +300,29 @@ def render_terminal_handoff_command(
     CliAgentExecutor.prepare_terminal_handoff) and referenced by path, rather than inlined
     via heredoc — a full stage prompt can run tens of KB, and pasting that much text
     directly into a terminal can overwhelm some terminals' paste handling.
+
+    With ``run_id``, the command is bracketed by liveness pings: a check-in that
+    records the pasting shell's pid before the CLI starts (``&&`` — a rejected
+    check-in means the run was already reaped, so the CLI must not start against
+    it), and an exit ping after the CLI ends so the run row is settled even when
+    the session finishes without completing the stage. Without these, a handoff
+    AgentRun stays RUNNING forever — blocking triage chat and the self-improve
+    restart watcher — since no process supervises it.
     """
     prefix = _claude_oauth_env_prefix() if invocation.adapter == "claude" else ""
     command = prefix + " ".join(shlex.quote(token) for token in invocation.argv)
+    if run_id is not None:
+        base = f"{resolve_api_base_url()}/api/runs/{run_id}"
+        checkin = (
+            f"curl -fsS -X POST -H 'Content-Type: application/json' "
+            f'--data "{{\\"pid\\": $$}}" {shlex.quote(base + "/handoff-checkin")} > /dev/null'
+        )
+        command = f"{checkin} && {command}"
     if cleanup_path is not None:
         command += f" ; rm -rf {shlex.quote(str(cleanup_path))}"
+    if run_id is not None:
+        exited = f"curl -fsS -X POST {shlex.quote(base + '/handoff-exited')} > /dev/null 2>&1"
+        command += f" ; {exited}"
     return command
 
 

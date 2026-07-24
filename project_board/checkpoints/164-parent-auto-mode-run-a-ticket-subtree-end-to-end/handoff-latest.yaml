@@ -1,0 +1,38 @@
+handoff:
+  schema_version: '1.0'
+  ticket_id: 164-parent-auto-mode-run-a-ticket-subtree-end-to-end
+  from_agent: gatekeeper
+  to_agent: human
+  validated_at: '2026-07-23T23:10:03Z'
+  required_items_met: 5
+  total_required_items: 5
+  checklist:
+  - item_key: acceptance_criteria_met
+    item: All acceptance criteria are met by the implementation
+    required: true
+    status: complete
+    evidence: All 9 ACs traced to code across builtin_orchestrator.py, orchestration.py, orchestration_profile.py,
+      subtree_auto_run.py, studio_routing.py; see attached gatekeeper review artifact.
+  - item_key: test_suite_complete
+    item: Test suite covers all acceptance criteria
+    required: true
+    status: complete
+    evidence: server/tests/test_auto_mode_subtree.py — 20/20 passing; verified coverage maps to every
+      AC.
+  - item_key: full_suite_green
+    item: Full test suite passes with no regressions
+    required: true
+    status: complete
+    evidence: 'python -m pytest server/tests: 1346 passed, 34 skipped, 0 failed, 590s — matches implementer''s
+      claimed count.'
+  - item_key: static_qa_clean
+    item: Static analysis / lint is clean on changed files
+    required: true
+    status: complete
+    evidence: ruff check clean on all 6 changed/new files.
+  - item_key: review_stages_passed
+    item: Architecture, static QA, and security review agents all passed
+    required: true
+    status: complete
+    evidence: All three review-stage agents (architecture_reviewer, static_qa, security_reviewer) reported
+      status=pass at confidence 0.85 in DB artifacts.

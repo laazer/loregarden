@@ -13,7 +13,10 @@ def find_active_run(
 
     "In-flight" means RUNNING or AWAITING_PERMISSION — both hold a live CLI
     subprocess against the workspace's on-disk checkout, which is not
-    worktree-isolated on the default execution path.
+    worktree-isolated on the default execution path. The exception is a
+    terminal-handoff run, which has no supervising process — callers that must
+    not block on a phantom should reap provably dead ones first via
+    ``run_service.fail_stale_handoff_runs``.
     """
     query = select(AgentRun).where(
         AgentRun.ticket_id == ticket_id,

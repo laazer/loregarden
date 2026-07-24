@@ -150,6 +150,141 @@ def test_queued_runs_gets_created_at_and_backfills(tmp_path):
     datetime.fromisoformat(str(created_at)).astimezone(timezone.utc)
 
 
+def test_ticket_enum_columns_move_from_names_to_values(tmp_path):
+    """0042 rewrites tickets.state/workflow_stage_status from names to values.
+
+    Those two columns stored the enum name (BLOCKED) while every neighbouring enum
+    column stored the value (blocked), so an out-of-band write of the lowercase form
+    produced a row the ORM could not load — and one such row raised LookupError on
+    every SELECT over tickets, not just its own.
+    """
+    from loregarden.models.domain import Ticket
+    from loregarden.models.domain.enums import StageStatus, TicketState
+    from sqlmodel import Session, select
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'enums.db'}")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(Ticket(id="t1", external_id="ext-1", workspace_id="ws1", title="Legacy row"))
+        session.commit()
+    # Rewind that row to how the old model persisted it: enum names, not values.
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE tickets SET state = 'BLOCKED', workflow_stage_status = 'RUNNING' "
+                "WHERE id = 't1'"
+            )
+        )
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        stored = conn.execute(
+            text("SELECT state, workflow_stage_status FROM tickets WHERE id = 't1'")
+        ).one()
+    assert stored == ("blocked", "running")
+
+    # The point of the rewrite: the row loads through the ORM afterwards.
+    with Session(engine) as session:
+        ticket = session.exec(select(Ticket).where(Ticket.id == "t1")).one()
+    assert ticket.state is TicketState.BLOCKED
+    assert ticket.workflow_stage_status is StageStatus.RUNNING
+
+
+def test_ticket_enum_migration_leaves_value_form_rows_alone(tmp_path):
+    """Re-running against an already-migrated row is a no-op, not a double rewrite."""
+    from loregarden.models.domain import Ticket
+    from loregarden.models.domain.enums import StageStatus, TicketState
+    from sqlmodel import Session
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'enums-idem.db'}")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(
+            Ticket(
+                id="t2",
+                external_id="ext-2",
+                workspace_id="ws1",
+                title="Current row",
+                state=TicketState.IN_PROGRESS,
+                workflow_stage_status=StageStatus.PENDING,
+            )
+        )
+        session.commit()
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        stored = conn.execute(
+            text("SELECT state, workflow_stage_status FROM tickets WHERE id = 't2'")
+        ).one()
+    assert stored == ("in_progress", "pending")
+
+
+def test_run_approval_event_enums_move_from_names_to_values(tmp_path):
+    """0043 converts the last three name-form columns, across three tables."""
+    from loregarden.models.domain import AgentRun, Approval, DomainEvent
+    from loregarden.models.domain.enums import ApprovalStatus, EventType, RunStatus
+    from sqlmodel import Session, select
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'enums43.db'}")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(
+            AgentRun(id="r1", run_code="run_x", ticket_id="t1", workspace_id="ws1", agent_id="a1")
+        )
+        session.add(Approval(id="a1", ticket_id="t1", workspace_id="ws1", title="Gate"))
+        session.add(DomainEvent(id="e1", type=EventType.AGENT_RUN_COMPLETED))
+        session.commit()
+    # Rewind all three to the names the old models persisted.
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE agent_runs SET status = 'FAILED' WHERE id = 'r1'"))
+        conn.execute(text("UPDATE approvals SET status = 'APPROVED' WHERE id = 'a1'"))
+        conn.execute(text("UPDATE domain_events SET type = 'AGENT_RUN_COMPLETED' WHERE id = 'e1'"))
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT status FROM agent_runs WHERE id='r1'")).scalar_one() == (
+            "failed"
+        )
+        assert conn.execute(text("SELECT status FROM approvals WHERE id='a1'")).scalar_one() == (
+            "approved"
+        )
+        # EventType values are PascalCase, so this one is a rename, not a case-fold.
+        assert conn.execute(text("SELECT type FROM domain_events WHERE id='e1'")).scalar_one() == (
+            "AgentRunCompleted"
+        )
+
+    with Session(engine) as session:
+        assert session.exec(select(AgentRun)).one().status is RunStatus.FAILED
+        assert session.exec(select(Approval)).one().status is ApprovalStatus.APPROVED
+        assert session.exec(select(DomainEvent)).one().type is EventType.AGENT_RUN_COMPLETED
+
+
+def test_every_enum_column_stores_values(tmp_path):
+    """The invariant the two migrations exist to establish.
+
+    A mixed schema is the actual defect: nothing on the row tells a reader whether a
+    column holds ``blocked`` or ``BLOCKED``, so a hand-written value is a coin flip.
+    This fails the moment a new model reintroduces a name-form column.
+    """
+    from sqlalchemy import Enum as SAEnum
+
+    offenders = [
+        f"{table.name}.{col.name}"
+        for table in SQLModel.metadata.sorted_tables
+        for col in table.columns
+        if isinstance(col.type, SAEnum)
+        and col.type.enum_class
+        and list(col.type.enums) != [m.value for m in col.type.enum_class]
+    ]
+    assert offenders == []
+
+
 def test_rigor_triage_reshapes_the_v3_template(tmp_path):
     """0023 scales rigor by change risk on a populated template.
 
@@ -544,3 +679,37 @@ def test_implementer_roles_explain_how_to_show_it_working():
         body = (settings.agent_context_dir / role).read_text(encoding="utf-8")
         assert "loregarden_attach_evidence" in body
         assert "real_surface" in body
+
+
+def test_a_database_migrated_by_newer_code_is_called_out(tmp_path, caplog):
+    """Reverting past a value-rewriting migration is otherwise a mystery LookupError."""
+    import logging
+
+    from loregarden.db.migrations import _warn_if_database_is_ahead
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'ahead.db'}")
+    SQLModel.metadata.create_all(engine)
+    apply_migrations(engine)
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO schema_migrations (id) VALUES ('9999_from_the_future')"))
+
+    with engine.connect() as conn:
+        applied = {r[0] for r in conn.execute(text("SELECT id FROM schema_migrations"))}
+
+    with caplog.at_level(logging.ERROR):
+        unknown = _warn_if_database_is_ahead(applied)
+
+    assert unknown == ["9999_from_the_future"]
+    assert "9999_from_the_future" in caplog.text
+
+
+def test_a_current_database_is_not_flagged_as_ahead(tmp_path):
+    from loregarden.db.migrations import _warn_if_database_is_ahead
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'current.db'}")
+    SQLModel.metadata.create_all(engine)
+    apply_migrations(engine)
+    with engine.connect() as conn:
+        applied = {r[0] for r in conn.execute(text("SELECT id FROM schema_migrations"))}
+
+    assert _warn_if_database_is_ahead(applied) == []
