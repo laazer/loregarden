@@ -1172,3 +1172,219 @@ def test_permission_bridge_triage_read_only_mcp_tool_auto_approved(tmp_path):
         assert any("allow" in write for write in captured_proc.stdin.writes)
         approvals = session.exec(select(Approval).where(Approval.run_id == run.id)).all()
         assert approvals == []
+
+
+def test_permission_bridge_orchestrated_agent_denied_create_ticket_end_to_end(tmp_path):
+    """Per a9-create-ticket-mcp-tool's triage decision: an orchestrated pipeline
+    agent (track_workflow_stage=True, the default every stage run uses) must be
+    auto-*denied* `loregarden_create_ticket` — never even reaching the human
+    approval inbox. This pins the orchestrated side of the interim allowlist end
+    to end, not just the pure predicate in `is_orchestrated_agent_denied_mcp_tool`."""
+    from loregarden.agents.cli_adapters import build_interactive_invocation
+    from loregarden.models.domain import AgentRun, Approval, RunStatus, Ticket
+    from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+
+        run = AgentRun(
+            run_code="run_orchestrated_create_ticket_denied",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="backend_implementer",
+            stage_key="implement",
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        workspace = tmp_path / "repo"
+        workspace.mkdir()
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("implement", encoding="utf-8")
+        invocation = build_interactive_invocation(
+            adapter="claude",
+            prompt_file=prompt_file,
+            workspace_root=workspace,
+        )
+
+        permission_line = json.dumps(
+            {
+                "type": "control_request",
+                "request_id": "perm_create_ticket_denied",
+                "request": {
+                    "subtype": "can_use_tool",
+                    "tool_name": "mcp__loregarden__loregarden_create_ticket",
+                    "tool_input": {"workspace_slug": "loregarden", "title": "spawned mid-run"},
+                },
+            }
+        )
+        result_line = json.dumps(
+            {"type": "result", "session_id": "sess_orch_denied", "subtype": "success"}
+        )
+
+        captured_proc: _FakeProc | None = None
+
+        def fake_spawn(*args, **kwargs):
+            nonlocal captured_proc
+            captured_proc = _FakeProc([permission_line, result_line])
+            return captured_proc
+
+        def fail_wait_for_approval(approval_id, **kwargs):
+            raise AssertionError(
+                "orchestrated create_ticket must be auto-denied, not routed to the "
+                "human approval inbox"
+            )
+
+        bridge = PermissionBridgeRunner(session)
+        result = bridge.run(
+            run_id=run.id,
+            ticket=ticket,
+            invocation=invocation,
+            prompt="implement",
+            timeout_seconds=30,
+            spawn_process=fake_spawn,
+            wait_for_approval=fail_wait_for_approval,
+        )
+
+        assert result.status == RunStatus.SUCCEEDED
+        assert captured_proc is not None
+        control_writes = []
+        for raw in captured_proc.stdin.writes:
+            text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+            for line in text.splitlines():
+                if line.strip().startswith("{"):
+                    control_writes.append(json.loads(line))
+        response = next(item for item in control_writes if item.get("type") == "control_response")
+        assert response["response"]["response"]["behavior"] == "deny"
+        assert (
+            "denied to orchestrated pipeline agents" in response["response"]["response"]["message"]
+        )
+        approvals = session.exec(select(Approval).where(Approval.run_id == run.id)).all()
+        assert approvals == []
+
+
+def test_permission_bridge_interactive_triage_create_ticket_is_not_auto_denied(tmp_path):
+    """The orchestrated-agent deny policy must be scoped to orchestrated pipeline
+    runs only. Ticket Studio chat and other interactive contexts use
+    `PermissionBridgeRunner(session, track_workflow_stage=False)` (see
+    `TriageTurnExecutor._execute_interactive`) and, per the ticket's own triage
+    decision, must remain ALLOWED to call `loregarden_create_ticket` — routed
+    through the normal human-approval gate like any other non-auto-approved
+    write, not silently rejected by the orchestrated-agent policy.
+
+    Expected to fail red until the orchestrated-denial check in
+    `PermissionBridgeRunner._try_fast_approve` is conditioned on
+    `self.track_workflow_stage` (or equivalent) instead of applying
+    unconditionally to every run that reaches the bridge."""
+    from loregarden.agents.cli_adapters import build_interactive_invocation
+    from loregarden.models.domain import AgentRun, Approval, ApprovalKind, RunStatus, Ticket
+    from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+
+        run = AgentRun(
+            run_code="run_triage_create_ticket_allowed",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="triage",
+            stage_key="triage",
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        workspace = tmp_path / "repo"
+        workspace.mkdir()
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("triage prompt", encoding="utf-8")
+        invocation = build_interactive_invocation(
+            adapter="claude",
+            prompt_file=prompt_file,
+            workspace_root=workspace,
+        )
+
+        permission_line = json.dumps(
+            {
+                "type": "control_request",
+                "request_id": "perm_create_ticket_interactive",
+                "request": {
+                    "subtype": "can_use_tool",
+                    "tool_name": "mcp__loregarden__loregarden_create_ticket",
+                    "tool_input": {
+                        "workspace_slug": "loregarden",
+                        "title": "created from Ticket Studio chat",
+                    },
+                },
+            }
+        )
+        result_line = json.dumps(
+            {"type": "result", "session_id": "sess_interactive_allowed", "subtype": "success"}
+        )
+
+        captured_proc: _FakeProc | None = None
+
+        def fake_spawn(*args, **kwargs):
+            nonlocal captured_proc
+            captured_proc = _FakeProc([permission_line, result_line])
+            return captured_proc
+
+        approvals_seen: list[str] = []
+
+        def fake_wait(approval_id, **kwargs):
+            approvals_seen.append(approval_id)
+            return ApprovalResolution(approved=True)
+
+        bridge = PermissionBridgeRunner(session, track_workflow_stage=False)
+        result = bridge.run(
+            run_id=run.id,
+            ticket=ticket,
+            invocation=invocation,
+            prompt="triage prompt",
+            timeout_seconds=30,
+            spawn_process=fake_spawn,
+            wait_for_approval=fake_wait,
+        )
+
+        assert result.status == RunStatus.SUCCEEDED
+        # Reached the normal human-approval gate — proof it was never auto-denied
+        # by the orchestrated-agent policy.
+        assert approvals_seen
+        approval = session.get(Approval, approvals_seen[0])
+        assert approval.kind == ApprovalKind.CLI_PERMISSION
+        assert captured_proc is not None
+        control_writes = []
+        for raw in captured_proc.stdin.writes:
+            text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+            for line in text.splitlines():
+                if line.strip().startswith("{"):
+                    control_writes.append(json.loads(line))
+        allow_response = next(
+            item for item in control_writes if item.get("type") == "control_response"
+        )
+        assert allow_response["response"]["response"]["behavior"] == "allow"
