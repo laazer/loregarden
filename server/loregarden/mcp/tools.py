@@ -667,7 +667,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "run_id": _string_prop("Agent or orchestration run UUID."),
                 "evidence_kind": _enum_string_prop(
                     "What this proves: a red-to-green test, output captured from the "
-                    "real surface a user touches, or a verifier's verdict.",
+                    "real surface a user touches, a verifier's verdict, or the full "
+                    "regression suite passing green at this commit.",
                     list(EVIDENCE_KINDS),
                 ),
                 "title": _string_prop("Short description of what was captured."),

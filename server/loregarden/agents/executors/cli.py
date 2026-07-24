@@ -35,6 +35,7 @@ from loregarden.services.cli_settings import (
 )
 from loregarden.services.code_map import render_code_map
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
+from loregarden.services.evidence import FULL_SUITE_EVIDENCE_KIND, full_suite_green_at_head
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_commit_push_service import working_tree_paths
 from loregarden.services.orchestration import OrchestrationService
@@ -56,6 +57,14 @@ logger = logging.getLogger(__name__)
 # budget, so a long-but-progressing test run is no longer killed mid-progress
 # while a chatty runaway is still bounded.
 _TIMEOUT_HARD_CAP_MULTIPLIER = 4
+
+# Skills whose stages run or consume the full regression suite. The suite-runner
+# is told to record its green result as commit-scoped evidence; the reviewer is
+# told it may skip re-running the suite when that evidence already covers the
+# exact tree it is about to test. Keyed on skill rather than stage key so a
+# workflow that renames its stages still gets the behaviour by using these skills.
+_FULL_SUITE_SKILL = "run_tests"
+_SUITE_REVIEW_SKILL = "ac_gate"
 
 
 def _titled_block(title: str, body: str, *, cap: int = 0) -> list[str]:
@@ -436,6 +445,37 @@ class CliAgentExecutor:
             None,
         )
 
+    def _full_suite_evidence_note(
+        self, skill_name: str, ticket: Ticket, workspace: Workspace
+    ) -> str:
+        """Guidance about the full regression suite for this stage, or "".
+
+        The suite-runner is told to record a green run as commit-scoped evidence.
+        The reviewer is told it may skip re-running the suite, but only when that
+        evidence already proves the exact tree it is about to test — same HEAD,
+        clean working tree; otherwise it says nothing and the reviewer runs it.
+        """
+        if skill_name == _FULL_SUITE_SKILL:
+            return (
+                "When the full suite passes, record it as reusable proof so a later "
+                "stage need not re-run it: call `loregarden_attach_evidence` with "
+                f"`evidence_kind: {FULL_SUITE_EVIDENCE_KIND}` (the commit is stamped "
+                "server-side). Do this only for a genuinely green full run — not a "
+                "partial or scoped one."
+            )
+        if skill_name == _SUITE_REVIEW_SKILL and full_suite_green_at_head(
+            self.session, ticket, resolve_workspace_root(workspace)
+        ):
+            return (
+                "The full regression suite already passed at the current commit with a "
+                "clean working tree (recorded as "
+                f"`{FULL_SUITE_EVIDENCE_KIND}` evidence). Do not re-run the full suite; "
+                "review the change itself and run only the fast static checks. If you "
+                "make any edit, that proof no longer holds — run the full suite before "
+                "reporting `pass`."
+            )
+        return ""
+
     def _build_prompt(
         self,
         ticket: Ticket,
@@ -479,6 +519,7 @@ class CliAgentExecutor:
         stage_report_doc = load_stage_report_contract_doc(agent_context_dir)
         is_verify = stage_def is not None and stage_def.stage_type == VERIFY_STAGE_TYPE
         is_synthesis = skill_name == SYNTHESIS_SKILL
+        full_suite_note = self._full_suite_evidence_note(skill_name, ticket, workspace)
 
         # Ordered prompt blocks. Add a section by inserting a block here rather
         # than threading another conditional through the assembly; each block
@@ -500,6 +541,9 @@ class CliAgentExecutor:
                 "## Acceptance Criteria",
                 *[f"- {item}" for item in ac],
             ],
+            # High in the prompt: it governs whether the agent runs the suite at
+            # all, so it must land before the role text that tells it to.
+            _titled_block("## Full test suite", full_suite_note),
             # A verifier is deliberately starved of inherited context. Handing it
             # the prior stage's settled decisions ("do not re-derive") would make
             # it a reader of that reasoning rather than an independent check, and

@@ -9,8 +9,10 @@ can tell proof from a leftover.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from loregarden.models.domain import Artifact, Ticket, Workspace
-from loregarden.services.git_commit_push_service import head_commit_sha
+from loregarden.services.git_commit_push_service import head_commit_sha, working_tree_paths
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -26,7 +28,12 @@ EVIDENCE_KINDS = (
     "real_surface",
     # An independent verifier's confirm/refute of a stage's done-claim.
     "verify_verdict",
+    # The full regression suite, green at a specific commit. Lets a later stage
+    # (e.g. the gatekeeper review) trust it was already run rather than re-run it.
+    "full_suite_green",
 )
+
+FULL_SUITE_EVIDENCE_KIND = "full_suite_green"
 
 
 def resolve_head_sha(session: Session, ticket: Ticket) -> str:
@@ -71,3 +78,22 @@ def has_evidence(
     return bool(
         evidence_for_commit(session, ticket, commit_sha=commit_sha, evidence_kind=evidence_kind)
     )
+
+
+def full_suite_green_at_head(session: Session, ticket: Ticket, repo_root: Path) -> bool:
+    """Whether the full suite is already proven green for the exact tree a stage
+    is about to test — i.e. `full_suite_green` evidence exists at the current
+    HEAD *and* the working tree is clean.
+
+    The clean-tree requirement closes the gap the commit stamp alone leaves: the
+    suite ran against a working tree, but evidence is keyed only to HEAD, so an
+    uncommitted edit would leave HEAD (and the evidence) unchanged while the tree
+    the next stage sees is no longer the one that was tested. If anything is
+    dirty, the proof no longer covers the current state and the suite must run.
+    """
+    head = resolve_head_sha(session, ticket)
+    if not head:
+        return False
+    if working_tree_paths(repo_root):
+        return False
+    return has_evidence(session, ticket, commit_sha=head, evidence_kind=FULL_SUITE_EVIDENCE_KIND)
