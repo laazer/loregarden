@@ -824,10 +824,17 @@ class PermissionBridgeRunner:
         permission as handled and move on to the next line)."""
         tool_input = permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
 
-        if bare_mcp and is_orchestrated_agent_denied_mcp_tool(permission["tool_name"]):
+        if (
+            bare_mcp
+            and self.track_workflow_stage
+            and is_orchestrated_agent_denied_mcp_tool(permission["tool_name"])
+        ):
             # Checked first, ahead of every approval path including the human
             # inbox — an orchestrated stage agent must never be able to spawn
             # tickets mid-run, not even with a click. See ORCHESTRATED_DENIED_MCP_TOOLS.
+            # Interactive contexts (Ticket Studio chat, a human's terminal session)
+            # construct PermissionBridgeRunner with track_workflow_stage=False and
+            # fall through to the normal approval gate below instead.
             message = (
                 f"{bare_mcp} is denied to orchestrated pipeline agents (interim "
                 "allowlist, a9-create-ticket-mcp-tool; superseded once "

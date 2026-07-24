@@ -99,21 +99,26 @@ def _coerce_optional_string(value: Any) -> str:
     return str(value).strip()
 
 
-def _coerce_optional_int(value: Any) -> int | None:
+def _coerce_optional_int(value: Any, *, field: str = "max_stages") -> int | None:
     if value is None or value == "":
         return None
     if isinstance(value, bool):
-        raise ValueError("max_stages must be an integer")
+        raise ValueError(f"{field} must be an integer")
     if isinstance(value, int):
         return value
     if isinstance(value, float):
+        if not value.is_integer():
+            raise ValueError(f"{field} must be an integer")
         return int(value)
     if isinstance(value, str):
         text = value.strip()
         if not text:
             return None
-        return int(text)
-    raise ValueError("max_stages must be an integer")
+        try:
+            return int(text)
+        except ValueError as exc:
+            raise ValueError(f"{field} must be an integer: {exc}") from exc
+    raise ValueError(f"{field} must be an integer")
 
 
 def _coerce_string_list(value: Any, *, field: str) -> list[str]:
@@ -454,7 +459,7 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             "acceptance_criteria": _coerce_string_list(
                 args.get("acceptance_criteria") or [], field="acceptance_criteria"
             ),
-            "priority": _coerce_optional_int(args.get("priority")),
+            "priority": _coerce_optional_int(args.get("priority"), field="priority"),
             "external_id": _coerce_optional_string(args.get("external_id")),
             "parent": _coerce_optional_string(args.get("parent")),
         }

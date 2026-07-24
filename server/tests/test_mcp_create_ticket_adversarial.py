@@ -240,3 +240,97 @@ def test_milestone_with_parent_rejection_message_is_identical_across_repeated_ca
             )
         messages.append(str(excinfo.value))
     assert messages[0] == messages[1], messages
+
+
+# --- type mutations: priority coercion --------------------------------------
+#
+# normalize_tool_arguments("loregarden_create_ticket", ...) routes priority through
+# `_coerce_optional_int`, a helper shared with `max_stages` (loregarden_start_orchestration).
+# That sharing leaks: the helper's only messaged failure path hardcodes "max_stages must
+# be an integer" regardless of which field actually called it, and its str/int/float
+# branches are inconsistent with each other. These tests pin the *actionable, field-correct*
+# behavior a caller writing `priority` (not `max_stages`) is entitled to — not what the
+# helper currently does. Confirmed by direct probe against `normalize_tool_arguments`
+# before writing these:
+#   priority="abc"  -> ValueError("invalid literal for int() with base 10: 'abc'")
+#   priority=True   -> ValueError("max_stages must be an integer")
+#   priority=[1, 2] -> ValueError("max_stages must be an integer")
+#   priority=1.9    -> silently coerced to 1 (int(1.9)), no rejection
+# All four are live bugs in the current implementation, not hypothetical.
+
+
+def test_priority_as_non_numeric_string_gets_an_actionable_priority_error(client, db_session):
+    """A caller sending priority="abc" must see an error that names the field it got
+    wrong. Today `_coerce_optional_int` falls through to Python's bare `int("abc")`,
+    which raises "invalid literal for int() with base 10: 'abc'" — a raw stdlib
+    message with no mention of "priority" at all, indistinguishable from a crash to
+    a caller who doesn't already know the implementation."""
+    milestone = _milestone(db_session)
+    with pytest.raises(ValueError, match="(?i)priority"):
+        _create(
+            db_session,
+            {
+                "workspace_slug": "loregarden",
+                "title": "Non-numeric priority",
+                "work_item_type": "feature",
+                "parent": milestone.id,
+                "priority": "abc",
+            },
+        )
+
+
+def test_priority_as_boolean_gets_an_actionable_priority_error_not_max_stages(client, db_session):
+    """`_coerce_optional_int` explicitly rejects bools with a hardcoded
+    "max_stages must be an integer" message — correct for the `max_stages` argument
+    it was written for, but wrong and confusing when reused for `priority`. A
+    priority=True/False payload (e.g. a client mistakenly boolean-coding priority)
+    must be told about `priority`, not a field it never sent."""
+    milestone = _milestone(db_session)
+    with pytest.raises(ValueError, match="(?i)priority"):
+        _create(
+            db_session,
+            {
+                "workspace_slug": "loregarden",
+                "title": "Boolean priority",
+                "work_item_type": "feature",
+                "parent": milestone.id,
+                "priority": True,
+            },
+        )
+
+
+def test_priority_as_list_gets_an_actionable_priority_error_not_max_stages(client, db_session):
+    """Same hardcoded-field-name bug as the boolean case, via the generic
+    "not a str/int/float/bool" fallback branch instead of the explicit bool guard."""
+    milestone = _milestone(db_session)
+    with pytest.raises(ValueError, match="(?i)priority"):
+        _create(
+            db_session,
+            {
+                "workspace_slug": "loregarden",
+                "title": "List priority",
+                "work_item_type": "feature",
+                "parent": milestone.id,
+                "priority": [1, 2],
+            },
+        )
+
+
+def test_fractional_priority_is_rejected_not_silently_truncated(client, db_session):
+    """`_coerce_optional_int` does `int(1.9)` for a float priority, silently dropping
+    the fraction and storing priority=1 with no error and no hint the request was
+    malformed. A ticket create is not the place for implicit floor()-ing a bounded
+    enum-like field — 1.9 is neither 1 nor 2 and the caller deserves to know their
+    input didn't round-trip, not have it quietly reinterpreted."""
+    milestone = _milestone(db_session)
+    with pytest.raises(ValueError, match="(?i)priority"):
+        _create(
+            db_session,
+            {
+                "workspace_slug": "loregarden",
+                "title": "Fractional priority",
+                "work_item_type": "feature",
+                "parent": milestone.id,
+                "priority": 1.9,
+            },
+        )
