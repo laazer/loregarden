@@ -5,13 +5,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from loregarden.models.domain import (
     OrchestrationDriver,
     OrchestrationRunStatus,
+    Ticket,
     TicketState,
     UpdateTicketRequest,
+    WorkItemType,
     Workspace,
 )
 from loregarden.services.acceptance_criteria import (
@@ -33,6 +35,7 @@ from loregarden.services.orchestration_callbacks import OrchestrationCallbackSer
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.prior_work import search_prior_work
 from loregarden.services.ticket_discovery import list_tickets_mcp, ticket_neighbors_mcp
+from loregarden.services.ticket_service import TicketService
 
 
 def _tool_schema(
@@ -438,6 +441,27 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             )
         return payload
 
+    if name == "loregarden_create_ticket":
+        # Deliberately loose here: title/workspace_slug are passed through
+        # (stripped, not rejected) so TicketService.create_ticket owns every
+        # validation message — duplicating "Title is required" here with
+        # different casing would silently diverge from the service's own text.
+        payload = {
+            "workspace_slug": _coerce_optional_string(args.get("workspace_slug")),
+            "title": _coerce_optional_string(args.get("title")),
+            "work_item_type": _coerce_optional_string(args.get("work_item_type")) or "task",
+            "description": _coerce_optional_string(args.get("description")),
+            "acceptance_criteria": _coerce_string_list(
+                args.get("acceptance_criteria") or [], field="acceptance_criteria"
+            ),
+            "priority": _coerce_optional_int(args.get("priority")),
+            "external_id": _coerce_optional_string(args.get("external_id")),
+            "parent": _coerce_optional_string(args.get("parent")),
+        }
+        if payload["priority"] is None:
+            payload["priority"] = 3
+        return payload
+
     if name == "loregarden_write_handoff":
         checklist = args.get("checklist")
         if isinstance(checklist, str):
@@ -752,6 +776,40 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": "loregarden_create_ticket",
+        "description": (
+            "Create a new ticket. Mirrors the TicketCreate schema — validation "
+            "(including milestone-cannot-have-parent and hierarchy rules) is owned "
+            "by TicketService.create_ticket, not reimplemented here. Returns the "
+            "created ticket's id, external_id, and title."
+        ),
+        "inputSchema": _tool_schema(
+            properties={
+                "workspace_slug": _string_prop("Workspace slug, e.g. loregarden."),
+                "title": _string_prop("Ticket title."),
+                "work_item_type": _enum_string_prop(
+                    "Work item type (default task).",
+                    ["milestone", "feature", "capability", "task", "bug"],
+                ),
+                "description": _string_prop("Ticket description (default empty)."),
+                "acceptance_criteria": {
+                    "type": "array",
+                    "description": "Acceptance criteria, one per entry (default empty).",
+                    "items": {"type": "string"},
+                },
+                "priority": _integer_prop("Priority 1-3 (default 3)."),
+                "external_id": _string_prop(
+                    "Explicit external_id slug; auto-slugged from the title when empty."
+                ),
+                "parent": _string_prop(
+                    "Parent ticket, as a UUID or external_id slug — resolved the same "
+                    "way loregarden_get_ticket resolves ticket_id."
+                ),
+            },
+            required=["workspace_slug", "title"],
+        ),
+    },
+    {
         "name": "loregarden_memory_status",
         "description": (
             "Report configured Obsidian/iCloud memory backends and workspace-scoped resolved paths."
@@ -1051,6 +1109,47 @@ def _update_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
     return json.dumps(_ticket_state_payload(session, ticket.id), indent=2)
 
 
+def _resolve_parent_ticket_id(session: Session, parent: str) -> str | None:
+    """UUID or external_id slug, resolved the same way loregarden_get_ticket resolves
+    ticket_id. Deliberately not workspace-scoped here: TicketService.create_ticket
+    already rejects a parent from another workspace ("Parent work item not found in
+    workspace"), so scoping twice would only risk the two checks disagreeing."""
+    parent = (parent or "").strip()
+    if not parent:
+        return None
+    ticket = session.get(Ticket, parent)
+    if ticket:
+        return ticket.id
+    ticket = session.exec(select(Ticket).where(Ticket.external_id == parent)).first()
+    if ticket:
+        return ticket.id
+    raise ValueError(f"Parent ticket not found: {parent}")
+
+
+def _create_ticket(session: Session, arguments: dict[str, Any]) -> str:
+    work_item_type_raw = arguments.get("work_item_type") or "task"
+    try:
+        work_item_type = WorkItemType(work_item_type_raw)
+    except ValueError as exc:
+        raise ValueError(f"Unknown work_item_type: {work_item_type_raw}") from exc
+
+    parent_ticket_id = _resolve_parent_ticket_id(session, arguments.get("parent", ""))
+
+    ticket = TicketService(session).create_ticket(
+        workspace_slug=arguments["workspace_slug"],
+        title=arguments["title"],
+        work_item_type=work_item_type,
+        parent_ticket_id=parent_ticket_id,
+        description=arguments.get("description", ""),
+        acceptance_criteria=arguments.get("acceptance_criteria") or [],
+        priority=arguments.get("priority", 3),
+        external_id=arguments.get("external_id", ""),
+    )
+    return json.dumps(
+        {"id": ticket.id, "external_id": ticket.external_id, "title": ticket.title}, indent=2
+    )
+
+
 def _start_orchestration(session: Session, svc, arguments: dict[str, Any]) -> str:
     """Start a run on whichever driver the workspace profile selects."""
     ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
@@ -1143,6 +1242,9 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
 
     if name == "loregarden_update_ticket":
         return _update_ticket(session, svc, arguments)
+
+    if name == "loregarden_create_ticket":
+        return _create_ticket(session, arguments)
 
     if name == "loregarden_write_handoff":
         from loregarden.services.handoff_writer import write_handoff

@@ -284,7 +284,12 @@ def test_parent_in_a_different_workspace_is_not_resolved(client, db_session):
     which satisfies an unqualified `pytest.raises(ValueError)` too. Both made this test
     pass red-suite-wide with zero implementation. Pinning `match="(?i)parent"` and using
     a genuinely different workspace closes both gaps."""
-    other_ws = Workspace(slug="other-workspace-for-parent-scoping", name="Other Workspace")
+    loregarden_ws = _workspace(db_session)
+    other_ws = Workspace(
+        slug="other-workspace-for-parent-scoping",
+        name="Other Workspace",
+        workflow_template_id=loregarden_ws.workflow_template_id,
+    )
     db_session.add(other_ws)
     db_session.commit()
     other_milestone = TicketService(db_session).create_ticket(
