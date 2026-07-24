@@ -80,20 +80,27 @@ def has_evidence(
     )
 
 
-def full_suite_green_at_head(session: Session, ticket: Ticket, repo_root: Path) -> bool:
-    """Whether the full suite is already proven green for the exact tree a stage
-    is about to test — i.e. `full_suite_green` evidence exists at the current
-    HEAD *and* the working tree is clean.
+def evidence_kinds_at_head(session: Session, ticket: Ticket, repo_root: Path) -> set[str]:
+    """The evidence kinds proven for the *exact current tree*: recorded at the
+    current HEAD with a clean working tree.
 
-    The clean-tree requirement closes the gap the commit stamp alone leaves: the
-    suite ran against a working tree, but evidence is keyed only to HEAD, so an
-    uncommitted edit would leave HEAD (and the evidence) unchanged while the tree
-    the next stage sees is no longer the one that was tested. If anything is
-    dirty, the proof no longer covers the current state and the suite must run.
+    The clean-tree requirement closes the gap the commit stamp alone leaves:
+    evidence is keyed only to HEAD, so an uncommitted edit would leave HEAD (and
+    the evidence) unchanged while the tree a downstream stage sees is no longer
+    the one that was proven. Empty when HEAD is unresolved or anything is dirty —
+    the proof no longer covers what's there.
     """
     head = resolve_head_sha(session, ticket)
-    if not head:
-        return False
-    if working_tree_paths(repo_root):
-        return False
-    return has_evidence(session, ticket, commit_sha=head, evidence_kind=FULL_SUITE_EVIDENCE_KIND)
+    if not head or working_tree_paths(repo_root):
+        return set()
+    return {
+        artifact.evidence_kind
+        for artifact in evidence_for_commit(session, ticket, commit_sha=head)
+        if artifact.evidence_kind
+    }
+
+
+def full_suite_green_at_head(session: Session, ticket: Ticket, repo_root: Path) -> bool:
+    """Whether the full suite is already proven green for the exact tree a stage
+    is about to test — `full_suite_green` recorded at HEAD with a clean tree."""
+    return FULL_SUITE_EVIDENCE_KIND in evidence_kinds_at_head(session, ticket, repo_root)
