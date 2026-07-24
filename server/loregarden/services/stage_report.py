@@ -113,6 +113,41 @@ def _build_report(payload: str) -> StageReport | None:
     )
 
 
+# Signatures of an agent run that died from infrastructure — an API/usage-limit
+# or overload error — rather than reporting bad work. The Claude CLI ends its
+# stream with a JSON result carrying `terminal_reason`; `api_error` is its label
+# for a non-recoverable API failure (usage limit included). The text signatures
+# catch the same across adapters and log lines. Kept deliberately narrow: a false
+# "transient" only pauses a real rejection (recoverable on resume), whereas too
+# broad would mask genuine failures as retryable.
+_TRANSIENT_TERMINAL_REASONS = ("api_error",)
+_TRANSIENT_SIGNATURES = (
+    "usage limit",
+    "rate limit",
+    "rate_limit",
+    "overloaded",
+    "quota exceeded",
+    "too many requests",
+    "service unavailable",
+)
+
+
+def is_transient_failure(stdout: str, stderr: str) -> bool:
+    """True when a *failed* agent run died from infrastructure (API/usage limit,
+    overload) rather than reporting bad work.
+
+    Such a failure is not a rework signal: the stage should pause for a
+    human/resume, not reroute upstream (which wastes a cycle and, with the rework
+    loop cap, inches toward blocking for the wrong reason). Only meaningful for a
+    run whose status is FAILED — a clean run that merely mentions these words in
+    its output is not a transient failure, so callers must gate on status first.
+    """
+    blob = f"{stdout}\n{stderr}".lower()
+    if "terminal_reason" in blob and any(r in blob for r in _TRANSIENT_TERMINAL_REASONS):
+        return True
+    return any(sig in blob for sig in _TRANSIENT_SIGNATURES)
+
+
 def stage_report_artifact_content(stage_key: str, report: StageReport) -> dict:
     """Build the `context`-artifact `content` payload for a parsed stage report.
 

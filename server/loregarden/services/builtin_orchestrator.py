@@ -39,6 +39,7 @@ from loregarden.services.rework_feedback import (
 )
 from loregarden.services.stage_report import (
     StageReport,
+    is_transient_failure,
     parse_stage_report,
     stage_report_artifact_content,
 )
@@ -737,7 +738,7 @@ class BuiltinOrchestrator:
         runs = self._start_parallel_stage_runs(
             ticket, orch_run, stage_def, stage_key, pending_specs, auto_approve=auto_approve
         )
-        failures, reports = self._run_and_collect_parallel_results(runs)
+        failures, reports, transient = self._run_and_collect_parallel_results(runs)
 
         for agent_id, report in reports:
             self.callbacks.attach_artifact(
@@ -749,7 +750,7 @@ class BuiltinOrchestrator:
 
         if failures:
             return _handle_parallel_stage_failures(
-                self, ticket, orch_run, stage_key, failures, reports
+                self, ticket, orch_run, stage_key, failures, reports, transient
             )
 
         self.orch.finalize_stage(ticket, stage_key, status=StageStatus.DONE)
@@ -847,9 +848,13 @@ class BuiltinOrchestrator:
 
     def _run_and_collect_parallel_results(
         self, runs: list[AgentRun]
-    ) -> tuple[list[str], list[tuple[str, StageReport]]]:
+    ) -> tuple[list[str], list[tuple[str, StageReport]], bool]:
         failures: list[str] = []
         reports: list[tuple[str, StageReport]] = []
+        # Track whether any failure was infrastructure (API/usage limit), so the
+        # caller can pause the stage for retry rather than treat it as a rework
+        # rejection and reroute upstream.
+        transient_hits: list[str] = []
 
         def _run_agent(run_id: str) -> tuple[str, str, str, str]:
             with Session(engine) as session:
@@ -880,6 +885,8 @@ class BuiltinOrchestrator:
                 reports.append((agent_id, report))
             if status_value != RunStatus.SUCCEEDED.value:
                 failures.append(f"{agent_id}: {stderr or 'agent run failed'}")
+                if is_transient_failure(stdout, stderr):
+                    transient_hits.append(agent_id)
             elif report and report.status in ("fail", "needs_rework", "blocked"):
                 failures.append(f"{agent_id}: {report.reroute_context or 'agent reported failure'}")
 
@@ -901,7 +908,7 @@ class BuiltinOrchestrator:
                     except Exception as exc:
                         failures.append(f"{agent_label}: {exc}")
 
-        return failures, reports
+        return failures, reports, bool(transient_hits)
 
     def _recover_interrupted_stage(self, ticket: Ticket, instance, stages) -> str | None:
         """Clear a stage blocked only by a server restart, not a genuine failure.
@@ -1018,6 +1025,7 @@ def _handle_parallel_stage_failures(
     stage_key: str,
     failures: list[str],
     reports: list[tuple[str, StageReport]],
+    transient: bool = False,
 ) -> tuple[bool, str]:
     """Route a parallel review stage's rework: record the reviewers' feedback for
     the re-run agent and either reroute upstream or, at the loop cap, block for a
@@ -1039,6 +1047,26 @@ def _handle_parallel_stage_failures(
     rejecting.sort(key=lambda pair: pair[1].confidence, reverse=True)
     agent_to_key = rejecting[0][1].reroute_to_stage if rejecting else ""
     agent_context = rejecting[0][1].reroute_context if rejecting else ""
+
+    if transient and not rejecting:
+        # The only failures were infrastructure (API/usage limit, overload), and
+        # no reviewer produced a genuine rejection. Rerouting to `implement` would
+        # waste a cycle and, via the rework loop cap, inch toward blocking for the
+        # wrong reason. Pause the stage for a human/resume instead — no reroute,
+        # no ledger entry, so the loop budget is untouched. A genuine rejection
+        # from another reviewer (rejecting non-empty) still takes precedence and
+        # is rerouted below with its real feedback.
+        builtin.callbacks.block_ticket(
+            orch_run,
+            ticket,
+            stage_key=stage_key,
+            message=(
+                f"'{stage_key}' stage hit a transient API/usage error, not a rework "
+                f"rejection. Paused — resume to retry once it clears. ({message[:300]})"
+            ),
+        )
+        builtin.session.refresh(ticket)
+        return False, message
 
     template_route = StateMachine.resolve_transition_target(transitions, stage_key, "reject")
     to_key = agent_to_key or (template_route[0] if template_route else "")
