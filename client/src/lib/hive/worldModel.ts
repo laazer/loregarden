@@ -110,7 +110,13 @@ export interface HiveWorldModel {
   orchestratorActive: boolean;
   orchestratorLabel: string;
   waitingProp: { x: number; y: number; label: string; visible: boolean };
-  receptionist: { id: string; x: number; y: number; label: string } | null;
+  receptionist: {
+    id: string;
+    x: number;
+    y: number;
+    label: string;
+    character: HiveCharacterId;
+  } | null;
   idle: boolean;
 }
 
