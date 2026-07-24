@@ -1,0 +1,34 @@
+handoff:
+  schema_version: '1.0'
+  ticket_id: a9-create-ticket-mcp-tool
+  from_agent: test_designer
+  to_agent: test_breaker
+  validated_at: '2026-07-24T15:47:49Z'
+  required_items_met: 4
+  total_required_items: 4
+  checklist:
+  - item_key: test_suite_complete
+    item: Test suite covers all acceptance criteria
+    required: true
+    status: complete
+    evidence: server/tests/test_mcp_create_ticket.py (happy path, defaults, parent resolution by UUID/external_id,
+      delegated validation error messages, HTTP/JSON-RPC layer) + server/tests/test_mcp_create_ticket_access_control.py
+      (orchestrated-agent deny / interactive allow)
+  - item_key: tests_are_deterministic
+    item: Tests are deterministic, no flaky waits
+    required: true
+    status: complete
+    evidence: Pure DB-session and TestClient calls, no sleeps/timing, no network
+  - item_key: spec_gaps_reported
+    item: Spec gaps or ambiguities reported, not silently assumed
+    required: true
+    status: complete
+    evidence: 'Checkpoint appended: exact enforcement interface for the orchestrated-vs-interactive access-control
+      gate is a design proposal (new permission_bridge.py predicate), not a confirmed decision -- flagged
+      for implement stage to confirm or rename'
+  - item_key: baseline_failure_captured
+    item: Pre-existing failure baseline captured before editing tests
+    required: true
+    status: complete
+    evidence: 'Ran full suite before/after touching the shared test_mcp_all_tools_smoke.py tables: 1361
+      passed / 34 skipped both times, confirming the shared-file edit is inert until the tool is implemented'
