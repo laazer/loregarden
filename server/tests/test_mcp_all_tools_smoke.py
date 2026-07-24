@@ -156,6 +156,11 @@ def _args_for(
             "content_json": json.dumps({"status": 200}),
         },
         "loregarden_update_ticket": {"ticket_id": ticket_id, "state": "in_progress"},
+        "loregarden_create_ticket": {
+            "workspace_slug": ws,
+            "title": "MCP smoke ticket",
+            "work_item_type": "milestone",
+        },
         "loregarden_request_approval": {
             "run_id": run_id,
             "stage_key": stage_key,
@@ -230,6 +235,7 @@ def test_every_advertised_tool_is_callable(client: TestClient):
         "loregarden_attach_evidence",
         "loregarden_search_prior_work",
         "loregarden_update_ticket",
+        "loregarden_create_ticket",
         "loregarden_request_approval",
         "loregarden_write_handoff",
         "loregarden_start_stage",

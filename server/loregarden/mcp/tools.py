@@ -7,11 +7,13 @@ from typing import Any
 
 from sqlmodel import Session
 
+from loregarden.agents.executors.permission_bridge import is_orchestrated_agent_denied_mcp_tool
 from loregarden.models.domain import (
     OrchestrationDriver,
     OrchestrationRunStatus,
     TicketState,
     UpdateTicketRequest,
+    WorkItemType,
     Workspace,
 )
 from loregarden.services.acceptance_criteria import (
@@ -33,6 +35,7 @@ from loregarden.services.orchestration_callbacks import OrchestrationCallbackSer
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.prior_work import search_prior_work
 from loregarden.services.ticket_discovery import list_tickets_mcp, ticket_neighbors_mcp
+from loregarden.services.ticket_service import TicketService
 
 
 def _tool_schema(
@@ -96,21 +99,26 @@ def _coerce_optional_string(value: Any) -> str:
     return str(value).strip()
 
 
-def _coerce_optional_int(value: Any) -> int | None:
+def _coerce_optional_int(value: Any, *, field: str = "max_stages") -> int | None:
     if value is None or value == "":
         return None
     if isinstance(value, bool):
-        raise ValueError("max_stages must be an integer")
+        raise ValueError(f"{field} must be an integer")
     if isinstance(value, int):
         return value
     if isinstance(value, float):
+        if not value.is_integer():
+            raise ValueError(f"{field} must be an integer")
         return int(value)
     if isinstance(value, str):
         text = value.strip()
         if not text:
             return None
-        return int(text)
-    raise ValueError("max_stages must be an integer")
+        try:
+            return int(text)
+        except ValueError as exc:
+            raise ValueError(f"{field} must be an integer: {exc}") from exc
+    raise ValueError(f"{field} must be an integer")
 
 
 def _coerce_string_list(value: Any, *, field: str) -> list[str]:
@@ -438,6 +446,27 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             )
         return payload
 
+    if name == "loregarden_create_ticket":
+        # Deliberately loose here: title/workspace_slug are passed through
+        # (stripped, not rejected) so TicketService.create_ticket owns every
+        # validation message — duplicating "Title is required" here with
+        # different casing would silently diverge from the service's own text.
+        payload = {
+            "workspace_slug": _coerce_optional_string(args.get("workspace_slug")),
+            "title": _coerce_optional_string(args.get("title")),
+            "work_item_type": _coerce_optional_string(args.get("work_item_type")) or "task",
+            "description": _coerce_optional_string(args.get("description")),
+            "acceptance_criteria": _coerce_string_list(
+                args.get("acceptance_criteria") or [], field="acceptance_criteria"
+            ),
+            "priority": _coerce_optional_int(args.get("priority"), field="priority"),
+            "external_id": _coerce_optional_string(args.get("external_id")),
+            "parent": _coerce_optional_string(args.get("parent")),
+        }
+        if payload["priority"] is None:
+            payload["priority"] = 3
+        return payload
+
     if name == "loregarden_write_handoff":
         checklist = args.get("checklist")
         if isinstance(checklist, str):
@@ -752,6 +781,40 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": "loregarden_create_ticket",
+        "description": (
+            "Create a new ticket. Mirrors the TicketCreate schema — validation "
+            "(including milestone-cannot-have-parent and hierarchy rules) is owned "
+            "by TicketService.create_ticket, not reimplemented here. Returns the "
+            "created ticket's id, external_id, and title."
+        ),
+        "inputSchema": _tool_schema(
+            properties={
+                "workspace_slug": _string_prop("Workspace slug, e.g. loregarden."),
+                "title": _string_prop("Ticket title."),
+                "work_item_type": _enum_string_prop(
+                    "Work item type (default task).",
+                    ["milestone", "feature", "capability", "task", "bug"],
+                ),
+                "description": _string_prop("Ticket description (default empty)."),
+                "acceptance_criteria": {
+                    "type": "array",
+                    "description": "Acceptance criteria, one per entry (default empty).",
+                    "items": {"type": "string"},
+                },
+                "priority": _integer_prop("Priority 1-3 (default 3)."),
+                "external_id": _string_prop(
+                    "Explicit external_id slug; auto-slugged from the title when empty."
+                ),
+                "parent": _string_prop(
+                    "Parent ticket, as a UUID or external_id slug — resolved the same "
+                    "way loregarden_get_ticket resolves ticket_id."
+                ),
+            },
+            required=["workspace_slug", "title"],
+        ),
+    },
+    {
         "name": "loregarden_memory_status",
         "description": (
             "Report configured Obsidian/iCloud memory backends and workspace-scoped resolved paths."
@@ -1051,6 +1114,43 @@ def _update_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
     return json.dumps(_ticket_state_payload(session, ticket.id), indent=2)
 
 
+def _create_ticket(
+    session: Session, svc: OrchestrationCallbackService, arguments: dict[str, Any]
+) -> str:
+    """`parent` is resolved via `svc.resolve_ticket` — the same UUID/external_id
+    resolution `loregarden_get_ticket` uses — rather than a second lookup, so the two
+    never disagree. Deliberately not workspace-scoped here: TicketService.create_ticket
+    already rejects a parent from another workspace ("Parent work item not found in
+    workspace"), so scoping twice would only risk the two checks disagreeing."""
+    work_item_type_raw = arguments.get("work_item_type") or "task"
+    try:
+        work_item_type = WorkItemType(work_item_type_raw)
+    except ValueError as exc:
+        raise ValueError(f"Unknown work_item_type: {work_item_type_raw}") from exc
+
+    parent = (arguments.get("parent") or "").strip()
+    parent_ticket_id = None
+    if parent:
+        try:
+            parent_ticket_id = svc.resolve_ticket(ticket_id=parent).id
+        except ValueError as exc:
+            raise ValueError(f"Parent ticket not found: {parent}") from exc
+
+    ticket = TicketService(session).create_ticket(
+        workspace_slug=arguments["workspace_slug"],
+        title=arguments["title"],
+        work_item_type=work_item_type,
+        parent_ticket_id=parent_ticket_id,
+        description=arguments.get("description", ""),
+        acceptance_criteria=arguments.get("acceptance_criteria") or [],
+        priority=arguments.get("priority", 3),
+        external_id=arguments.get("external_id", ""),
+    )
+    return json.dumps(
+        {"id": ticket.id, "external_id": ticket.external_id, "title": ticket.title}, indent=2
+    )
+
+
 def _start_orchestration(session: Session, svc, arguments: dict[str, Any]) -> str:
     """Start a run on whichever driver the workspace profile selects."""
     ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
@@ -1097,7 +1197,33 @@ def _attach_evidence(session: Session, svc, ticket, arguments: dict[str, Any]) -
     )
 
 
-def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -> str:
+def execute_tool(
+    session: Session,
+    name: str,
+    arguments: dict[str, Any] | Any,
+    *,
+    orchestrated: bool = False,
+) -> str:
+    """Dispatch a tool call.
+
+    `orchestrated=True` marks a call made by an agent CLI subprocess Loregarden itself
+    supervises (any run built via `agents.cli_adapters.resolve_cli_invocation` — builtin
+    autopilot or a manually-started single stage alike; see `ORCHESTRATED_DENIED_MCP_TOOLS`).
+    It is threaded down from the MCP transport: the HTTP endpoint sets it from the
+    `X-Loregarden-Orchestrated` header, which only Loregarden's own CLI invocation
+    builders attach to a run's `--mcp-config`/stdio env. A caller that never sets that
+    header — a human's own terminal `claude` session, Ticket Studio chat, a direct
+    operator `curl` against `/mcp`, or an `external_mcp`-driven orchestrator calling
+    tools/call directly — is NOT covered by this check; `orchestrated` defaults to False
+    for exactly that reason. That gap is recorded debt (a9-create-ticket-mcp-tool),
+    pending a2-per-agent-server-policy's real per-agent x per-server policy table.
+    """
+    if orchestrated and is_orchestrated_agent_denied_mcp_tool(name):
+        raise ValueError(
+            f"{name} is not available to orchestrated pipeline agents (interim policy, "
+            "a9-create-ticket-mcp-tool). Use the REST API or an interactive session instead."
+        )
+
     svc = OrchestrationCallbackService(session)
     arguments = normalize_tool_arguments(name, arguments)
 
@@ -1143,6 +1269,9 @@ def execute_tool(session: Session, name: str, arguments: dict[str, Any] | Any) -
 
     if name == "loregarden_update_ticket":
         return _update_ticket(session, svc, arguments)
+
+    if name == "loregarden_create_ticket":
+        return _create_ticket(session, svc, arguments)
 
     if name == "loregarden_write_handoff":
         from loregarden.services.handoff_writer import write_handoff

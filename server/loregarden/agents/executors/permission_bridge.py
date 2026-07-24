@@ -155,6 +155,30 @@ _CONTROL_PLANE_WRITE_MCP_TOOLS = frozenset(
 
 AUTO_APPROVED_MCP_TOOLS = _READ_ONLY_MCP_TOOLS | _CONTROL_PLANE_WRITE_MCP_TOOLS
 
+#: Interim allowlist (a9-create-ticket-mcp-tool triage decision), pending
+#: a2-per-agent-server-policy's real per-agent x per-server policy table. Every
+#: agent run that reaches PermissionBridgeRunner — whether kicked off by the
+#: builtin autopilot or a single manually-started stage — is an orchestrated
+#: pipeline agent by definition; interactive contexts (Ticket Studio chat, a
+#: human's own terminal Claude Code session, direct operator MCP/HTTP calls)
+#: never go through this runner at all. Recorded here as debt: this must be
+#: superseded, not left to become the de facto permanent policy.
+#:
+#: This predicate is checked in two places, not one: here, in
+#: `_try_fast_approve`, which stops Claude Code from ever placing the call when
+#: `--permission-mode`/`--permission-prompt-tool stdio` is in play; and again at
+#: the real dispatch entrypoint, `mcp.tools.execute_tool`, which is what a
+#: direct HTTP POST to `/mcp` or an `external_mcp`-driven orchestrator actually
+#: hits — this runner is never invoked for those callers, so relying on this
+#: check alone left `loregarden_create_ticket` fully open to them (confirmed by
+#: running `execute_tool` directly with no orchestration context: creation
+#: succeeded unconditionally). `execute_tool` sources its own `orchestrated`
+#: flag from the `X-Loregarden-Orchestrated` header / `LOREGARDEN_MCP_ORCHESTRATED`
+#: env var that only `agents.cli_adapters.resolve_cli_invocation`'s builders
+#: attach — see its docstring for exactly which callers that still misses
+#: (plain curl, an `external_mcp` orchestrator, Ticket Studio chat).
+ORCHESTRATED_DENIED_MCP_TOOLS = frozenset({"loregarden_create_ticket"})
+
 #: CLI tools approved by policy rather than per call. The stored allowlist keys
 #: on the exact tool input, so every distinct URL would otherwise need its own
 #: rule and an unattended research run stalls on the first fetch. These only
@@ -175,6 +199,16 @@ def bare_mcp_tool_name(tool_name: str) -> str | None:
 def is_auto_approved_mcp_tool(tool_name: str) -> bool:
     bare = bare_mcp_tool_name(tool_name)
     return bare in AUTO_APPROVED_MCP_TOOLS if bare else False
+
+
+def is_orchestrated_agent_denied_mcp_tool(tool_name: str) -> bool:
+    """`tool_name` may arrive bare (as tests and MCP arguments do) or prefixed
+    with `mcp__loregarden__` (as the CLI permission bridge sees it) — accept
+    either form."""
+    bare = bare_mcp_tool_name(tool_name)
+    if bare is None:
+        bare = tool_name
+    return bare in ORCHESTRATED_DENIED_MCP_TOOLS
 
 
 def enrich_mcp_tool_input(
@@ -803,6 +837,36 @@ class PermissionBridgeRunner:
         True if a response was already written (caller should treat the
         permission as handled and move on to the next line)."""
         tool_input = permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
+
+        if (
+            bare_mcp
+            and self.track_workflow_stage
+            and is_orchestrated_agent_denied_mcp_tool(permission["tool_name"])
+        ):
+            # Checked first, ahead of every approval path including the human
+            # inbox — an orchestrated stage agent must never be able to spawn
+            # tickets mid-run, not even with a click. See ORCHESTRATED_DENIED_MCP_TOOLS.
+            # Interactive contexts (Ticket Studio chat, a human's terminal session)
+            # construct PermissionBridgeRunner with track_workflow_stage=False and
+            # fall through to the normal approval gate below instead.
+            message = (
+                f"{bare_mcp} is denied to orchestrated pipeline agents (interim "
+                "allowlist, a9-create-ticket-mcp-tool; superseded once "
+                "a2-per-agent-server-policy lands). Use it only from interactive "
+                "contexts (Ticket Studio chat, a human's terminal session, direct "
+                "operator MCP/HTTP calls)."
+            )
+            self._send_response(
+                proc,
+                build_control_response(request_id=request_id, approved=False, message=message),
+            )
+            self._record(ctx.agent_id, ticket, run_id, permission["tool_name"], DECISION_REJECTED)
+            if streamer:
+                streamer.append(
+                    "TOOL", f"Denied (orchestrated agent policy): {bare_mcp}", force=True
+                )
+                streamer.set_live("Agent running…")
+            return True
 
         third_party = self._third_party_auto_approved(permission["tool_name"], bare_mcp)
         if third_party:
