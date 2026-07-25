@@ -115,6 +115,18 @@ class BuiltinOrchestrator:
                 if child_pause:
                     return self._pause_orchestration(orch_run, ticket, message=child_pause)
 
+                # A ticket with child tickets is a pure aggregator: its children
+                # carry the work and it never runs its own workflow stages. Running
+                # them would create an unused ticket branch (ensure_ticket_branch
+                # fires per stage agent) and sweep a parent commit onto whatever
+                # branch is checked out — the last child's — and they cannot even
+                # decompose the parent, since orchestrated agents are denied
+                # loregarden_create_ticket (decomposition happens in Ticket Studio,
+                # before orchestration). Reaching here means every child is complete
+                # (the pause above returns otherwise), so finalize the parent and stop.
+                if self._has_child_tickets(ticket):
+                    return self._finalize_aggregator_parent(orch_run, ticket)
+
                 instance, stages, recovered_stage_key = self._resolve_stages_with_recovery(ticket)
                 if not instance or not stages:
                     break
@@ -205,18 +217,25 @@ class BuiltinOrchestrator:
                 if advanced is not None:
                     return advanced
 
-            final_status = (
-                OrchestrationRunStatus.BLOCKED
-                if ticket.state == TicketState.BLOCKED
-                else OrchestrationRunStatus.SUCCEEDED
-            )
-            self.callbacks.complete_orchestration(orch_run, ticket, status=final_status)
+            self._complete_run(orch_run, ticket)
         except Exception as exc:
             self.callbacks.block_ticket(
                 orch_run,
                 ticket,
                 message=str(exc),
             )
+        self.session.refresh(orch_run)
+        return orch_run
+
+    def _complete_run(self, orch_run: OrchestrationRun, ticket: Ticket) -> OrchestrationRun:
+        """Close an orchestration run, deriving its status from the ticket's own
+        state (a BLOCKED ticket yields a BLOCKED run, anything else SUCCEEDED)."""
+        status = (
+            OrchestrationRunStatus.BLOCKED
+            if ticket.state == TicketState.BLOCKED
+            else OrchestrationRunStatus.SUCCEEDED
+        )
+        self.callbacks.complete_orchestration(orch_run, ticket, status=status)
         self.session.refresh(orch_run)
         return orch_run
 
@@ -272,6 +291,31 @@ class BuiltinOrchestrator:
         if not next_key:
             return self._pause_orchestration(orch_run, ticket)
         return None
+
+    def _has_child_tickets(self, ticket: Ticket) -> bool:
+        return (
+            self.session.exec(
+                select(Ticket.id).where(Ticket.parent_ticket_id == ticket.id).limit(1)
+            ).first()
+            is not None
+        )
+
+    def _finalize_aggregator_parent(
+        self, orch_run: OrchestrationRun, ticket: Ticket
+    ) -> OrchestrationRun:
+        """Complete a parent ticket without running any of its own stages: settle
+        its unreached stages, mark it done, and close the run. Called only once
+        every child is complete. If the parent's own stage is mid-flight
+        (RUNNING/AWAITING from a pre-aggregator run), skip finalize and just close
+        the run rather than let finalize_workflow raise into a spurious block.
+        """
+        if (
+            ticket.state not in StateMachine.TERMINAL_TICKET_STATES
+            and ticket.workflow_stage_status not in (StageStatus.RUNNING, StageStatus.AWAITING)
+        ):
+            self.orch.finalize_workflow(ticket, force=True)
+            self.session.refresh(ticket)
+        return self._complete_run(orch_run, ticket)
 
     def _pause_orchestration(
         self, orch_run: OrchestrationRun, ticket: Ticket, *, message: str = ""

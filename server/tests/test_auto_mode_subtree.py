@@ -388,10 +388,13 @@ def test_subtree_with_two_children_completes_end_to_end_under_auto_mode(
 
     assert child_a.state == TicketState.DONE, "child A must run its full workflow unattended"
     assert child_b.state == TicketState.DONE, "child B must run its full workflow unattended"
-    assert parent.state == TicketState.DONE, "the parent's own workflow must also complete"
+    assert parent.state == TicketState.DONE, (
+        "the parent must complete by aggregation once its children are done"
+    )
     assert orch_run.status == OrchestrationRunStatus.SUCCEEDED
 
-    for ticket in (child_a, child_b, parent):
+    # Each child runs its own gates for real.
+    for ticket in (child_a, child_b):
         gate_approval = db_session.exec(
             select(Approval).where(Approval.ticket_id == ticket.id, Approval.stage_key == "signoff")
         ).first()
@@ -403,17 +406,59 @@ def test_subtree_with_two_children_completes_end_to_end_under_auto_mode(
         assert review_approval.status == ApprovalStatus.APPROVED
         assert review_approval.resolved_by == "automation"
 
-    # Children run before the parent's own stages advance, and in
-    # deterministic (_child_sort_key) order — not parallel.
-    child_a_first_run = min(
-        db_session.exec(select(AgentRun).where(AgentRun.ticket_id == child_a.id)).all(),
-        key=lambda r: r.created_at,
+    # The parent is a pure aggregator: it runs none of its own stages, so it
+    # produces no agent runs and opens no gates of its own — its DONE state comes
+    # from finalizing once every child completed.
+    assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == parent.id)).all() == [], (
+        "an aggregator parent must not run any of its own workflow stages"
     )
-    parent_first_run = min(
-        db_session.exec(select(AgentRun).where(AgentRun.ticket_id == parent.id)).all(),
-        key=lambda r: r.created_at,
+    assert db_session.exec(select(Approval).where(Approval.ticket_id == parent.id)).all() == [], (
+        "an aggregator parent opens no gates of its own"
     )
-    assert child_a_first_run.created_at <= parent_first_run.created_at
+    # The children did the actual work.
+    assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == child_a.id)).all()
+    assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == child_b.id)).all()
+
+
+def test_aggregator_parent_creates_no_git_branch_of_its_own(db_session: Session, tmp_path):
+    """The point of skipping a parent's own stages: no unused ticket branch is
+    ever created for it. ensure_ticket_branch fires per stage agent, so a parent
+    that runs zero stages leaves no branch behind — while its child, which runs
+    its stages for real, does get one.
+    """
+    from loregarden.services.git_branch import resolve_ticket_branch
+
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-no-parent-branch")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="nobranch-parent",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    child = _make_ticket(
+        db_session, ws, external_id="nobranch-child", title="Child", parent_ticket_id=parent.id
+    )
+
+    BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    db_session.refresh(parent)
+    db_session.refresh(child)
+    assert parent.state == TicketState.DONE
+    assert child.state == TicketState.DONE
+
+    branches = subprocess.run(
+        ["git", "branch", "--format=%(refname:short)"],
+        cwd=ws.repo_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    assert resolve_ticket_branch(parent) not in branches, (
+        f"an aggregator parent must not create a branch; found {branches}"
+    )
+    assert resolve_ticket_branch(child) in branches, (
+        f"the child ran its stages and must have a branch; found {branches}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1064,9 +1109,10 @@ def test_subtree_bound_exact_stage_count_completes_fully(db_session: Session, tm
         db_session, ws, external_id="exact-bound-child", title="Child", parent_ticket_id=parent.id
     )
 
-    # Each ticket runs exactly 3 stages to DONE (work, signoff, review) under
-    # this test template; parent + 1 child = 6 stages total, exactly.
-    profile = _profile(max_subtree_stages_per_run=6)
+    # The child runs exactly 3 stages to DONE (work, signoff, review) under this
+    # test template; the parent is an aggregator that runs none of its own, so a
+    # 1-child subtree is 3 stages total, exactly.
+    profile = _profile(max_subtree_stages_per_run=3)
     orch_run = BuiltinOrchestrator(db_session).execute(parent, profile, auto_approve=True)
     db_session.refresh(parent)
     db_session.refresh(child)
@@ -1091,7 +1137,9 @@ def test_subtree_bound_one_less_than_exact_stops_short(db_session: Session, tmp_
         db_session, ws, external_id="short-bound-child", title="Child", parent_ticket_id=parent.id
     )
 
-    profile = _profile(max_subtree_stages_per_run=5)
+    # The child needs 3 stages (work, signoff, review); the aggregator parent
+    # runs none. A bound of 2 is one short of the child's required count.
+    profile = _profile(max_subtree_stages_per_run=2)
     orch_run = BuiltinOrchestrator(db_session).execute(parent, profile, auto_approve=True)
     db_session.refresh(parent)
     db_session.refresh(child)

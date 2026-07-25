@@ -431,8 +431,14 @@ class OrchestrationService:
         self.session.refresh(ticket)
         return ticket
 
-    def finalize_workflow(self, ticket: Ticket) -> Ticket:
-        """Mark the terminal done stage complete and close out the ticket."""
+    def finalize_workflow(self, ticket: Ticket, *, force: bool = False) -> Ticket:
+        """Mark the terminal done stage complete and close out the ticket.
+
+        ``force`` skips only the "advance to the Done stage first" precondition —
+        used to finish an aggregator parent that intentionally never ran its own
+        stages (settle_unreached_stages below marks those still-PENDING stages
+        WONT_DO). The terminal-state and RUNNING/AWAITING guards still apply.
+        """
         self.ensure_workflow_instance(ticket, commit=True)
         instance, stages = self._resolve_stages(ticket)
         if not instance or not stages:
@@ -450,7 +456,8 @@ class OrchestrationService:
 
         current = ticket.workflow_stage_key
         if (
-            current
+            not force
+            and current
             and current != done_def.key
             and ticket.workflow_stage_status
             not in (
