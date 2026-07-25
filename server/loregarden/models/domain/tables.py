@@ -131,6 +131,12 @@ class Ticket(SQLModel, table=True):
     next_agent: str = ""
     next_status: str = "Proceed"
     blocking_issues: str = ""
+    # Authoritative "run this agent next for the current stage" pin, set only when
+    # a scoped implementer is denied a write onto a sibling implementer's subtree
+    # (see agent_scope / permission_bridge). Outranks classify keyword-scoring in
+    # resolve_stage_execution and is cleared the moment it is consumed at dispatch,
+    # so it steers exactly one re-run and cannot become a sticky stale hint.
+    scope_reroute_agent: str = ""
     state_locked: bool = Field(default=False)
     workflow_disabled: bool = Field(default=False)
     triage_runtime_json: str = "{}"

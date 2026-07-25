@@ -28,16 +28,23 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
-from loregarden.services.agent_scope import check_agent_scope
+from loregarden.services.agent_scope import (
+    check_agent_scope,
+    extract_target_path,
+    owning_scoped_agent,
+    relative_to_root,
+)
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.permission_allowlist import is_permission_allowed
 from loregarden.services.rate_limit import rate_limit_denial
+from loregarden.services.rework_feedback import record_reroute_exhausts_budget
 from loregarden.services.run_errors import agent_timeout_message
 from loregarden.services.run_steering import (
     POLL_INTERVAL_SECONDS,
     mark_delivered,
     pending_messages,
 )
+from loregarden.services.studio_routing import resolve_scope_reroute_pin
 from loregarden.services.subprocess_lines import SubprocessLineReader
 from loregarden.services.tool_policy import (
     LOREGARDEN_SERVER,
@@ -58,6 +65,12 @@ from loregarden.services.workflow_state import set_stage_status
 from loregarden.services.workspace_paths import resolve_workspace_root
 
 logger = logging.getLogger(__name__)
+
+# Single durable budget for scope-denial handoffs on a ticket. All cross-scope
+# reroutes share it (not one per direction) so a ticket that keeps bouncing
+# between the frontend and backend implementers halts for a human after a few
+# rounds instead of ping-ponging forever. Not a real stage key — only a counter.
+_SCOPE_REROUTE_LEDGER_KEY = "scope-reroute"
 
 
 @dataclass
@@ -768,9 +781,23 @@ class PermissionBridgeRunner:
             proc,
             build_control_response(request_id=request_id, approved=False, message=scope_denial),
         )
+        rerouted_to = self._try_scope_reroute(
+            ctx=ctx, ticket=ticket, tool_input=tool_input, run_id=run_id, message=scope_denial
+        )
         if streamer:
-            streamer.append("TOOL", f"Denied (out of scope): {scope_denial}", force=True)
-        self._mark_stage_blocked(ticket, scope_denial)
+            if rerouted_to:
+                streamer.append(
+                    "TOOL",
+                    f"Out of scope for {ctx.agent_id}; handing this stage off to "
+                    f"{rerouted_to}: {scope_denial}",
+                    force=True,
+                )
+            else:
+                streamer.append("TOOL", f"Denied (out of scope): {scope_denial}", force=True)
+        if not rerouted_to:
+            # No sibling can take this path (e.g. infra) or the handoff budget is
+            # spent — fall back to halting the ticket for a human.
+            self._mark_stage_blocked(ticket, scope_denial)
         run = self.session.get(AgentRun, run_id)
         if run:
             run.status = RunStatus.FAILED
@@ -783,6 +810,79 @@ class PermissionBridgeRunner:
             stderr=scope_denial,
             session_id=state.session_id,
         )
+
+    def _try_scope_reroute(
+        self,
+        *,
+        ctx: _RunContext,
+        ticket: Ticket,
+        tool_input: dict[str, Any],
+        run_id: str,
+        message: str,
+    ) -> str | None:
+        """Turn a cross-scope write denial into a handoff to the sibling implementer.
+
+        When a scoped implementer is denied a write onto another scoped
+        implementer's subtree, the work isn't a human blocker — it just belongs
+        to the other agent. Pin that sibling as the authoritative agent for the
+        current stage's next run and reset the stage to re-run, so the
+        orchestrator dispatches the sibling instead of blocking the ticket.
+
+        Returns the sibling agent id when the handoff is set up, or None when the
+        caller should block instead: the run isn't workflow-tracked, no scoped
+        sibling owns the path, or the frontend<->backend handoff budget is spent
+        (so a ticket that genuinely needs both never ping-pongs forever).
+        """
+        if not self.track_workflow_stage:
+            return None
+        target = extract_target_path(tool_input)
+        if not target:
+            return None
+        relative = relative_to_root(target, ctx.workspace_root)
+        if relative is None:
+            return None
+        sibling = owning_scoped_agent(relative)
+        if not sibling or sibling == ctx.agent_id:
+            return None
+
+        instance, stages = self.orch._resolve_stages(ticket)
+        if not instance or not stages or not ticket.workflow_stage_key:
+            return None
+        stage = next((s for s in stages if s.key == ticket.workflow_stage_key), None)
+        if stage is None:
+            return None
+        # Reuse the dispatch-time validation: only reroute when this stage can
+        # actually run the sibling (a classify route offers it, or it is the
+        # stage's static agent). Setting the pin first lets that check see it.
+        ticket.scope_reroute_agent = sibling
+        if resolve_scope_reroute_pin(ticket, stage) is None:
+            ticket.scope_reroute_agent = ""
+            return None
+
+        if record_reroute_exhausts_budget(
+            self.session,
+            ticket,
+            target_stage=_SCOPE_REROUTE_LEDGER_KEY,
+            from_stage=ticket.workflow_stage_key,
+            context=message,
+            run_id=run_id,
+        ):
+            # Budget spent: stop bouncing between implementers and block instead.
+            # Clear the pin durably — a prior reroute committed one, and leaving
+            # it would make a human's later resume dispatch the wrong specialist.
+            ticket.scope_reroute_agent = ""
+            self.session.add(ticket)
+            self.session.commit()
+            return None
+
+        set_stage_status(ticket, instance, stages, ticket.workflow_stage_key, StageStatus.PENDING)
+        ticket.next_status = "Proceed"
+        ticket.blocking_issues = ""
+        ticket.revision += 1
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.commit()
+        return sibling
 
     def _record(
         self,

@@ -369,6 +369,12 @@ class BuiltinOrchestrator:
             return True
 
         if completed.status != RunStatus.SUCCEEDED:
+            # A scope-denied implementer set a reroute pin and reset this stage to
+            # PENDING (see permission_bridge._try_scope_reroute). The run "failed"
+            # only because the wrong specialist ran — don't block; let this pass
+            # continue so the stage re-dispatches to the sibling the pin names.
+            if ticket.scope_reroute_agent:
+                return False
             self.callbacks.block_ticket(
                 orch_run,
                 ticket,

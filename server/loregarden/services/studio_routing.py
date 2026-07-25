@@ -308,7 +308,35 @@ def should_skip_stage(
     return False
 
 
+def resolve_scope_reroute_pin(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str] | None:
+    """The scope-denial reroute pin, when it names a valid agent for this stage.
+
+    Set only when a scoped implementer was denied a write onto a sibling's
+    subtree (see ``agent_scope`` / ``permission_bridge``). It is *authoritative*:
+    it outranks classify keyword-scoring so a frontend-keyword-heavy ticket that
+    actually needs backend work reaches the backend implementer instead of being
+    re-scored straight back to frontend. The pin is honored only on the stage
+    whose route table (or static agent) actually offers the pinned agent, so a
+    stale pin can never divert an unrelated later stage — and it is cleared the
+    moment it is consumed at dispatch, so it steers exactly one re-run.
+    """
+    pinned = (ticket.scope_reroute_agent or "").strip()
+    if not pinned or not get_agent(pinned):
+        return None
+    if stage.classify_routes:
+        for route in stage.classify_routes:
+            if route.agent_id == pinned:
+                return pinned, route.skill_name or stage.skill_name
+        return None
+    if (stage.agent_id or "").strip() == pinned:
+        return pinned, stage.skill_name or ""
+    return None
+
+
 def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
+    pinned = resolve_scope_reroute_pin(ticket, stage)
+    if pinned:
+        return pinned
     if stage.stage_type == "classify":
         return resolve_classify_route(ticket, stage)
     if stage.stage_type == "gate":
