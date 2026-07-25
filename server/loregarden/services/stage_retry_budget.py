@@ -118,6 +118,14 @@ def enforce_stage_retry_budget(
     now-BLOCKED run for the caller to hand straight back. Otherwise record this
     dispatch pass and return ``None`` so the caller proceeds.
     """
+    # A pending scope-denial reroute is a handoff to the *sibling* implementer,
+    # not a retry of the same failing work — it re-dispatches the stage under a
+    # different agent doing a different half of the change. It has its own bound
+    # (the scope-reroute ledger, capped separately), so it must neither consume
+    # this stage's dispatch budget nor trip its breaker; either would block the
+    # sibling before it ever runs.
+    if ticket.scope_reroute_agent:
+        return None
     block = exceeds_stage_retry_budget(
         session,
         ticket.id,

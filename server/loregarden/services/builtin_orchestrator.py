@@ -190,6 +190,15 @@ class BuiltinOrchestrator:
                     self.session.refresh(orch_run)
                     return orch_run
 
+                # A scope-denial reroute re-armed this stage to PENDING for the
+                # sibling implementer (permission_bridge._try_scope_reroute), and
+                # _run_sequential_stage already refreshed the ticket. Re-dispatch it
+                # rather than advancing past it as if it passed: running the exit
+                # gate here would block on work the sibling hasn't done yet. (A
+                # parallel stage never sets this pin, so its flow is untouched.)
+                if ticket.scope_reroute_agent:
+                    continue
+
                 advanced = self._advance_after_stage(
                     ticket, profile, stage_def, orch_run, target_key
                 )
