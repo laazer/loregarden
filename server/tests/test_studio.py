@@ -150,6 +150,7 @@ def test_studio_workflow_publish(client: TestClient):
                     "gate_required": True,
                     "order": 3,
                 },
+                {"key": "done", "name": "Done", "stage_type": "agent", "order": 4},
             ],
         },
     )
@@ -209,6 +210,7 @@ def test_studio_workflow_stage_model_survives_publish(client: TestClient):
                     "order": 1,
                     "model": "opus",
                 },
+                {"key": "done", "name": "Done", "stage_type": "agent", "order": 2},
             ],
         },
     )
@@ -593,6 +595,8 @@ def test_studio_generate_requires_description(client: TestClient):
 
 
 def _two_stage_workflow(slug: str) -> dict:
+    # A terminal `done` stage is required (every workflow must be able to finalize);
+    # the two meaningful stages are implement + gate.
     return {
         "slug": slug,
         "name": slug,
@@ -600,6 +604,7 @@ def _two_stage_workflow(slug: str) -> dict:
         "stages": [
             {"key": "implement", "name": "Implement", "stage_type": "agent", "order": 1},
             {"key": "gate", "name": "Gate", "stage_type": "agent", "order": 2},
+            {"key": "done", "name": "Done", "stage_type": "agent", "order": 3},
         ],
     }
 
@@ -630,6 +635,7 @@ def test_studio_stage_edit_preserves_reject_transitions(client: TestClient):
                     "order": 1,
                 },
                 {"key": "gate", "name": "Gate", "stage_type": "agent", "order": 2},
+                {"key": "done", "name": "Done", "stage_type": "agent", "order": 3},
             ]
         },
     )
@@ -651,9 +657,16 @@ def test_studio_stage_edit_prunes_transitions_to_removed_stages(client: TestClie
 
     updated = client.patch(
         "/api/studio/workflows/reject-prune",
-        json={"stages": [{"key": "gate", "name": "Gate", "stage_type": "agent", "order": 1}]},
+        json={
+            "stages": [
+                {"key": "gate", "name": "Gate", "stage_type": "agent", "order": 1},
+                {"key": "done", "name": "Done", "stage_type": "agent", "order": 2},
+            ]
+        },
     )
     assert updated.status_code == 200
+    # Both authored edges referenced the removed `implement` stage, so both prune;
+    # the surviving `done` stage carries no route of its own.
     assert updated.json()["transitions"] == []
 
 
@@ -674,11 +687,15 @@ def test_studio_stage_edit_seeds_linear_chain_only_when_none_exist(client: TestC
             "stages": [
                 {"key": "implement", "name": "Implement", "stage_type": "agent", "order": 1},
                 {"key": "gate", "name": "Gate", "stage_type": "agent", "order": 2},
+                {"key": "done", "name": "Done", "stage_type": "agent", "order": 3},
             ]
         },
     )
     assert updated.status_code == 200
-    assert updated.json()["transitions"] == [{"from": "implement", "to": "gate"}]
+    assert updated.json()["transitions"] == [
+        {"from": "implement", "to": "gate"},
+        {"from": "gate", "to": "done"},
+    ]
 
 
 def test_studio_adding_a_stage_preserves_routes_without_inventing_edges(client: TestClient):

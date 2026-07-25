@@ -24,6 +24,7 @@ from loregarden.db.migration_utils import (
 )
 from loregarden.db.migrations_templates import (
     m_adversarial_planning,
+    m_ensure_terminal_stage,
     m_light_heavy_rigor_triage,
     m_parallel_review_in_v3,
     m_plan_skill_on_plan_stage,
@@ -1128,6 +1129,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0042_ticket_enum_values", _m_ticket_enum_values),
     ("0043_run_approval_event_enum_values", _m_run_approval_event_enum_values),
     ("0044_ticket_scope_reroute_agent", _m_ticket_scope_reroute_agent),
+    ("0045_ensure_terminal_stage", m_ensure_terminal_stage),
 ]
 
 

@@ -45,7 +45,7 @@ from loregarden.services.studio_generation import (
     slugify,
     tool_names,
 )
-from loregarden.services.studio_routing import SKIP_CONDITIONS
+from loregarden.services.studio_routing import SKIP_CONDITIONS, TERMINAL_STAGE_KEY
 from loregarden.services.workflow_service import WorkflowService
 from loregarden.skills.registry import list_skills
 from sqlmodel import Session, select
@@ -781,6 +781,20 @@ def _validate_stage_route_targets(stages: list[StudioWorkflowStage]) -> None:
         raise ValueError(f"Workflow routes branch to unknown stage(s): {', '.join(unknown)}")
 
 
+def _validate_has_terminal_stage(stages: list[StudioWorkflowStage]) -> None:
+    """Reject a workflow with no terminal stage. Without one the orchestrator has
+    nowhere to finalize on: a passing final stage re-loops instead of completing
+    the ticket (the studio-loregarden-tdd v2/v3 templates shipped this way and
+    cycled back to implement after the gate passed). A stage is terminal via the
+    `terminal` flag or the historical `done` key — matching is_terminal_stage.
+    """
+    if stages and not any(stage.terminal or stage.key == TERMINAL_STAGE_KEY for stage in stages):
+        raise ValueError(
+            "Workflow must have a terminal stage (set `terminal: true`, or add a "
+            "`done` stage) so the orchestrator can finalize the ticket."
+        )
+
+
 def _available_skills() -> list[str]:
     return list_skills()
 
@@ -1069,6 +1083,7 @@ class StudioService:
         stages = sorted(body.stages, key=lambda stage: stage.order)
         _validate_stage_agent_ids(self.session, stages)
         _validate_stage_route_targets(stages)
+        _validate_has_terminal_stage(stages)
         transitions = body.transitions or _auto_transitions(stages)
         now = datetime.now(timezone.utc)
         workflow = StudioWorkflow(
@@ -1099,6 +1114,7 @@ class StudioService:
             stages = sorted(body.stages, key=lambda stage: stage.order)
             _validate_stage_agent_ids(self.session, stages)
             _validate_stage_route_targets(stages)
+            _validate_has_terminal_stage(stages)
             workflow.stages_json = json.dumps([stage.model_dump() for stage in stages])
             if body.transitions is None:
                 # Editing a stage must not destroy hand-authored routes. This used to
@@ -1142,6 +1158,7 @@ class StudioService:
             raise ValueError("Workflow must have at least one stage")
         _validate_stage_agent_ids(self.session, stages)
         _validate_stage_route_targets(stages)
+        _validate_has_terminal_stage(stages)
 
         published_slug = f"studio-{workflow.slug}"
         stage_defs: list[dict] = []
@@ -1164,6 +1181,11 @@ class StudioService:
                     "optional": stage.optional,
                     "order": stage.order,
                     "stage_type": stage.stage_type,
+                    # `terminal` and `skip_when` were dropped here, so a stage's
+                    # terminal marker (and its skip condition) never survived a
+                    # publish — the published template could not finalize.
+                    "terminal": stage.terminal,
+                    "skip_when": stage.skip_when,
                     "classify_routes": [route.model_dump() for route in stage.classify_routes],
                     "parallel_agents": [item.model_dump() for item in stage.parallel_agents],
                     "gate_commands": list(stage.gate_commands),
