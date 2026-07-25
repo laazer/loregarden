@@ -747,6 +747,93 @@ def test_already_done_child_is_not_rerun_under_auto_mode(
     assert child.state == TicketState.DONE
 
 
+def test_ticket_workflow_complete_true_for_done_ticket_with_incomplete_stages():
+    """A ticket whose state is terminal (DONE/WONT_DO) is workflow-complete even
+    when its stage instance still has required stages PENDING. A ticket can reach
+    DONE without every stage ticked (manual completion, review shortcut, imported
+    or older tickets, a stage-map reset); the subtree loop must treat that as
+    complete, not as an incomplete child to re-run.
+    """
+    from unittest.mock import MagicMock
+
+    from loregarden.services.subtree_auto_run import ticket_workflow_complete
+
+    stage = MagicMock(key="implement", optional=False)
+    orch = MagicMock()
+    orch._resolve_stages.return_value = (MagicMock(), [stage])
+
+    ticket = MagicMock(state=TicketState.DONE)
+    assert ticket_workflow_complete(orch, ticket) is True
+    ticket.state = TicketState.WONT_DO
+    assert ticket_workflow_complete(orch, ticket) is True
+    # The terminal-state short-circuit means the stage instance is never consulted.
+    orch._resolve_stages.assert_not_called()
+
+
+def test_done_child_with_incomplete_stages_does_not_block_later_siblings(
+    db_session: Session, tmp_path
+):
+    """The subtree bug: a first child left DONE with an incomplete stage instance
+    (state=DONE but required stages still PENDING) must be skipped as complete so
+    the parent auto run continues on to the *next* sibling — instead of re-entering
+    execute() on the done child (which no-ops on its terminal state), still seeing
+    it "incomplete", and pausing the whole subtree there. Reproduces the real 219→
+    220→[221 DONE, 223, 225] tree where 221 was DONE with only `triage` ticked and
+    223/225 never ran.
+    """
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-done-incomplete")
+    parent = _make_ticket(db_session, ws, external_id="di-parent-1", title="Parent")
+    # First child: DONE at the ticket level, but its stage instance is untouched
+    # (every required stage still PENDING) — exactly the divergent state the bug
+    # tripped on. Set it directly so no stage ever gets ticked.
+    done_child = _make_ticket(
+        db_session,
+        ws,
+        external_id="di-child-done",
+        title="Done child",
+        parent_ticket_id=parent.id,
+    )
+    done_child.state = TicketState.DONE
+    db_session.add(done_child)
+    db_session.commit()
+    db_session.refresh(done_child)
+    assert _stage_status(db_session, done_child, "work") == StageStatus.PENDING, (
+        "test setup: the done child must have an incomplete stage instance"
+    )
+    # Later sibling: a fresh backlog ticket that must get run once the loop
+    # advances past the done child.
+    sibling = _make_ticket(
+        db_session,
+        ws,
+        external_id="di-child-later",
+        title="Later sibling",
+        parent_ticket_id=parent.id,
+    )
+
+    done_runs_before = len(
+        db_session.exec(select(AgentRun).where(AgentRun.ticket_id == done_child.id)).all()
+    )
+
+    BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    db_session.refresh(done_child)
+    db_session.refresh(sibling)
+
+    done_runs_after = len(
+        db_session.exec(select(AgentRun).where(AgentRun.ticket_id == done_child.id)).all()
+    )
+    assert done_runs_after == done_runs_before, (
+        "a DONE child with incomplete stages must not be re-run"
+    )
+    sibling_runs = db_session.exec(select(AgentRun).where(AgentRun.ticket_id == sibling.id)).all()
+    assert sibling_runs, (
+        "the later sibling must run: the parent auto run has to advance past a "
+        "done-but-incomplete first child, not pause the whole subtree on it"
+    )
+    assert sibling.state == TicketState.DONE, (
+        "with auto_approve the later sibling should run all the way to DONE"
+    )
+
+
 def test_children_run_in_type_then_priority_order_not_alphabetical(db_session: Session, tmp_path):
     """_child_sort_key orders by work_item_type, then priority, then external_id.
     Pick external_ids that sort the OPPOSITE way alphabetically from the

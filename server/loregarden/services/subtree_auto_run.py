@@ -15,6 +15,7 @@ from loregarden.models.domain import (
     OrchestrationRun,
     StageStatus,
     Ticket,
+    TicketState,
     WorkItemType,
 )
 from loregarden.services.orchestration import ApprovalService, OrchestrationService
@@ -92,7 +93,19 @@ def auto_resolve_awaiting_gate(
 
 def ticket_workflow_complete(orch: OrchestrationService, ticket: Ticket) -> bool:
     """Whether every required stage of the ticket's workflow is DONE/WONT_DO —
-    complete children are skipped, not re-run, by a subtree pass."""
+    complete children are skipped, not re-run, by a subtree pass.
+
+    A ticket already in a terminal state (DONE/WONT_DO) is complete regardless
+    of its per-stage instance bookkeeping. A ticket can reach DONE without every
+    stage instance ticked to DONE (manual completion, a review shortcut, an
+    imported/older ticket, stage-map resets), and execute() short-circuits on
+    that same terminal state (see the guard at the top of its loop) — so if this
+    predicate disagreed, the subtree loop would judge a DONE child "incomplete",
+    re-enter execute() which does nothing, still see "incomplete", and pause the
+    whole subtree there, never advancing to the remaining siblings.
+    """
+    if ticket.state in (TicketState.DONE, TicketState.WONT_DO):
+        return True
     instance, stages = orch._resolve_stages(ticket)
     if not instance or not stages:
         return True
