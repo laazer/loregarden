@@ -136,7 +136,10 @@ def test_template_stages_resolve_from_pinned_version(db_session: Session):
         StudioWorkflowCreate(
             slug="pinwf",
             name="Pin WF",
-            stages=[StudioWorkflowStage(key="planning", name="Plan", agent_id="planner", order=1)],
+            stages=[
+                StudioWorkflowStage(key="planning", name="Plan", agent_id="planner", order=1),
+                StudioWorkflowStage(key="done", name="Done", order=2, terminal=True),
+            ],
         )
     )
     svc.publish_workflow("pinwf")  # template v1
@@ -152,6 +155,7 @@ def test_template_stages_resolve_from_pinned_version(db_session: Session):
             stages=[
                 StudioWorkflowStage(key="planning", name="Plan", agent_id="planner", order=1),
                 StudioWorkflowStage(key="spec", name="Spec", agent_id="spec", order=2),
+                StudioWorkflowStage(key="done", name="Done", order=3, terminal=True),
             ]
         ),
     )
@@ -163,7 +167,7 @@ def test_template_stages_resolve_from_pinned_version(db_session: Session):
     pinned = get_template_stages_at_version(db_session, template, 1)
     assert len(pinned) == v1_stage_count
     live = get_template_stages_at_version(db_session, template, template.version)
-    assert len(live) == 2
+    assert len(live) == 3
 
 
 # ---- Per-run pinning ------------------------------------------------------------
