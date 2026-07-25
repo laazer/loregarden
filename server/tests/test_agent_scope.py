@@ -2,8 +2,22 @@ from loregarden.services.agent_scope import (
     check_agent_scope,
     extract_target_path,
     is_path_in_scope,
+    owning_scoped_agent,
     relative_to_root,
 )
+
+
+def test_owning_scoped_agent_maps_subtree_to_its_implementer():
+    assert owning_scoped_agent("server/loregarden/main.py") == "backend_implementer"
+    assert owning_scoped_agent("server") == "backend_implementer"
+    assert owning_scoped_agent("client/src/App.tsx") == "frontend_implementer"
+
+
+def test_owning_scoped_agent_none_for_unowned_path():
+    # A path no scoped implementer owns (infra/docs) has no sibling to hand to,
+    # so the caller must block rather than reroute.
+    assert owning_scoped_agent("docs/readme.md") is None
+    assert owning_scoped_agent("server2/main.py") is None
 
 
 def test_extract_target_path_prefers_file_path():

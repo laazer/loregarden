@@ -1067,6 +1067,22 @@ def _m_run_approval_event_enum_values(conn: Connection) -> None:
             conn.execute(text(statement), {"name": name, "value": value})
 
 
+def _m_ticket_scope_reroute_agent(conn: Connection) -> None:
+    """Pin for "run this sibling implementer next" when a scoped implementer is
+    denied a write onto the other's subtree. Blank on every existing row — no
+    reroute is in flight — so an empty-string default backfills correctly.
+    """
+    add_columns_if_missing(
+        conn,
+        "tickets",
+        {
+            "scope_reroute_agent": (
+                "ALTER TABLE tickets ADD COLUMN scope_reroute_agent TEXT NOT NULL DEFAULT ''"
+            )
+        },
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1111,6 +1127,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0041_agent_run_handoff_liveness", _m_agent_run_handoff_liveness),
     ("0042_ticket_enum_values", _m_ticket_enum_values),
     ("0043_run_approval_event_enum_values", _m_run_approval_event_enum_values),
+    ("0044_ticket_scope_reroute_agent", _m_ticket_scope_reroute_agent),
 ]
 
 

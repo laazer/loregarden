@@ -110,6 +110,17 @@ def _build_gate_impact(ticket: Ticket, stage_name: str) -> str:
     return "\n".join(lines)
 
 
+def _consume_scope_reroute_pin(ticket: Ticket, chosen_agent: str) -> None:
+    """Clear the scope-denial reroute pin once its dispatch is committed.
+
+    The pin exists to steer this one dispatch to the sibling implementer; clearing
+    it here means a *fresh* denial in this run sets a new pin, but a satisfied one
+    can never linger into a later stage as a stale hint.
+    """
+    if ticket.scope_reroute_agent and ticket.scope_reroute_agent == chosen_agent:
+        ticket.scope_reroute_agent = ""
+
+
 class OrchestrationService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -627,6 +638,8 @@ class OrchestrationService:
             raise ValueError(
                 f"Stage '{target_key}' is a human approval gate — it does not run an agent CLI."
             )
+
+        _consume_scope_reroute_pin(ticket, chosen_agent)
 
         ticket.workflow_stage_key = target_key
         if stage_map.get(target_key) != StageStatus.RUNNING:

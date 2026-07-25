@@ -48,6 +48,7 @@ def test_old_schema_gets_upgraded(tmp_path):
     assert "work_item_type" in cols
     assert "parent_ticket_id" in cols
     assert "permission_allowlist_json" in cols
+    assert "scope_reroute_agent" in cols
 
 
 def test_backfill_runs_against_a_populated_db(tmp_path):

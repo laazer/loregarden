@@ -59,6 +59,20 @@ def is_path_in_scope(relative_path: str, allowed_prefixes: tuple[str, ...]) -> b
     )
 
 
+def owning_scoped_agent(relative_path: str) -> str | None:
+    """The scoped agent whose declared subtree covers ``relative_path``, or None.
+
+    Lets the orchestrator turn a cross-scope write denial into a handoff to the
+    agent that *can* make the change, instead of blocking the whole ticket. Only
+    the scoped implementers are eligible — an unscoped agent (planner, reviewer)
+    has no subtree to own — so a path outside every scoped subtree returns None.
+    """
+    for agent_id, prefixes in AGENT_PATH_SCOPES.items():
+        if is_path_in_scope(relative_path, prefixes):
+            return agent_id
+    return None
+
+
 def scope_violation_message(
     *,
     agent_id: str,
@@ -71,8 +85,11 @@ def scope_violation_message(
     return (
         f"{agent_name} ({agent_id}) is scoped to {allowed} and cannot use "
         f"{tool_name} on '{path}'. This is a hard technical restriction, not "
-        "a request that can be approved around — route this work to an "
-        "agent whose scope covers this path instead."
+        "a request that can be approved around. Do **not** report this stage as "
+        "`blocked` — work that another agent's scope covers is a reroute, not a "
+        "human blocker: Loregarden routes the implementation stage to the agent "
+        "that owns this path so it can make the change. Finish the part inside "
+        "your own scope, hand off the rest, and report `needs_rework`."
     )
 
 

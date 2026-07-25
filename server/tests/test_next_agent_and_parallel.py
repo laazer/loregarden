@@ -13,8 +13,80 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
-from loregarden.services.studio_routing import resolve_classify_route, resolve_stage_execution
+from loregarden.services.studio_routing import (
+    resolve_classify_route,
+    resolve_scope_reroute_pin,
+    resolve_stage_execution,
+)
 from sqlmodel import Session, select
+
+
+def _impl_classify_stage() -> WorkflowStageDef:
+    return WorkflowStageDef(
+        key="implementation",
+        name="Implementation",
+        stage_type="classify",
+        classify_routes=[
+            ClassifyRoute(
+                languages=["python"],
+                specialties=["backend"],
+                agent_id="backend_implementer",
+                skill_name="apply_patch",
+                default=True,
+            ),
+            ClassifyRoute(
+                languages=["typescript"],
+                specialties=["frontend"],
+                agent_id="frontend_implementer",
+                skill_name="apply_patch",
+            ),
+        ],
+    )
+
+
+def test_scope_reroute_pin_outranks_content_classification():
+    """A scope-denial pin is authoritative — it must beat content keywords even
+    when the ticket text scores clearly for the *other* implementer. This is the
+    complement of the #164 guard: #164 keeps a *stale* next_agent from winning,
+    while a fresh scope pin *must* win so a frontend-keyword ticket that actually
+    needs backend work reaches the backend implementer instead of looping.
+    """
+    ticket = Ticket(
+        id="t1",
+        external_id="222-test",
+        workspace_id="ws",
+        title="Update the React modal component styling",
+        description="Frontend UI tweak to a client-side dialog and CSS",
+        scope_reroute_agent="backend_implementer",
+    )
+    agent_id, skill = resolve_stage_execution(ticket, _impl_classify_stage())
+    assert agent_id == "backend_implementer"
+    assert skill == "apply_patch"
+
+
+def test_scope_reroute_pin_ignored_when_not_a_route_on_stage():
+    """A pin only steers a stage that can actually run the pinned agent; on any
+    other stage it is inert, so it can never divert unrelated later work."""
+    ticket = Ticket(
+        id="t1",
+        external_id="222-test",
+        workspace_id="ws",
+        title="Python backend API route",
+        description="Implement the server endpoint",
+        scope_reroute_agent="frontend_implementer",
+    )
+    review_stage = WorkflowStageDef(
+        key="review", name="Review", agent_id="architecture_reviewer", order=2
+    )
+    assert resolve_scope_reroute_pin(ticket, review_stage) is None
+    # Falls through to the stage's own static agent, not the pin.
+    agent_id, _ = resolve_stage_execution(ticket, review_stage)
+    assert agent_id == "architecture_reviewer"
+
+
+def test_scope_reroute_pin_absent_returns_none():
+    ticket = Ticket(id="t1", external_id="x", workspace_id="ws", title="", description="")
+    assert resolve_scope_reroute_pin(ticket, _impl_classify_stage()) is None
 
 
 def test_resolve_classify_route_prefers_next_agent():
