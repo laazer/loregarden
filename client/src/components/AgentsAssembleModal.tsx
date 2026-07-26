@@ -61,6 +61,9 @@ export function AgentsAssembleModal({
   const busy = isRunning || isSavingRuntime;
   const runnableStages = stages.filter((s) => s.key !== "done");
   const runtimeDirty = !runtimeSettingsEqual(draftRuntime, workspaceRuntime);
+  // A parent ticket runs no stages of its own (its children carry the work), so it
+  // never checks out a branch — hide the field and don't gate starting on it.
+  const isParent = (ticket.child_count ?? 0) > 0;
 
   return (
     <>
@@ -78,20 +81,22 @@ export function AgentsAssembleModal({
         </div>
 
         <div className="modal-body">
-          <div style={{ marginBottom: 16 }}>
-            <div className="modal-section-title">Branch</div>
-            <input
-              className="btn-secondary"
-              style={{ width: "100%", fontSize: 12, boxSizing: "border-box" }}
-              value={branch}
-              disabled={busy}
-              onChange={(e) => setBranch(e.target.value)}
-              placeholder={`loregarden/${ticket.external_id}`}
-            />
-            <p className="modal-hint" style={{ marginTop: 6 }}>
-              Agent runs checkout this branch before executing.
-            </p>
-          </div>
+          {!isParent && (
+            <div style={{ marginBottom: 16 }}>
+              <div className="modal-section-title">Branch</div>
+              <input
+                className="btn-secondary"
+                style={{ width: "100%", fontSize: 12, boxSizing: "border-box" }}
+                value={branch}
+                disabled={busy}
+                onChange={(e) => setBranch(e.target.value)}
+                placeholder={`loregarden/${ticket.external_id}`}
+              />
+              <p className="modal-hint" style={{ marginTop: 6 }}>
+                Agent runs checkout this branch before executing.
+              </p>
+            </div>
+          )}
 
           {runtimeOptions && (
             <div style={{ marginBottom: 16 }}>
@@ -156,13 +161,15 @@ export function AgentsAssembleModal({
           <button
             type="button"
             className="btn-primary"
-            disabled={busy || !branch.trim()}
+            disabled={busy || (!isParent && !branch.trim())}
             onClick={() =>
               void onConfirm({
                 runtime: draftRuntime,
                 stopAtStageKey,
                 autoApprove,
-                branch: branch.trim(),
+                // A parent's branch is unused; pass its stored value so confirmAssemble
+                // treats it as unchanged and never rewrites it.
+                branch: isParent ? (ticket.branch ?? "") : branch.trim(),
               })
             }
           >

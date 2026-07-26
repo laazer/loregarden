@@ -87,6 +87,13 @@ def _apply_operator_edits(ticket: Ticket, body: UpdateTicketRequest) -> None:
             ticket.acceptance_criteria_json = criteria_json
             content_updated = True
 
+    if body.priority is not None:
+        if body.priority < 1 or body.priority > 3:
+            raise ValueError("Priority must be between 1 and 3")
+        if ticket.priority != body.priority:
+            ticket.priority = body.priority
+            content_updated = True
+
     if body.compatibility_posture is not None:
         apply_compatibility_posture(ticket, body.compatibility_posture)
 

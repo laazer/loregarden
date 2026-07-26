@@ -344,6 +344,7 @@ class UpdateTicketRequest(SQLModel):
     #: Replaces the stored list; omit to leave it alone, [] to clear it.
     acceptance_criteria: list[str] | None = None
     state: TicketState | None = None
+    priority: int | None = None
     branch: str | None = None
     workflow_stage_key: str | None = None
     workflow_stage_status: StageStatus | None = None

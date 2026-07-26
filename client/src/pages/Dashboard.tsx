@@ -13,7 +13,6 @@ import { TriagePanel } from "../components/TriagePanel";
 import { findAncestorIds, TicketTree } from "../components/TicketTree";
 import { findTicketTreeNode } from "../lib/parentTicketTree";
 import { AgentsAssembleModal, type AgentsAssembleOptions } from "../components/AgentsAssembleModal";
-import { TicketDependencies } from "../components/TicketDependencies";
 import { ConfirmRunStageModal } from "../components/ConfirmRunStageModal";
 import { StageRouteHints } from "../components/StageRouteHints";
 import { StageOverflowMenu } from "../components/StageOverflowMenu";
@@ -1205,7 +1204,6 @@ export function Dashboard() {
                 >
                   Update state…
                 </button>
-                <TicketDependencies ticket={sel} />
                 {sel.child_count > 0 ? (
                   <div>
                     <div className="state-label workflow-lifecycle-label" style={{ marginBottom: 6 }}>

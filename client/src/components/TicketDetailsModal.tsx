@@ -1,11 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as apiClient from '../api/client';
+import type { TicketState } from '../api/client';
+import { priorityLabel } from '../lib/importTicketPreview';
 import { IconCloseButton } from './IconCloseButton';
+import { TicketDependencies } from './TicketDependencies';
+import { STATE_LABELS } from './UpdateStateModal';
+
+const STATE_OPTIONS = Object.keys(STATE_LABELS) as TicketState[];
+const PRIORITY_OPTIONS = [1, 2, 3] as const;
 
 export interface TicketDetailsSaveDraft {
   title: string;
   description: string;
   acceptanceCriteria: string[];
+  state: TicketState;
+  priority: number;
 }
 
 /** One criterion per line, blank lines dropped — mirrors the server's normalization. */
@@ -71,6 +80,8 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [criteriaText, setCriteriaText] = useState('');
+  const [state, setState] = useState<TicketState>('backlog');
+  const [priority, setPriority] = useState(3);
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Joined rather than the array itself: a refetch hands back a new array identity
@@ -82,8 +93,10 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
       setTitle(asDisplayString(ticket.title));
       setDescription(asDisplayString(ticket.description));
       setCriteriaText(criteriaSeed);
+      setState(ticket.state);
+      setPriority(ticket.priority);
     }
-  }, [ticket?.id, ticket?.title, ticket?.description, criteriaSeed]);
+  }, [ticket?.id, ticket?.title, ticket?.description, ticket?.state, ticket?.priority, criteriaSeed]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -114,12 +127,14 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
     !!ticket &&
     (title.trim() !== asDisplayString(ticket.title) ||
       description !== asDisplayString(ticket.description) ||
-      acceptanceCriteria.join('\n') !== parseCriteria(criteriaSeed).join('\n'));
+      acceptanceCriteria.join('\n') !== parseCriteria(criteriaSeed).join('\n') ||
+      state !== ticket.state ||
+      priority !== ticket.priority);
   const canSave = isDirty && title.trim().length > 0 && !!onSave;
 
   const handleSave = async () => {
     if (!canSave) return;
-    await onSave({ title: title.trim(), description, acceptanceCriteria });
+    await onSave({ title: title.trim(), description, acceptanceCriteria, state, priority });
   };
 
   const diffArtifact = ticket?.artifacts?.diff;
@@ -193,11 +208,33 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div>
                     <div style={{ fontSize: 11, color: 'var(--txm)' }}>State</div>
-                    <div style={{ marginTop: 4, fontSize: 13, color: 'var(--tx)' }}>{asDisplayString(ticket.state)}</div>
+                    <select
+                      aria-label="State"
+                      className="btn-secondary filter-select"
+                      style={{ width: '100%', fontSize: 13, marginTop: 4 }}
+                      value={state}
+                      disabled={isSaving}
+                      onChange={(e) => setState(e.target.value as TicketState)}
+                    >
+                      {STATE_OPTIONS.map((s) => (
+                        <option key={s} value={s}>{STATE_LABELS[s]}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <div style={{ fontSize: 11, color: 'var(--txm)' }}>Priority</div>
-                    <div style={{ marginTop: 4, fontSize: 13, color: 'var(--tx)' }}>{asDisplayString(ticket.priority)}</div>
+                    <select
+                      aria-label="Priority"
+                      className="btn-secondary filter-select"
+                      style={{ width: '100%', fontSize: 13, marginTop: 4 }}
+                      value={priority}
+                      disabled={isSaving}
+                      onChange={(e) => setPriority(Number(e.target.value))}
+                    >
+                      {PRIORITY_OPTIONS.map((p) => (
+                        <option key={p} value={p}>{priorityLabel(p)}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>
@@ -232,6 +269,8 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
                   , one per line
                 </p>
               </div>
+
+              <TicketDependencies ticket={ticket} />
 
               {asDisplayString(ticket.blocking_issues) && (
                 <div className="state-card">
