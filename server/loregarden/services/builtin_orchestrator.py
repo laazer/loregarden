@@ -55,6 +55,7 @@ from loregarden.services.studio_routing import (
 from loregarden.services.subtree_auto_run import (
     SubtreeBudget,
     auto_resolve_awaiting_gate,
+    finalize_aggregator_ticket,
     order_children_for_subtree,
     ticket_workflow_complete,
 )
@@ -304,18 +305,12 @@ class BuiltinOrchestrator:
     def _finalize_aggregator_parent(
         self, orch_run: OrchestrationRun, ticket: Ticket
     ) -> OrchestrationRun:
-        """Complete a parent ticket without running any of its own stages: settle
-        its unreached stages, mark it done, and close the run. Called only once
-        every child is complete. If the parent's own stage is mid-flight
-        (RUNNING/AWAITING from a pre-aggregator run), skip finalize and just close
-        the run rather than let finalize_workflow raise into a spurious block.
-        """
-        if (
-            ticket.state not in StateMachine.TERMINAL_TICKET_STATES
-            and ticket.workflow_stage_status not in (StageStatus.RUNNING, StageStatus.AWAITING)
-        ):
-            self.orch.finalize_workflow(ticket, force=True)
-            self.session.refresh(ticket)
+        """Complete a parent ticket without running any of its own stages and close
+        the run. Called only once every child is complete; the finalize/mark-done
+        decision (including the no-terminal-stage fallback) lives in
+        finalize_aggregator_ticket."""
+        finalize_aggregator_ticket(self.session, self.orch, ticket)
+        self.session.refresh(ticket)
         return self._complete_run(orch_run, ticket)
 
     def _pause_orchestration(

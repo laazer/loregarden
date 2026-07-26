@@ -108,12 +108,19 @@ def _git_repo(tmp_path: Path) -> Path:
     return root
 
 
-def _make_workspace(db_session: Session, tmp_path: Path, slug: str) -> Workspace:
+def _make_workspace(
+    db_session: Session,
+    tmp_path: Path,
+    slug: str,
+    *,
+    stages: list[dict] = _STAGES,
+    transitions: list[dict] = _TRANSITIONS,
+) -> Workspace:
     template = WorkflowTemplate(
         slug=f"{slug}-tpl",
         name="Auto-mode subtree test template",
-        stages_json=json.dumps(_STAGES),
-        transitions_json=json.dumps(_TRANSITIONS),
+        stages_json=json.dumps(stages),
+        transitions_json=json.dumps(transitions),
         version=1,
     )
     db_session.add(template)
@@ -461,6 +468,44 @@ def test_aggregator_parent_creates_no_git_branch_of_its_own(db_session: Session,
     assert resolve_ticket_branch(child) in branches, (
         f"the child ran its stages and must have a branch; found {branches}"
     )
+
+
+def test_aggregator_parent_without_terminal_stage_completes_not_blocks(
+    db_session: Session, tmp_path
+):
+    """A parent whose own workflow has no terminal ('done') stage — an older
+    instance or template drift — must still complete once its children are done,
+    not block with "Workflow has no done stage". Its children carry the work, so
+    its own stage shape is moot.
+    """
+    from loregarden.services.studio_routing import is_terminal_stage
+
+    no_terminal = [stage for stage in _STAGES if stage["key"] != "done"]
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-no-terminal", stages=no_terminal)
+    parent = _make_ticket(
+        db_session, ws, external_id="nt-parent", title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    child = _make_ticket(
+        db_session, ws, external_id="nt-child", title="Child", parent_ticket_id=parent.id
+    )
+    # Child already complete (isolate the parent-finalize path).
+    child.state = TicketState.DONE
+    db_session.add(child)
+    db_session.commit()
+
+    _, stages = OrchestrationService(db_session)._resolve_stages(parent)
+    assert stages and not any(is_terminal_stage(s) for s in stages), (
+        "test setup: the parent's workflow must have no terminal stage"
+    )
+
+    orch_run = BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    db_session.refresh(parent)
+    assert parent.state == TicketState.DONE, (
+        "an aggregator parent whose workflow lacks a terminal stage must complete, not block"
+    )
+    assert orch_run.status != OrchestrationRunStatus.BLOCKED
+    assert "done stage" not in (orch_run.error_message or "")
 
 
 def _make_review_child(db_session, ws, *, external_id, parent):
