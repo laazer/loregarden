@@ -58,9 +58,22 @@ export interface WorkflowTransition {
   agent_id?: string;
 }
 
+export interface TicketDependencyRef {
+  id: string;
+  external_id: string;
+  title: string;
+  state: TicketState;
+  work_item_type: WorkItemType;
+  is_integration_review: boolean;
+}
+
 export interface TicketDetail extends TicketSummary {
   description: string;
   acceptance_criteria: string[];
+  /** Tickets this one waits for (its prerequisites). */
+  dependencies?: TicketDependencyRef[];
+  /** Tickets waiting on this one. */
+  dependents?: TicketDependencyRef[];
   revision: number;
   last_updated_by: string;
   next_agent: string;

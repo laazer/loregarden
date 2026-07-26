@@ -11,6 +11,7 @@ from loregarden.agents.executors.permission_bridge import is_orchestrated_agent_
 from loregarden.models.domain import (
     OrchestrationDriver,
     OrchestrationRunStatus,
+    Ticket,
     TicketState,
     UpdateTicketRequest,
     WorkItemType,
@@ -34,6 +35,10 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.prior_work import search_prior_work
+from loregarden.services.ticket_dependencies import (
+    DependencyCycleError,
+    TicketDependencyService,
+)
 from loregarden.services.ticket_discovery import list_tickets_mcp, ticket_neighbors_mcp
 from loregarden.services.ticket_service import TicketService
 
@@ -525,7 +530,29 @@ def _ticket_state_payload(session: Session, ticket_id: str) -> dict[str, Any]:
         ),
         "stages": [s.model_dump() for s in orch.build_stage_views(ticket)],
         "hierarchy": ticket_neighbors_mcp(session, ticket),
+        "depends_on": _dependency_summaries(
+            session, TicketDependencyService(session).prerequisites(ticket.id)
+        ),
+        "dependents": _dependency_summaries(
+            session, TicketDependencyService(session).dependents(ticket.id)
+        ),
     }
+
+
+def _dependency_summaries(session: Session, ticket_ids: list[str]) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for tid in ticket_ids:
+        dep = session.get(Ticket, tid)
+        if dep is not None:
+            out.append(
+                {
+                    "id": dep.id,
+                    "external_id": dep.external_id,
+                    "title": dep.title,
+                    "state": dep.state.value,
+                }
+            )
+    return out
 
 
 def _resolve_ticket_payload(
@@ -779,6 +806,38 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 ),
             },
             required=["ticket_id"],
+        ),
+    },
+    {
+        "name": "loregarden_link_dependency",
+        "description": (
+            "Link one ticket to wait for another: ticket_id depends on (runs after) "
+            "depends_on. Best-effort ordering within a parent's subtree — it does not "
+            "hard-block a standalone run. Idempotent; rejects self-links and cycles. "
+            "Both ids accept a UUID or external_id slug."
+        ),
+        "inputSchema": _tool_schema(
+            properties={
+                "ticket_id": _string_prop("The dependent ticket (UUID or external_id)."),
+                "depends_on": _string_prop(
+                    "The prerequisite ticket it should wait for (UUID or external_id)."
+                ),
+            },
+            required=["ticket_id", "depends_on"],
+        ),
+    },
+    {
+        "name": "loregarden_unlink_dependency",
+        "description": (
+            "Remove a dependency edge: ticket_id no longer waits for depends_on. "
+            "No-op if the edge does not exist. Both ids accept a UUID or external_id."
+        ),
+        "inputSchema": _tool_schema(
+            properties={
+                "ticket_id": _string_prop("The dependent ticket (UUID or external_id)."),
+                "depends_on": _string_prop("The prerequisite ticket to unlink."),
+            },
+            required=["ticket_id", "depends_on"],
         ),
     },
     {
@@ -1115,6 +1174,26 @@ def _update_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
     return json.dumps(_ticket_state_payload(session, ticket.id), indent=2)
 
 
+def _link_dependency(session: Session, svc, arguments: dict[str, Any]) -> str:
+    """Make ``ticket_id`` wait for ``depends_on``. Both accept a UUID or external_id."""
+    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
+    prerequisite = svc.resolve_ticket(ticket_id=arguments["depends_on"])
+    try:
+        TicketDependencyService(session).add_dependency(
+            ticket.id, prerequisite.id, created_by="agent"
+        )
+    except DependencyCycleError as exc:
+        raise ValueError(str(exc)) from exc
+    return json.dumps(_ticket_state_payload(session, ticket.id), indent=2)
+
+
+def _unlink_dependency(session: Session, svc, arguments: dict[str, Any]) -> str:
+    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
+    prerequisite = svc.resolve_ticket(ticket_id=arguments["depends_on"])
+    TicketDependencyService(session).remove_dependency(ticket.id, prerequisite.id)
+    return json.dumps(_ticket_state_payload(session, ticket.id), indent=2)
+
+
 def _create_ticket(
     session: Session, svc: OrchestrationCallbackService, arguments: dict[str, Any]
 ) -> str:
@@ -1270,6 +1349,12 @@ def execute_tool(
 
     if name == "loregarden_update_ticket":
         return _update_ticket(session, svc, arguments)
+
+    if name == "loregarden_link_dependency":
+        return _link_dependency(session, svc, arguments)
+
+    if name == "loregarden_unlink_dependency":
+        return _unlink_dependency(session, svc, arguments)
 
     if name == "loregarden_create_ticket":
         return _create_ticket(session, svc, arguments)

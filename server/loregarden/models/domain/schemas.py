@@ -132,9 +132,29 @@ class TicketTreeNode(SQLModel):
     children: list["TicketTreeNode"] = []
 
 
+class TicketDependencyRef(SQLModel):
+    """A ticket at one end of a dependency edge, enough for the UI to render it."""
+
+    id: str
+    external_id: str
+    title: str
+    state: TicketState
+    work_item_type: WorkItemType
+    is_integration_review: bool = False
+
+
+class TicketDependencyRequest(SQLModel):
+    """Add a "this ticket waits for depends_on" edge; accepts a UUID or external_id."""
+
+    depends_on: str
+
+
 class TicketDetail(TicketSummary):
     description: str
     acceptance_criteria: list[str]
+    #: Tickets this one waits for (its prerequisites) and tickets waiting on it.
+    dependencies: list[TicketDependencyRef] = Field(default_factory=list)
+    dependents: list[TicketDependencyRef] = Field(default_factory=list)
     revision: int
     last_updated_by: str
     next_status: str

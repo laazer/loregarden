@@ -308,6 +308,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body ?? {}),
     }),
+  addDependency: (id: string, dependsOn: string) =>
+    request<TicketDetail>(`/api/tickets/${id}/dependencies`, {
+      method: "POST",
+      body: JSON.stringify({ depends_on: dependsOn }),
+    }),
+  removeDependency: (id: string, dependsOnId: string) =>
+    request<TicketDetail>(`/api/tickets/${id}/dependencies/${dependsOnId}`, {
+      method: "DELETE",
+    }),
   openPr: (id: string) =>
     request<TicketDetail>(`/api/tickets/${id}/open-pr`, {
       method: "POST",
