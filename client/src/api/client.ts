@@ -252,6 +252,7 @@ export const api = {
       description?: string;
       acceptance_criteria?: string[];
       state?: TicketState;
+      priority?: number;
       workflow_stage_key?: string;
       workflow_stage_status?: StageStatus;
       workflow_template_slug?: string;

@@ -9,7 +9,8 @@ interface TicketDependenciesProps {
   ticket: TicketDetail;
 }
 
-/** View and manage the tickets this one waits for (and what waits on it). */
+/** View and manage the tickets this one waits for (and what waits on it).
+ * Styled as a modal state-card to sit alongside the other ticket-details sections. */
 export function TicketDependencies({ ticket }: TicketDependenciesProps) {
   const qc = useQueryClient();
   const [value, setValue] = useState("");
@@ -45,22 +46,17 @@ export function TicketDependencies({ ticket }: TicketDependenciesProps) {
   };
 
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div className="state-label workflow-lifecycle-label" style={{ marginBottom: 6 }}>
-        Dependencies
-      </div>
+    <div className="state-card">
+      <div className="state-label">Dependencies</div>
 
       {dependencies.length === 0 ? (
-        <div style={{ fontSize: 13, marginBottom: 8, color: "var(--fg2)" }}>
+        <p className="modal-hint" style={{ marginTop: 4 }}>
           Waits for nothing.
-        </div>
+        </p>
       ) : (
-        <ul style={{ listStyle: "none", padding: 0, margin: "0 0 8px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
           {dependencies.map((dep) => (
-            <li
-              key={dep.id}
-              style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}
-            >
+            <div key={dep.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <DependencyLabel dep={dep} />
               <button
                 type="button"
@@ -71,14 +67,16 @@ export function TicketDependencies({ ticket }: TicketDependenciesProps) {
               >
                 ✕
               </button>
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
 
-      <div style={{ display: "flex", gap: 6 }}>
+      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
         <input
           type="text"
+          className="btn-secondary filter-select"
+          style={{ flex: 1, fontSize: 13 }}
           value={value}
           placeholder="Wait for ticket (id or external id)…"
           onChange={(e) => {
@@ -88,7 +86,6 @@ export function TicketDependencies({ ticket }: TicketDependenciesProps) {
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();
           }}
-          style={{ flex: 1 }}
         />
         <button
           type="button"
@@ -100,21 +97,21 @@ export function TicketDependencies({ ticket }: TicketDependenciesProps) {
         </button>
       </div>
       {error && (
-        <div style={{ fontSize: 12, marginTop: 4, color: "var(--red)" }}>{error}</div>
+        <p className="modal-hint" style={{ marginTop: 4, color: "var(--red)" }}>
+          {error}
+        </p>
       )}
 
       {dependents.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 12, marginBottom: 4, color: "var(--fg2)" }}>
-            Blocking {dependents.length} ticket{dependents.length === 1 ? "" : "s"}:
+          <div style={{ fontSize: 11, color: "var(--txm)" }}>
+            Blocking {dependents.length} ticket{dependents.length === 1 ? "" : "s"}
           </div>
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
             {dependents.map((dep) => (
-              <li key={dep.id} style={{ marginBottom: 2 }}>
-                <DependencyLabel dep={dep} />
-              </li>
+              <DependencyLabel key={dep.id} dep={dep} />
             ))}
-          </ul>
+          </div>
         </div>
       )}
     </div>
@@ -123,7 +120,7 @@ export function TicketDependencies({ ticket }: TicketDependenciesProps) {
 
 function DependencyLabel({ dep }: { dep: TicketDependencyRef }) {
   return (
-    <span style={{ fontSize: 13 }} title={`${dep.external_id} — ${dep.state}`}>
+    <span style={{ fontSize: 13, color: "var(--tx)" }} title={`${dep.external_id} — ${dep.state}`}>
       <span className="count-pill">{dep.external_id}</span> {dep.title}
       {dep.is_integration_review && (
         <span className="count-pill" style={{ marginLeft: 6 }}>

@@ -38,6 +38,12 @@ export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButton
       if (draft.acceptanceCriteria.join('\n') !== currentCriteria.join('\n')) {
         patch.acceptance_criteria = draft.acceptanceCriteria;
       }
+      if (draft.state !== current.state) {
+        patch.state = draft.state;
+      }
+      if (draft.priority !== current.priority) {
+        patch.priority = draft.priority;
+      }
       if (Object.keys(patch).length === 0) return;
 
       await apiClient.api.updateTicket(ticketId, patch);

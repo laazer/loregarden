@@ -178,7 +178,28 @@ describe('TicketDetailsModal', () => {
           title: 'Updated title',
           description: 'Updated description',
           acceptanceCriteria: [],
+          state: 'in_progress',
+          priority: 1,
         });
+      });
+    });
+
+    it('should allow editing state and priority and save changes', async () => {
+      const onSave = jest.fn().mockResolvedValue(undefined);
+      const ticket = createMockTicket({ state: 'backlog', priority: 3 });
+      renderWithQueryClient(
+        <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} onSave={onSave} />
+      );
+
+      fireEvent.change(screen.getByLabelText('State'), { target: { value: 'in_progress' } });
+      fireEvent.change(screen.getByLabelText('Priority'), { target: { value: '1' } });
+
+      fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+      await waitFor(() => {
+        expect(onSave).toHaveBeenCalledWith(
+          expect.objectContaining({ state: 'in_progress', priority: 1 })
+        );
       });
     });
 
