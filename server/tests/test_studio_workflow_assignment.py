@@ -5,11 +5,14 @@ import json
 import pytest
 from loregarden.core.workflow_loader import sync_workflow_templates
 from loregarden.models.domain import (
+    Ticket,
     TicketStudioSession,
     WorkflowInstance,
     WorkflowTemplate,
+    WorkItemType,
     Workspace,
 )
+from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.ticket_studio_service import TicketStudioService
 from sqlmodel import Session, select
 
@@ -119,3 +122,37 @@ def test_an_unknown_workflow_is_rejected_rather_than_silently_ignored(client, db
 
     with pytest.raises(ValueError):
         TicketStudioService(db_session).commit_session(row.id)
+
+
+def test_commit_adds_integration_review_child_with_sibling_dependency(client, db_session: Session):
+    """Committing a feature/capability/task draft gives the feature an
+    integration-review capability, wired to depend on its capability sibling."""
+    from loregarden.services.ticket_service import TicketService
+
+    sync_workflow_templates(db_session)
+    workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+    # A session parent milestone keeps the feature from being parentless (no
+    # synthetic milestone), so exactly one review — the feature's — is created.
+    milestone = TicketService(db_session).create_ticket(
+        workspace_slug="loregarden", title="Parent milestone", work_item_type=WorkItemType.MILESTONE
+    )
+    row = _session_row(db_session, workspace, _draft())
+    row.parent_ticket_id = milestone.id
+    db_session.add(row)
+    db_session.commit()
+
+    result = TicketStudioService(db_session).commit_session(row.id)
+
+    reviews = [
+        t
+        for tid in result.created_ticket_ids
+        if (t := db_session.get(Ticket, tid)) and t.is_integration_review
+    ]
+    assert len(reviews) == 1
+    review = reviews[0]
+    assert review.work_item_type == WorkItemType.CAPABILITY
+
+    feature = _ticket_by_title(db_session, result.created_ticket_ids, "Markdown import")
+    capability = _ticket_by_title(db_session, result.created_ticket_ids, "Parser")
+    assert review.parent_ticket_id == feature.id
+    assert TicketDependencyService(db_session).prerequisites(review.id) == [capability.id]

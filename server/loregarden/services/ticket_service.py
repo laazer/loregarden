@@ -94,6 +94,7 @@ class TicketService:
         priority: int = 3,
         milestone: str = "",
         external_id: str = "",
+        is_integration_review: bool = False,
     ) -> Ticket:
         with _create_ticket_lock:
             return self._create_ticket_impl(
@@ -106,6 +107,7 @@ class TicketService:
                 priority=priority,
                 milestone=milestone,
                 external_id=external_id,
+                is_integration_review=is_integration_review,
             )
 
     def _create_ticket_impl(
@@ -120,6 +122,7 @@ class TicketService:
         priority: int = 3,
         milestone: str = "",
         external_id: str = "",
+        is_integration_review: bool = False,
     ) -> Ticket:
         title = title.strip()
         if not title:
@@ -168,6 +171,7 @@ class TicketService:
             work_item_type=work_item_type,
             parent_ticket_id=parent_ticket_id,
             acceptance_criteria_json=serialize_criteria(acceptance_criteria),
+            is_integration_review=is_integration_review,
             last_updated_by="user",
         )
 

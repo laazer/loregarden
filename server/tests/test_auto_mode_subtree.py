@@ -35,8 +35,10 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+from loregarden.services.integration_review import backfill_integration_reviews
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import OrchestrationProfile
+from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.workflow_state import parse_stage_map
 from sqlmodel import Session, select
 
@@ -459,6 +461,122 @@ def test_aggregator_parent_creates_no_git_branch_of_its_own(db_session: Session,
     assert resolve_ticket_branch(child) in branches, (
         f"the child ran its stages and must have a branch; found {branches}"
     )
+
+
+def _make_review_child(db_session, ws, *, external_id, parent):
+    child = _make_ticket(
+        db_session,
+        ws,
+        external_id=external_id,
+        title="Integration review",
+        work_item_type=WorkItemType.CAPABILITY,
+        parent_ticket_id=parent.id,
+    )
+    child.is_integration_review = True
+    db_session.add(child)
+    db_session.commit()
+    db_session.refresh(child)
+    return child
+
+
+def test_integration_review_child_runs_last_via_dependency(db_session: Session, tmp_path):
+    """A child that depends on its siblings runs after them, even though its
+    external_id would sort it first without the dependency — proving run order
+    comes from the dependency edges, not child_sort_key.
+    """
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-review-last")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="rev-parent",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    cap_b = _make_ticket(
+        db_session,
+        ws,
+        external_id="cap-b",
+        title="Cap B",
+        work_item_type=WorkItemType.CAPABILITY,
+        parent_ticket_id=parent.id,
+    )
+    cap_c = _make_ticket(
+        db_session,
+        ws,
+        external_id="cap-c",
+        title="Cap C",
+        work_item_type=WorkItemType.CAPABILITY,
+        parent_ticket_id=parent.id,
+    )
+    # external_id "aaa-*" sorts first — without the dependency it would run FIRST.
+    review = _make_review_child(db_session, ws, external_id="aaa-review", parent=parent)
+    deps = TicketDependencyService(db_session)
+    deps.add_dependency(review.id, cap_b.id)
+    deps.add_dependency(review.id, cap_c.id)
+
+    BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    for t in (parent, cap_b, cap_c, review):
+        db_session.refresh(t)
+    assert review.state == TicketState.DONE
+    assert parent.state == TicketState.DONE
+
+    def _first_run_at(ticket):
+        runs = db_session.exec(select(AgentRun).where(AgentRun.ticket_id == ticket.id)).all()
+        assert runs, f"{ticket.external_id} must have run"
+        return min(r.created_at for r in runs)
+
+    review_start = _first_run_at(review)
+    assert review_start > _first_run_at(cap_b), "review must start after sibling cap-b"
+    assert review_start > _first_run_at(cap_c), "review must start after sibling cap-c"
+
+
+def test_backfill_adds_integration_review_with_sibling_dependencies(db_session: Session, tmp_path):
+    """Backfill gives an existing childful feature a review capability that depends
+    on its siblings, and is idempotent on a second pass.
+    """
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-backfill")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="bf-parent",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    cap_a = _make_ticket(
+        db_session,
+        ws,
+        external_id="bf-cap-a",
+        title="Cap A",
+        work_item_type=WorkItemType.CAPABILITY,
+        parent_ticket_id=parent.id,
+    )
+    cap_b = _make_ticket(
+        db_session,
+        ws,
+        external_id="bf-cap-b",
+        title="Cap B",
+        work_item_type=WorkItemType.CAPABILITY,
+        parent_ticket_id=parent.id,
+    )
+
+    created = backfill_integration_reviews(db_session, workspace_slug=ws.slug)
+    assert len(created) == 1
+    review = db_session.get(Ticket, created[0])
+    assert review.is_integration_review is True
+    assert review.parent_ticket_id == parent.id
+    assert review.work_item_type == WorkItemType.CAPABILITY
+    assert set(TicketDependencyService(db_session).prerequisites(review.id)) == {cap_a.id, cap_b.id}
+
+    # Idempotent: a second pass creates nothing new.
+    again = backfill_integration_reviews(db_session, workspace_slug=ws.slug)
+    assert again == []
+    reviews = db_session.exec(
+        select(Ticket).where(
+            Ticket.parent_ticket_id == parent.id,
+            Ticket.is_integration_review == True,  # noqa: E712
+        )
+    ).all()
+    assert len(reviews) == 1
 
 
 # ---------------------------------------------------------------------------

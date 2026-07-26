@@ -55,9 +55,10 @@ from loregarden.services.studio_routing import (
 from loregarden.services.subtree_auto_run import (
     SubtreeBudget,
     auto_resolve_awaiting_gate,
-    child_sort_key,
+    order_children_for_subtree,
     ticket_workflow_complete,
 )
+from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.workflow_routing import apply_stage_route, previous_stage_key
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session, select
@@ -1038,7 +1039,8 @@ class BuiltinOrchestrator:
         children = list(
             self.session.exec(select(Ticket).where(Ticket.parent_ticket_id == ticket.id)).all()
         )
-        children.sort(key=child_sort_key)
+        prereqs = TicketDependencyService(self.session).prerequisites_map([c.id for c in children])
+        children = order_children_for_subtree(children, prereqs)
         for child in children:
             if child.work_item_type not in WORKFLOW_WORK_ITEM_TYPES:
                 continue
