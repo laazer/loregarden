@@ -644,3 +644,73 @@ def m_adversarial_planning(conn: Connection) -> None:
         },
     )
     _snapshot_template_version(conn, row["id"], new_version, "Adversarial planning")
+
+
+def _has_terminal_stage(stages: list[dict]) -> bool:
+    """A workflow can only finalize on a terminal stage — the `terminal` flag, or
+    the `done` key as the historical fallback (mirrors studio_routing.is_terminal_stage)."""
+    return any(bool(s.get("terminal")) or s.get("key") == "done" for s in stages)
+
+
+def _terminal_done_stage(order: int) -> dict:
+    """A terminal, agentless `done` stage the orchestrator finalizes the ticket on."""
+    return {
+        "key": "done",
+        "name": "Done",
+        "agent_id": "",
+        "skill_name": "",
+        "optional": False,
+        "order": order,
+        "stage_type": "agent",
+        "terminal": True,
+        "classify_routes": [],
+        "parallel_agents": [],
+        "gate_commands": [],
+        "gate_required": False,
+        "model": "",
+    }
+
+
+def m_ensure_terminal_stage(conn: Connection) -> None:
+    """Every workflow template must end at a terminal stage the orchestrator can
+    finalize on. The studio-loregarden-tdd v2/v3 templates end at `gate`, which is
+    not terminal and has no pass-route, so a passing final gate has nowhere to
+    advance: the pipeline re-loops through implement/verify/review instead of
+    marking the ticket done. Append a terminal `done` stage to any template that
+    lacks one and route its current last stage into it on pass.
+    """
+    if not table_exists(conn, "workflow_templates"):
+        return
+    rows = (
+        conn.execute(
+            text("SELECT id, slug, version, stages_json, transitions_json FROM workflow_templates")
+        )
+        .mappings()
+        .fetchall()
+    )
+    for row in rows:
+        stages = json.loads(row["stages_json"] or "[]")
+        if not stages or _has_terminal_stage(stages):
+            continue
+        last = max(stages, key=lambda s: int(s.get("order") or 0))
+        stages.append(_terminal_done_stage(int(last.get("order") or 0) + 1))
+
+        transitions = json.loads(row["transitions_json"] or "[]")
+        # Route the old last stage to `done` on a clean pass, alongside whatever
+        # reject edge it already has (e.g. gate -> implement on reject).
+        transitions.append({"from": last["key"], "to": "done", "when": "pass"})
+
+        new_version = int(row["version"] or 1) + 1
+        conn.execute(
+            text(
+                "UPDATE workflow_templates SET stages_json=:st, transitions_json=:tr, version=:v "
+                "WHERE id=:id"
+            ),
+            {
+                "st": json.dumps(stages),
+                "tr": json.dumps(transitions),
+                "v": new_version,
+                "id": row["id"],
+            },
+        )
+        _snapshot_template_version(conn, row["id"], new_version, "Terminal done stage")

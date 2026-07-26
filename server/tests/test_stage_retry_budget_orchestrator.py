@@ -363,7 +363,14 @@ def test_self_redo_reject_loop_trips_the_breaker_live_like_the_static_qa_inciden
     within a single `execute()` call — an agent's own stage report reroutes
     to its own stage_key on every failure, so the main loop redispatches it
     over and over with zero wall-clock gap in between. This is the scenario
-    that specifically rules out any timestamp-based dispatch counting."""
+    that specifically rules out any timestamp-based dispatch counting.
+
+    The retry budget is set *below* the rework-reroute loop cap
+    (`MAX_REWORK_REROUTES` = 3) on purpose: a self-*reject* loop is counted by
+    both the stage-dispatch breaker and the durable rework ledger, and whichever
+    is tighter fires first. With `max_attempts` at or above 3 the rework ledger
+    would block first and this test would never exercise the dispatch breaker it
+    is here to cover; at 2 the breaker is the one that trips."""
     from loregarden.agents.executors.cli import CliAgentExecutor
 
     ticket = _build_fixture(db_session)
@@ -379,11 +386,13 @@ def test_self_redo_reject_loop_trips_the_breaker_live_like_the_static_qa_inciden
     monkeypatch.setattr(CliAgentExecutor, "execute", fake_execute)
 
     builtin = BuiltinOrchestrator(db_session)
-    orch_run = builtin.execute(ticket, _profile(max_attempts=5), max_stages=10)
+    orch_run = builtin.execute(ticket, _profile(max_attempts=2), max_stages=10)
 
     db_session.refresh(ticket)
     assert ticket.state == TicketState.BLOCKED
     assert orch_run.status == OrchestrationRunStatus.BLOCKED
-    # 5 passes x 3 members = 15 AgentRun rows, but exactly 5 recorded attempts.
-    assert _script_review_run_count(db_session, ticket.id) == 15
-    assert count_stage_dispatches(db_session, ticket.id, "script_review") == 5
+    # 2 passes x 3 members = 6 AgentRun rows, and exactly 2 recorded dispatches.
+    # Blocking at 2 is only reachable via the dispatch breaker (max_attempts=2);
+    # the rework ledger could not have fired before its 4th reroute.
+    assert _script_review_run_count(db_session, ticket.id) == 6
+    assert count_stage_dispatches(db_session, ticket.id, "script_review") == 2
