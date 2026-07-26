@@ -35,8 +35,10 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+from loregarden.services.integration_review import backfill_integration_reviews
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import OrchestrationProfile
+from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.workflow_state import parse_stage_map
 from sqlmodel import Session, select
 
@@ -388,10 +390,13 @@ def test_subtree_with_two_children_completes_end_to_end_under_auto_mode(
 
     assert child_a.state == TicketState.DONE, "child A must run its full workflow unattended"
     assert child_b.state == TicketState.DONE, "child B must run its full workflow unattended"
-    assert parent.state == TicketState.DONE, "the parent's own workflow must also complete"
+    assert parent.state == TicketState.DONE, (
+        "the parent must complete by aggregation once its children are done"
+    )
     assert orch_run.status == OrchestrationRunStatus.SUCCEEDED
 
-    for ticket in (child_a, child_b, parent):
+    # Each child runs its own gates for real.
+    for ticket in (child_a, child_b):
         gate_approval = db_session.exec(
             select(Approval).where(Approval.ticket_id == ticket.id, Approval.stage_key == "signoff")
         ).first()
@@ -403,17 +408,175 @@ def test_subtree_with_two_children_completes_end_to_end_under_auto_mode(
         assert review_approval.status == ApprovalStatus.APPROVED
         assert review_approval.resolved_by == "automation"
 
-    # Children run before the parent's own stages advance, and in
-    # deterministic (_child_sort_key) order — not parallel.
-    child_a_first_run = min(
-        db_session.exec(select(AgentRun).where(AgentRun.ticket_id == child_a.id)).all(),
-        key=lambda r: r.created_at,
+    # The parent is a pure aggregator: it runs none of its own stages, so it
+    # produces no agent runs and opens no gates of its own — its DONE state comes
+    # from finalizing once every child completed.
+    assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == parent.id)).all() == [], (
+        "an aggregator parent must not run any of its own workflow stages"
     )
-    parent_first_run = min(
-        db_session.exec(select(AgentRun).where(AgentRun.ticket_id == parent.id)).all(),
-        key=lambda r: r.created_at,
+    assert db_session.exec(select(Approval).where(Approval.ticket_id == parent.id)).all() == [], (
+        "an aggregator parent opens no gates of its own"
     )
-    assert child_a_first_run.created_at <= parent_first_run.created_at
+    # The children did the actual work.
+    assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == child_a.id)).all()
+    assert db_session.exec(select(AgentRun).where(AgentRun.ticket_id == child_b.id)).all()
+
+
+def test_aggregator_parent_creates_no_git_branch_of_its_own(db_session: Session, tmp_path):
+    """The point of skipping a parent's own stages: no unused ticket branch is
+    ever created for it. ensure_ticket_branch fires per stage agent, so a parent
+    that runs zero stages leaves no branch behind — while its child, which runs
+    its stages for real, does get one.
+    """
+    from loregarden.services.git_branch import resolve_ticket_branch
+
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-no-parent-branch")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="nobranch-parent",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    child = _make_ticket(
+        db_session, ws, external_id="nobranch-child", title="Child", parent_ticket_id=parent.id
+    )
+
+    BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    db_session.refresh(parent)
+    db_session.refresh(child)
+    assert parent.state == TicketState.DONE
+    assert child.state == TicketState.DONE
+
+    branches = subprocess.run(
+        ["git", "branch", "--format=%(refname:short)"],
+        cwd=ws.repo_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    assert resolve_ticket_branch(parent) not in branches, (
+        f"an aggregator parent must not create a branch; found {branches}"
+    )
+    assert resolve_ticket_branch(child) in branches, (
+        f"the child ran its stages and must have a branch; found {branches}"
+    )
+
+
+def _make_review_child(db_session, ws, *, external_id, parent):
+    child = _make_ticket(
+        db_session,
+        ws,
+        external_id=external_id,
+        title="Integration review",
+        work_item_type=WorkItemType.CAPABILITY,
+        parent_ticket_id=parent.id,
+    )
+    child.is_integration_review = True
+    db_session.add(child)
+    db_session.commit()
+    db_session.refresh(child)
+    return child
+
+
+def test_integration_review_child_runs_last_via_dependency(db_session: Session, tmp_path):
+    """A child that depends on its siblings runs after them, even though its
+    external_id would sort it first without the dependency — proving run order
+    comes from the dependency edges, not child_sort_key.
+    """
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-review-last")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="rev-parent",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    cap_b = _make_ticket(
+        db_session,
+        ws,
+        external_id="cap-b",
+        title="Cap B",
+        work_item_type=WorkItemType.CAPABILITY,
+        parent_ticket_id=parent.id,
+    )
+    cap_c = _make_ticket(
+        db_session,
+        ws,
+        external_id="cap-c",
+        title="Cap C",
+        work_item_type=WorkItemType.CAPABILITY,
+        parent_ticket_id=parent.id,
+    )
+    # external_id "aaa-*" sorts first — without the dependency it would run FIRST.
+    review = _make_review_child(db_session, ws, external_id="aaa-review", parent=parent)
+    deps = TicketDependencyService(db_session)
+    deps.add_dependency(review.id, cap_b.id)
+    deps.add_dependency(review.id, cap_c.id)
+
+    BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    for t in (parent, cap_b, cap_c, review):
+        db_session.refresh(t)
+    assert review.state == TicketState.DONE
+    assert parent.state == TicketState.DONE
+
+    def _first_run_at(ticket):
+        runs = db_session.exec(select(AgentRun).where(AgentRun.ticket_id == ticket.id)).all()
+        assert runs, f"{ticket.external_id} must have run"
+        return min(r.created_at for r in runs)
+
+    review_start = _first_run_at(review)
+    assert review_start > _first_run_at(cap_b), "review must start after sibling cap-b"
+    assert review_start > _first_run_at(cap_c), "review must start after sibling cap-c"
+
+
+def test_backfill_adds_integration_review_with_sibling_dependencies(db_session: Session, tmp_path):
+    """Backfill gives an existing childful feature a review capability that depends
+    on its siblings, and is idempotent on a second pass.
+    """
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-backfill")
+    parent = _make_ticket(
+        db_session,
+        ws,
+        external_id="bf-parent",
+        title="Parent",
+        work_item_type=WorkItemType.FEATURE,
+    )
+    cap_a = _make_ticket(
+        db_session,
+        ws,
+        external_id="bf-cap-a",
+        title="Cap A",
+        work_item_type=WorkItemType.CAPABILITY,
+        parent_ticket_id=parent.id,
+    )
+    cap_b = _make_ticket(
+        db_session,
+        ws,
+        external_id="bf-cap-b",
+        title="Cap B",
+        work_item_type=WorkItemType.CAPABILITY,
+        parent_ticket_id=parent.id,
+    )
+
+    created = backfill_integration_reviews(db_session, workspace_slug=ws.slug)
+    assert len(created) == 1
+    review = db_session.get(Ticket, created[0])
+    assert review.is_integration_review is True
+    assert review.parent_ticket_id == parent.id
+    assert review.work_item_type == WorkItemType.CAPABILITY
+    assert set(TicketDependencyService(db_session).prerequisites(review.id)) == {cap_a.id, cap_b.id}
+
+    # Idempotent: a second pass creates nothing new.
+    again = backfill_integration_reviews(db_session, workspace_slug=ws.slug)
+    assert again == []
+    reviews = db_session.exec(
+        select(Ticket).where(
+            Ticket.parent_ticket_id == parent.id,
+            Ticket.is_integration_review == True,  # noqa: E712
+        )
+    ).all()
+    assert len(reviews) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -747,6 +910,93 @@ def test_already_done_child_is_not_rerun_under_auto_mode(
     assert child.state == TicketState.DONE
 
 
+def test_ticket_workflow_complete_true_for_done_ticket_with_incomplete_stages():
+    """A ticket whose state is terminal (DONE/WONT_DO) is workflow-complete even
+    when its stage instance still has required stages PENDING. A ticket can reach
+    DONE without every stage ticked (manual completion, review shortcut, imported
+    or older tickets, a stage-map reset); the subtree loop must treat that as
+    complete, not as an incomplete child to re-run.
+    """
+    from unittest.mock import MagicMock
+
+    from loregarden.services.subtree_auto_run import ticket_workflow_complete
+
+    stage = MagicMock(key="implement", optional=False)
+    orch = MagicMock()
+    orch._resolve_stages.return_value = (MagicMock(), [stage])
+
+    ticket = MagicMock(state=TicketState.DONE)
+    assert ticket_workflow_complete(orch, ticket) is True
+    ticket.state = TicketState.WONT_DO
+    assert ticket_workflow_complete(orch, ticket) is True
+    # The terminal-state short-circuit means the stage instance is never consulted.
+    orch._resolve_stages.assert_not_called()
+
+
+def test_done_child_with_incomplete_stages_does_not_block_later_siblings(
+    db_session: Session, tmp_path
+):
+    """The subtree bug: a first child left DONE with an incomplete stage instance
+    (state=DONE but required stages still PENDING) must be skipped as complete so
+    the parent auto run continues on to the *next* sibling — instead of re-entering
+    execute() on the done child (which no-ops on its terminal state), still seeing
+    it "incomplete", and pausing the whole subtree there. Reproduces the real 219→
+    220→[221 DONE, 223, 225] tree where 221 was DONE with only `triage` ticked and
+    223/225 never ran.
+    """
+    ws = _make_workspace(db_session, tmp_path, "auto-mode-done-incomplete")
+    parent = _make_ticket(db_session, ws, external_id="di-parent-1", title="Parent")
+    # First child: DONE at the ticket level, but its stage instance is untouched
+    # (every required stage still PENDING) — exactly the divergent state the bug
+    # tripped on. Set it directly so no stage ever gets ticked.
+    done_child = _make_ticket(
+        db_session,
+        ws,
+        external_id="di-child-done",
+        title="Done child",
+        parent_ticket_id=parent.id,
+    )
+    done_child.state = TicketState.DONE
+    db_session.add(done_child)
+    db_session.commit()
+    db_session.refresh(done_child)
+    assert _stage_status(db_session, done_child, "work") == StageStatus.PENDING, (
+        "test setup: the done child must have an incomplete stage instance"
+    )
+    # Later sibling: a fresh backlog ticket that must get run once the loop
+    # advances past the done child.
+    sibling = _make_ticket(
+        db_session,
+        ws,
+        external_id="di-child-later",
+        title="Later sibling",
+        parent_ticket_id=parent.id,
+    )
+
+    done_runs_before = len(
+        db_session.exec(select(AgentRun).where(AgentRun.ticket_id == done_child.id)).all()
+    )
+
+    BuiltinOrchestrator(db_session).execute(parent, _profile(), auto_approve=True)
+    db_session.refresh(done_child)
+    db_session.refresh(sibling)
+
+    done_runs_after = len(
+        db_session.exec(select(AgentRun).where(AgentRun.ticket_id == done_child.id)).all()
+    )
+    assert done_runs_after == done_runs_before, (
+        "a DONE child with incomplete stages must not be re-run"
+    )
+    sibling_runs = db_session.exec(select(AgentRun).where(AgentRun.ticket_id == sibling.id)).all()
+    assert sibling_runs, (
+        "the later sibling must run: the parent auto run has to advance past a "
+        "done-but-incomplete first child, not pause the whole subtree on it"
+    )
+    assert sibling.state == TicketState.DONE, (
+        "with auto_approve the later sibling should run all the way to DONE"
+    )
+
+
 def test_children_run_in_type_then_priority_order_not_alphabetical(db_session: Session, tmp_path):
     """_child_sort_key orders by work_item_type, then priority, then external_id.
     Pick external_ids that sort the OPPOSITE way alphabetically from the
@@ -977,9 +1227,10 @@ def test_subtree_bound_exact_stage_count_completes_fully(db_session: Session, tm
         db_session, ws, external_id="exact-bound-child", title="Child", parent_ticket_id=parent.id
     )
 
-    # Each ticket runs exactly 3 stages to DONE (work, signoff, review) under
-    # this test template; parent + 1 child = 6 stages total, exactly.
-    profile = _profile(max_subtree_stages_per_run=6)
+    # The child runs exactly 3 stages to DONE (work, signoff, review) under this
+    # test template; the parent is an aggregator that runs none of its own, so a
+    # 1-child subtree is 3 stages total, exactly.
+    profile = _profile(max_subtree_stages_per_run=3)
     orch_run = BuiltinOrchestrator(db_session).execute(parent, profile, auto_approve=True)
     db_session.refresh(parent)
     db_session.refresh(child)
@@ -1004,7 +1255,9 @@ def test_subtree_bound_one_less_than_exact_stops_short(db_session: Session, tmp_
         db_session, ws, external_id="short-bound-child", title="Child", parent_ticket_id=parent.id
     )
 
-    profile = _profile(max_subtree_stages_per_run=5)
+    # The child needs 3 stages (work, signoff, review); the aggregator parent
+    # runs none. A bound of 2 is one short of the child's required count.
+    profile = _profile(max_subtree_stages_per_run=2)
     orch_run = BuiltinOrchestrator(db_session).execute(parent, profile, auto_approve=True)
     db_session.refresh(parent)
     db_session.refresh(child)

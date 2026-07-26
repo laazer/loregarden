@@ -137,6 +137,11 @@ class Ticket(SQLModel, table=True):
     # resolve_stage_execution and is cleared the moment it is consumed at dispatch,
     # so it steers exactly one re-run and cannot become a sticky stale hint.
     scope_reroute_agent: str = ""
+    # A synthesized "review that the parent's children integrate" work item. It is
+    # childless (so it runs its own workflow, unlike an aggregator parent) and is
+    # ordered to run last among its siblings (see child_sort_key). Added under
+    # feature/milestone parents by the Ticket Studio draft repair and the backfill.
+    is_integration_review: bool = Field(default=False)
     state_locked: bool = Field(default=False)
     workflow_disabled: bool = Field(default=False)
     triage_runtime_json: str = "{}"
@@ -527,6 +532,22 @@ class RunOutputReview(SQLModel, table=True):
     approved_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+class TicketDependency(SQLModel, table=True):
+    """A directed "waits for" edge between two tickets: ``ticket_id`` depends on
+    ``depends_on_ticket_id`` and should run after it is complete. Ordering is
+    best-effort (it steers subtree run order; it does not hard-block a standalone
+    run). Edges are kept acyclic by TicketDependencyService.add_dependency.
+    """
+
+    __tablename__ = "ticket_dependencies"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    depends_on_ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    created_at: datetime = Field(default_factory=utcnow)
+    created_by: str = ""
 
 
 class TicketDiffComment(SQLModel, table=True):

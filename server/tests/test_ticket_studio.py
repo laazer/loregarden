@@ -195,8 +195,10 @@ def test_ticket_studio_scope_and_commit(client: TestClient, monkeypatch):
     commit = client.post(f"/api/ticket-studio/sessions/{session_id}/commit")
     assert commit.status_code == 200, commit.text
     result = commit.json()
-    assert result["created_count"] == 3
-    assert len(result["created_ticket_ids"]) == 3
+    # feature + capability + task, plus one auto-added integration-review capability
+    # under the feature (which now has a child).
+    assert result["created_count"] == 4
+    assert len(result["created_ticket_ids"]) == 4
     assert result["root_ticket_id"] == milestone_id
     assert sum(result["breakdown"].values()) == result["created_count"]
 
@@ -240,9 +242,11 @@ def test_ticket_studio_scope_surfaces_root_milestone_in_draft(client: TestClient
     commit = client.post(f"/api/ticket-studio/sessions/{session_id}/commit")
     assert commit.status_code == 200, commit.text
     result = commit.json()
-    # 3 draft tickets + 1 synthesized milestone parent for the root feature
-    assert result["created_count"] == 4
-    assert len(result["created_ticket_ids"]) == 4
+    # 3 draft tickets + 1 synthesized milestone parent, plus 2 auto-added
+    # integration-review children (one under the milestone, one under the feature —
+    # each now has a child).
+    assert result["created_count"] == 6
+    assert len(result["created_ticket_ids"]) == 6
 
     tickets = {
         t["id"]: t

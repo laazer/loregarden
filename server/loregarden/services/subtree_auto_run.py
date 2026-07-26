@@ -15,6 +15,7 @@ from loregarden.models.domain import (
     OrchestrationRun,
     StageStatus,
     Ticket,
+    TicketState,
     WorkItemType,
 )
 from loregarden.services.orchestration import ApprovalService, OrchestrationService
@@ -92,7 +93,19 @@ def auto_resolve_awaiting_gate(
 
 def ticket_workflow_complete(orch: OrchestrationService, ticket: Ticket) -> bool:
     """Whether every required stage of the ticket's workflow is DONE/WONT_DO —
-    complete children are skipped, not re-run, by a subtree pass."""
+    complete children are skipped, not re-run, by a subtree pass.
+
+    A ticket already in a terminal state (DONE/WONT_DO) is complete regardless
+    of its per-stage instance bookkeeping. A ticket can reach DONE without every
+    stage instance ticked to DONE (manual completion, a review shortcut, an
+    imported/older ticket, stage-map resets), and execute() short-circuits on
+    that same terminal state (see the guard at the top of its loop) — so if this
+    predicate disagreed, the subtree loop would judge a DONE child "incomplete",
+    re-enter execute() which does nothing, still see "incomplete", and pause the
+    whole subtree there, never advancing to the remaining siblings.
+    """
+    if ticket.state in (TicketState.DONE, TicketState.WONT_DO):
+        return True
     instance, stages = orch._resolve_stages(ticket)
     if not instance or not stages:
         return True
@@ -105,8 +118,10 @@ def ticket_workflow_complete(orch: OrchestrationService, ticket: Ticket) -> bool
 
 
 def child_sort_key(ticket: Ticket) -> tuple:
-    """Sequential subtree order: coarser work items first, then priority,
-    then stable external id."""
+    """Stable tie-break order for siblings with no dependency constraint between
+    them: coarser work items first, then priority, then external id. Actual run
+    order is the dependency-aware topological sort in order_children_for_subtree;
+    this only breaks ties among items that topo-sort as equally ready."""
     type_order = {
         WorkItemType.MILESTONE: 0,
         WorkItemType.FEATURE: 1,
@@ -115,3 +130,29 @@ def child_sort_key(ticket: Ticket) -> tuple:
         WorkItemType.BUG: 4,
     }
     return (type_order.get(ticket.work_item_type, 9), ticket.priority, ticket.external_id)
+
+
+def order_children_for_subtree(
+    children: list[Ticket], prereqs: dict[str, set[str]]
+) -> list[Ticket]:
+    """Best-effort dependency-aware run order for one parent's children (Kahn's
+    algorithm). A child runs after every prerequisite that is also in this sibling
+    set; ties among ready children break by ``child_sort_key``. Prerequisites
+    outside the set are ignored (order-only, best-effort). A dependency cycle
+    among siblings can't happen — edges are kept acyclic on insert — but if one
+    somehow existed, the remaining children are emitted in child_sort_key order
+    rather than dropped, so ordering degrades gracefully instead of hanging.
+    """
+    ids = {c.id for c in children}
+    by_id = {c.id: c for c in children}
+    remaining = {c.id: {p for p in prereqs.get(c.id, set()) if p in ids} for c in children}
+    ordered: list[Ticket] = []
+    done: set[str] = set()
+    while len(ordered) < len(children):
+        ready = [by_id[cid] for cid in ids if cid not in done and not (remaining[cid] - done)]
+        if not ready:  # cycle / unsatisfiable — emit the rest deterministically
+            ready = [by_id[cid] for cid in ids if cid not in done]
+        nxt = min(ready, key=child_sort_key)
+        ordered.append(nxt)
+        done.add(nxt.id)
+    return ordered

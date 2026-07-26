@@ -17,6 +17,8 @@ from loregarden.models.domain import (
     StartRunRequest,
     Ticket,
     TicketCreate,
+    TicketDependencyRef,
+    TicketDependencyRequest,
     TicketDetail,
     TicketImportPreviewPathsRequest,
     TicketImportPreviewRequest,
@@ -46,6 +48,10 @@ from loregarden.services.path_browser import read_import_files
 from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.run_ledger import ledger_payload
 from loregarden.services.run_service import RunService, schedule_agent_run, schedule_orchestration
+from loregarden.services.ticket_dependencies import (
+    DependencyCycleError,
+    TicketDependencyService,
+)
 from loregarden.services.ticket_import_service import TicketImportService
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.triage_run_service import (
@@ -520,10 +526,13 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
 
     transitions = normalize_transitions_for_api(template.transitions_json) if template else []
     posture = resolve_compatibility_posture(session, ticket)
+    prereq_ids, dependent_ids = _dependency_edge_ids(session, ticket.id)
     return TicketDetail(
         **summary.model_dump(),
         description=ticket.description,
         acceptance_criteria=load_criteria(ticket.acceptance_criteria_json),
+        dependencies=_dependency_refs(session, prereq_ids),
+        dependents=_dependency_refs(session, dependent_ids),
         revision=ticket.revision,
         last_updated_by=ticket.last_updated_by,
         next_status=ticket.next_status,
@@ -538,6 +547,70 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         resolved_compatibility_posture=posture.posture.value,
         compatibility_posture_source=posture.source,
     )
+
+
+def _dependency_edge_ids(session: Session, ticket_id: str) -> tuple[list[str], list[str]]:
+    svc = TicketDependencyService(session)
+    return svc.prerequisites(ticket_id), svc.dependents(ticket_id)
+
+
+def _dependency_refs(session: Session, ticket_ids: list[str]) -> list[TicketDependencyRef]:
+    refs: list[TicketDependencyRef] = []
+    for tid in ticket_ids:
+        dep = session.get(Ticket, tid)
+        if dep is None:
+            continue
+        refs.append(
+            TicketDependencyRef(
+                id=dep.id,
+                external_id=dep.external_id,
+                title=dep.title,
+                state=dep.state,
+                work_item_type=dep.work_item_type,
+                is_integration_review=dep.is_integration_review,
+            )
+        )
+    return refs
+
+
+@router.post("/{ticket_id}/dependencies", response_model=TicketDetail)
+def add_ticket_dependency(
+    ticket_id: str,
+    body: TicketDependencyRequest,
+    session: Session = Depends(get_session),
+) -> TicketDetail:
+    """Link this ticket to wait for another (``depends_on`` is a UUID or external_id)."""
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    try:
+        prerequisite = OrchestrationCallbackService(session).resolve_ticket(
+            ticket_id=body.depends_on
+        )
+    except ValueError as exc:
+        raise HTTPException(404, f"Prerequisite ticket not found: {body.depends_on}") from exc
+    try:
+        TicketDependencyService(session).add_dependency(
+            ticket.id, prerequisite.id, created_by="user"
+        )
+    except DependencyCycleError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return get_ticket(ticket_id, session)
+
+
+@router.delete("/{ticket_id}/dependencies/{depends_on_id}", response_model=TicketDetail)
+def remove_ticket_dependency(
+    ticket_id: str,
+    depends_on_id: str,
+    session: Session = Depends(get_session),
+) -> TicketDetail:
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    TicketDependencyService(session).remove_dependency(ticket.id, depends_on_id)
+    return get_ticket(ticket_id, session)
 
 
 @router.get("/{ticket_id}/workflow-reassignment", response_model=dict)

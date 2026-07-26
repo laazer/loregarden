@@ -38,6 +38,7 @@ from loregarden.services.draft_hierarchy import (
     repair_draft_hierarchy,
     topo_sort_draft_items,
 )
+from loregarden.services.integration_review import ensure_reviews_for_tickets
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.workflow_service import WorkflowService
 from sqlmodel import Session, select
@@ -549,6 +550,22 @@ def _apply_draft_workflow(session: Session, ticket: Ticket, template_slug: str) 
     WorkflowService(session).set_ticket_workflow_template(ticket, slug)
 
 
+def _record_integration_reviews(
+    session: Session, created_ids: list[str], breakdown: dict[str, int]
+) -> None:
+    """Create the integration-review child for each just-committed feature/milestone,
+    appending it to ``created_ids`` and counting it in ``breakdown`` in place."""
+    for review_id in ensure_reviews_for_tickets(
+        session, list(created_ids), created_by="ticket-studio"
+    ):
+        created_ids.append(review_id)
+        review = session.get(Ticket, review_id)
+        if review:
+            breakdown[review.work_item_type.value] = (
+                breakdown.get(review.work_item_type.value, 0) + 1
+            )
+
+
 class TicketStudioService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -947,6 +964,11 @@ class TicketStudioService:
             breakdown[item.work_item_type.value] = breakdown.get(item.work_item_type.value, 0) + 1
             if root_ticket_id is None and parent_id is None:
                 root_ticket_id = created.id
+
+        # Every feature/milestone we just created gets its integration-review child
+        # (a childless capability/feature that depends on its siblings, so it runs
+        # last). Post-commit on real tickets — the scope preview stays untouched.
+        _record_integration_reviews(self.session, created_ids, breakdown)
 
         row.status = TicketStudioSessionStatus.COMMITTED
         row.is_preview = False

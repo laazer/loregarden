@@ -1084,6 +1084,50 @@ def _m_ticket_scope_reroute_agent(conn: Connection) -> None:
     )
 
 
+def _m_ticket_integration_review(conn: Connection) -> None:
+    """Flag for a synthesized parent-level integration-review work item. False on
+    every existing row — none were review items before this — so a 0 default
+    backfills correctly. child_sort_key uses it to run these last among siblings.
+    """
+    add_columns_if_missing(
+        conn,
+        "tickets",
+        {
+            "is_integration_review": (
+                "ALTER TABLE tickets ADD COLUMN is_integration_review INTEGER NOT NULL DEFAULT 0"
+            )
+        },
+    )
+
+
+def _m_ticket_dependencies_table(conn: Connection) -> None:
+    """Directed best-effort "waits for" edges between tickets (ticket_id depends
+    on depends_on_ticket_id). Created empty; nothing to backfill."""
+    conn.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS ticket_dependencies ("
+            "id TEXT PRIMARY KEY, "
+            "ticket_id TEXT NOT NULL, "
+            "depends_on_ticket_id TEXT NOT NULL, "
+            "created_at TEXT NOT NULL, "
+            "created_by TEXT NOT NULL DEFAULT ''"
+            ")"
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_ticket_dependencies_ticket_id "
+            "ON ticket_dependencies (ticket_id)"
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_ticket_dependencies_depends_on "
+            "ON ticket_dependencies (depends_on_ticket_id)"
+        )
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1130,6 +1174,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0043_run_approval_event_enum_values", _m_run_approval_event_enum_values),
     ("0044_ticket_scope_reroute_agent", _m_ticket_scope_reroute_agent),
     ("0045_ensure_terminal_stage", m_ensure_terminal_stage),
+    ("0046_ticket_integration_review", _m_ticket_integration_review),
+    ("0047_ticket_dependencies_table", _m_ticket_dependencies_table),
 ]
 
 

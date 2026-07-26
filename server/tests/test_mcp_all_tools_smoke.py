@@ -102,12 +102,20 @@ def _seed_ticket(client: TestClient) -> tuple[str, str]:
 
 
 def _args_for(
-    tool: str, ticket_id: str, external_id: str, run_id: str, memory_id: str, stage_key: str
+    tool: str,
+    ticket_id: str,
+    external_id: str,
+    run_id: str,
+    memory_id: str,
+    stage_key: str,
+    prereq_id: str,
 ) -> dict | None:
     """Minimal well-formed arguments per tool, mirroring each schema's `required`."""
     ws = "loregarden"
     table: dict[str, dict] = {
         "loregarden_get_ticket": {"ticket_id": ticket_id},
+        "loregarden_link_dependency": {"ticket_id": ticket_id, "depends_on": prereq_id},
+        "loregarden_unlink_dependency": {"ticket_id": ticket_id, "depends_on": prereq_id},
         "loregarden_get_ticket_by_external": {"workspace_slug": ws, "external_id": external_id},
         "loregarden_list_tickets": {"workspace_slug": ws},
         "loregarden_memory_status": {"workspace_slug": ws},
@@ -220,8 +228,14 @@ def test_every_advertised_tool_is_callable(client: TestClient):
             memory_id = ""
     assert memory_id, f"could not resolve a memory node id from upsert_memory: {mem}"
 
+    # A distinct ticket to depend on (self-links are rejected).
+    all_tickets = client.get("/api/tickets").json()
+    prereq_id = next((t["id"] for t in all_tickets if t["id"] != ticket_id), ticket_id)
+
     ordered = [
         "loregarden_get_ticket",
+        "loregarden_link_dependency",
+        "loregarden_unlink_dependency",
         "loregarden_get_ticket_by_external",
         "loregarden_list_tickets",
         "loregarden_memory_status",
@@ -254,7 +268,7 @@ def test_every_advertised_tool_is_callable(client: TestClient):
     for tool in ordered:
         if tool not in advertised:
             continue
-        args = _args_for(tool, ticket_id, external_id, run_id, memory_id, stage_key)
+        args = _args_for(tool, ticket_id, external_id, run_id, memory_id, stage_key, prereq_id)
         if args is None:
             failures.append(f"{tool}: no args defined in the smoke table")
             continue
