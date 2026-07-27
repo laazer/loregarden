@@ -1,0 +1,31 @@
+handoff:
+  schema_version: '1.0'
+  ticket_id: 239-integration-review
+  from_agent: backend_implementer
+  to_agent: verifier
+  validated_at: '2026-07-27T12:29:51Z'
+  required_items_met: 4
+  total_required_items: 4
+  checklist:
+  - item_key: acceptance_criteria_addressed
+    item: All acceptance criteria addressed
+    required: true
+    status: complete
+    evidence: 'R1-AC1..AC4: dead grouped["runs"] branch deleted from _apply_log_artifacts in server/loregarden/api/tickets.py
+      (lines ~130-142); R2-AC1..AC3: 5 vacuous tests removed/merged, 3 kept tests adapted, in server/tests/test_live_logs.py'
+  - item_key: test_suite_complete
+    item: Test suite passes
+    required: true
+    status: complete
+    evidence: pytest server/tests/test_live_logs.py -q -> 7 passed, 0 failed
+  - item_key: full_suite_green
+    item: Full backend suite green
+    required: true
+    status: complete
+    evidence: pytest server/tests/ -q -> 1509 passed, 34 skipped, 0 failed, 630.19s
+  - item_key: no_dead_references
+    item: No remaining references to removed interface
+    required: true
+    status: complete
+    evidence: grep confirms zero readers of grouped["runs"] in server/ or client/src/ beyond unrelated
+      queue_management.py list literal and runs.py router prefix

@@ -127,20 +127,6 @@ def _apply_log_artifacts(
     ).all()
     active_run = running_runs[0] if running_runs else None
 
-    if len(running_runs) > 1:
-        runs: dict[str, dict] = {}
-        for run in running_runs:
-            art = next((a for a in log_artifacts if a.run_id == run.id), None)
-            if art:
-                body = json.loads(art.content_json or "{}")
-                runs[run.id] = {
-                    "logs": body.get("lines", []),
-                    "live": body.get("live") or "Agent running…",
-                }
-            else:
-                runs[run.id] = {"logs": [], "live": "Agent running…"}
-        grouped["runs"] = runs
-
     if not active_run:
         active_run = session.exec(
             select(AgentRun)

@@ -1,12 +1,18 @@
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { api } from "../api/client";
 import type { RuntimeOptions, TicketDetail, TriageMessage } from "../api/client";
+import type { LedgerAttempt } from "../api/types";
 
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { formatLogExcerpt } from "../utils/logExcerpt";
+import { ACTIVE_LEDGER_STATUSES } from "../lib/ledgerStatus";
 import { TRIAGE_AGENT_NAME } from "../lib/triageAgent";
 import { ChatMessageBubble } from "./chat/ChatMessageBubble";
+import { LaneLogView } from "./logs/LaneLogView";
 import { LiveLogLine, LogLineRow } from "./logs/LogLineRow";
+import { RunningLaneTabs } from "./logs/RunningLaneTabs";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
 import { TriageComposer } from "./TriageComposer";
 import "./LogsPanel.css";
@@ -25,10 +31,47 @@ export function LogsPanel({
   const logScrollRef = useRef<HTMLDivElement | null>(null);
   const [showTriageReplies, setShowTriageReplies] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
   const { triage, pending } = useTriageSession(ticket.id);
 
   const resolveApproval = useApprovalResolution(ticket.id);
+
+  const ledger = useQuery({
+    queryKey: ["ticket-ledger", ticket.id],
+    queryFn: () => api.ticketLedger(ticket.id),
+    refetchInterval: 2000,
+  });
+
+  const runningLanes = useMemo<LedgerAttempt[]>(() => {
+    if (!ledger.data) return [];
+    const lanes: LedgerAttempt[] = [];
+    for (const visit of ledger.data.visits) {
+      if (!visit.is_parallel) continue;
+      for (const attempt of visit.attempts) {
+        if (ACTIVE_LEDGER_STATUSES.has(attempt.status)) lanes.push(attempt);
+      }
+    }
+    return lanes;
+  }, [ledger.data]);
+
+  // Render-time (not effect) selection adjustment: a dropped-out lane falls
+  // back synchronously, in the same render, to the next remaining lane — a
+  // one-frame-lagging effect would flash a blank pane.
+  const laneIds = runningLanes.map((lane) => lane.run_id).join(", ");
+  const laneIdsRef = useRef<string | undefined>(undefined);
+  let effectiveSelectedRunId = selectedRunId;
+  if (laneIdsRef.current !== laneIds) {
+    laneIdsRef.current = laneIds;
+    const stillPresent =
+      selectedRunId !== null && runningLanes.some((lane) => lane.run_id === selectedRunId);
+    if (!stillPresent) {
+      effectiveSelectedRunId = runningLanes[0]?.run_id ?? null;
+    }
+    if (effectiveSelectedRunId !== selectedRunId) {
+      setSelectedRunId(effectiveSelectedRunId);
+    }
+  }
 
   const lines = ticket.artifacts?.logs ?? [];
   const live = ticket.artifacts?.live ?? null;
@@ -49,23 +92,35 @@ export function LogsPanel({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 340 }}>
-      <div ref={logScrollRef} style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
-        <div className="log-feed">
-          {lines.length === 0 && !live ? (
-            <div className="log-feed-empty">
-              No log lines yet. Start a stage run or ask {TRIAGE_AGENT_NAME} about failures below.
-            </div>
-          ) : (
-            <>
-              {lines.map((line, index) => (
-                <LogLineRow key={`${line.time}-${line.tag}-${index}`} line={line} />
-              ))}
-              {live ? <LiveLogLine text={live} /> : null}
-            </>
-          )}
-        </div>
+      {runningLanes.length > 0 ? (
+        <>
+          <RunningLaneTabs
+            lanes={runningLanes}
+            selectedRunId={effectiveSelectedRunId}
+            onSelect={setSelectedRunId}
+          />
+          <div role="tabpanel" style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
+            {effectiveSelectedRunId && <LaneLogView key={effectiveSelectedRunId} runId={effectiveSelectedRunId} />}
+          </div>
+        </>
+      ) : (
+        <div ref={logScrollRef} style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+          <div className="log-feed">
+            {lines.length === 0 && !live ? (
+              <div className="log-feed-empty">
+                No log lines yet. Start a stage run or ask {TRIAGE_AGENT_NAME} about failures below.
+              </div>
+            ) : (
+              <>
+                {lines.map((line, index) => (
+                  <LogLineRow key={`${line.time}-${line.tag}-${index}`} line={line} />
+                ))}
+                {live ? <LiveLogLine text={live} /> : null}
+              </>
+            )}
+          </div>
 
-        {recentReplies.length > 0 && (
+          {recentReplies.length > 0 && (
           <section style={{ padding: "0 16px 16px" }}>
             <button
               type="button"
@@ -87,8 +142,9 @@ export function LogsPanel({
                 <ChatMessageBubble key={msg.id} message={msg} assistantLabel={TRIAGE_AGENT_NAME} />
               ))}
           </section>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       <PendingApprovalsSection
         approvals={pending}

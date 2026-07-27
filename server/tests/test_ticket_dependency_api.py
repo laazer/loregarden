@@ -56,7 +56,10 @@ def test_add_and_remove_dependency_via_api(client, db_session):
 def test_api_rejects_dependency_cycle_with_409(client, db_session):
     a = _feature(db_session, "Cycle A")
     b = _feature(db_session, "Cycle B")
-    assert client.post(f"/api/tickets/{a.id}/dependencies", json={"depends_on": b.id}).status_code == 200
+    assert (
+        client.post(f"/api/tickets/{a.id}/dependencies", json={"depends_on": b.id}).status_code
+        == 200
+    )
     conflict = client.post(f"/api/tickets/{b.id}/dependencies", json={"depends_on": a.id})
     assert conflict.status_code == 409
 

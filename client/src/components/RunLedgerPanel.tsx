@@ -3,8 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { LedgerVisit } from "../api/types";
 import { duration } from "../lib/duration";
-
-const ACTIVE = new Set(["running", "queued", "awaiting_permission"]);
+import { ACTIVE_LEDGER_STATUSES } from "../lib/ledgerStatus";
 
 function VisitRow({
   visit,
@@ -34,7 +33,7 @@ function VisitRow({
             marginLeft: "auto",
             fontFamily: "var(--mono)",
             fontSize: 10.5,
-            color: ACTIVE.has(visit.status) ? "var(--tx)" : "var(--txl)",
+            color: ACTIVE_LEDGER_STATUSES.has(visit.status) ? "var(--tx)" : "var(--txl)",
           }}
         >
           {visit.status}

@@ -175,6 +175,7 @@ class EventType(str, Enum):
     ARTIFACT_CREATED = "ArtifactCreated"
     APPROVAL_REQUESTED = "ApprovalRequested"
     APPROVAL_RESOLVED = "ApprovalResolved"
+    GATE_EVALUATED = "GateEvaluated"
 
 
 class QueueOperationType(str, Enum):

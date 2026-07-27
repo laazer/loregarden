@@ -55,6 +55,15 @@ interface UiState {
    * routes and cannot see a page's local state.
    */
   branchTriageBranch: string;
+  /**
+   * Per-run auto-follow-to-bottom choice for LogsPanel's running-lane views.
+   *
+   * Not persisted: run ids are meaningless across sessions/reloads of a
+   * finished run, so persisting this map would leak stale, unbounded entries
+   * (same rationale as branchTriageBranch above).
+   */
+  autoFollowByRunId: Record<string, boolean>;
+  setAutoFollow: (runId: string, value: boolean) => void;
   toggleStateFilter: (state: TicketState) => void;
   clearStateFilters: () => void;
   toggleTypeFilter: (type: WorkItemType) => void;
@@ -131,6 +140,9 @@ export const useUiStore = create<UiState>()(
       // visit, and restoring a stale one would bind the dock to a
       // conversation the screen is not showing.
       branchTriageBranch: "",
+      autoFollowByRunId: {},
+      setAutoFollow: (runId, value) =>
+        set((state) => ({ autoFollowByRunId: { ...state.autoFollowByRunId, [runId]: value } })),
       toggleStateFilter: (state) => {
         const current = get().stateFilters;
         set({

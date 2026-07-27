@@ -87,5 +87,56 @@ def test_run_log_without_artifact_returns_empty_lines(client: TestClient, db_ses
     assert body["run_code"] == "run_modal1"
 
 
+def test_run_log_isolates_each_concurrent_running_run(client: TestClient, db_session: Session):
+    """Two RUNNING runs on the same ticket must never see each other's log body."""
+    ticket = db_session.exec(select(Ticket)).first()
+    assert ticket
+
+    run_a = AgentRun(
+        run_code="run_a",
+        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id,
+        agent_id="planner",
+        stage_key="plan",
+        status=RunStatus.RUNNING,
+        command="claude -p 'plan A'",
+    )
+    run_b = AgentRun(
+        run_code="run_b",
+        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id,
+        agent_id="planner",
+        stage_key="plan",
+        status=RunStatus.RUNNING,
+        command="claude -p 'plan B'",
+    )
+    db_session.add(run_a)
+    db_session.add(run_b)
+    db_session.commit()
+    db_session.refresh(run_a)
+    db_session.refresh(run_b)
+
+    _seed_log(
+        db_session,
+        run_a,
+        [{"time": "20:57:14", "tag": "OUT", "text": "lane A output"}],
+        live="A working",
+    )
+    _seed_log(
+        db_session,
+        run_b,
+        [{"time": "20:58:00", "tag": "OUT", "text": "lane B output"}],
+        live="B working",
+    )
+
+    body_a = client.get(f"/api/runs/{run_a.id}/log").json()
+    body_b = client.get(f"/api/runs/{run_b.id}/log").json()
+
+    assert [line["text"] for line in body_a["lines"]] == ["lane A output"]
+    assert body_a["live"] == "A working"
+    assert [line["text"] for line in body_b["lines"]] == ["lane B output"]
+    assert body_b["live"] == "B working"
+
+
 def test_run_log_missing_run_returns_404(client: TestClient):
     assert client.get("/api/runs/does-not-exist/log").status_code == 404

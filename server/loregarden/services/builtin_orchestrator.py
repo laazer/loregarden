@@ -27,7 +27,12 @@ from loregarden.models.domain import (
 )
 from loregarden.services.artifact_service import looks_like_test_output
 from loregarden.services.evidence import has_evidence, resolve_head_sha
-from loregarden.services.gate_runner import run_gate_autofix, run_transition_gates, strip_ansi
+from loregarden.services.gate_observability import (
+    clean_gate_detail,
+    record_gate_evaluation,
+    run_gates_detail,
+)
+from loregarden.services.gate_runner import run_gate_autofix, run_transition_gates
 from loregarden.services.git_commit_push_service import commit_paths
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -449,33 +454,6 @@ class BuiltinOrchestrator:
 
         return False
 
-    def _run_gates(
-        self,
-        ticket: Ticket,
-        profile: OrchestrationProfile,
-        workspace: Workspace,
-        stage_def: WorkflowStageDef,
-        from_stage: str,
-        to_stage: str,
-    ) -> str:
-        """Run the transition gates once. Returns "" if they pass, else a cleaned,
-        human-readable failure detail. Pure — no ticket/stage mutation, so it can
-        be re-run after an auto-fix pass to check whether the fix cleared it."""
-        result = run_transition_gates(
-            profile,
-            workspace,
-            ticket,
-            from_stage=from_stage,
-            to_stage=to_stage,
-            stage_def=stage_def,
-        )
-        if result.ok:
-            return ""
-        detail = result.message or result.stderr or "Transition gate failed"
-        if result.command:
-            detail = f"{detail} (command: {result.command})"
-        return strip_ansi(detail)
-
     def _missing_evidence_detail(
         self,
         ticket: Ticket,
@@ -546,8 +524,32 @@ class BuiltinOrchestrator:
         # Checked independently of profile.gates.enabled — a stage only opts in by
         # declaring required_evidence, so nothing that has not asked is affected.
         detail = self._missing_evidence_detail(ticket, stage_def, stages)
-        if not detail and profile.gates.enabled:
-            detail = self._run_gates(ticket, profile, workspace, stage_def, from_stage, to_stage)
+        if not detail:
+            # Evaluate the transition gate on *every* advance — including when
+            # gates are disabled or nothing runnable is configured — and record
+            # the outcome, so a gate that ran-and-passed is auditable apart from
+            # one that never ran (ticket 88). run_transition_gates short-circuits
+            # cheaply for the disabled/skipped cases; only a real "failed" sets
+            # detail and pulls in the recovery path below.
+            result = run_transition_gates(
+                profile,
+                workspace,
+                ticket,
+                from_stage=from_stage,
+                to_stage=to_stage,
+                stage_def=stage_def,
+            )
+            record_gate_evaluation(
+                self.session,
+                self.callbacks,
+                ticket,
+                orch_run,
+                result,
+                from_stage=from_stage,
+                to_stage=to_stage,
+            )
+            if not result.ok:
+                detail = clean_gate_detail(result)
         if not detail:
             return _GateDecision.PASS
 
@@ -563,7 +565,7 @@ class BuiltinOrchestrator:
                 stage_def=stage_def,
             )
             if autofix.ran:
-                residual = self._run_gates(
+                residual = run_gates_detail(
                     ticket, profile, workspace, stage_def, from_stage, to_stage
                 )
                 if not residual:
