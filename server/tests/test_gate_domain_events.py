@@ -202,6 +202,66 @@ def test_zero_commands_configured_emits_skipped_not_passed(
     assert payload["outcome"] != "passed"
 
 
+def test_disabled_outcome_context_artifact_is_distinguishable_from_skipped_too(
+    db_session: Session, monkeypatch, tmp_path
+):
+    """AC only names 'skipped' vs 'passed' explicitly, but 'disabled' must be
+    its own third bucket too — a workspace with gates turned off entirely is a
+    different fact from one that left them on but configured nothing to run,
+    and an operator scanning the context tab needs to tell those apart.
+    """
+    disabled_repo = tmp_path / "disabled"
+    disabled_repo.mkdir()
+    skipped_repo = tmp_path / "skipped2"
+    skipped_repo.mkdir()
+
+    disabled_ticket, disabled_profile = _setup_ticket_at_test_break(
+        db_session, disabled_repo, "gate-ui-disabled"
+    )
+    disabled_profile.gates.enabled = False
+    _run_stage(db_session, monkeypatch, disabled_ticket, disabled_profile)
+
+    skipped_ticket, skipped_profile = _setup_ticket_at_test_break(
+        db_session, skipped_repo, "gate-ui-skipped2"
+    )
+    _run_stage(db_session, monkeypatch, skipped_ticket, skipped_profile)
+
+    disabled_titles = [a.title for a in _context_artifacts(db_session, disabled_ticket)]
+    skipped_titles = [a.title for a in _context_artifacts(db_session, skipped_ticket)]
+
+    assert any("disabled" in t.lower() for t in disabled_titles)
+    assert not any("skipped" in t.lower() for t in disabled_titles)
+    assert any("skipped" in t.lower() for t in skipped_titles)
+    assert not any("disabled" in t.lower() for t in skipped_titles)
+
+
+def test_repeated_gate_failures_across_bounded_retries_each_emit_a_distinct_event(
+    db_session: Session, monkeypatch, tmp_path
+):
+    """Order-dependency / statefulness check: a gate that fails on every one of
+    the bounded autofix-agent retries must leave one GATE_EVALUATED row per
+    evaluation, not a single upserted-in-place row. Collapsing these would make
+    'failed once and got fixed' indistinguishable from 'has been failing on
+    every retry and still is' — exactly the kind of gap this ticket exists to
+    close, just one level deeper (across time, not just across outcome kinds).
+    """
+    ticket, profile = _setup_ticket_at_test_break(db_session, tmp_path, "gate-event-retries")
+    profile.gates.commands = ["false"]
+    profile.gates.autofix_agent_fallback = True
+    profile.gates.autofix_max_agent_attempts = 2
+
+    # Round 1: fails, attempts=0 < max=2 -> rerouted back to test_break.
+    _run_stage(db_session, monkeypatch, ticket, profile)
+    # Round 2: fails again, attempts=1 < max=2 -> rerouted again.
+    _run_stage(db_session, monkeypatch, ticket, profile)
+    # Round 3: fails again, attempts=2 == max=2 -> exhausted, blocks.
+    _run_stage(db_session, monkeypatch, ticket, profile)
+
+    events = _gate_events(db_session, ticket)
+    assert len(events) == 3
+    assert all(json.loads(e.payload_json)["outcome"] == "failed" for e in events)
+
+
 def test_failing_gate_emits_failed_event_with_preserved_message(
     db_session: Session, monkeypatch, tmp_path
 ):

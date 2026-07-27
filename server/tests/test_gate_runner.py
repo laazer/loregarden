@@ -391,3 +391,37 @@ def test_gates_can_run_true_when_transition_script_resolves_with_no_commands(tmp
     ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=True))
     assert gates_can_run(profile, ws) is True
+
+
+# --- Adversarial: blank/whitespace-only command entries ---
+#
+# `gates.commands` is a bare list[str]; nothing stops a Studio user (or a
+# hand-edited profile YAML) from saving ["", "  "]. `bool(commands)` alone
+# would call that "configured" when nothing real would run, and the current
+# `_run_command` crashes outright on an empty command string:
+# `shlex.split("")` is `[]`, and `subprocess.run([])` raises an unhandled
+# IndexError before ever reaching the FileNotFoundError/TimeoutExpired
+# handling — a blank command entry must not take down the whole evaluation.
+
+
+def test_run_transition_gates_blank_and_whitespace_only_commands_do_not_crash(tmp_path):
+    ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
+    ticket = Ticket(id="tid", external_id="M88-09", workspace_id="ws", title="Test")
+    profile = OrchestrationProfile(
+        slug="demo", gates=GatesConfig(enabled=True, commands=["", "   "])
+    )
+
+    result = run_transition_gates(
+        profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+    )
+
+    assert result.ok
+    assert result.outcome == "skipped"
+
+
+def test_gates_can_run_false_when_only_blank_commands_configured(tmp_path):
+    ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
+    profile = OrchestrationProfile(
+        slug="demo", gates=GatesConfig(enabled=True, commands=["", "   "])
+    )
+    assert gates_can_run(profile, ws) is False

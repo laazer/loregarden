@@ -1,37 +1,28 @@
 handoff:
   schema_version: '1.0'
   ticket_id: 88-gate-outcomes-are-indistinguishable-from-gate-sk
-  from_agent: test_designer
-  to_agent: test_breaker
-  validated_at: '2026-07-27T13:12:32Z'
-  required_items_met: 4
-  total_required_items: 4
+  from_agent: test_breaker
+  to_agent: backend_implementer
+  validated_at: '2026-07-27T13:16:31Z'
+  required_items_met: 3
+  total_required_items: 3
   checklist:
   - item_key: test_suite_complete
-    item: Test suite covers all acceptance criteria
+    item: Test suite covers acceptance criteria and edge cases
     required: true
     status: complete
-    evidence: server/tests/test_gate_runner.py (outcome+message+gates_can_run), server/tests/test_gate_domain_events.py
-      (GATE_EVALUATED event + context-artifact distinguishability, new file), server/tests/test_orchestration_profile_gates.py
-      (gates_enabled reflects runnability)
-  - item_key: tests_fail_red
-    item: New tests fail for the right reason against current code
+    evidence: server/tests/test_gate_runner.py, test_gate_domain_events.py, test_orchestration_profile_gates.py
+      — all red, pin outcome vocabulary (passed|skipped|disabled|failed), preserved messages, GATE_EVALUATED
+      event on every evaluation (incl. disabled/skipped/retries), gates_can_run, and 3-way UI distinguishability
+  - item_key: adversarial_tests_added
+    item: Adversarial/edge-case tests added beyond the happy path
     required: true
     status: complete
-    evidence: 'pytest run: test_gate_runner.py fails on ImportError for gates_can_run; test_gate_domain_events.py
-      5/6 fail on missing EventType.GATE_EVALUATED / no context artifact on pass/skip; test_orchestration_profile_gates.py
-      1 new test fails on gates_enabled True vs expected False. Client ArtifactView.gateOutcome.test.tsx
-      passes already (renderer is generic, no client change needed).'
-  - item_key: no_regressions
-    item: Existing gate tests still pass unmodified
+    evidence: Blank/whitespace-only gate command crash (real IndexError repro'd against current code),
+      gates_can_run false for whitespace-only commands, disabled-vs-skipped-vs-passed 3-way UI distinguishability,
+      and a 3-round bounded-retry test asserting distinct per-evaluation GATE_EVALUATED rows (no upsert-collapse)
+  - item_key: tests_deterministic
+    item: Tests are deterministic and reproducible
     required: true
     status: complete
-    evidence: 'test_transition_gate_reroute.py + test_gate_auto_advance.py: 11 passed, 1 warning'
-  - item_key: spec_gaps_reported
-    item: Spec gaps/ambiguities and design assumptions logged
-    required: true
-    status: complete
-    evidence: 'loregarden_append_checkpoint entry filed: outcome vocabulary, gates_can_run semantics,
-      GateEvaluated event payload shape, and UI artifact-title convention are test-designer''s own reasonable
-      choices (no spec/plan stage ran); agentless-stage gate-skip fail-open (builtin_orchestrator.py:110-115)
-      intentionally left untested, flagged as follow-up'
+    evidence: No randomness/timing dependence; all new tests use tmp_path repos and fixed commands (true/false/echo)
