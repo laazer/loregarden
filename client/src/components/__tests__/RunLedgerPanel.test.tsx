@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import { api } from "../../api/client";
 import type { LedgerVisit } from "../../api/types";
@@ -130,4 +130,70 @@ it("reports a failure to load rather than showing an empty ledger", async () => 
 
   renderPanel();
   expect(await screen.findByText(/could not load this ticket/i)).toBeInTheDocument();
+});
+
+// AC-2.2 (regression guard): the pre-existing single-attempt, non-parallel
+// row must render exactly as it did before per-lane rendering existed — a
+// flipped `visit.is_parallel &&` conditional would silently relabel every
+// ordinary run without any test above catching it.
+it("does not label a single-attempt, non-parallel visit with a lane or attempt count", async () => {
+  mockApi.ticketLedger.mockResolvedValue({
+    visits: [visit()],
+    total_runs: 1,
+    reworked_stages: [],
+    total_seconds: 30,
+  });
+
+  renderPanel();
+  await screen.findByText("implement");
+
+  expect(screen.queryByText(/lane/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/attempt/i)).not.toBeInTheDocument();
+});
+
+// AC-2.1: each sub-row must be wired to its own attempt's run_id, not the
+// visit's, and not the first attempt in the list regardless of which was
+// clicked.
+it("invokes onOpenRunLog with the clicked attempt's own run_id", async () => {
+  const onOpenRunLog = jest.fn();
+  mockApi.ticketLedger.mockResolvedValue({
+    visits: [
+      visit({
+        is_parallel: true,
+        attempts: [
+          attempt({ run_id: "p1", agent_id: "planner" }),
+          attempt({ run_id: "p2", agent_id: "gatekeeper" }),
+        ],
+      }),
+    ],
+    total_runs: 2,
+    reworked_stages: [],
+    total_seconds: 60,
+  });
+
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <RunLedgerPanel ticketId="t1" onOpenRunLog={onOpenRunLog} />
+    </QueryClientProvider>,
+  );
+
+  fireEvent.click(await screen.findByText(/gatekeeper/));
+
+  expect(onOpenRunLog).toHaveBeenCalledWith("p2");
+  expect(onOpenRunLog).not.toHaveBeenCalledWith("p1");
+});
+
+it("disables attempt buttons and does not throw on click when onOpenRunLog is not provided", async () => {
+  mockApi.ticketLedger.mockResolvedValue({
+    visits: [visit()],
+    total_runs: 1,
+    reworked_stages: [],
+    total_seconds: 30,
+  });
+
+  renderPanel();
+
+  const button = await screen.findByRole("button", { name: /backend_implementer/ });
+  expect(button).toBeDisabled();
+  expect(() => fireEvent.click(button)).not.toThrow();
 });
