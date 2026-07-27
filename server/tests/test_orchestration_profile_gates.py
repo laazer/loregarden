@@ -159,3 +159,67 @@ def test_update_workspace_gates_endpoint_unknown_workspace(client: TestClient):
         json={"enabled": True, "commands": [], "transition_script": ""},
     )
     assert res.status_code == 404
+
+
+# --- gates_enabled reflects whether gates can actually run (ticket 88) ---
+#
+# api/orchestration.py used to report gates_enabled straight from the raw
+# config flag: gates.enabled=true + zero gates resolve = the Studio editor
+# shows green for a config that gates nothing.
+
+
+def test_gates_enabled_false_when_config_on_but_nothing_would_run(
+    client: TestClient, db_session: Session, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+    ws = Workspace(slug="gates-empty-test", name="Gates Empty Test", repo_path=".")
+    db_session.add(ws)
+    db_session.commit()
+
+    res = client.put(
+        "/api/orchestration/workspaces/gates-empty-test/profile/gates",
+        json={"enabled": True, "commands": [], "transition_script": ""},
+    )
+    assert res.status_code == 200
+    assert res.json()["gates_enabled"] is False
+
+    followup = client.get("/api/orchestration/workspaces/gates-empty-test/profile")
+    assert followup.json()["gates_enabled"] is False
+
+
+def test_gates_enabled_true_when_transition_script_resolves_with_no_commands(
+    client: TestClient, db_session: Session, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+    script_dir = tmp_path / "ci" / "scripts"
+    script_dir.mkdir(parents=True)
+    (script_dir / "run_workflow_transition_gates.py").write_text(
+        "import sys\nsys.exit(0)\n", encoding="utf-8"
+    )
+
+    ws = Workspace(slug="gates-script-test", name="Gates Script Test", repo_path=".")
+    db_session.add(ws)
+    db_session.commit()
+
+    res = client.put(
+        "/api/orchestration/workspaces/gates-script-test/profile/gates",
+        json={"enabled": True, "commands": [], "transition_script": ""},
+    )
+    assert res.status_code == 200
+    assert res.json()["gates_enabled"] is True
+
+
+def test_gates_enabled_false_when_config_off_even_with_commands(
+    client: TestClient, db_session: Session, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "repo_root", tmp_path)
+    ws = Workspace(slug="gates-disabled-test", name="Gates Disabled Test", repo_path=".")
+    db_session.add(ws)
+    db_session.commit()
+
+    res = client.put(
+        "/api/orchestration/workspaces/gates-disabled-test/profile/gates",
+        json={"enabled": False, "commands": ["lefthook run pre-commit"], "transition_script": ""},
+    )
+    assert res.status_code == 200
+    assert res.json()["gates_enabled"] is False
