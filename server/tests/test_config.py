@@ -51,3 +51,67 @@ def test_prime_claude_oauth_token_env_noop_when_file_absent(tmp_path, monkeypatc
     config._prime_claude_oauth_token_env()
 
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in config.os.environ
+
+
+def test_prime_cursor_api_key_env_loads_cached_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("CURSOR_API_KEY", raising=False)
+    token_dir = tmp_path / "data"
+    token_dir.mkdir()
+    (token_dir / ".cursor-api-key").write_text("cursor_test_key", encoding="utf-8")
+    monkeypatch.setattr(
+        "loregarden.services.cursor_cli_auth.read_cursor_ide_access_token",
+        lambda: None,
+    )
+    from loregarden.services.cursor_cli_auth import prime_cursor_api_key_env
+
+    assert prime_cursor_api_key_env(repo_root=tmp_path) == "file"
+    assert config.os.environ["CURSOR_API_KEY"] == "cursor_test_key"
+
+
+def test_prime_cursor_api_key_env_falls_back_to_ide_token(tmp_path, monkeypatch):
+    monkeypatch.delenv("CURSOR_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "loregarden.services.cursor_cli_auth.read_cursor_ide_access_token",
+        lambda: "ide_session_token",
+    )
+    from loregarden.services.cursor_cli_auth import prime_cursor_api_key_env
+
+    assert prime_cursor_api_key_env(repo_root=tmp_path) == "ide"
+    assert config.os.environ["CURSOR_API_KEY"] == "ide_session_token"
+
+
+def test_prime_cursor_api_key_env_does_not_override_existing_env_var(tmp_path, monkeypatch):
+    monkeypatch.setenv("CURSOR_API_KEY", "already-set")
+    token_dir = tmp_path / "data"
+    token_dir.mkdir()
+    (token_dir / ".cursor-api-key").write_text("cached-key", encoding="utf-8")
+    from loregarden.services.cursor_cli_auth import prime_cursor_api_key_env
+
+    assert prime_cursor_api_key_env(repo_root=tmp_path) == "env"
+    assert config.os.environ["CURSOR_API_KEY"] == "already-set"
+
+
+def test_format_cli_auth_hint_for_cursor_headless():
+    from loregarden.services.cli_auth_errors import format_agent_unavailable
+
+    msg = format_agent_unavailable(
+        "Baxter",
+        RuntimeError(
+            "Authentication required. Please run 'agent login' first, or set CURSOR_API_KEY environment variable."
+        ),
+    )
+    assert "Cursor IDE login" in msg
+    assert "task cursor:setup-key" in msg
+    assert "cursor.com/dashboard/integrations" in msg
+    assert "LM Studio" in msg
+
+
+def test_format_cli_auth_hint_for_lmstudio_down():
+    from loregarden.services.cli_auth_errors import format_agent_unavailable
+
+    msg = format_agent_unavailable(
+        "Baxter",
+        RuntimeError("LM Studio has no loaded models; load a model or set lmstudio_model"),
+    )
+    assert "Start LM Studio" in msg
+    assert "127.0.0.1:1234" in msg

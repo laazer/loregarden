@@ -522,8 +522,8 @@ export function Dashboard() {
   };
 
   const runtimeOptions = useQuery({
-    queryKey: ["runtime-options"],
-    queryFn: api.runtimeOptions,
+    queryKey: ["runtime-options", workspace],
+    queryFn: () => api.runtimeOptions({ workspace }),
   });
 
   const setRuntime = useMutation({

@@ -232,6 +232,96 @@ def test_resolve_cursor_model_precedence(tmp_path, monkeypatch):
     )
 
 
+def test_cross_adapter_model_pins_are_dropped(tmp_path, monkeypatch):
+    """Workspace override to cursor must not forward a Claude agent's model pin."""
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "cursor")
+    monkeypatch.setenv("LOREGARDEN_ALLOW_PERMISSION_BYPASS", "1")
+    monkeypatch.setenv("LOREGARDEN_CURSOR_BIN", "cursor-agent")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("plan", encoding="utf-8")
+    workspace_root = tmp_path / "repo"
+    workspace_root.mkdir()
+    ws = Workspace(slug="test", name="Test", cursor_model="workspace-cursor")
+
+    inv = resolve_cli_invocation(
+        agent_id="planner",
+        adapter="claude",
+        prompt="plan",
+        prompt_file=prompt_file,
+        skill_name="plan",
+        workspace_root=workspace_root,
+        workspace=ws,
+        agent_model="opus",
+        stage_model="sonnet",
+    )
+    assert inv.adapter == "cursor"
+    assert inv.argv[inv.argv.index("--model") + 1] == "workspace-cursor"
+
+
+def test_resolve_lmstudio_model_precedence(tmp_path, monkeypatch):
+    """LM Studio shares the same pin precedence as claude/cursor."""
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "lmstudio")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("plan", encoding="utf-8")
+    workspace_root = tmp_path / "repo"
+    workspace_root.mkdir()
+    ws = Workspace(
+        slug="test",
+        name="Test",
+        lmstudio_base_url="http://127.0.0.1:1234/v1",
+        lmstudio_model="workspace-local",
+    )
+
+    def model_for(**overrides):
+        inv = resolve_cli_invocation(
+            agent_id="planner",
+            adapter="lmstudio",
+            prompt="plan",
+            prompt_file=prompt_file,
+            skill_name="plan",
+            workspace_root=workspace_root,
+            workspace=ws,
+            **overrides,
+        )
+        return inv.argv[inv.argv.index("--model") + 1]
+
+    assert model_for() == "workspace-local"
+    assert model_for(agent_model="agent-local") == "agent-local"
+    assert model_for(agent_model="agent-local", stage_model="stage-local") == "stage-local"
+    assert (
+        model_for(
+            agent_model="agent-local",
+            stage_model="stage-local",
+            ticket_lmstudio_model="ticket-local",
+        )
+        == "ticket-local"
+    )
+
+
+def test_build_triage_invocation_uses_shared_cursor_model(tmp_path, monkeypatch):
+    from loregarden.agents.cli_adapters import build_triage_invocation
+
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "cursor")
+    monkeypatch.setenv("LOREGARDEN_CURSOR_BIN", "cursor-agent")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("triage", encoding="utf-8")
+    workspace_root = tmp_path / "repo"
+    workspace_root.mkdir()
+    ws = Workspace(slug="test", name="Test", cursor_model="triage-cursor")
+
+    inv = build_triage_invocation(
+        agent_id="ticket_scoper",
+        adapter="claude",
+        prompt="triage",
+        prompt_file=prompt_file,
+        skill_name="",
+        workspace_root=workspace_root,
+        workspace=ws,
+    )
+    assert inv.adapter == "cursor"
+    assert inv.argv[inv.argv.index("--model") + 1] == "triage-cursor"
+
+
 def test_resolve_adapter_ticket_override(tmp_path, monkeypatch):
     # The `force_local_cli_adapter` autouse fixture sets LOREGARDEN_CLI_ADAPTER=local for
     # every test; clear it here since this test exercises the ticket-override tier, which

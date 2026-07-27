@@ -1,8 +1,14 @@
-"""Workspace CLI runtime settings — adapter and model selection."""
+"""Workspace CLI runtime settings — adapter and model selection.
+
+One precedence chain, one resolver. Surfaces (stage runs, triage, ticket studio,
+terminal handoff) all call ``resolve_model_for_adapter`` for whichever adapter
+``resolve_effective_adapter`` selected — they do not each invent their own.
+"""
 
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -17,7 +23,7 @@ from sqlmodel import Session
 
 CLI_ADAPTER_OPTIONS: list[dict[str, str]] = [
     {"id": "default", "label": "Workspace default"},
-    {"id": "local", "label": "Local runner (dev)"},
+    {"id": "local", "label": "Local stub (dev/tests)"},
     {"id": "claude", "label": "Claude Code"},
     {"id": "cursor", "label": "Cursor Agent"},
     {"id": "lmstudio", "label": "LM Studio"},
@@ -40,6 +46,9 @@ CURSOR_MODEL_OPTIONS: list[dict[str, str]] = [
 ]
 
 VALID_CLI_ADAPTERS = {opt["id"] for opt in CLI_ADAPTER_OPTIONS}
+
+# Adapters that take a ``--model`` / model-id pin. local/codex do not.
+MODEL_PIN_ADAPTERS = frozenset({"claude", "cursor", "lmstudio"})
 
 
 @dataclass(frozen=True)
@@ -69,8 +78,6 @@ def resolve_effective_adapter(
     workspace: Workspace | None,
     ticket_adapter: str = "default",
 ) -> str:
-    import os
-
     env_override = os.environ.get("LOREGARDEN_CLI_ADAPTER")
     if env_override:
         return env_override
@@ -85,6 +92,90 @@ def resolve_effective_adapter(
     return agent_adapter or settings.cli_adapter
 
 
+def _first_set(*values: str) -> str:
+    for value in values:
+        if value:
+            return value
+    return ""
+
+
+def adapter_model_pins_apply(*, agent_adapter: str, selected_adapter: str) -> bool:
+    """Whether agent/stage model pins belong to the selected provider.
+
+    Those pins are authored against the agent's declared adapter (Claude aliases
+    vs Cursor ids vs an LM Studio load name). When workspace/ticket/env overrides
+    the provider, forwarding them would send the wrong namespace to the CLI.
+    """
+    declared = agent_adapter or ""
+    if not declared or declared == "default":
+        return True
+    return declared == selected_adapter
+
+
+def ticket_model_for_adapter(
+    adapter: str,
+    *,
+    claude_model: str = "",
+    cursor_model: str = "",
+    lmstudio_model: str = "",
+) -> str:
+    """Pick the ticket-runtime model field that matches the selected adapter."""
+    if adapter == "claude":
+        return claude_model
+    if adapter == "cursor":
+        return cursor_model
+    if adapter == "lmstudio":
+        return lmstudio_model
+    return ""
+
+
+def resolve_model_for_adapter(
+    adapter: str,
+    workspace: Workspace | None,
+    *,
+    ticket_model: str = "",
+    stage_model: str = "",
+    agent_model: str = "",
+) -> str:
+    """Resolve the model id for one concrete adapter.
+
+    Precedence (shared by every surface): env → ticket → stage → agent →
+    workspace → global settings. Callers must only pass stage/agent pins that
+    belong to this adapter (see ``adapter_model_pins_apply``).
+    """
+    if adapter not in MODEL_PIN_ADAPTERS:
+        return ""
+
+    ws = workspace_cli_settings(workspace)
+    if adapter == "claude":
+        return _first_set(
+            os.environ.get("LOREGARDEN_CLAUDE_MODEL", ""),
+            ticket_model,
+            stage_model,
+            agent_model,
+            ws.claude_model,
+            settings.claude_model,
+        )
+    if adapter == "cursor":
+        return _first_set(
+            os.environ.get("LOREGARDEN_CURSOR_MODEL", ""),
+            ticket_model,
+            stage_model,
+            agent_model,
+            ws.cursor_model,
+            settings.cursor_model,
+        )
+    # lmstudio
+    return _first_set(
+        os.environ.get("LOREGARDEN_LMSTUDIO_MODEL", ""),
+        ticket_model,
+        stage_model,
+        agent_model,
+        ws.lmstudio_model,
+        settings.lmstudio_model,
+    )
+
+
 def resolve_claude_model(
     workspace: Workspace | None,
     *,
@@ -92,19 +183,13 @@ def resolve_claude_model(
     stage_model: str = "",
     agent_model: str = "",
 ) -> str:
-    import os
-
-    env_model = os.environ.get("LOREGARDEN_CLAUDE_MODEL")
-    if env_model:
-        return env_model
-    if ticket_model:
-        return ticket_model
-    if stage_model:
-        return stage_model
-    if agent_model:
-        return agent_model
-    ws = workspace_cli_settings(workspace)
-    return ws.claude_model or settings.claude_model
+    return resolve_model_for_adapter(
+        "claude",
+        workspace,
+        ticket_model=ticket_model,
+        stage_model=stage_model,
+        agent_model=agent_model,
+    )
 
 
 # Models too weak to reliably drive Loregarden MCP tool calls. run_43ea0c: a
@@ -134,24 +219,16 @@ def resolve_cursor_model(
     stage_model: str = "",
     agent_model: str = "",
 ) -> str:
-    import os
-
-    env_model = os.environ.get("LOREGARDEN_CURSOR_MODEL")
-    if env_model:
-        return env_model
-    if ticket_model:
-        return ticket_model
-    if stage_model:
-        return stage_model
-    if agent_model:
-        return agent_model
-    ws = workspace_cli_settings(workspace)
-    return ws.cursor_model or settings.cursor_model
+    return resolve_model_for_adapter(
+        "cursor",
+        workspace,
+        ticket_model=ticket_model,
+        stage_model=stage_model,
+        agent_model=agent_model,
+    )
 
 
 def resolve_lmstudio_base_url(workspace: Workspace | None) -> str:
-    import os
-
     env_url = os.environ.get("LOREGARDEN_LMSTUDIO_BASE_URL")
     if env_url:
         return env_url
@@ -159,14 +236,20 @@ def resolve_lmstudio_base_url(workspace: Workspace | None) -> str:
     return ws.lmstudio_base_url or settings.lmstudio_base_url
 
 
-def resolve_lmstudio_model(workspace: Workspace | None) -> str:
-    import os
-
-    env_model = os.environ.get("LOREGARDEN_LMSTUDIO_MODEL")
-    if env_model:
-        return env_model
-    ws = workspace_cli_settings(workspace)
-    return ws.lmstudio_model or settings.lmstudio_model
+def resolve_lmstudio_model(
+    workspace: Workspace | None,
+    *,
+    ticket_model: str = "",
+    stage_model: str = "",
+    agent_model: str = "",
+) -> str:
+    return resolve_model_for_adapter(
+        "lmstudio",
+        workspace,
+        ticket_model=ticket_model,
+        stage_model=stage_model,
+        agent_model=agent_model,
+    )
 
 
 RUNTIME_MODEL_FIELDS = ("claude_model", "cursor_model", "lmstudio_base_url", "lmstudio_model")
@@ -230,9 +313,12 @@ def set_ticket_orchestration_runtime(
     return get_ticket_orchestration_runtime(ticket)
 
 
-def runtime_options_payload() -> dict:
+def runtime_options_payload(*, lmstudio_base_url: str = "") -> dict:
+    from loregarden.services.lmstudio_discovery import lmstudio_model_options
+
     return {
         "cli_adapters": CLI_ADAPTER_OPTIONS,
         "claude_models": CLAUDE_MODEL_OPTIONS,
         "cursor_models": CURSOR_MODEL_OPTIONS,
+        "lmstudio_models": lmstudio_model_options(lmstudio_base_url),
     }

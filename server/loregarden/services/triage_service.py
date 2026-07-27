@@ -24,6 +24,7 @@ from loregarden.services.cli_agent_runner import (
     run_cli_agent_turn,
     stub_response,
 )
+from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.cli_settings import (
     VALID_CLI_ADAPTERS,
     apply_runtime_overrides,
@@ -166,7 +167,7 @@ def send_triage_message(session: Session, ticket: Ticket, content: str) -> dict:
     try:
         reply = invoke_triage_model(session, ticket, text)
     except Exception as exc:
-        reply = f"{TRIAGE_AGENT_NAME} unavailable: {exc}"
+        reply = format_agent_unavailable(TRIAGE_AGENT_NAME, exc)
 
     assistant_message = TriageMessage(ticket_id=ticket.id, role="assistant", content=reply)
     session.add(assistant_message)
@@ -190,7 +191,13 @@ def send_triage_message(session: Session, ticket: Ticket, content: str) -> dict:
     }
 
 
-def invoke_triage_model(session: Session, ticket: Ticket, latest_user_message: str) -> str:
+def invoke_triage_model(
+    session: Session,
+    ticket: Ticket,
+    latest_user_message: str,
+    *,
+    run_id: str = "",
+) -> str:
     stub = stub_response(TRIAGE_CLI_PROFILE)
     if stub is not None:
         return stub
@@ -201,10 +208,13 @@ def invoke_triage_model(session: Session, ticket: Ticket, latest_user_message: s
 
     history = list_triage_messages(session, ticket.id)
     prompt = build_triage_prompt(ticket, history, latest_user_message, session=session)
+    effective = apply_triage_runtime_overrides(workspace, ticket)
     return run_cli_agent_turn(
         TRIAGE_CLI_PROFILE,
-        workspace=apply_triage_runtime_overrides(workspace, ticket),
+        workspace=effective,
         prompt=prompt,
+        run_id=run_id,
+        workspace_slug=effective.slug or workspace.slug or "",
     )
 
 

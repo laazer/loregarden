@@ -36,7 +36,7 @@ export function runtimeSummaryLabel(
   const adapterId = runtime.cli_adapter || "default";
 
   if (adapterId === "default") return "Workspace default";
-  if (adapterId === "local") return "Local runner";
+  if (adapterId === "local") return "Local stub";
 
   if (adapterId === "claude") {
     const name = modelLabel(options.claude_models, runtime.claude_model ?? "");
@@ -128,13 +128,42 @@ export function WorkspaceRuntimeFields({
       </select>
     );
   } else if (adapter === "lmstudio") {
+    const lmOptions = options.lmstudio_models ?? [];
     modelStep = (
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {lmOptions.length > 1 ? (
+          <select
+            className="btn-secondary filter-select"
+            style={selectStyle}
+            value={
+              lmOptions.some((opt) => opt.id === (runtime.lmstudio_model ?? ""))
+                ? (runtime.lmstudio_model ?? "")
+                : ""
+            }
+            disabled={disabled}
+            onChange={(e) =>
+              onChange({
+                ...runtime,
+                lmstudio_model: e.target.value,
+              })
+            }
+          >
+            {lmOptions.map((opt) => (
+              <option key={opt.id || "auto"} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        ) : null}
         <input
           className="btn-secondary"
           style={{ ...selectStyle, boxSizing: "border-box" }}
           value={runtime.lmstudio_model ?? ""}
-          placeholder="Loaded model id"
+          placeholder={
+            lmOptions.length > 1
+              ? "Or type a model id"
+              : "Loaded model id (start LM Studio to discover)"
+          }
           disabled={disabled}
           onChange={(e) =>
             onChange({
@@ -170,7 +199,7 @@ export function WorkspaceRuntimeFields({
   } else if (adapter === "local") {
     modelStep = (
       <p className="modal-hint" style={{ margin: 0 }}>
-        Uses the built-in local test runner. No model pick needed.
+        Dev stub only — does not call a real model. Choose LM Studio for local LLMs.
       </p>
     );
   }

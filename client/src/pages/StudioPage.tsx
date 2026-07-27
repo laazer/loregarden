@@ -37,6 +37,25 @@ const ADAPTERS = [
 const LANGUAGE_OPTIONS = ["python", "typescript", "javascript", "go", "rust", "java", "sql", "markdown"];
 const SPECIALTY_OPTIONS = ["backend", "frontend", "testing", "planning", "research", "devops", "review"];
 
+/** Model dropdown options for the agent's declared adapter. */
+function modelOptionsForAdapter(
+  adapter: string,
+  options: {
+    claude_models?: { id: string; label: string }[];
+    cursor_models?: { id: string; label: string }[];
+    lmstudio_models?: { id: string; label: string }[];
+  } | undefined,
+) {
+  if (adapter === "cursor") return options?.cursor_models;
+  if (adapter === "claude") return options?.claude_models;
+  if (adapter === "lmstudio") {
+    const models = options?.lmstudio_models;
+    // Only the Auto placeholder → keep free-text (LM Studio offline).
+    return models && models.length > 1 ? models : undefined;
+  }
+  return undefined;
+}
+
 const EMPTY_AGENT = {
   slug: "",
   name: "",
@@ -126,7 +145,7 @@ export function StudioPage() {
   const workflows = useQuery({ queryKey: ["studio-workflows"], queryFn: api.studioWorkflows });
   const skills = useQuery({ queryKey: ["agent-skills"], queryFn: api.skills });
   const workspaces = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
-  const runtimeOptions = useQuery({ queryKey: ["runtime-options"], queryFn: api.runtimeOptions });
+  const runtimeOptions = useQuery({ queryKey: ["runtime-options"], queryFn: () => api.runtimeOptions() });
 
   // Inherit the app-wide active workspace so Ticket Studio (and its Smart import)
   // opens on the workspace the user is already working in, not the first in the list.
@@ -819,12 +838,7 @@ export function StudioPage() {
                       const value = isAgentReadOnly
                         ? selectedAgent?.default_model ?? ""
                         : agentDraft.default_model;
-                      const modelOptions =
-                        adapter === "cursor"
-                          ? runtimeOptions.data?.cursor_models
-                          : adapter === "claude"
-                            ? runtimeOptions.data?.claude_models
-                            : undefined;
+                      const modelOptions = modelOptionsForAdapter(adapter, runtimeOptions.data);
                       if (modelOptions) {
                         return (
                           <select
@@ -1548,12 +1562,10 @@ export function StudioPage() {
                               <div className="studio-stage-field-label">Model override</div>
                               {(() => {
                                 const stageAgent = agents.data?.find((a) => a.slug === stage.agent_id);
-                                const modelOptions =
-                                  stageAgent?.adapter === "cursor"
-                                    ? runtimeOptions.data?.cursor_models
-                                    : stageAgent?.adapter === "claude" || !stageAgent
-                                      ? runtimeOptions.data?.claude_models
-                                      : undefined;
+                                const modelOptions = modelOptionsForAdapter(
+                                  stageAgent?.adapter ?? "claude",
+                                  runtimeOptions.data,
+                                );
                                 if (modelOptions) {
                                   return (
                                     <select

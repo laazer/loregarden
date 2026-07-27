@@ -695,27 +695,9 @@ def _cursor_state_db() -> Path:
 
 
 def _read_cursor_access_token() -> str | None:
-    db_path = _cursor_state_db()
-    if not db_path.is_file():
-        return None
-    try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        try:
-            row = conn.execute(
-                "SELECT value FROM ItemTable WHERE key = ? LIMIT 1",
-                (CURSOR_ACCESS_KEY,),
-            ).fetchone()
-        finally:
-            conn.close()
-        if not row or not row[0]:
-            return None
-        raw = row[0]
-        if isinstance(raw, bytes):
-            return raw.decode("utf-8") or None
-        return str(raw) or None
-    except sqlite3.Error as exc:
-        logger.debug("cursor credential sqlite read failed: %s", exc)
-        return None
+    from loregarden.services.cursor_cli_auth import read_cursor_ide_access_token
+
+    return read_cursor_ide_access_token()
 
 
 def _cursor_connect_post(client: httpx.Client, url: str, token: str) -> httpx.Response:

@@ -21,10 +21,11 @@ from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.registry import get_agent
 from loregarden.db.session import engine
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, TriageMessage, Workspace
+from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.cli_output import extract_triage_reply
 from loregarden.services.cli_settings import (
-    resolve_claude_model,
     resolve_effective_adapter,
+    resolve_model_for_adapter,
 )
 from loregarden.services.run_concurrency import find_active_run
 from loregarden.services.run_service import fail_stale_handoff_runs
@@ -133,14 +134,14 @@ class TriageTurnExecutor:
         history = list_triage_messages(self.session, ticket.id)
         latest_user_message = history[-1].content if history and history[-1].role == "user" else ""
         try:
-            reply = invoke_triage_model(self.session, ticket, latest_user_message)
+            reply = invoke_triage_model(self.session, ticket, latest_user_message, run_id=run.id)
             self._finish(run, ticket, status=RunStatus.SUCCEEDED, reply=reply, stderr="")
         except Exception as exc:
             self._finish(
                 run,
                 ticket,
                 status=RunStatus.FAILED,
-                reply=f"{TRIAGE_AGENT_NAME} unavailable: {exc}",
+                reply=format_agent_unavailable(TRIAGE_AGENT_NAME, exc),
                 stderr=str(exc)[:4000],
             )
 
@@ -166,7 +167,7 @@ class TriageTurnExecutor:
 
         triage_claude_model = (
             os.environ.get("LOREGARDEN_TRIAGE_CLAUDE_MODEL", "").strip()
-            or resolve_claude_model(workspace)
+            or resolve_model_for_adapter("claude", workspace)
             or "haiku"
         )
 
@@ -247,7 +248,7 @@ def execute_triage_turn_background(run_id: str) -> None:
                             TriageMessage(
                                 ticket_id=ticket.id,
                                 role="assistant",
-                                content=f"{TRIAGE_AGENT_NAME} unavailable: {exc}",
+                                content=format_agent_unavailable(TRIAGE_AGENT_NAME, exc),
                                 run_id=run.id,
                             )
                         )

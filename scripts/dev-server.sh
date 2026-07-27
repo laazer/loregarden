@@ -32,6 +32,15 @@ CLAUDE_OAUTH_TOKEN_FILE="$ROOT/data/.claude-oauth-token"
 if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" && -s "$CLAUDE_OAUTH_TOKEN_FILE" ]]; then
   export CLAUDE_CODE_OAUTH_TOKEN="$(<"$CLAUDE_OAUTH_TOKEN_FILE")"
 fi
+
+# Cursor headless auth (Baxter / stage runs spawn `cursor-agent -p`):
+# Browser `agent login` is not enough for non-interactive print mode. Create a
+# User API key at https://cursor.com/dashboard/integrations, then either
+# `task cursor:setup-key` or export CURSOR_API_KEY before starting the server.
+CURSOR_API_KEY_FILE="$ROOT/data/.cursor-api-key"
+if [[ -z "${CURSOR_API_KEY:-}" && -s "$CURSOR_API_KEY_FILE" ]]; then
+  export CURSOR_API_KEY="$(<"$CURSOR_API_KEY_FILE")"
+fi
 #
 # iCloud + Obsidian memory (optional):
 #   LOREGARDEN_DATABASE_URL=sqlite:///$HOME/Library/Mobile Documents/com~apple~CloudDocs/Loregarden/loregarden.db

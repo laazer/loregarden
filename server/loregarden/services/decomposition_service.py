@@ -1,9 +1,17 @@
-"""Service for decomposing tickets into hierarchies using Claude API."""
+"""Hierarchy decomposition — prompt build + response parse.
+
+LLM turns go through the shared CLI seam (``run_cli_agent_turn`` /
+``resolve_model_for_adapter``), never a direct Anthropic SDK call. Callers that
+need a live model pass a ``generate`` callable that already resolved adapter +
+model the same way triage and ticket studio do.
+"""
+
+from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 
-import anthropic
 from loregarden.models.domain import WorkItemType
 from loregarden.models.domain.enums import VALID_HIERARCHY
 from loregarden.models.domain.schemas import HierarchyWorkItem
@@ -11,18 +19,19 @@ from loregarden.services.proposal_validator import ProposalValidationError, Prop
 
 logger = logging.getLogger(__name__)
 
+GenerateFn = Callable[[str], str]
+
 
 class DecompositionService:
-    """Generates hierarchical work item breakdowns using Claude."""
+    """Generates hierarchical work item breakdowns via an injected model turn."""
 
-    def __init__(self, api_key: str | None = None):
-        """Initialize Claude API client.
+    def __init__(self, generate: GenerateFn | None = None):
+        """``generate`` maps a prompt to raw model text (JSON hierarchy).
 
-        Args:
-            api_key: Anthropic API key. If not provided, uses ANTHROPIC_API_KEY env var.
+        Production wiring should be a closure over ``run_cli_agent_turn`` with the
+        workspace's effective adapter already applied — same path as ticket studio.
         """
-        self.client = anthropic.Anthropic(api_key=api_key)
-        self.model = "claude-3-5-sonnet-20241022"
+        self._generate = generate
 
     def decompose(self, ticket_content: dict) -> list[HierarchyWorkItem]:
         """Generate hierarchy proposal for a ticket.
@@ -35,53 +44,34 @@ class DecompositionService:
             Empty list if decomposition fails.
 
         Raises:
-            ValueError: If hierarchy validation or normalization fails.
+            ValueError: If hierarchy validation or normalization fails, or no
+                generator was configured.
             ProposalValidationError: If proposal doesn't conform to structure constraints.
         """
         if not ticket_content:
             return []
 
+        if self._generate is None:
+            raise ValueError(
+                "DecompositionService requires a generate callable wired through the "
+                "CLI agent seam (run_cli_agent_turn); direct SDK calls are not supported"
+            )
+
         prompt = self._build_prompt(ticket_content)
 
         try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=4000,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-            )
-
-            response_text = response.content[0].text
+            response_text = self._generate(prompt)
             hierarchy = self._parse_response(response_text)
-
-            # Validate and normalize proposal using comprehensive validator
-            validated_hierarchy = ProposalValidator.validate_all(hierarchy)
-
-            return validated_hierarchy
-
-        except anthropic.APIError as e:
-            logger.error(f"Claude API error: {e}")
-            raise
+            return ProposalValidator.validate_all(hierarchy)
         except (json.JSONDecodeError, ValueError) as e:
-            logger.error(f"Parsing error: {e}")
+            logger.error("Parsing error: %s", e)
             raise
         except ProposalValidationError as e:
-            logger.error(f"Proposal validation error: {e}")
+            logger.error("Proposal validation error: %s", e)
             raise
 
     def _build_prompt(self, ticket_content: dict) -> str:
-        """Build the prompt for Claude to generate hierarchy.
-
-        Args:
-            ticket_content: Ticket data with title, description, acceptance_criteria
-
-        Returns:
-            Formatted prompt string.
-        """
+        """Build the prompt for the model to generate hierarchy."""
         title = ticket_content.get("title", "")
         description = ticket_content.get("description", "")
         acceptance_criteria = ticket_content.get("acceptance_criteria", [])
@@ -140,47 +130,21 @@ Return a JSON object with this exact structure:
 }}"""
 
     def _parse_response(self, response_text: str) -> list[HierarchyWorkItem]:
-        """Parse Claude's JSON response into HierarchyWorkItem objects.
-
-        Args:
-            response_text: Raw text response from Claude
-
-        Returns:
-            List of parsed HierarchyWorkItem objects.
-
-        Raises:
-            json.JSONDecodeError: If response is invalid JSON.
-            ValueError: If required fields are missing.
-        """
+        """Parse model JSON response into HierarchyWorkItem objects."""
         try:
             data = json.loads(response_text)
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON response: {e}")
+            logger.error("Failed to parse JSON response: %s", e)
             raise
 
         hierarchy_data = data.get("hierarchy", [])
         if not hierarchy_data:
             return []
 
-        items = []
-        for item_data in hierarchy_data:
-            item = self._parse_item(item_data)
-            items.append(item)
-
-        return items
+        return [self._parse_item(item_data) for item_data in hierarchy_data]
 
     def _parse_item(self, data: dict) -> HierarchyWorkItem:
-        """Recursively parse a hierarchy item from dict data.
-
-        Args:
-            data: Dictionary containing work item data
-
-        Returns:
-            Parsed HierarchyWorkItem object.
-
-        Raises:
-            ValueError: If required fields are missing or invalid.
-        """
+        """Recursively parse a hierarchy item from dict data."""
         external_id = data.get("external_id")
         if not external_id:
             raise ValueError("external_id is required")
@@ -222,14 +186,7 @@ Return a JSON object with this exact structure:
         )
 
     def _validate_item(self, item: HierarchyWorkItem) -> None:
-        """Validate a work item against hierarchy rules.
-
-        Args:
-            item: HierarchyWorkItem to validate
-
-        Raises:
-            ValueError: If hierarchy violates VALID_HIERARCHY rules.
-        """
+        """Validate a work item against hierarchy rules."""
         valid_child_types = VALID_HIERARCHY.get(item.work_item_type, [])
 
         for child in item.children:

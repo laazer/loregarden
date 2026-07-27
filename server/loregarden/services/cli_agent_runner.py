@@ -68,11 +68,17 @@ def run_cli_agent_turn(
     prompt: str,
     reply_cap: int | None = None,
     user_prompt: str | None = None,
+    run_id: str = "",
+    workspace_slug: str = "",
+    granted_tools: list[str] | None = None,
 ) -> str:
     """Run one turn to completion and return the assistant's reply.
 
     `workspace` should already carry any runtime overrides for this surface. `reply_cap`
     overrides the profile's cap for a turn whose output is legitimately larger.
+
+    ``run_id`` / ``granted_tools`` are forwarded for LM Studio so the runner can
+    speak MCP; Claude/Cursor ignore them (they configure MCP themselves).
     """
     repo_root = resolve_workspace_root(workspace)
     if not repo_root.is_dir():
@@ -83,6 +89,9 @@ def run_cli_agent_turn(
         raise ValueError(f"Unknown {profile.cli_label.lower()} agent: {profile.agent_id}")
 
     timeout = resolve_agent_timeout(agent, profile.timeout_env)
+    tools = granted_tools
+    if tools is None and run_id:
+        tools = list(agent.get("mcp_tools") or [])
 
     with tempfile.TemporaryDirectory(prefix=profile.tmp_prefix) as tmp:
         prompt_file = Path(tmp) / "prompt.md"
@@ -96,6 +105,9 @@ def run_cli_agent_turn(
             workspace_root=repo_root,
             workspace=workspace,
             user_prompt=user_prompt,
+            run_id=run_id,
+            workspace_slug=workspace_slug or workspace.slug or "",
+            granted_tools=tools,
         )
         proc = subprocess.Popen(
             invocation.argv,

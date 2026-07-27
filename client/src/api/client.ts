@@ -152,7 +152,19 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ workflow_template_slug }),
     }),
-  runtimeOptions: () => request<RuntimeOptions>("/api/workspaces/runtime-options"),
+  runtimeOptions: (params?: { workspace?: string; lmstudio_base_url?: string }) => {
+    const query = new URLSearchParams();
+    if (params && typeof params === "object" && !Array.isArray(params)) {
+      if (typeof params.workspace === "string" && params.workspace) {
+        query.set("workspace", params.workspace);
+      }
+      if (typeof params.lmstudio_base_url === "string" && params.lmstudio_base_url) {
+        query.set("lmstudio_base_url", params.lmstudio_base_url);
+      }
+    }
+    const suffix = query.toString() ? `?${query}` : "";
+    return request<RuntimeOptions>(`/api/workspaces/runtime-options${suffix}`);
+  },
   workspaceRuntime: (slug: string) =>
     request<WorkspaceRuntimeSettings>(`/api/workspaces/${slug}/runtime`),
   setWorkspaceRuntime: (slug: string, body: WorkspaceRuntimeSettings) =>
