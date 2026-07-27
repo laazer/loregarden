@@ -19,21 +19,15 @@ def test_adapter_model_pins_apply_matches_declared_adapter():
 
 def test_ticket_model_for_adapter_picks_matching_field():
     assert (
-        ticket_model_for_adapter(
-            "claude", claude_model="c", cursor_model="u", lmstudio_model="l"
-        )
+        ticket_model_for_adapter("claude", claude_model="c", cursor_model="u", lmstudio_model="l")
         == "c"
     )
     assert (
-        ticket_model_for_adapter(
-            "cursor", claude_model="c", cursor_model="u", lmstudio_model="l"
-        )
+        ticket_model_for_adapter("cursor", claude_model="c", cursor_model="u", lmstudio_model="l")
         == "u"
     )
     assert (
-        ticket_model_for_adapter(
-            "lmstudio", claude_model="c", cursor_model="u", lmstudio_model="l"
-        )
+        ticket_model_for_adapter("lmstudio", claude_model="c", cursor_model="u", lmstudio_model="l")
         == "l"
     )
     assert ticket_model_for_adapter("local", claude_model="c") == ""
@@ -56,9 +50,7 @@ def test_resolve_model_for_adapter_shared_precedence(monkeypatch):
     assert resolve_model_for_adapter("lmstudio", ws) == "ws-local"
     assert resolve_model_for_adapter("local", ws) == ""
 
-    assert (
-        resolve_model_for_adapter("cursor", ws, agent_model="agent-pin") == "agent-pin"
-    )
+    assert resolve_model_for_adapter("cursor", ws, agent_model="agent-pin") == "agent-pin"
     assert (
         resolve_model_for_adapter(
             "lmstudio", ws, agent_model="a", stage_model="s", ticket_model="t"
@@ -67,6 +59,4 @@ def test_resolve_model_for_adapter_shared_precedence(monkeypatch):
     )
 
     monkeypatch.setenv("LOREGARDEN_CURSOR_MODEL", "env-cursor")
-    assert (
-        resolve_model_for_adapter("cursor", ws, ticket_model="ticket") == "env-cursor"
-    )
+    assert resolve_model_for_adapter("cursor", ws, ticket_model="ticket") == "env-cursor"

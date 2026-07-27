@@ -34,9 +34,7 @@ def _assistant_text(message: dict) -> str:
     if content:
         return content
 
-    reasoning = str(
-        message.get("reasoning_content") or message.get("reasoning") or ""
-    ).strip()
+    reasoning = str(message.get("reasoning_content") or message.get("reasoning") or "").strip()
     if not reasoning:
         return ""
 

@@ -324,4 +324,3 @@ def test_triage_lmstudio_invocation_carries_run_mcp(tmp_path, monkeypatch):
     assert inv.argv[inv.argv.index("--run-id") + 1] == "run-triage-1"
     assert "--mcp-url" in inv.argv
     assert inv.argv[inv.argv.index("--tools") + 1] == "loregarden_get_ticket"
-

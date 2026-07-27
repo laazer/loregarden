@@ -134,9 +134,7 @@ class TriageTurnExecutor:
         history = list_triage_messages(self.session, ticket.id)
         latest_user_message = history[-1].content if history and history[-1].role == "user" else ""
         try:
-            reply = invoke_triage_model(
-                self.session, ticket, latest_user_message, run_id=run.id
-            )
+            reply = invoke_triage_model(self.session, ticket, latest_user_message, run_id=run.id)
             self._finish(run, ticket, status=RunStatus.SUCCEEDED, reply=reply, stderr="")
         except Exception as exc:
             self._finish(

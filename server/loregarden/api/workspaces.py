@@ -74,6 +74,7 @@ def get_runtime_options(
             base_url = ws.lmstudio_base_url
     return runtime_options_payload(lmstudio_base_url=base_url)
 
+
 @router.get("/{slug}/runtime", response_model=WorkspaceRuntimeSettings)
 def get_workspace_runtime(
     slug: str, session: Session = Depends(get_session)

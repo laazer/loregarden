@@ -24,9 +24,7 @@ def format_cli_auth_hint(detail: str) -> str | None:
             "and run `task cursor:setup-key`, or\n"
             "3. Switch the workspace/triage adapter to Claude or LM Studio"
         )
-    if "claude_code_oauth_token" in lower or (
-        "not logged in" in lower and "claude" in lower
-    ):
+    if "claude_code_oauth_token" in lower or ("not logged in" in lower and "claude" in lower):
         return (
             "Claude CLI is not authenticated for background runs. "
             "Run `task claude:setup-token`, then restart the server."
