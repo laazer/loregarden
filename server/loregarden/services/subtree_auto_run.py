@@ -8,6 +8,7 @@ an audit trail), and the child ordering for sequential subtree runs.
 
 from __future__ import annotations
 
+from loregarden.core.state_machine import StateMachine
 from loregarden.models.domain import (
     Approval,
     ApprovalKind,
@@ -20,8 +21,52 @@ from loregarden.models.domain import (
 )
 from loregarden.services.orchestration import ApprovalService, OrchestrationService
 from loregarden.services.orchestration_profile import OrchestrationProfile
-from loregarden.services.workflow_state import parse_stage_map
+from loregarden.services.studio_routing import is_terminal_stage
+from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session, select
+
+
+def finalize_aggregator_ticket(
+    session: Session, orch: OrchestrationService, ticket: Ticket
+) -> None:
+    """Complete a parent ticket without running its own stages, once every child is
+    done. Finalizes through the terminal stage when the workflow has one; falls back
+    to marking it DONE directly when it doesn't (an older instance / template drift,
+    which would otherwise raise "Workflow has no done stage" and block the parent).
+    A parent whose own stage is mid-flight (RUNNING/AWAITING from a pre-aggregator
+    run) is left as-is rather than force-finalized."""
+    if ticket.state in StateMachine.TERMINAL_TICKET_STATES or ticket.workflow_stage_status in (
+        StageStatus.RUNNING,
+        StageStatus.AWAITING,
+    ):
+        return
+    _, stages = orch._resolve_stages(ticket)
+    if stages and any(is_terminal_stage(s) for s in stages):
+        orch.finalize_workflow(ticket, force=True)
+    else:
+        mark_aggregator_done(session, orch, ticket)
+
+
+def mark_aggregator_done(session: Session, orch: OrchestrationService, ticket: Ticket) -> None:
+    """Complete an aggregator parent whose workflow has no terminal stage: settle
+    every still-open stage as WONT_DO and set the ticket DONE. Used when
+    finalize_workflow can't run because the instance lacks a done stage (an older
+    instance or template drift) — the parent's children carry the work, so its own
+    stage shape must not block it."""
+    instance, stages = orch._resolve_stages(ticket)
+    if instance and stages:
+        stage_map = parse_stage_map(instance, stages)
+        for stage in stages:
+            if stage_map.get(stage.key) not in (StageStatus.DONE, StageStatus.WONT_DO):
+                set_stage_status(ticket, instance, stages, stage.key, StageStatus.WONT_DO)
+        session.add(instance)
+    ticket.state = TicketState.DONE
+    ticket.state_locked = True
+    ticket.blocking_issues = ""
+    ticket.revision += 1
+    ticket.last_updated_by = "orchestrator"
+    session.add(ticket)
+    session.commit()
 
 
 class SubtreeBudget:
