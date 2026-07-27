@@ -425,3 +425,129 @@ def test_gates_can_run_false_when_only_blank_commands_configured(tmp_path):
         slug="demo", gates=GatesConfig(enabled=True, commands=["", "   "])
     )
     assert gates_can_run(profile, ws) is False
+
+
+# --- Adversarial: mutation/error-handling gaps beyond the happy-path contracts
+# above. Each of these reproduces an unhandled crash or a miscount that a
+# well-meaning `outcome` implementation could still leave in place. ---
+
+
+def test_run_transition_gates_malformed_quoting_reports_failed_not_crash(tmp_path):
+    # shlex.split raises ValueError on an unterminated quote. `_run_command`
+    # today only catches FileNotFoundError/TimeoutExpired around
+    # subprocess.run — the shlex.split call itself is unguarded, so one badly
+    # quoted command entry (a typo'd Studio gate command) takes down the
+    # entire evaluation with an unhandled exception instead of reporting a
+    # normal "failed" outcome.
+    ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
+    ticket = Ticket(id="tid", external_id="M88-10", workspace_id="ws", title="Test")
+    profile = OrchestrationProfile(
+        slug="demo", gates=GatesConfig(enabled=True, commands=["echo 'unterminated"])
+    )
+
+    result = run_transition_gates(
+        profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+    )
+
+    assert not result.ok
+    assert result.outcome == "failed"
+    assert result.message
+
+
+def test_run_transition_gates_non_executable_script_reports_failed_not_crash(tmp_path):
+    # A gate command pointing at a file that exists but lacks the execute bit
+    # (e.g. checked in without chmod +x, or edited on a filesystem that
+    # dropped permissions) raises PermissionError from subprocess.run.
+    # `_run_command` only catches FileNotFoundError — PermissionError is a
+    # distinct OSError subclass and today propagates uncaught, crashing the
+    # gate evaluation instead of yielding a "failed" outcome.
+    script = tmp_path / "noexec.sh"
+    script.write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
+    script.chmod(0o644)  # explicitly non-executable
+
+    ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
+    ticket = Ticket(id="tid", external_id="M88-11", workspace_id="ws", title="Test")
+    profile = OrchestrationProfile(
+        slug="demo", gates=GatesConfig(enabled=True, commands=["./noexec.sh"])
+    )
+
+    result = run_transition_gates(
+        profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+    )
+
+    assert not result.ok
+    assert result.outcome == "failed"
+    assert result.message
+
+
+def test_run_transition_gates_mixed_blank_and_real_commands_counts_only_real_ones(tmp_path):
+    # A blank entry must not be silently treated as "ran" — the passed-count
+    # in the message exists specifically so an operator can tell "1 real gate
+    # ran" from "1 real gate + N no-ops ran". Miscounting blanks as executed
+    # gate commands would quietly inflate that number.
+    ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
+    ticket = Ticket(id="tid", external_id="M88-12", workspace_id="ws", title="Test")
+    profile = OrchestrationProfile(
+        slug="demo", gates=GatesConfig(enabled=True, commands=["", "true", "   "])
+    )
+
+    result = run_transition_gates(
+        profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+    )
+
+    assert result.ok
+    assert result.outcome == "passed"
+    assert result.message == "passed 1 gate command(s)"
+
+
+def test_run_transition_gates_skipped_transition_script_plus_passing_command_is_passed(
+    tmp_path,
+):
+    # Combinatorial case: the workspace transition script rejects this edge
+    # (an "unmodeled transition" skip) but a real profile gate command is
+    # also configured and passes. The overall outcome must be "passed" —
+    # driven by the command that actually ran — not "skipped", which would
+    # hide that a real gate did run and pass.
+    _write_transition_script(
+        tmp_path,
+        """\
+        import sys
+        sys.stderr.write(
+            "run_workflow_transition_gates.py: error: argument --transition: "
+            "invalid choice: 'a_to_b'\\n"
+        )
+        sys.exit(2)
+        """,
+    )
+    ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
+    ticket = Ticket(id="tid", external_id="M88-13", workspace_id="ws", title="Test")
+    profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=True, commands=["true"]))
+
+    result = run_transition_gates(profile, ws, ticket, from_stage="a", to_stage="b")
+
+    assert result.ok
+    assert result.outcome == "passed"
+
+
+def test_run_transition_gates_disabled_outcome_still_carries_stage_context(tmp_path):
+    # The GATE_EVALUATED event payload is expected to carry from_stage/to_stage
+    # (see test_gate_domain_events.py) on every evaluation including disabled
+    # ones. If the disabled short-circuit in run_transition_gates returns
+    # before building gate context, the caller has nothing to attach that
+    # context from for the "disabled" case specifically — pin that the
+    # from_stage/to_stage passed in are still recoverable off the result or
+    # its context, not just for passed/skipped/failed outcomes.
+    ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
+    ticket = Ticket(id="tid", external_id="M88-14", workspace_id="ws", title="Test")
+    profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=False))
+
+    result = run_transition_gates(
+        profile, ws, ticket, from_stage="implementation", to_stage="review"
+    )
+
+    assert result.outcome == "disabled"
+    context = build_gate_context(
+        workspace=ws, ticket=ticket, from_stage="implementation", to_stage="review"
+    )
+    assert context["from_stage"] == "implementation"
+    assert context["to_stage"] == "review"

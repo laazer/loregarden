@@ -1,28 +1,23 @@
 handoff:
   schema_version: '1.0'
   ticket_id: 88-gate-outcomes-are-indistinguishable-from-gate-sk
-  from_agent: test_breaker
+  from_agent: frontend_implementer
   to_agent: backend_implementer
-  validated_at: '2026-07-27T13:16:31Z'
-  required_items_met: 3
-  total_required_items: 3
+  validated_at: '2026-07-27T13:25:10Z'
+  required_items_met: 1
+  total_required_items: 2
   checklist:
-  - item_key: test_suite_complete
-    item: Test suite covers acceptance criteria and edge cases
+  - item_key: frontend_scope_complete
+    item: 'Frontend scope (AC4: UI distinguishes gate skipped from gate passed) verified complete, no
+      client changes needed'
     required: true
     status: complete
-    evidence: server/tests/test_gate_runner.py, test_gate_domain_events.py, test_orchestration_profile_gates.py
-      — all red, pin outcome vocabulary (passed|skipped|disabled|failed), preserved messages, GATE_EVALUATED
-      event on every evaluation (incl. disabled/skipped/retries), gates_can_run, and 3-way UI distinguishability
-  - item_key: adversarial_tests_added
-    item: Adversarial/edge-case tests added beyond the happy path
+    evidence: ArtifactView.gateOutcome.test.tsx (2 tests) passes against unmodified client/src/components/dashboard/ArtifactView.tsx
+      — the existing generic {title, rows} context-section renderer already displays 'Gate passed — X'
+      vs 'Gate skipped — X' distinctly since the server-emitted section title carries the outcome.
+  - item_key: backend_scope_remaining
+    item: AC1, AC2, AC3, AC5 remain unimplemented and are out of frontend_implementer scope (server/**)
     required: true
-    status: complete
-    evidence: Blank/whitespace-only gate command crash (real IndexError repro'd against current code),
-      gates_can_run false for whitespace-only commands, disabled-vs-skipped-vs-passed 3-way UI distinguishability,
-      and a 3-round bounded-retry test asserting distinct per-evaluation GATE_EVALUATED rows (no upsert-collapse)
-  - item_key: tests_deterministic
-    item: Tests are deterministic and reproducible
-    required: true
-    status: complete
-    evidence: No randomness/timing dependence; all new tests use tmp_path repos and fixed commands (true/false/echo)
+    status: incomplete
+    evidence: gate_runner.py, builtin_orchestrator.py, api/orchestration.py, and domain_events all need
+      server changes per ticket description; not touched this stage.
