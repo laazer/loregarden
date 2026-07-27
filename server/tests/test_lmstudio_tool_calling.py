@@ -203,6 +203,21 @@ def test_a_model_that_never_stops_calling_tools_is_cut_off():
     assert len(transport.tool_calls) == MAX_TOOL_ROUNDS
 
 
+def test_assistant_text_prefers_content_then_reasoning_json():
+    from loregarden.agents.executors.lmstudio_runner import _assistant_text
+
+    assert _assistant_text({"content": "hello"}) == "hello"
+    assert _assistant_text({"content": "  ", "reasoning_content": "noise"}) == "noise"
+    reasoning = 'Thinking...\n```json\n{"summary": "ok", "tickets": []}\n```\n'
+    assert _assistant_text({"content": "", "reasoning_content": reasoning}) == (
+        '{"summary": "ok", "tickets": []}'
+    )
+    assert (
+        _assistant_text({"content": None, "reasoning_content": '{"summary": "x"}'})
+        == '{"summary": "x"}'
+    )
+
+
 def test_without_mcp_details_it_stays_a_plain_chat(monkeypatch):
     """Existing lmstudio use keeps working; tools are opt-in per run."""
     transport = FakeTransport([{"role": "assistant", "content": "plain answer"}])
@@ -247,7 +262,7 @@ def test_the_invocation_carries_the_run_context(tmp_path, monkeypatch):
 
 
 def test_a_run_without_context_gets_no_tool_flags(tmp_path, monkeypatch):
-    """Triage and terminal-handoff builders have no run; they must stay plain."""
+    """Stage/triage builders omit MCP flags unless a run_id is supplied."""
     from loregarden.agents.cli_adapters import resolve_cli_invocation
     from loregarden.models.domain import Workspace
 
@@ -273,3 +288,40 @@ def test_a_run_without_context_gets_no_tool_flags(tmp_path, monkeypatch):
     )
     assert "--run-id" not in invocation.argv
     assert "--mcp-url" not in invocation.argv
+
+
+def test_triage_lmstudio_invocation_carries_run_mcp(tmp_path, monkeypatch):
+    """Baxter on LM Studio needs the same MCP wiring as stage runs — no native MCP."""
+    from loregarden.agents.cli_adapters import build_triage_invocation
+    from loregarden.models.domain import Workspace
+
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "lmstudio")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("triage")
+    workspace_root = tmp_path / "repo"
+    workspace_root.mkdir()
+    ws = Workspace(
+        slug="test",
+        name="Test",
+        cli_adapter="lmstudio",
+        lmstudio_base_url="http://lm.test/v1",
+        lmstudio_model="local-chat",
+    )
+    inv = build_triage_invocation(
+        agent_id="triage",
+        adapter="claude",
+        prompt="triage",
+        prompt_file=prompt_file,
+        skill_name="",
+        workspace_root=workspace_root,
+        workspace=ws,
+        run_id="run-triage-1",
+        workspace_slug="test",
+        granted_tools=["loregarden_get_ticket"],
+    )
+    assert inv.adapter == "lmstudio"
+    assert inv.argv[inv.argv.index("--model") + 1] == "local-chat"
+    assert inv.argv[inv.argv.index("--run-id") + 1] == "run-triage-1"
+    assert "--mcp-url" in inv.argv
+    assert inv.argv[inv.argv.index("--tools") + 1] == "loregarden_get_ticket"
+

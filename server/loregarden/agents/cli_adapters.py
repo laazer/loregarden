@@ -12,11 +12,11 @@ from loregarden.agents.mcp_context import (
 )
 from loregarden.config import settings
 from loregarden.services.cli_settings import (
-    resolve_claude_model,
-    resolve_cursor_model,
+    adapter_model_pins_apply,
     resolve_effective_adapter,
     resolve_lmstudio_base_url,
-    resolve_lmstudio_model,
+    resolve_model_for_adapter,
+    ticket_model_for_adapter,
 )
 
 DEFAULT_CLAUDE_USER_PROMPT = (
@@ -250,19 +250,20 @@ def resolve_terminal_handoff_invocation(
         return override
 
     selected = resolve_effective_adapter(agent_adapter=adapter, workspace=workspace)
+    model = resolve_model_for_adapter(selected, workspace)
 
     if selected == "claude":
         return _claude_terminal_handoff_invocation(
             prompt_file=prompt_file,
             workspace_root=workspace_root,
-            claude_model=resolve_claude_model(workspace),
+            claude_model=model,
         )
 
     if selected == "cursor":
         return _cursor_print_invocation(
             prompt=prompt,
             workspace_root=workspace_root,
-            cursor_model=resolve_cursor_model(workspace),
+            cursor_model=model,
         )
 
     raise ValueError(
@@ -450,6 +451,7 @@ def resolve_cli_invocation(
     ticket_adapter: str = "default",
     ticket_claude_model: str = "",
     ticket_cursor_model: str = "",
+    ticket_lmstudio_model: str = "",
     stage_model: str = "",
     agent_model: str = "",
     run_id: str = "",
@@ -471,17 +473,18 @@ def resolve_cli_invocation(
     selected = resolve_effective_adapter(
         agent_adapter=adapter, workspace=workspace, ticket_adapter=ticket_adapter
     )
-    claude_model = resolve_claude_model(
+    pins_apply = adapter_model_pins_apply(agent_adapter=adapter, selected_adapter=selected)
+    model = resolve_model_for_adapter(
+        selected,
         workspace,
-        ticket_model=ticket_claude_model,
-        stage_model=stage_model,
-        agent_model=agent_model,
-    )
-    cursor_model = resolve_cursor_model(
-        workspace,
-        ticket_model=ticket_cursor_model,
-        stage_model=stage_model,
-        agent_model=agent_model,
+        ticket_model=ticket_model_for_adapter(
+            selected,
+            claude_model=ticket_claude_model,
+            cursor_model=ticket_cursor_model,
+            lmstudio_model=ticket_lmstudio_model,
+        ),
+        stage_model=stage_model if pins_apply else "",
+        agent_model=agent_model if pins_apply else "",
     )
 
     if selected == "local":
@@ -498,22 +501,22 @@ def resolve_cli_invocation(
             prompt_file=prompt_file,
             workspace_root=workspace_root,
             resume_session_id=resume_session_id,
-            claude_model=claude_model if selected == "claude" else "",
-            cursor_model=cursor_model if selected == "cursor" else "",
+            claude_model=model if selected == "claude" else "",
+            cursor_model=model if selected == "cursor" else "",
         )
 
     if selected == "claude":
         return _claude_print_invocation(
             prompt_file=prompt_file,
             workspace_root=workspace_root,
-            claude_model=claude_model,
+            claude_model=model,
         )
 
     if selected == "cursor":
         return _cursor_print_invocation(
             prompt=prompt,
             workspace_root=workspace_root,
-            cursor_model=cursor_model,
+            cursor_model=model,
             orchestrated=True,
         )
 
@@ -525,7 +528,7 @@ def resolve_cli_invocation(
             prompt_file=prompt_file,
             workspace_root=workspace_root,
             base_url=resolve_lmstudio_base_url(workspace),
-            model=resolve_lmstudio_model(workspace),
+            model=model,
             run_id=run_id,
             workspace_slug=workspace_slug,
             granted_tools=granted_tools,
@@ -544,11 +547,18 @@ def build_triage_invocation(
     workspace_root: Path,
     workspace=None,
     user_prompt: str | None = None,
+    run_id: str = "",
+    workspace_slug: str = "",
+    granted_tools: list[str] | None = None,
 ) -> CliInvocation:
     """One-shot, non-interactive CLI for the triage chat channel.
 
     Stage runs use stream-json + permission bridge; triage must return plain text
     from stdout in a single communicate() call.
+
+    ``run_id`` / ``granted_tools`` matter for LM Studio only: that runner has no
+    native MCP, so the subprocess needs the control-plane endpoint + tool grant.
+    Claude/Cursor CLIs configure MCP themselves.
     """
     override = _env_command_override(
         agent_id=agent_id,
@@ -561,7 +571,9 @@ def build_triage_invocation(
         return override
 
     selected = resolve_effective_adapter(agent_adapter=adapter, workspace=workspace)
-    cursor_model = resolve_cursor_model(workspace)
+    # Workspace already carries any triage/studio runtime overrides. Stage/agent
+    # pins are not a one-shot concern — same resolver, empty pin tiers.
+    model = resolve_model_for_adapter(selected, workspace)
     triage_user_prompt = user_prompt or os.environ.get(
         "LOREGARDEN_TRIAGE_USER_PROMPT", DEFAULT_TRIAGE_USER_PROMPT
     )
@@ -575,9 +587,7 @@ def build_triage_invocation(
 
     if selected == "claude":
         triage_model = (
-            os.environ.get("LOREGARDEN_TRIAGE_CLAUDE_MODEL", "").strip()
-            or resolve_claude_model(workspace)
-            or "haiku"
+            os.environ.get("LOREGARDEN_TRIAGE_CLAUDE_MODEL", "").strip() or model or "haiku"
         )
         argv = [
             _bin("claude", "LOREGARDEN_CLAUDE_BIN"),
@@ -611,7 +621,7 @@ def build_triage_invocation(
             str(workspace_root),
             f"{triage_user_prompt}\n\n{prompt}",
         ]
-        _append_model_flag(argv, cursor_model)
+        _append_model_flag(argv, model)
         extra = os.environ.get("LOREGARDEN_CURSOR_AGENT_ARGS")
         if extra:
             argv[2:2] = shlex.split(extra)
@@ -625,7 +635,10 @@ def build_triage_invocation(
             prompt_file=prompt_file,
             workspace_root=workspace_root,
             base_url=resolve_lmstudio_base_url(workspace),
-            model=resolve_lmstudio_model(workspace),
+            model=model,
+            run_id=run_id,
+            workspace_slug=workspace_slug,
+            granted_tools=granted_tools,
         )
 
     raise ValueError(f"Unknown CLI adapter for triage: {selected}")

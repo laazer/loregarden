@@ -20,6 +20,7 @@ from loregarden.services.branch_triage_chat_service import (
     invoke_branch_triage_model,
     latest_pending_turn,
 )
+from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.triage_service import TRIAGE_AGENT_NAME
 from sqlmodel import Session, select
 
@@ -116,7 +117,7 @@ def execute_branch_triage_turn_background(assistant_id: str) -> None:
                 _settle(
                     session,
                     assistant_id,
-                    content=f"{TRIAGE_AGENT_NAME} unavailable: {exc}",
+                    content=format_agent_unavailable(TRIAGE_AGENT_NAME, exc),
                     status="failed",
                 )
     except Exception:

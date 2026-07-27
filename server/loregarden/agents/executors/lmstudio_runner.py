@@ -5,16 +5,57 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
 import httpx
+from loregarden.services.lmstudio_discovery import is_chat_lmstudio_model
 
 DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
 DEFAULT_TIMEOUT_SECONDS = 600.0
+# Thinking models (Qwen3, etc.) spend most of the budget on reasoning_content.
+# LM Studio's default max_tokens is often too low for a real Ticket Studio scope
+# reply, which then returns empty content and looks like "local models don't work".
+DEFAULT_MAX_TOKENS = int(os.environ.get("LOREGARDEN_LMSTUDIO_MAX_TOKENS") or "8192")
 
 
 MAX_TOOL_ROUNDS = 25
+
+
+def _assistant_text(message: dict) -> str:
+    """Prefer ``content``; fall back to JSON (or text) buried in reasoning.
+
+    Qwen3-class models under LM Studio often fill ``reasoning_content`` and leave
+    ``content`` empty when the token budget is tight. Stage/studio parsers only
+    read stdout, so empty content means a silent failed turn.
+    """
+    content = str(message.get("content") or "").strip()
+    if content:
+        return content
+
+    reasoning = str(
+        message.get("reasoning_content") or message.get("reasoning") or ""
+    ).strip()
+    if not reasoning:
+        return ""
+
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", reasoning, re.DOTALL)
+    if fenced:
+        return fenced.group(1).strip()
+
+    start = reasoning.rfind("{")
+    end = reasoning.rfind("}")
+    if start >= 0 and end > start:
+        candidate = reasoning[start : end + 1].strip()
+        try:
+            json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+        else:
+            return candidate
+
+    return reasoning
 
 
 class McpBridge:
@@ -94,7 +135,14 @@ def _resolve_model(client: httpx.Client, base_url: str, model: str) -> str:
     models = payload.get("data") or []
     if not models:
         raise RuntimeError("LM Studio has no loaded models; load a model or set lmstudio_model")
-    return str(models[0].get("id") or models[0].get("name") or "")
+    for entry in models:
+        model_id = str(entry.get("id") or entry.get("name") or "").strip()
+        if model_id and is_chat_lmstudio_model(model_id):
+            return model_id
+    raise RuntimeError(
+        "LM Studio has no loaded chat models (only embeddings/other); "
+        "load a chat model or set lmstudio_model"
+    )
 
 
 def _chat_completion(
@@ -109,6 +157,7 @@ def _chat_completion(
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "stream": stream,
+        "max_tokens": DEFAULT_MAX_TOKENS,
     }
     if stream:
         text_parts: list[str] = []
@@ -126,10 +175,11 @@ def _chat_completion(
                 if chunk_raw == "[DONE]":
                     break
                 chunk = json.loads(chunk_raw)
-                delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
-                if delta:
-                    text_parts.append(delta)
-                    print(delta, end="", flush=True)
+                delta = chunk.get("choices", [{}])[0].get("delta", {}) or {}
+                piece = delta.get("content") or delta.get("reasoning_content")
+                if piece:
+                    text_parts.append(piece)
+                    print(piece, end="", flush=True)
         print()
         return "".join(text_parts)
 
@@ -140,8 +190,8 @@ def _chat_completion(
     )
     response.raise_for_status()
     payload = response.json()
-    message = payload.get("choices", [{}])[0].get("message", {})
-    content = str(message.get("content") or "")
+    message = payload.get("choices", [{}])[0].get("message", {}) or {}
+    content = _assistant_text(message)
     print(content)
     return content
 
@@ -171,6 +221,7 @@ def _chat_with_tools(
                 "tools": tools,
                 "tool_choice": "auto",
                 "stream": False,
+                "max_tokens": DEFAULT_MAX_TOKENS,
             },
             timeout=DEFAULT_TIMEOUT_SECONDS,
         )
@@ -179,7 +230,7 @@ def _chat_with_tools(
         calls = message.get("tool_calls") or []
 
         if not calls:
-            content = str(message.get("content") or "")
+            content = _assistant_text(message)
             print(content)
             return content
 
@@ -212,8 +263,8 @@ def _chat_with_tools(
     # Out of rounds. The stage report parser reads stdout, so emit what we have
     # rather than nothing.
     print(f"[WARN] stopped after {MAX_TOOL_ROUNDS} tool rounds", file=sys.stderr)
-    last = next((m.get("content") for m in reversed(messages) if m.get("role") == "assistant"), "")
-    content = str(last or "")
+    last = next((m for m in reversed(messages) if m.get("role") == "assistant"), {})
+    content = _assistant_text(last if isinstance(last, dict) else {})
     print(content)
     return content
 

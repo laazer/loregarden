@@ -42,6 +42,7 @@ const TRY_ASKING: Record<string, string[]> = {
   "branch-triage": [
     "What changed on this branch?",
     "Is this branch safe to delete?",
+    "commit and push",
   ],
 };
 
@@ -71,6 +72,13 @@ export function CopilotDock() {
     // Clear optimistically so the composer is ready for the next message; a
     // failed send surfaces through session.error rather than by restoring text.
     setDraft("");
+    void session.send(content, { autoApprove }).catch(() => {});
+  };
+
+  const sendQuick = (content: string) => {
+    if (!session || session.isBusy || session.loadError) return;
+    setDraft("");
+    setOpen(true);
     void session.send(content, { autoApprove }).catch(() => {});
   };
 
@@ -173,14 +181,26 @@ export function CopilotDock() {
             disabled={session.loadError}
             error={session.error}
             optionsRow={
-              <label className="copilot-dock-option">
-                <input
-                  type="checkbox"
-                  checked={autoApprove}
-                  onChange={(e) => setAutoApprove(e.target.checked)}
-                />
-                Auto-approve
-              </label>
+              <div className="studio-chat-composer-options-inline">
+                <label className="copilot-dock-option">
+                  <input
+                    type="checkbox"
+                    checked={autoApprove}
+                    onChange={(e) => setAutoApprove(e.target.checked)}
+                  />
+                  Auto-approve
+                </label>
+                {session.kind === "branch-triage" ? (
+                  <button
+                    type="button"
+                    className="btn-secondary btn-compact chat-composer-quick-action"
+                    disabled={session.isBusy || session.loadError}
+                    onClick={() => sendQuick("commit and push")}
+                  >
+                    {session.isBusy ? "Sending…" : "Commit & push"}
+                  </button>
+                ) : null}
+              </div>
             }
           />
           </div>

@@ -31,6 +31,25 @@ tasks:
         echo "Saved to data/.claude-oauth-token — the server loads it automatically from now on."
     interactive: true
 
+  cursor:setup-key:
+    desc: >-
+      Save a Cursor User API key so Baxter/stage runs can auth cursor-agent -p
+      (browser `agent login` is not enough for headless control-plane spawns)
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - |
+        set -euo pipefail
+        echo "Create a User API key at: https://cursor.com/dashboard/integrations"
+        echo "(Team Admin API keys will not work with the CLI.)"
+        echo
+        printf 'Paste the CURSOR_API_KEY here: '
+        read -r CURSOR_API_KEY
+        mkdir -p data
+        printf '%s' "$CURSOR_API_KEY" > data/.cursor-api-key
+        chmod 600 data/.cursor-api-key
+        echo "Saved to data/.cursor-api-key — restart the server so Baxter picks it up."
+    interactive: true
+
   client:
     desc: Start React IDE dev server (http://localhost:5173)
     dir: "{{.ROOT_DIR}}"

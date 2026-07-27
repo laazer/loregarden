@@ -311,6 +311,7 @@ export interface RuntimeOptions {
   cli_adapters: RuntimeOption[];
   claude_models: RuntimeOption[];
   cursor_models: RuntimeOption[];
+  lmstudio_models?: RuntimeOption[];
 }
 
 export interface WorkspaceRuntimeSettings {

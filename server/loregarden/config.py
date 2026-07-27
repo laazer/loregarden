@@ -114,7 +114,19 @@ def _prime_claude_oauth_token_env() -> None:
         os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = token
 
 
+def _prime_cursor_api_key_env() -> None:
+    """Export Cursor auth for headless ``cursor-agent -p`` subprocesses.
+
+    Prefer an explicit User API key file; otherwise reuse the Cursor IDE session
+    token already on this machine (same store the Usage modal reads).
+    """
+    from loregarden.services.cursor_cli_auth import prime_cursor_api_key_env
+
+    prime_cursor_api_key_env(repo_root=settings.repo_root)
+
+
 _prime_claude_oauth_token_env()
+_prime_cursor_api_key_env()
 
 from loregarden.services.memory_config import load_local_memory_config_into_settings  # noqa: E402
 

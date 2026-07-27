@@ -100,7 +100,7 @@ export function BranchTriageOverviewPanel({
   const setCopilotOpen = useUiStore((s) => s.setCopilotOpen);
   const [modelModalOpen, setModelModalOpen] = useState(false);
 
-  const runtimeOptions = useQuery({ queryKey: ["runtime-options"], queryFn: api.runtimeOptions });
+  const runtimeOptions = useQuery({ queryKey: ["runtime-options"], queryFn: () => api.runtimeOptions() });
 
   const activity = useQuery({
     queryKey: ["branch-triage-activity", workspaceSlug, branch],
@@ -262,6 +262,17 @@ export function BranchTriageOverviewPanel({
               onClick={() => setCopilotOpen(true)}
             >
               Ask in chat
+            </button>
+            <button
+              type="button"
+              className="btn-secondary btn-compact"
+              disabled={session.isBusy || session.loadError}
+              onClick={() => {
+                setCopilotOpen(true);
+                void session.send("commit and push").catch(() => {});
+              }}
+            >
+              {session.isBusy ? "Sending…" : "Commit & push"}
             </button>
             <button
               type="button"

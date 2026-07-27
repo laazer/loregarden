@@ -30,8 +30,10 @@ from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.agents.verify_context import build_verify_context
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, WorkflowStageDef, Workspace
 from loregarden.services.cli_settings import (
+    WorkspaceRuntimeSettings,
+    adapter_model_pins_apply,
     get_ticket_orchestration_runtime,
-    resolve_claude_model,
+    resolve_model_for_adapter,
     weak_mcp_model_warning,
 )
 from loregarden.services.code_map import render_code_map
@@ -159,6 +161,7 @@ class CliAgentExecutor:
                     ticket_adapter=ticket_runtime.cli_adapter,
                     ticket_claude_model=ticket_runtime.claude_model,
                     ticket_cursor_model=ticket_runtime.cursor_model,
+                    ticket_lmstudio_model=ticket_runtime.lmstudio_model,
                     stage_model=stage_def.model if stage_def else "",
                     agent_model=agent.get("default_model", ""),
                     run_id=run.id,
@@ -186,19 +189,15 @@ class CliAgentExecutor:
                 skill_name=run.skill_name,
             )
             streamer.start(run.command)
-
-            resolved_claude_model = resolve_claude_model(
-                workspace,
-                ticket_model=ticket_runtime.claude_model,
-                stage_model=stage_def.model if stage_def else "",
-                agent_model=agent.get("default_model", ""),
+            self._maybe_warn_weak_mcp_model(
+                streamer=streamer,
+                run=run,
+                agent=agent,
+                workspace=workspace,
+                ticket_runtime=ticket_runtime,
+                stage_def=stage_def,
+                selected_adapter=invocation.adapter,
             )
-            model_warning = weak_mcp_model_warning(
-                resolved_claude_model, agent.get("adapter", "local")
-            )
-            if model_warning:
-                logger.warning("run %s (%s): %s", run.run_code, run.agent_id, model_warning)
-                streamer.append("WARN", model_warning, force=True)
 
             timeout = (
                 run.timeout_override_seconds
@@ -340,6 +339,36 @@ class CliAgentExecutor:
         self.session.add(run)
         self.session.commit()
         return invocation, cleanup_path
+
+    def _maybe_warn_weak_mcp_model(
+        self,
+        *,
+        streamer: RunLogStreamer,
+        run: AgentRun,
+        agent: dict,
+        workspace: Workspace,
+        ticket_runtime: WorkspaceRuntimeSettings,
+        stage_def: WorkflowStageDef | None,
+        selected_adapter: str,
+    ) -> None:
+        if selected_adapter != "claude":
+            return
+        pins_apply = adapter_model_pins_apply(
+            agent_adapter=agent.get("adapter", "local"),
+            selected_adapter="claude",
+        )
+        resolved_model = resolve_model_for_adapter(
+            "claude",
+            workspace,
+            ticket_model=ticket_runtime.claude_model,
+            stage_model=(stage_def.model if stage_def and pins_apply else ""),
+            agent_model=agent.get("default_model", "") if pins_apply else "",
+        )
+        model_warning = weak_mcp_model_warning(resolved_model, "claude")
+        if not model_warning:
+            return
+        logger.warning("run %s (%s): %s", run.run_code, run.agent_id, model_warning)
+        streamer.append("WARN", model_warning, force=True)
 
     def _run_print_mode(
         self,

@@ -57,9 +57,22 @@ def list_workspaces(session: Session = Depends(get_session)) -> list[dict]:
 
 
 @router.get("/runtime-options")
-def get_runtime_options() -> dict:
-    return runtime_options_payload()
+def get_runtime_options(
+    lmstudio_base_url: str = "",
+    workspace: str = "",
+    session: Session = Depends(get_session),
+) -> dict:
+    """Static Claude/Cursor catalogs + live LM Studio chat models when reachable.
 
+    Optional ``lmstudio_base_url`` or ``workspace`` (slug) selects which LM Studio
+    server to probe — otherwise the global default URL is used.
+    """
+    base_url = lmstudio_base_url.strip()
+    if not base_url and workspace.strip():
+        ws = session.exec(select(Workspace).where(Workspace.slug == workspace.strip())).first()
+        if ws and ws.lmstudio_base_url:
+            base_url = ws.lmstudio_base_url
+    return runtime_options_payload(lmstudio_base_url=base_url)
 
 @router.get("/{slug}/runtime", response_model=WorkspaceRuntimeSettings)
 def get_workspace_runtime(
