@@ -19,6 +19,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+from loregarden.services.gate_runner import gates_can_run
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import (
@@ -47,14 +48,17 @@ def _run_view(run: OrchestrationRun) -> OrchestrationRunView:
     )
 
 
-def _profile_view(profile) -> OrchestrationProfileView:
+def _profile_view(profile, workspace: Workspace) -> OrchestrationProfileView:
     return OrchestrationProfileView(
         slug=profile.slug,
         name=profile.name or profile.slug,
         driver=profile.driver,
         workflow_template=profile.workflow_template,
         orchestrator_skill=profile.orchestrator.skill,
-        gates_enabled=profile.gates.enabled,
+        # Report whether gates *can actually run*, not the raw config flag — a
+        # profile that is enabled but has nothing runnable configured gates
+        # nothing, and must not read as green (ticket 88).
+        gates_enabled=gates_can_run(profile, workspace),
         gates_commands=profile.gates.commands,
         gates_transition_script=profile.gates.transition_script,
         max_stages_per_run=profile.max_stages_per_run,
@@ -75,7 +79,7 @@ def get_workspace_profile(
     ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
     if not ws:
         raise HTTPException(404, "Workspace not found")
-    return _profile_view(resolve_orchestration_profile(ws))
+    return _profile_view(resolve_orchestration_profile(ws), ws)
 
 
 @router.get("/workspaces/{slug}/profiles", response_model=list[OrchestrationProfileView])
@@ -85,7 +89,7 @@ def list_workspace_profiles(
     ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
     if not ws:
         raise HTTPException(404, "Workspace not found")
-    return [_profile_view(p) for p in list_profiles(ws)]
+    return [_profile_view(p, ws) for p in list_profiles(ws)]
 
 
 @router.put("/workspaces/{slug}/profile/gates", response_model=OrchestrationProfileView)
@@ -99,7 +103,7 @@ def update_workspace_gates(
         enabled=body.enabled, commands=body.commands, transition_script=body.transition_script
     )
     profile = update_gates_config(ws, gates)
-    return _profile_view(profile)
+    return _profile_view(profile, ws)
 
 
 @router.post("/tickets/{ticket_id}/start", response_model=OrchestrationRunView)

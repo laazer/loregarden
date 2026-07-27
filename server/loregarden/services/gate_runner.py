@@ -7,7 +7,7 @@ import re
 import shlex
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from loregarden.models.domain import Ticket, WorkflowStageDef, Workspace
@@ -31,6 +31,15 @@ def strip_ansi(text: str) -> str:
 @dataclass(frozen=True)
 class GateRunResult:
     ok: bool
+    # Explicit terminal outcome so a gate that ran-and-passed is distinguishable
+    # from one that never ran. Callers must not infer this from `ok`/`message`
+    # alone — an empty message with ok=True used to collapse "passed" and
+    # "skipped"/"disabled" into the same indistinguishable result (ticket 88).
+    #   passed   — at least one real gate command ran and exited clean
+    #   skipped  — gates on, but nothing was configured that actually runs
+    #   disabled — gates turned off for this workspace entirely
+    #   failed   — a gate ran and failed, or the evaluation could not proceed
+    outcome: str = ""
     message: str = ""
     command: str = ""
     stdout: str = ""
@@ -92,16 +101,30 @@ def _resolve_transition_script(gates: GatesConfig, repo_root: Path) -> Path | No
 
 
 def _run_command(command: str, cwd: Path) -> GateRunResult:
+    # A single malformed or unrunnable command entry (a typo'd Studio gate, a
+    # checked-in script missing its execute bit) must degrade to a normal
+    # "failed" result — never take down the whole evaluation with an unhandled
+    # exception. shlex.split raises ValueError on unterminated quotes and yields
+    # [] for a blank string (which subprocess.run would turn into an
+    # IndexError); PermissionError and friends are OSError subclasses.
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        return GateRunResult(ok=False, message=f"malformed gate command: {exc}", command=command)
+    if not argv:
+        return GateRunResult(ok=False, message="empty gate command", command=command)
     try:
         completed = subprocess.run(
-            shlex.split(command),
+            argv,
             cwd=cwd,
             capture_output=True,
             text=True,
             timeout=GATE_TIMEOUT_SECONDS,
             check=False,
         )
-    except FileNotFoundError as exc:
+    except OSError as exc:
+        # FileNotFoundError (command not on PATH), PermissionError (file exists
+        # but not executable), and other OS-level exec failures all land here.
         return GateRunResult(ok=False, message=str(exc), command=command)
     except subprocess.TimeoutExpired:
         return GateRunResult(
@@ -157,6 +180,23 @@ def collect_gate_commands(
     return commands
 
 
+def gates_can_run(profile: OrchestrationProfile, workspace: Workspace) -> bool:
+    """True when this profile would actually execute *something* that gates a
+    transition — i.e. `gates.enabled` AND either a real (non-blank) gate command
+    is configured or the workspace's transition script resolves.
+
+    `gates.enabled=True` with nothing runnable gates nothing; reporting that as
+    "enabled" (as the raw flag did) shows green in the Gates editor for a config
+    that in fact lets every transition through. This is the honest predicate.
+    """
+    if not profile.gates.enabled:
+        return False
+    if any(command.strip() for command in profile.gates.commands):
+        return True
+    repo_root = resolve_workspace_root(workspace)
+    return _resolve_transition_script(profile.gates, repo_root) is not None
+
+
 def run_transition_gates(
     profile: OrchestrationProfile,
     workspace: Workspace,
@@ -168,11 +208,15 @@ def run_transition_gates(
 ) -> GateRunResult:
     """Run configured gate commands after *from_stage* completes and before *to_stage*."""
     if not profile.gates.enabled:
-        return GateRunResult(ok=True, message="gates disabled")
+        return GateRunResult(ok=True, outcome="disabled", message="gates disabled")
 
     repo_root = resolve_workspace_root(workspace)
     if not repo_root.is_dir():
-        return GateRunResult(ok=False, message=f"Workspace repo path does not exist: {repo_root}")
+        return GateRunResult(
+            ok=False,
+            outcome="failed",
+            message=f"Workspace repo path does not exist: {repo_root}",
+        )
 
     context = build_gate_context(
         workspace=workspace,
@@ -206,7 +250,7 @@ def run_transition_gates(
                 context["transition"],
             )
         else:
-            return result
+            return replace(result, outcome="failed")
 
     # Profile- and stage-configured gate commands (lint, static analysis, etc.)
     # are objective checks with no such notion of an "unmodeled" transition, so
@@ -217,16 +261,21 @@ def run_transition_gates(
         to_stage=to_stage,
         stage_def=stage_def,
     ):
+        # A blank/whitespace-only entry (a Studio user or hand-edited YAML saving
+        # ["", "  "]) gates nothing — skip it so it neither crashes the run nor
+        # inflates the "ran" count that lets an operator tell real gates apart.
+        if not template.strip():
+            continue
         command = format_gate_command(template, context)
         result = _run_command(command, repo_root)
         if not result.ok:
-            return result
+            return replace(result, outcome="failed")
         ran += 1
 
     if ran == 0:
-        return GateRunResult(ok=True, message="no gate commands configured")
+        return GateRunResult(ok=True, outcome="skipped", message="no gate commands configured")
 
-    return GateRunResult(ok=True, message=f"passed {ran} gate command(s)")
+    return GateRunResult(ok=True, outcome="passed", message=f"passed {ran} gate command(s)")
 
 
 def run_gate_autofix(
