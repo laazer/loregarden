@@ -208,6 +208,44 @@ export function BranchTriageOverviewPanel({
           </div>
         </section>
 
+        <section className="branch-triage-copilot-card">
+          <div className="branch-triage-copilot-copy">
+            <h3>Ask {TRIAGE_AGENT_NAME} about this branch</h3>
+            <p>
+              The chat lives in the bar below — it already has <strong>{branch}</strong> in
+              context. Ask about risks, or tell it to commit, push, merge, or clean up.
+            </p>
+          </div>
+          <div className="branch-triage-copilot-actions">
+            <button
+              type="button"
+              className="btn-primary btn-compact"
+              onClick={() => setCopilotOpen(true)}
+            >
+              Ask in chat
+            </button>
+            <button
+              type="button"
+              className="btn-secondary btn-compact"
+              disabled={session.isBusy || session.loadError}
+              onClick={() => {
+                setCopilotOpen(true);
+                void session.send("commit and push").catch(() => {});
+              }}
+            >
+              {session.isBusy ? "Sending…" : "Commit & push"}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary btn-compact"
+              disabled={!runtimeOptions.data || session.isLoading}
+              onClick={() => setModelModalOpen(true)}
+            >
+              Model · {runtimeSummaryLabel(savedRuntime, runtimeOptions.data)}
+            </button>
+          </div>
+        </section>
+
         <section className="branch-triage-activity">
           <div className="branch-triage-activity-header">
             <h3>Recent commits</h3>
@@ -245,44 +283,6 @@ export function BranchTriageOverviewPanel({
               ))}
             </ul>
           )}
-        </section>
-
-        <section className="branch-triage-copilot-card">
-          <div className="branch-triage-copilot-copy">
-            <h3>Ask {TRIAGE_AGENT_NAME} about this branch</h3>
-            <p>
-              The chat lives in the bar below — it already has <strong>{branch}</strong> in
-              context. Ask about risks, or tell it to commit, push, merge, or clean up.
-            </p>
-          </div>
-          <div className="branch-triage-copilot-actions">
-            <button
-              type="button"
-              className="btn-primary btn-compact"
-              onClick={() => setCopilotOpen(true)}
-            >
-              Ask in chat
-            </button>
-            <button
-              type="button"
-              className="btn-secondary btn-compact"
-              disabled={session.isBusy || session.loadError}
-              onClick={() => {
-                setCopilotOpen(true);
-                void session.send("commit and push").catch(() => {});
-              }}
-            >
-              {session.isBusy ? "Sending…" : "Commit & push"}
-            </button>
-            <button
-              type="button"
-              className="btn-secondary btn-compact"
-              disabled={!runtimeOptions.data || session.isLoading}
-              onClick={() => setModelModalOpen(true)}
-            >
-              Model · {runtimeSummaryLabel(savedRuntime, runtimeOptions.data)}
-            </button>
-          </div>
         </section>
       </div>
 
