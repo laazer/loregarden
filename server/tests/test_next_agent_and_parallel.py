@@ -84,6 +84,42 @@ def test_scope_reroute_pin_ignored_when_not_a_route_on_stage():
     assert agent_id == "architecture_reviewer"
 
 
+def test_scope_reroute_pin_honored_via_static_agent_when_not_in_route_table():
+    """A classify stage may name a static ``agent_id`` that is not also repeated
+    as one of its routes. That agent can still run the stage, so a pin naming it
+    must be honored: giving up on a route-table miss dropped the pin and handed
+    the stage back to keyword scoring — the very thing that mis-picked the
+    specialist and provoked the scope denial in the first place.
+    """
+    ticket = Ticket(
+        id="t1",
+        external_id="88-test",
+        workspace_id="ws",
+        title="Update the React modal component styling",
+        description="Frontend UI tweak to a client-side dialog and CSS",
+        scope_reroute_agent="backend_implementer",
+    )
+    stage = WorkflowStageDef(
+        key="implementation",
+        name="Implementation",
+        stage_type="classify",
+        agent_id="backend_implementer",
+        skill_name="refactor",
+        classify_routes=[
+            ClassifyRoute(
+                languages=["typescript"],
+                specialties=["frontend"],
+                agent_id="frontend_implementer",
+                skill_name="apply_patch",
+            ),
+        ],
+    )
+
+    assert resolve_scope_reroute_pin(ticket, stage) == ("backend_implementer", "refactor")
+    agent_id, _ = resolve_stage_execution(ticket, stage)
+    assert agent_id == "backend_implementer"
+
+
 def test_scope_reroute_pin_absent_returns_none():
     ticket = Ticket(id="t1", external_id="x", workspace_id="ws", title="", description="")
     assert resolve_scope_reroute_pin(ticket, _impl_classify_stage()) is None
