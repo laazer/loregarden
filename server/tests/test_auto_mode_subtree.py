@@ -483,7 +483,10 @@ def test_aggregator_parent_without_terminal_stage_completes_not_blocks(
     no_terminal = [stage for stage in _STAGES if stage["key"] != "done"]
     ws = _make_workspace(db_session, tmp_path, "auto-mode-no-terminal", stages=no_terminal)
     parent = _make_ticket(
-        db_session, ws, external_id="nt-parent", title="Parent",
+        db_session,
+        ws,
+        external_id="nt-parent",
+        title="Parent",
         work_item_type=WorkItemType.FEATURE,
     )
     child = _make_ticket(
