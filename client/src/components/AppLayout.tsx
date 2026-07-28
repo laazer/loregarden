@@ -64,7 +64,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <AppIconRail onOpenSettings={openSettings} />
       <div className="app-main">
         <div className="screen-area">{children}</div>
-        <CopilotDock />
+        {appPage === "chat" ? null : <CopilotDock />}
       </div>
 
       <SettingsModal

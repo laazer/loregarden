@@ -394,6 +394,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ content, auto_approve: options?.auto_approve ?? false }),
     }),
+  sendBaxterChatMessage: (
+    slug: string,
+    body: {
+      content: string;
+      history?: { role: "user" | "assistant"; content: string }[];
+    },
+  ) =>
+    request<{ reply: string }>(`/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/messages`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   skills: () => request<string[]>("/api/agents/skills"),
   studioMcpTools: () => request<string[]>("/api/studio/mcp-tools"),
   studioMcpToolGuides: () => request<StudioMcpToolGuide[]>("/api/studio/mcp-tool-guides"),

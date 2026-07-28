@@ -1,4 +1,4 @@
-export type AppPage = "home" | "dashboard" | "studio" | "editor" | "queue" | "branch-triage" | "mcp";
+export type AppPage = "home" | "chat" | "dashboard" | "studio" | "editor" | "queue" | "branch-triage" | "mcp";
 
 export type ArtifactTab =
   | "diff"
@@ -57,6 +57,7 @@ export const STUDIO_NEW_RESOURCE = "new";
 
 const PAGE_PATHS: Record<AppPage, string> = {
   home: "/",
+  chat: "/chat",
   dashboard: "/console",
   studio: "/studio/agents",
   editor: "/editor",
@@ -154,6 +155,7 @@ export function studioSectionFromPath(pathname: string): StudioSection {
 
 export function pageFromPath(pathname: string): AppPage {
   if (pathname === "/" || pathname === "") return "home";
+  if (pathname === "/chat" || pathname.startsWith("/chat/")) return "chat";
   if (pathname === "/console" || pathname.startsWith("/console/")) return "dashboard";
   if (pathname === "/studio" || pathname.startsWith("/studio/")) return "studio";
   if (pathname === "/editor" || pathname.startsWith("/editor/")) return "editor";

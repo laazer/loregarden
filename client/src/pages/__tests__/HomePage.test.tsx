@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { api } from "../../api/client";
-import { HOME_BAXTER_BRIEF_KEY } from "../../lib/homeBaxter";
+import { HOME_BAXTER_PROMPT_KEY } from "../../lib/homeBaxter";
 import { HomePage } from "../HomePage";
 
 jest.mock("../../api/client", () => {
@@ -31,7 +31,7 @@ function renderHome(initial = "/") {
       <MemoryRouter initialEntries={[initial]}>
         <Routes>
           <Route path="/" element={<HomePage />} />
-          <Route path="/studio/tickets/new" element={<div>Studio new session</div>} />
+          <Route path="/chat" element={<div>Baxter chat</div>} />
           <Route path="/console" element={<div>Console</div>} />
         </Routes>
       </MemoryRouter>
@@ -110,15 +110,15 @@ describe("HomePage", () => {
     expect(screen.getByRole("link", { name: "Open Console" })).toHaveAttribute("href", "/console");
   });
 
-  it("sends the hero prompt to Ticket Studio as a Baxter brief", async () => {
+  it("sends the hero prompt to Baxter chat", async () => {
     renderHome();
     const input = screen.getByPlaceholderText("What should we ship today?");
     fireEvent.change(input, { target: { value: "Triage stuck tickets" } });
     fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
 
     await waitFor(() => {
-      expect(sessionStorage.getItem(HOME_BAXTER_BRIEF_KEY)).toBe("Triage stuck tickets");
-      expect(screen.getByText("Studio new session")).toBeInTheDocument();
+      expect(sessionStorage.getItem(HOME_BAXTER_PROMPT_KEY)).toBe("Triage stuck tickets");
+      expect(screen.getByText("Baxter chat")).toBeInTheDocument();
     });
   });
 
@@ -129,7 +129,7 @@ describe("HomePage", () => {
     expect(screen.getByPlaceholderText("What should we ship today?")).toHaveValue(
       "Review what's waiting on me",
     );
-    expect(screen.queryByText("Studio new session")).not.toBeInTheDocument();
-    expect(sessionStorage.getItem(HOME_BAXTER_BRIEF_KEY)).toBeNull();
+    expect(screen.queryByText("Baxter chat")).not.toBeInTheDocument();
+    expect(sessionStorage.getItem(HOME_BAXTER_PROMPT_KEY)).toBeNull();
   });
 });

@@ -17,6 +17,7 @@ import {
 describe("appNavigation", () => {
   it("maps known paths to app pages", () => {
     expect(pageFromPath("/")).toBe("home");
+    expect(pageFromPath("/chat")).toBe("chat");
     expect(pageFromPath("/console")).toBe("dashboard");
     expect(pageFromPath("/studio")).toBe("studio");
     expect(pageFromPath("/studio/agents")).toBe("studio");
@@ -33,6 +34,7 @@ describe("appNavigation", () => {
 
   it("returns canonical paths for each page", () => {
     expect(pathForPage("home")).toBe("/");
+    expect(pathForPage("chat")).toBe("/chat");
     expect(pathForPage("dashboard")).toBe("/console");
     expect(pathForPage("studio")).toBe("/studio/agents");
     expect(pathForPage("editor")).toBe("/editor");
