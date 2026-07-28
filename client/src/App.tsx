@@ -7,6 +7,7 @@ import { RouterBridgeSync } from "./components/RouterBridgeSync";
 import { StudioSectionRedirect } from "./components/StudioSectionRedirect";
 import { TicketTabRedirect } from "./components/TicketTabRedirect";
 import { McpGatewayPage } from "./pages/McpGatewayPage";
+import { BaxterChatPage } from "./pages/BaxterChatPage";
 import { BranchTriagePage } from "./pages/BranchTriagePage";
 import { Dashboard } from "./pages/Dashboard";
 import { EditorPage } from "./pages/EditorPage";
@@ -70,6 +71,7 @@ function AppShell() {
       <PageErrorBoundary resetKey={errorBoundaryKey}>
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/chat" element={<BaxterChatPage />} />
           <Route path="/console" element={<Dashboard />} />
           <Route path="/tickets/:ticketId" element={<TicketTabRedirect />} />
           <Route path="/tickets/:ticketId/:artifactTab" element={<Dashboard />} />

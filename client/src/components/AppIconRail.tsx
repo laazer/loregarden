@@ -49,6 +49,12 @@ export function AppIconRail({ onOpenSettings }: AppIconRailProps) {
         </svg>
       </NavButton>
 
+      <NavButton active={appPage === "chat"} title="Chat" to="/chat">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+          <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7A2.5 2.5 0 0 1 17.5 16H10l-4 3.2V16H6.5A2.5 2.5 0 0 1 4 13.5z" />
+        </svg>
+      </NavButton>
+
       <NavButton
         active={appPage === "dashboard" || appPage === "editor"}
         title="Console"

@@ -5,8 +5,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, type Approval, type TicketSummary } from "../api/client";
 import { BaxterAvatar } from "../components/chat/BaxterAvatar";
 import { StudioChatComposer } from "../components/studio/StudioChat";
-import { studioTicketSessionNewPath, ticketPath } from "../lib/appNavigation";
-import { HOME_BAXTER_BRIEF_KEY } from "../lib/homeBaxter";
+import { ticketPath } from "../lib/appNavigation";
+import { chatPath, stashHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
 import "./HomePage.css";
 
@@ -98,13 +98,9 @@ export function HomePage() {
   const sendToBaxter = (text: string) => {
     const content = text.trim();
     if (!content) return;
-    try {
-      sessionStorage.setItem(HOME_BAXTER_BRIEF_KEY, content);
-    } catch {
-      /* private mode — Studio still opens; brief just won't prefill */
-    }
+    stashHomeBaxterPrompt(content);
     setDraft("");
-    navigate(studioTicketSessionNewPath());
+    navigate(chatPath());
   };
 
   return (
