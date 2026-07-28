@@ -72,8 +72,15 @@ export function HomePage() {
 
   const pending = pendingApprovals(approvalsQ.data);
   const tickets = ticketsQ.data ?? [];
+  const activeTickets = useMemo(() => {
+    const rank = (t: TicketSummary) => (t.state === "blocked" ? 0 : 1);
+    return [...tickets].sort(
+      (a, b) => rank(a) - rank(b) || a.priority - b.priority || a.title.localeCompare(b.title),
+    );
+  }, [tickets]);
   const inProgress = tickets.filter((t) => t.state === "in_progress");
   const blocked = tickets.filter((t) => t.state === "blocked");
+  const ticketsLoading = ticketsQ.isLoading || (ticketsQ.isFetching && !ticketsQ.data);
   const workflows = workflowsQ.data ?? [];
   const featuredWorkflows = workflows.slice(0, 6);
   const publishedCount = workflows.filter((w) => Boolean(w.published_template_id)).length;
@@ -132,7 +139,7 @@ export function HomePage() {
                 type="button"
                 className="home-chip"
                 role="listitem"
-                onClick={() => sendToBaxter(chip)}
+                onClick={() => setDraft(chip)}
               >
                 {chip}
               </button>
@@ -192,12 +199,12 @@ export function HomePage() {
 
         <HomeCard
           title="Tickets in progress"
-          count={inProgress.length + blocked.length}
-          empty="No active tickets"
+          count={ticketsLoading ? null : inProgress.length + blocked.length}
+          empty={ticketsLoading ? "Loading…" : "No active tickets"}
           actionLabel="Open Console"
           onAction={() => navigate("/console")}
         >
-          {[...blocked, ...inProgress].slice(0, 5).map((t: TicketSummary) => (
+          {activeTickets.slice(0, 8).map((t: TicketSummary) => (
             <button
               key={t.id}
               type="button"
@@ -247,7 +254,7 @@ function HomeCard({
   children,
 }: {
   title: string;
-  count: number;
+  count: number | null;
   empty: string;
   actionLabel: string;
   onAction: () => void;
@@ -263,7 +270,7 @@ function HomeCard({
     <article className="home-card">
       <header className="home-card-head">
         <h2>{title}</h2>
-        <span className="home-card-count">{count}</span>
+        <span className="home-card-count">{count === null ? "…" : count}</span>
       </header>
       <div className="home-card-body">
         {childCount > 0 ? children : <p className="home-empty">{empty}</p>}

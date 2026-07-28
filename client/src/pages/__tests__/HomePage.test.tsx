@@ -121,4 +121,15 @@ describe("HomePage", () => {
       expect(screen.getByText("Studio new session")).toBeInTheDocument();
     });
   });
+
+  it("fills the composer from a quick-prompt chip without navigating away", () => {
+    renderHome();
+    fireEvent.click(screen.getByText("Review what's waiting on me"));
+
+    expect(screen.getByPlaceholderText("What should we ship today?")).toHaveValue(
+      "Review what's waiting on me",
+    );
+    expect(screen.queryByText("Studio new session")).not.toBeInTheDocument();
+    expect(sessionStorage.getItem(HOME_BAXTER_BRIEF_KEY)).toBeNull();
+  });
 });
