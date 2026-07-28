@@ -9,21 +9,47 @@ export type ArtifactTab =
   | "ledger"
   | "errors"
   | "triage"
-  | "pr";
+  | "pr"
+  | "artifacts";
+
+/** Nested under the Artifacts top tab (URL segment still matches ArtifactTab). */
+export type ArtifactsSubTab = "artifacts" | "errors" | "context" | "ledger";
 
 export type StudioSection = "agents" | "workflows" | "tickets" | "gates";
 
+/** Every routable ticket pane — includes Artifacts sub-tabs for deep links. */
 export const ARTIFACT_TABS: ArtifactTab[] = [
   "diff",
   "errors",
   "triage",
   "logs",
+  "artifacts",
   "tests",
   "hive",
   "context",
   "ledger",
   "pr",
 ];
+
+/** Top tab bar only — errors/context/ledger live under Artifacts. */
+export const PRIMARY_ARTIFACT_TABS: ArtifactTab[] = [
+  "diff",
+  "triage",
+  "logs",
+  "artifacts",
+  "tests",
+  "hive",
+  "pr",
+];
+
+export const ARTIFACTS_SUB_TABS: ArtifactsSubTab[] = ["artifacts", "errors", "context", "ledger"];
+
+export const ARTIFACTS_SUB_TAB_LABELS: Record<ArtifactsSubTab, string> = {
+  artifacts: "Feed",
+  errors: "Errors",
+  context: "Context",
+  ledger: "Ledger",
+};
 
 export const STUDIO_SECTIONS: StudioSection[] = ["agents", "workflows", "tickets", "gates"];
 
@@ -82,6 +108,10 @@ export function studioResourceFromPath(pathname: string): string | null {
 
 export function isArtifactTab(value: string | undefined | null): value is ArtifactTab {
   return Boolean(value && ARTIFACT_TABS.includes(value as ArtifactTab));
+}
+
+export function isArtifactsSubTab(value: string | undefined | null): value is ArtifactsSubTab {
+  return Boolean(value && ARTIFACTS_SUB_TABS.includes(value as ArtifactsSubTab));
 }
 
 export function isStudioSection(value: string | undefined | null): value is StudioSection {

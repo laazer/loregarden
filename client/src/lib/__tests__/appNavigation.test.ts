@@ -1,7 +1,9 @@
 import {
   artifactTabFromPath,
+  isArtifactsSubTab,
   pageFromPath,
   pathForPage,
+  PRIMARY_ARTIFACT_TABS,
   studioAgentNewPath,
   studioAgentPath,
   studioPath,
@@ -43,6 +45,19 @@ describe("appNavigation", () => {
     expect(ticketPath("abc-123", "logs")).toBe("/tickets/abc-123/logs");
     expect(artifactTabFromPath("/tickets/abc-123/logs")).toBe("logs");
     expect(artifactTabFromPath("/tickets/abc-123")).toBeNull();
+  });
+
+  it("keeps artifacts sub-tabs routable but off the primary bar", () => {
+    expect(PRIMARY_ARTIFACT_TABS).not.toContain("errors");
+    expect(PRIMARY_ARTIFACT_TABS).not.toContain("context");
+    expect(PRIMARY_ARTIFACT_TABS).not.toContain("ledger");
+    expect(PRIMARY_ARTIFACT_TABS).toContain("artifacts");
+    expect(isArtifactsSubTab("artifacts")).toBe(true);
+    expect(isArtifactsSubTab("errors")).toBe(true);
+    expect(isArtifactsSubTab("context")).toBe(true);
+    expect(isArtifactsSubTab("ledger")).toBe(true);
+    expect(isArtifactsSubTab("diff")).toBe(false);
+    expect(artifactTabFromPath("/tickets/abc-123/errors")).toBe("errors");
   });
 
   it("builds and parses studio routes", () => {

@@ -1062,3 +1062,45 @@ def ensure_test_artifact(
             )
             return tests
     return None
+
+
+def list_ticket_artifacts(
+    session: Session,
+    ticket_id: str,
+    *,
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Chronological artifact feed for the Artifacts tab (newest first).
+
+    The grouped ticket.artifacts payload only surfaces known kinds (diff/log/test/
+    context/error/pr). Agents — especially local models — attach arbitrary kinds
+    (`test_spec`, `source_analysis`, …) that never appear there. This list is the
+    raw row feed so operators can watch attachments land during a run.
+    """
+    rows = session.exec(
+        select(Artifact)
+        .where(Artifact.ticket_id == ticket_id)
+        .order_by(Artifact.created_at.desc())
+        .limit(limit)
+    ).all()
+    items: list[dict[str, Any]] = []
+    for art in rows:
+        raw = art.content_json or "{}"
+        try:
+            content = json.loads(raw)
+        except json.JSONDecodeError:
+            content = {"_raw": raw}
+        items.append(
+            {
+                "id": art.id,
+                "kind": art.kind,
+                "title": art.title,
+                "run_id": art.run_id,
+                "evidence_kind": art.evidence_kind,
+                "commit_sha": art.commit_sha,
+                "created_at": art.created_at.isoformat() if art.created_at else None,
+                "content_bytes": len(raw.encode("utf-8")),
+                "content": content,
+            }
+        )
+    return {"items": items, "total": len(items)}

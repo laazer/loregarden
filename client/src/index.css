@@ -3282,6 +3282,54 @@ button {
   min-height: 0;
 }
 
+/* Nested under Artifacts — match the primary tab-bar inset and tab-btn rhythm. */
+.artifacts-subtabs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--bd);
+  background: var(--bg1);
+}
+
+.artifacts-subtab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1;
+  border-radius: 8px;
+  padding: 6px 13px;
+  cursor: pointer;
+  border: 1px solid var(--bd);
+  background: transparent;
+  color: var(--txm);
+}
+
+.artifacts-subtab:hover:not(.active) {
+  color: var(--tx);
+}
+
+.artifacts-subtab.active {
+  font-weight: 600;
+  background: var(--bg2);
+  color: var(--tx);
+  border-color: var(--bd2);
+}
+
+.artifacts-subtab-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+  flex: none;
+}
+
 .dual-state {
   display: flex;
   gap: 10px;

@@ -69,6 +69,27 @@ def count_stage_dispatches(session: Session, ticket_id: str, stage_key: str) -> 
     )
 
 
+def clear_stage_dispatches(session: Session, ticket_id: str, stage_key: str) -> int:
+    """Drop the persisted dispatch markers for ``(ticket_id, stage_key)``.
+
+    A human resetting a stage to pending (or otherwise intervening after the
+    breaker fires) must get a fresh budget — otherwise the next start blocks
+    immediately on the same exhausted counter and the reset is a no-op.
+    Returns how many markers were removed.
+    """
+    rows = session.exec(
+        select(Artifact)
+        .where(Artifact.ticket_id == ticket_id)
+        .where(Artifact.kind == _DISPATCH_KIND)
+        .where(Artifact.title == _dispatch_title(stage_key))
+    ).all()
+    for row in rows:
+        session.delete(row)
+    if rows:
+        session.commit()
+    return len(rows)
+
+
 def stage_retry_block_message(stage_key: str, attempts: int, max_attempts: int) -> str:
     """ "" while ``attempts < max_attempts``; a human-readable block message once
     the budget is exhausted.

@@ -36,6 +36,7 @@ from loregarden.models.domain import (
     WorkspaceRuntimeUpdate,
 )
 from loregarden.services.acceptance_criteria import load_criteria, serialize_criteria
+from loregarden.services.artifact_service import list_ticket_artifacts
 from loregarden.services.cli_settings import (
     get_ticket_orchestration_runtime,
     set_ticket_orchestration_runtime,
@@ -633,6 +634,23 @@ def get_ticket_ledger(
         raise HTTPException(404, "Ticket not found")
     runs = RunService(session).list_runs(ticket_id=ticket_id, limit=limit)
     return ledger_payload(runs)
+
+
+@router.get("/{ticket_id}/artifacts", response_model=dict)
+def get_ticket_artifacts(
+    ticket_id: str,
+    limit: int = 200,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Raw artifact feed for this ticket (newest first).
+
+    Unlike the grouped `ticket.artifacts` view, this includes every kind agents
+    attach — including ad-hoc kinds that never map to Diff/Logs/Context tabs.
+    """
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    return list_ticket_artifacts(session, ticket_id, limit=limit)
 
 
 @router.patch("/{ticket_id}", response_model=TicketDetail)

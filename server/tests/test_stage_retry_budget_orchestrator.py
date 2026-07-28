@@ -396,3 +396,39 @@ def test_self_redo_reject_loop_trips_the_breaker_live_like_the_static_qa_inciden
     # the rework ledger could not have fired before its 4th reroute.
     assert _script_review_run_count(db_session, ticket.id) == 6
     assert count_stage_dispatches(db_session, ticket.id, "script_review") == 2
+
+
+def test_re_running_a_blocked_stage_refreshes_its_retry_budget(db_session: Session, monkeypatch):
+    """Human Continue / Re-run must wipe the exhausted dispatch counter.
+
+    Ticket 105's breaker holds across orchestration runs until a human
+    intervenes. Starting a stage (the Re-run button) is that intervention —
+    without a refresh, the next start blocks immediately on the same counter.
+    """
+    from loregarden.agents.executors.cli import CliAgentExecutor
+    from loregarden.services.orchestration import OrchestrationService
+
+    ticket = _build_fixture(db_session)
+    _seed_prior_budget_attempts(db_session, ticket.id, "script_review", count=5)
+
+    def refuse_dispatch(self, run: AgentRun, worker_ticket: Ticket, **kwargs):  # pragma: no cover
+        raise AssertionError("must not dispatch while budget is exhausted")
+
+    monkeypatch.setattr(CliAgentExecutor, "execute", refuse_dispatch)
+    builtin = BuiltinOrchestrator(db_session)
+    builtin.execute(ticket, _profile(max_attempts=5), max_stages=10)
+    db_session.refresh(ticket)
+    assert ticket.state == TicketState.BLOCKED
+    assert count_stage_dispatches(db_session, ticket.id, "script_review") == 5
+
+    monkeypatch.setattr(
+        "loregarden.services.orchestration.bootstrap_run_log",
+        lambda _run: None,
+    )
+    orch = OrchestrationService(db_session)
+    run = orch.start_run(ticket, stage_key="script_review", agent_id="static_qa")
+    db_session.refresh(ticket)
+    assert count_stage_dispatches(db_session, ticket.id, "script_review") == 0
+    assert ticket.state == TicketState.IN_PROGRESS
+    assert ticket.blocking_issues == ""
+    assert run.stage_key == "script_review"

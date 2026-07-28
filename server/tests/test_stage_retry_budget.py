@@ -88,6 +88,21 @@ def test_count_is_not_reset_or_bypassed_by_a_fresh_session(db_session: Session, 
         assert count_stage_dispatches(fresh_session, "t1", "implement") == 5
 
 
+def test_clear_stage_dispatches_resets_budget_for_that_stage_only(db_session: Session):
+    from loregarden.services.stage_retry_budget import clear_stage_dispatches
+
+    for _ in range(5):
+        record_stage_dispatch(db_session, "t1", "implement")
+    record_stage_dispatch(db_session, "t1", "verify")
+    assert clear_stage_dispatches(db_session, "t1", "implement") == 5
+    assert count_stage_dispatches(db_session, "t1", "implement") == 0
+    assert count_stage_dispatches(db_session, "t1", "verify") == 1
+    assert (
+        exceeds_stage_retry_budget(db_session, "t1", "implement", enabled=True, max_attempts=5)
+        == ""
+    )
+
+
 def test_recording_one_stage_does_not_affect_another_stage_of_the_same_ticket(
     db_session: Session,
 ):

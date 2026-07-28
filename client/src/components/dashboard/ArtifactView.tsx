@@ -86,16 +86,17 @@ export function ArtifactView({
       : undefined;
 
     return (
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 6, minHeight: 0 }}>
         {(ticket.blocking_issues || errorArt?.message) && (
           <div
-            className="state-card"
+            className="list-btn"
             style={{
+              padding: "11px 16px",
               borderColor: "rgba(240,96,63,.35)",
               background: "rgba(240,96,63,.08)",
             }}
           >
-            <div className="state-label" style={{ color: "var(--rdl)" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rdl)" }}>
               Blocking issue
             </div>
             <pre
@@ -113,9 +114,11 @@ export function ArtifactView({
           </div>
         )}
         {errorArt && (
-          <div className="state-card">
+          <div className="list-btn" style={{ padding: "11px 16px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <div className="state-label">Failed run</div>
+              <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--txl)" }}>
+                Failed run
+              </div>
               {onOpenRunLog && errorRunId && (
                 <ViewLogButton onClick={() => onOpenRunLog(errorRunId)} />
               )}
@@ -131,9 +134,9 @@ export function ArtifactView({
           </div>
         )}
         {failedRuns.map((run) => (
-          <div key={run.id} className="state-card">
+          <div key={run.id} className="list-btn" style={{ padding: "11px 16px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <div className="state-label">{run.run_code}</div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 12.5, color: "var(--tx)" }}>{run.run_code}</div>
               {onOpenRunLog && <ViewLogButton onClick={() => onOpenRunLog(run.id)} />}
             </div>
             <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--txm)", marginTop: 6 }}>
@@ -282,10 +285,12 @@ export function ArtifactView({
   }
   if (!sections.length && !runRows.length && !stages.length) return <EmptyArtifacts />;
   return (
-    <div style={{ padding: 16 }}>
+    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
       {runRows.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <div className="state-label">Agent runs</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontFamily: "var(--dp)", fontSize: 13, color: "var(--txm)" }}>
+            {runRows.length} agent run{runRows.length === 1 ? "" : "s"}
+          </div>
           {runRows.map((r) => (
             <button
               key={r.id}
@@ -297,7 +302,7 @@ export function ArtifactView({
                 display: "block",
                 width: "100%",
                 textAlign: "left",
-                marginBottom: 4,
+                padding: "11px 16px",
                 fontFamily: "var(--mono)",
                 fontSize: 11,
                 cursor: onOpenRunLog ? "pointer" : "default",
@@ -309,23 +314,22 @@ export function ArtifactView({
         </div>
       )}
       {stages.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <div className="state-label">Workflow steps</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontFamily: "var(--dp)", fontSize: 13, color: "var(--txm)" }}>Workflow steps</div>
           {stages.map((stage) => {
             const reports = reportsByStage.get(stage.key) ?? [];
             return (
-              <div key={stage.key} style={{ padding: "9px 0", borderBottom: "1px solid var(--bd)" }}>
+              <div key={stage.key} className="list-btn" style={{ padding: "11px 16px" }}>
                 <div style={{ color: "var(--tx)", fontSize: 13 }}>{stage.name}</div>
-                <div style={{ fontSize: 12, color: "var(--txm)" }}>
+                <div style={{ fontSize: 12, color: "var(--txm)", marginTop: 4 }}>
                   Agent: {stage.agent_id || "N/A"} · Status: {stage.status}
                 </div>
                 {reports.map((report, i) => (
                   <div
                     key={i}
                     style={{
-                      marginTop: 6,
-                      marginLeft: 8,
-                      paddingLeft: 8,
+                      marginTop: 8,
+                      paddingLeft: 10,
                       borderLeft: "2px solid var(--bd)",
                       fontSize: 12,
                     }}
@@ -352,12 +356,16 @@ export function ArtifactView({
         </div>
       )}
       {otherSections.map((sec, i) => (
-        <div key={i} style={{ marginBottom: 16 }}>
-          <div className="state-label">{sec.title}</div>
+        <div key={i} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontFamily: "var(--dp)", fontSize: 13, color: "var(--txm)" }}>{sec.title}</div>
           {sec.rows?.map((r, j) => (
-            <div key={j} style={{ display: "flex", gap: 12, padding: "9px 0", borderBottom: "1px solid var(--bd)" }}>
-              <span style={{ width: 130, color: "var(--txm)" }}>{r.k}</span>
-              <span style={{ fontFamily: "var(--mono)", flex: 1 }}>{r.v}</span>
+            <div
+              key={j}
+              className="list-btn"
+              style={{ display: "flex", gap: 12, padding: "11px 16px", alignItems: "baseline" }}
+            >
+              <span style={{ width: 130, flex: "0 0 auto", color: "var(--txm)", fontSize: 12 }}>{r.k}</span>
+              <span style={{ fontFamily: "var(--mono)", flex: 1, minWidth: 0, fontSize: 12 }}>{r.v}</span>
             </div>
           ))}
         </div>
