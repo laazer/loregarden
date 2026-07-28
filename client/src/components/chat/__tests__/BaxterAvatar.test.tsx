@@ -9,7 +9,15 @@ describe("BaxterAvatar", () => {
     render(<BaxterAvatar state="idle" label="Scoper" />);
     const avatar = screen.getByRole("img", { name: "Scoper" });
     expect(avatar).toHaveAttribute("data-baxter-state", "idle");
+    expect(avatar).toHaveAttribute("data-baxter-variant", "full");
     expect(avatar.className).toContain("baxter-avatar--idle");
+  });
+
+  it("renders the head profile variant for chat icons", () => {
+    render(<BaxterAvatar variant="head" state="idle" label="Baxter" />);
+    const avatar = screen.getByRole("img", { name: "Baxter" });
+    expect(avatar).toHaveAttribute("data-baxter-variant", "head");
+    expect(avatar.className).toContain("baxter-avatar--head");
   });
 
   it.each([

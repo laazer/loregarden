@@ -296,7 +296,7 @@
 
 .queue-item.drag-over {
   border-color: var(--ac);
-  background: rgba(45, 212, 167, 0.06);
+  background: rgba(111, 174, 143, 0.06);
 }
 
 .queue-item-handle {
@@ -311,7 +311,7 @@
 }
 
 .queue-position {
-  background: rgba(45, 212, 167, 0.14);
+  background: rgba(111, 174, 143, 0.14);
   color: var(--ac2);
   padding: 2px 8px;
   border-radius: 6px;

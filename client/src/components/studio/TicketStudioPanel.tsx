@@ -756,7 +756,7 @@ export function TicketStudioPanel({
               <div className="ticket-studio-chat-body">
                 {selectedSession.summary && (
                   <div className="ticket-studio-msg-row">
-                    <BaxterAvatar state="idle" label={TRIAGE_AGENT_NAME} />
+                    <BaxterAvatar variant="head" state="idle" label={TRIAGE_AGENT_NAME} />
                     <div className="ticket-studio-msg ticket-studio-msg-assistant">
                       <div className="ticket-studio-msg-body">{selectedSession.summary}</div>
                     </div>

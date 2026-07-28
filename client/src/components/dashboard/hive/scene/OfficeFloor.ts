@@ -231,7 +231,7 @@ export class OfficeFloor {
         style: new TextStyle({
           fontFamily: "monospace",
           fontSize: 10,
-          fill: 0x2dd4a7,
+          fill: 0x6fae8f,
           fontWeight: "bold",
         }),
       });

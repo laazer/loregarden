@@ -245,8 +245,8 @@
 }
 
 .operation-item.selected {
-  background: rgba(45, 212, 167, 0.06);
-  border-color: rgba(45, 212, 167, 0.35);
+  background: rgba(111, 174, 143, 0.06);
+  border-color: rgba(111, 174, 143, 0.35);
 }
 
 .operation-item .op-type {
