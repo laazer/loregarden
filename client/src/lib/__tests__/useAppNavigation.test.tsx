@@ -57,6 +57,11 @@ describe("useAppNavigation", () => {
     expect(screen.getByTestId("artifact-tab")).toHaveTextContent("hive");
   });
 
+  it("treats / as home and /console as dashboard", () => {
+    expect(pageFromPath("/")).toBe("home");
+    expect(pageFromPath("/console")).toBe("dashboard");
+  });
+
   it("reads studio section and resource from studio routes", () => {
     render(
       <MemoryRouter initialEntries={[studioAgentPath("backend_implementer")]}>

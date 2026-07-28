@@ -14,7 +14,8 @@ import {
 
 describe("appNavigation", () => {
   it("maps known paths to app pages", () => {
-    expect(pageFromPath("/")).toBe("dashboard");
+    expect(pageFromPath("/")).toBe("home");
+    expect(pageFromPath("/console")).toBe("dashboard");
     expect(pageFromPath("/studio")).toBe("studio");
     expect(pageFromPath("/studio/agents")).toBe("studio");
     expect(pageFromPath("/studio/workflows")).toBe("studio");
@@ -24,12 +25,13 @@ describe("appNavigation", () => {
     expect(pageFromPath("/tickets/abc-123/diff")).toBe("dashboard");
   });
 
-  it("falls back to dashboard for unknown paths", () => {
-    expect(pageFromPath("/unknown")).toBe("dashboard");
+  it("falls back to home for unknown paths", () => {
+    expect(pageFromPath("/unknown")).toBe("home");
   });
 
   it("returns canonical paths for each page", () => {
-    expect(pathForPage("dashboard")).toBe("/");
+    expect(pathForPage("home")).toBe("/");
+    expect(pathForPage("dashboard")).toBe("/console");
     expect(pathForPage("studio")).toBe("/studio/agents");
     expect(pathForPage("editor")).toBe("/editor");
     expect(pathForPage("queue")).toBe("/queue");

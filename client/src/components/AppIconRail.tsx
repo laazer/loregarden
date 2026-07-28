@@ -42,10 +42,17 @@ export function AppIconRail({ onOpenSettings }: AppIconRailProps) {
         <BrandMark />
       </div>
 
+      <NavButton active={appPage === "home"} title="Home" to="/">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+          <path d="M3 11.5 12 4l9 7.5" />
+          <path d="M6 10.5V20h12v-9.5" />
+        </svg>
+      </NavButton>
+
       <NavButton
         active={appPage === "dashboard" || appPage === "editor"}
         title="Console"
-        to="/"
+        to="/console"
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
           <rect x="3" y="4" width="18" height="16" rx="2" />

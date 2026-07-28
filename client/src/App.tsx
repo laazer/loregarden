@@ -10,6 +10,7 @@ import { McpGatewayPage } from "./pages/McpGatewayPage";
 import { BranchTriagePage } from "./pages/BranchTriagePage";
 import { Dashboard } from "./pages/Dashboard";
 import { EditorPage } from "./pages/EditorPage";
+import { HomePage } from "./pages/HomePage";
 import { QueuePage } from "./pages/QueuePage";
 import { StudioPage } from "./pages/StudioPage";
 import { navigateToPage, pageFromPath } from "./lib/useAppNavigation";
@@ -47,11 +48,11 @@ class PageErrorBoundary extends Component<
             type="button"
             className="btn-secondary"
             onClick={() => {
-              navigateToPage("dashboard");
+              navigateToPage("home");
               this.setState({ error: null });
             }}
           >
-            Back to IDE
+            Back to Home
           </button>
         </div>
       );
@@ -68,7 +69,8 @@ function AppShell() {
     <AppLayout>
       <PageErrorBoundary resetKey={errorBoundaryKey}>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<HomePage />} />
+          <Route path="/console" element={<Dashboard />} />
           <Route path="/tickets/:ticketId" element={<TicketTabRedirect />} />
           <Route path="/tickets/:ticketId/:artifactTab" element={<Dashboard />} />
           <Route path="/studio" element={<StudioSectionRedirect />} />

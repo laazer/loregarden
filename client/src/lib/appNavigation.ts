@@ -1,4 +1,4 @@
-export type AppPage = "dashboard" | "studio" | "editor" | "queue" | "branch-triage" | "mcp";
+export type AppPage = "home" | "dashboard" | "studio" | "editor" | "queue" | "branch-triage" | "mcp";
 
 export type ArtifactTab =
   | "diff"
@@ -30,7 +30,8 @@ export const STUDIO_SECTIONS: StudioSection[] = ["agents", "workflows", "tickets
 export const STUDIO_NEW_RESOURCE = "new";
 
 const PAGE_PATHS: Record<AppPage, string> = {
-  dashboard: "/",
+  home: "/",
+  dashboard: "/console",
   studio: "/studio/agents",
   editor: "/editor",
   queue: "/queue",
@@ -122,6 +123,8 @@ export function studioSectionFromPath(pathname: string): StudioSection {
 }
 
 export function pageFromPath(pathname: string): AppPage {
+  if (pathname === "/" || pathname === "") return "home";
+  if (pathname === "/console" || pathname.startsWith("/console/")) return "dashboard";
   if (pathname === "/studio" || pathname.startsWith("/studio/")) return "studio";
   if (pathname === "/editor" || pathname.startsWith("/editor/")) return "editor";
   if (pathname === "/queue" || pathname.startsWith("/queue/")) return "queue";
@@ -129,7 +132,9 @@ export function pageFromPath(pathname: string): AppPage {
     return "branch-triage";
   }
   if (pathname === "/mcp" || pathname.startsWith("/mcp/")) return "mcp";
-  return "dashboard";
+  // Ticket deep-links still live in the Console shell.
+  if (pathname.startsWith("/tickets/")) return "dashboard";
+  return "home";
 }
 
 export function pathForPage(page: AppPage): string {

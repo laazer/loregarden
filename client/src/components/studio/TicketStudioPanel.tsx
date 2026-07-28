@@ -20,6 +20,7 @@ import {
   type WorkspaceSummary,
 } from "../../api/client";
 import { isStudioNewResource } from "../../lib/appNavigation";
+import { HOME_BAXTER_BRIEF_KEY } from "../../lib/homeBaxter";
 import { TRIAGE_AGENT_NAME } from "../../lib/triageAgent";
 import {
   navigateToStudio,
@@ -136,7 +137,18 @@ export function TicketStudioPanel({
 
   useEffect(() => {
     if (!isNewSession) return;
-    setNewDraft(emptySessionDraft());
+    const next = emptySessionDraft();
+    try {
+      const brief = sessionStorage.getItem(HOME_BAXTER_BRIEF_KEY);
+      if (brief?.trim()) {
+        next.brief = brief.trim();
+        next.title = brief.trim().slice(0, 72);
+        sessionStorage.removeItem(HOME_BAXTER_BRIEF_KEY);
+      }
+    } catch {
+      /* ignore storage failures */
+    }
+    setNewDraft(next);
   }, [isNewSession]);
 
   useEffect(() => {
