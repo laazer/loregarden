@@ -41,10 +41,9 @@ export function ArtifactsHub({
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       <div
-        className="studio-subtabs tab-bar-scroll"
+        className="artifacts-subtabs"
         role="tablist"
         aria-label="Artifact sections"
-        style={{ padding: "8px 16px" }}
       >
         {ARTIFACTS_SUB_TABS.map((tab) => {
           const selected = subTab === tab;
@@ -54,22 +53,13 @@ export function ArtifactsHub({
               type="button"
               role="tab"
               aria-selected={selected}
-              className={`studio-subtab${selected ? " active" : ""}`}
+              className={`artifacts-subtab${selected ? " active" : ""}`}
               onClick={() => navigateToTicketTab(ticket.id, tab)}
-              style={tab === "errors" && hasRunErrors ? { color: "var(--rdl)" } : undefined}
+              style={tab === "errors" && hasRunErrors && !selected ? { color: "var(--rdl)" } : undefined}
             >
-              {ARTIFACTS_SUB_TAB_LABELS[tab]}
+              <span>{ARTIFACTS_SUB_TAB_LABELS[tab]}</span>
               {tab === "errors" && hasRunErrors ? (
-                <span
-                  style={{
-                    marginLeft: 6,
-                    minWidth: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: "var(--red)",
-                    display: "inline-block",
-                  }}
-                />
+                <span className="artifacts-subtab-dot" aria-hidden />
               ) : null}
             </button>
           );

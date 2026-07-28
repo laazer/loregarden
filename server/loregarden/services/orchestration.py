@@ -34,6 +34,7 @@ from loregarden.services.run_completion import (
     settle_stage_after_failed_completion,
 )
 from loregarden.services.run_log_stream import bootstrap_run_log
+from loregarden.services.stage_retry_budget import clear_stage_dispatches
 from loregarden.services.studio_routing import find_terminal_stage, is_terminal_stage
 from loregarden.services.triage_question_log import record_triage_question_exchange
 from loregarden.services.workflow_service import resolve_ticket_stages, resolve_workspace_stages
@@ -293,16 +294,17 @@ class OrchestrationService:
             ticket.last_updated_by = "human"
 
         if body.stage_updates and instance and stages:
-            stage_map = parse_stage_map(instance, stages)
-            for key, status in body.stage_updates.items():
-                if key not in stage_map:
-                    raise ValueError(f"Unknown stage key: {key}")
-                stage_map[key] = status
-            instance.stages_json = serialize_stage_map(stage_map, stages)
-            if body.auto_state is True or not ticket.state_locked:
-                reconcile_workflow_state(ticket, instance, stages, persist=False)
+            self._apply_manual_stage_updates(
+                ticket,
+                instance,
+                stages,
+                body.stage_updates,
+                auto_state=body.auto_state is True or not ticket.state_locked,
+            )
         elif body.stage_key and body.stage_status and instance and stages:
             set_stage_status(ticket, instance, stages, body.stage_key, body.stage_status)
+            if body.stage_status == StageStatus.PENDING:
+                self.refresh_stage_retry_budget(ticket, body.stage_key)
         elif instance and stages:
             stage_map = parse_stage_map(instance, stages)
             if body.workflow_stage_key:
@@ -337,6 +339,64 @@ class OrchestrationService:
                 payload={"state": ticket.state.value, "manual": True},
             )
         return ticket
+
+    def refresh_stage_retry_budget(self, ticket: Ticket, stage_key: str) -> None:
+        """Give a continued / human-reset stage a full dispatch budget again.
+
+        The circuit breaker persists ``stage_dispatch`` artifacts across runs.
+        Continuing a failed or blocked stage without wiping that counter makes
+        the next start re-block immediately on the same exhausted budget.
+        """
+        if not stage_key:
+            return
+        clear_stage_dispatches(self.session, ticket.id, stage_key)
+        if "retry budget" in (ticket.blocking_issues or "").lower():
+            ticket.blocking_issues = ""
+        if ticket.state == TicketState.BLOCKED and not ticket.state_locked:
+            ticket.state = TicketState.IN_PROGRESS
+            ticket.next_status = ""
+
+    def _apply_manual_stage_updates(
+        self,
+        ticket: Ticket,
+        instance: WorkflowInstance,
+        stages: list[WorkflowStageDef],
+        stage_updates: dict[str, StageStatus],
+        *,
+        auto_state: bool,
+    ) -> None:
+        stage_map = parse_stage_map(instance, stages)
+        for key, status in stage_updates.items():
+            if key not in stage_map:
+                raise ValueError(f"Unknown stage key: {key}")
+            stage_map[key] = status
+            if status == StageStatus.PENDING:
+                self.refresh_stage_retry_budget(ticket, key)
+        instance.stages_json = serialize_stage_map(stage_map, stages)
+        if auto_state:
+            reconcile_workflow_state(ticket, instance, stages, persist=False)
+
+    def _prepare_stage_start(
+        self,
+        ticket: Ticket,
+        target_key: str,
+        stage_map: dict[str, StageStatus],
+    ) -> None:
+        """Clear stale blocking text and restore budget when re-entering a blocked stage."""
+        # Starting a stage is a fresh attempt — drop any stale blocking message
+        # left over from a prior failure. Without this, a stage that was left
+        # PENDING (not BLOCKED) after an earlier failure elsewhere carries its
+        # old blocking_issues text forward; the moment this run marks it
+        # RUNNING, reconcile_workflow_state sees non-empty blocking_issues and
+        # misreports the ticket as BLOCKED before anything has actually failed
+        # in this attempt.
+        ticket.blocking_issues = ""
+        # Human Continue / Re-run of a blocked stage must restore a full
+        # dispatch budget. Do not clear on ordinary in-loop starts — parallel
+        # members and self-reroutes would wipe the counter the breaker just
+        # recorded for this pass.
+        if ticket.state == TicketState.BLOCKED or stage_map.get(target_key) == StageStatus.BLOCKED:
+            self.refresh_stage_retry_budget(ticket, target_key)
 
     def advance_stage(self, ticket: Ticket) -> Ticket:
         if ticket.state == TicketState.WONT_DO:
@@ -626,14 +686,7 @@ class OrchestrationService:
         if stage_map.get(target_key) == StageStatus.WONT_DO:
             raise ValueError(f"Stage '{target_key}' is marked won't do")
 
-        # Starting a stage is a fresh attempt — drop any stale blocking message
-        # left over from a prior failure. Without this, a stage that was left
-        # PENDING (not BLOCKED) after an earlier failure elsewhere carries its
-        # old blocking_issues text forward; the moment this run marks it
-        # RUNNING, reconcile_workflow_state sees non-empty blocking_issues and
-        # misreports the ticket as BLOCKED before anything has actually failed
-        # in this attempt.
-        ticket.blocking_issues = ""
+        self._prepare_stage_start(ticket, target_key, stage_map)
 
         if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
             raise ValueError(f"Cannot start run for ticket in state: {ticket.state.value}")
