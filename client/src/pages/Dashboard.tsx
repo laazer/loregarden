@@ -7,7 +7,7 @@ import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetai
 import { PrioBars } from "../components/PrioBars";
 import { TicketPaneFilters } from "../components/TicketPaneFilters";
 import { ArtifactView } from "../components/dashboard/ArtifactView";
-import { ArtifactsPanel } from "../components/dashboard/ArtifactsPanel";
+import { ArtifactsHub } from "../components/dashboard/ArtifactsHub";
 import { HiveSimulationPanel } from "../components/dashboard/HiveSimulationPanel";
 import { LogsPanel } from "../components/LogsPanel";
 import { TriagePanel } from "../components/TriagePanel";
@@ -37,7 +37,7 @@ import { runtimeFromWorkspace, runtimeSettingsEqual, runtimeSummaryLabel } from 
 import { TriageModelModal } from "../components/TriageModelModal";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
 import { navigateToPage, navigateToStudioTicketSession, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
-import { isArtifactTab } from "../lib/appNavigation";
+import { isArtifactTab, isArtifactsSubTab, PRIMARY_ARTIFACT_TABS } from "../lib/appNavigation";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useUiStore, type PaneId } from "../state/uiStore";
 import { agentsAssembleLabel } from "../lib/workflowHelpers";
@@ -191,7 +191,10 @@ export function Dashboard() {
   const artifactTabRefs = useRef<Partial<Record<string, HTMLButtonElement>>>({});
 
   useEffect(() => {
-    artifactTabRefs.current[artifactTab]?.scrollIntoView?.({ block: "nearest", inline: "center" });
+    artifactTabRefs.current[isArtifactsSubTab(artifactTab) ? "artifacts" : artifactTab]?.scrollIntoView?.({
+      block: "nearest",
+      inline: "center",
+    });
   }, [artifactTab]);
 
   const wsParam = workspace === "all" ? undefined : workspace;
@@ -1556,18 +1559,20 @@ export function Dashboard() {
         <section className={`artifacts-pane ${showWorkflow ? "" : "pane-fill"}`.trim()}>
           <div className="tab-bar">
             <div className="tab-bar-scroll" role="tablist" aria-label="Artifact views">
-              {(["diff", "errors", "triage", "logs", "artifacts", "tests", "hive", "context", "ledger", "pr"] as const).map((t) => (
+              {PRIMARY_ARTIFACT_TABS.map((t) => {
+                const selected = t === "artifacts" ? isArtifactsSubTab(artifactTab) : artifactTab === t;
+                return (
                 <button
                   key={t}
                   ref={(el) => {
                     if (el) artifactTabRefs.current[t] = el;
                   }}
                   role="tab"
-                  aria-selected={artifactTab === t}
-                  className={`tab-btn ${artifactTab === t ? "active" : ""}`}
+                  aria-selected={selected}
+                  className={`tab-btn ${selected ? "active" : ""}`}
                   onClick={() => selectedId && navigateToTicketTab(selectedId, t)}
                   style={
-                    t === "errors" && hasRunErrors
+                    t === "artifacts" && hasRunErrors
                       ? { color: "var(--rdl)" }
                       : t === "triage" && triagePendingCount > 0
                         ? { color: "var(--amb)" }
@@ -1575,7 +1580,7 @@ export function Dashboard() {
                   }
                 >
                   {t === "pr" ? "PR" : t.charAt(0).toUpperCase() + t.slice(1)}
-                  {t === "errors" && hasRunErrors && (
+                  {t === "artifacts" && hasRunErrors && (
                     <span
                       style={{
                         marginLeft: 6,
@@ -1610,7 +1615,8 @@ export function Dashboard() {
                     />
                   )}
                 </button>
-              ))}
+              );
+              })}
             </div>
             <div className="tab-bar-actions">
               <PaneHideButton
@@ -1641,10 +1647,13 @@ export function Dashboard() {
                   qc.invalidateQueries({ queryKey: ["runs", selectedId] });
                 }}
               />
-            ) : artifactTab === "artifacts" && sel ? (
-              <ArtifactsPanel
-                ticketId={sel.id}
+            ) : isArtifactsSubTab(artifactTab) && sel ? (
+              <ArtifactsHub
+                ticket={sel}
+                subTab={artifactTab}
+                runs={ticketRuns.data ?? []}
                 isActive={hasActiveRun || sel.workflow_stage_status === "running"}
+                hasRunErrors={hasRunErrors}
                 onOpenRunLog={setLogRunId}
               />
             ) : artifactTab === "hive" && sel ? (
