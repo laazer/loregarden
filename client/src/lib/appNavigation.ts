@@ -9,7 +9,8 @@ export type ArtifactTab =
   | "ledger"
   | "errors"
   | "triage"
-  | "pr";
+  | "pr"
+  | "artifacts";
 
 export type StudioSection = "agents" | "workflows" | "tickets" | "gates";
 
@@ -18,6 +19,7 @@ export const ARTIFACT_TABS: ArtifactTab[] = [
   "errors",
   "triage",
   "logs",
+  "artifacts",
   "tests",
   "hive",
   "context",

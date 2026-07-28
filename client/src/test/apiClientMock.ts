@@ -24,6 +24,7 @@ export const api = {
   runLog: jest.fn(),
   runMessages: jest.fn(),
   ticketLedger: jest.fn(),
+  ticketArtifacts: jest.fn(),
   mcpServers: jest.fn(),
   mcpTelemetry: jest.fn(),
   checkMcpServerHealth: jest.fn(),

@@ -85,6 +85,7 @@ import type {
   RunLog,
   RunMessage,
   TicketLedger,
+  TicketArtifactsFeed,
   McpServerInput,
   McpTelemetry,
   McpServerView,
@@ -217,6 +218,8 @@ export const api = {
     request<{ deleted: string }>(`/api/mcp-servers/${id}`, { method: "DELETE" }),
   ticketLedger: (ticketId: string) =>
     request<TicketLedger>(`/api/tickets/${ticketId}/ledger`),
+  ticketArtifacts: (ticketId: string) =>
+    request<TicketArtifactsFeed>(`/api/tickets/${ticketId}/artifacts`),
   runMessages: (runId: string) =>
     request<{ messages: RunMessage[]; refusal: string }>(`/api/runs/${runId}/messages`),
   sendRunMessage: (runId: string, content: string) =>

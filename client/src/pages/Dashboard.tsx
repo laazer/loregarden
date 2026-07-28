@@ -7,6 +7,7 @@ import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetai
 import { PrioBars } from "../components/PrioBars";
 import { TicketPaneFilters } from "../components/TicketPaneFilters";
 import { ArtifactView } from "../components/dashboard/ArtifactView";
+import { ArtifactsPanel } from "../components/dashboard/ArtifactsPanel";
 import { HiveSimulationPanel } from "../components/dashboard/HiveSimulationPanel";
 import { LogsPanel } from "../components/LogsPanel";
 import { TriagePanel } from "../components/TriagePanel";
@@ -289,6 +290,14 @@ export function Dashboard() {
       const status = query.state.data?.workflow_stage_status;
       return hasActiveRun || status === "running" || status === "awaiting" ? 1000 : 3000;
     },
+  });
+
+  const artifactsFeed = useQuery({
+    queryKey: ["ticket-artifacts", selectedId],
+    queryFn: () => api.ticketArtifacts(selectedId!),
+    enabled: !!selectedId,
+    refetchInterval: () =>
+      hasActiveRun || detail.data?.workflow_stage_status === "running" ? 2000 : false,
   });
 
   const orchestrate = useMutation({
@@ -1547,7 +1556,7 @@ export function Dashboard() {
         <section className={`artifacts-pane ${showWorkflow ? "" : "pane-fill"}`.trim()}>
           <div className="tab-bar">
             <div className="tab-bar-scroll" role="tablist" aria-label="Artifact views">
-              {(["diff", "errors", "triage", "logs", "tests", "hive", "context", "ledger", "pr"] as const).map((t) => (
+              {(["diff", "errors", "triage", "logs", "artifacts", "tests", "hive", "context", "ledger", "pr"] as const).map((t) => (
                 <button
                   key={t}
                   ref={(el) => {
@@ -1581,6 +1590,11 @@ export function Dashboard() {
                   {t === "triage" && triagePendingCount > 0 && (
                     <span className="count-pill" style={{ marginLeft: 6, fontSize: 9 }}>
                       {triagePendingCount}
+                    </span>
+                  )}
+                  {t === "artifacts" && (artifactsFeed.data?.total ?? 0) > 0 && (
+                    <span className="count-pill" style={{ marginLeft: 6, fontSize: 9 }}>
+                      {artifactsFeed.data?.total}
                     </span>
                   )}
                   {t === "pr" && sel?.artifacts?.pr && (
@@ -1626,6 +1640,12 @@ export function Dashboard() {
                   qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
                   qc.invalidateQueries({ queryKey: ["runs", selectedId] });
                 }}
+              />
+            ) : artifactTab === "artifacts" && sel ? (
+              <ArtifactsPanel
+                ticketId={sel.id}
+                isActive={hasActiveRun || sel.workflow_stage_status === "running"}
+                onOpenRunLog={setLogRunId}
               />
             ) : artifactTab === "hive" && sel ? (
               <HiveSimulationPanel ticket={sel} />

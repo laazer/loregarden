@@ -210,6 +210,24 @@ export interface TicketLedger {
   total_seconds: number;
 }
 
+/** One row from the raw ticket artifact feed (Artifacts tab). */
+export interface TicketArtifactItem {
+  id: string;
+  kind: string;
+  title: string;
+  run_id: string | null;
+  evidence_kind: string;
+  commit_sha: string;
+  created_at: string | null;
+  content_bytes: number;
+  content: unknown;
+}
+
+export interface TicketArtifactsFeed {
+  items: TicketArtifactItem[];
+  total: number;
+}
+
 /** A third-party MCP server the control plane knows about. */
 export interface McpServerView {
   id: string;
