@@ -118,7 +118,7 @@ export function HomePage() {
 
       <section className="home-hero" aria-label="Ask Baxter">
         <div className="home-hero-avatar">
-          <BaxterAvatar state="idle" label="Baxter" />
+          <BaxterAvatar variant="head" state="idle" size={64} label="Baxter" />
         </div>
         <div className="home-hero-body">
           <StudioChatComposer

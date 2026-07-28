@@ -189,7 +189,7 @@ export function BaxterChatPage() {
     <div className={`baxter-chat${isEmpty ? " baxter-chat--empty" : ""}`}>
       <header className="baxter-chat-top">
         <div className="baxter-chat-brand">
-          <BaxterAvatar state={busy ? "thinking" : "idle"} size={28} />
+          <BaxterAvatar variant="head" state="idle" size={32} />
           <span className="baxter-chat-name">Baxter</span>
           <span className="baxter-chat-context">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -217,7 +217,7 @@ export function BaxterChatPage() {
 
           <section className="baxter-chat-hero" aria-label="Ask Baxter">
             <div className="baxter-chat-hero-avatar">
-              <BaxterAvatar state="idle" label="Baxter" />
+              <BaxterAvatar variant="head" state="idle" size={64} label="Baxter" />
             </div>
             <div className="baxter-chat-hero-body">
               <StudioChatComposer
@@ -311,7 +311,15 @@ export function BaxterChatPage() {
 
             {busy ? (
               <div className="baxter-chat-turn baxter-chat-turn--assistant">
-                <p className="baxter-chat-thinking">Baxter is looking…</p>
+                <div className="baxter-chat-loading" role="status" aria-live="polite">
+                  <div className="baxter-chat-loading-track" aria-hidden>
+                    <div className="baxter-chat-loading-walker">
+                      <BaxterAvatar variant="full" state="typing" size={56} />
+                    </div>
+                  </div>
+                  <p className="baxter-chat-loading-title">Baxter is looking…</p>
+                  <p className="baxter-chat-loading-sub">Fetching a reply from your workspace model</p>
+                </div>
               </div>
             ) : null}
             <div ref={threadEndRef} />

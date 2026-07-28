@@ -86,7 +86,7 @@
 }
 
 .ticket-filter-option.active {
-  background: rgba(45, 212, 167, 0.1);
+  background: rgba(111, 174, 143, 0.1);
   color: var(--ac2);
 }
 

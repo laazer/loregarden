@@ -128,6 +128,29 @@ describe("BaxterChatPage", () => {
     });
   });
 
+  it("shows an animated loading card while waiting on Baxter", async () => {
+    let resolveReply: (value: { reply: string }) => void = () => undefined;
+    mockedApi.sendBaxterChatMessage.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveReply = resolve;
+        }),
+    );
+    renderChat();
+    const input = screen.getByPlaceholderText("What should we ship today?");
+    fireEvent.change(input, { target: { value: "Hello" } });
+    fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Baxter is looking…")).toBeInTheDocument();
+      expect(screen.getByText(/workspace model/i)).toBeInTheDocument();
+      expect(document.querySelector(".baxter-chat-loading-walker")).toBeTruthy();
+      expect(document.querySelector('.baxter-avatar--full.baxter-avatar--typing')).toBeTruthy();
+    });
+    resolveReply({ reply: "On it." });
+    await waitFor(() => expect(screen.getByText("On it.")).toBeInTheDocument());
+  });
+
   it("surfaces API failures in the thread", async () => {
     mockedApi.sendBaxterChatMessage.mockRejectedValue(new ApiError(502, "Baxter unavailable: boom"));
     renderChat();

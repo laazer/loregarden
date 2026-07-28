@@ -50,7 +50,7 @@ export class StationView extends Container {
 
     this.glow.clear();
     if (station.active) {
-      this.glow.circle(0, 4, 22).fill({ color: 0x2dd4a7, alpha: 0.22 });
+      this.glow.circle(0, 4, 22).fill({ color: 0x6fae8f, alpha: 0.22 });
       this.sprite.tint = 0xffffff;
     } else {
       this.sprite.tint = 0xb0b8c4;

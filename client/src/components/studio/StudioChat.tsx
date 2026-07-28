@@ -96,7 +96,7 @@ export function StudioChatMessages({
           !isThinking && message.id === latestAssistantId ? activeState : "idle";
         return (
           <div key={message.id} className="ticket-studio-msg-row">
-            <BaxterAvatar state={state} label={assistantLabel} />
+            <BaxterAvatar variant="head" state={state} label={assistantLabel} />
             <div className="ticket-studio-msg ticket-studio-msg-assistant">
               <MarkdownContent content={body} className="ticket-studio-msg-body" />
             </div>
@@ -105,7 +105,7 @@ export function StudioChatMessages({
       })}
       {isThinking ? (
         <div className="ticket-studio-msg-row ticket-studio-thinking-row">
-          <BaxterAvatar state={busyState} label={assistantLabel} />
+          <BaxterAvatar variant="head" state={busyState} label={assistantLabel} />
           <p className="ticket-studio-thinking">{thinkingMessage}</p>
         </div>
       ) : null}

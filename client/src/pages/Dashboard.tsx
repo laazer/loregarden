@@ -1034,7 +1034,7 @@ export function Dashboard() {
                 >
                   <span
                     className="workspace-icon"
-                    style={{ background: "rgba(45,212,167,.14)", color: "var(--ac2)" }}
+                    style={{ background: "rgba(111,174,143,.14)", color: "var(--ac2)" }}
                     aria-hidden
                   >
                     {w.name.charAt(0).toUpperCase()}
