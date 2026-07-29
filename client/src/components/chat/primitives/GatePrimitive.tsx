@@ -154,7 +154,7 @@ function LiveGateBody({
           </p>
           <button
             type="button"
-            className="lg-primitive-run-btn lg-primitive-run-btn--play"
+            className="lg-primitive-run-btn lg-primitive-run-btn--confirm"
             disabled={advance.isPending}
             onClick={() => void advance.mutate()}
           >
@@ -264,16 +264,15 @@ export function GatePrimitive({ part }: { part: GatePart }) {
           {ticket?.workspace_slug ? <span>{ticket.workspace_slug}</span> : null}
         </>
       }
-      actions={
-        <>
-          {ticketId ? (
-            <>
-              <OpenTicketButton ticketId={ticketId} />
-              <OpenTicketButton ticketId={ticketId} tab="triage" label="Open triage" />
-            </>
-          ) : null}
+      resourceAction={
+        ticketId ? (
+          <>
+            <OpenTicketButton ticketId={ticketId} />
+            <OpenTicketButton ticketId={ticketId} tab="triage" label="Open triage" />
+          </>
+        ) : (
           <OpenGateStudioButton />
-        </>
+        )
       }
     >
       {ticket ? (

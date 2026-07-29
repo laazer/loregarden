@@ -15,6 +15,7 @@ from loregarden.services.branch_triage_service import (
     _pr_status_ttl,
     branch_activity,
     branch_triage_snapshot,
+    commit_snapshot,
     delete_branch,
     remove_branch_worktree,
 )
@@ -718,6 +719,23 @@ def test_branch_activity_without_upstream_reports_nothing_pushed(triage_workspac
     assert activity["upstream"] is None
     assert activity["commits"]
     assert all(commit["pushed"] is False for commit in activity["commits"])
+
+
+def test_commit_snapshot_reads_metadata_and_stats(triage_workspace):
+    commit = commit_snapshot(triage_workspace, "HEAD")
+
+    assert commit["message"] == "init"
+    assert commit["short_sha"]
+    assert commit["author"]
+    assert commit["files_changed"] == 1
+    assert commit["insertions"] == 1
+    assert commit["deletions"] == 0
+    assert commit["pushed"] is False
+
+
+def test_commit_snapshot_rejects_arbitrary_revision(triage_workspace):
+    with pytest.raises(ValueError, match="Commit ref"):
+        commit_snapshot(triage_workspace, "--all")
 
 
 def test_branch_activity_endpoint_honours_limit(

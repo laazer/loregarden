@@ -55,6 +55,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   className,
   renderAfterMessage,
   showAssistantAvatar = true,
+  onPrimitiveSubmit,
 }: {
   messages: ChatMessageView[];
   emptyMessage?: string;
@@ -69,6 +70,8 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   renderAfterMessage?: (message: ChatMessageView) => ReactNode;
   /** When false, assistant turns are bubble-only (Baxter main chat look). */
   showAssistantAvatar?: boolean;
+  /** Lets interactive primitives, such as Q&A, send a user reply. */
+  onPrimitiveSubmit?: (content: string) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const responding = useRespondingFlash(messages, Boolean(isThinking));
@@ -131,7 +134,9 @@ export const StudioChatMessages = memo(function StudioChatMessages({
                 <MarkdownContent content={textBody} className="ticket-studio-msg-body" />
               </div>
             ) : null}
-            {hasNonTextParts ? <PrimitiveParts parts={nonTextParts} /> : null}
+            {hasNonTextParts ? (
+              <PrimitiveParts parts={nonTextParts} onSubmit={onPrimitiveSubmit} />
+            ) : null}
           </>
         );
         return (
@@ -157,7 +162,9 @@ export const StudioChatMessages = memo(function StudioChatMessages({
                     <div style={{ flex: 1 }} />
                   )}
                 </div>
-                {hasNonTextParts ? <PrimitiveParts parts={nonTextParts} /> : null}
+                {hasNonTextParts ? (
+                  <PrimitiveParts parts={nonTextParts} onSubmit={onPrimitiveSubmit} />
+                ) : null}
               </div>
             ) : (
               <div className="lg-chat-assistant-col">{reply}</div>

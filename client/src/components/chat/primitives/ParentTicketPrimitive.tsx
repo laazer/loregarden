@@ -1,11 +1,22 @@
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../../api/client";
+import { TicketTree } from "../../TicketTree";
 import type { ParentTicketPart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenTicketButton } from "./ResourceActionButton";
-import { childProgressPercent, ticketStateColor } from "./ticketProgress";
+import { PlayButton, StopButton } from "./RunControlButton";
+import {
+  TicketCardBody,
+  childProgressSegments,
+  stageProgressSegments,
+} from "./TicketCardMeta";
+import { toTicketTreeNode } from "./ticketTreeNodes";
 import { ticketIsRunning, useRunControls } from "./useRunControls";
+
+/** Children arrive one level deep, so no row in this card is expandable. */
+const NO_EXPANDED_ROWS: Set<string> = new Set();
 
 export function ParentTicketPrimitive({ part }: { part: ParentTicketPart }) {
   const { data, isLoading, error } = useQuery({
@@ -21,60 +32,64 @@ export function ParentTicketPrimitive({ part }: { part: ParentTicketPart }) {
     refetchInterval: 5000,
   });
   const controls = useRunControls(part.ticket_id);
-  const children = childrenQuery.data ?? [];
-  const percent = childProgressPercent(children);
+  const children = useMemo(() => childrenQuery.data ?? [], [childrenQuery.data]);
+  const nodes = useMemo(() => children.map(toTicketTreeNode), [children]);
   const running = ticketIsRunning(data?.workflow_stage_status);
+  const title = data?.title ?? part.title ?? "Parent ticket";
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Parents report children done/total; fall back to stage progress when none yet.
+  const progress = children.length
+    ? childProgressSegments(children)
+    : stageProgressSegments(data?.stages);
 
   return (
     <PrimitiveCard
-      title={data?.title ?? part.title ?? "Parent ticket"}
-      subtitle={data ? `${data.external_id} · ${children.length} children` : undefined}
-      statusDot={ticketStateColor(data?.state)}
+      className="lg-primitive-ticket-card lg-primitive-ticket-card--parent"
+      title={title}
+      header={<span className="lg-primitive-ticket-card-spacer" aria-hidden />}
       loading={isLoading}
       error={error ? (error instanceof Error ? error.message : "Failed to load") : null}
       tone={running ? "accent" : "default"}
+      resourceAction={<OpenTicketButton ticketId={part.ticket_id} compact />}
       actions={
-        <>
-          <OpenTicketButton ticketId={part.ticket_id} />
-          {running ? (
-            <button
-              type="button"
-              className="lg-primitive-run-btn lg-primitive-run-btn--stop"
-              disabled={controls.isStopping}
-              onClick={() => void controls.stop()}
-            >
-              Stop
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="lg-primitive-run-btn lg-primitive-run-btn--play"
-              disabled={controls.isStarting || !data}
-              onClick={() => void controls.start()}
-            >
-              Play
-            </button>
-          )}
-        </>
+        running ? (
+          <StopButton disabled={controls.isStopping} onClick={() => void controls.stop()} />
+        ) : (
+          <PlayButton
+            disabled={controls.isStarting || !data}
+            onClick={() => void controls.start()}
+          />
+        )
       }
     >
-      <div className="lg-primitive-progress" aria-label={`Progress ${percent}%`}>
-        <span style={{ width: `${percent}%` }} />
-      </div>
-      <p className="lg-primitive-card-sub">{percent}% complete</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
-        {children.map((child) => (
-          <div key={child.id} className="lg-primitive-ticket-row">
-            <span
-              className="lg-primitive-card-dot"
-              style={{ background: ticketStateColor(child.state), marginTop: 0 }}
-            />
-            <span className="lg-primitive-ticket-row-title">{child.title}</span>
-            <span style={{ color: "var(--txl)", fontSize: 11 }}>{child.state}</span>
-            <OpenTicketButton ticketId={child.id} compact label={`Open ${child.title}`} />
-          </div>
-        ))}
-      </div>
+      {data ? (
+        <TicketCardBody
+          title={title}
+          priority={data.priority}
+          state={data.state}
+          workspaceSlug={data.workspace_slug}
+          stageName={data.workflow_stage_name || undefined}
+          stageStatus={data.workflow_stage_status}
+          segments={progress.segments}
+          progressLabel={progress.total ? `${progress.done}/${progress.total}` : null}
+        />
+      ) : null}
+      {nodes.length ? (
+        <div className="lg-primitive-ticket-children">
+          <TicketTree
+            nodes={nodes}
+            selectedId={selectedId}
+            expandedIds={NO_EXPANDED_ROWS}
+            onSelect={setSelectedId}
+            onToggle={setSelectedId}
+            showExternalId
+            renderRowAction={(node) => (
+              <OpenTicketButton ticketId={node.id} compact label={`Open ${node.title}`} />
+            )}
+          />
+        </div>
+      ) : null}
     </PrimitiveCard>
   );
 }

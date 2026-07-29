@@ -5,6 +5,7 @@ import { WorkflowStageTimeline } from "../../WorkflowStageTimeline";
 import type { TicketWorkflowPart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenTicketButton } from "./ResourceActionButton";
+import { PlayButton, StopButton } from "./RunControlButton";
 import { ticketIsRunning, useRunControls } from "./useRunControls";
 
 export function TicketWorkflowPrimitive({ part }: { part: TicketWorkflowPart }) {
@@ -24,29 +25,16 @@ export function TicketWorkflowPrimitive({ part }: { part: TicketWorkflowPart }) 
       loading={isLoading}
       error={error ? (error instanceof Error ? error.message : "Failed to load") : null}
       tone={running ? "accent" : "default"}
+      resourceAction={<OpenTicketButton ticketId={part.ticket_id} />}
       actions={
-        <>
-          <OpenTicketButton ticketId={part.ticket_id} />
-          {running ? (
-            <button
-              type="button"
-              className="lg-primitive-run-btn lg-primitive-run-btn--stop"
-              disabled={controls.isStopping}
-              onClick={() => void controls.stop()}
-            >
-              Stop
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="lg-primitive-run-btn lg-primitive-run-btn--play"
-              disabled={controls.isStarting || !data}
-              onClick={() => void controls.start()}
-            >
-              Play
-            </button>
-          )}
-        </>
+        running ? (
+          <StopButton disabled={controls.isStopping} onClick={() => void controls.stop()} />
+        ) : (
+          <PlayButton
+            disabled={controls.isStarting || !data}
+            onClick={() => void controls.start()}
+          />
+        )
       }
     >
       {data ? (

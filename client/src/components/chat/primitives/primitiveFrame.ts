@@ -23,6 +23,12 @@ export const PRIMITIVE_SIZES: Record<PrimitiveKind, PrimitiveSize> = {
   edit: "wide",
   calendar: "full",
   calendar_event: "regular",
+  workspace: "regular",
+  todo_list: "regular",
+  branch_history: "wide",
+  commit: "regular",
+  qa: "regular",
+  giphy: "regular",
 };
 
 const SIZE_RANK: Record<PrimitiveSize, number> = { regular: 0, wide: 1, full: 2 };

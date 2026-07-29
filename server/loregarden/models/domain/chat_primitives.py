@@ -139,6 +139,64 @@ class CalendarEventPart(BaseModel):
     event: CalendarEventItem
 
 
+class WorkspacePart(BaseModel):
+    primitive: Literal["workspace"] = "workspace"
+    workspace_slug: str
+    title: str | None = None
+
+
+class TodoItem(BaseModel):
+    id: str
+    text: str
+    checked: bool = False
+
+
+class TodoListPart(BaseModel):
+    primitive: Literal["todo_list"] = "todo_list"
+    owner: Literal["agent", "user"] = "agent"
+    items: list[TodoItem] = Field(default_factory=list)
+    title: str | None = None
+
+
+class BranchHistoryPart(BaseModel):
+    primitive: Literal["branch_history"] = "branch_history"
+    workspace_slug: str
+    branch: str
+    limit: int = Field(default=8, ge=1, le=50)
+    title: str | None = None
+
+
+class CommitPart(BaseModel):
+    primitive: Literal["commit"] = "commit"
+    workspace_slug: str
+    sha: str
+    branch: str | None = None
+    title: str | None = None
+
+
+class QAItem(BaseModel):
+    id: str
+    question: str
+    answer: str = ""
+
+
+class QAPart(BaseModel):
+    primitive: Literal["qa"] = "qa"
+    items: list[QAItem] = Field(default_factory=list)
+    title: str | None = None
+    prompt: str | None = None
+    interactive: bool = True
+
+
+class GiphyPart(BaseModel):
+    primitive: Literal["giphy"] = "giphy"
+    giphy_id: str | None = None
+    url: str | None = None
+    alt: str = "Animated GIF"
+    title: str | None = None
+    caption: str | None = None
+
+
 ChatPart = Annotated[
     TextPart
     | ThinkingPart
@@ -155,7 +213,13 @@ ChatPart = Annotated[
     | TerminalPart
     | EditPart
     | CalendarPart
-    | CalendarEventPart,
+    | CalendarEventPart
+    | WorkspacePart
+    | TodoListPart
+    | BranchHistoryPart
+    | CommitPart
+    | QAPart
+    | GiphyPart,
     Field(discriminator="primitive"),
 ]
 
@@ -177,5 +241,11 @@ KNOWN_PRIMITIVES = frozenset(
         "edit",
         "calendar",
         "calendar_event",
+        "workspace",
+        "todo_list",
+        "branch_history",
+        "commit",
+        "qa",
+        "giphy",
     }
 )

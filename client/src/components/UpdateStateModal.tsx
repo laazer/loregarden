@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { IconCloseButton } from "./IconCloseButton";
+import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../lib/ticketStates";
 
 import type { StageStatus, TicketDetail, TicketState } from "../api/client";
 
@@ -12,21 +13,9 @@ export const TICKET_STATES: TicketState[] = [
   "wont_do",
 ];
 
-export const STATE_COLORS: Record<TicketState, string> = {
-  backlog: "var(--txm)",
-  in_progress: "var(--blue)",
-  blocked: "var(--red)",
-  done: "var(--grn)",
-  wont_do: "var(--amb)",
-};
+export const STATE_COLORS = TICKET_STATE_COLORS;
 
-export const STATE_LABELS: Record<TicketState, string> = {
-  backlog: "Backlog",
-  in_progress: "In Progress",
-  blocked: "Blocked",
-  done: "Done",
-  wont_do: "Won't do",
-};
+export const STATE_LABELS = TICKET_STATE_LABELS;
 
 const STAGE_STATUSES: StageStatus[] = [
   "pending",

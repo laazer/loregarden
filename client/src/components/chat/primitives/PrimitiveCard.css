@@ -5,7 +5,8 @@
   width: 100%;
   max-width: min(620px, 100%);
   padding: 12px 14px;
-  border-radius: 14px;
+  /* Square top-left matches agent text replies — these cards are Baxter answering. */
+  border-radius: 0 14px 14px 14px;
   background: linear-gradient(180deg, var(--bg2), var(--bg1));
   border: 1px solid var(--bd);
   box-shadow:
@@ -28,6 +29,12 @@
 
 .lg-primitive-card--ok {
   border-color: color-mix(in srgb, var(--grn) 50%, var(--bd));
+}
+
+/* v6 carries a record's status on the card's left edge, so it outranks the tone border. */
+.lg-primitive-card--accented {
+  border-left: 3px solid var(--lg-primitive-accent, var(--bd));
+  padding-left: 12px;
 }
 
 .lg-primitive-card-header {
@@ -92,6 +99,9 @@
 .lg-primitive-card-header-actions {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: 6px;
 }
 
@@ -116,7 +126,9 @@
   padding-top: 2px;
 }
 
-.lg-primitive-card-actions button,
+/* Resource buttons keep their own blue treatment wherever they are placed. */
+.lg-primitive-card-actions
+  button:not(.lg-primitive-resource-btn):not(.lg-primitive-run-btn),
 .lg-primitive-run-btn {
   display: inline-flex;
   align-items: center;
@@ -162,6 +174,10 @@
   outline-offset: 2px;
 }
 
+.lg-primitive-resource-btn svg {
+  flex: none;
+}
+
 .lg-primitive-resource-btn--compact {
   flex: none;
   width: 24px;
@@ -175,16 +191,32 @@
   display: none;
 }
 
-.lg-primitive-run-btn--play {
-  background: color-mix(in srgb, var(--ac) 22%, var(--bg3));
-  border-color: color-mix(in srgb, var(--ac) 45%, var(--bd2));
-  color: var(--ac);
+.lg-primitive-run-icon {
+  flex: none;
+}
+
+.lg-primitive-run-btn--play,
+.lg-primitive-run-btn--confirm {
+  background: color-mix(in srgb, var(--grn) 18%, var(--bg3));
+  border-color: color-mix(in srgb, var(--grn) 46%, var(--bd2));
+  color: var(--grn);
+}
+
+.lg-primitive-run-btn--play:hover:not(:disabled),
+.lg-primitive-run-btn--confirm:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--grn) 28%, var(--bg3));
+  border-color: color-mix(in srgb, var(--grn) 68%, var(--bd2));
 }
 
 .lg-primitive-run-btn--stop {
   background: color-mix(in srgb, var(--red) 18%, var(--bg3));
-  border-color: color-mix(in srgb, var(--red) 45%, var(--bd2));
+  border-color: color-mix(in srgb, var(--red) 46%, var(--bd2));
   color: var(--red);
+}
+
+.lg-primitive-run-btn--stop:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 28%, var(--bg3));
+  border-color: color-mix(in srgb, var(--red) 68%, var(--bd2));
 }
 
 .lg-primitive-card-actions .lg-primitive-run-btn[aria-pressed="true"] {
@@ -227,6 +259,7 @@
 
 .lg-primitive-slot--regular {
   max-width: var(--lg-primitive-regular, min(620px, 100%));
+  margin-inline: auto;
 }
 
 /* Breakout tiers grow symmetrically about the reading column's centre, which is also the
@@ -488,13 +521,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.lg-primitive-calendar-event .lg-primitive-resource-btn--compact {
-  width: 18px;
-  min-height: 18px;
-  border: 0;
-  background: transparent;
 }
 
 .lg-primitive-calendar-event--run {
@@ -1076,6 +1102,200 @@
   overflow: hidden;
 }
 
+/* Ticket cards match the v6 console list card: P-badge, state, stage segments, stage line. */
+.lg-primitive-ticket-card {
+  position: relative;
+  background: var(--bg1);
+  box-shadow: none;
+}
+
+.lg-primitive-ticket-card.lg-primitive-card--accent {
+  border-color: color-mix(in srgb, var(--ac) 55%, var(--bd));
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.28),
+    inset 0 0 0 1px color-mix(in srgb, var(--ac) 35%, transparent);
+}
+
+.lg-primitive-ticket-card > .lg-primitive-card-header {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 1;
+  gap: 6px;
+}
+
+.lg-primitive-ticket-card-spacer {
+  display: none;
+}
+
+.lg-primitive-ticket-card > .lg-primitive-card-body {
+  display: block;
+  padding-right: 28px;
+}
+
+.lg-primitive-ticket-card--parent > .lg-primitive-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lg-primitive-ticket-children {
+  margin: 0 -2px;
+  padding-top: 4px;
+  border-top: 1px solid var(--bd);
+}
+
+.lg-primitive-ticket-children .ticket-tree {
+  gap: 4px;
+}
+
+.lg-primitive-ticket-children .tree-row {
+  padding: 9px 10px;
+}
+
+.lg-primitive-ticket-v6 {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lg-primitive-ticket-v6-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.lg-primitive-ticket-prio {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  margin-top: 1px;
+  padding: 0 6px;
+  border: 1px solid;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.lg-primitive-ticket-v6-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--tx);
+}
+
+.lg-primitive-ticket-v6-meta,
+.lg-primitive-ticket-segs,
+.lg-primitive-ticket-stage {
+  padding-left: 32px;
+}
+
+.lg-primitive-ticket-v6-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.lg-primitive-ticket-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 500;
+}
+
+.lg-primitive-ticket-state-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.lg-primitive-ticket-sep {
+  color: var(--bd2);
+}
+
+.lg-primitive-ticket-slug {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txl);
+}
+
+.lg-primitive-ticket-segs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.lg-primitive-ticket-segs-track {
+  display: flex;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+
+.lg-primitive-ticket-seg {
+  height: 3px;
+  flex: 1;
+  border-radius: 2px;
+  background: var(--bd);
+}
+
+.lg-primitive-ticket-seg--active {
+  animation: lg-primitive-ticket-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes lg-primitive-ticket-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.lg-primitive-ticket-segs-label {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--txl);
+}
+
+.lg-primitive-ticket-stage {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--txm);
+}
+
+.lg-primitive-ticket-stage-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.lg-primitive-ticket-stage-name {
+  font-weight: 500;
+}
+
+.lg-primitive-ticket-stage-status {
+  color: var(--txl);
+}
+
 .lg-primitive-ticket-row {
   display: flex;
   align-items: center;
@@ -1197,4 +1417,228 @@
 
 .lg-primitive-gate .approval-gate-check {
   margin: 0;
+}
+
+.lg-primitive-workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.lg-primitive-workspace-grid > div {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 9px;
+  background: var(--bg0);
+}
+
+.lg-primitive-workspace-grid strong {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--tx);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lg-primitive-workspace-label {
+  color: var(--txl);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lg-primitive-todo-list,
+.lg-primitive-commit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lg-primitive-todo-list li {
+  padding: 8px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 9px;
+  background: var(--bg0);
+}
+
+.lg-primitive-todo-list label {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: var(--txm);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.lg-primitive-todo-list input {
+  margin-top: 2px;
+  accent-color: var(--grn);
+}
+
+.lg-primitive-todo-list li.is-checked span {
+  color: var(--txl);
+  text-decoration: line-through;
+}
+
+.lg-primitive-commit-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 9px;
+  background: var(--bg0);
+}
+
+.lg-primitive-commit-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--amb);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--amb) 55%, transparent);
+}
+
+.lg-primitive-commit-dot.is-pushed {
+  background: var(--grn);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--grn) 55%, transparent);
+}
+
+.lg-primitive-commit-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.lg-primitive-commit-copy strong {
+  overflow: hidden;
+  color: var(--tx);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lg-primitive-commit-copy span,
+.lg-primitive-commit-list time {
+  color: var(--txl);
+  font-size: 10.5px;
+}
+
+.lg-primitive-commit-detail > p {
+  margin: 0 0 10px;
+  color: var(--txm);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.lg-primitive-commit-stats {
+  display: flex;
+  gap: 10px;
+  color: var(--txl);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.lg-primitive-commit-stats .is-add {
+  color: var(--grn);
+}
+
+.lg-primitive-commit-stats .is-delete {
+  color: var(--red);
+}
+
+.lg-primitive-qa-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lg-primitive-qa-item {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.lg-primitive-qa-question {
+  display: flex;
+  gap: 8px;
+  color: var(--tx);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.lg-primitive-qa-question > span {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  color: var(--ac2);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.lg-primitive-qa-item textarea {
+  min-height: 56px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--bd2);
+  border-radius: 9px;
+  outline: none;
+  background: var(--bg0);
+  color: var(--tx);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.lg-primitive-qa-item textarea:focus {
+  border-color: var(--ac);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac) 16%, transparent);
+}
+
+.lg-primitive-qa-answer {
+  padding: 8px 10px;
+  border-left: 2px solid var(--bd2);
+  color: var(--txm);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.lg-primitive-giphy {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--bd);
+  border-radius: 11px;
+  background: var(--bg0);
+}
+
+.lg-primitive-giphy img {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+}
+
+.lg-primitive-giphy figcaption {
+  padding: 8px 10px;
+  color: var(--txm);
+  font-size: 11.5px;
+}
+
+@media (max-width: 560px) {
+  .lg-primitive-workspace-grid {
+    grid-template-columns: 1fr;
+  }
 }

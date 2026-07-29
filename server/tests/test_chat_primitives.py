@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import pytest
 from loregarden.models.domain.chat_primitives import (
+    BranchHistoryPart,
+    CommitPart,
+    GiphyPart,
+    QAPart,
     TextPart,
     ThinkingPart,
     TicketPart,
+    TodoListPart,
+    WorkspacePart,
 )
 from loregarden.services.chat_primitives.parser import parse_primitive_parts, parts_to_jsonable
 from loregarden.services.chat_primitives.resolver import resolve_parts
@@ -69,6 +76,42 @@ def test_parts_to_jsonable_round_trips():
     )
     payload = parts_to_jsonable(parts)
     assert payload == [{"primitive": "ticket", "ticket_id": "t1", "title": "X"}]
+
+
+@pytest.mark.parametrize(
+    ("payload", "part_type"),
+    [
+        (
+            '{"primitive":"workspace","workspace_slug":"loregarden"}',
+            WorkspacePart,
+        ),
+        (
+            '{"primitive":"todo_list","owner":"user","items":[{"id":"1","text":"Review"}]}',
+            TodoListPart,
+        ),
+        (
+            '{"primitive":"branch_history","workspace_slug":"loregarden","branch":"main"}',
+            BranchHistoryPart,
+        ),
+        (
+            '{"primitive":"commit","workspace_slug":"loregarden","sha":"HEAD"}',
+            CommitPart,
+        ),
+        (
+            '{"primitive":"qa","items":[{"id":"scope","question":"Who is this for?"}]}',
+            QAPart,
+        ),
+        (
+            '{"primitive":"giphy","giphy_id":"ICOgUNjpvO0PC"}',
+            GiphyPart,
+        ),
+    ],
+)
+def test_new_primitive_fences_parse(payload, part_type):
+    parts = parse_primitive_parts(f"```loregarden\n{payload}\n```")
+
+    assert len(parts) == 1
+    assert isinstance(parts[0], part_type)
 
 
 def test_resolve_parts_fills_ticket_title(db_session: Session):

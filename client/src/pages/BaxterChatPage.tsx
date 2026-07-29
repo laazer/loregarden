@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { ApiError, api, type Approval, type TicketSummary } from "../api/client";
 import { BaxterAvatar } from "../components/chat/BaxterAvatar";
 import { ChatHistorySidebar } from "../components/chat/ChatHistorySidebar";
-import { primitiveGalleryParts } from "../components/chat/primitiveGallery";
+import { primitiveGallerySections } from "../components/chat/primitiveGallery";
 import { StudioChatComposer, StudioChatMessages } from "../components/studio/StudioChat";
 import { ticketPath } from "../lib/appNavigation";
 import { takeHomeBaxterPrompt } from "../lib/homeBaxter";
@@ -136,7 +136,7 @@ function BaxterReplyDock({
   };
 
   return (
-    <div className="baxter-chat-dock">
+    <div className="baxter-chat-dock baxter-chat-dock--fade">
       {suggestions && suggestions.length > 0 && !busy ? (
         <div className="lg-chat-chip-row baxter-chat-suggestions">
           {suggestions.map((chip) => (
@@ -285,20 +285,26 @@ export function BaxterChatPage() {
 
   const openPrimitiveGallery = () => {
     const liveTickets = historyTicketsQ.data ?? tickets;
-    setTurns([
-      {
-        id: "primitive-gallery-user",
-        role: "user",
-        text: "Show me examples of every chat UI primitive.",
-      },
-      {
-        id: "primitive-gallery-assistant",
-        role: "assistant",
-        text: "Here is the complete Chat UI Primitive gallery.",
-        parts: primitiveGalleryParts({ tickets: liveTickets }),
-        suggestions: ["Start a new chat", "Open the Console"],
-      },
-    ]);
+    const sections = primitiveGallerySections({ tickets: liveTickets });
+    setTurns(
+      sections.flatMap((section, index) => [
+        {
+          id: `primitive-gallery-${section.id}-ask`,
+          role: "user" as const,
+          text: section.ask,
+        },
+        {
+          id: `primitive-gallery-${section.id}-reply`,
+          role: "assistant" as const,
+          text: section.reply,
+          parts: section.parts,
+          suggestions:
+            index === sections.length - 1
+              ? ["Start a new chat", "Open the Console"]
+              : undefined,
+        },
+      ]),
+    );
     setBusy(false);
     setHistoryOpen(false);
   };
@@ -352,7 +358,7 @@ export function BaxterChatPage() {
         </div>
       ) : (
         <>
-          <div className="baxter-chat-thread" aria-live="polite">
+          <div className="baxter-chat-thread baxter-chat-thread--faded" aria-live="polite">
             <StudioChatMessages
               messages={threadMessages}
               isThinking={busy}
@@ -361,6 +367,7 @@ export function BaxterChatPage() {
               thinkingActivity="typing"
               assistantLabel="Baxter"
               showAssistantAvatar={false}
+              onPrimitiveSubmit={(content) => void respond(content)}
               renderAfterMessage={(message) => {
                 const turnApprovals = approvalsByTurnId.get(message.id);
                 if (!turnApprovals?.length) return null;

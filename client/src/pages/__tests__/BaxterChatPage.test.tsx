@@ -203,4 +203,37 @@ describe("BaxterChatPage", () => {
     expect(screen.getByText("Workspace schedule")).toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: "Chat history" })).not.toBeInTheDocument();
   });
+
+  it("brackets each gallery card with the ask that produced it", async () => {
+    const { container } = renderChat();
+
+    act(() => useUiStore.getState().setBaxterHistoryOpen(true));
+    await screen.findByRole("complementary", { name: "Chat history" });
+    fireEvent.click(screen.getByRole("button", { name: /UI Primitive gallery/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("What is scheduled today?")).toBeInTheDocument();
+    });
+    // Every card is a reply to a visible ask, so no card can read as unattributed.
+    const asks = container.querySelectorAll(".lg-chat-turn--user");
+    const replies = container.querySelectorAll(".lg-chat-turn--assistant");
+    expect(asks.length).toBeGreaterThan(1);
+    expect(replies.length).toBe(asks.length);
+  });
+
+  it("pairs the thread's fade clearance with the dock that draws the ramp", async () => {
+    const { container } = renderChat();
+
+    act(() => useUiStore.getState().setBaxterHistoryOpen(true));
+    await screen.findByRole("complementary", { name: "Chat history" });
+    fireEvent.click(screen.getByRole("button", { name: /UI Primitive gallery/i }));
+
+    await waitFor(() => {
+      expect(container.querySelector(".baxter-chat-dock")).not.toBeNull();
+    });
+    // The ramp is drawn above the dock and needs matching clearance inside the
+    // scrollport; one without the other either veils the last card or does nothing.
+    expect(container.querySelector(".baxter-chat-thread--faded")).not.toBeNull();
+    expect(container.querySelector(".baxter-chat-dock--fade")).not.toBeNull();
+  });
 });

@@ -8,7 +8,7 @@ export function TerminalPrimitive({ part }: { part: TerminalPart }) {
     <PrimitiveCard
       title={part.title ?? "Terminal"}
       subtitle={part.cwd ?? undefined}
-      actions={part.cwd ? <OpenIdeButton /> : null}
+      resourceAction={part.cwd ? <OpenIdeButton /> : null}
     >
       <div className="lg-primitive-terminal">
         <div className="lg-primitive-terminal-bar">

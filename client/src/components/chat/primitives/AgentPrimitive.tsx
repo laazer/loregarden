@@ -49,7 +49,7 @@ export function AgentPrimitive({ part }: { part: AgentPart }) {
             : "Failed to load agent"
           : null
       }
-      actions={slug && !part.draft ? <OpenAgentStudioButton slug={slug} /> : null}
+      resourceAction={slug && !part.draft ? <OpenAgentStudioButton slug={slug} /> : null}
     >
       <AgentPreviewContent preview={preview} loading={false} slug={slug} compact showMeta={false} />
     </PrimitiveCard>

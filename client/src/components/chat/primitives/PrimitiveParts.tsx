@@ -6,8 +6,10 @@ import "./PrimitiveCard.css";
 
 export function PrimitiveParts({
   parts,
+  onSubmit,
 }: {
   parts: Array<ChatPart | UnknownPart | unknown> | undefined;
+  onSubmit?: (content: string) => void;
 }) {
   if (!parts?.length) return null;
   const nodes = parts.flatMap((part, index) => {
@@ -16,7 +18,7 @@ export function PrimitiveParts({
     const key = `${part.primitive}-${index}`;
     return [
       <PrimitiveSlot key={key} kind={part.primitive}>
-        {renderChatPart(part, key)}
+        {renderChatPart(part, key, onSubmit)}
       </PrimitiveSlot>,
     ];
   });

@@ -8,6 +8,7 @@ import {
   navigateToTicket,
   type ArtifactTab,
 } from "../../../lib/useAppNavigation";
+import { useUiStore } from "../../../state/uiStore";
 
 function ArrowIcon() {
   return (
@@ -105,8 +106,36 @@ export function OpenGateStudioButton() {
   );
 }
 
-export function OpenIdeButton() {
+export function OpenIdeButton({ workspaceSlug }: { workspaceSlug?: string } = {}) {
+  const setEditorWorkspace = useUiStore((state) => state.setEditorWorkspace);
   return (
-    <ResourceActionButton label="Open IDE" onClick={() => navigateToPage("editor")} />
+    <ResourceActionButton
+      label="Open IDE"
+      onClick={() => {
+        if (workspaceSlug) setEditorWorkspace(workspaceSlug);
+        navigateToPage("editor");
+      }}
+    />
+  );
+}
+
+export function OpenBranchTriageButton({
+  workspaceSlug,
+  branch,
+}: {
+  workspaceSlug: string;
+  branch: string;
+}) {
+  const setWorkspace = useUiStore((state) => state.setBranchTriageWorkspaceSlug);
+  const setBranch = useUiStore((state) => state.setBranchTriageBranch);
+  return (
+    <ResourceActionButton
+      label="Open branch triage"
+      onClick={() => {
+        setWorkspace(workspaceSlug);
+        setBranch(branch);
+        navigateToPage("branch-triage");
+      }}
+    />
   );
 }

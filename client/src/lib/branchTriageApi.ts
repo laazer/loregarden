@@ -91,6 +91,13 @@ export interface BranchActivity {
   commits: BranchActivityCommit[];
 }
 
+export interface CommitSnapshot extends BranchActivityCommit {
+  body: string;
+  files_changed: number;
+  insertions: number;
+  deletions: number;
+}
+
 export interface BranchTriageChatMessage {
   id: string;
   role: string;
@@ -193,8 +200,20 @@ export async function fetchBranchDiff(
 export async function fetchBranchActivity(
   slug: string,
   branch: string,
+  limit?: number,
 ): Promise<BranchActivity> {
-  return branchTriageRequest(branchQueryPath(slug, branch, "/activity"));
+  const path = branchQueryPath(slug, branch, "/activity");
+  return branchTriageRequest(limit ? `${path}&limit=${limit}` : path);
+}
+
+export async function fetchCommitSnapshot(
+  slug: string,
+  sha: string,
+): Promise<CommitSnapshot> {
+  const q = new URLSearchParams({ sha });
+  return branchTriageRequest(
+    `/api/workspaces/${encodeURIComponent(slug)}/branch-triage/commit?${q}`,
+  );
 }
 
 export async function checkoutBranchTriage(slug: string, branch: string) {

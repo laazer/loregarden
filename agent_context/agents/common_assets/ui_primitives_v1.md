@@ -40,6 +40,12 @@ Rules:
 | `edit` | `content`, `target` | Editable text (agent/workflow/gate/text) |
 | `calendar` | `view`, optional `events` | Month/week/day calendar |
 | `calendar_event` | `event` | Single calendar event |
+| `workspace` | `workspace_slug` | Live workspace summary |
+| `todo_list` | `owner`, `items` | Shared checklist; only `owner:"user"` is user-editable |
+| `branch_history` | `workspace_slug`, `branch` | Branch with recent commit history |
+| `commit` | `workspace_slug`, `sha` | Live commit detail (`sha` may be `HEAD`) |
+| `qa` | `items` | Ticket-Studio-style questions and answers |
+| `giphy` | `giphy_id` or Giphy media `url` | Safe animated Giphy reaction |
 
 Optional `title` on most kinds is a display hint only.
 
@@ -69,8 +75,26 @@ Terminal transcript:
 ```
 ````
 
+Agent-owned todo list (the user cannot check these boxes):
+
+````markdown
+```loregarden
+{"primitive":"todo_list","owner":"agent","items":[{"id":"tests","text":"Run tests","checked":true},{"id":"review","text":"Review the diff","checked":false}]}
+```
+````
+
+User Q&A:
+
+````markdown
+```loregarden
+{"primitive":"qa","interactive":true,"items":[{"id":"scope","question":"Which users are in scope?","answer":""}]}
+```
+````
+
 ## Do not
 
 - Do not write ticket markdown files — tickets live in the database.
 - Do not dump full `TicketDetail` JSON into a fence; the UI fetches live state.
 - Do not invent ticket/agent ids. Look them up via MCP first.
+- Do not use arbitrary image URLs for `giphy`; provide a Giphy ID or HTTPS URL
+  hosted by `i.giphy.com` or `media*.giphy.com`.

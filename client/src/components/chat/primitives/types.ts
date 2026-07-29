@@ -18,7 +18,13 @@ export type PrimitiveKind =
   | "terminal"
   | "edit"
   | "calendar"
-  | "calendar_event";
+  | "calendar_event"
+  | "workspace"
+  | "todo_list"
+  | "branch_history"
+  | "commit"
+  | "qa"
+  | "giphy";
 
 export interface TextPart {
   primitive: "text";
@@ -145,6 +151,64 @@ export interface CalendarEventPart {
   event: CalendarEventItem;
 }
 
+export interface WorkspacePart {
+  primitive: "workspace";
+  workspace_slug: string;
+  title?: string | null;
+}
+
+export interface TodoItem {
+  id: string;
+  text: string;
+  checked?: boolean;
+}
+
+export interface TodoListPart {
+  primitive: "todo_list";
+  owner?: "agent" | "user";
+  items?: TodoItem[];
+  title?: string | null;
+}
+
+export interface BranchHistoryPart {
+  primitive: "branch_history";
+  workspace_slug: string;
+  branch: string;
+  limit?: number;
+  title?: string | null;
+}
+
+export interface CommitPart {
+  primitive: "commit";
+  workspace_slug: string;
+  sha: string;
+  branch?: string | null;
+  title?: string | null;
+}
+
+export interface QAItem {
+  id: string;
+  question: string;
+  answer?: string;
+}
+
+export interface QAPart {
+  primitive: "qa";
+  items?: QAItem[];
+  title?: string | null;
+  prompt?: string | null;
+  interactive?: boolean;
+}
+
+export interface GiphyPart {
+  primitive: "giphy";
+  giphy_id?: string | null;
+  url?: string | null;
+  alt?: string;
+  title?: string | null;
+  caption?: string | null;
+}
+
 export type ChatPart =
   | TextPart
   | ThinkingPart
@@ -161,7 +225,13 @@ export type ChatPart =
   | TerminalPart
   | EditPart
   | CalendarPart
-  | CalendarEventPart;
+  | CalendarEventPart
+  | WorkspacePart
+  | TodoListPart
+  | BranchHistoryPart
+  | CommitPart
+  | QAPart
+  | GiphyPart;
 
 export type UnknownPart = { primitive: string; [key: string]: unknown };
 

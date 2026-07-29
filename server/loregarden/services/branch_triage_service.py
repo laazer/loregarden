@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -25,6 +26,7 @@ from sqlmodel import Session, select
 
 STALE_DAYS = 30
 RECENT_COMMIT_LIMIT = 8
+COMMIT_SHA_RE = re.compile(r"^(?:HEAD|[0-9a-fA-F]{7,40})$")
 AGENT_BRANCH_PREFIXES = ("loregarden/", "agent/")
 PR_STATUS_TTL_SECONDS = 120
 PR_STATUS_TERMINAL_TTL_SECONDS = 600
@@ -476,6 +478,59 @@ def branch_activity(
             }
         )
     return {"branch": branch, "upstream": upstream, "commits": commits}
+
+
+def commit_snapshot(workspace: Workspace, sha: str) -> dict[str, Any]:
+    """Read one commit by SHA without accepting arbitrary git revisions."""
+    if not COMMIT_SHA_RE.fullmatch(sha):
+        raise ValueError("Commit ref must be HEAD or a 7 to 40 character hexadecimal SHA")
+
+    repo_root = resolve_workspace_root(workspace)
+    if not _is_git_repo(repo_root):
+        raise ValueError("Workspace is not a git repository")
+
+    proc = _git(
+        repo_root,
+        "show",
+        "--no-patch",
+        "--format=%H%x00%h%x00%cI%x00%an%x00%s%x00%b",
+        sha,
+    )
+    if proc.returncode != 0 or not (proc.stdout or "").strip():
+        raise ValueError("Commit not found")
+    fields = proc.stdout.rstrip("\n").split("\x00", 5)
+    if len(fields) != 6:
+        raise ValueError("Commit metadata is unavailable")
+    full_sha, short_sha, date, author, message, body = fields
+
+    stats = _git(repo_root, "show", "--numstat", "--format=", full_sha)
+    files_changed = 0
+    insertions = 0
+    deletions = 0
+    if stats.returncode == 0:
+        for line in (stats.stdout or "").splitlines():
+            parts = line.split("\t", 2)
+            if len(parts) != 3:
+                continue
+            files_changed += 1
+            if parts[0].isdigit():
+                insertions += int(parts[0])
+            if parts[1].isdigit():
+                deletions += int(parts[1])
+
+    remote_refs = _git(repo_root, "branch", "-r", "--contains", full_sha)
+    return {
+        "sha": full_sha,
+        "short_sha": short_sha,
+        "date": date,
+        "author": author,
+        "message": message,
+        "body": body.strip(),
+        "pushed": remote_refs.returncode == 0 and bool((remote_refs.stdout or "").strip()),
+        "files_changed": files_changed,
+        "insertions": insertions,
+        "deletions": deletions,
+    }
 
 
 def _validate_diff_file_path(file_path: str) -> None:

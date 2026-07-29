@@ -1,34 +1,14 @@
 import type { ReactNode } from "react";
 
-import type { TicketState, TicketTreeNode } from "../api/client";
+import type { TicketTreeNode } from "../api/client";
+import {
+  TICKET_STATE_COLORS,
+  TICKET_STATE_LABELS,
+  stageStatusColor,
+} from "../lib/ticketStates";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import { PrioBars } from "./PrioBars";
-
-const STATE_COLORS: Record<TicketState, string> = {
-  backlog: "var(--txm)",
-  in_progress: "var(--blue)",
-  blocked: "var(--red)",
-  done: "var(--grn)",
-  wont_do: "var(--amb)",
-};
-
-const STATE_LABELS: Record<TicketState, string> = {
-  backlog: "Backlog",
-  in_progress: "In Progress",
-  blocked: "Blocked",
-  done: "Done",
-  wont_do: "Won't do",
-};
-
-const WORKFLOW_STATUS_COLORS: Record<string, string> = {
-  running: "var(--blue)",
-  awaiting: "var(--amb)",
-  blocked: "var(--red)",
-  done: "var(--grn)",
-  pending: "var(--txl)",
-  wont_do: "var(--amb)",
-};
 
 function TreeRow({
   node,
@@ -56,8 +36,8 @@ function TreeRow({
   const isSelected = selectedId === node.id;
   const workflowRunning = node.workflow_stage_status === "running";
   const showAddChild = !!onAddChild && canHaveChildren(node.work_item_type);
-  const stateColor = STATE_COLORS[node.state];
-  const wfColor = WORKFLOW_STATUS_COLORS[node.workflow_stage_status] ?? "var(--txl)";
+  const stateColor = TICKET_STATE_COLORS[node.state];
+  const wfColor = stageStatusColor(node.workflow_stage_status);
 
   const showTrail = workflowRunning || showAddChild || Boolean(renderRowAction) || hasChildren;
 
@@ -115,7 +95,7 @@ function TreeRow({
           <div className="tree-card-meta-main">
             <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 500, color: stateColor }}>
               <span className="tree-state-dot" style={{ background: stateColor }} />
-              {STATE_LABELS[node.state]}
+              {TICKET_STATE_LABELS[node.state]}
             </span>
             {node.workspace_slug ? (
               <>
@@ -149,10 +129,10 @@ function TreeRow({
                   +
                 </button>
               )}
-              {renderRowAction?.(node)}
               {hasChildren && (
                 <span className="count-pill tree-child-count">{node.child_count}</span>
               )}
+              {renderRowAction?.(node)}
             </div>
           ) : null}
         </div>

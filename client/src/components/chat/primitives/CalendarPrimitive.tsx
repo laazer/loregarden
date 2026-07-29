@@ -88,7 +88,7 @@ export function CalendarEventPrimitive({ part }: { part: CalendarEventPart }) {
         starts ? formatTime(starts) : event.starts_at,
       ].join(" · ")}
       meta={event.ticket_id ? <span>{event.ticket_id.slice(0, 8)}…</span> : null}
-      actions={
+      resourceAction={
         event.ticket_id ? <OpenTicketButton ticketId={event.ticket_id} /> : null
       }
     >

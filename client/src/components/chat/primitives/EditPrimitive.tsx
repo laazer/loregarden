@@ -35,9 +35,9 @@ export function EditPrimitive({
     <PrimitiveCard
       title={part.title ?? `Edit ${part.target ?? "text"}`}
       subtitle={part.target_id ?? part.language ?? undefined}
+      resourceAction={resourceAction}
       actions={
         <>
-          {resourceAction}
           <button
             type="button"
             className="lg-primitive-run-btn"
@@ -48,7 +48,7 @@ export function EditPrimitive({
           </button>
           <button
             type="button"
-            className="lg-primitive-run-btn lg-primitive-run-btn--play"
+            className="lg-primitive-run-btn lg-primitive-run-btn--confirm"
             disabled={!dirty || saving || !onSave}
             onClick={() => {
               if (!onSave) return;

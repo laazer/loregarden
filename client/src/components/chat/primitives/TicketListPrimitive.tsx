@@ -7,6 +7,8 @@ import { TicketTree } from "../../TicketTree";
 import type { TicketListPart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenTicketButton } from "./ResourceActionButton";
+import { PlayButton, StopButton } from "./RunControlButton";
+import { toTicketTreeNode } from "./ticketTreeNodes";
 import { ticketIsRunning, useRunControls } from "./useRunControls";
 
 function filterTree(nodes: TicketTreeNode[], ids: Set<string>): TicketTreeNode[] {
@@ -28,21 +30,7 @@ export function TicketListPrimitive({ part }: { part: TicketListPart }) {
     queryFn: async () => {
       if (parentId) {
         const children = await api.tickets({ parent_ticket_id: parentId });
-        return children.map(
-          (c): TicketTreeNode => ({
-            id: c.id,
-            external_id: c.external_id,
-            title: c.title,
-            state: c.state,
-            priority: c.priority,
-            work_item_type: c.work_item_type,
-            workspace_slug: c.workspace_slug,
-            workflow_stage_name: c.workflow_stage_name,
-            workflow_stage_status: c.workflow_stage_status,
-            child_count: c.child_count,
-            children: [],
-          }),
-        );
+        return children.map(toTicketTreeNode);
       }
       return api.ticketTree({});
     },
@@ -81,33 +69,17 @@ export function TicketListPrimitive({ part }: { part: TicketListPart }) {
             : "Failed to load"
           : null
       }
+      resourceAction={
+        parentId ? <OpenTicketButton ticketId={parentId} label="Open parent ticket" /> : null
+      }
       actions={
-        <>
-          {parentId ? (
-            <>
-              <OpenTicketButton ticketId={parentId} label="Open parent ticket" />
-              {running ? (
-                <button
-                  type="button"
-                  className="lg-primitive-run-btn lg-primitive-run-btn--stop"
-                  disabled={controls.isStopping}
-                  onClick={() => void controls.stop()}
-                >
-                  Stop
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="lg-primitive-run-btn lg-primitive-run-btn--play"
-                  disabled={controls.isStarting}
-                  onClick={() => void controls.start()}
-                >
-                  Play
-                </button>
-              )}
-            </>
-          ) : null}
-        </>
+        parentId ? (
+          running ? (
+            <StopButton disabled={controls.isStopping} onClick={() => void controls.stop()} />
+          ) : (
+            <PlayButton disabled={controls.isStarting} onClick={() => void controls.start()} />
+          )
+        ) : null
       }
     >
       <TicketTree

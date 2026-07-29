@@ -15,6 +15,7 @@ from loregarden.services.branch_triage_service import (
     branch_activity,
     branch_diff_snapshot,
     branch_triage_snapshot,
+    commit_snapshot,
     delete_branch,
     remove_branch_worktree,
 )
@@ -124,6 +125,24 @@ def get_branch_activity(
     ws = _workspace_or_404(session, slug)
     try:
         return branch_activity(ws, branch, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/{slug}/branch-triage/commit")
+def get_commit(
+    slug: str,
+    sha: str = Query(
+        ...,
+        min_length=4,
+        max_length=40,
+        pattern="^(?:HEAD|[0-9a-fA-F]{7,40})$",
+    ),
+    session: Session = Depends(get_session),
+) -> dict:
+    ws = _workspace_or_404(session, slug)
+    try:
+        return commit_snapshot(ws, sha)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 

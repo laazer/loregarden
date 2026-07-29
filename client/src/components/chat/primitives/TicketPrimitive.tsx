@@ -4,8 +4,9 @@ import { api } from "../../../api/client";
 import type { TicketPart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenTicketButton } from "./ResourceActionButton";
+import { PlayButton, StopButton } from "./RunControlButton";
+import { TicketCardBody, stageProgressSegments } from "./TicketCardMeta";
 import { ticketIsRunning, useRunControls } from "./useRunControls";
-import { ticketStateColor } from "./ticketProgress";
 
 export function TicketPrimitive({ part }: { part: TicketPart }) {
   const { data, isLoading, error } = useQuery({
@@ -16,51 +17,41 @@ export function TicketPrimitive({ part }: { part: TicketPart }) {
   });
   const controls = useRunControls(part.ticket_id);
   const running = ticketIsRunning(data?.workflow_stage_status);
+  const progress = stageProgressSegments(data?.stages);
+  const title = data?.title ?? part.title ?? part.ticket_id;
 
   return (
     <PrimitiveCard
-      title={data?.title ?? part.title ?? part.ticket_id}
-      subtitle={data ? `${data.external_id} · ${data.work_item_type}` : undefined}
-      statusDot={ticketStateColor(data?.state)}
-      meta={
-        data ? (
-          <>
-            <span>{data.state.replace("_", " ")}</span>
-            <span>{data.workflow_stage_name || data.workflow_stage_key || "—"}</span>
-            <span>P{data.priority}</span>
-            {data.workspace_slug ? <span>{data.workspace_slug}</span> : null}
-          </>
-        ) : null
-      }
+      className="lg-primitive-ticket-card"
+      title={title}
+      header={<span className="lg-primitive-ticket-card-spacer" aria-hidden />}
       loading={isLoading}
       error={error ? (error instanceof Error ? error.message : "Failed to load ticket") : null}
       tone={running ? "accent" : "default"}
+      resourceAction={<OpenTicketButton ticketId={part.ticket_id} compact />}
       actions={
-        <>
-          <OpenTicketButton ticketId={part.ticket_id} />
-          {running ? (
-            <button
-              type="button"
-              className="lg-primitive-run-btn lg-primitive-run-btn--stop"
-              disabled={controls.isStopping}
-              onClick={() => void controls.stop()}
-            >
-              Stop
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="lg-primitive-run-btn lg-primitive-run-btn--play"
-              disabled={controls.isStarting || !data}
-              onClick={() => void controls.start()}
-            >
-              Play
-            </button>
-          )}
-        </>
+        running ? (
+          <StopButton disabled={controls.isStopping} onClick={() => void controls.stop()} />
+        ) : (
+          <PlayButton
+            disabled={controls.isStarting || !data}
+            onClick={() => void controls.start()}
+          />
+        )
       }
     >
-      {data?.description ? <p className="lg-primitive-card-sub">{data.description}</p> : null}
+      {data ? (
+        <TicketCardBody
+          title={title}
+          priority={data.priority}
+          state={data.state}
+          workspaceSlug={data.workspace_slug}
+          stageName={data.workflow_stage_name || undefined}
+          stageStatus={data.workflow_stage_status}
+          segments={progress.segments}
+          progressLabel={progress.total ? `${progress.done}/${progress.total}` : null}
+        />
+      ) : null}
     </PrimitiveCard>
   );
 }

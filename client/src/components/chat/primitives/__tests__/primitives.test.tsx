@@ -9,9 +9,13 @@ import { RouterBridgeSync } from "../../../RouterBridgeSync";
 import { StudioChatMessages } from "../../../studio/StudioChat";
 import { CalendarPrimitive } from "../CalendarPrimitive";
 import { GatePrimitive } from "../GatePrimitive";
+import { GiphyPrimitive } from "../GiphyPrimitive";
+import { BranchHistoryPrimitive, CommitPrimitive } from "../GitPrimitive";
+import { ParentTicketPrimitive } from "../ParentTicketPrimitive";
 import { PrimitiveCard } from "../PrimitiveCard";
 import { PrimitiveParts } from "../PrimitiveParts";
 import { primitiveSize, widestPrimitiveSize } from "../primitiveFrame";
+import { QAPrimitive } from "../QAPrimitive";
 import { UnknownPrimitiveCard } from "../registry";
 import {
   OpenAgentStudioButton,
@@ -20,14 +24,27 @@ import {
   OpenTicketButton,
   OpenWorkflowStudioButton,
 } from "../ResourceActionButton";
+import { PlayButton, StopButton } from "../RunControlButton";
 import { TerminalPrimitive } from "../TerminalPrimitive";
+import { TicketPrimitive } from "../TicketPrimitive";
 import { ThinkingPrimitive } from "../ThinkingPrimitive";
+import { TodoListPrimitive } from "../TodoListPrimitive";
 import { WorkflowPrimitive } from "../WorkflowPrimitive";
+import { WorkspacePrimitive } from "../WorkspacePrimitive";
 import {
   childProgressPercent,
   stageProgressPercent,
 } from "../ticketProgress";
-import type { ChatPart } from "../types";
+import type { ChatPart, QAItem, TodoItem } from "../types";
+import {
+  fetchBranchActivity,
+  fetchCommitSnapshot,
+} from "../../../../lib/branchTriageApi";
+
+jest.mock("../../../../lib/branchTriageApi", () => ({
+  fetchBranchActivity: jest.fn(),
+  fetchCommitSnapshot: jest.fn(),
+}));
 
 jest.mock("../../../../api/client", () => {
   const actual = jest.requireActual("../../../../api/client");
@@ -36,6 +53,8 @@ jest.mock("../../../../api/client", () => {
     api: {
       ...actual.api,
       ticket: jest.fn(),
+      tickets: jest.fn().mockResolvedValue([]),
+      workspaces: jest.fn(),
       approvals: jest.fn(),
       advance: jest.fn(),
       resolveApproval: jest.fn(),
@@ -45,6 +64,12 @@ jest.mock("../../../../api/client", () => {
 });
 
 const mockedApi = api as jest.Mocked<typeof api>;
+const mockedBranchActivity = fetchBranchActivity as jest.MockedFunction<
+  typeof fetchBranchActivity
+>;
+const mockedCommitSnapshot = fetchCommitSnapshot as jest.MockedFunction<
+  typeof fetchCommitSnapshot
+>;
 
 function wrap(ui: ReactNode) {
   const client = new QueryClient({
@@ -101,6 +126,70 @@ describe("PrimitiveCard", () => {
     expect(screen.getByText("Body")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
   });
+
+  it("places the external-resource link last in the header, after the card controls", () => {
+    const { container } = render(
+      <PrimitiveCard
+        title="Ticket"
+        collapsible
+        resourceAction={<OpenTicketButton ticketId="t1" />}
+        actions={<PlayButton onClick={() => {}} />}
+      >
+        Body
+      </PrimitiveCard>,
+    );
+
+    const header = container.querySelector(".lg-primitive-card-header-actions");
+    const headerItems = Array.from(header?.children ?? []);
+    expect(headerItems).toHaveLength(2);
+    expect(headerItems[0]).toHaveClass("lg-primitive-card-collapse");
+    expect(headerItems[1]).toHaveClass("lg-primitive-resource-btn");
+    expect(
+      container.querySelector(".lg-primitive-card-actions .lg-primitive-resource-btn"),
+    ).toBeNull();
+  });
+
+  it("keeps the resource link visible while the body is collapsed", () => {
+    const { container } = render(
+      <PrimitiveCard
+        title="Ticket"
+        collapsible
+        defaultCollapsed
+        resourceAction={<OpenTicketButton ticketId="t1" />}
+      >
+        Body
+      </PrimitiveCard>,
+    );
+    expect(screen.queryByText("Body")).not.toBeInTheDocument();
+    expect(
+      container.querySelector(".lg-primitive-card-header-actions .lg-primitive-resource-btn"),
+    ).not.toBeNull();
+  });
+});
+
+describe("run control buttons", () => {
+  it("renders a play triangle and a stop square on their toned buttons", () => {
+    render(
+      <>
+        <PlayButton onClick={() => {}} />
+        <StopButton onClick={() => {}} />
+      </>,
+    );
+
+    const play = screen.getByRole("button", { name: "Play" });
+    const stop = screen.getByRole("button", { name: "Stop" });
+    expect(play).toHaveClass("lg-primitive-run-btn--play");
+    expect(stop).toHaveClass("lg-primitive-run-btn--stop");
+    expect(play.querySelector("svg path")).not.toBeNull();
+    expect(stop.querySelector("svg rect")).not.toBeNull();
+  });
+
+  it("does not fire while disabled", () => {
+    const onClick = jest.fn();
+    render(<StopButton onClick={onClick} disabled />);
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(onClick).not.toHaveBeenCalled();
+  });
 });
 
 describe("resource action buttons", () => {
@@ -131,6 +220,26 @@ describe("resource action buttons", () => {
     renderResourceAction(renderButton());
     fireEvent.click(screen.getByRole("button", { name: label }));
     expect(screen.getByTestId("path")).toHaveTextContent(path);
+  });
+
+  it("uses the same blue arrow treatment for full and compact links", () => {
+    render(
+      <>
+        <OpenTicketButton ticketId="full" />
+        <OpenTicketButton ticketId="compact" compact label="Open compact ticket" />
+      </>,
+    );
+
+    for (const button of [
+      screen.getByRole("button", { name: "Open ticket" }),
+      screen.getByRole("button", { name: "Open compact ticket" }),
+    ]) {
+      expect(button).toHaveClass("lg-primitive-resource-btn");
+      expect(button.lastElementChild?.tagName).toBe("svg");
+    }
+    expect(screen.getByRole("button", { name: "Open compact ticket" })).toHaveClass(
+      "lg-primitive-resource-btn--compact",
+    );
   });
 });
 
@@ -279,6 +388,157 @@ describe("Gate primitive", () => {
     await waitFor(() => {
       expect(mockedApi.advance).toHaveBeenCalledWith("gate-ticket-1");
     });
+  });
+});
+
+describe("Ticket primitive chrome", () => {
+  beforeEach(() => {
+    mockedApi.ticket.mockReset();
+    mockedApi.tickets.mockReset();
+    mockedApi.tickets.mockResolvedValue([]);
+  });
+
+  it("wears the v6 ticket card: P-badge, state, stage segments, stage line", async () => {
+    mockedApi.ticket.mockResolvedValue(
+      gateTicket({
+        priority: 1,
+        stages: [
+          {
+            key: "plan",
+            name: "Plan",
+            status: "done",
+            agent_id: "",
+            skill_name: "",
+            optional: false,
+            note: "",
+            stage_type: "agent",
+            agents: [],
+          },
+          {
+            key: "quality_gate",
+            name: "Quality Gate",
+            status: "awaiting",
+            agent_id: "human",
+            skill_name: "",
+            optional: false,
+            note: "",
+            stage_type: "gate",
+            agents: [],
+          },
+          {
+            key: "done",
+            name: "Done",
+            status: "pending",
+            agent_id: "",
+            skill_name: "",
+            optional: false,
+            note: "",
+            stage_type: "agent",
+            agents: [],
+          },
+        ],
+      }),
+    );
+
+    const { container } = wrap(
+      <TicketPrimitive part={{ primitive: "ticket", ticket_id: "gate-ticket-1" }} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Ship gate polish")).toBeInTheDocument();
+    });
+    expect(screen.getByText("P1")).toBeInTheDocument();
+    expect(container.querySelector(".lg-primitive-ticket-v6-meta")?.textContent).toContain(
+      "In Progress",
+    );
+    expect(container.querySelector(".lg-primitive-ticket-v6-meta")?.textContent).toContain(
+      "loregarden",
+    );
+    expect(container.querySelectorAll(".lg-primitive-ticket-seg")).toHaveLength(3);
+    expect(container.querySelector(".lg-primitive-ticket-segs-label")?.textContent).toBe("1/3");
+    expect(container.querySelector(".lg-primitive-ticket-stage")?.textContent).toContain(
+      "Quality Gate",
+    );
+    expect(container.querySelector(".lg-primitive-ticket-stage")?.textContent).toContain("Awaiting");
+  });
+
+  it("labels parent progress as children done out of total", async () => {
+    mockedApi.ticket.mockResolvedValue(gateTicket({ work_item_type: "milestone", child_count: 2 }));
+    mockedApi.tickets.mockResolvedValue([
+      gateTicket({ id: "child-1", external_id: "43-one", title: "Child one", state: "done" }),
+      gateTicket({
+        id: "child-2",
+        external_id: "44-two",
+        title: "Child two",
+        state: "in_progress",
+      }),
+    ]);
+
+    const { container } = wrap(
+      <ParentTicketPrimitive part={{ primitive: "parent_ticket", ticket_id: "gate-ticket-1" }} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Ship gate polish")).toBeInTheDocument();
+    });
+    expect(mockedApi.tickets).toHaveBeenCalledWith({ parent_ticket_id: "gate-ticket-1" });
+    expect(container.querySelector(".lg-primitive-ticket-segs-label")?.textContent).toBe("1/2");
+    expect(container.querySelectorAll(".lg-primitive-ticket-seg")).toHaveLength(2);
+    expect(container.querySelectorAll(".tree-row")).toHaveLength(2);
+    expect(screen.getByText("Child one")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Child two" })).toBeInTheDocument();
+  });
+
+  it("falls back to stage progress when a parent has no children yet", async () => {
+    mockedApi.ticket.mockResolvedValue(gateTicket({ work_item_type: "milestone" }));
+    mockedApi.tickets.mockResolvedValue([]);
+
+    const { container } = wrap(
+      <ParentTicketPrimitive part={{ primitive: "parent_ticket", ticket_id: "gate-ticket-1" }} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Ship gate polish")).toBeInTheDocument();
+    });
+    expect(container.querySelector(".lg-primitive-ticket-segs-label")?.textContent).toBe("0/1");
+    expect(container.querySelector(".lg-primitive-ticket-children")).toBeNull();
+  });
+
+  it("links to the ticket from the header and runs it from the actions row", async () => {
+    mockedApi.ticket.mockResolvedValue(gateTicket({ workflow_stage_status: "pending" }));
+
+    const { container } = wrap(
+      <TicketPrimitive part={{ primitive: "ticket", ticket_id: "gate-ticket-1" }} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Play" })).toBeEnabled();
+    });
+    expect(
+      container.querySelector(
+        ".lg-primitive-card-header-actions .lg-primitive-resource-btn--compact",
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(".lg-primitive-card-actions .lg-primitive-run-btn--play"),
+    ).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
+  });
+
+  it("swaps the play button for stop while the stage runs", async () => {
+    mockedApi.ticket.mockResolvedValue(gateTicket({ workflow_stage_status: "running" }));
+
+    const { container } = wrap(
+      <TicketPrimitive part={{ primitive: "ticket", ticket_id: "gate-ticket-1" }} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: "Play" })).not.toBeInTheDocument();
+    expect(
+      container.querySelector(".lg-primitive-card-actions .lg-primitive-run-btn--stop"),
+    ).not.toBeNull();
   });
 });
 
@@ -471,6 +731,215 @@ describe("Calendar week schedule", () => {
     expect(screen.getByText("Quality gate")).toBeInTheDocument();
     expect(screen.getByText("frontend · implement")).toBeInTheDocument();
     expect(screen.getAllByText("Open")).toHaveLength(5);
+  });
+});
+
+describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
+  it("loads a live workspace summary", async () => {
+    mockedApi.workspaces.mockResolvedValue([
+      {
+        id: "ws-1",
+        slug: "loregarden",
+        name: "Lore Garden",
+        repo_path: "/workspace/loregarden",
+        repo_root: "/workspace/loregarden",
+        repo_exists: true,
+        ticket_count: 12,
+        blocked_count: 2,
+        workflow_template_slug: "tdd",
+        cli_adapter: "cursor",
+        claude_model: "",
+        cursor_model: "gpt-5",
+        lmstudio_base_url: "",
+        lmstudio_model: "",
+      },
+    ]);
+
+    wrap(
+      <WorkspacePrimitive
+        part={{ primitive: "workspace", workspace_slug: "loregarden" }}
+      />,
+    );
+
+    expect(await screen.findByText("Lore Garden")).toBeInTheDocument();
+    expect(screen.getByText("12 tickets")).toBeInTheDocument();
+    expect(screen.getByText("2 blocked")).toBeInTheDocument();
+    expect(screen.getByText("tdd")).toBeInTheDocument();
+  });
+
+  it("keeps agent todos read-only and lets users toggle the same component", () => {
+    const agent = render(
+      <TodoListPrimitive
+        part={{
+          primitive: "todo_list",
+          owner: "agent",
+          items: [{ id: "test", text: "Run tests", checked: false }],
+        }}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "Run tests" })).toBeDisabled();
+    agent.unmount();
+
+    render(
+      <TodoListPrimitive
+        part={{
+          primitive: "todo_list",
+          owner: "user",
+          items: [{ id: "review", text: "Review diff", checked: false }],
+        }}
+      />,
+    );
+    const checkbox = screen.getByRole("checkbox", { name: "Review diff" });
+    fireEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
+    expect(screen.getByText("1/1 complete")).toBeInTheDocument();
+  });
+
+  it("keeps user ticks through a re-render but adopts a changed payload", () => {
+    const userList = (items: TodoItem[]) => (
+      <TodoListPrimitive part={{ primitive: "todo_list", owner: "user", items }} />
+    );
+    const original: TodoItem[] = [{ id: "review", text: "Review diff", checked: false }];
+    const view = render(userList(original));
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Review diff" }));
+    // A fresh array with identical contents stands in for an unrelated
+    // re-render of the thread; the tick must survive it.
+    view.rerender(userList([{ ...original[0] }]));
+    expect(screen.getByRole("checkbox", { name: "Review diff" })).toBeChecked();
+
+    view.rerender(userList([{ id: "ship", text: "Approve release", checked: false }]));
+    expect(screen.getByRole("checkbox", { name: "Approve release" })).not.toBeChecked();
+    expect(screen.getByText("0/1 complete")).toBeInTheDocument();
+  });
+
+  it("keeps typed Q&A answers through a re-render", () => {
+    const onSubmit = jest.fn();
+    const card = (items: QAItem[]) => (
+      <QAPrimitive part={{ primitive: "qa", items }} onSubmit={onSubmit} />
+    );
+    const items: QAItem[] = [{ id: "scope", question: "Who is this for?" }];
+    const view = render(card(items));
+
+    fireEvent.change(screen.getByLabelText("Who is this for?"), {
+      target: { value: "Operators" },
+    });
+    view.rerender(card([{ ...items[0] }]));
+
+    expect(screen.getByLabelText("Who is this for?")).toHaveValue("Operators");
+    expect(screen.getByRole("button", { name: "Send answers" })).toBeEnabled();
+  });
+
+  it("renders live branch history and commit detail", async () => {
+    mockedBranchActivity.mockResolvedValue({
+      branch: "main",
+      upstream: "origin/main",
+      commits: [
+        {
+          sha: "a".repeat(40),
+          short_sha: "aaaaaaa",
+          date: new Date().toISOString(),
+          author: "Baxter",
+          message: "Add primitives",
+          pushed: true,
+        },
+      ],
+    });
+    mockedCommitSnapshot.mockResolvedValue({
+      sha: "a".repeat(40),
+      short_sha: "aaaaaaa",
+      date: new Date().toISOString(),
+      author: "Baxter",
+      message: "Add primitives",
+      body: "Implement the new cards.",
+      pushed: false,
+      files_changed: 3,
+      insertions: 42,
+      deletions: 5,
+    });
+
+    const branch = wrap(
+      <BranchHistoryPrimitive
+        part={{
+          primitive: "branch_history",
+          workspace_slug: "loregarden",
+          branch: "main",
+        }}
+      />,
+    );
+    expect(await screen.findByText("Add primitives")).toBeInTheDocument();
+    expect(screen.getByText("tracking origin/main")).toBeInTheDocument();
+    branch.unmount();
+
+    wrap(
+      <CommitPrimitive
+        part={{
+          primitive: "commit",
+          workspace_slug: "loregarden",
+          sha: "aaaaaaa",
+          branch: "main",
+        }}
+      />,
+    );
+    expect(await screen.findByText("Implement the new cards.")).toBeInTheDocument();
+    expect(screen.getByText("3 files")).toBeInTheDocument();
+    expect(screen.getByText("+42")).toBeInTheDocument();
+    expect(screen.getByText("−5")).toBeInTheDocument();
+  });
+
+  it("sends complete Q&A responses through the chat callback", () => {
+    const onSubmit = jest.fn();
+    render(
+      <QAPrimitive
+        part={{
+          primitive: "qa",
+          items: [{ id: "scope", question: "Who is this for?" }],
+        }}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    const send = screen.getByRole("button", { name: "Send answers" });
+    expect(send).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Who is this for?"), {
+      target: { value: "Operators" },
+    });
+    fireEvent.click(send);
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      "1. Who is this for?\nAnswer: Operators",
+    );
+    expect(screen.getByText("Answers sent")).toBeInTheDocument();
+  });
+
+  it("renders only allowlisted Giphy media URLs", () => {
+    const view = render(
+      <GiphyPrimitive
+        part={{
+          primitive: "giphy",
+          giphy_id: "ICOgUNjpvO0PC",
+          alt: "Typing cat",
+        }}
+      />,
+    );
+    const image = screen.getByRole("img", { name: "Typing cat" });
+    expect(image).toHaveAttribute(
+      "src",
+      "https://media.giphy.com/media/ICOgUNjpvO0PC/giphy.gif",
+    );
+    fireEvent.error(image);
+    expect(screen.getByText("This Giphy image could not be loaded")).toBeInTheDocument();
+
+    view.rerender(
+      <GiphyPrimitive
+        part={{
+          primitive: "giphy",
+          url: "https://example.com/tracker.gif",
+        }}
+      />,
+    );
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(screen.getByText(/valid Giphy ID/)).toBeInTheDocument();
   });
 });
 

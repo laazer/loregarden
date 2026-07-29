@@ -13,12 +13,15 @@ export function stageProgressPercent(stages: WorkflowStageView[] | undefined): n
   return Math.round(stageProgressRatio(stages) * 100);
 }
 
+export function childDoneCount(children: { state: TicketState }[] | undefined): number {
+  return (children ?? []).filter((c) => DONE_TICKET_STATES.has(c.state)).length;
+}
+
 export function childProgressRatio(
   children: { state: TicketState }[] | undefined,
 ): number {
   if (!children || children.length === 0) return 0;
-  const done = children.filter((c) => DONE_TICKET_STATES.has(c.state)).length;
-  return done / children.length;
+  return childDoneCount(children) / children.length;
 }
 
 export function childProgressPercent(children: { state: TicketState }[] | undefined): number {
@@ -27,19 +30,4 @@ export function childProgressPercent(children: { state: TicketState }[] | undefi
 
 export function isStageRunning(status: StageStatus | undefined): boolean {
   return status === "running" || status === "awaiting";
-}
-
-export function ticketStateColor(state: TicketState | string | undefined): string {
-  switch (state) {
-    case "in_progress":
-      return "var(--blue)";
-    case "blocked":
-      return "var(--red)";
-    case "done":
-      return "var(--grn)";
-    case "wont_do":
-      return "var(--txl)";
-    default:
-      return "var(--amb)";
-  }
 }

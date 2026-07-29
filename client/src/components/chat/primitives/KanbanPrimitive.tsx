@@ -3,10 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../../api/client";
 import type { TicketState, TicketSummary } from "../../../api/types";
+import { ticketStateColor } from "../../../lib/ticketStates";
 import type { FilterableKanbanPart, KanbanPart, StatusColumnPart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenTicketButton } from "./ResourceActionButton";
-import { ticketStateColor } from "./ticketProgress";
 
 const DEFAULT_STATUSES: TicketState[] = [
   "backlog",

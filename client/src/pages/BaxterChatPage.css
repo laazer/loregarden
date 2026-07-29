@@ -5,6 +5,9 @@
   flex-direction: column;
   position: relative;
   overflow: hidden;
+  /* Reading column is intentionally wider than a blog measure — chat cards need room. */
+  --baxter-reading: 880px;
+  --baxter-prose: min(760px, 100%);
 }
 
 .baxter-chat-top {
@@ -70,36 +73,55 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  /* Extra bottom padding so the last turn can scroll through the fade into the dock. */
-  padding: 28px 22px 40px;
+  padding: 28px 22px 4px;
   /* Query container so primitives can size against the thread, not the viewport. */
   container-type: inline-size;
 }
 
-/* Soften the hard edge where the scrollport meets the reply dock. */
-.baxter-chat-thread::after {
-  content: "";
-  display: block;
-  position: sticky;
-  bottom: 0;
-  height: 28px;
-  margin-top: -28px;
-  pointer-events: none;
-  background: linear-gradient(
-    to bottom,
-    color-mix(in srgb, var(--bg0) 0%, transparent),
-    var(--bg0)
-  );
-  z-index: 1;
+/* Clearance for the dock's fade ramp, so at rest the softness lands on empty space
+   inside the scrollport rather than on the last card's own edge. */
+.baxter-chat-thread--faded {
+  padding-bottom: 22px;
 }
 
-/* Prose keeps the 720px reading measure; primitives may spend up to the whole thread. */
+/* Prose sits on the reading measure; primitives may spend up to the whole thread. */
 .baxter-chat-thread .lg-chat-messages {
-  --lg-primitive-wide: min(940px, 100cqw);
-  --lg-primitive-full: min(1320px, 100cqw);
-  max-width: 720px;
+  --lg-primitive-regular: var(--baxter-prose);
+  --lg-primitive-wide: min(1100px, 100cqw);
+  --lg-primitive-full: min(1400px, 100cqw);
+  max-width: var(--baxter-reading);
   margin: 0 auto;
   width: 100%;
+}
+
+.baxter-chat-thread .lg-chat-assistant-col {
+  max-width: var(--baxter-prose);
+  width: 100%;
+}
+
+/* Breakout slots centre on this column — it must match the reading measure, not prose,
+   or wide/full cards overhang the thread and get clipped by .baxter-chat { overflow:hidden }. */
+.baxter-chat-thread .lg-chat-turn--wide .lg-chat-assistant-col,
+.baxter-chat-thread .lg-chat-turn--full .lg-chat-assistant-col {
+  max-width: 100%;
+}
+
+.baxter-chat-thread .lg-chat-user-bubble {
+  max-width: min(640px, 92%);
+}
+
+.baxter-chat-thread .lg-chat-turn--wide .lg-chat-assistant-col > .lg-chat-reply,
+.baxter-chat-thread .lg-chat-turn--full .lg-chat-assistant-col > .lg-chat-reply {
+  max-width: var(--baxter-prose);
+}
+
+/* Scroll-anchor only — don't leave a soft empty band above the suggestion chips. */
+.baxter-chat-thread .lg-chat-messages-tail {
+  min-height: 0;
+  height: 0;
+  margin-top: -18px; /* cancel .lg-chat-messages gap */
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .baxter-chat-welcome {
@@ -287,18 +309,38 @@
   background: var(--bg0);
 }
 
+/* Messages dissolve into the dock instead of being sliced by the thread's overflow
+   edge. The ramp sits above the dock — over the thread — not between the suggestion
+   chips and the composer, and it fades to the dock's own colour so the two meet
+   without a seam. Only for docks that sit directly under the thread; triage puts its
+   approvals panel in between, where a veil would land on the wrong element. */
+.baxter-chat-dock--fade::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 100% 0;
+  height: 30px;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    var(--bg0) 0%,
+    color-mix(in srgb, var(--bg0) 82%, transparent) 34%,
+    color-mix(in srgb, var(--bg0) 34%, transparent) 68%,
+    transparent 100%
+  );
+}
+
 .baxter-chat-suggestions {
-  max-width: 720px;
-  margin: 0 auto 12px;
+  max-width: var(--baxter-reading, 880px);
+  margin: 0 auto 10px;
 }
 
 .baxter-chat-dock .lg-chat-composer-wrap {
-  max-width: 720px;
+  max-width: var(--baxter-reading, 880px);
   margin: 0 auto;
 }
 
 .baxter-chat-footnote {
-  max-width: 720px;
+  max-width: var(--baxter-reading, 880px);
   margin: 8px auto 0;
   text-align: center;
   font-size: 11.5px;
@@ -518,7 +560,7 @@
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 880px) {
   .baxter-chat-thread,
   .baxter-chat-dock {
     padding-left: 14px;

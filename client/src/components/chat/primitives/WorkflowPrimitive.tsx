@@ -186,7 +186,7 @@ export function WorkflowPrimitive({ part }: { part: WorkflowPart }) {
             : "Failed to load workflow"
           : null
       }
-      actions={slug && !part.draft ? <OpenWorkflowStudioButton slug={slug} /> : null}
+      resourceAction={slug && !part.draft ? <OpenWorkflowStudioButton slug={slug} /> : null}
     >
       <div className="lg-primitive-workflow-flow">
         <ReactFlow
