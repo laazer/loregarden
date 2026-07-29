@@ -99,7 +99,6 @@ export function buildTextDiffArtifact(
 }
 
 export type EditDiffComment = {
-  id: string;
   file_path: string;
   line_index: number;
   line_kind: string;

@@ -32,7 +32,6 @@ describe("formatEditCommentsForChat", () => {
       path: "agent_context/agents/planner.md",
       comments: [
         {
-          id: "1",
           file_path: "agent_context/agents/planner.md",
           line_index: 4,
           line_kind: "a",

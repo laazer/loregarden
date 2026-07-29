@@ -15,6 +15,7 @@ import {
   submitBranchDiffReviewToAgent,
   type BranchDiffComment,
 } from "../lib/branchTriageApi";
+import type { EditDiffComment } from "../lib/textDiff";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import "./InlineCodeDiffReview.css";
 
@@ -462,14 +463,7 @@ export function InlineCodeDiffReview({
   localMode?: boolean;
   submitActionLabel?: string;
   onSubmitLocal?: (payload: {
-    comments: Array<{
-      file_path: string;
-      line_index: number;
-      line_kind: string;
-      content: string;
-      line_number: string;
-      line_text: string;
-    }>;
+    comments: EditDiffComment[];
     instructions: string;
   }) => void | Promise<void>;
 }) {
