@@ -25,6 +25,24 @@ jest.mock("../../api/client", () => {
 
 const mockedApi = api as jest.Mocked<typeof api>;
 
+const APPROVAL_FIXTURE = {
+  id: "a1",
+  title: "Merge retro-tokens",
+  level: "ask",
+  workspace_slug: "loregarden",
+  stage_key: "gate",
+  stage_name: "Gate",
+  impact: "",
+  ticket_id: "t1",
+  ticket_external_id: "retro-1",
+  kind: "workflow_gate",
+  status: "pending",
+  run_id: "r1",
+  tool_name: "",
+  tool_input_json: "{}",
+  cli_adapter: "claude",
+};
+
 function renderChat() {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -41,18 +59,35 @@ function renderChat() {
   );
 }
 
+/**
+ * Chat is confined to one workspace, so the composer stays locked until that
+ * workspace is known — typing before then is dropped, not queued.
+ */
+async function renderChatReady() {
+  const result = renderChat();
+  await waitFor(() =>
+    expect(screen.getByPlaceholderText("What should we ship today?")).toBeEnabled(),
+  );
+  return result;
+}
+
 describe("BaxterChatPage", () => {
   beforeEach(() => {
     sessionStorage.clear();
+    // Call history leaks between tests otherwise, so per-workspace assertions
+    // would see requests another test made.
+    jest.clearAllMocks();
     mockedApi.approvals.mockResolvedValue([]);
     mockedApi.ticket.mockRejectedValue(new ApiError(404, "Example ticket not found"));
     mockedApi.ticketTree.mockResolvedValue([]);
     mockedApi.tickets.mockResolvedValue([]);
     mockedApi.workspaces.mockResolvedValue([
       { id: "w1", slug: "loregarden", name: "Loregarden", repo_path: "/tmp" } as never,
+      { id: "w2", slug: "blobert", name: "Blobert", repo_path: "/tmp/b" } as never,
     ]);
     mockedApi.sendBaxterChatMessage.mockResolvedValue({ reply: "Model says ship Home polish." });
-    useUiStore.setState({ baxterHistoryOpen: false });
+    // The slug is persisted, so leaving it set would leak across tests.
+    useUiStore.setState({ baxterHistoryOpen: false, chatWorkspaceSlug: "", workspace: "all" });
   });
 
   it("shows a welcoming empty shell with the large Ask Baxter composer", async () => {
@@ -65,7 +100,7 @@ describe("BaxterChatPage", () => {
   });
 
   it("sends the prompt to the workspace Baxter chat API", async () => {
-    renderChat();
+    await renderChatReady();
     const input = screen.getByPlaceholderText("What should we ship today?");
     fireEvent.change(input, { target: { value: "Hello Baxter" } });
     fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
@@ -81,27 +116,79 @@ describe("BaxterChatPage", () => {
     });
   });
 
+  it("locks the composer until it knows which workspace answers", async () => {
+    let resolveWorkspaces: (value: unknown) => void = () => undefined;
+    mockedApi.workspaces.mockImplementation(
+      () => new Promise((resolve) => { resolveWorkspaces = resolve; }) as never,
+    );
+
+    renderChat();
+    const input = screen.getByPlaceholderText("What should we ship today?");
+    expect(input).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "Hello Baxter" } });
+    fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
+    expect(mockedApi.sendBaxterChatMessage).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveWorkspaces([
+        { id: "w1", slug: "loregarden", name: "Loregarden", repo_path: "/tmp" },
+      ]);
+    });
+    await waitFor(() => expect(input).toBeEnabled());
+  });
+
+  it("sends to the picked chat workspace, not the Console filter", async () => {
+    useUiStore.setState({ chatWorkspaceSlug: "blobert", workspace: "loregarden" });
+    await renderChatReady();
+
+    fireEvent.change(screen.getByPlaceholderText("What should we ship today?"), {
+      target: { value: "What is next here?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
+
+    await waitFor(() => {
+      expect(mockedApi.sendBaxterChatMessage).toHaveBeenCalledWith("blobert", {
+        content: "What is next here?",
+        history: [],
+      });
+    });
+  });
+
+  it("scopes its ticket queries to one workspace instead of every workspace", async () => {
+    useUiStore.setState({ chatWorkspaceSlug: "blobert" });
+    await renderChatReady();
+
+    await waitFor(() => expect(mockedApi.tickets).toHaveBeenCalled());
+    for (const call of mockedApi.tickets.mock.calls) {
+      expect(call[0]).toMatchObject({ workspace: "blobert" });
+    }
+  });
+
+  it("drops approvals belonging to another workspace", async () => {
+    useUiStore.setState({ chatWorkspaceSlug: "loregarden" });
+    mockedApi.approvals.mockResolvedValue([
+      { ...APPROVAL_FIXTURE, id: "a1", title: "Mine", workspace_slug: "loregarden" },
+      { ...APPROVAL_FIXTURE, id: "a2", title: "Theirs", workspace_slug: "blobert" },
+    ] as never);
+    mockedApi.sendBaxterChatMessage.mockResolvedValue({ reply: "One thing waits on you." });
+
+    await renderChatReady();
+    // Only the in-workspace approval counts toward the greeting summary.
+    await screen.findByText(/1 approval waiting/);
+
+    fireEvent.change(screen.getByPlaceholderText("What should we ship today?"), {
+      target: { value: "What waits on me?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
+
+    await waitFor(() => expect(screen.getByText("Mine")).toBeInTheDocument());
+    expect(screen.queryByText("Theirs")).not.toBeInTheDocument();
+  });
+
   it("bootstraps a handoff prompt from Home into the thread", async () => {
     sessionStorage.setItem(HOME_BAXTER_PROMPT_KEY, "What should I look at first this morning?");
-    mockedApi.approvals.mockResolvedValue([
-      {
-        id: "a1",
-        title: "Merge retro-tokens",
-        level: "ask",
-        workspace_slug: "loregarden",
-        stage_key: "gate",
-        stage_name: "Gate",
-        impact: "",
-        ticket_id: "t1",
-        ticket_external_id: "retro-1",
-        kind: "workflow_gate",
-        status: "pending",
-        run_id: "r1",
-        tool_name: "",
-        tool_input_json: "{}",
-        cli_adapter: "claude",
-      },
-    ]);
+    mockedApi.approvals.mockResolvedValue([APPROVAL_FIXTURE] as never);
     mockedApi.sendBaxterChatMessage.mockResolvedValue({
       reply: "Start with the Merge retro-tokens approval.",
     });
@@ -123,7 +210,7 @@ describe("BaxterChatPage", () => {
     mockedApi.sendBaxterChatMessage.mockResolvedValue({
       reply: "**Ship Home polish** with `cursor` next.",
     });
-    renderChat();
+    await renderChatReady();
     const input = screen.getByPlaceholderText("What should we ship today?");
     fireEvent.change(input, { target: { value: "What next?" } });
     fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
@@ -142,7 +229,7 @@ describe("BaxterChatPage", () => {
           resolveReply = resolve;
         }),
     );
-    renderChat();
+    await renderChatReady();
     const input = screen.getByPlaceholderText("What should we ship today?");
     fireEvent.change(input, { target: { value: "Hello" } });
     fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
@@ -159,7 +246,7 @@ describe("BaxterChatPage", () => {
 
   it("surfaces API failures in the thread", async () => {
     mockedApi.sendBaxterChatMessage.mockRejectedValue(new ApiError(502, "Baxter unavailable: boom"));
-    renderChat();
+    await renderChatReady();
     const input = screen.getByPlaceholderText("What should we ship today?");
     fireEvent.change(input, { target: { value: "Hello" } });
     fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
@@ -170,7 +257,7 @@ describe("BaxterChatPage", () => {
   });
 
   it("starts a new chat when the global topbar reset fires", async () => {
-    renderChat();
+    await renderChatReady();
     const input = screen.getByPlaceholderText("What should we ship today?");
     fireEvent.change(input, { target: { value: "Hello" } });
     fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));

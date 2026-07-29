@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from loregarden.models.domain import Ticket, WorkItemType, Workspace
 from loregarden.models.domain.chat_primitives import (
     BranchHistoryPart,
     CommitPart,
@@ -17,7 +18,7 @@ from loregarden.models.domain.chat_primitives import (
 )
 from loregarden.services.chat_primitives.parser import parse_primitive_parts, parts_to_jsonable
 from loregarden.services.chat_primitives.resolver import resolve_parts
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 
 def test_plain_text_is_a_single_text_part():
@@ -123,30 +124,73 @@ def test_new_primitive_fences_parse(payload, part_type):
         assert parts[0].path == "a.md"
 
 
-def test_resolve_parts_fills_ticket_title(db_session: Session):
-    from loregarden.models.domain import Ticket, WorkItemType, Workspace
-    from sqlmodel import select
-
-    workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
-    assert workspace is not None
+def _make_ticket(session: Session, workspace_id: str, external_id: str, title: str) -> Ticket:
     ticket = Ticket(
-        workspace_id=workspace.id,
-        external_id="PRIM-1",
-        title="Primitive ticket",
+        workspace_id=workspace_id,
+        external_id=external_id,
+        title=title,
         description="",
         work_item_type=WorkItemType.TASK,
     )
-    db_session.add(ticket)
-    db_session.commit()
-    db_session.refresh(ticket)
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    return ticket
+
+
+def _other_workspace(session: Session) -> Workspace:
+    workspace = Workspace(slug="other-ws", name="Other")
+    session.add(workspace)
+    session.commit()
+    session.refresh(workspace)
+    return workspace
+
+
+def test_resolve_parts_fills_ticket_title(db_session: Session):
+    workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+    assert workspace is not None
+    ticket = _make_ticket(db_session, workspace.id, "PRIM-1", "Primitive ticket")
 
     parts = resolve_parts(
         db_session,
         [TicketPart(ticket_id=ticket.external_id)],
+        workspace_id=workspace.id,
     )
     assert isinstance(parts[0], TicketPart)
     assert parts[0].ticket_id == ticket.id
     assert parts[0].title == "Primitive ticket"
+
+
+def test_resolve_parts_ignores_ticket_from_another_workspace(db_session: Session):
+    """A chat is confined to one workspace, so a foreign uuid must not resolve."""
+    other = _other_workspace(db_session)
+    home = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+    assert home is not None
+    foreign = _make_ticket(db_session, other.id, "PRIM-2", "Foreign ticket")
+
+    parts = resolve_parts(
+        db_session,
+        [TicketPart(ticket_id=foreign.id)],
+        workspace_id=home.id,
+    )
+    assert isinstance(parts[0], TicketPart)
+    assert parts[0].ticket_id == foreign.id
+    assert parts[0].title is None
+
+
+def test_resolve_parts_picks_the_external_id_in_its_own_workspace(db_session: Session):
+    """external_id is unique per workspace only, so the same ref exists in both."""
+    other = _other_workspace(db_session)
+    home = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+    assert home is not None
+    mine = _make_ticket(db_session, home.id, "01-shared", "Mine")
+    theirs = _make_ticket(db_session, other.id, "01-shared", "Theirs")
+
+    parts = resolve_parts(db_session, [TicketPart(ticket_id="01-shared")], workspace_id=other.id)
+    assert isinstance(parts[0], TicketPart)
+    assert parts[0].ticket_id == theirs.id
+    assert parts[0].ticket_id != mine.id
+    assert parts[0].title == "Theirs"
 
 
 def test_baxter_reply_includes_parts(client, monkeypatch):

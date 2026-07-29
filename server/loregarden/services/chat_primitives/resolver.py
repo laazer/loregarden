@@ -3,6 +3,10 @@
 Agents emit refs (ticket_id, agent_id, …). The client then renders live state
 from existing APIs; this layer only checks the ref resolves and fills a
 display title so a broken link can degrade gracefully.
+
+Resolution is confined to the chat's workspace. `external_id` is only unique
+per workspace (`_next_external_id` numbers from 01 within each one), so an
+unscoped lookup would resolve a colliding ref to an arbitrary workspace.
 """
 
 from __future__ import annotations
@@ -24,22 +28,31 @@ from loregarden.models.domain.chat_primitives import (
 from sqlmodel import Session, select
 
 
-def _resolve_ticket_id(session: Session, ticket_id: str) -> tuple[str, str | None]:
-    """Return (canonical_id, title). Unresolved refs keep the original id."""
+def _resolve_ticket_id(
+    session: Session, ticket_id: str, workspace_id: str
+) -> tuple[str, str | None]:
+    """Return (canonical_id, title). Refs outside the workspace keep the original id."""
     ticket = session.get(Ticket, ticket_id)
+    if ticket is not None and ticket.workspace_id != workspace_id:
+        ticket = None
     if ticket is None:
-        ticket = session.exec(select(Ticket).where(Ticket.external_id == ticket_id)).first()
+        ticket = session.exec(
+            select(Ticket).where(
+                Ticket.external_id == ticket_id,
+                Ticket.workspace_id == workspace_id,
+            )
+        ).first()
     if ticket is None:
         return ticket_id, None
     return ticket.id, ticket.title or ticket.external_id or ticket.id
 
 
-def resolve_parts(session: Session, parts: list[ChatPart]) -> list[ChatPart]:
+def resolve_parts(session: Session, parts: list[ChatPart], *, workspace_id: str) -> list[ChatPart]:
     """Return a new list with refs canonicalized and titles filled where possible."""
     resolved: list[ChatPart] = []
     for part in parts:
         if isinstance(part, (TicketPart, TicketWorkflowPart, ParentTicketPart)):
-            canonical, title = _resolve_ticket_id(session, part.ticket_id)
+            canonical, title = _resolve_ticket_id(session, part.ticket_id, workspace_id)
             resolved.append(
                 part.model_copy(
                     update={
@@ -51,12 +64,12 @@ def resolve_parts(session: Session, parts: list[ChatPart]) -> list[ChatPart]:
         elif isinstance(part, TicketListPart):
             ids: list[str] = []
             for tid in part.ticket_ids:
-                canonical, _ = _resolve_ticket_id(session, tid)
+                canonical, _ = _resolve_ticket_id(session, tid, workspace_id)
                 ids.append(canonical)
             parent_id = part.parent_ticket_id
             parent_title = part.title
             if parent_id:
-                parent_id, parent_title = _resolve_ticket_id(session, parent_id)
+                parent_id, parent_title = _resolve_ticket_id(session, parent_id, workspace_id)
                 parent_title = part.title or parent_title
             resolved.append(
                 part.model_copy(
@@ -70,11 +83,11 @@ def resolve_parts(session: Session, parts: list[ChatPart]) -> list[ChatPart]:
         elif isinstance(part, (StatusColumnPart, KanbanPart, FilterableKanbanPart)):
             ids = []
             for tid in part.ticket_ids:
-                canonical, _ = _resolve_ticket_id(session, tid)
+                canonical, _ = _resolve_ticket_id(session, tid, workspace_id)
                 ids.append(canonical)
             resolved.append(part.model_copy(update={"ticket_ids": ids}))
         elif isinstance(part, GatePart) and part.ticket_id:
-            canonical, title = _resolve_ticket_id(session, part.ticket_id)
+            canonical, title = _resolve_ticket_id(session, part.ticket_id, workspace_id)
             resolved.append(
                 part.model_copy(
                     update={

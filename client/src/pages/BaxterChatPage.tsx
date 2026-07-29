@@ -7,6 +7,7 @@ import { BaxterAvatar } from "../components/chat/BaxterAvatar";
 import { ChatHistorySidebar } from "../components/chat/ChatHistorySidebar";
 import { primitiveGallerySections } from "../components/chat/primitiveGallery";
 import { StudioChatComposer, StudioChatMessages } from "../components/studio/StudioChat";
+import { useChatWorkspace } from "../hooks/useChatWorkspace";
 import { ticketPath } from "../lib/appNavigation";
 import { takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
@@ -68,15 +69,18 @@ function suggestionChips(approvals: Approval[], tickets: TicketSummary[]): strin
 function BaxterHeroAsk({
   onSend,
   busy,
+  blocked = false,
 }: {
   onSend: (text: string) => void;
   busy: boolean;
+  /** No workspace resolved yet — nothing can answer the question. */
+  blocked?: boolean;
 }) {
   const [draft, setDraft] = useState("");
 
   const submit = () => {
     const text = draft.trim();
-    if (!text || busy) return;
+    if (!text || busy || blocked) return;
     setDraft("");
     onSend(text);
   };
@@ -94,7 +98,7 @@ function BaxterHeroAsk({
           placeholder="What should we ship today?"
           sendLabel="Ask Baxter"
           isSending={busy}
-          disabled={busy}
+          disabled={busy || blocked}
           variant="dock"
           iconOnlySend={false}
         />
@@ -121,16 +125,19 @@ function BaxterReplyDock({
   onSend,
   busy,
   suggestions,
+  blocked = false,
 }: {
   onSend: (text: string) => void;
   busy: boolean;
   suggestions?: string[];
+  /** No workspace resolved yet — nothing can answer the question. */
+  blocked?: boolean;
 }) {
   const [draft, setDraft] = useState("");
 
   const submit = () => {
     const text = draft.trim();
-    if (!text || busy) return;
+    if (!text || busy || blocked) return;
     setDraft("");
     onSend(text);
   };
@@ -159,7 +166,7 @@ function BaxterReplyDock({
         placeholder="Reply to Baxter…"
         sendLabel="Send"
         isSending={busy}
-        disabled={busy}
+        disabled={busy || blocked}
         variant="dock"
         showShortcut
       />
@@ -169,17 +176,11 @@ function BaxterReplyDock({
 
 export function BaxterChatPage() {
   const navigate = useNavigate();
-  const workspace = useUiStore((s) => s.workspace);
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
   const historyOpen = useUiStore((s) => s.baxterHistoryOpen);
   const setHistoryOpen = useUiStore((s) => s.setBaxterHistoryOpen);
 
-  const workspacesQ = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
-  const workspaceSlug =
-    workspace && workspace !== "all"
-      ? workspace
-      : (workspacesQ.data?.[0]?.slug ?? "loregarden");
-  const workspaceParam = workspace && workspace !== "all" ? workspace : undefined;
+  const { slug: workspaceSlug } = useChatWorkspace();
 
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
@@ -189,28 +190,34 @@ export function BaxterChatPage() {
   const resetSeenRef = useRef(resetNonce);
   const now = useMemo(() => new Date(), []);
 
+  // The inbox route has no workspace filter, so narrow the global list here.
   const approvalsQ = useQuery({
     queryKey: ["baxter-chat-approvals"],
     queryFn: () => api.approvals(),
     refetchInterval: 15_000,
   });
   const ticketsQ = useQuery({
-    queryKey: ["baxter-chat-tickets", workspaceParam],
+    queryKey: ["baxter-chat-tickets", workspaceSlug],
     queryFn: () =>
       api.tickets({
-        workspace: workspaceParam,
+        workspace: workspaceSlug,
         state: ["in_progress", "blocked"],
       }),
+    enabled: Boolean(workspaceSlug),
     refetchInterval: 15_000,
   });
   const historyTicketsQ = useQuery({
-    queryKey: ["baxter-chat-history-tickets", workspaceParam],
-    queryFn: () => api.tickets({ workspace: workspaceParam }),
-    enabled: historyOpen,
+    queryKey: ["baxter-chat-history-tickets", workspaceSlug],
+    queryFn: () => api.tickets({ workspace: workspaceSlug }),
+    enabled: historyOpen && Boolean(workspaceSlug),
     staleTime: 15_000,
   });
 
-  const approvals = useMemo(() => pendingApprovals(approvalsQ.data), [approvalsQ.data]);
+  const approvals = useMemo(
+    () =>
+      pendingApprovals(approvalsQ.data).filter((a) => a.workspace_slug === workspaceSlug),
+    [approvalsQ.data, workspaceSlug],
+  );
   const tickets = ticketsQ.data ?? [];
   const latestSuggestions = [...turns].reverse().find((t) => t.role === "assistant" && t.suggestions?.length)
     ?.suggestions;
@@ -235,7 +242,7 @@ export function BaxterChatPage() {
 
   const respond = async (prompt: string) => {
     const content = prompt.trim();
-    if (!content || busy) return;
+    if (!content || busy || !workspaceSlug) return;
     setBusy(true);
     const history = turnsRef.current.map((t) => ({ role: t.role, content: t.text }));
     const userTurn: ChatTurn = { id: nextId("user"), role: "user", text: content };
@@ -318,12 +325,14 @@ export function BaxterChatPage() {
   useEffect(() => {
     const handedOff = initialPromptRef.current;
     if (!handedOff) return;
-    if (workspacesQ.isLoading) return;
+    // A turn snapshots the approvals it was answered with, so bootstrapping
+    // before the inbox lands would strip the first reply of its context.
+    if (!workspaceSlug || approvalsQ.isLoading) return;
     initialPromptRef.current = "";
     void respond(handedOff);
-    // Bootstrap once workspace slug is known.
+    // Bootstrap once the workspace and its inbox are known.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspacesQ.isLoading, workspaceSlug]);
+  }, [workspaceSlug, approvalsQ.isLoading]);
 
   const threadMessages = useMemo(
     () =>
@@ -354,7 +363,11 @@ export function BaxterChatPage() {
             <p className="baxter-chat-summary">{summaryLine}</p>
           </header>
 
-          <BaxterHeroAsk onSend={(text) => void respond(text)} busy={busy} />
+          <BaxterHeroAsk
+            onSend={(text) => void respond(text)}
+            busy={busy}
+            blocked={!workspaceSlug}
+          />
         </div>
       ) : (
         <>
@@ -425,6 +438,7 @@ export function BaxterChatPage() {
             onSend={(text) => void respond(text)}
             busy={busy}
             suggestions={latestSuggestions}
+            blocked={!workspaceSlug}
           />
         </>
       )}
