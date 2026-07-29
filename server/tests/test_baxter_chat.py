@@ -64,5 +64,6 @@ def test_baxter_chat_prompt_includes_snapshot(client: TestClient, monkeypatch):
     prompt = str(captured["prompt"])
     assert "What should I look at first?" in prompt
     assert "Live snapshot" in prompt
+    assert "Chat UI primitives" in prompt
     assert "user: Hi" in prompt
     assert "assistant: Hello" in prompt

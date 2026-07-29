@@ -3,10 +3,8 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background:
-    radial-gradient(900px 420px at 50% -20%, rgba(111, 174, 143, 0.07), transparent 55%),
-    radial-gradient(720px 380px at 12% 18%, rgba(75, 155, 255, 0.05), transparent 50%),
-    var(--bg0);
+  position: relative;
+  overflow: hidden;
 }
 
 .baxter-chat-top {
@@ -72,7 +70,36 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 28px 22px 18px;
+  /* Extra bottom padding so the last turn can scroll through the fade into the dock. */
+  padding: 28px 22px 40px;
+  /* Query container so primitives can size against the thread, not the viewport. */
+  container-type: inline-size;
+}
+
+/* Soften the hard edge where the scrollport meets the reply dock. */
+.baxter-chat-thread::after {
+  content: "";
+  display: block;
+  position: sticky;
+  bottom: 0;
+  height: 28px;
+  margin-top: -28px;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--bg0) 0%, transparent),
+    var(--bg0)
+  );
+  z-index: 1;
+}
+
+/* Prose keeps the 720px reading measure; primitives may spend up to the whole thread. */
+.baxter-chat-thread .lg-chat-messages {
+  --lg-primitive-wide: min(940px, 100cqw);
+  --lg-primitive-full: min(1320px, 100cqw);
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .baxter-chat-welcome {
@@ -150,155 +177,17 @@
   gap: 12px;
 }
 
+.baxter-chat-hero .lg-chat-composer-wrap,
 .baxter-chat-hero .ticket-studio-composer-wrap {
   margin: 0;
-}
-
-.baxter-chat-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.baxter-chat-turn {
-  max-width: 720px;
-  margin: 0 auto 22px;
-}
-
-.baxter-chat-turn--user {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.baxter-chat-user-bubble {
-  max-width: min(520px, 92%);
-  padding: 12px 14px;
-  border-radius: 14px 14px 4px 14px;
-  background: var(--bg3);
-  border: 1px solid var(--bd2);
-  color: var(--tx);
-  font-size: 14.5px;
-  line-height: 1.45;
-}
-
-.baxter-chat-assistant-col {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-width: min(620px, 100%);
-}
-
-.baxter-chat-reply {
-  padding: 14px 16px;
-  border-radius: 4px 14px 14px 14px;
-  background: var(--bg2);
-  border: 1px solid var(--bd2);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 8px 24px rgba(0, 0, 0, 0.22);
-}
-
-.baxter-chat-text {
-  color: var(--tx);
-  font-size: 14.5px;
-  line-height: 1.55;
-  max-width: none;
-}
-
-.baxter-chat-text.markdown-preview {
-  margin: 0;
-}
-
-.baxter-chat-loading {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-width: min(720px, 100%);
-  width: 100%;
-  padding: 14px 16px 16px;
-  border-radius: 4px 14px 14px 14px;
-  background:
-    linear-gradient(135deg, rgba(111, 174, 143, 0.08), rgba(75, 155, 255, 0.05)),
-    var(--bg2);
-  border: 1px solid rgba(111, 174, 143, 0.28);
-  box-shadow:
-    0 0 0 1px rgba(111, 174, 143, 0.06),
-    0 10px 28px rgba(0, 0, 0, 0.22);
-}
-
-.baxter-chat-loading-track {
-  --baxter-walker-size: 56px;
-  position: relative;
-  width: 100%;
-  height: calc(var(--baxter-walker-size) + 8px);
-  overflow: hidden;
-  border-radius: 12px;
-  background:
-    linear-gradient(180deg, rgba(251, 243, 228, 0.06), transparent 70%),
-    var(--bg1);
-  border: 1px solid var(--bd);
-}
-
-.baxter-chat-loading-walker {
-  position: absolute;
-  top: 4px;
-  left: 0;
-  width: var(--baxter-walker-size);
-  height: var(--baxter-walker-size);
-  animation: baxter-chat-pace 3.6s linear infinite;
-  will-change: left, transform;
-}
-
-.baxter-chat-loading-walker .baxter-avatar {
-  border-radius: 14px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-}
-
-.baxter-chat-loading-title {
-  margin: 0;
-  font-size: 14.5px;
-  font-weight: 600;
-  color: var(--tx);
-}
-
-.baxter-chat-loading-sub {
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--txm);
-}
-
-@keyframes baxter-chat-pace {
-  0% {
-    left: 0;
-    transform: scaleX(1);
-  }
-  46% {
-    left: calc(100% - var(--baxter-walker-size));
-    transform: scaleX(1);
-  }
-  50% {
-    left: calc(100% - var(--baxter-walker-size));
-    transform: scaleX(-1);
-  }
-  96% {
-    left: 0;
-    transform: scaleX(-1);
-  }
-  100% {
-    left: 0;
-    transform: scaleX(1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .baxter-chat-loading-walker {
-    animation: none;
-    left: 12px;
-    transform: none;
-  }
+  padding: 0;
+  border: none;
+  background: transparent;
 }
 
 .baxter-chat-card {
+  margin-top: 12px;
+  max-width: min(620px, 100%);
   border: 1px solid rgba(255, 106, 84, 0.28);
   border-radius: 14px;
   overflow: hidden;
@@ -392,89 +281,20 @@
 
 .baxter-chat-dock {
   flex: none;
-  padding: 0 22px 16px;
-  border-top: 1px solid transparent;
+  padding: 12px 22px 16px;
+  position: relative;
+  z-index: 2;
+  background: var(--bg0);
 }
 
 .baxter-chat-suggestions {
   max-width: 720px;
-  margin: 0 auto 10px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  margin: 0 auto 12px;
 }
 
-.baxter-chat-chip {
-  border: 1px solid var(--bd);
-  border-radius: 999px;
-  background: var(--bg1);
-  color: var(--txm);
-  font-size: 12px;
-  padding: 6px 12px;
-  cursor: pointer;
-}
-
-.baxter-chat-chip:hover {
-  border-color: var(--ac);
-  color: var(--tx);
-  background: var(--bg3);
-}
-
-.baxter-chat-composer {
+.baxter-chat-dock .lg-chat-composer-wrap {
   max-width: 720px;
   margin: 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 8px 8px 14px;
-  border: 1px solid var(--bd2);
-  border-radius: 16px;
-  background: var(--bg1);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
-}
-
-.baxter-chat-input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--tx);
-  font: inherit;
-  font-size: 14.5px;
-  padding: 8px 0;
-}
-
-.baxter-chat-shortcut {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--txl);
-  padding: 2px 6px;
-  border: 1px solid var(--bd);
-  border-radius: 6px;
-}
-
-.baxter-chat-send {
-  width: 36px;
-  height: 36px;
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 999px;
-  background: var(--ac);
-  color: var(--onac);
-  cursor: pointer;
-}
-
-.baxter-chat-send:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.baxter-chat-send:not(:disabled):hover {
-  background: var(--ac2);
 }
 
 .baxter-chat-footnote {
@@ -493,8 +313,212 @@
   color: var(--ac2);
 }
 
+.baxter-history-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  border: 0;
+  padding: 0;
+  background: rgba(4, 7, 10, 0.48);
+  backdrop-filter: blur(2px);
+  cursor: default;
+  animation: baxter-history-fade 150ms ease-out;
+}
+
+.baxter-history-panel {
+  position: absolute;
+  z-index: 31;
+  inset: 0 0 0 auto;
+  width: min(390px, calc(100% - 24px));
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(420px 240px at 100% 0%, rgba(111, 174, 143, 0.1), transparent 60%),
+    var(--bg1);
+  border-left: 1px solid var(--bd2);
+  box-shadow: -24px 0 70px rgba(0, 0, 0, 0.42);
+  animation: baxter-history-enter 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.baxter-history-head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 20px 18px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.baxter-history-head h2 {
+  margin: 2px 0 0;
+  font-family: var(--dp);
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--tx);
+}
+
+.baxter-history-eyebrow {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ac);
+}
+
+.baxter-history-close {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--bd);
+  border-radius: 9px;
+  background: var(--bg2);
+  color: var(--txm);
+  cursor: pointer;
+}
+
+.baxter-history-close:hover {
+  border-color: var(--bd2);
+  color: var(--tx);
+  background: var(--bg3);
+}
+
+.baxter-history-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+.baxter-history-entry {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 11px;
+  padding: 14px 12px;
+  border: 1px solid var(--bd);
+  border-radius: 13px;
+  background: linear-gradient(155deg, var(--bg2), var(--bg1));
+  color: var(--tx);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  transition:
+    border-color 140ms ease,
+    transform 140ms ease,
+    background 140ms ease;
+}
+
+.baxter-history-entry:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--ac) 48%, var(--bd2));
+  background: linear-gradient(155deg, var(--bg3), var(--bg1));
+}
+
+.baxter-history-entry-mark {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  border: 1px solid color-mix(in srgb, var(--ac) 38%, var(--bd));
+  background: color-mix(in srgb, var(--ac) 14%, var(--bg3));
+  color: var(--ac2);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+}
+
+.baxter-history-entry-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.baxter-history-entry-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.baxter-history-entry-row strong {
+  font-family: var(--dp);
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.baxter-history-entry-row time {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--txl);
+  text-transform: uppercase;
+}
+
+.baxter-history-entry-summary {
+  color: var(--txm);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.baxter-history-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.baxter-history-tags span {
+  padding: 2px 6px;
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  background: var(--bg0);
+  color: var(--txl);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  line-height: 1.35;
+}
+
+.baxter-history-entry-arrow {
+  align-self: center;
+  color: var(--txl);
+}
+
+.baxter-history-entry:hover .baxter-history-entry-arrow {
+  color: var(--ac);
+}
+
+.baxter-history-note {
+  flex: none;
+  margin: 0;
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--bd);
+  color: var(--txl);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+@keyframes baxter-history-enter {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+}
+
+@keyframes baxter-history-fade {
+  from {
+    opacity: 0;
+  }
+}
+
 @media (max-width: 720px) {
-  .baxter-chat-top,
   .baxter-chat-thread,
   .baxter-chat-dock {
     padding-left: 14px;
@@ -511,5 +535,16 @@
 
   .baxter-chat-greeting {
     font-size: 28px;
+  }
+
+  .baxter-history-panel {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .baxter-history-panel,
+  .baxter-history-scrim {
+    animation: none;
   }
 }

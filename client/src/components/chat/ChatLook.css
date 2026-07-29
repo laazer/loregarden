@@ -1,0 +1,336 @@
+/* Shared Baxter-first chat look. Used by StudioChat, CopilotDock, Triage,
+   Ticket Studio, Home, and the main /chat page. */
+
+.lg-chat-surface {
+  background:
+    radial-gradient(900px 420px at 50% -20%, rgba(111, 174, 143, 0.07), transparent 55%),
+    radial-gradient(720px 380px at 12% 18%, rgba(75, 155, 255, 0.05), transparent 50%),
+    var(--bg0);
+}
+
+/* Width budgets for chat UI primitives. A surface that has room to spare (the full-page
+   Baxter thread) raises the wide/full budgets past the reading measure; narrow surfaces
+   such as the copilot dock leave them at 100% so nothing breaks out. */
+.lg-chat-messages {
+  --lg-primitive-regular: min(620px, 100%);
+  --lg-primitive-wide: 100%;
+  --lg-primitive-full: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  flex: 1 0 auto;
+}
+
+.lg-chat-messages-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--txm);
+  line-height: 1.55;
+}
+
+.lg-chat-messages-tail {
+  flex-shrink: 0;
+  min-height: 16px;
+}
+
+.lg-chat-turn {
+  display: flex;
+  width: 100%;
+}
+
+.lg-chat-turn--user {
+  justify-content: flex-end;
+}
+
+.lg-chat-turn--assistant {
+  justify-content: flex-start;
+}
+
+.lg-chat-user-bubble {
+  max-width: min(520px, 92%);
+  padding: 12px 14px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--bg3);
+  border: 1px solid var(--bd2);
+  color: var(--tx);
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+
+.lg-chat-assistant-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: min(620px, 100%);
+}
+
+/* A turn carrying breakout primitives keeps its own left edge on the reading column — the
+   prose must not shift relative to neighbouring turns — but spans the full column so the
+   breakout slots inside it can centre on the thread. See PrimitiveCard.css. */
+.lg-chat-turn--wide .lg-chat-assistant-col,
+.lg-chat-turn--full .lg-chat-assistant-col {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.lg-chat-turn--wide .lg-chat-assistant-col > .lg-chat-reply,
+.lg-chat-turn--full .lg-chat-assistant-col > .lg-chat-reply {
+  flex: none;
+  max-width: min(620px, 100%);
+}
+
+.lg-chat-assistant-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  max-width: min(620px, 100%);
+}
+
+.lg-chat-reply {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: 4px 14px 14px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--bd2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 8px 24px rgba(0, 0, 0, 0.22);
+  color: var(--tx);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.lg-chat-reply .markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.lg-chat-reply .markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+
+.lg-chat-reply .markdown-preview p {
+  margin: 0.35em 0;
+}
+
+.lg-chat-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(620px, 100%);
+  width: 100%;
+  padding: 14px 16px 16px;
+  border-radius: 4px 14px 14px 14px;
+  background:
+    linear-gradient(135deg, rgba(111, 174, 143, 0.08), rgba(75, 155, 255, 0.05)),
+    var(--bg2);
+  border: 1px solid rgba(111, 174, 143, 0.28);
+  box-shadow:
+    0 0 0 1px rgba(111, 174, 143, 0.06),
+    0 10px 28px rgba(0, 0, 0, 0.22);
+}
+
+.lg-chat-loading-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lg-chat-loading-track {
+  --lg-chat-walker-size: 56px;
+  position: relative;
+  width: 100%;
+  height: calc(var(--lg-chat-walker-size) + 8px);
+  overflow: hidden;
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(251, 243, 228, 0.06), transparent 70%),
+    var(--bg1);
+  border: 1px solid var(--bd);
+}
+
+.lg-chat-loading-walker {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  width: var(--lg-chat-walker-size);
+  height: var(--lg-chat-walker-size);
+  animation: lg-chat-pace 3.6s linear infinite;
+  will-change: left, transform;
+}
+
+.lg-chat-loading-walker .baxter-avatar {
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.lg-chat-loading-title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.lg-chat-loading-sub {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--txm);
+}
+
+@keyframes lg-chat-pace {
+  0% {
+    left: 0;
+    transform: scaleX(1);
+  }
+  46% {
+    left: calc(100% - var(--lg-chat-walker-size));
+    transform: scaleX(1);
+  }
+  50% {
+    left: calc(100% - var(--lg-chat-walker-size));
+    transform: scaleX(-1);
+  }
+  96% {
+    left: 0;
+    transform: scaleX(-1);
+  }
+  100% {
+    left: 0;
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-chat-loading-walker {
+    animation: none;
+    left: 12px;
+    transform: none;
+  }
+}
+
+.lg-chat-chip {
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  background: var(--bg1);
+  color: var(--txm);
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.lg-chat-chip:hover {
+  border-color: var(--ac);
+  color: var(--tx);
+  background: var(--bg3);
+}
+
+.lg-chat-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lg-chat-composer-wrap {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lg-chat-composer-wrap--dock {
+  padding: 0;
+  border-top: none;
+  background: transparent;
+}
+
+.lg-chat-composer-wrap--panel {
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--bd);
+  background: transparent;
+}
+
+.lg-chat-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 10px 10px 14px;
+  border: 1px solid var(--bd2);
+  border-radius: 16px;
+  background: var(--bg1);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+}
+
+.lg-chat-composer-input {
+  width: 100%;
+  min-height: 44px;
+  resize: none;
+  background: transparent;
+  border: none;
+  color: var(--tx);
+  font-size: 14.5px;
+  line-height: 1.5;
+  outline: none;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.lg-chat-composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lg-chat-composer-spacer {
+  flex: 1;
+  min-width: 12px;
+}
+
+.lg-chat-composer-send {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  border-radius: 999px;
+  background: var(--ac);
+  color: var(--onac);
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 0;
+}
+
+.lg-chat-composer-send--labeled {
+  width: auto;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+}
+
+.lg-chat-composer-send:hover:not(:disabled) {
+  background: var(--ac2);
+}
+
+.lg-chat-composer-send:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.lg-chat-composer-shortcut {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+  padding: 2px 6px;
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+}
+
+.lg-chat-composer-error {
+  font-size: 11.5px;
+  color: var(--rdl);
+}

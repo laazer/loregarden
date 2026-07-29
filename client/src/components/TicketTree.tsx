@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import type { TicketState, TicketTreeNode } from "../api/client";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
@@ -35,6 +37,7 @@ function TreeRow({
   onSelect,
   onToggle,
   onAddChild,
+  renderRowAction,
   showExternalId = false,
   depth = 0,
 }: {
@@ -44,6 +47,7 @@ function TreeRow({
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
   onAddChild?: (node: TicketTreeNode) => void;
+  renderRowAction?: (node: TicketTreeNode) => ReactNode;
   showExternalId?: boolean;
   depth?: number;
 }) {
@@ -55,7 +59,7 @@ function TreeRow({
   const stateColor = STATE_COLORS[node.state];
   const wfColor = WORKFLOW_STATUS_COLORS[node.workflow_stage_status] ?? "var(--txl)";
 
-  const showTrail = workflowRunning || showAddChild || hasChildren;
+  const showTrail = workflowRunning || showAddChild || Boolean(renderRowAction) || hasChildren;
 
   const handleRowClick = () => {
     onSelect(node.id);
@@ -145,6 +149,7 @@ function TreeRow({
                   +
                 </button>
               )}
+              {renderRowAction?.(node)}
               {hasChildren && (
                 <span className="count-pill tree-child-count">{node.child_count}</span>
               )}
@@ -168,6 +173,7 @@ function TreeRow({
             onSelect={onSelect}
             onToggle={onToggle}
             onAddChild={onAddChild}
+            renderRowAction={renderRowAction}
             showExternalId={showExternalId}
             depth={depth + 1}
           />
@@ -184,6 +190,7 @@ interface TicketTreeProps {
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
   onAddChild?: (node: TicketTreeNode) => void;
+  renderRowAction?: (node: TicketTreeNode) => ReactNode;
   showExternalId?: boolean;
   depth?: number;
 }
@@ -218,6 +225,7 @@ export function TicketTree({
   onSelect,
   onToggle,
   onAddChild,
+  renderRowAction,
   showExternalId = false,
   depth = 0,
 }: TicketTreeProps) {
@@ -232,6 +240,7 @@ export function TicketTree({
           onSelect={onSelect}
           onToggle={onToggle}
           onAddChild={onAddChild}
+          renderRowAction={renderRowAction}
           showExternalId={showExternalId}
           depth={depth}
         />

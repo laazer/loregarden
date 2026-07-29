@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../api/client";
-import { PageHeroAppToolbar } from "../components/PageHeroAppToolbar";
 import { BranchTriageDiffPanel } from "../components/BranchTriageDiffPanel";
 import { BranchTriageOverviewPanel } from "../components/BranchTriageOverviewPanel";
 import { BranchTriageList } from "../components/BranchTriageList";
@@ -118,7 +117,6 @@ export function BranchTriagePage() {
               ))}
             </select>
           </label>
-          <PageHeroAppToolbar />
         </div>
       </header>
 

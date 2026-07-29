@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 
 import { api } from "../api/client";
-import { PageHeroAppToolbar } from "../components/PageHeroAppToolbar";
 import { QueueDashboard } from "../components/QueueDashboard";
 import { useParallelExecutionWS } from "../hooks/useParallelExecutionWS";
 import { useUiStore } from "../state/uiStore";
@@ -93,7 +92,6 @@ export function QueuePage() {
               ))}
             </select>
           </label>
-          <PageHeroAppToolbar />
         </div>
       </header>
 

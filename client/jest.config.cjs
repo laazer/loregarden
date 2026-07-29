@@ -35,6 +35,8 @@ module.exports = {
     "^remark-gfm$": "<rootDir>/src/test/remarkGfmMock.ts",
     "^pixi\\.js$": "<rootDir>/src/test/pixiMock.ts",
     "^@xterm/(xterm|addon-fit)$": "<rootDir>/src/test/xtermMock.ts",
+    "^@xyflow/react$": "<rootDir>/src/test/xyflowMock.tsx",
+    "^@monaco-editor/react$": "<rootDir>/src/test/monacoMock.ts",
     "(^|/)viteEnv$": "<rootDir>/src/test/viteEnvMock.ts",
   },
 };

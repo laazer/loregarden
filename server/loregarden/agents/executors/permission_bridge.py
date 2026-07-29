@@ -38,6 +38,7 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.permission_allowlist import is_permission_allowed
 from loregarden.services.rate_limit import rate_limit_denial
 from loregarden.services.rework_feedback import record_reroute_exhausts_budget
+from loregarden.services.run_cancellation import cancel_requested
 from loregarden.services.run_errors import agent_timeout_message
 from loregarden.services.run_steering import (
     POLL_INTERVAL_SECONDS,
@@ -452,6 +453,7 @@ class _LoopState:
     finished_with_result: bool = False
     result_is_error: bool = False
     last_steer_poll: float = 0.0
+    last_cancel_poll: float = 0.0
 
 
 @dataclass
@@ -462,6 +464,29 @@ class _LoopStep:
 
     action: str
     result: BridgeResult | None = None
+
+
+def _check_cancel(run_id: str, proc: Any, state: _LoopState) -> BridgeResult | None:
+    """Kill the CLI when the API has requested a cancel."""
+    now = time.time()
+    if now - state.last_cancel_poll < POLL_INTERVAL_SECONDS:
+        return None
+    state.last_cancel_poll = now
+
+    if not cancel_requested(run_id):
+        return None
+
+    _close_stdin(proc)
+    try:
+        proc.kill()
+    except OSError:
+        pass
+    return BridgeResult(
+        status=RunStatus.CANCELLED,
+        stdout="\n".join(state.stdout_lines),
+        stderr="Cancelled by operator",
+        session_id=state.session_id,
+    )
 
 
 class PermissionBridgeRunner:
@@ -529,6 +554,10 @@ class PermissionBridgeRunner:
             while time.time() < deadline:
                 if proc.poll() is not None:
                     break
+
+                cancelled = _check_cancel(run_id, proc, state)
+                if cancelled is not None:
+                    return cancelled
 
                 self._deliver_steer_messages(
                     run_id=run_id,

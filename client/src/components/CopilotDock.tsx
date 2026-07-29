@@ -18,9 +18,8 @@ import "./CopilotDock.css";
  * have sent, and appears in both.
  *
  * Collapsed it is a single bar; expanded it shows the turns above the composer.
- * It mounts above the routes as the only persistent chrome besides the icon
- * rail, which is why the binding is resolved from the route rather than handed
- * down by a page.
+ * It mounts inside AppUtilityDock (global chrome), which is why the binding is
+ * resolved from the route rather than handed down by a page.
  */
 /**
  * Openers for the questions this dock is usually opened to ask.
@@ -50,6 +49,7 @@ export function CopilotDock() {
   const open = useUiStore((s) => s.copilotOpen);
   const setOpen = useUiStore((s) => s.setCopilotOpen);
   const height = useUiStore((s) => s.copilotHeight);
+  const edge = useUiStore((s) => s.utilityDockEdge);
   const { session, label, ticketId, pendingApprovals } = useActiveChatSession();
   const resolveApproval = useApprovalResolution(ticketId ?? undefined);
   const terminalOpen = useUiStore((s) => s.terminalOpen);
@@ -62,6 +62,7 @@ export function CopilotDock() {
   const showTerminal = terminalOpen && Boolean(terminal.workspaceSlug);
   const showChat = open && Boolean(session);
   const expanded = showChat || showTerminal;
+  const edgeClass = edge === "right" ? " copilot-dock--edge-right" : " copilot-dock--edge-bottom";
 
   const [draft, setDraft] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
@@ -85,7 +86,7 @@ export function CopilotDock() {
   // Nothing on this screen to chat about, and no shell asked for.
   if (!session && !showTerminal) {
     return (
-      <div className="copilot-dock copilot-dock--empty">
+      <div className={`copilot-dock copilot-dock--empty${edgeClass}`}>
         <span className="copilot-dock-hint">
           Open a ticket or a branch to chat about it.
         </span>
@@ -95,8 +96,8 @@ export function CopilotDock() {
 
   return (
     <div
-      className={`copilot-dock${expanded ? " copilot-dock--open" : ""}`}
-      style={expanded ? { height } : undefined}
+      className={`copilot-dock${edgeClass}${expanded ? " copilot-dock--open" : ""}`}
+      style={expanded && edge === "bottom" ? { height } : undefined}
     >
       <div className="copilot-dock-bar">
         {session ? (
@@ -158,13 +159,13 @@ export function CopilotDock() {
             className="copilot-dock-messages"
           />
           {session.messages.length === 0 && (TRY_ASKING[session.kind]?.length ?? 0) > 0 && (
-            <div className="copilot-dock-chips">
+            <div className="copilot-dock-chips lg-chat-chip-row">
               <span className="copilot-dock-chips-label">Try asking</span>
               {TRY_ASKING[session.kind].map((prompt) => (
                 <button
                   key={prompt}
                   type="button"
-                  className="copilot-dock-chip"
+                  className="lg-chat-chip copilot-dock-chip"
                   onClick={() => setDraft(prompt)}
                 >
                   {prompt}
@@ -180,6 +181,7 @@ export function CopilotDock() {
             isSending={session.isBusy}
             disabled={session.loadError}
             error={session.error}
+            variant="dock"
             optionsRow={
               <div className="studio-chat-composer-options-inline">
                 <label className="copilot-dock-option">

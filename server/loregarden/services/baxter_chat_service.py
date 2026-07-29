@@ -109,6 +109,14 @@ def build_baxter_chat_prompt(
             "## Latest operator message",
             _clip(latest_user_message),
             "",
+            "## Chat UI primitives",
+            "When a live card helps more than prose, emit a fenced `loregarden` JSON",
+            "block with a `primitive` field. Prefer thin refs (ticket_id, agent_id).",
+            'Example: ```loregarden\\n{"primitive":"ticket","ticket_id":"<id>"}\\n```',
+            "Kinds: thinking, ticket, ticket_workflow, parent_ticket, ticket_list,",
+            "status_column, kanban, filterable_kanban, agent, workflow, gate,",
+            "terminal, edit, calendar, calendar_event.",
+            "",
             "Reply as Baxter. Keep it concise.",
         ]
     )

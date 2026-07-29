@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 MCP_DOC_REL = Path("agents/common_assets/loregarden_mcp_v1.md")
 MEMORY_DOC_REL = Path("agents/common_assets/memory_protocol_v1.md")
 WORKFLOW_ENFORCEMENT_DOC_REL = Path("agents/common_assets/workflow_enforcement_v1.md")
+UI_PRIMITIVES_DOC_REL = Path("agents/common_assets/ui_primitives_v1.md")
 STAGE_REPORT_SECTION_TITLE = "STAGE REPORT CONTRACT"
 _SECTION_DIVIDER_RE = re.compile(r"^-{20,}\s*$", re.MULTILINE)
 MCP_SERVER_NAME = "loregarden"
@@ -142,6 +143,13 @@ def load_loregarden_mcp_doc(agent_context_dir: Path) -> str:
 
 def load_memory_protocol_doc(agent_context_dir: Path) -> str:
     path = agent_context_dir / MEMORY_DOC_REL
+    if not path.is_file():
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
+def load_ui_primitives_doc(agent_context_dir: Path) -> str:
+    path = agent_context_dir / UI_PRIMITIVES_DOC_REL
     if not path.is_file():
         return ""
     return path.read_text(encoding="utf-8")

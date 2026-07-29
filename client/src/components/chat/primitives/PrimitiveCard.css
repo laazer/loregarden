@@ -1,0 +1,1200 @@
+.lg-primitive-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: min(620px, 100%);
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--bg2), var(--bg1));
+  border: 1px solid var(--bd);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 8px 24px rgba(0, 0, 0, 0.18);
+  color: var(--tx);
+}
+
+.lg-primitive-card--accent {
+  border-color: color-mix(in srgb, var(--ac) 45%, var(--bd));
+}
+
+.lg-primitive-card--warn {
+  border-color: color-mix(in srgb, var(--amb) 50%, var(--bd));
+}
+
+.lg-primitive-card--danger {
+  border-color: color-mix(in srgb, var(--red) 50%, var(--bd));
+}
+
+.lg-primitive-card--ok {
+  border-color: color-mix(in srgb, var(--grn) 50%, var(--bd));
+}
+
+.lg-primitive-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.lg-primitive-card-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--bg3);
+  border: 1px solid var(--bd2);
+  font-size: 13px;
+}
+
+.lg-primitive-card-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 50%;
+  box-shadow: 0 0 9px currentColor;
+}
+
+.lg-primitive-card-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.lg-primitive-card-title {
+  margin: 0;
+  font-family: var(--dp);
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--tx);
+}
+
+.lg-primitive-card-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--txm);
+  line-height: 1.4;
+}
+
+.lg-primitive-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--txl);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.lg-primitive-card-header-actions {
+  flex: none;
+  display: flex;
+  gap: 6px;
+}
+
+.lg-primitive-card-collapse {
+  border: 1px solid var(--bd2);
+  background: var(--bg3);
+  color: var(--txm);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.lg-primitive-card-body {
+  min-width: 0;
+}
+
+.lg-primitive-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.lg-primitive-card-actions button,
+.lg-primitive-run-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--bd2);
+  background: var(--bg3);
+  color: var(--tx);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lg-primitive-resource-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 29px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--blue) 42%, var(--bd2));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--blue) 12%, var(--bg3));
+  color: color-mix(in srgb, var(--blue) 78%, var(--tx));
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.lg-primitive-resource-btn:hover {
+  border-color: color-mix(in srgb, var(--blue) 68%, var(--bd2));
+  background: color-mix(in srgb, var(--blue) 20%, var(--bg3));
+  color: var(--tx);
+}
+
+.lg-primitive-resource-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--blue) 75%, transparent);
+  outline-offset: 2px;
+}
+
+.lg-primitive-resource-btn--compact {
+  flex: none;
+  width: 24px;
+  min-height: 24px;
+  padding: 3px;
+  border-radius: 7px;
+  font-size: 10px;
+}
+
+.lg-primitive-resource-btn--compact .lg-primitive-resource-btn-label {
+  display: none;
+}
+
+.lg-primitive-run-btn--play {
+  background: color-mix(in srgb, var(--ac) 22%, var(--bg3));
+  border-color: color-mix(in srgb, var(--ac) 45%, var(--bd2));
+  color: var(--ac);
+}
+
+.lg-primitive-run-btn--stop {
+  background: color-mix(in srgb, var(--red) 18%, var(--bg3));
+  border-color: color-mix(in srgb, var(--red) 45%, var(--bd2));
+  color: var(--red);
+}
+
+.lg-primitive-card-actions .lg-primitive-run-btn[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--ac) 20%, var(--bg3));
+  border-color: color-mix(in srgb, var(--ac) 48%, var(--bd2));
+  color: var(--ac);
+}
+
+.lg-primitive-run-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.lg-primitive-card-error {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--red);
+}
+
+.lg-primitive-card-loading {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--txm);
+}
+
+.lg-primitive-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Each primitive claims a width tier from the surface's budget (see ChatLook.css). */
+.lg-primitive-slot {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.lg-primitive-slot--regular {
+  max-width: var(--lg-primitive-regular, min(620px, 100%));
+}
+
+/* Breakout tiers grow symmetrically about the reading column's centre, which is also the
+   thread's centre, so a wider card stays centred without moving the prose above it. The
+   budget is clamped to the surface, so the negative margin can never create h-scroll. */
+.lg-primitive-slot--wide {
+  width: var(--lg-primitive-wide, 100%);
+  max-width: none;
+  margin-left: calc(50% - var(--lg-primitive-wide, 100%) / 2);
+}
+
+.lg-primitive-slot--full {
+  width: var(--lg-primitive-full, 100%);
+  max-width: none;
+  margin-left: calc(50% - var(--lg-primitive-full, 100%) / 2);
+}
+
+.lg-primitive-slot > .lg-primitive-card {
+  max-width: 100%;
+}
+
+.lg-primitive-slot--wide > .lg-primitive-card .lg-primitive-terminal-body {
+  max-height: 360px;
+}
+
+.lg-primitive-slot--wide > .lg-primitive-card .lg-primitive-editor {
+  height: 340px;
+}
+
+.lg-primitive-slot--full > .lg-primitive-card .lg-primitive-workflow-flow {
+  height: 520px;
+}
+
+.lg-primitive-slot--full > .lg-primitive-card .lg-primitive-calendar-cell {
+  min-height: 78px;
+}
+
+.lg-primitive-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: clamp(16px, 3vw, 40px);
+  background: color-mix(in srgb, var(--bg0) 74%, transparent);
+  backdrop-filter: blur(6px);
+  animation: lg-primitive-overlay-in 130ms ease-out;
+}
+
+@keyframes lg-primitive-overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.lg-primitive-overlay-inner {
+  display: flex;
+  width: min(1440px, 100%);
+  height: min(920px, 100%);
+}
+
+.lg-primitive-card--expanded {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  overflow: hidden;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
+}
+
+.lg-primitive-card--expanded > .lg-primitive-card-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.lg-primitive-card--expanded > .lg-primitive-card-body > .lg-primitive-terminal,
+.lg-primitive-card--expanded > .lg-primitive-card-body > .lg-primitive-workflow-flow,
+.lg-primitive-card--expanded > .lg-primitive-card-body > .lg-primitive-editor,
+.lg-primitive-card--expanded > .lg-primitive-card-body > .lg-primitive-kanban {
+  flex: 1;
+  height: auto;
+  min-height: 320px;
+}
+
+.lg-primitive-card--expanded .lg-primitive-terminal {
+  display: flex;
+  flex-direction: column;
+}
+
+.lg-primitive-card--expanded .lg-primitive-terminal-body {
+  flex: 1;
+  max-height: none;
+}
+
+.lg-primitive-card--expanded .lg-primitive-calendar-cell {
+  min-height: 108px;
+}
+
+.lg-primitive-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg3);
+  border: 1px solid var(--bd2);
+  overflow: hidden;
+}
+
+.lg-primitive-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--ac);
+  border-radius: inherit;
+}
+
+.lg-primitive-kanban {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(160px, 1fr);
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.lg-primitive-kanban-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 160px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--bg0);
+  border: 1px solid var(--bd);
+}
+
+.lg-primitive-kanban-col-title {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--txl);
+  font-weight: 650;
+}
+
+.lg-primitive-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.lg-primitive-filters button {
+  border-radius: 999px;
+  border: 1px solid var(--bd2);
+  background: var(--bg3);
+  color: var(--txm);
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.lg-primitive-filters button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--ac) 20%, var(--bg3));
+  border-color: color-mix(in srgb, var(--ac) 50%, var(--bd2));
+  color: var(--ac);
+}
+
+.lg-primitive-terminal {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: #0d1117;
+  color: #c9d1d9;
+  border-radius: 10px;
+  border: 1px solid var(--bd);
+  overflow: hidden;
+}
+
+.lg-primitive-terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  color: #8b949e;
+  font-size: 11px;
+}
+
+.lg-primitive-terminal-body {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+
+.lg-primitive-terminal-cmd {
+  color: #7ee787;
+}
+
+.lg-primitive-terminal-err {
+  color: #ffa198;
+}
+
+.lg-primitive-thinking {
+  font-size: 13px;
+  color: var(--txm);
+  font-style: italic;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.lg-primitive-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.lg-primitive-calendar-cell {
+  min-height: 54px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--bg0);
+  border: 1px solid var(--bd);
+  font-size: 11px;
+}
+
+.lg-primitive-calendar-cell--muted {
+  opacity: 0.45;
+}
+
+.lg-primitive-calendar-cell--today {
+  border-color: color-mix(in srgb, var(--ac) 55%, var(--bd));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ac) 25%, transparent);
+}
+
+.lg-primitive-calendar-daynum {
+  font-weight: 650;
+  color: var(--txm);
+  margin-bottom: 2px;
+}
+
+.lg-primitive-calendar-event {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 2px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ac) 22%, transparent);
+  color: var(--ac);
+  overflow: hidden;
+}
+
+.lg-primitive-calendar-event > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lg-primitive-calendar-event .lg-primitive-resource-btn--compact {
+  width: 18px;
+  min-height: 18px;
+  border: 0;
+  background: transparent;
+}
+
+.lg-primitive-calendar-event--run {
+  background: color-mix(in srgb, var(--blue) 22%, transparent);
+  color: var(--blue);
+}
+
+.lg-primitive-calendar-event--scheduled,
+.lg-primitive-calendar-event--cron {
+  background: color-mix(in srgb, var(--amb) 22%, transparent);
+  color: var(--amb);
+}
+
+.lg-primitive-calendar-event--plan {
+  background: color-mix(in srgb, var(--ac) 22%, transparent);
+  color: var(--ac);
+}
+
+.lg-primitive-calendar-more {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--txl);
+}
+
+/* Week schedule — seven readable day lanes at full width; narrow chat surfaces scroll
+   horizontally instead of crushing event titles into one-line month chips. */
+.lg-primitive-calendar-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(150px, 1fr));
+  gap: 7px;
+  min-height: 310px;
+  overflow-x: auto;
+  padding: 1px 1px 7px;
+  scroll-snap-type: x proximity;
+  scrollbar-color: var(--bd2) transparent;
+}
+
+.lg-primitive-calendar-week-day {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--bd);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--bg0) 88%, var(--bg1));
+  overflow: hidden;
+  scroll-snap-align: start;
+}
+
+.lg-primitive-calendar-week-day--today {
+  border-color: color-mix(in srgb, var(--ac) 58%, var(--bd));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--ac) 18%, transparent),
+    0 0 18px color-mix(in srgb, var(--ac) 7%, transparent);
+}
+
+.lg-primitive-calendar-week-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px 8px;
+  border-bottom: 1px solid var(--bd);
+  background: color-mix(in srgb, var(--bg2) 72%, transparent);
+}
+
+.lg-primitive-calendar-week-weekday {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.lg-primitive-calendar-week-date {
+  margin: 2px 0 0;
+  font-family: var(--dp);
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--tx);
+}
+
+.lg-primitive-calendar-week-day--today .lg-primitive-calendar-week-weekday,
+.lg-primitive-calendar-week-day--today .lg-primitive-calendar-week-date {
+  color: var(--ac);
+}
+
+.lg-primitive-calendar-week-count {
+  display: grid;
+  place-items: center;
+  flex: none;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border: 1px solid var(--bd2);
+  border-radius: 999px;
+  background: var(--bg3);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--txm);
+}
+
+.lg-primitive-calendar-week-events {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+}
+
+.lg-primitive-calendar-week-event {
+  position: relative;
+  min-width: 0;
+  padding: 8px 8px 8px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--bg1);
+  overflow: hidden;
+}
+
+.lg-primitive-calendar-week-event::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: var(--grn);
+}
+
+.lg-primitive-calendar-week-event--run::before {
+  background: var(--blue);
+}
+
+.lg-primitive-calendar-week-event--scheduled::before,
+.lg-primitive-calendar-week-event--cron::before {
+  background: var(--amb);
+}
+
+.lg-primitive-calendar-week-event--plan::before {
+  background: var(--ac);
+}
+
+.lg-primitive-calendar-week-event-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.lg-primitive-calendar-week-event-meta time {
+  font-weight: 650;
+  color: var(--txm);
+}
+
+.lg-primitive-calendar-week-event-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.lg-primitive-calendar-week-event-title {
+  flex: 1;
+  min-width: 0;
+  margin: 5px 0 0;
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1.35;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+
+.lg-primitive-calendar-week-event-title-row .lg-primitive-calendar-week-event-title {
+  margin-top: 0;
+}
+
+.lg-primitive-calendar-week-event-desc {
+  display: -webkit-box;
+  margin: 4px 0 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--txl);
+}
+
+.lg-primitive-calendar-week-empty {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-height: 72px;
+  margin: 0;
+  padding: 12px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--txl) 70%, transparent);
+}
+
+.lg-primitive-card--expanded .lg-primitive-calendar-week {
+  flex: 1;
+  min-height: 100%;
+}
+
+/* Day agenda — readable schedule, not a stretched month cell. */
+.lg-primitive-calendar-day {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 280px;
+}
+
+.lg-primitive-calendar-day-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.lg-primitive-calendar-day-weekday {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.lg-primitive-calendar-day-date {
+  margin: 2px 0 0;
+  font-family: var(--dp);
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--tx);
+}
+
+.lg-primitive-calendar-day-count {
+  margin: 0;
+  flex: none;
+  font-size: 12px;
+  color: var(--txm);
+}
+
+.lg-primitive-calendar-day-empty {
+  margin: 0;
+  padding: 28px 8px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--txm);
+}
+
+.lg-primitive-calendar-agenda {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lg-primitive-calendar-agenda-item {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg0);
+  border: 1px solid var(--bd);
+  border-left: 3px solid color-mix(in srgb, var(--ac) 70%, var(--bd));
+}
+
+.lg-primitive-calendar-agenda-item--run {
+  border-left-color: color-mix(in srgb, var(--blue) 75%, var(--bd));
+}
+
+.lg-primitive-calendar-agenda-item--scheduled,
+.lg-primitive-calendar-agenda-item--cron {
+  border-left-color: color-mix(in srgb, var(--amb) 75%, var(--bd));
+}
+
+.lg-primitive-calendar-agenda-item--plan {
+  border-left-color: color-mix(in srgb, var(--ac) 75%, var(--bd));
+}
+
+.lg-primitive-calendar-agenda-item--one_time {
+  border-left-color: color-mix(in srgb, var(--grn) 70%, var(--bd));
+}
+
+.lg-primitive-calendar-agenda-time {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 1px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--txm);
+}
+
+.lg-primitive-calendar-agenda-start {
+  font-weight: 650;
+  color: var(--tx);
+}
+
+.lg-primitive-calendar-agenda-end,
+.lg-primitive-calendar-agenda-duration {
+  color: var(--txl);
+}
+
+.lg-primitive-calendar-agenda-body {
+  min-width: 0;
+}
+
+.lg-primitive-calendar-agenda-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.lg-primitive-calendar-agenda-kind {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--bd2);
+  background: var(--bg3);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--txm);
+}
+
+.lg-primitive-calendar-agenda-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--tx);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.lg-primitive-calendar-agenda-desc {
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--txm);
+}
+
+.lg-primitive-calendar-agenda-meta {
+  margin: 6px 0 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txl);
+}
+
+.lg-primitive-card--expanded .lg-primitive-calendar-day {
+  min-height: 100%;
+}
+
+.lg-primitive-slot--full > .lg-primitive-card .lg-primitive-calendar-day {
+  min-height: 360px;
+}
+
+.lg-primitive-workflow-flow {
+  height: 280px;
+  border-radius: 10px;
+  border: 1px solid var(--bd);
+  overflow: hidden;
+  background: var(--bg0);
+}
+
+.lg-primitive-workflow-node.react-flow__node {
+  border: 1px solid var(--bd2);
+  border-radius: 12px;
+  background: var(--bg2);
+  color: var(--tx);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 8px 18px rgba(0, 0, 0, 0.18);
+  font-family: var(--ui);
+  text-align: left;
+}
+
+.lg-primitive-workflow-node--classify.react-flow__node {
+  border-color: color-mix(in srgb, var(--blue) 52%, var(--bd2));
+  background: color-mix(in srgb, var(--blue) 10%, var(--bg2));
+}
+
+.lg-primitive-workflow-node--parallel.react-flow__node {
+  border-color: color-mix(in srgb, var(--amb) 54%, var(--bd2));
+  background: color-mix(in srgb, var(--amb) 9%, var(--bg2));
+}
+
+.lg-primitive-workflow-node--gate.react-flow__node {
+  border-color: color-mix(in srgb, var(--red) 68%, var(--bd2));
+  background: color-mix(in srgb, var(--red) 11%, var(--bg2));
+  box-shadow:
+    inset 3px 0 0 color-mix(in srgb, var(--red) 72%, transparent),
+    0 8px 18px rgba(0, 0, 0, 0.2);
+}
+
+.lg-primitive-workflow-node-content {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.lg-primitive-workflow-node-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 11px 8px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.lg-primitive-workflow-node-head strong {
+  min-width: 0;
+  font-family: var(--dp);
+  font-size: 12px;
+  font-weight: 680;
+  line-height: 1.3;
+  color: var(--tx);
+  overflow-wrap: anywhere;
+}
+
+.lg-primitive-workflow-node-head > span {
+  flex: none;
+  padding: 2px 6px;
+  border: 1px solid var(--bd2);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg3) 82%, transparent);
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.lg-primitive-workflow-node--gate .lg-primitive-workflow-node-head > span {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--bd2));
+  color: var(--red);
+}
+
+.lg-primitive-workflow-node-owner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 11px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--txm);
+}
+
+.lg-primitive-workflow-node-owner span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lg-primitive-workflow-node-owner small {
+  flex: none;
+  font-size: 8.5px;
+  color: var(--txl);
+}
+
+.lg-primitive-workflow-parallel {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+}
+
+.lg-primitive-workflow-agent {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 23px;
+  padding: 3px 6px 3px 3px;
+  border: 1px solid color-mix(in srgb, var(--amb) 26%, var(--bd));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--amb) 7%, var(--bg0));
+  font-family: var(--mono);
+  font-size: 8.5px;
+}
+
+.lg-primitive-workflow-agent-index {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--amb) 22%, var(--bg3));
+  color: var(--amb);
+}
+
+.lg-primitive-workflow-agent-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--txm);
+}
+
+.lg-primitive-workflow-agent-skill {
+  color: var(--txl);
+}
+
+.lg-primitive-workflow-node-empty {
+  padding: 4px;
+  font-size: 9px;
+  color: var(--txl);
+}
+
+.lg-primitive-workflow-node-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 0 10px 9px;
+}
+
+.lg-primitive-workflow-node-flags span {
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: var(--bg3);
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--txl);
+}
+
+.lg-primitive-workflow-edge--gate .react-flow__edge-text {
+  letter-spacing: 0.02em;
+}
+
+.lg-primitive-workflow-flow .react-flow__controls {
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
+}
+
+.lg-primitive-workflow-flow .react-flow__controls-button {
+  border-bottom-color: var(--bd);
+  background: var(--bg2);
+  color: var(--txm);
+}
+
+.lg-primitive-workflow-flow .react-flow__controls-button:hover {
+  background: var(--bg3);
+  color: var(--tx);
+}
+
+.lg-primitive-editor {
+  height: 260px;
+  border-radius: 10px;
+  border: 1px solid var(--bd);
+  overflow: hidden;
+}
+
+.lg-primitive-ticket-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg0);
+  border: 1px solid var(--bd);
+  font-size: 13px;
+}
+
+.lg-primitive-ticket-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lg-primitive-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lg-primitive-gate-status {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--amb) 45%, var(--bd));
+  background: color-mix(in srgb, var(--amb) 10%, var(--bg0));
+}
+
+.lg-primitive-gate-status--draft {
+  border-color: var(--bd2);
+  background: var(--bg0);
+}
+
+.lg-primitive-card--danger .lg-primitive-gate-status {
+  border-color: color-mix(in srgb, var(--red) 50%, var(--bd));
+  background: color-mix(in srgb, var(--red) 10%, var(--bg0));
+}
+
+.lg-primitive-card--ok .lg-primitive-gate-status {
+  border-color: color-mix(in srgb, var(--grn) 50%, var(--bd));
+  background: color-mix(in srgb, var(--grn) 10%, var(--bg0));
+}
+
+.lg-primitive-gate-status-label {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--txm);
+}
+
+.lg-primitive-gate-status-copy {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--tx);
+}
+
+.lg-primitive-gate-status-meta {
+  margin: 6px 0 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txl);
+}
+
+.lg-primitive-gate-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lg-primitive-gate-section-title {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.lg-primitive-gate-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lg-primitive-gate-checklist li {
+  position: relative;
+  padding: 8px 10px 8px 28px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--bg0);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--txm);
+}
+
+.lg-primitive-gate-checklist li::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 11px;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--bd2);
+  border-radius: 3px;
+  background: var(--bg3);
+}
+
+.lg-primitive-gate .approval-gate-check {
+  margin: 0;
+}

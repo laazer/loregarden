@@ -1,9 +1,12 @@
+import type { ChatPart, UnknownPart } from "./primitives/types";
+
 export interface ChatMessageView {
   id: string;
   role: string;
   content: string;
   created_at?: string;
   display_content?: string;
+  parts?: Array<ChatPart | UnknownPart>;
 }
 
 export function formatChatTime(iso?: string): string {
@@ -69,4 +72,18 @@ export function normalizeChatMarkdown(text: string): string {
 
 export function isUserChatRole(role: string): boolean {
   return role === "user";
+}
+
+/** Prefer structured parts for display; fall back to stripping fences from content. */
+export function assistantTextFromParts(
+  parts: Array<ChatPart | UnknownPart> | undefined,
+  fallback: string,
+): string {
+  if (!parts?.length) return fallback;
+  const text = parts
+    .filter((p): p is Extract<ChatPart, { primitive: "text" }> => p.primitive === "text")
+    .map((p) => p.content)
+    .join("\n\n")
+    .trim();
+  return text || fallback;
 }

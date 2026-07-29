@@ -19,6 +19,7 @@ from loregarden.agents.mcp_context import (
     load_loregarden_mcp_doc,
     load_memory_protocol_doc,
     load_stage_report_contract_doc,
+    load_ui_primitives_doc,
 )
 from loregarden.agents.plan_context import (
     SYNTHESIS_SKILL,
@@ -42,6 +43,7 @@ from loregarden.services.evidence import FULL_SUITE_EVIDENCE_KIND
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_commit_push_service import working_tree_paths
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.run_cancellation import cancel_requested
 from loregarden.services.run_errors import agent_timeout_message
 from loregarden.services.run_log_stream import RunLogStreamer
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
@@ -222,6 +224,7 @@ class CliAgentExecutor:
                         repo_root=repo_root,
                         timeout=timeout,
                         streamer=streamer,
+                        run_id=run.id,
                     )
 
                 streamer.finalize(status=status, stderr=stderr)
@@ -377,6 +380,7 @@ class CliAgentExecutor:
         repo_root: Path,
         timeout: int,
         streamer: RunLogStreamer,
+        run_id: str,
     ) -> tuple[str, str, RunStatus]:
         proc = subprocess.Popen(
             invocation.argv,
@@ -402,6 +406,7 @@ class CliAgentExecutor:
         start = time.time()
         idle_deadline = start + timeout
         hard_deadline = start + timeout * _TIMEOUT_HARD_CAP_MULTIPLIER
+        cancelled = False
         try:
             while True:
                 if proc.poll() is not None and reader.readline(timeout=0) is None:
@@ -410,6 +415,10 @@ class CliAgentExecutor:
                 if now >= idle_deadline or now >= hard_deadline:
                     proc.kill()
                     raise self._timeout_expired(invocation.argv, start, stdout_lines)
+                if cancel_requested(run_id):
+                    proc.kill()
+                    cancelled = True
+                    break
                 line = reader.readline(timeout=0.5)
                 if line is None:
                     if proc.poll() is not None:
@@ -427,10 +436,13 @@ class CliAgentExecutor:
                     proc.wait(timeout=max(0.1, hard_deadline - time.time()))
                 except subprocess.TimeoutExpired:
                     proc.kill()
-                    raise self._timeout_expired(invocation.argv, start, stdout_lines) from None
+                    if not cancelled:
+                        raise self._timeout_expired(invocation.argv, start, stdout_lines) from None
 
         stderr = proc.stderr.read().decode("utf-8", errors="replace") if proc.stderr else ""
         stdout = "\n".join(stdout_lines)
+        if cancelled:
+            return stdout, "Cancelled by operator", RunStatus.CANCELLED
         status = RunStatus.SUCCEEDED if proc.returncode == 0 else RunStatus.FAILED
         return stdout, stderr, status
 
@@ -530,6 +542,7 @@ class CliAgentExecutor:
         )
         mcp_doc = load_loregarden_mcp_doc(agent_context_dir)
         memory_doc = load_memory_protocol_doc(agent_context_dir)
+        ui_primitives_doc = load_ui_primitives_doc(agent_context_dir)
         stage_report_doc = load_stage_report_contract_doc(agent_context_dir)
         is_verify = stage_def is not None and stage_def.stage_type == VERIFY_STAGE_TYPE
         is_synthesis = skill_name == SYNTHESIS_SKILL
@@ -596,6 +609,7 @@ class CliAgentExecutor:
             _raw_block(build_studio_prompt_sections(agent)),
             _titled_block("## Loregarden MCP module", mcp_doc, cap=12000),
             _titled_block("## Memory protocol module", memory_doc, cap=8000),
+            _titled_block("## Chat UI primitives", ui_primitives_doc, cap=6000),
             [
                 "",
                 "## Permission policy",

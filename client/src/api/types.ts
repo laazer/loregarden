@@ -21,6 +21,18 @@ export interface TicketSummary {
   milestone: string;
   branch: string;
   child_count: number;
+  next_agent?: string;
+  stages?: WorkflowStageView[];
+}
+
+export interface CalendarEventView {
+  id: string;
+  title: string;
+  starts_at: string;
+  ends_at: string | null;
+  kind: "cron" | "scheduled" | "one_time" | "plan" | "run";
+  ticket_id: string | null;
+  description: string | null;
 }
 
 export interface TicketTreeNode {

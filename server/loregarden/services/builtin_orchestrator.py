@@ -41,6 +41,7 @@ from loregarden.services.rework_feedback import (
     record_reroute_exhausts_budget,
     rework_reroute_count,
 )
+from loregarden.services.run_cancellation import orchestration_cancel_requested
 from loregarden.services.stage_report import (
     StageReport,
     is_transient_failure,
@@ -113,7 +114,11 @@ class BuiltinOrchestrator:
         stages_run = 0
         try:
             while True:
-                if ticket.state in (TicketState.BLOCKED, TicketState.DONE, TicketState.WONT_DO):
+                if ticket.state in (
+                    TicketState.BLOCKED,
+                    TicketState.DONE,
+                    TicketState.WONT_DO,
+                ) or orchestration_cancel_requested(orch_run.id):
                     break
 
                 child_pause = self._orchestrate_incomplete_children(
@@ -237,12 +242,19 @@ class BuiltinOrchestrator:
     def _complete_run(self, orch_run: OrchestrationRun, ticket: Ticket) -> OrchestrationRun:
         """Close an orchestration run, deriving its status from the ticket's own
         state (a BLOCKED ticket yields a BLOCKED run, anything else SUCCEEDED)."""
-        status = (
-            OrchestrationRunStatus.BLOCKED
-            if ticket.state == TicketState.BLOCKED
-            else OrchestrationRunStatus.SUCCEEDED
+        cancelled = orchestration_cancel_requested(orch_run.id)
+        if cancelled:
+            status = OrchestrationRunStatus.CANCELLED
+        elif ticket.state == TicketState.BLOCKED:
+            status = OrchestrationRunStatus.BLOCKED
+        else:
+            status = OrchestrationRunStatus.SUCCEEDED
+        self.callbacks.complete_orchestration(
+            orch_run,
+            ticket,
+            status=status,
+            message="Cancelled by operator" if cancelled else "",
         )
-        self.callbacks.complete_orchestration(orch_run, ticket, status=status)
         self.session.refresh(orch_run)
         return orch_run
 

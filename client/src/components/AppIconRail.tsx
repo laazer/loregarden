@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 
 import { useAppPage } from "../lib/useAppNavigation";
 import { BrandMark } from "./BrandMark";
+import { BaxterAvatar } from "./chat/BaxterAvatar";
 
 type AppIconRailProps = {
   onOpenSettings: () => void;
@@ -109,8 +110,8 @@ export function AppIconRail({ onOpenSettings }: AppIconRailProps) {
         </svg>
       </button>
 
-      <div className="icon-rail-avatar" aria-hidden>
-        LG
+      <div className="icon-rail-avatar" title="Baxter">
+        <BaxterAvatar variant="head" state="idle" size={32} label="Baxter" />
       </div>
     </nav>
   );

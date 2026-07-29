@@ -11,6 +11,7 @@ from loregarden.api import (
     baxter_chat,
     branch_triage,
     bulk_queue_operations,
+    calendar_events,
     ci,
     diff_review,
     editor,
@@ -88,6 +89,7 @@ app.add_middleware(
 app.include_router(tickets.router, prefix="/api")
 app.include_router(diff_review.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
+app.include_router(calendar_events.router, prefix="/api")
 app.include_router(editor.router, prefix="/api")
 app.include_router(branch_triage.router, prefix="/api")
 app.include_router(baxter_chat.router, prefix="/api")

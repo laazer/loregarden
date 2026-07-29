@@ -5,7 +5,8 @@ import { api } from "../api/client";
 import { useAppPage } from "../lib/useAppNavigation";
 import { useUiStore } from "../state/uiStore";
 import { AppIconRail } from "./AppIconRail";
-import { CopilotDock } from "./CopilotDock";
+import { AppTopbar } from "./AppTopbar";
+import { AppUtilityDock } from "./AppUtilityDock";
 import { SettingsModal } from "./SettingsModal";
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -15,6 +16,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const editorWorkspace = useUiStore((s) => s.editorWorkspace);
   const queueWorkspaceSlug = useUiStore((s) => s.queueWorkspaceSlug);
   const branchTriageWorkspaceSlug = useUiStore((s) => s.branchTriageWorkspaceSlug);
+  const utilityDockEdge = useUiStore((s) => s.utilityDockEdge);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsWorkspaceSlug, setSettingsWorkspaceSlug] = useState("loregarden");
@@ -58,13 +60,18 @@ export function AppLayout({ children }: { children: ReactNode }) {
     setSettingsOpen(true);
   };
 
+  const showUtilityDock = appPage !== "chat";
+
   return (
     <div className="app-frame">
       <div className="app-ambient" aria-hidden />
       <AppIconRail onOpenSettings={openSettings} />
       <div className="app-main">
-        <div className="screen-area">{children}</div>
-        {appPage === "chat" ? null : <CopilotDock />}
+        <AppTopbar />
+        <div className={`app-body app-body--dock-${utilityDockEdge}`}>
+          <div className="screen-area">{children}</div>
+          {showUtilityDock ? <AppUtilityDock /> : null}
+        </div>
       </div>
 
       <SettingsModal

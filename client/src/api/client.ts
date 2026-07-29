@@ -41,6 +41,7 @@ import type {
   TicketSummary,
   TicketTreeNode,
   TicketDetail,
+  CalendarEventView,
   WorkspaceSummary,
   RuntimeOptions,
   WorkspaceRuntimeSettings,
@@ -231,6 +232,8 @@ export const api = {
     workspace?: string;
     state?: TicketState | TicketState[];
     work_item_type?: WorkItemType | WorkItemType[];
+    parent_ticket_id?: string;
+    roots_only?: boolean;
     search?: string;
   }) => request<TicketSummary[]>(`/api/tickets${ticketQuery(params)}`),
   ticketTree: (params?: {
@@ -240,6 +243,26 @@ export const api = {
     search?: string;
   }) => request<TicketTreeNode[]>(`/api/tickets/tree${ticketQuery(params)}`),
   ticket: (id: string) => request<TicketDetail>(`/api/tickets/${id}`),
+  stopTicket: (id: string) =>
+    request<TicketDetail>(`/api/tickets/${id}/stop`, { method: "POST" }),
+  cancelRun: (runId: string) =>
+    request<{
+      id: string;
+      status: string;
+      cancel_requested_at: string | null;
+      refusal: string;
+    }>(`/api/runs/${runId}/cancel`, {
+      method: "POST",
+    }),
+  calendarEvents: (slug: string, params?: { from?: string; to?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.from) q.set("from", params.from);
+    if (params?.to) q.set("to", params.to);
+    const qs = q.toString();
+    return request<CalendarEventView[]>(
+      `/api/workspaces/${encodeURIComponent(slug)}/calendar/events${qs ? `?${qs}` : ""}`,
+    );
+  },
   createTicket: (body: CreateTicketRequest) =>
     request<TicketDetail>("/api/tickets", {
       method: "POST",
@@ -401,10 +424,13 @@ export const api = {
       history?: { role: "user" | "assistant"; content: string }[];
     },
   ) =>
-    request<{ reply: string }>(`/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/messages`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
+    request<{ reply: string; parts?: unknown[] }>(
+      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/messages`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    ),
   skills: () => request<string[]>("/api/agents/skills"),
   studioMcpTools: () => request<string[]>("/api/studio/mcp-tools"),
   studioMcpToolGuides: () => request<StudioMcpToolGuide[]>("/api/studio/mcp-tool-guides"),

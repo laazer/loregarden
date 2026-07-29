@@ -1128,6 +1128,55 @@ def _m_ticket_dependencies_table(conn: Connection) -> None:
     )
 
 
+def _m_chat_message_parts(conn: Connection) -> None:
+    """Persist ordered ChatPart JSON on stored chat messages."""
+    add_columns_if_missing(
+        conn,
+        "branch_triage_messages",
+        {
+            "parts_json": (
+                "ALTER TABLE branch_triage_messages ADD COLUMN parts_json "
+                "TEXT NOT NULL DEFAULT '[]'"
+            ),
+        },
+    )
+    add_columns_if_missing(
+        conn,
+        "ticket_studio_messages",
+        {
+            "parts_json": (
+                "ALTER TABLE ticket_studio_messages ADD COLUMN parts_json "
+                "TEXT NOT NULL DEFAULT '[]'"
+            ),
+        },
+    )
+
+
+def _m_run_cancel_requested(conn: Connection) -> None:
+    """Cooperative cancel flag for in-flight agent and orchestration runs.
+
+    Runs execute on fire-and-forget daemon threads with no process registry, so
+    the API can only set a DB flag that the executor/orchestrator polls — the
+    same shape as run steering. Nullable TEXT timestamps match handoff_accepted_at.
+    """
+    add_columns_if_missing(
+        conn,
+        "agent_runs",
+        {
+            "cancel_requested_at": "ALTER TABLE agent_runs ADD COLUMN cancel_requested_at TEXT",
+        },
+    )
+    add_columns_if_missing(
+        conn,
+        "orchestration_runs",
+        {
+            "cancel_requested_at": (
+                "ALTER TABLE orchestration_runs ADD COLUMN cancel_requested_at TEXT"
+            ),
+        },
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1176,6 +1225,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0045_ensure_terminal_stage", m_ensure_terminal_stage),
     ("0046_ticket_integration_review", _m_ticket_integration_review),
     ("0047_ticket_dependencies_table", _m_ticket_dependencies_table),
+    ("0048_chat_message_parts", _m_chat_message_parts),
+    ("0049_run_cancel_requested", _m_run_cancel_requested),
 ]
 
 

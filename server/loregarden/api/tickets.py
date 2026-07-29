@@ -7,9 +7,12 @@ from loregarden.core.workflow_loader import stage_display_name
 from loregarden.db.session import get_session
 from loregarden.models.domain import (
     AdvanceStageRequest,
+    AgentRun,
     Artifact,
     FinalizeHierarchyRequest,
     FinalizeHierarchyResponse,
+    OrchestrationRun,
+    OrchestrationRunStatus,
     RouteWorkflowRequest,
     RunStatus,
     StageStatus,
@@ -46,6 +49,7 @@ from loregarden.services.hierarchy_service import build_tree, child_count
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.path_browser import read_import_files
+from loregarden.services.run_cancellation import request_cancel, request_orchestration_cancel
 from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.run_ledger import ledger_payload
 from loregarden.services.run_service import RunService, schedule_agent_run, schedule_orchestration
@@ -68,8 +72,6 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 
 def _latest_run_code(session: Session, ticket_id: str) -> str:
-    from loregarden.models.domain import AgentRun
-
     run = session.exec(
         select(AgentRun).where(AgentRun.ticket_id == ticket_id).order_by(AgentRun.created_at.desc())
     ).first()
@@ -119,8 +121,6 @@ def _apply_log_artifacts(
     active run exists but has not emitted its log artifact yet — matching the
     original early return so the workspace diff/test backfill is skipped.
     """
-    from loregarden.models.domain import AgentRun
-
     running_runs = session.exec(
         select(AgentRun)
         .where(AgentRun.ticket_id == ticket_id, AgentRun.status == RunStatus.RUNNING)
@@ -767,6 +767,46 @@ def start_run(
         raise HTTPException(400, str(exc)) from exc
     if run:
         schedule_agent_run(run.id)
+    session.refresh(ticket)
+    return get_ticket(ticket_id, session)
+
+
+@router.post("/{ticket_id}/stop", response_model=TicketDetail)
+def stop_ticket(ticket_id: str, session: Session = Depends(get_session)) -> TicketDetail:
+    """Cancel in-flight agent runs and orchestration for this ticket."""
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+
+    in_flight = session.exec(
+        select(AgentRun).where(
+            AgentRun.ticket_id == ticket_id,
+            AgentRun.status.in_(
+                [RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION]
+            ),
+        )
+    ).all()
+    for run in in_flight:
+        try:
+            request_cancel(session, run)
+        except ValueError:
+            # Already finishing / double-stop — skip rather than 409 the whole ticket.
+            continue
+
+    orch_runs = session.exec(
+        select(OrchestrationRun).where(
+            OrchestrationRun.ticket_id == ticket_id,
+            OrchestrationRun.status.in_(
+                [OrchestrationRunStatus.QUEUED, OrchestrationRunStatus.RUNNING]
+            ),
+        )
+    ).all()
+    for orch_run in orch_runs:
+        try:
+            request_orchestration_cancel(session, orch_run)
+        except ValueError:
+            continue
+
     session.refresh(ticket)
     return get_ticket(ticket_id, session)
 

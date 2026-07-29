@@ -30,6 +30,8 @@ export function TriageComposer({
   autoScroll = true,
   onAutoScrollChange,
   onSent,
+  draftSeed = null,
+  onDraftSeedConsumed,
 }: {
   ticketId: string;
   runtimeOptions: RuntimeOptions | undefined;
@@ -41,12 +43,21 @@ export function TriageComposer({
   autoScroll?: boolean;
   onAutoScrollChange?: (value: boolean) => void;
   onSent?: () => void;
+  /** Fills the composer once (e.g. welcome chips), then cleared by the parent. */
+  draftSeed?: string | null;
+  onDraftSeedConsumed?: () => void;
 }) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState("");
   const [modelModalOpen, setModelModalOpen] = useState(false);
   const [attachLogs, setAttachLogs] = useState(attachLogsDefault);
   const [autoApprove, setAutoApprove] = useState(readStoredAutoApprove);
+
+  useEffect(() => {
+    if (!draftSeed) return;
+    setDraft(draftSeed);
+    onDraftSeedConsumed?.();
+  }, [draftSeed, onDraftSeedConsumed]);
 
   const triage = useQuery({
     queryKey: ["triage", ticketId],
@@ -163,6 +174,8 @@ export function TriageComposer({
         sendLabel={`Ask ${TRIAGE_AGENT_NAME}`}
         optionsRow={optionsRow}
         error={composerError}
+        variant="dock"
+        iconOnlySend={false}
         toolbar={
           <button
             type="button"

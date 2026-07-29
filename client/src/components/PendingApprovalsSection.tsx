@@ -32,39 +32,15 @@ export function PendingApprovalsSection({
   if (approvals.length === 0) return null;
 
   return (
-    <section
-      style={{
-        padding: "12px 16px",
-        borderTop: "1px solid var(--bd)",
-        background: "rgba(96,165,250,.04)",
-        maxHeight: 280,
-        overflowY: "auto",
-      }}
-    >
-      <div className="state-label" style={{ marginBottom: 10 }}>
-        Needs attention
-      </div>
-      {submitError && (
-        <div
-          style={{
-            fontSize: 11.5,
-            color: "var(--rdl)",
-            marginBottom: 10,
-            padding: "8px 10px",
-            borderRadius: 8,
-            background: "rgba(240,96,63,.08)",
-            border: "1px solid rgba(240,96,63,.25)",
-          }}
-        >
-          {submitError}
-        </div>
-      )}
+    <section className="pending-approvals">
+      <div className="state-label pending-approvals-label">Needs attention</div>
+      {submitError ? <div className="pending-approvals-error">{submitError}</div> : null}
       {approvals.map((approval) => (
         <div key={approval.id}>
           {approval.ticket_external_id &&
             ticketExternalId &&
             approval.ticket_external_id !== ticketExternalId && (
-              <div style={{ fontSize: 10.5, color: "var(--txl)", marginBottom: 4 }}>
+              <div className="pending-approvals-ticket-hint">
                 {approvalKindLabel(approval.kind)} · {approval.ticket_external_id}
               </div>
             )}

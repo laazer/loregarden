@@ -192,6 +192,9 @@ class OrchestrationRun(SQLModel, table=True):
     error_message: str = ""
     auto_approve: bool = Field(default=False)
     stop_at_stage_key: str = ""
+    # Cooperative stop: set by the API, observed by BuiltinOrchestrator between
+    # stages. Null means no cancel has been requested.
+    cancel_requested_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
@@ -230,6 +233,9 @@ class AgentRun(SQLModel, table=True):
     # whose terminal died, can be reaped instead of blocking the ticket forever.
     handoff_accepted_at: datetime | None = None
     handoff_pid: int | None = None
+    # Cooperative stop: set by the API, observed by the permission bridge /
+    # print-mode loop. Null means no cancel has been requested.
+    cancel_requested_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
@@ -599,6 +605,8 @@ class BranchTriageMessage(SQLModel, table=True):
     # turn runs and settled by the background worker, so an interrupted turn is
     # recoverable from the database rather than lost with the request.
     status: str = Field(default="complete", index=True)
+    # Ordered ChatPart JSON (see chat_primitives). Empty when the turn is plain text.
+    parts_json: str = "[]"
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -634,6 +642,8 @@ class TicketStudioMessage(SQLModel, table=True):
     session_id: str = Field(foreign_key="ticket_studio_sessions.id", index=True)
     role: str = Field(index=True)  # user | assistant | system
     content: str = ""
+    # Ordered ChatPart JSON (see chat_primitives). Empty when the turn is plain text.
+    parts_json: str = "[]"
     created_at: datetime = Field(default_factory=utcnow)
 
 

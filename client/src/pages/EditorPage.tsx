@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../api/client";
-import { PageHeroAppToolbar } from "../components/PageHeroAppToolbar";
 import { CodeEditor } from "../components/editor/CodeEditor";
 import { EditorFileExplorer } from "../components/editor/EditorFileExplorer";
 import { GitRefSwitcher } from "../components/editor/GitRefSwitcher";
@@ -131,7 +130,6 @@ export function EditorPage() {
           />
 
           {saveMessage ? <span className="editor-save-status">{saveMessage}</span> : null}
-          <PageHeroAppToolbar />
         </div>
       </header>
 

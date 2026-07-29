@@ -5,7 +5,6 @@ import { api, type McpServerInput, type McpServerView } from "../api/client";
 import { McpActivityFeed } from "../components/mcp/McpActivityFeed";
 import { McpHealthBadge } from "../components/mcp/McpHealthBadge";
 import { McpServerForm } from "../components/mcp/McpServerForm";
-import { PageHeroAppToolbar } from "../components/PageHeroAppToolbar";
 import "./McpGatewayPage.css";
 
 const LOREGARDEN_SERVER = "loregarden";
@@ -132,7 +131,6 @@ export function McpGatewayPage() {
           >
             Add server
           </button>
-          <PageHeroAppToolbar />
         </div>
       </header>
 

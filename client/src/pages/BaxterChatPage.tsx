@@ -4,8 +4,9 @@ import { useNavigate } from "react-router-dom";
 
 import { ApiError, api, type Approval, type TicketSummary } from "../api/client";
 import { BaxterAvatar } from "../components/chat/BaxterAvatar";
-import { MarkdownContent } from "../components/chat/MarkdownContent";
-import { StudioChatComposer } from "../components/studio/StudioChat";
+import { ChatHistorySidebar } from "../components/chat/ChatHistorySidebar";
+import { primitiveGalleryParts } from "../components/chat/primitiveGallery";
+import { StudioChatComposer, StudioChatMessages } from "../components/studio/StudioChat";
 import { ticketPath } from "../lib/appNavigation";
 import { takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
@@ -17,6 +18,7 @@ type ChatTurn = {
   id: string;
   role: ChatRole;
   text: string;
+  parts?: import("../components/chat/primitives/types").ChatPart[];
   approvals?: Approval[];
   suggestions?: string[];
 };
@@ -62,10 +64,115 @@ function suggestionChips(approvals: Approval[], tickets: TicketSummary[]): strin
   return ["What should we ship today?", "Open the Console", "Start a Ticket Studio session"];
 }
 
+/** Owns draft locally so typing does not re-render the whole chat page. */
+function BaxterHeroAsk({
+  onSend,
+  busy,
+}: {
+  onSend: (text: string) => void;
+  busy: boolean;
+}) {
+  const [draft, setDraft] = useState("");
+
+  const submit = () => {
+    const text = draft.trim();
+    if (!text || busy) return;
+    setDraft("");
+    onSend(text);
+  };
+
+  return (
+    <section className="baxter-chat-hero" aria-label="Ask Baxter">
+      <div className="baxter-chat-hero-avatar">
+        <BaxterAvatar variant="head" state="idle" size={64} label="Baxter" />
+      </div>
+      <div className="baxter-chat-hero-body">
+        <StudioChatComposer
+          value={draft}
+          onChange={setDraft}
+          onSubmit={submit}
+          placeholder="What should we ship today?"
+          sendLabel="Ask Baxter"
+          isSending={busy}
+          disabled={busy}
+          variant="dock"
+          iconOnlySend={false}
+        />
+        <div className="lg-chat-chip-row baxter-chat-chip-row" role="list">
+          {EMPTY_CHIPS.map((chip) => (
+            <button
+              key={chip}
+              type="button"
+              className="lg-chat-chip baxter-chat-chip"
+              role="listitem"
+              onClick={() => setDraft(chip)}
+            >
+              {chip}
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Owns draft locally so typing does not re-render the message thread. */
+function BaxterReplyDock({
+  onSend,
+  busy,
+  suggestions,
+}: {
+  onSend: (text: string) => void;
+  busy: boolean;
+  suggestions?: string[];
+}) {
+  const [draft, setDraft] = useState("");
+
+  const submit = () => {
+    const text = draft.trim();
+    if (!text || busy) return;
+    setDraft("");
+    onSend(text);
+  };
+
+  return (
+    <div className="baxter-chat-dock">
+      {suggestions && suggestions.length > 0 && !busy ? (
+        <div className="lg-chat-chip-row baxter-chat-suggestions">
+          {suggestions.map((chip) => (
+            <button
+              key={chip}
+              type="button"
+              className="lg-chat-chip baxter-chat-chip"
+              onClick={() => onSend(chip)}
+            >
+              {chip}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <StudioChatComposer
+        value={draft}
+        onChange={setDraft}
+        onSubmit={submit}
+        placeholder="Reply to Baxter…"
+        sendLabel="Send"
+        isSending={busy}
+        disabled={busy}
+        variant="dock"
+        showShortcut
+      />
+    </div>
+  );
+}
+
 export function BaxterChatPage() {
   const navigate = useNavigate();
   const workspace = useUiStore((s) => s.workspace);
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
+  const historyOpen = useUiStore((s) => s.baxterHistoryOpen);
+  const setHistoryOpen = useUiStore((s) => s.setBaxterHistoryOpen);
 
   const workspacesQ = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
   const workspaceSlug =
@@ -74,12 +181,12 @@ export function BaxterChatPage() {
       : (workspacesQ.data?.[0]?.slug ?? "loregarden");
   const workspaceParam = workspace && workspace !== "all" ? workspace : undefined;
 
-  const [draft, setDraft] = useState("");
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
-  const threadEndRef = useRef<HTMLDivElement | null>(null);
   const initialPromptRef = useRef(takeHomeBaxterPrompt());
   const turnsRef = useRef<ChatTurn[]>([]);
+  const resetNonce = useUiStore((s) => s.baxterChatResetNonce);
+  const resetSeenRef = useRef(resetNonce);
   const now = useMemo(() => new Date(), []);
 
   const approvalsQ = useQuery({
@@ -95,6 +202,12 @@ export function BaxterChatPage() {
         state: ["in_progress", "blocked"],
       }),
     refetchInterval: 15_000,
+  });
+  const historyTicketsQ = useQuery({
+    queryKey: ["baxter-chat-history-tickets", workspaceParam],
+    queryFn: () => api.tickets({ workspace: workspaceParam }),
+    enabled: historyOpen,
+    staleTime: 15_000,
   });
 
   const approvals = useMemo(() => pendingApprovals(approvalsQ.data), [approvalsQ.data]);
@@ -124,13 +237,12 @@ export function BaxterChatPage() {
     const content = prompt.trim();
     if (!content || busy) return;
     setBusy(true);
-    setDraft("");
     const history = turnsRef.current.map((t) => ({ role: t.role, content: t.text }));
     const userTurn: ChatTurn = { id: nextId("user"), role: "user", text: content };
     setTurns((prev) => [...prev, userTurn]);
 
     try {
-      const { reply } = await api.sendBaxterChatMessage(workspaceSlug, {
+      const { reply, parts } = await api.sendBaxterChatMessage(workspaceSlug, {
         content,
         history,
       });
@@ -140,6 +252,7 @@ export function BaxterChatPage() {
           id: nextId("assistant"),
           role: "assistant",
           text: reply.trim() || "Baxter returned an empty reply.",
+          parts: parts as ChatTurn["parts"],
           approvals: approvals.slice(0, 5),
           suggestions: suggestionChips(approvals, tickets),
         },
@@ -167,9 +280,34 @@ export function BaxterChatPage() {
 
   const startNewChat = () => {
     setTurns([]);
-    setDraft("");
     setBusy(false);
   };
+
+  const openPrimitiveGallery = () => {
+    const liveTickets = historyTicketsQ.data ?? tickets;
+    setTurns([
+      {
+        id: "primitive-gallery-user",
+        role: "user",
+        text: "Show me examples of every chat UI primitive.",
+      },
+      {
+        id: "primitive-gallery-assistant",
+        role: "assistant",
+        text: "Here is the complete Chat UI Primitive gallery.",
+        parts: primitiveGalleryParts({ tickets: liveTickets }),
+        suggestions: ["Start a new chat", "Open the Console"],
+      },
+    ]);
+    setBusy(false);
+    setHistoryOpen(false);
+  };
+
+  useEffect(() => {
+    if (resetNonce === resetSeenRef.current) return;
+    resetSeenRef.current = resetNonce;
+    startNewChat();
+  }, [resetNonce]);
 
   useEffect(() => {
     const handedOff = initialPromptRef.current;
@@ -181,32 +319,27 @@ export function BaxterChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspacesQ.isLoading, workspaceSlug]);
 
-  useEffect(() => {
-    threadEndRef.current?.scrollIntoView?.({ behavior: "smooth" });
-  }, [turns.length, busy]);
+  const threadMessages = useMemo(
+    () =>
+      turns.map((t) => ({
+        id: t.id,
+        role: t.role,
+        content: t.text,
+        parts: t.parts,
+      })),
+    [turns],
+  );
+
+  const approvalsByTurnId = useMemo(() => {
+    const map = new Map<string, Approval[]>();
+    for (const turn of turns) {
+      if (turn.approvals?.length) map.set(turn.id, turn.approvals);
+    }
+    return map;
+  }, [turns]);
 
   return (
-    <div className={`baxter-chat${isEmpty ? " baxter-chat--empty" : ""}`}>
-      <header className="baxter-chat-top">
-        <div className="baxter-chat-brand">
-          <BaxterAvatar variant="head" state="idle" size={32} />
-          <span className="baxter-chat-name">Baxter</span>
-          <span className="baxter-chat-context">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-              <path d="M3 10.5 12 3l9 7.5" />
-              <path d="M5 9.5V21h14V9.5" />
-            </svg>
-            On Home
-          </span>
-        </div>
-        <button type="button" className="baxter-chat-new" onClick={startNewChat}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          New chat
-        </button>
-      </header>
-
+    <div className={`baxter-chat lg-chat-surface${isEmpty ? " baxter-chat--empty" : ""}`}>
       {isEmpty ? (
         <div className="baxter-chat-welcome">
           <header className="baxter-chat-intro">
@@ -215,164 +348,84 @@ export function BaxterChatPage() {
             <p className="baxter-chat-summary">{summaryLine}</p>
           </header>
 
-          <section className="baxter-chat-hero" aria-label="Ask Baxter">
-            <div className="baxter-chat-hero-avatar">
-              <BaxterAvatar variant="head" state="idle" size={64} label="Baxter" />
-            </div>
-            <div className="baxter-chat-hero-body">
-              <StudioChatComposer
-                value={draft}
-                onChange={setDraft}
-                onSubmit={() => void respond(draft)}
-                placeholder="What should we ship today?"
-                sendLabel="Ask Baxter"
-              />
-              <div className="baxter-chat-chip-row" role="list">
-                {EMPTY_CHIPS.map((chip) => (
-                  <button
-                    key={chip}
-                    type="button"
-                    className="baxter-chat-chip"
-                    role="listitem"
-                    onClick={() => setDraft(chip)}
-                  >
-                    {chip}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </section>
+          <BaxterHeroAsk onSend={(text) => void respond(text)} busy={busy} />
         </div>
       ) : (
         <>
           <div className="baxter-chat-thread" aria-live="polite">
-            {turns.map((turn) => (
-              <div
-                key={turn.id}
-                className={`baxter-chat-turn baxter-chat-turn--${turn.role}`}
-              >
-                {turn.role === "assistant" ? (
-                  <div className="baxter-chat-assistant-col">
-                    <div className="baxter-chat-reply">
-                      <MarkdownContent content={turn.text} className="baxter-chat-text" />
+            <StudioChatMessages
+              messages={threadMessages}
+              isThinking={busy}
+              thinkingMessage="Baxter is looking…"
+              thinkingSub="Fetching a reply from your workspace model"
+              thinkingActivity="typing"
+              assistantLabel="Baxter"
+              showAssistantAvatar={false}
+              renderAfterMessage={(message) => {
+                const turnApprovals = approvalsByTurnId.get(message.id);
+                if (!turnApprovals?.length) return null;
+                return (
+                  <div className="baxter-chat-card">
+                    <div className="baxter-chat-card-head">
+                      <span className="baxter-chat-card-title">
+                        ● {turnApprovals.length} approval
+                        {turnApprovals.length === 1 ? "" : "s"} waiting on you
+                      </span>
+                      <button
+                        type="button"
+                        className="baxter-chat-card-link"
+                        onClick={() => {
+                          setInboxOpen(true);
+                          navigate("/console");
+                        }}
+                      >
+                        Open Triage →
+                      </button>
                     </div>
-                    {turn.approvals && turn.approvals.length > 0 ? (
-                      <div className="baxter-chat-card">
-                        <div className="baxter-chat-card-head">
-                          <span className="baxter-chat-card-title">
-                            ● {turn.approvals.length} approval
-                            {turn.approvals.length === 1 ? "" : "s"} waiting on you
-                          </span>
+                    <ul className="baxter-chat-card-list">
+                      {turnApprovals.map((a) => (
+                        <li key={a.id} className="baxter-chat-card-row">
+                          <div className="baxter-chat-card-row-main">
+                            <span className="baxter-chat-card-row-title">
+                              {a.title || a.tool_name || "Approval"}
+                            </span>
+                            <span className="baxter-chat-card-row-meta">
+                              {[a.workspace_slug, a.ticket_external_id, a.kind]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                          </div>
                           <button
                             type="button"
-                            className="baxter-chat-card-link"
+                            className="baxter-chat-card-review"
                             onClick={() => {
                               setInboxOpen(true);
-                              navigate("/console");
+                              navigate(ticketPath(a.ticket_id, "triage"));
                             }}
                           >
-                            Open Triage →
+                            Review
                           </button>
-                        </div>
-                        <ul className="baxter-chat-card-list">
-                          {turn.approvals.map((a) => (
-                            <li key={a.id} className="baxter-chat-card-row">
-                              <div className="baxter-chat-card-row-main">
-                                <span className="baxter-chat-card-row-title">
-                                  {a.title || a.tool_name || "Approval"}
-                                </span>
-                                <span className="baxter-chat-card-row-meta">
-                                  {[a.workspace_slug, a.ticket_external_id, a.kind]
-                                    .filter(Boolean)
-                                    .join(" · ")}
-                                </span>
-                              </div>
-                              <button
-                                type="button"
-                                className="baxter-chat-card-review"
-                                onClick={() => {
-                                  setInboxOpen(true);
-                                  navigate(ticketPath(a.ticket_id, "triage"));
-                                }}
-                              >
-                                Review
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                ) : (
-                  <div className="baxter-chat-user-bubble">{turn.text}</div>
-                )}
-              </div>
-            ))}
-
-            {busy ? (
-              <div className="baxter-chat-turn baxter-chat-turn--assistant">
-                <div className="baxter-chat-loading" role="status" aria-live="polite">
-                  <div className="baxter-chat-loading-track" aria-hidden>
-                    <div className="baxter-chat-loading-walker">
-                      <BaxterAvatar variant="full" state="typing" size={56} />
-                    </div>
-                  </div>
-                  <p className="baxter-chat-loading-title">Baxter is looking…</p>
-                  <p className="baxter-chat-loading-sub">Fetching a reply from your workspace model</p>
-                </div>
-              </div>
-            ) : null}
-            <div ref={threadEndRef} />
-          </div>
-
-          <div className="baxter-chat-dock">
-            {latestSuggestions && latestSuggestions.length > 0 && !busy ? (
-              <div className="baxter-chat-suggestions">
-                {latestSuggestions.map((chip) => (
-                  <button
-                    key={chip}
-                    type="button"
-                    className="baxter-chat-chip"
-                    onClick={() => void respond(chip)}
-                  >
-                    {chip}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-
-            <form
-              className="baxter-chat-composer"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void respond(draft);
+                );
               }}
-            >
-              <input
-                className="baxter-chat-input"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Reply to Baxter…"
-                disabled={busy}
-                aria-label="Message Baxter"
-              />
-              <span className="baxter-chat-shortcut" aria-hidden>
-                ⌘J
-              </span>
-              <button
-                type="submit"
-                className="baxter-chat-send"
-                disabled={busy || !draft.trim()}
-                aria-label="Send"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                  <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />
-                </svg>
-              </button>
-            </form>
+            />
           </div>
+
+          <BaxterReplyDock
+            onSend={(text) => void respond(text)}
+            busy={busy}
+            suggestions={latestSuggestions}
+          />
         </>
       )}
+      <ChatHistorySidebar
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onOpenPrimitiveGallery={openPrimitiveGallery}
+      />
     </div>
   );
 }

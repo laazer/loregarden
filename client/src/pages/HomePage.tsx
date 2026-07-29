@@ -104,7 +104,7 @@ export function HomePage() {
   };
 
   return (
-    <div className="home-page">
+    <div className="home-page lg-chat-surface">
       <header className="home-header">
         <div className="home-header-text">
           <p className="home-kicker">{formatDateLine(now)}</p>
@@ -127,13 +127,15 @@ export function HomePage() {
             onSubmit={() => sendToBaxter(draft)}
             placeholder="What should we ship today?"
             sendLabel="Ask Baxter"
+            variant="dock"
+            iconOnlySend={false}
           />
-          <div className="home-chip-row" role="list">
+          <div className="lg-chat-chip-row home-chip-row" role="list">
             {HERO_CHIPS.map((chip) => (
               <button
                 key={chip}
                 type="button"
-                className="home-chip"
+                className="lg-chat-chip home-chip"
                 role="listitem"
                 onClick={() => setDraft(chip)}
               >

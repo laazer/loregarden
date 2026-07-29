@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { ApiError, api } from "../../api/client";
 import { HOME_BAXTER_PROMPT_KEY } from "../../lib/homeBaxter";
+import { useUiStore } from "../../state/uiStore";
 import { BaxterChatPage } from "../BaxterChatPage";
 
 jest.mock("../../api/client", () => {
@@ -13,6 +14,8 @@ jest.mock("../../api/client", () => {
     api: {
       ...actual.api,
       approvals: jest.fn(),
+      ticket: jest.fn(),
+      ticketTree: jest.fn(),
       tickets: jest.fn(),
       workspaces: jest.fn(),
       sendBaxterChatMessage: jest.fn(),
@@ -42,11 +45,14 @@ describe("BaxterChatPage", () => {
   beforeEach(() => {
     sessionStorage.clear();
     mockedApi.approvals.mockResolvedValue([]);
+    mockedApi.ticket.mockRejectedValue(new ApiError(404, "Example ticket not found"));
+    mockedApi.ticketTree.mockResolvedValue([]);
     mockedApi.tickets.mockResolvedValue([]);
     mockedApi.workspaces.mockResolvedValue([
       { id: "w1", slug: "loregarden", name: "Loregarden", repo_path: "/tmp" } as never,
     ]);
     mockedApi.sendBaxterChatMessage.mockResolvedValue({ reply: "Model says ship Home polish." });
+    useUiStore.setState({ baxterHistoryOpen: false });
   });
 
   it("shows a welcoming empty shell with the large Ask Baxter composer", async () => {
@@ -144,8 +150,8 @@ describe("BaxterChatPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Baxter is looking…")).toBeInTheDocument();
       expect(screen.getByText(/workspace model/i)).toBeInTheDocument();
-      expect(document.querySelector(".baxter-chat-loading-walker")).toBeTruthy();
-      expect(document.querySelector('.baxter-avatar--full.baxter-avatar--typing')).toBeTruthy();
+      expect(document.querySelector(".lg-chat-loading-walker")).toBeTruthy();
+      expect(document.querySelector(".baxter-avatar--full.baxter-avatar--typing")).toBeTruthy();
     });
     resolveReply({ reply: "On it." });
     await waitFor(() => expect(screen.getByText("On it.")).toBeInTheDocument());
@@ -163,7 +169,7 @@ describe("BaxterChatPage", () => {
     });
   });
 
-  it("starts a new chat from the header action", async () => {
+  it("starts a new chat when the global topbar reset fires", async () => {
     renderChat();
     const input = screen.getByPlaceholderText("What should we ship today?");
     fireEvent.change(input, { target: { value: "Hello" } });
@@ -172,10 +178,29 @@ describe("BaxterChatPage", () => {
     await waitFor(() => expect(screen.getByText("Hello")).toBeInTheDocument());
     await waitFor(() => expect(screen.queryByText("Baxter is looking…")).not.toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole("button", { name: /New chat/i }));
+    act(() => useUiStore.getState().requestBaxterChatReset());
     await waitFor(() => {
       expect(screen.getByPlaceholderText("What should we ship today?")).toBeInTheDocument();
     });
     expect(screen.queryByText("Hello")).not.toBeInTheDocument();
+  });
+
+  it("opens the fallback history and loads the primitive gallery", async () => {
+    renderChat();
+
+    act(() => useUiStore.getState().setBaxterHistoryOpen(true));
+    expect(await screen.findByRole("complementary", { name: "Chat history" })).toBeInTheDocument();
+    expect(screen.getByText("UI Primitive gallery")).toBeInTheDocument();
+    expect(screen.getByText("Filterable kanban")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /UI Primitive gallery/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Show me examples of every chat UI primitive.")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Thinking")).toBeInTheDocument();
+    expect(screen.getAllByText("client · npm test").length).toBeGreaterThan(0);
+    expect(screen.getByText("Workspace schedule")).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Chat history" })).not.toBeInTheDocument();
   });
 });

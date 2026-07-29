@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiError, api, API_BASE, type StageStatus, type TicketDetail, type TicketImportPreviewResponse, type TicketTreeNode, type WorkItemType, type WorkflowStageView, type WorkflowReassignmentPreview } from "../api/client";
-import { AppTopbarActions } from "../components/AppTopbarActions";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
 import { PrioBars } from "../components/PrioBars";
 import { TicketPaneFilters } from "../components/TicketPaneFilters";
@@ -38,7 +37,6 @@ import { TriageModelModal } from "../components/TriageModelModal";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
 import { navigateToPage, navigateToStudioTicketSession, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
 import { isArtifactTab, isArtifactsSubTab, PRIMARY_ARTIFACT_TABS } from "../lib/appNavigation";
-import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useUiStore, type PaneId } from "../state/uiStore";
 import { agentsAssembleLabel } from "../lib/workflowHelpers";
 import { PANE_LABELS } from "../lib/appTopbarConfig";
@@ -167,7 +165,6 @@ export function Dashboard() {
     clearStateFilters,
     toggleTypeFilter,
     clearTypeFilters,
-    setSearch,
     toggleExpanded,
     expandPath,
     setWorkspace,
@@ -175,11 +172,7 @@ export function Dashboard() {
     setPaneVisible,
     openEditorFile,
     setBranchTriageWorkspaceSlug,
-    terminalOpen,
-    setTerminalOpen,
   } = useUiStore();
-  // Where a shell opened from the status bar would run.
-  const terminalTarget = useTerminalTarget();
 
   const { workspaces: showWorkspaces, tickets: showTickets, workflow: showWorkflow, artifacts: showArtifacts } =
     paneVisibility;
@@ -958,28 +951,6 @@ export function Dashboard() {
 
   return (
     <div className="screen-view screen-view--ide">
-      <header className="topbar ide-topbar">
-        <div className="ide-topbar-brand">
-          <div className="brand-title">loregarden</div>
-          <div className="brand-sub">Agent SDLC · Console</div>
-        </div>
-        <label className="topbar-search">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search tickets, agents, runs…"
-            aria-label="Search tickets"
-          />
-          <kbd>⌘K</kbd>
-        </label>
-        <div className="topbar-spacer" />
-        <AppTopbarActions />
-      </header>
-
       <div className="main-panes">
         {showSidebar && (
           <aside
@@ -1626,7 +1597,7 @@ export function Dashboard() {
               />
             </div>
           </div>
-          <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+          <div className={`artifact-tab-body${artifactTab === "triage" ? " artifact-tab-body--fill" : ""}`}>
             {artifactTab === "triage" ? (
               <TriagePanel
                 ticket={sel}
@@ -1677,51 +1648,6 @@ export function Dashboard() {
         </section>
         )}
       </div>
-
-      <footer className="status-bar">
-        {sel?.branch ? (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--txl)" strokeWidth="2" aria-hidden>
-              <circle cx="6" cy="6" r="3" />
-              <circle cx="6" cy="18" r="3" />
-              <path d="M6 9v6" />
-              <circle cx="18" cy="6" r="3" />
-              <path d="M18 9a9 9 0 0 1-9 9" />
-            </svg>
-            {sel.branch}
-          </span>
-        ) : null}
-        {sel?.run_code ? (
-          <span style={{ fontFamily: "var(--mono)", color: "var(--txl)" }}>{sel.run_code}</span>
-        ) : null}
-        <span className="status-bar-live">
-          <span className="status-bar-live-dot" />
-          agents online
-        </span>
-        <div style={{ flex: 1 }} />
-        <button
-          type="button"
-          className={`status-bar-terminal${terminalOpen ? " is-on" : ""}`}
-          aria-pressed={terminalOpen}
-          // Disabled rather than hidden: a control that stays put explains why
-          // it does nothing, where a vanishing one just looks broken.
-          disabled={!terminalTarget.workspaceSlug}
-          title={
-            terminalTarget.workspaceSlug
-              ? `Shell in ${terminalTarget.workspaceSlug}`
-              : "Pick a workspace to open a shell in"
-          }
-          // Only the terminal. The dock shows it whether or not the chat is
-          // expanded, so opening a shell no longer drags a conversation open
-          // with it.
-          onClick={() => setTerminalOpen(!terminalOpen)}
-        >
-          Terminal
-        </button>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}>
-          {sel?.workflow_template_slug || "truth layer · execution output"}
-        </span>
-      </footer>
 
       <UpdateStateModal
         open={stateModalOpen}

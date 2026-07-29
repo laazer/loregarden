@@ -13,7 +13,6 @@ import {
   type StudioWorkflowStage,
   type WorkflowTransition,
 } from "../api/client";
-import { AppTopbarActions } from "../components/AppTopbarActions";
 import { AgentPreviewPanel } from "../components/studio/AgentPreviewPanel";
 import { AgentVersionHistory } from "../components/studio/AgentVersionHistory";
 import { StageRouteHints } from "../components/StageRouteHints";
@@ -584,7 +583,6 @@ export function StudioPage() {
               </button>
             </div>
           )}
-          <AppTopbarActions />
         </div>
       </header>
 

@@ -130,7 +130,7 @@ button {
     radial-gradient(720px 480px at 92% 108%, rgba(75, 155, 255, 0.05), transparent 60%);
 }
 
-/* Rail on the left; screen and the copilot dock stacked to its right. */
+/* Rail on the left; topbar + body (screen + utility dock) to its right. */
 .app-main {
   flex: 1;
   min-width: 0;
@@ -140,12 +140,50 @@ button {
   flex-direction: column;
 }
 
+.app-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.app-body--dock-bottom {
+  flex-direction: column;
+}
+
+.app-body--dock-right {
+  flex-direction: row;
+}
+
 .screen-area {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+.app-utility-dock {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.app-utility-dock--bottom {
+  width: 100%;
+}
+
+.app-utility-dock--right {
+  height: 100%;
+  max-width: 44vw;
+  border-left: 1px solid var(--bd);
+  background: var(--bg1);
+}
+
+.app-topbar {
+  flex: none;
 }
 
 .icon-rail {
@@ -241,14 +279,17 @@ button {
   height: 32px;
   flex: none;
   border-radius: 10px;
-  background: linear-gradient(135deg, #3fb0a8, #2a7d8c);
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  font-weight: 600;
-  color: #04110f;
-  font-family: var(--dp);
+  background: linear-gradient(140deg, var(--ac), #4d8f6e);
+  box-shadow: 0 2px 8px rgba(111, 174, 143, 0.35);
+}
+
+.icon-rail-avatar .baxter-avatar--head {
+  border-radius: 9px;
+  box-shadow: none;
 }
 
 .screen-view {
@@ -1699,6 +1740,10 @@ button {
   flex-direction: column;
   min-height: 0;
   border-right: 1px solid var(--bd);
+  background:
+    radial-gradient(900px 420px at 50% -20%, rgba(111, 174, 143, 0.07), transparent 55%),
+    radial-gradient(720px 380px at 12% 18%, rgba(75, 155, 255, 0.05), transparent 50%),
+    var(--bg0);
 }
 
 .ticket-studio-chat-header {
@@ -1771,11 +1816,12 @@ button {
    nests it in a flex column whose scrolling is done by an ancestor. The list itself does not
    scroll (overflow stays visible), so it must never be shrunk below its content: flexbox would
    spill the conversation outside the box, where the ancestor's scrollport cannot reach it and
-   later siblings paint over it. Grow to fill a short conversation, never shrink a long one. */
+   later siblings paint over it. Grow to fill a short conversation, never shrink a long one.
+   Visual chrome: .lg-chat-messages in ChatLook.css. */
 .ticket-studio-messages {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
   flex: 1 0 auto;
 }
 
@@ -1830,65 +1876,46 @@ button {
   color: var(--rdl);
 }
 
-.triage-panel-shell {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 340px;
-  background: var(--bg0);
+/* Shared pending-approvals strip (triage + logs). TriagePanel overrides colors. */
+.pending-approvals {
+  flex: none;
+  padding: 12px 16px;
+  border-top: 1px solid var(--bd);
+  background: rgba(96, 165, 250, 0.04);
+  max-height: 280px;
+  overflow-y: auto;
 }
 
-.triage-panel-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+.pending-approvals-label {
+  margin-bottom: 10px;
 }
 
-.triage-panel-alert {
+.pending-approvals-error {
   font-size: 11.5px;
   color: var(--rdl);
+  margin-bottom: 10px;
   padding: 8px 10px;
   border-radius: 8px;
   background: rgba(240, 96, 63, 0.08);
   border: 1px solid rgba(240, 96, 63, 0.25);
 }
 
-.triage-panel-section-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-}
-
-.triage-panel-section-count {
-  font-size: 10px;
+.pending-approvals-ticket-hint {
+  font-size: 10.5px;
   color: var(--txl);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  margin-bottom: 4px;
 }
 
-.triage-panel-section-scroll {
-  max-height: 220px;
-  overflow-y: auto;
-  padding-right: 4px;
-  margin-top: 10px;
+.artifact-tab-body {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
 }
 
-.triage-chat-section {
+.artifact-tab-body--fill {
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  flex: 1;
-  min-height: 0;
 }
 
 .workflow-lifecycle-label {
@@ -2040,101 +2067,14 @@ button {
   }
 }
 
-.ticket-studio-msg {
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.ticket-studio-msg-user {
-  align-self: flex-end;
-  max-width: 82%;
-  background: var(--bg3);
-  border: 1px solid var(--bd2);
-  border-radius: 14px 14px 4px 14px;
-  padding: 13px 15px;
-  color: var(--tx);
-}
-
-.ticket-studio-msg-assistant {
-  background: var(--bg1);
-  border: 1px solid var(--bd);
-  border-radius: 14px 14px 14px 4px;
-  padding: 14px 16px;
-  color: var(--txm);
-  flex: 1;
-  min-width: 0;
-}
-
-.ticket-studio-msg-body {
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.ticket-studio-msg-body.markdown-preview > :first-child {
-  margin-top: 0;
-}
-
-.ticket-studio-msg-body.markdown-preview > :last-child {
-  margin-bottom: 0;
-}
-
-.ticket-studio-msg-body.markdown-preview p {
-  margin: 0.35em 0;
-}
-
-.ticket-studio-thinking {
-  margin: 0;
-  font-size: 12px;
-  color: var(--ac2);
-  align-self: center;
-}
+/* Message + composer chrome: components/chat/ChatLook.css (Baxter-first).
+   Legacy class names remain on StudioChat nodes for existing layout wrappers. */
 
 .ticket-studio-clarify-card {
   background: var(--bg1);
   border: 1px solid var(--bd);
   border-radius: 14px;
   padding: 16px 18px;
-}
-
-.ticket-studio-composer-wrap {
-  flex: none;
-  padding: 14px 20px 18px;
-  border-top: 1px solid var(--bd);
-  background: var(--bg1);
-}
-
-.ticket-studio-composer {
-  background: var(--bg2);
-  border: 1px solid var(--bd);
-  border-radius: 13px;
-  padding: 12px 14px;
-}
-
-.ticket-studio-composer-input {
-  width: 100%;
-  min-height: 44px;
-  resize: none;
-  background: transparent;
-  border: none;
-  color: var(--tx);
-  font-size: 13px;
-  line-height: 1.5;
-  outline: none;
-  font-family: inherit;
-  box-sizing: border-box;
-  margin-bottom: 8px;
-}
-
-.ticket-studio-composer-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.ticket-studio-composer-spacer {
-  flex: 1;
-  min-width: 12px;
 }
 
 .ticket-studio-composer-action {
@@ -2167,29 +2107,6 @@ button {
 
 .ticket-studio-composer-action.accent:hover:not(:disabled) {
   background: rgba(75, 155, 255, 0.18);
-}
-
-.ticket-studio-composer-send {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--onac);
-  background: var(--ac);
-  border: none;
-  border-radius: 8px;
-  padding: 7px 14px;
-  cursor: pointer;
-}
-
-.ticket-studio-composer-send:hover:not(:disabled) {
-  background: var(--ac2);
-}
-
-.ticket-studio-composer-send:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 .ticket-studio-commit-btn {
@@ -2324,7 +2241,7 @@ button {
 
 .status-bar {
   flex: none;
-  height: 30px;
+  min-height: 30px;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -2333,6 +2250,30 @@ button {
   background: var(--bg1);
   font-size: 11px;
   color: var(--txm);
+}
+
+.app-utility-dock--right .status-bar {
+  border-top: none;
+  border-bottom: 1px solid var(--bd);
+  flex-wrap: wrap;
+  row-gap: 6px;
+  padding: 6px 10px;
+}
+
+.status-bar-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-bar-run {
+  font-family: var(--mono);
+  color: var(--txl);
+}
+
+.status-bar-spacer {
+  flex: 1;
+  min-width: 0;
 }
 
 .status-bar-live {
@@ -2348,6 +2289,24 @@ button {
   border-radius: 50%;
   background: var(--grn);
   box-shadow: 0 0 6px var(--grn);
+}
+
+.status-bar-dock-edge {
+  flex: 0 0 auto;
+  border: 1px solid var(--bd);
+  background: transparent;
+  border-radius: 999px;
+  padding: 1px 10px;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txm, var(--txl));
+  cursor: pointer;
+}
+
+.status-bar-dock-edge:hover {
+  color: var(--tx);
+  border-color: var(--ac, var(--bd));
 }
 
 .topbar-center {

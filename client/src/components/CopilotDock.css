@@ -3,15 +3,29 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-top: 1px solid var(--bd);
   background: var(--bg1, var(--bg));
   /* So the body can ask how wide the dock is, rather than how wide the window
      is — see the container query below. */
   container-type: inline-size;
+}
+
+.copilot-dock--edge-bottom {
+  border-top: 1px solid var(--bd);
   /* The stored height is in pixels, but on a short window 340px swallows the
      screen it is meant to sit beneath. Cap it against the viewport so the dock
      stays a dock. */
   max-height: 44vh;
+}
+
+.copilot-dock--edge-right {
+  flex: 1 1 auto;
+  border-top: none;
+  max-height: none;
+  min-height: 0;
+}
+
+.app-utility-dock--right .copilot-dock--empty {
+  flex: 1 1 auto;
 }
 
 .copilot-dock--empty {
@@ -95,6 +109,13 @@
   gap: 8px;
 }
 
+.copilot-dock-chat {
+  background:
+    radial-gradient(640px 280px at 50% -30%, rgba(111, 174, 143, 0.08), transparent 55%),
+    transparent;
+  border-radius: 12px;
+}
+
 /* Stacked when the dock is too narrow to hold both. Keyed to the dock's own
    width, not the window's — the icon rail and any open panes take their share
    first, so the window is the wrong thing to measure. */
@@ -172,11 +193,11 @@
 
 .copilot-dock-chip {
   border: 1px solid var(--bd);
-  background: transparent;
+  background: var(--bg1);
   border-radius: 999px;
-  padding: 3px 10px;
+  padding: 6px 12px;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--txm, var(--txl));
   cursor: pointer;
 }
@@ -184,4 +205,5 @@
 .copilot-dock-chip:hover {
   color: var(--tx);
   border-color: var(--ac, var(--bd));
+  background: var(--bg3);
 }

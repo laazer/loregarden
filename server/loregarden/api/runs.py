@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from loregarden.db.session import get_session
 from loregarden.models.domain import HandoffCheckinRequest, RunMessageCreate, RunStatus
 from loregarden.services.artifact_service import load_run_log
+from loregarden.services.run_cancellation import cancel_refusal, request_cancel
 from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.run_service import (
     HANDOFF_EXITED_MESSAGE,
@@ -119,6 +120,26 @@ def post_run_message(
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return _message_payload(message)
+
+
+@router.post("/{run_id}/cancel")
+def cancel_run(run_id: str, session: Session = Depends(get_session)) -> dict:
+    """Ask an in-flight run to stop cooperatively."""
+    run = RunService(session).get_run(run_id)
+    if not run:
+        raise HTTPException(404, "Run not found")
+    try:
+        run = request_cancel(session, run)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {
+        "id": run.id,
+        "status": run.status.value,
+        "cancel_requested_at": (
+            run.cancel_requested_at.isoformat() if run.cancel_requested_at else None
+        ),
+        "refusal": cancel_refusal(run),
+    }
 
 
 @router.post("/{run_id}/handoff-checkin")

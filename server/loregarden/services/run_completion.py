@@ -250,6 +250,10 @@ def advance_stage_after_run(
                 )
         set_stage_status(ticket, instance, stages, run.stage_key, stage_status)
         ticket.blocking_issues = ""
+    elif status == RunStatus.CANCELLED:
+        # A stop is not a failure — leave the stage re-runnable with no inbox noise.
+        ticket.blocking_issues = ""
+        set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.PENDING)
     else:
         ticket.blocking_issues = _blocking_issue(
             orch.session, ticket, run, stderr[:2000] or "Agent run failed"
@@ -279,7 +283,7 @@ def persist_run_artifacts(
     artifacts: list[dict] | None,
 ) -> None:
     artifacts = list(artifacts or [])
-    if status != RunStatus.SUCCEEDED:
+    if status not in (RunStatus.SUCCEEDED, RunStatus.CANCELLED):
         artifacts.append(
             {
                 "kind": "error",

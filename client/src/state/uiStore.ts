@@ -14,14 +14,30 @@ export type PaneId = "workspaces" | "tickets" | "workflow" | "artifacts";
 
 export type PaneVisibility = Record<PaneId, boolean>;
 
+export type UtilityDockEdge = "bottom" | "right";
+
 export const DEFAULT_COPILOT_HEIGHT = 340;
 const MIN_COPILOT_HEIGHT = 180;
 const MAX_COPILOT_HEIGHT = 720;
+
+export const DEFAULT_COPILOT_WIDTH = 380;
+const MIN_COPILOT_WIDTH = 280;
+const MAX_COPILOT_WIDTH = 640;
 
 /** Keep a restored or dragged height usable, whatever is in storage. */
 export function clampCopilotHeight(value: unknown): number {
   const height = typeof value === "number" && Number.isFinite(value) ? value : DEFAULT_COPILOT_HEIGHT;
   return Math.min(MAX_COPILOT_HEIGHT, Math.max(MIN_COPILOT_HEIGHT, height));
+}
+
+/** Keep a restored right-dock width usable, whatever is in storage. */
+export function clampCopilotWidth(value: unknown): number {
+  const width = typeof value === "number" && Number.isFinite(value) ? value : DEFAULT_COPILOT_WIDTH;
+  return Math.min(MAX_COPILOT_WIDTH, Math.max(MIN_COPILOT_WIDTH, width));
+}
+
+export function normalizeUtilityDockEdge(value: unknown): UtilityDockEdge {
+  return value === "right" ? "right" : "bottom";
 }
 
 interface UiState {
@@ -41,6 +57,12 @@ interface UiState {
   hiveSpeedIndex: number;
   copilotOpen: boolean;
   copilotHeight: number;
+  copilotWidth: number;
+  /**
+   * Where the status bar + Copilot unit sits relative to the screen.
+   * Persisted so operators keep a preferred edge across reloads.
+   */
+  utilityDockEdge: UtilityDockEdge;
   /**
    * Whether the dock is also showing a shell.
    *
@@ -55,6 +77,13 @@ interface UiState {
    * routes and cannot see a page's local state.
    */
   branchTriageBranch: string;
+  /**
+   * Bumped by the global topbar "New chat" action so BaxterChatPage can clear
+   * its local thread without owning the chrome.
+   */
+  baxterChatResetNonce: number;
+  /** Whether the Baxter chat history drawer is visible. */
+  baxterHistoryOpen: boolean;
   /**
    * Per-run auto-follow-to-bottom choice for LogsPanel's running-lane views.
    *
@@ -83,10 +112,15 @@ interface UiState {
   setQueueWorkspaceSlug: (slug: string) => void;
   setBranchTriageWorkspaceSlug: (slug: string) => void;
   setBranchTriageBranch: (branch: string) => void;
+  requestBaxterChatReset: () => void;
+  setBaxterHistoryOpen: (open: boolean) => void;
+  toggleBaxterHistory: () => void;
   setCopilotOpen: (open: boolean) => void;
   setTerminalOpen: (open: boolean) => void;
   toggleCopilot: () => void;
   setCopilotHeight: (height: number) => void;
+  setCopilotWidth: (width: number) => void;
+  setUtilityDockEdge: (edge: UtilityDockEdge) => void;
   setHiveSkin: (skin: HiveSkinId | string) => void;
   setHiveSpeedIndex: (index: number) => void;
   stepHiveSpeed: (delta: -1 | 1) => void;
@@ -108,6 +142,8 @@ type PersistedUiState = Pick<
   | "hiveSpeedIndex"
   | "copilotOpen"
   | "copilotHeight"
+  | "copilotWidth"
+  | "utilityDockEdge"
   | "terminalOpen"
 >;
 
@@ -135,11 +171,15 @@ export const useUiStore = create<UiState>()(
       hiveSpeedIndex: hiveSpeedIndexFor(DEFAULT_HIVE_SPEED_MULTIPLIER),
       copilotOpen: false,
       copilotHeight: DEFAULT_COPILOT_HEIGHT,
+      copilotWidth: DEFAULT_COPILOT_WIDTH,
+      utilityDockEdge: "bottom",
       terminalOpen: false,
       // Not persisted: which branch is under review is a property of this
       // visit, and restoring a stale one would bind the dock to a
       // conversation the screen is not showing.
       branchTriageBranch: "",
+      baxterChatResetNonce: 0,
+      baxterHistoryOpen: false,
       autoFollowByRunId: {},
       setAutoFollow: (runId, value) =>
         set((state) => ({ autoFollowByRunId: { ...state.autoFollowByRunId, [runId]: value } })),
@@ -200,11 +240,22 @@ export const useUiStore = create<UiState>()(
       setBranchTriageWorkspaceSlug: (branchTriageWorkspaceSlug) =>
         set({ branchTriageWorkspaceSlug }),
       setBranchTriageBranch: (branchTriageBranch) => set({ branchTriageBranch }),
+      requestBaxterChatReset: () =>
+        set((state) => ({
+          baxterChatResetNonce: state.baxterChatResetNonce + 1,
+          baxterHistoryOpen: false,
+        })),
+      setBaxterHistoryOpen: (baxterHistoryOpen) => set({ baxterHistoryOpen }),
+      toggleBaxterHistory: () =>
+        set((state) => ({ baxterHistoryOpen: !state.baxterHistoryOpen })),
       setCopilotOpen: (copilotOpen) => set({ copilotOpen }),
       toggleCopilot: () => set({ copilotOpen: !get().copilotOpen }),
       setTerminalOpen: (terminalOpen) => set({ terminalOpen }),
       setCopilotHeight: (height) =>
         set({ copilotHeight: clampCopilotHeight(height) }),
+      setCopilotWidth: (width) => set({ copilotWidth: clampCopilotWidth(width) }),
+      setUtilityDockEdge: (utilityDockEdge) =>
+        set({ utilityDockEdge: normalizeUtilityDockEdge(utilityDockEdge) }),
       setHiveSkin: (hiveSkin) => set({ hiveSkin: resolveHiveSkinId(hiveSkin) }),
       setHiveSpeedIndex: (hiveSpeedIndex) =>
         set({ hiveSpeedIndex: clampHiveSpeedIndex(hiveSpeedIndex) }),
@@ -223,9 +274,13 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "loregarden-ui",
-      version: 9,
+      version: 10,
       migrate: (persistedState, version) => {
         const state = { ...(persistedState as Record<string, unknown>) };
+        if (version < 10) {
+          state.utilityDockEdge = normalizeUtilityDockEdge(state.utilityDockEdge);
+          state.copilotWidth = clampCopilotWidth(state.copilotWidth);
+        }
         if (version < 9 && typeof state.terminalOpen !== "boolean") {
           state.terminalOpen = false;
         }
@@ -289,6 +344,8 @@ export const useUiStore = create<UiState>()(
         branchTriageWorkspaceSlug: s.branchTriageWorkspaceSlug,
         copilotOpen: s.copilotOpen,
         copilotHeight: s.copilotHeight,
+        copilotWidth: s.copilotWidth,
+        utilityDockEdge: s.utilityDockEdge,
         terminalOpen: s.terminalOpen,
         hiveSkin: s.hiveSkin,
         hiveSpeedIndex: s.hiveSpeedIndex,

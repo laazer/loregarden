@@ -44,6 +44,7 @@ def _run(db_session: Session, script: str, timeout: int):
         repo_root=Path.cwd(),
         timeout=timeout,
         streamer=_CollectingStreamer(),
+        run_id="test-print-mode-run",
     )
 
 
