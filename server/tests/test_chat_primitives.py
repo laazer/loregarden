@@ -21,10 +21,7 @@ def test_plain_text_is_a_single_text_part():
 
 def test_valid_ticket_fence_parses():
     text = (
-        "Here is the ticket:\n\n"
-        "```loregarden\n"
-        '{"primitive":"ticket","ticket_id":"abc-123"}\n'
-        "```\n"
+        'Here is the ticket:\n\n```loregarden\n{"primitive":"ticket","ticket_id":"abc-123"}\n```\n'
     )
     parts = parse_primitive_parts(text)
     assert len(parts) == 2

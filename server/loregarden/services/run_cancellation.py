@@ -51,10 +51,7 @@ def orchestration_cancel_refusal(orch_run: OrchestrationRun | None) -> str:
     if orch_run is None:
         return "Orchestration run not found."
     if orch_run.status not in _CANCELLABLE_ORCH_STATUSES:
-        return (
-            f"Orchestration is {orch_run.status.value.lower()}, "
-            "so there is nothing to cancel."
-        )
+        return f"Orchestration is {orch_run.status.value.lower()}, so there is nothing to cancel."
     if orch_run.cancel_requested_at is not None:
         return "Cancel already requested."
     return ""

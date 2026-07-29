@@ -260,7 +260,7 @@ describe("Gate primitive", () => {
   it("offers advance when the gate is awaiting with no pending approvals", async () => {
     mockedApi.ticket.mockResolvedValue(gateTicket());
     mockedApi.approvals.mockResolvedValue([]);
-    mockedApi.advance.mockResolvedValue({});
+    mockedApi.advance.mockResolvedValue(gateTicket());
 
     wrap(
       <GatePrimitive
