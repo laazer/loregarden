@@ -1,4 +1,5 @@
 import { AppTopbarActions } from "./AppTopbarActions";
+import { useChatWorkspace } from "../hooks/useChatWorkspace";
 import { useAppPage } from "../lib/useAppNavigation";
 import { useUiStore } from "../state/uiStore";
 
@@ -7,6 +8,31 @@ const PAGE_SUBTITLES: Partial<Record<string, string>> = {
   chat: "Agent SDLC · Chat",
   home: "Agent SDLC · Home",
 };
+
+/** Chat answers from one workspace, so the topbar names which one. */
+function ChatWorkspacePicker() {
+  const { slug, setSlug, workspaces } = useChatWorkspace();
+
+  return (
+    <label className="topbar-workspace-picker">
+      <span className="topbar-workspace-picker-label">Workspace</span>
+      <select
+        className="btn-secondary topbar-workspace-picker-select"
+        value={slug}
+        disabled={!workspaces.length}
+        aria-label="Chat workspace"
+        onChange={(event) => setSlug(event.target.value)}
+      >
+        {workspaces.length ? null : <option value="">No workspaces</option>}
+        {workspaces.map((ws) => (
+          <option key={ws.slug} value={ws.slug}>
+            {ws.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 export function AppTopbar() {
   const appPage = useAppPage();
@@ -43,6 +69,7 @@ export function AppTopbar() {
       <div className="topbar-spacer" />
       {isChat ? (
         <>
+          <ChatWorkspacePicker />
           <button
             type="button"
             className="btn-secondary topbar-action-btn"

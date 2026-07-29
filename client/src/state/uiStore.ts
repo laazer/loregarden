@@ -53,6 +53,14 @@ interface UiState {
   editorFilePath: string | null;
   queueWorkspaceSlug: string;
   branchTriageWorkspaceSlug: string;
+  /**
+   * Which workspace Baxter chat is confined to.
+   *
+   * Separate from `workspace` (the Console/Home filter, which may be "all")
+   * because a chat turn is answered by one workspace's agent and its ticket
+   * refs only resolve there.
+   */
+  chatWorkspaceSlug: string;
   hiveSkin: HiveSkinId;
   hiveSpeedIndex: number;
   copilotOpen: boolean;
@@ -110,6 +118,7 @@ interface UiState {
   setEditorContextRoot: (root: string) => void;
   setEditorFilePath: (path: string | null) => void;
   setQueueWorkspaceSlug: (slug: string) => void;
+  setChatWorkspaceSlug: (slug: string) => void;
   setBranchTriageWorkspaceSlug: (slug: string) => void;
   setBranchTriageBranch: (branch: string) => void;
   requestBaxterChatReset: () => void;
@@ -138,6 +147,7 @@ type PersistedUiState = Pick<
   | "editorContextRoot"
   | "queueWorkspaceSlug"
   | "branchTriageWorkspaceSlug"
+  | "chatWorkspaceSlug"
   | "hiveSkin"
   | "hiveSpeedIndex"
   | "copilotOpen"
@@ -167,6 +177,7 @@ export const useUiStore = create<UiState>()(
       editorFilePath: null,
       queueWorkspaceSlug: "",
       branchTriageWorkspaceSlug: "",
+      chatWorkspaceSlug: "",
       hiveSkin: DEFAULT_HIVE_SKIN,
       hiveSpeedIndex: hiveSpeedIndexFor(DEFAULT_HIVE_SPEED_MULTIPLIER),
       copilotOpen: false,
@@ -237,6 +248,7 @@ export const useUiStore = create<UiState>()(
       setEditorContextRoot: (editorContextRoot) => set({ editorContextRoot }),
       setEditorFilePath: (editorFilePath) => set({ editorFilePath }),
       setQueueWorkspaceSlug: (queueWorkspaceSlug) => set({ queueWorkspaceSlug }),
+      setChatWorkspaceSlug: (chatWorkspaceSlug) => set({ chatWorkspaceSlug }),
       setBranchTriageWorkspaceSlug: (branchTriageWorkspaceSlug) =>
         set({ branchTriageWorkspaceSlug }),
       setBranchTriageBranch: (branchTriageBranch) => set({ branchTriageBranch }),
@@ -274,9 +286,12 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "loregarden-ui",
-      version: 10,
+      version: 11,
       migrate: (persistedState, version) => {
         const state = { ...(persistedState as Record<string, unknown>) };
+        if (version < 11 && typeof state.chatWorkspaceSlug !== "string") {
+          state.chatWorkspaceSlug = "";
+        }
         if (version < 10) {
           state.utilityDockEdge = normalizeUtilityDockEdge(state.utilityDockEdge);
           state.copilotWidth = clampCopilotWidth(state.copilotWidth);
@@ -342,6 +357,7 @@ export const useUiStore = create<UiState>()(
         editorContextRoot: s.editorContextRoot,
         queueWorkspaceSlug: s.queueWorkspaceSlug,
         branchTriageWorkspaceSlug: s.branchTriageWorkspaceSlug,
+        chatWorkspaceSlug: s.chatWorkspaceSlug,
         copilotOpen: s.copilotOpen,
         copilotHeight: s.copilotHeight,
         copilotWidth: s.copilotWidth,

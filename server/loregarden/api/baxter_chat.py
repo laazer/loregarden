@@ -59,5 +59,5 @@ def send_baxter_chat_message(
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 — surface CLI/auth failures to the UI
         raise HTTPException(502, format_agent_unavailable(TRIAGE_AGENT_NAME, exc)) from exc
-    parts = resolve_parts(session, parse_primitive_parts(reply))
+    parts = resolve_parts(session, parse_primitive_parts(reply), workspace_id=workspace.id)
     return BaxterChatMessageReply(reply=reply, parts=parts_to_jsonable(parts))

@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { ReactNode } from "react";
 
 import { AppLayout } from "../AppLayout";
+import { api } from "../../api/client";
 import { useUiStore } from "../../state/uiStore";
 
 jest.mock("../AppIconRail", () => ({
@@ -47,12 +48,17 @@ function wrap(ui: ReactNode, path: string) {
   );
 }
 
+const mockedApi = api as jest.Mocked<typeof api>;
+
 beforeEach(() => {
+  jest.clearAllMocks();
+  mockedApi.workspaces.mockResolvedValue([]);
   useUiStore.setState({
     utilityDockEdge: "bottom",
     terminalOpen: false,
     workspace: "all",
     baxterHistoryOpen: false,
+    chatWorkspaceSlug: "",
   });
 });
 
@@ -73,6 +79,29 @@ it("shows topbar on chat but keeps the utility dock hidden", () => {
   expect(screen.getByRole("button", { name: /New chat/i })).toBeInTheDocument();
   expect(screen.queryByTestId("copilot-dock")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /Dock/i })).not.toBeInTheDocument();
+});
+
+it("names the chat workspace in the topbar without re-filtering the Console", async () => {
+  mockedApi.workspaces.mockResolvedValue([
+    { slug: "loregarden", name: "Loregarden" },
+    { slug: "blobert", name: "Blobert" },
+  ] as never);
+
+  wrap(<div>chat body</div>, "/chat");
+
+  const picker = await screen.findByLabelText("Chat workspace");
+  await waitFor(() => expect(picker).toHaveValue("loregarden"));
+
+  fireEvent.change(picker, { target: { value: "blobert" } });
+  expect(useUiStore.getState().chatWorkspaceSlug).toBe("blobert");
+  // Home and the Console keep their own filter — confining chat must not
+  // confine them too.
+  expect(useUiStore.getState().workspace).toBe("all");
+});
+
+it("keeps the chat workspace picker off non-chat pages", () => {
+  wrap(<div>console body</div>, "/console");
+  expect(screen.queryByLabelText("Chat workspace")).not.toBeInTheDocument();
 });
 
 it("applies right dock body class when edge is right", () => {
