@@ -68,6 +68,7 @@ export function TicketCardBody({
   stageStatus,
   segments,
   progressLabel,
+  compact = false,
 }: {
   title: string;
   priority: number;
@@ -78,13 +79,21 @@ export function TicketCardBody({
   segments: ProgressSegment[];
   /** Right-side fraction — stages for a leaf, children for a parent. */
   progressLabel?: string | null;
+  /** Board tiles are too narrow for the badge-aligned indent. */
+  compact?: boolean;
 }) {
   const prio = priorityStyle(priority);
   const stateColor = ticketStateColor(state);
   const stageColor = stageStatusColor(stageStatus);
 
   return (
-    <div className="lg-primitive-ticket-v6">
+    <div
+      className={
+        compact
+          ? "lg-primitive-ticket-v6 lg-primitive-ticket-v6--compact"
+          : "lg-primitive-ticket-v6"
+      }
+    >
       <div className="lg-primitive-ticket-v6-title-row">
         <span
           className="lg-primitive-ticket-prio"

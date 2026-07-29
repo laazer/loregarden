@@ -378,7 +378,7 @@
 .lg-primitive-kanban {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(160px, 1fr);
+  grid-auto-columns: minmax(196px, 1fr);
   gap: 10px;
   overflow-x: auto;
   padding-bottom: 4px;
@@ -388,7 +388,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-width: 160px;
+  min-width: 196px;
   padding: 8px;
   border-radius: 12px;
   background: var(--bg0);
@@ -396,12 +396,27 @@
 }
 
 .lg-primitive-kanban-col-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
+  padding: 1px 2px 5px;
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--txl);
   font-weight: 650;
+}
+
+.lg-primitive-kanban-col-count {
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg3);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0;
+  color: var(--txm);
 }
 
 .lg-primitive-filters {
@@ -1133,10 +1148,16 @@
   padding-right: 28px;
 }
 
-.lg-primitive-ticket-card--parent > .lg-primitive-card-body {
+.lg-primitive-ticket-card--parent > .lg-primitive-card-body,
+.lg-primitive-ticket-card--workflow > .lg-primitive-card-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.lg-primitive-ticket-timeline {
+  padding-top: 12px;
+  border-top: 1px solid var(--bd);
 }
 
 .lg-primitive-ticket-children {
@@ -1195,6 +1216,21 @@
 .lg-primitive-ticket-segs,
 .lg-primitive-ticket-stage {
   padding-left: 32px;
+}
+
+/* Board tiles have no room for the badge-aligned indent. */
+.lg-primitive-ticket-v6--compact {
+  gap: 6px;
+}
+
+.lg-primitive-ticket-v6--compact .lg-primitive-ticket-v6-meta,
+.lg-primitive-ticket-v6--compact .lg-primitive-ticket-segs,
+.lg-primitive-ticket-v6--compact .lg-primitive-ticket-stage {
+  padding-left: 0;
+}
+
+.lg-primitive-ticket-v6--compact .lg-primitive-ticket-v6-title {
+  font-size: 12.5px;
 }
 
 .lg-primitive-ticket-v6-meta {
@@ -1296,23 +1332,31 @@
   color: var(--txl);
 }
 
-.lg-primitive-ticket-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: var(--bg0);
+.lg-primitive-ticket-tile {
+  position: relative;
+  padding: 10px 11px;
+  border-radius: 12px;
+  background: var(--bg1);
   border: 1px solid var(--bd);
-  font-size: 13px;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
-.lg-primitive-ticket-row-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.lg-primitive-ticket-tile:hover {
+  border-color: var(--bd2);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32);
+}
+
+/* Keep the open button clear of the title's last line. */
+.lg-primitive-ticket-tile-action {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+}
+
+.lg-primitive-ticket-tile .lg-primitive-ticket-v6-title {
+  padding-right: 22px;
 }
 
 .lg-primitive-gate {

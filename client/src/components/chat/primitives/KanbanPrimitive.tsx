@@ -3,10 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../../api/client";
 import type { TicketState, TicketSummary } from "../../../api/types";
-import { ticketStateColor } from "../../../lib/ticketStates";
+import { ticketStateColor, ticketStateLabel } from "../../../lib/ticketStates";
 import type { FilterableKanbanPart, KanbanPart, StatusColumnPart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenTicketButton } from "./ResourceActionButton";
+import { TicketCardBody, stageProgressSegments } from "./TicketCardMeta";
 
 const DEFAULT_STATUSES: TicketState[] = [
   "backlog",
@@ -34,15 +35,26 @@ function useTicketBucket(ticketIds: string[] | undefined) {
   });
 }
 
+/** Board tile: the v6 list card compacted to a column's width. */
 function TicketMini({ ticket }: { ticket: TicketSummary }) {
+  const progress = stageProgressSegments(ticket.stages);
+
   return (
-    <div className="lg-primitive-ticket-row">
-      <span
-        className="lg-primitive-card-dot"
-        style={{ background: ticketStateColor(ticket.state), marginTop: 0 }}
+    <div className="lg-primitive-ticket-tile">
+      <TicketCardBody
+        compact
+        title={ticket.title}
+        priority={ticket.priority}
+        state={ticket.state}
+        workspaceSlug={ticket.workspace_slug}
+        stageName={ticket.workflow_stage_name || undefined}
+        stageStatus={ticket.workflow_stage_status}
+        segments={progress.segments}
+        progressLabel={progress.total ? `${progress.done}/${progress.total}` : null}
       />
-      <span className="lg-primitive-ticket-row-title">{ticket.title}</span>
-      <OpenTicketButton ticketId={ticket.id} compact label={`Open ${ticket.title}`} />
+      <div className="lg-primitive-ticket-tile-action">
+        <OpenTicketButton ticketId={ticket.id} compact label={`Open ${ticket.title}`} />
+      </div>
     </div>
   );
 }
@@ -53,7 +65,7 @@ export function StatusColumnPrimitive({ part }: { part: StatusColumnPart }) {
 
   return (
     <PrimitiveCard
-      title={part.title ?? part.status.replace("_", " ")}
+      title={part.title ?? ticketStateLabel(part.status)}
       subtitle={`${tickets.length} tickets`}
       loading={isLoading}
       error={error ? (error instanceof Error ? error.message : "Failed to load") : null}
@@ -115,7 +127,7 @@ export function KanbanPrimitive({
                 })
               }
             >
-              {status.replace("_", " ")}
+              {ticketStateLabel(status)}
             </button>
           ))}
         </div>
@@ -124,7 +136,13 @@ export function KanbanPrimitive({
         {columns.map((col) => (
           <div key={col.status} className="lg-primitive-kanban-col">
             <p className="lg-primitive-kanban-col-title">
-              {col.status.replace("_", " ")} · {col.tickets.length}
+              <span
+                className="lg-primitive-ticket-state-dot"
+                style={{ background: ticketStateColor(col.status) }}
+                aria-hidden
+              />
+              {ticketStateLabel(col.status)}
+              <span className="lg-primitive-kanban-col-count">{col.tickets.length}</span>
             </p>
             {col.tickets.map((t) => (
               <TicketMini key={t.id} ticket={t} />

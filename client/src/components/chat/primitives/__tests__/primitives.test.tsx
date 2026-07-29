@@ -11,6 +11,7 @@ import { CalendarPrimitive } from "../CalendarPrimitive";
 import { GatePrimitive } from "../GatePrimitive";
 import { GiphyPrimitive } from "../GiphyPrimitive";
 import { BranchHistoryPrimitive, CommitPrimitive } from "../GitPrimitive";
+import { KanbanPrimitive } from "../KanbanPrimitive";
 import { ParentTicketPrimitive } from "../ParentTicketPrimitive";
 import { PrimitiveCard } from "../PrimitiveCard";
 import { PrimitiveParts } from "../PrimitiveParts";
@@ -27,6 +28,7 @@ import {
 import { PlayButton, StopButton } from "../RunControlButton";
 import { TerminalPrimitive } from "../TerminalPrimitive";
 import { TicketPrimitive } from "../TicketPrimitive";
+import { TicketWorkflowPrimitive } from "../TicketWorkflowPrimitive";
 import { ThinkingPrimitive } from "../ThinkingPrimitive";
 import { TodoListPrimitive } from "../TodoListPrimitive";
 import { WorkflowPrimitive } from "../WorkflowPrimitive";
@@ -539,6 +541,78 @@ describe("Ticket primitive chrome", () => {
     expect(
       container.querySelector(".lg-primitive-card-actions .lg-primitive-run-btn--stop"),
     ).not.toBeNull();
+  });
+
+  it("gives the workflow card the v6 head above its stage timeline", async () => {
+    mockedApi.ticket.mockResolvedValue(gateTicket({ priority: 1 }));
+
+    const { container } = wrap(
+      <TicketWorkflowPrimitive
+        part={{ primitive: "ticket_workflow", ticket_id: "gate-ticket-1" }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("P1")).toBeInTheDocument();
+    });
+    expect(container.querySelector(".lg-primitive-ticket-v6-meta")?.textContent).toContain(
+      "In Progress",
+    );
+    expect(container.querySelector(".lg-primitive-ticket-segs-label")?.textContent).toBe("0/1");
+    expect(container.querySelector(".lg-primitive-ticket-timeline")).not.toBeNull();
+  });
+});
+
+describe("Board tiles", () => {
+  beforeEach(() => {
+    mockedApi.ticket.mockReset();
+    mockedApi.tickets.mockReset();
+    mockedApi.tickets.mockResolvedValue([]);
+  });
+
+  it("renders board tickets as compact v6 tiles", async () => {
+    mockedApi.ticket.mockResolvedValue(gateTicket({ priority: 1 }));
+
+    const { container } = wrap(
+      <KanbanPrimitive
+        part={{ primitive: "kanban", ticket_ids: ["gate-ticket-1"], statuses: ["in_progress"] }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Ship gate polish")).toBeInTheDocument();
+    });
+    const tile = container.querySelector(".lg-primitive-ticket-tile");
+    expect(tile).not.toBeNull();
+    expect(tile?.querySelector(".lg-primitive-ticket-v6--compact")).not.toBeNull();
+    expect(screen.getByText("P1")).toBeInTheDocument();
+    expect(tile?.textContent).toContain("In Progress");
+    expect(tile?.textContent).toContain("Quality Gate");
+    expect(
+      tile?.querySelector(".lg-primitive-ticket-tile-action .lg-primitive-resource-btn--compact"),
+    ).not.toBeNull();
+  });
+
+  it("labels board columns with the ticket state and a count", async () => {
+    mockedApi.ticket.mockResolvedValue(gateTicket());
+
+    const { container } = wrap(
+      <KanbanPrimitive
+        part={{
+          primitive: "kanban",
+          ticket_ids: ["gate-ticket-1"],
+          statuses: ["in_progress", "wont_do"],
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Ship gate polish")).toBeInTheDocument();
+    });
+    const titles = Array.from(
+      container.querySelectorAll(".lg-primitive-kanban-col-title"),
+    ).map((el) => el.textContent);
+    expect(titles).toEqual(["In Progress1", "Won't do0"]);
   });
 });
 
