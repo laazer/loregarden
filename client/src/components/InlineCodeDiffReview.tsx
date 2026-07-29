@@ -440,6 +440,9 @@ export function InlineCodeDiffReview({
   onLoadFile,
   onCommitPush,
   isCommittingPush = false,
+  localMode = false,
+  submitActionLabel = "Submit review to agent",
+  onSubmitLocal,
 }: {
   ticketId?: string;
   branchReview?: { workspaceSlug: string; branch: string };
@@ -455,6 +458,20 @@ export function InlineCodeDiffReview({
   onLoadFile?: (filePath: string) => Promise<DiffFileSection | null>;
   onCommitPush?: () => void;
   isCommittingPush?: boolean;
+  /** Keep comments in memory and submit via onSubmitLocal (chat edit cards). */
+  localMode?: boolean;
+  submitActionLabel?: string;
+  onSubmitLocal?: (payload: {
+    comments: Array<{
+      file_path: string;
+      line_index: number;
+      line_kind: string;
+      content: string;
+      line_number: string;
+      line_text: string;
+    }>;
+    instructions: string;
+  }) => void | Promise<void>;
 }) {
   const sections = useMemo(() => diffFileSections(diff), [diff]);
   const fileRows = useMemo(
@@ -582,6 +599,7 @@ export function InlineCodeDiffReview({
 
   const refreshComments = useCallback(async () => {
     setError(null);
+    if (localMode) return;
     if (branchWorkspaceSlug && branchName) {
       const data = await listBranchDiffComments(branchWorkspaceSlug, branchName);
       setComments(data.comments ?? []);
@@ -593,7 +611,7 @@ export function InlineCodeDiffReview({
     }
     const data = await listTicketDiffComments(ticketId);
     setComments(data.comments ?? []);
-  }, [branchWorkspaceSlug, branchName, ticketId]);
+  }, [branchWorkspaceSlug, branchName, ticketId, localMode]);
 
   useEffect(() => {
     if (sections.length === 0 && ticketId) {
@@ -602,10 +620,11 @@ export function InlineCodeDiffReview({
   }, [sections.length, queryClient, ticketId]);
 
   useEffect(() => {
+    if (localMode) return;
     void refreshComments().catch((err) => {
       setError(err instanceof Error ? err.message : "Failed to load review comments");
     });
-  }, [refreshComments]);
+  }, [refreshComments, localMode]);
 
   const handleAddComment = async (
     filePath: string,
@@ -616,6 +635,25 @@ export function InlineCodeDiffReview({
     setIsLoading(true);
     setError(null);
     try {
+      if (localMode) {
+        const now = new Date().toISOString();
+        const local: DiffReviewComment = {
+          id: `local-${Date.now()}-${lineIndex}`,
+          ticket_id: ticketId ?? "",
+          file_path: filePath,
+          line_index: lineIndex,
+          line_kind: lineKind,
+          content: draft.trim(),
+          resolved: false,
+          created_at: now,
+          created_by: "reviewer",
+          updated_at: now,
+        };
+        setComments((current) => [...current, local]);
+        setDraft("");
+        setActiveAnchor(null);
+        return;
+      }
       if (branchWorkspaceSlug && branchName) {
         await addBranchDiffComment(branchWorkspaceSlug, branchName, {
           file_path: filePath,
@@ -646,6 +684,38 @@ export function InlineCodeDiffReview({
     setError(null);
     setSubmitMessage(null);
     try {
+      if (localMode) {
+        if (!onSubmitLocal) {
+          throw new Error("No chat submit handler is wired for this review.");
+        }
+        const open = comments.filter((comment) => !comment.resolved);
+        await onSubmitLocal({
+          comments: open.map((comment) => {
+            const section = sections.find((entry) => entry.path === comment.file_path);
+            const line = section?.lines[comment.line_index];
+            return {
+              file_path: comment.file_path,
+              line_index: comment.line_index,
+              line_kind: comment.line_kind,
+              content: comment.content,
+              line_number: line?.ln || String(comment.line_index + 1),
+              line_text: line?.text ?? "",
+            };
+          }),
+          instructions: submitInstructions,
+        });
+        setSubmitMessage(
+          `Sent ${open.length} inline comment${open.length === 1 ? "" : "s"} to chat.`,
+        );
+        setShowSubmit(false);
+        setSubmitInstructions("");
+        setComments((current) =>
+          current.map((comment) =>
+            comment.resolved ? comment : { ...comment, resolved: true },
+          ),
+        );
+        return;
+      }
       const result =
         branchWorkspaceSlug && branchName
           ? await submitBranchDiffReviewToAgent(branchWorkspaceSlug, branchName, {
@@ -768,7 +838,7 @@ export function InlineCodeDiffReview({
             disabled={isLoading || unresolvedCount === 0}
             onClick={() => setShowSubmit((open) => !open)}
           >
-            Submit review to agent
+            {submitActionLabel}
           </button>
         </div>
         </div>
@@ -782,7 +852,11 @@ export function InlineCodeDiffReview({
           <textarea
             className="inline-code-diff-submit-input"
             rows={3}
-            placeholder="Optional instructions for the agent alongside your inline comments…"
+            placeholder={
+              localMode
+                ? "Optional note for Baxter alongside your inline comments…"
+                : "Optional instructions for the agent alongside your inline comments…"
+            }
             value={submitInstructions}
             disabled={isLoading}
             onChange={(e) => setSubmitInstructions(e.target.value)}
@@ -794,7 +868,7 @@ export function InlineCodeDiffReview({
               disabled={isLoading}
               onClick={() => void handleSubmitToAgent()}
             >
-              Send to agent
+              {localMode ? "Send to chat" : "Send to agent"}
             </button>
             <button
               type="button"

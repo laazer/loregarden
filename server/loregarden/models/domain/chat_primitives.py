@@ -113,6 +113,14 @@ class EditPart(BaseModel):
     target_id: str | None = None
     language: str = "markdown"
     content: str = ""
+    # Baseline for an active proposed-edit diff. When set (including ""), the card
+    # renders a reviewable diff of original → content instead of a plain editor.
+    original: str | None = None
+    # Display path used as the comment anchor and editor jump target
+    # (e.g. agent_context/agents/planner.md).
+    path: str | None = None
+    # Workspace whose repo holds `path`; the UI falls back to the current editor workspace.
+    workspace_slug: str | None = None
     title: str | None = None
 
 

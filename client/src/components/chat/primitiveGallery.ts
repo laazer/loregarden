@@ -321,15 +321,21 @@ export function primitiveGallerySections(
     }),
     section(
       "edit",
-      "Let me edit the Planner role file.",
-      "An editor bound to the agent's role file.",
+      "Let me review your proposed Planner role tweak.",
+      "An active diff — hover a line, comment, and send it to chat.",
       {
         primitive: "edit",
         target: "agent",
         target_id: GALLERY_AGENT_SLUG,
+        path: "agent_context/agents/1_planner/planner_v1.md",
+        workspace_slug: workspaceSlug,
         language: "markdown",
-        title: "Edit Planner role",
-        content: PLANNER_ROLE_EXCERPT,
+        title: "Tighten Planner scope",
+        original: PLANNER_ROLE_EXCERPT,
+        content: `${PLANNER_ROLE_EXCERPT.trimEnd()}
+
+**Hard rule:** Never write application code, tests, or config. If the request asks for implementation, stop and hand off to the implementer.
+`,
       },
     ),
     section(

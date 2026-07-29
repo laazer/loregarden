@@ -125,6 +125,12 @@ export interface EditPart {
   target_id?: string | null;
   language?: string;
   content?: string;
+  /** Baseline for a proposed-edit diff. When set, the card shows a reviewable diff. */
+  original?: string | null;
+  /** Display path used as the comment anchor and editor jump target. */
+  path?: string | null;
+  /** Workspace whose repo holds `path`; falls back to the current editor workspace. */
+  workspace_slug?: string | null;
   title?: string | null;
 }
 

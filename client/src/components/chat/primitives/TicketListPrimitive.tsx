@@ -59,6 +59,7 @@ export function TicketListPrimitive({ part }: { part: TicketListPart }) {
 
   return (
     <PrimitiveCard
+      className="lg-primitive-ticket-list--v6"
       title={part.title ?? parentQuery.data?.title ?? "Ticket list"}
       subtitle={parentId ? parentQuery.data?.external_id : `${nodes.length} tickets`}
       loading={treeQuery.isLoading}
@@ -87,6 +88,8 @@ export function TicketListPrimitive({ part }: { part: TicketListPart }) {
         selectedId={selectedId}
         expandedIds={expandedIds}
         onSelect={setSelectedId}
+        presentation="v6"
+        showExternalId
         renderRowAction={(node) => (
           <OpenTicketButton ticketId={node.id} compact label={`Open ${node.title}`} />
         )}

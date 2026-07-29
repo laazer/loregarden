@@ -4,7 +4,9 @@ import type { TicketTreeNode } from "../api/client";
 import {
   TICKET_STATE_COLORS,
   TICKET_STATE_LABELS,
+  priorityStyle,
   stageStatusColor,
+  stageStatusLabel,
 } from "../lib/ticketStates";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
@@ -19,6 +21,7 @@ function TreeRow({
   onAddChild,
   renderRowAction,
   showExternalId = false,
+  presentation = "default",
   depth = 0,
 }: {
   node: TicketTreeNode;
@@ -29,6 +32,7 @@ function TreeRow({
   onAddChild?: (node: TicketTreeNode) => void;
   renderRowAction?: (node: TicketTreeNode) => ReactNode;
   showExternalId?: boolean;
+  presentation?: "default" | "v6";
   depth?: number;
 }) {
   const hasChildren = node.children.length > 0;
@@ -38,6 +42,8 @@ function TreeRow({
   const showAddChild = !!onAddChild && canHaveChildren(node.work_item_type);
   const stateColor = TICKET_STATE_COLORS[node.state];
   const wfColor = stageStatusColor(node.workflow_stage_status);
+  const priority = priorityStyle(node.priority);
+  const isV6 = presentation === "v6";
 
   const showTrail = workflowRunning || showAddChild || Boolean(renderRowAction) || hasChildren;
 
@@ -49,9 +55,16 @@ function TreeRow({
   return (
     <div className="tree-node">
       <div
-        className={`tree-row list-btn ${isSelected ? "active" : ""}`}
+        className={[
+          "tree-row",
+          "list-btn",
+          isV6 ? "tree-row--v6" : null,
+          isSelected ? "active" : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
         style={{
-          borderLeft: `2px solid ${stateColor}`,
+          borderLeft: isV6 ? undefined : `2px solid ${stateColor}`,
         }}
         onClick={handleRowClick}
         onKeyDown={(e) => {
@@ -78,7 +91,20 @@ function TreeRow({
               <TreeExpandChevron expanded={expanded} />
             </button>
           ) : null}
-          <PrioBars priority={node.priority} />
+          {isV6 ? (
+            <span
+              className="lg-primitive-ticket-prio"
+              style={{
+                color: priority.color,
+                background: priority.background,
+                borderColor: priority.border,
+              }}
+            >
+              {priority.code}
+            </span>
+          ) : (
+            <PrioBars priority={node.priority} />
+          )}
           <div className="tree-card-title">
             {showExternalId ? (
               <>
@@ -140,7 +166,11 @@ function TreeRow({
           <div className="tree-card-workflow">
             <span className="tree-workflow-dot-inline" style={{ background: wfColor }} />
             <span style={{ color: wfColor, fontWeight: 500 }}>{node.workflow_stage_name}</span>
-            <span style={{ color: "var(--txl)" }}>{node.workflow_stage_status.replace("_", " ")}</span>
+            <span style={{ color: "var(--txl)" }}>
+              {isV6
+                ? stageStatusLabel(node.workflow_stage_status)
+                : node.workflow_stage_status.replace("_", " ")}
+            </span>
           </div>
         ) : null}
       </div>
@@ -155,6 +185,7 @@ function TreeRow({
             onAddChild={onAddChild}
             renderRowAction={renderRowAction}
             showExternalId={showExternalId}
+            presentation={presentation}
             depth={depth + 1}
           />
         </div>
@@ -172,6 +203,7 @@ interface TicketTreeProps {
   onAddChild?: (node: TicketTreeNode) => void;
   renderRowAction?: (node: TicketTreeNode) => ReactNode;
   showExternalId?: boolean;
+  presentation?: "default" | "v6";
   depth?: number;
 }
 
@@ -207,6 +239,7 @@ export function TicketTree({
   onAddChild,
   renderRowAction,
   showExternalId = false,
+  presentation = "default",
   depth = 0,
 }: TicketTreeProps) {
   return (
@@ -222,6 +255,7 @@ export function TicketTree({
           onAddChild={onAddChild}
           renderRowAction={renderRowAction}
           showExternalId={showExternalId}
+          presentation={presentation}
           depth={depth}
         />
       ))}

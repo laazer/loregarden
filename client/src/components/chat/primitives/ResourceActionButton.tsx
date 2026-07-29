@@ -119,6 +119,44 @@ export function OpenIdeButton({ workspaceSlug }: { workspaceSlug?: string } = {}
   );
 }
 
+/** Jump straight to a workspace file in the Editor page. */
+export function OpenEditorFileButton({
+  path,
+  workspaceSlug,
+  label,
+  compact,
+}: {
+  path: string;
+  workspaceSlug?: string;
+  label?: string;
+  compact?: boolean;
+}) {
+  const openEditorFile = useUiStore((state) => state.openEditorFile);
+  const editorWorkspace = useUiStore((state) => state.editorWorkspace);
+  const workspace = useUiStore((state) => state.workspace);
+  const resolvedWorkspace =
+    workspaceSlug ||
+    editorWorkspace ||
+    (workspace && workspace !== "all" ? workspace : "");
+  const actionLabel = label ?? `Open ${path} in editor`;
+
+  return (
+    <ResourceActionButton
+      label={actionLabel}
+      compact={compact}
+      onClick={() => {
+        if (!resolvedWorkspace) {
+          navigateToPage("editor");
+          return;
+        }
+        openEditorFile(resolvedWorkspace, path);
+      }}
+    >
+      Open in editor
+    </ResourceActionButton>
+  );
+}
+
 export function OpenBranchTriageButton({
   workspaceSlug,
   branch,

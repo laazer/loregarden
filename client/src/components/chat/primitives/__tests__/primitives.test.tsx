@@ -8,6 +8,7 @@ import type { Approval, TicketDetail } from "../../../../api/types";
 import { RouterBridgeSync } from "../../../RouterBridgeSync";
 import { StudioChatMessages } from "../../../studio/StudioChat";
 import { CalendarPrimitive } from "../CalendarPrimitive";
+import { EditPrimitive } from "../EditPrimitive";
 import { GatePrimitive } from "../GatePrimitive";
 import { GiphyPrimitive } from "../GiphyPrimitive";
 import { BranchHistoryPrimitive, CommitPrimitive } from "../GitPrimitive";
@@ -20,6 +21,7 @@ import { QAPrimitive } from "../QAPrimitive";
 import { UnknownPrimitiveCard } from "../registry";
 import {
   OpenAgentStudioButton,
+  OpenEditorFileButton,
   OpenGateStudioButton,
   OpenIdeButton,
   OpenTicketButton,
@@ -27,6 +29,7 @@ import {
 } from "../ResourceActionButton";
 import { PlayButton, StopButton } from "../RunControlButton";
 import { TerminalPrimitive } from "../TerminalPrimitive";
+import { TicketListPrimitive } from "../TicketListPrimitive";
 import { TicketPrimitive } from "../TicketPrimitive";
 import { TicketWorkflowPrimitive } from "../TicketWorkflowPrimitive";
 import { ThinkingPrimitive } from "../ThinkingPrimitive";
@@ -42,6 +45,7 @@ import {
   fetchBranchActivity,
   fetchCommitSnapshot,
 } from "../../../../lib/branchTriageApi";
+import { useUiStore } from "../../../../state/uiStore";
 
 jest.mock("../../../../lib/branchTriageApi", () => ({
   fetchBranchActivity: jest.fn(),
@@ -55,6 +59,7 @@ jest.mock("../../../../api/client", () => {
     api: {
       ...actual.api,
       ticket: jest.fn(),
+      ticketTree: jest.fn().mockResolvedValue([]),
       tickets: jest.fn().mockResolvedValue([]),
       workspaces: jest.fn(),
       approvals: jest.fn(),
@@ -178,7 +183,7 @@ describe("run control buttons", () => {
       </>,
     );
 
-    const play = screen.getByRole("button", { name: "Play" });
+    const play = screen.getByRole("button", { name: "Run" });
     const stop = screen.getByRole("button", { name: "Stop" });
     expect(play).toHaveClass("lg-primitive-run-btn--play");
     expect(stop).toHaveClass("lg-primitive-run-btn--stop");
@@ -214,6 +219,16 @@ describe("resource action buttons", () => {
     ["Open Gate Studio", () => <OpenGateStudioButton />, "/studio/gates"],
     ["Open IDE", () => <OpenIdeButton />, "/editor"],
     [
+      "Open agent_context/agents/1_planner/planner_v1.md in editor",
+      () => (
+        <OpenEditorFileButton
+          path="agent_context/agents/1_planner/planner_v1.md"
+          workspaceSlug="loregarden"
+        />
+      ),
+      "/editor",
+    ],
+    [
       "Open triage",
       () => <OpenTicketButton ticketId="ticket/42" tab="triage" label="Open triage" />,
       "/tickets/ticket%2F42/triage",
@@ -222,6 +237,29 @@ describe("resource action buttons", () => {
     renderResourceAction(renderButton());
     fireEvent.click(screen.getByRole("button", { name: label }));
     expect(screen.getByTestId("path")).toHaveTextContent(path);
+  });
+
+  it("points the editor at the requested file path", () => {
+    useUiStore.setState({
+      editorWorkspace: "",
+      editorFilePath: null,
+      editorContextRoot: ".",
+    });
+    renderResourceAction(
+      <OpenEditorFileButton
+        path="agent_context/agents/1_planner/planner_v1.md"
+        workspaceSlug="loregarden"
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Open agent_context/agents/1_planner/planner_v1.md in editor",
+      }),
+    );
+    expect(useUiStore.getState().editorWorkspace).toBe("loregarden");
+    expect(useUiStore.getState().editorFilePath).toBe(
+      "agent_context/agents/1_planner/planner_v1.md",
+    );
   });
 
   it("uses the same blue arrow treatment for full and compact links", () => {
@@ -506,6 +544,40 @@ describe("Ticket primitive chrome", () => {
     expect(container.querySelector(".lg-primitive-ticket-children")).toBeNull();
   });
 
+  it("renders open-work list rows with the v6 ticket treatment", async () => {
+    mockedApi.ticket.mockResolvedValue(gateTicket({ title: "Open work parent" }));
+    mockedApi.tickets.mockResolvedValue([
+      gateTicket({
+        id: "child-1",
+        external_id: "43-hive-upgrade",
+        title: "Hive Workplace Upgrade",
+        priority: 1,
+      }),
+    ]);
+
+    const { container } = wrap(
+      <TicketListPrimitive
+        part={{
+          primitive: "ticket_list",
+          parent_ticket_id: "gate-ticket-1",
+          title: "Open work",
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Hive Workplace Upgrade")).toBeInTheDocument();
+    });
+    const row = container.querySelector(".tree-row--v6");
+    expect(row).not.toBeNull();
+    expect(row?.querySelector(".lg-primitive-ticket-prio")?.textContent).toBe("P1");
+    expect(row?.textContent).toContain("43-hive-upgrade");
+    expect(row?.textContent).toContain("In Progress");
+    expect(row?.textContent).toContain("Quality Gate");
+    expect(row?.textContent).toContain("Awaiting");
+    expect(screen.getByRole("button", { name: "Open Hive Workplace Upgrade" })).toBeInTheDocument();
+  });
+
   it("links to the ticket from the header and runs it from the actions row", async () => {
     mockedApi.ticket.mockResolvedValue(gateTicket({ workflow_stage_status: "pending" }));
 
@@ -514,7 +586,7 @@ describe("Ticket primitive chrome", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Play" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Run" })).toBeEnabled();
     });
     expect(
       container.querySelector(
@@ -537,7 +609,7 @@ describe("Ticket primitive chrome", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
     });
-    expect(screen.queryByRole("button", { name: "Play" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run" })).not.toBeInTheDocument();
     expect(
       container.querySelector(".lg-primitive-card-actions .lg-primitive-run-btn--stop"),
     ).not.toBeNull();
@@ -637,6 +709,98 @@ describe("Thinking and Terminal primitives", () => {
     );
     expect(screen.getByText(/pytest -q/)).toBeInTheDocument();
     expect(screen.getByText("ok")).toBeInTheDocument();
+  });
+});
+
+describe("Edit primitive", () => {
+  it("shows an active diff with local comments that send to chat", async () => {
+    const onSubmit = jest.fn();
+    wrap(
+      <EditPrimitive
+        part={{
+          primitive: "edit",
+          title: "Tighten Planner scope",
+          path: "agent_context/agents/1_planner/planner_v1.md",
+          language: "markdown",
+          original: "You write plans.\n",
+          content: "You write plans.\nYou never write code.\n",
+        }}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    expect(screen.getByText(/Proposed edit/)).toBeInTheDocument();
+    expect(screen.getByText("You never write code.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByTitle("Add inline review comment")[0]);
+    fireEvent.change(screen.getByPlaceholderText("Leave an inline code review comment…"), {
+      target: { value: "Make this a hard stop." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Send comments to chat" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send to chat" }));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalled();
+    });
+    const payload = onSubmit.mock.calls[0][0] as string;
+    expect(payload).toContain("## Diff review: Tighten Planner scope");
+    expect(payload).toContain("Make this a hard stop.");
+  });
+
+  it("falls back to a plain editor when no original is supplied", () => {
+    wrap(
+      <EditPrimitive
+        part={{
+          primitive: "edit",
+          title: "Notes",
+          content: "scratch pad",
+        }}
+      />,
+    );
+    expect(screen.getByTestId("monaco-editor")).toHaveValue("scratch pad");
+    expect(screen.queryByText(/Proposed edit/)).not.toBeInTheDocument();
+  });
+
+  it("opens the file in the editor view, not Agent Studio", () => {
+    useUiStore.setState({
+      editorWorkspace: "",
+      editorFilePath: null,
+      editorContextRoot: ".",
+    });
+    render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <RouterBridgeSync />
+        <QueryClientProvider
+          client={
+            new QueryClient({ defaultOptions: { queries: { retry: false } } })
+          }
+        >
+          <EditPrimitive
+            part={{
+              primitive: "edit",
+              title: "Tighten Planner scope",
+              path: "agent_context/agents/1_planner/planner_v1.md",
+              workspace_slug: "loregarden",
+              target: "agent",
+              target_id: "planner",
+              original: "old\n",
+              content: "new\n",
+            }}
+          />
+        </QueryClientProvider>
+        <PathProbe />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole("button", { name: "Open in Agent Studio" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Open .* in editor/ }));
+    expect(screen.getByTestId("path")).toHaveTextContent("/editor");
+    expect(useUiStore.getState().editorFilePath).toBe(
+      "agent_context/agents/1_planner/planner_v1.md",
+    );
+    expect(useUiStore.getState().editorWorkspace).toBe("loregarden");
   });
 });
 

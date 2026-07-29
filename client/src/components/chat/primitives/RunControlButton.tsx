@@ -29,7 +29,7 @@ function StopIcon() {
 }
 
 export function PlayButton({
-  label = "Play",
+  label = "Run",
   disabled = false,
   onClick,
 }: {

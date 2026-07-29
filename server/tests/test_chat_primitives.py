@@ -6,6 +6,7 @@ import pytest
 from loregarden.models.domain.chat_primitives import (
     BranchHistoryPart,
     CommitPart,
+    EditPart,
     GiphyPart,
     QAPart,
     TextPart,
@@ -105,6 +106,10 @@ def test_parts_to_jsonable_round_trips():
             '{"primitive":"giphy","giphy_id":"ICOgUNjpvO0PC"}',
             GiphyPart,
         ),
+        (
+            '{"primitive":"edit","path":"a.md","original":"old\\n","content":"new\\n","title":"Patch"}',
+            EditPart,
+        ),
     ],
 )
 def test_new_primitive_fences_parse(payload, part_type):
@@ -112,6 +117,10 @@ def test_new_primitive_fences_parse(payload, part_type):
 
     assert len(parts) == 1
     assert isinstance(parts[0], part_type)
+    if isinstance(parts[0], EditPart):
+        assert parts[0].original == "old\n"
+        assert parts[0].content == "new\n"
+        assert parts[0].path == "a.md"
 
 
 def test_resolve_parts_fills_ticket_title(db_session: Session):

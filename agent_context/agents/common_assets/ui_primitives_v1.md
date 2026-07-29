@@ -37,7 +37,7 @@ Rules:
 | `workflow` | `workflow_slug` or `draft` | Workflow graph preview |
 | `gate` | `ticket_id`+`stage_key` or `draft` | Gate preview |
 | `terminal` | `lines` | Read-only command transcript |
-| `edit` | `content`, `target` | Editable text (agent/workflow/gate/text) |
+| `edit` | `content`, optional `original`, `path` | Proposed edit: active diff + inline comments → chat; `path` opens in Editor |
 | `calendar` | `view`, optional `events` | Month/week/day calendar |
 | `calendar_event` | `event` | Single calendar event |
 | `workspace` | `workspace_slug` | Live workspace summary |
@@ -72,6 +72,14 @@ Terminal transcript:
 ````markdown
 ```loregarden
 {"primitive":"terminal","title":"pytest","lines":[{"kind":"command","text":"pytest -q"},{"kind":"stdout","text":"12 passed"}]}
+```
+````
+
+Proposed edit (active diff with inline comments sent to chat):
+
+````markdown
+```loregarden
+{"primitive":"edit","target":"agent","target_id":"planner","path":"agent_context/agents/1_planner/planner_v1.md","language":"markdown","title":"Tighten Planner scope","original":"You write plans.\n","content":"You write plans.\nYou never write code.\n"}
 ```
 ````
 
