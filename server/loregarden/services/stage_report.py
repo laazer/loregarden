@@ -113,13 +113,13 @@ def _build_report(payload: str) -> StageReport | None:
     )
 
 
-# Signatures of an agent run that died from infrastructure — an API/usage-limit
-# or overload error — rather than reporting bad work. The Claude CLI ends its
-# stream with a JSON result carrying `terminal_reason`; `api_error` is its label
-# for a non-recoverable API failure (usage limit included). The text signatures
-# catch the same across adapters and log lines. Kept deliberately narrow: a false
-# "transient" only pauses a real rejection (recoverable on resume), whereas too
-# broad would mask genuine failures as retryable.
+# Signatures of an agent run that died from infrastructure — an API/usage-limit,
+# overload, or CLI credential error — rather than reporting bad work. The Claude
+# CLI ends its stream with a JSON result carrying `terminal_reason`; `api_error`
+# is its label for a non-recoverable API failure (usage limit included). The text
+# signatures catch the same across adapters and log lines. Kept deliberately
+# narrow: a false "transient" only pauses a real rejection (recoverable on
+# resume), whereas too broad would mask genuine failures as retryable.
 _TRANSIENT_TERMINAL_REASONS = ("api_error",)
 _TRANSIENT_SIGNATURES = (
     "usage limit",
@@ -130,11 +130,21 @@ _TRANSIENT_SIGNATURES = (
     "too many requests",
     "service unavailable",
 )
+# A CLI that cannot authenticate never reaches the model, so it has no opinion on
+# the work. Parallel lanes make these common: concurrent `cursor-agent` launches
+# contend for the same macOS keychain item and lose their saved login mid-read.
+_AUTH_FAILURE_SIGNATURES = (
+    "keychain",
+    "errsecduplicateitem",
+    "agent logout",
+    "invalid api key",
+    "not logged in",
+)
 
 
 def is_transient_failure(stdout: str, stderr: str) -> bool:
     """True when a *failed* agent run died from infrastructure (API/usage limit,
-    overload) rather than reporting bad work.
+    overload, or a CLI that could not authenticate) rather than reporting bad work.
 
     Such a failure is not a rework signal: the stage should pause for a
     human/resume, not reroute upstream (which wastes a cycle and, with the rework
@@ -144,6 +154,8 @@ def is_transient_failure(stdout: str, stderr: str) -> bool:
     """
     blob = f"{stdout}\n{stderr}".lower()
     if "terminal_reason" in blob and any(r in blob for r in _TRANSIENT_TERMINAL_REASONS):
+        return True
+    if any(sig in blob for sig in _AUTH_FAILURE_SIGNATURES):
         return True
     return any(sig in blob for sig in _TRANSIENT_SIGNATURES)
 

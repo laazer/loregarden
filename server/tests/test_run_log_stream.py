@@ -180,6 +180,201 @@ def test_run_log_streamer_coalesces_cursor_partial_assistant_tokens():
         stream_mod.engine = original_engine
 
 
+def test_run_log_streamer_coalesces_cursor_thinking_deltas():
+    """Cursor stream-partial-output emits thinking subtype=delta token events.
+
+    These used to fall through format_stream_payload's generic text handler and
+    flush one OUT line per word.
+    """
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    import loregarden.services.run_log_stream as stream_mod
+
+    original_engine = stream_mod.engine
+    stream_mod.engine = engine
+    try:
+        with Session(engine) as session:
+            seed_database(session)
+            ticket = session.exec(select(Ticket).limit(1)).first()
+            assert ticket
+
+            title_chunk = "**Organizing ticket processes**\n\nI"
+            body = "need to start with the MCP ticket. Is there a workflow module already embedded?"
+            streamer = RunLogStreamer(
+                run_id="run_cursor_thinking",
+                ticket_id=ticket.id,
+                run_code="run_cursor_thinking",
+                agent_id="planner",
+                skill_name="plan",
+                partial_output=True,
+            )
+            # First delta includes the thinking title + paragraph break + first word,
+            # matching real cursor-agent stream-json.
+            deltas = [
+                title_chunk,
+                " need",
+                " to",
+                " start",
+                " with",
+                " the",
+                " MCP",
+                " ticket",
+                ".",
+                " Is",
+                " there",
+                " a",
+                " workflow",
+                " module",
+                " already",
+                " embedded",
+                "?",
+            ]
+            for text in deltas:
+                streamer.append_stream_line(
+                    json.dumps({"type": "thinking", "subtype": "delta", "text": text})
+                )
+
+            artifact = session.exec(
+                select(Artifact).where(
+                    Artifact.run_id == "run_cursor_thinking", Artifact.kind == "log"
+                )
+            ).first()
+            assert artifact is not None
+            content = json.loads(artifact.content_json)
+            out_texts = [line["text"] for line in content["lines"] if line["tag"] == "OUT"]
+            assert out_texts == [title_chunk, body]
+            assert not any(text in {"need", "to", "start", "MCP"} for text in out_texts)
+            assert content["live"] is None
+
+            streamer.append_stream_line(json.dumps({"type": "thinking", "subtype": "completed"}))
+            session.refresh(artifact)
+            content = json.loads(artifact.content_json)
+            out_texts = [line["text"] for line in content["lines"] if line["tag"] == "OUT"]
+            assert out_texts == [title_chunk, body]
+            assert content["live"] is None
+    finally:
+        stream_mod.engine = original_engine
+
+
+def test_format_stream_payload_ignores_thinking_deltas():
+    assert format_stream_payload({"type": "thinking", "subtype": "delta", "text": " need"}) is None
+
+
+def test_run_log_streamer_drops_repeated_cursor_message_snapshot():
+    """Cursor closes a partial-output message by re-emitting it whole.
+
+    The token deltas already streamed it, so appending the snapshot printed every
+    assistant message twice.
+    """
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    import loregarden.services.run_log_stream as stream_mod
+
+    original_engine = stream_mod.engine
+    stream_mod.engine = engine
+    try:
+        with Session(engine) as session:
+            seed_database(session)
+            ticket = session.exec(select(Ticket).limit(1)).first()
+            assert ticket
+
+            message = "Plan attached as artifact abc123. No files changed."
+            streamer = RunLogStreamer(
+                run_id="run_snapshot",
+                ticket_id=ticket.id,
+                run_code="run_snapshot",
+                agent_id="planner",
+                skill_name="plan",
+                partial_output=True,
+            )
+
+            def assistant(text: str) -> str:
+                return json.dumps(
+                    {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
+                )
+
+            for index, token in enumerate(message.split(" ")):
+                streamer.append_stream_line(assistant(token if index == 0 else f" {token}"))
+            # cursor's terminal snapshot for the same message
+            streamer.append_stream_line(assistant(message))
+            streamer.append_stream_line(json.dumps({"type": "result", "result": message}))
+
+            artifact = session.exec(
+                select(Artifact).where(Artifact.run_id == "run_snapshot", Artifact.kind == "log")
+            ).first()
+            assert artifact is not None
+            content = json.loads(artifact.content_json)
+            out_text = "".join(line["text"] for line in content["lines"] if line["tag"] == "OUT")
+            assert out_text.count("Plan attached as artifact") == 1
+            assert out_text == message
+    finally:
+        stream_mod.engine = original_engine
+
+
+def test_run_log_streamer_finalize_is_idempotent():
+    """The executor and run_completion both finalize the same run.
+
+    The second call must not append a second terminal marker or repeat stderr.
+    """
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    import loregarden.services.run_log_stream as stream_mod
+
+    original_engine = stream_mod.engine
+    stream_mod.engine = engine
+    try:
+        with Session(engine) as session:
+            seed_database(session)
+            ticket = session.exec(select(Ticket).limit(1)).first()
+            assert ticket
+
+            streamer = RunLogStreamer(
+                run_id="run_finalize",
+                ticket_id=ticket.id,
+                run_code="run_finalize",
+                agent_id="planner",
+                skill_name="plan",
+            )
+            streamer.start("cursor-agent agent -p")
+            streamer.finalize(status=RunStatus.FAILED, stderr="boom")
+
+            second = RunLogStreamer(
+                run_id="run_finalize",
+                ticket_id=ticket.id,
+                run_code="run_finalize",
+                agent_id="planner",
+                skill_name="plan",
+            )
+            second._hydrate()
+            second.finalize(status=RunStatus.FAILED, stderr="boom")
+
+            artifact = session.exec(
+                select(Artifact).where(Artifact.run_id == "run_finalize", Artifact.kind == "log")
+            ).first()
+            assert artifact is not None
+            content = json.loads(artifact.content_json)
+            tags = [line["tag"] for line in content["lines"]]
+            assert tags.count("FAIL") == 1
+            assert [line["text"] for line in content["lines"] if line["tag"] == "ERR"] == ["boom"]
+    finally:
+        stream_mod.engine = original_engine
+
+
 def test_run_log_streamer_persists_live_log():
     engine = create_engine(
         "sqlite://",
