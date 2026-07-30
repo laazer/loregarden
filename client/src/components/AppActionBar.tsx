@@ -7,7 +7,7 @@ import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import {
   COMPOSER_PLACEHOLDER,
   DOCK_QUICK_PROMPT_LIMIT,
-  TRY_ASKING,
+  quickPrompts as promptsFor,
 } from "../lib/dockChatPrompts";
 import { useUiStore, type UtilityDockEdge } from "../state/uiStore";
 import { formatLogExcerpt } from "../utils/logExcerpt";
@@ -24,7 +24,7 @@ const NO_SESSION_PLACEHOLDER = "Open a ticket or a branch to chat about it";
  * a message sent here is the same turn the on-screen panel would have sent.
  */
 export function AppActionBar() {
-  const { session, label, ticketId, pendingApprovals } = useActiveChatSession();
+  const { session, label, ticketId, pendingApprovals, branch } = useActiveChatSession();
   const terminal = useTerminalTarget();
 
   const chatOpen = useUiStore((s) => s.copilotOpen);
@@ -60,7 +60,7 @@ export function AppActionBar() {
   const sendable = Boolean(session) && !session?.loadError;
   const nextEdge: UtilityDockEdge = utilityDockEdge === "bottom" ? "right" : "bottom";
   const quickPrompts = session
-    ? (TRY_ASKING[session.kind] ?? []).slice(0, DOCK_QUICK_PROMPT_LIMIT)
+    ? promptsFor(session.kind, branch).slice(0, DOCK_QUICK_PROMPT_LIMIT)
     : [];
 
   const submit = (content: string) => {

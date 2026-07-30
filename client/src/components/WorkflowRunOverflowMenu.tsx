@@ -1,5 +1,4 @@
 import type { TicketDetail } from "../api/client";
-import { agentsAssembleLabel } from "../lib/workflowHelpers";
 import { isAgentWorkflowTicket } from "../lib/terminalCommands";
 import { OverflowMenu, OverflowMenuItem, OverflowMenuSection } from "./OverflowMenu";
 
@@ -21,23 +20,25 @@ async function copyText(text: string) {
 interface WorkflowRunOverflowMenuProps {
   ticket: TicketDetail;
   orchestrateCommand: string;
-  assemblePending: boolean;
-  onAssemble: () => void;
+  rerunDisabled: boolean;
+  rerunTitle?: string;
+  onRerun: () => void;
   onDelete: () => void;
 }
 
 export function WorkflowRunOverflowMenu({
   ticket,
   orchestrateCommand,
-  assemblePending,
-  onAssemble,
+  rerunDisabled,
+  rerunTitle,
+  onRerun,
   onDelete,
 }: WorkflowRunOverflowMenuProps) {
   return (
     <OverflowMenu label="More workflow actions" align="right">
       <OverflowMenuSection title="Pipeline" />
-      <OverflowMenuItem disabled={assemblePending} onSelect={onAssemble}>
-        {agentsAssembleLabel(ticket, assemblePending)}
+      <OverflowMenuItem disabled={rerunDisabled} title={rerunTitle} onSelect={onRerun}>
+        Re-run current stage
       </OverflowMenuItem>
       {isAgentWorkflowTicket(ticket) ? (
         <>

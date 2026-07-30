@@ -1,6 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 
-import type { Approval } from "../api/client";
+import { api, type Approval } from "../api/client";
 import { ticketIdFromPath } from "../lib/appNavigation";
 import type { ChatSession } from "../lib/chatSession";
 import { useUiStore } from "../state/uiStore";
@@ -28,6 +29,13 @@ export interface ActiveChatSession {
    * with nothing to answer.
    */
   pendingApprovals: Approval[];
+  /**
+   * The branch this conversation's work sits on, when it has one.
+   *
+   * Read so the surfaces can offer branch-only actions — shipping a change, for
+   * one — without each of them working out where the branch comes from.
+   */
+  branch: string | null;
 }
 
 /**
@@ -60,13 +68,33 @@ export function useActiveChatSession(): ActiveChatSession {
     onBranchTriage ? branch : "",
   );
 
-  const none = { session: null, label: "", ticketId: null, pendingApprovals: [] };
+  // Same key the action bar and the dashboard use, so the ticket's branch costs
+  // no extra request.
+  const { data: ticket } = useQuery({
+    queryKey: ["ticket", ticketId],
+    queryFn: () => api.ticket(ticketId as string),
+    enabled: Boolean(ticketId),
+  });
+
+  const none = { session: null, label: "", ticketId: null, pendingApprovals: [], branch: null };
   if (onBranchTriage) {
     return branch
-      ? { session: branchSession, label: `Branch · ${branch}`, ticketId: null, pendingApprovals: [] }
+      ? {
+          session: branchSession,
+          label: `Branch · ${branch}`,
+          ticketId: null,
+          pendingApprovals: [],
+          branch,
+        }
       : none;
   }
   return ticketId
-    ? { session: ticketSession, label: "Ticket triage", ticketId, pendingApprovals: pending }
+    ? {
+        session: ticketSession,
+        label: "Ticket triage",
+        ticketId,
+        pendingApprovals: pending,
+        branch: ticket?.branch || null,
+      }
     : none;
 }

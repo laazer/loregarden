@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { CodeEditor } from "../components/editor/CodeEditor";
 import { EditorFileExplorer } from "../components/editor/EditorFileExplorer";
 import { GitRefSwitcher } from "../components/editor/GitRefSwitcher";
+import { PageTopbar } from "../components/TopbarPageSlot";
 import { useUiStore } from "../state/uiStore";
 
 export function EditorPage() {
@@ -89,49 +90,38 @@ export function EditorPage() {
 
   return (
     <div className="screen-view screen-view--editor editor-page">
-      <header className="page-hero-header editor-topbar">
-        <div className="page-hero-copy">
-          <div className="page-hero-eyebrow">
-            <span>Console</span>
-            <span className="page-hero-eyebrow-dot" aria-hidden />
-            <span className="page-hero-eyebrow-muted">File Editor</span>
-          </div>
-          <h1 className="page-hero-title">File Editor</h1>
-          <p className="page-hero-sub">Browse, view, and edit workspace files</p>
-        </div>
+      <PageTopbar title="File Editor">
+        <label className="topbar-workspace-picker">
+          <span className="topbar-workspace-picker-label">Workspace</span>
+          <select
+            className="btn-secondary topbar-workspace-picker-select"
+            value={workspaceSlug}
+            disabled={!workspaces.data?.length}
+            aria-label="Editor workspace"
+            onChange={(event) => {
+              setEditorWorkspace(event.target.value);
+              setEditorContextRoot(".");
+              setEditorFilePath(null);
+            }}
+          >
+            {(workspaces.data ?? []).map((ws) => (
+              <option key={ws.slug} value={ws.slug}>
+                {ws.name}
+              </option>
+            ))}
+          </select>
+        </label>
 
-        <div className="page-hero-actions">
-          <label className="editor-workspace-picker">
-            <span className="page-hero-field-label">Workspace</span>
-            <select
-              className="btn-secondary page-hero-field-select"
-              value={workspaceSlug}
-              disabled={!workspaces.data?.length}
-              onChange={(event) => {
-                setEditorWorkspace(event.target.value);
-                setEditorContextRoot(".");
-                setEditorFilePath(null);
-              }}
-            >
-              {(workspaces.data ?? []).map((ws) => (
-                <option key={ws.slug} value={ws.slug}>
-                  {ws.name}
-                </option>
-              ))}
-            </select>
-          </label>
+        <GitRefSwitcher
+          workspaceSlug={workspaceSlug}
+          refs={refs.data}
+          contextRoot={contextRoot}
+          isLoading={refs.isLoading}
+          disabled={!workspaceSlug || !activeWorkspace?.repo_exists}
+        />
 
-          <GitRefSwitcher
-            workspaceSlug={workspaceSlug}
-            refs={refs.data}
-            contextRoot={contextRoot}
-            isLoading={refs.isLoading}
-            disabled={!workspaceSlug || !activeWorkspace?.repo_exists}
-          />
-
-          {saveMessage ? <span className="editor-save-status">{saveMessage}</span> : null}
-        </div>
-      </header>
+        {saveMessage ? <span className="editor-save-status">{saveMessage}</span> : null}
+      </PageTopbar>
 
       <div className="editor-layout">
         <aside className="editor-sidebar">

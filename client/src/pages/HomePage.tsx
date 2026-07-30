@@ -59,11 +59,6 @@ export function HomePage() {
       }),
     refetchInterval: 15_000,
   });
-  const workflowsQ = useQuery({
-    queryKey: ["home-workflows"],
-    queryFn: api.studioWorkflows,
-    refetchInterval: 60_000,
-  });
   const runsQ = useQuery({
     queryKey: ["home-runs"],
     queryFn: () => api.runs(),
@@ -81,9 +76,6 @@ export function HomePage() {
   const inProgress = tickets.filter((t) => t.state === "in_progress");
   const blocked = tickets.filter((t) => t.state === "blocked");
   const ticketsLoading = ticketsQ.isLoading || (ticketsQ.isFetching && !ticketsQ.data);
-  const workflows = workflowsQ.data ?? [];
-  const featuredWorkflows = workflows.slice(0, 6);
-  const publishedCount = workflows.filter((w) => Boolean(w.published_template_id)).length;
   const activity = (runsQ.data ?? []).slice(0, 8);
 
   const summaryLine = useMemo(() => {
@@ -169,28 +161,6 @@ export function HomePage() {
             >
               <span className="home-row-title">{a.title || a.tool_name || "Approval"}</span>
               <span className="home-row-meta">{a.ticket_external_id || a.kind}</span>
-            </button>
-          ))}
-        </HomeCard>
-
-        <HomeCard
-          title="Workflows"
-          count={publishedCount || workflows.length}
-          empty="No studio workflows yet"
-          actionLabel="Open Studios"
-          onAction={() => navigate("/studio/workflows")}
-        >
-          {featuredWorkflows.slice(0, 4).map((w) => (
-            <button
-              key={w.slug}
-              type="button"
-              className="home-row"
-              onClick={() => navigate(`/studio/workflows/${encodeURIComponent(w.slug)}`)}
-            >
-              <span className="home-row-title">{w.name || w.slug}</span>
-              <span className="home-row-meta">
-                {w.published_template_id ? "published" : "draft"}
-              </span>
             </button>
           ))}
         </HomeCard>
