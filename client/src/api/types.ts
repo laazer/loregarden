@@ -1,6 +1,8 @@
 // Shared API type definitions for the Loregarden client.
 // Split out of client.ts so the module boundary separates data shapes from calls.
 
+import type { ChatPart } from "../components/chat/primitives/types";
+
 export type TicketState = "backlog" | "in_progress" | "blocked" | "done" | "wont_do";
 export type StageStatus = "pending" | "running" | "blocked" | "awaiting" | "done" | "wont_do";
 export type WorkItemType = "milestone" | "feature" | "capability" | "task" | "bug";
@@ -546,7 +548,30 @@ export interface TriageMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  /** Resolved at write time and stored, so cards survive a reload. */
+  parts?: ChatPart[];
   created_at: string;
+}
+
+/** One Home Baxter conversation, as the archive lists it. */
+export interface BaxterChatSessionSummary {
+  id: string;
+  title: string;
+  message_count: number;
+  preview: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BaxterChatSnapshot {
+  id: string;
+  workspace_id: string;
+  title: string;
+  messages: TriageMessage[];
+  run_status: TriageRunStatus;
+  active_turn_id: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export type TriageRunStatus = "idle" | "running" | "awaiting_input";
@@ -831,6 +856,8 @@ export interface TicketStudioMessage {
   role: string;
   content: string;
   display_content?: string;
+  /** Resolved at write time and stored, so cards survive a reload. */
+  parts?: ChatPart[];
   created_at: string;
 }
 
@@ -851,6 +878,9 @@ export interface TicketStudioSession {
   runtime: WorkspaceRuntimeSettings;
   is_preview: boolean;
   imported_tickets: ImportedTicket[];
+  /** Server-derived, so a reload mid-turn still shows the scoper working. */
+  run_status: TriageRunStatus;
+  active_turn_id: string | null;
   created_at: string;
   updated_at: string;
 }

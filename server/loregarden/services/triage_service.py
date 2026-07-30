@@ -19,6 +19,7 @@ from loregarden.models.domain import (
     WorkspaceRuntimeUpdate,
 )
 from loregarden.services.approval_views import approval_to_view
+from loregarden.services.chat_primitives import load_parts_json, parts_json_for_reply
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
     run_cli_agent_turn,
@@ -141,6 +142,7 @@ def triage_snapshot(session: Session, ticket: Ticket) -> dict:
                 "id": msg.id,
                 "role": msg.role,
                 "content": msg.content,
+                "parts": load_parts_json(msg.parts_json),
                 "created_at": msg.created_at.isoformat(),
             }
             for msg in messages
@@ -169,7 +171,12 @@ def send_triage_message(session: Session, ticket: Ticket, content: str) -> dict:
     except Exception as exc:
         reply = format_agent_unavailable(TRIAGE_AGENT_NAME, exc)
 
-    assistant_message = TriageMessage(ticket_id=ticket.id, role="assistant", content=reply)
+    assistant_message = TriageMessage(
+        ticket_id=ticket.id,
+        role="assistant",
+        content=reply,
+        parts_json=parts_json_for_reply(session, reply, workspace_id=ticket.workspace_id),
+    )
     session.add(assistant_message)
     session.add(ticket)
     session.commit()
@@ -186,6 +193,7 @@ def send_triage_message(session: Session, ticket: Ticket, content: str) -> dict:
             "id": assistant_message.id,
             "role": assistant_message.role,
             "content": assistant_message.content,
+            "parts": load_parts_json(assistant_message.parts_json),
             "created_at": assistant_message.created_at.isoformat(),
         },
     }

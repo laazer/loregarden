@@ -6,12 +6,45 @@ from loregarden.models.domain import (
     TicketStudioMessageCreate,
     TicketStudioSessionCreate,
     TicketStudioSessionUpdate,
+    TicketStudioSessionView,
     WorkspaceRuntimeUpdate,
 )
-from loregarden.services.ticket_studio_service import TicketStudioService
+from loregarden.services.ticket_studio_run_service import schedule_studio_turn
+from loregarden.services.ticket_studio_service import (
+    TicketStudioConflictError,
+    TicketStudioService,
+)
+from pydantic import BaseModel
 from sqlmodel import Session
 
 router = APIRouter(prefix="/ticket-studio", tags=["ticket-studio"])
+
+
+class TicketStudioClarifyRequest(BaseModel):
+    """``auto_scope`` bootstraps a new session: generate the breakdown straight
+    away when the scoper has nothing to ask."""
+
+    auto_scope: bool = False
+
+
+def _accept_turn(session: Session, view: TicketStudioSessionView) -> dict:
+    """Queue the turn the caller just started and return the session as it stands.
+
+    The reply lands on the pending row and reaches the panel by polling, so a
+    dropped connection costs the response, not the scoping work.
+
+    The session is re-read after scheduling rather than returned as captured:
+    normally that is the same running view, but it is the settled one wherever
+    turns run inline (``LOREGARDEN_SYNC_RUNS``), and a caller should never be
+    handed a view the server has already moved past.
+    """
+    if not view.active_turn_id:
+        return view.model_dump(mode="json")
+    schedule_studio_turn(view.active_turn_id)
+    # The turn commits on its own session, so this one must drop what it cached.
+    session.expire_all()
+    current = TicketStudioService(session).get_session(view.id)
+    return (current or view).model_dump(mode="json")
 
 
 @router.get("/sessions")
@@ -93,66 +126,72 @@ def update_ticket_studio_draft(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/sessions/{session_id}/messages")
+@router.post("/sessions/{session_id}/messages", status_code=202)
 def send_ticket_studio_message(
     session_id: str,
     body: TicketStudioMessageCreate,
     session: Session = Depends(get_session),
 ) -> dict:
     try:
-        return (
-            TicketStudioService(session)
-            .send_message(session_id, body.content)
-            .model_dump(mode="json")
+        return _accept_turn(
+            session, TicketStudioService(session).send_message(session_id, body.content)
         )
+    except TicketStudioConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/sessions/{session_id}/clarify")
+@router.post("/sessions/{session_id}/clarify", status_code=202)
 def request_ticket_studio_clarifications(
-    session_id: str, session: Session = Depends(get_session)
+    session_id: str,
+    body: TicketStudioClarifyRequest | None = None,
+    session: Session = Depends(get_session),
 ) -> dict:
     try:
-        return (
-            TicketStudioService(session).request_clarifications(session_id).model_dump(mode="json")
+        return _accept_turn(
+            session,
+            TicketStudioService(session).request_clarifications(
+                session_id, auto_scope=bool(body and body.auto_scope)
+            ),
         )
+    except TicketStudioConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/sessions/{session_id}/clarifications")
+@router.post("/sessions/{session_id}/clarifications", status_code=202)
 def request_ticket_studio_clarifications_alt(
-    session_id: str, session: Session = Depends(get_session)
+    session_id: str,
+    body: TicketStudioClarifyRequest | None = None,
+    session: Session = Depends(get_session),
 ) -> dict:
-    try:
-        return (
-            TicketStudioService(session).request_clarifications(session_id).model_dump(mode="json")
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return request_ticket_studio_clarifications(session_id, body, session)
 
 
-@router.patch("/sessions/{session_id}/clarifications")
+@router.patch("/sessions/{session_id}/clarifications", status_code=202)
 def save_ticket_studio_clarifications(
     session_id: str,
     body: TicketStudioClarificationsUpdate,
     session: Session = Depends(get_session),
 ) -> dict:
     try:
-        return (
-            TicketStudioService(session)
-            .save_clarifications(session_id, body.answers)
-            .model_dump(mode="json")
+        return _accept_turn(
+            session, TicketStudioService(session).save_clarifications(session_id, body.answers)
         )
+    except TicketStudioConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/sessions/{session_id}/scope")
+@router.post("/sessions/{session_id}/scope", status_code=202)
 def generate_ticket_studio_scope(session_id: str, session: Session = Depends(get_session)) -> dict:
     try:
-        return TicketStudioService(session).generate_scope(session_id).model_dump(mode="json")
+        return _accept_turn(session, TicketStudioService(session).generate_scope(session_id))
+    except TicketStudioConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

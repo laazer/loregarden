@@ -1,6 +1,10 @@
 import type { ChatMessageView } from "../components/chat/chatUtils";
 
-export type ChatSessionKind = "ticket-triage" | "branch-triage" | "ticket-studio";
+export type ChatSessionKind =
+  | "ticket-triage"
+  | "branch-triage"
+  | "ticket-studio"
+  | "baxter-home";
 
 /**
  * One conversation, however it is transported.

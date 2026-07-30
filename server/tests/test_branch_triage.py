@@ -559,7 +559,11 @@ def test_branch_chat_messages(client: TestClient, triage_repo, db_session: Sessi
 
     assert empty.json()["run_status"] == "idle"
 
-    monkeypatch.setenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", "Checkout main and delete this branch.")
+    monkeypatch.setenv(
+        "LOREGARDEN_TRIAGE_STUB_RESPONSE",
+        "Checkout main and delete this branch.\n"
+        '```loregarden\n{"primitive":"thinking","content":"weighing it"}\n```\n',
+    )
     sent = client.post(
         "/api/workspaces/loregarden/branch-triage/chat/messages",
         params={"branch": "feature/chat"},
@@ -579,6 +583,8 @@ def test_branch_chat_messages(client: TestClient, triage_repo, db_session: Sessi
     assert len(body["messages"]) == 2
     assert body["run_status"] == "idle"
     assert "Checkout main and delete this branch." in body["messages"][-1]["content"]
+    # Parts are stored with the turn, so the card survives a reload.
+    assert any(part.get("primitive") == "thinking" for part in body["messages"][-1]["parts"])
 
 
 def test_branch_chat_send_does_not_run_the_turn_on_the_request_thread(

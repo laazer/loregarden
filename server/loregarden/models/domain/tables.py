@@ -412,6 +412,8 @@ class TriageMessage(SQLModel, table=True):
     role: str = Field(index=True)  # user | assistant | system
     content: str = ""
     run_id: str | None = Field(default=None, foreign_key="agent_runs.id")
+    # Ordered ChatPart JSON (see chat_primitives). Empty when the turn is plain text.
+    parts_json: str = "[]"
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -610,6 +612,38 @@ class BranchTriageMessage(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class BaxterChatSession(SQLModel, table=True):
+    """One Home Baxter conversation. Many per workspace, listed in the archive."""
+
+    __tablename__ = "baxter_chat_sessions"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    # Derived from the first operator message unless the operator renames it.
+    title: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+    # Ordering key for the archive: bumped by every turn, not by a rename.
+    updated_at: datetime = Field(default_factory=utcnow, index=True)
+
+
+class BaxterChatMessage(SQLModel, table=True):
+    """Home Baxter chat message, persisted so a reload does not lose the thread."""
+
+    __tablename__ = "baxter_chat_messages"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    session_id: str = Field(foreign_key="baxter_chat_sessions.id", index=True)
+    role: str = Field(index=True)  # user | assistant | system
+    content: str = ""
+    # pending | complete | failed, as on BranchTriageMessage: the assistant row is
+    # written pending before the turn runs, so an interrupted turn is recoverable
+    # from the database rather than lost with the request.
+    status: str = Field(default="complete", index=True)
+    # Ordered ChatPart JSON (see chat_primitives). Empty when the turn is plain text.
+    parts_json: str = "[]"
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class TicketStudioSession(SQLModel, table=True):
     __tablename__ = "ticket_studio_sessions"
 
@@ -642,6 +676,12 @@ class TicketStudioMessage(SQLModel, table=True):
     session_id: str = Field(foreign_key="ticket_studio_sessions.id", index=True)
     role: str = Field(index=True)  # user | assistant | system
     content: str = ""
+    # pending | complete | failed, as on BranchTriageMessage and BaxterChatMessage.
+    status: str = Field(default="complete", index=True)
+    # Which scoper turn this is: chat | clarify | bootstrap_clarify | scope. It
+    # selects the prompt AND how the reply is applied to the session, so the
+    # background worker can finish a turn it did not start.
+    turn_mode: str = ""
     # Ordered ChatPart JSON (see chat_primitives). Empty when the turn is plain text.
     parts_json: str = "[]"
     created_at: datetime = Field(default_factory=utcnow)

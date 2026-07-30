@@ -434,6 +434,57 @@
   min-height: 0;
   overflow: auto;
   padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+/* A saved thread: no leading mark, and the delete control rides alongside. */
+.baxter-history-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.baxter-history-row .baxter-history-entry {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.baxter-history-row--active .baxter-history-entry {
+  border-color: color-mix(in srgb, var(--ac) 55%, var(--bd2));
+  background: linear-gradient(155deg, var(--bg3), var(--bg2));
+}
+
+.baxter-history-entry-meta {
+  color: var(--txl);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+}
+
+.baxter-history-delete {
+  flex: none;
+  width: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--bd);
+  border-radius: 11px;
+  background: var(--bg1);
+  color: var(--txl);
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease;
+}
+
+.baxter-history-delete:hover {
+  color: var(--dg, #e2555f);
+  border-color: color-mix(in srgb, var(--dg, #e2555f) 45%, var(--bd));
+}
+
+.baxter-history-list .baxter-history-note {
+  border-top: none;
+  padding: 6px 6px 10px;
 }
 
 .baxter-history-entry {
@@ -589,4 +640,16 @@
   .baxter-history-scrim {
     animation: none;
   }
+}
+
+.baxter-chat-error {
+  margin: 10px auto 0;
+  max-width: var(--baxter-chat-width, 760px);
+  padding: 9px 13px;
+  border: 1px solid color-mix(in srgb, var(--dg, #e2555f) 45%, var(--bd));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--dg, #e2555f) 10%, var(--bg1));
+  color: var(--tx);
+  font-size: 12px;
+  line-height: 1.45;
 }

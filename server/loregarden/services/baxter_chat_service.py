@@ -1,10 +1,27 @@
-"""Home-scoped Baxter chat — one-shot CLI/LM Studio turns on the workspace runtime."""
+"""Home-scoped Baxter chat — persisted conversations on the workspace runtime.
+
+Threads live in ``baxter_chat_sessions`` / ``baxter_chat_messages`` so a reload,
+a navigation, or a server restart does not lose the conversation, and so the
+archive has real threads to list. History is read from the database rather than
+replayed by the client: a client-supplied history is unverifiable and drifts
+from what the thread actually contains.
+"""
 
 from __future__ import annotations
 
 from dataclasses import replace
 
-from loregarden.models.domain import Approval, ApprovalStatus, Ticket, TicketState, Workspace
+from loregarden.models.domain import (
+    Approval,
+    ApprovalStatus,
+    BaxterChatMessage,
+    BaxterChatSession,
+    Ticket,
+    TicketState,
+    Workspace,
+)
+from loregarden.models.domain.enums import utcnow
+from loregarden.services.chat_primitives import load_parts_json
 from loregarden.services.cli_agent_runner import run_cli_agent_turn, stub_response
 from loregarden.services.triage_service import TRIAGE_CLI_PROFILE
 from sqlmodel import Session, col, select
@@ -19,6 +36,8 @@ BAXTER_CHAT_CLI_PROFILE = replace(
 MAX_HISTORY = 12
 MAX_MESSAGE_CHARS = 2000
 MAX_SNAPSHOT_ROWS = 8
+MAX_TITLE_CHARS = 60
+UNTITLED_SESSION_TITLE = "New chat"
 
 DEFAULT_BAXTER_CHAT_USER_PROMPT = (
     "You are Baxter, the Home assistant for Loregarden. Answer from the live "
@@ -62,10 +81,154 @@ def _active_tickets(session: Session, workspace_id: str) -> list[Ticket]:
     )
 
 
+def derive_session_title(text: str) -> str:
+    """A thread's name, taken from its opening message.
+
+    The archive needs something to show the moment a thread exists, and asking
+    the operator to name a conversation before having it is friction no chat
+    product survives. A rename overrides this permanently.
+    """
+    first_line = (text or "").strip().splitlines()[0].strip() if (text or "").strip() else ""
+    if not first_line:
+        return UNTITLED_SESSION_TITLE
+    if len(first_line) <= MAX_TITLE_CHARS:
+        return first_line
+    return first_line[: MAX_TITLE_CHARS - 1].rstrip() + "…"
+
+
+def list_chat_sessions(
+    session: Session, workspace_id: str, *, limit: int = 50
+) -> list[BaxterChatSession]:
+    return list(
+        session.exec(
+            select(BaxterChatSession)
+            .where(BaxterChatSession.workspace_id == workspace_id)
+            .order_by(col(BaxterChatSession.updated_at).desc())
+            .limit(limit)
+        ).all()
+    )
+
+
+def create_chat_session(
+    session: Session, workspace_id: str, *, title: str = ""
+) -> BaxterChatSession:
+    row = BaxterChatSession(
+        workspace_id=workspace_id,
+        title=(title or "").strip() or UNTITLED_SESSION_TITLE,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def get_chat_session(
+    session: Session, workspace_id: str, session_id: str
+) -> BaxterChatSession | None:
+    """Scoped by workspace on purpose: an id from another workspace is a 404, not a read."""
+    row = session.get(BaxterChatSession, session_id)
+    if not row or row.workspace_id != workspace_id:
+        return None
+    return row
+
+
+def delete_chat_session(session: Session, chat_session: BaxterChatSession) -> None:
+    for message in session.exec(
+        select(BaxterChatMessage).where(BaxterChatMessage.session_id == chat_session.id)
+    ).all():
+        session.delete(message)
+    session.delete(chat_session)
+    session.commit()
+
+
+def touch_chat_session(session: Session, chat_session: BaxterChatSession) -> None:
+    """Bump the archive's ordering key. Called by turns, never by a rename."""
+    chat_session.updated_at = utcnow()
+    session.add(chat_session)
+    session.commit()
+
+
+def list_chat_messages(
+    session: Session, session_id: str, *, limit: int = 500
+) -> list[BaxterChatMessage]:
+    """Settled messages only — a pending assistant row has no content yet and is
+    surfaced through ``baxter_chat_run_status`` instead."""
+    return list(
+        session.exec(
+            select(BaxterChatMessage)
+            .where(
+                BaxterChatMessage.session_id == session_id,
+                BaxterChatMessage.status != "pending",
+            )
+            .order_by(col(BaxterChatMessage.created_at).asc())
+            .limit(limit)
+        ).all()
+    )
+
+
+def latest_pending_turn(session: Session, session_id: str) -> BaxterChatMessage | None:
+    return session.exec(
+        select(BaxterChatMessage)
+        .where(
+            BaxterChatMessage.session_id == session_id,
+            BaxterChatMessage.status == "pending",
+        )
+        .order_by(col(BaxterChatMessage.created_at).desc())
+        .limit(1)
+    ).first()
+
+
+def baxter_chat_run_status(session: Session, session_id: str) -> tuple[str, str | None]:
+    """Return (run_status, active_turn_id) for the thread's latest turn."""
+    pending = latest_pending_turn(session, session_id)
+    if pending:
+        return "running", pending.id
+    return "idle", None
+
+
+def _message_view(message: BaxterChatMessage) -> dict:
+    return {
+        "id": message.id,
+        "role": message.role,
+        "content": message.content,
+        "parts": load_parts_json(message.parts_json),
+        "created_at": message.created_at.isoformat(),
+    }
+
+
+def chat_session_summary(session: Session, chat_session: BaxterChatSession) -> dict:
+    """One archive row: enough to recognise a thread without loading it."""
+    messages = list_chat_messages(session, chat_session.id)
+    last = messages[-1] if messages else None
+    return {
+        "id": chat_session.id,
+        "title": chat_session.title or UNTITLED_SESSION_TITLE,
+        "message_count": len(messages),
+        "preview": _clip(last.content, 160) if last else "",
+        "created_at": chat_session.created_at.isoformat(),
+        "updated_at": chat_session.updated_at.isoformat(),
+    }
+
+
+def chat_session_snapshot(session: Session, chat_session: BaxterChatSession) -> dict:
+    messages = list_chat_messages(session, chat_session.id)
+    run_status, active_turn_id = baxter_chat_run_status(session, chat_session.id)
+    return {
+        "id": chat_session.id,
+        "workspace_id": chat_session.workspace_id,
+        "title": chat_session.title or UNTITLED_SESSION_TITLE,
+        "messages": [_message_view(message) for message in messages],
+        "run_status": run_status,
+        "active_turn_id": active_turn_id,
+        "created_at": chat_session.created_at.isoformat(),
+        "updated_at": chat_session.updated_at.isoformat(),
+    }
+
+
 def build_baxter_chat_prompt(
     *,
     workspace: Workspace,
-    history: list[dict[str, str]],
+    history: list[BaxterChatMessage],
     latest_user_message: str,
     approvals: list[Approval],
     tickets: list[Ticket],
@@ -98,10 +261,8 @@ def build_baxter_chat_prompt(
     if trimmed:
         sections.extend(["", "## Conversation"])
         for message in trimmed:
-            role = (message.get("role") or "user").strip().lower()
-            if role not in {"user", "assistant"}:
-                role = "user"
-            sections.append(f"{role}: {_clip(message.get('content') or '')}")
+            role = message.role if message.role in {"user", "assistant"} else "user"
+            sections.append(f"{role}: {_clip(message.content)}")
 
     sections.extend(
         [
@@ -128,7 +289,7 @@ def invoke_baxter_chat_model(
     workspace: Workspace,
     *,
     content: str,
-    history: list[dict[str, str]] | None = None,
+    history: list[BaxterChatMessage] | None = None,
 ) -> str:
     """Run one Home chat turn against the workspace's current CLI/model runtime."""
     message = (content or "").strip()

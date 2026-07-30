@@ -20,6 +20,7 @@ from loregarden.services.branch_triage_chat_service import (
     invoke_branch_triage_model,
     latest_pending_turn,
 )
+from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, parts_json_for_reply
 from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.triage_service import TRIAGE_AGENT_NAME
 from sqlmodel import Session, select
@@ -76,7 +77,12 @@ def start_branch_triage_run(
 
 
 def _settle(
-    session: Session, assistant_id: str, *, content: str, status: str
+    session: Session,
+    assistant_id: str,
+    *,
+    content: str,
+    status: str,
+    parts_json: str = EMPTY_PARTS_JSON,
 ) -> BranchTriageMessage | None:
     assistant = session.get(BranchTriageMessage, assistant_id)
     if not assistant:
@@ -84,6 +90,7 @@ def _settle(
         return None
     assistant.content = content
     assistant.status = status
+    assistant.parts_json = parts_json
     session.add(assistant)
     session.commit()
     return assistant
@@ -111,7 +118,13 @@ def execute_branch_triage_turn_background(assistant_id: str) -> None:
             latest_user_message = _latest_user_content(session, workspace.id, branch)
             try:
                 reply = invoke_branch_triage_model(session, workspace, branch, latest_user_message)
-                _settle(session, assistant_id, content=reply, status="complete")
+                _settle(
+                    session,
+                    assistant_id,
+                    content=reply,
+                    status="complete",
+                    parts_json=parts_json_for_reply(session, reply, workspace_id=workspace.id),
+                )
             except Exception as exc:
                 logger.exception("Branch triage turn failed: %s", assistant_id)
                 _settle(

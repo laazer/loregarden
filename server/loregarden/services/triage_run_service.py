@@ -21,6 +21,7 @@ from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.registry import get_agent
 from loregarden.db.session import engine
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, TriageMessage, Workspace
+from loregarden.services.chat_primitives import parts_json_for_reply
 from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.cli_output import extract_triage_reply
 from loregarden.services.cli_settings import (
@@ -205,10 +206,16 @@ class TriageTurnExecutor:
             run.stderr = stderr[:4000]
             run.finished_at = datetime.now(timezone.utc)
             self.session.add(run)
+        content = reply or (stderr[:2000] if status == RunStatus.FAILED else "(no reply)")
         assistant_message = TriageMessage(
             ticket_id=ticket.id,
             role="assistant",
-            content=reply or (stderr[:2000] if status == RunStatus.FAILED else "(no reply)"),
+            content=content,
+            # Resolved at write time so the thread renders its cards after a
+            # reload instead of degrading to the raw fenced JSON.
+            parts_json=parts_json_for_reply(
+                self.session, content, workspace_id=ticket.workspace_id
+            ),
             run_id=run.id if run else None,
         )
         self.session.add(assistant_message)

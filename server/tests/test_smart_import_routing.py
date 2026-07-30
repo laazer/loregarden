@@ -310,7 +310,8 @@ class TestPreviewStateRecognition:
         clarify_res = client.post(
             f"/api/ticket-studio/sessions/{session_id}/clarifications",
         )
-        assert clarify_res.status_code == 200
+        # 202: the scoper turn is queued, not run on this request.
+        assert clarify_res.status_code == 202
         updated = clarify_res.json()
         assert updated.get("is_preview") is True
 
