@@ -7,10 +7,12 @@ from loregarden.models.domain import (
     RunStatus,
     StageStatus,
     Ticket,
+    TicketState,
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.run_service import (
     INTERRUPTED_RUN_MESSAGE,
     STRANDED_STAGE_MESSAGE,
@@ -26,6 +28,7 @@ from loregarden.services.triage_run_service import (
     start_triage_run,
 )
 from loregarden.services.triage_service import list_triage_messages
+from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session, select
 
 
@@ -189,6 +192,105 @@ def test_recover_interrupted_stage_clears_stale_block(isolated_db):
         session.refresh(ticket)
         assert ticket.workflow_stage_status == StageStatus.PENDING
         assert ticket.blocking_issues == ""
+
+
+def test_recover_interrupted_stage_clears_stranded_block(isolated_db):
+    with Session(isolated_db) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        orch = OrchestrationService(session)
+        run = orch.start_run(ticket, stage_key="testing")
+        run.status = RunStatus.FAILED
+        session.add(run)
+        session.commit()
+        settle_stranded_stages(session, ticket_id=ticket.id)
+        session.refresh(ticket)
+        assert ticket.blocking_issues == STRANDED_STAGE_MESSAGE
+
+        builtin = BuiltinOrchestrator(session)
+        instance, stages = builtin.orch._resolve_stages(ticket)
+        assert builtin._recover_interrupted_stage(ticket, instance, stages) == "testing"
+
+        session.refresh(ticket)
+        assert ticket.workflow_stage_status == StageStatus.PENDING
+        assert ticket.blocking_issues == ""
+
+
+def test_execute_reaches_recovery_for_a_reload_blocked_ticket(isolated_db):
+    with Session(isolated_db) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        run = OrchestrationService(session).start_run(ticket, stage_key="testing")
+        run.status = RunStatus.RUNNING
+        session.add(run)
+        session.commit()
+        fail_interrupted_runs(session, ticket_id=ticket.id)
+        session.refresh(ticket)
+        assert ticket.state == TicketState.BLOCKED
+
+        dispatched: list[str] = []
+
+        def complete_without_a_cli(executor, agent_run, worker_ticket, **_kwargs):
+            dispatched.append(agent_run.stage_key)
+            return executor.orchestration.complete_run(
+                agent_run,
+                status=RunStatus.SUCCEEDED,
+                stdout="recovered",
+            )
+
+        with mock.patch(
+            "loregarden.agents.executors.cli.CliAgentExecutor.execute",
+            complete_without_a_cli,
+        ):
+            BuiltinOrchestrator(session).execute(
+                ticket,
+                OrchestrationProfile(slug="recovery-test"),
+                max_stages=1,
+                stop_at_stage_key="testing",
+            )
+
+        assert dispatched == ["testing"]
+
+
+def test_recovery_targets_the_interrupted_stage_not_an_earlier_block(isolated_db):
+    with Session(isolated_db) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        builtin = BuiltinOrchestrator(session)
+        instance, stages = builtin.orch._resolve_stages(ticket)
+        testing_order = next(stage.order for stage in stages if stage.key == "testing")
+        interrupted_key = next(
+            stage.key for stage in sorted(stages, key=lambda stage: stage.order)
+            if stage.order > testing_order
+        )
+        set_stage_status(ticket, instance, stages, "testing", StageStatus.BLOCKED)
+        session.add(ticket)
+        session.add(instance)
+        session.commit()
+
+        interrupted = OrchestrationService(session).start_run(
+            ticket,
+            stage_key=interrupted_key,
+        )
+        interrupted.status = RunStatus.RUNNING
+        session.add(interrupted)
+        session.commit()
+        fail_interrupted_runs(session, ticket_id=ticket.id, stage_key=interrupted_key)
+        session.refresh(ticket)
+        assert ticket.workflow_stage_key == "testing"
+
+        instance, stages = builtin.orch._resolve_stages(ticket)
+        assert builtin._recover_interrupted_stage(ticket, instance, stages) == interrupted_key
+
+        stage_map = parse_stage_map(instance, stages)
+        assert stage_map["testing"] == StageStatus.BLOCKED
+        assert stage_map[interrupted_key] == StageStatus.PENDING
 
 
 def test_recover_interrupted_stage_ignores_genuine_block(isolated_db):

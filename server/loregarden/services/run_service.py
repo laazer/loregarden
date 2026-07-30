@@ -22,22 +22,16 @@ from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.run_interruption import (
+    INTERRUPTED_RUN_MESSAGE,
+    STRANDED_STAGE_MESSAGE,
+)
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
-
-INTERRUPTED_RUN_MESSAGE = (
-    "Agent run interrupted before completion (server reload or worker stopped). "
-    "Re-run the stage to continue."
-)
-
-STRANDED_STAGE_MESSAGE = (
-    "Stage was left running with no agent run behind it (the run ended before its "
-    "stage was settled). Re-run the stage to continue."
-)
 
 TERMINAL_HANDOFF_COMMAND_PREFIX = "[terminal-handoff]"
 
