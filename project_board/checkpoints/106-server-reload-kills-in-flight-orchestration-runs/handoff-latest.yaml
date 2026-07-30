@@ -1,0 +1,25 @@
+handoff:
+  schema_version: '1.0'
+  ticket_id: 106-server-reload-kills-in-flight-orchestration-runs
+  from_agent: ticket_scoper
+  to_agent: planner
+  validated_at: '2026-07-30T00:35:39Z'
+  required_items_met: 2
+  total_required_items: 2
+  checklist:
+  - item_key: scope_complete
+    item: Ticket scope is complete and actionable
+    required: true
+    status: complete
+    evidence: 'Single backend lifecycle bug: reconcile orphaned agent/orchestration records, automatically
+      continue the interrupted stage, preserve completed work, and defer managed reloads while work is
+      active.'
+    evidence_type: attestation
+  - item_key: acceptance_criteria_complete
+    item: Acceptance criteria are testable and complete
+    required: true
+    status: complete
+    evidence: Tests must prove automatic same-stage continuation after startup, idempotency, parallel-member
+      preservation, genuine-block exclusion, and recovery of stranded planning tickets without manual
+      action.
+    evidence_type: attestation

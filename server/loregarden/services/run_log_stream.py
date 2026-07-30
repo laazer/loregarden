@@ -68,6 +68,8 @@ class RunLogStreamer:
     MAX_LINE_CHARS = 32000
     MAX_LIVE_CHARS = 64000
     CHUNK_FLUSH_CHARS = 16000
+    PARTIAL_FLUSH_CHARS = 500
+    PARTIAL_SENTENCE_MIN_CHARS = 80
 
     def __init__(
         self,
@@ -77,16 +79,19 @@ class RunLogStreamer:
         run_code: str,
         agent_id: str,
         skill_name: str,
+        partial_output: bool = False,
     ) -> None:
         self.run_id = run_id
         self.ticket_id = ticket_id
         self.run_code = run_code
         self.agent_id = agent_id
         self.skill_name = skill_name
+        self.partial_output = partial_output
         self.artifact_id: str | None = None
         self._lines: list[dict[str, str]] = []
         self._live = ""
         self._stream_buffer = ""
+        self._partial_output_text = ""
         self._last_persist = 0.0
 
     def _timestamp(self) -> str:
@@ -151,6 +156,25 @@ class RunLogStreamer:
     def _maybe_chunk_flush(self, *, force: bool = False) -> None:
         if len(self._stream_buffer) >= self.CHUNK_FLUSH_CHARS:
             self._flush_stream_buffer(force=force, keep_remainder=True)
+
+    def _append_partial_output(self, text: str) -> None:
+        """Keep token deltas live, promoting only readable chunks to history."""
+        self._stream_buffer += text
+        self._partial_output_text += text
+        stripped = self._stream_buffer.rstrip()
+        sentence_complete = len(stripped) >= self.PARTIAL_SENTENCE_MIN_CHARS and stripped.endswith(
+            (".", "!", "?", ":")
+        )
+        paragraph_complete = "\n\n" in self._stream_buffer
+        if (
+            sentence_complete
+            or paragraph_complete
+            or len(self._stream_buffer) >= self.PARTIAL_FLUSH_CHARS
+        ):
+            self._flush_stream_buffer(force=True)
+            self.set_live("")
+            return
+        self._update_live_from_buffer()
 
     def _update_live_from_buffer(self) -> None:
         if not self._stream_buffer:
@@ -218,6 +242,9 @@ class RunLogStreamer:
                     if chunk:
                         parts.append(str(chunk))
             if parts:
+                if self.partial_output:
+                    self._append_partial_output("".join(parts))
+                    return
                 self._prefer_stream_text(" ".join(parts))
                 snapshot = self._stream_buffer
                 self._flush_stream_buffer(force=True)
@@ -226,6 +253,13 @@ class RunLogStreamer:
 
         if msg_type == "result":
             result = payload.get("result")
+            if self.partial_output and self._partial_output_text:
+                if isinstance(result, str) and result.startswith(self._partial_output_text):
+                    self._stream_buffer += result[len(self._partial_output_text) :]
+                self._flush_stream_buffer(force=True)
+                self._partial_output_text = ""
+                self.set_live("")
+                return
             if isinstance(result, str) and result.strip():
                 self._prefer_stream_text(result.strip())
                 self._flush_stream_buffer(force=True)
@@ -237,6 +271,10 @@ class RunLogStreamer:
             self._stream_buffer = ""
             self.set_live("")
             return
+
+        if self.partial_output and msg_type in {"tool_use", "tool_result", "tool_call"}:
+            self._flush_stream_buffer(force=True)
+            self.set_live("")
 
         formatted = format_stream_payload(payload)
         if formatted:

@@ -189,6 +189,7 @@ class CliAgentExecutor:
                 run_code=run.run_code,
                 agent_id=run.agent_id,
                 skill_name=run.skill_name,
+                partial_output="--stream-partial-output" in invocation.argv,
             )
             streamer.start(run.command)
             self._maybe_warn_weak_mcp_model(

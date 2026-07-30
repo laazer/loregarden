@@ -1,9 +1,11 @@
 import { useUiStore } from "../state/uiStore";
-import { AppStatusBar } from "./AppStatusBar";
+import { AppActionBar } from "./AppActionBar";
 import { CopilotDock } from "./CopilotDock";
 
 /**
- * Status strip + Copilot dock as one dockable unit (bottom or right).
+ * Chat/terminal panels with the global action bar beneath them, as one dockable
+ * unit (bottom or right). The bar is always present; the panels only mount when
+ * something is open, so the bar is what a collapsed dock looks like.
  */
 export function AppUtilityDock() {
   const edge = useUiStore((s) => s.utilityDockEdge);
@@ -14,8 +16,8 @@ export function AppUtilityDock() {
       className={`app-utility-dock app-utility-dock--${edge}`}
       style={edge === "right" ? { width } : undefined}
     >
-      <AppStatusBar />
       <CopilotDock />
+      <AppActionBar />
     </div>
   );
 }

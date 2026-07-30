@@ -13,7 +13,7 @@ export function RunningLaneTabs({
   if (lanes.length === 0) return null;
 
   return (
-    <div className="studio-subtabs tab-bar-scroll" role="tablist">
+    <div className="studio-subtabs running-lane-tabs" role="tablist">
       {lanes.map((lane, index) => {
         const isSelected = lane.run_id === selectedRunId;
         return (

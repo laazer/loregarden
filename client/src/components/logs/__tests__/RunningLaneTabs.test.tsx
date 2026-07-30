@@ -50,6 +50,20 @@ it("renders exactly one tab per running lane, in the given order", () => {
   expect(tabs[1]).toHaveTextContent("gatekeeper");
 });
 
+it("uses a compact lane-strip class, not tab-bar-scroll (which flex-grows and blanks half the Logs panel)", () => {
+  render(
+    <RunningLaneTabs
+      lanes={[lane({ run_id: "r1", agent_id: "planner" })]}
+      selectedRunId="r1"
+      onSelect={jest.fn()}
+    />,
+  );
+
+  const strip = screen.getByRole("tablist");
+  expect(strip).toHaveClass("running-lane-tabs");
+  expect(strip).not.toHaveClass("tab-bar-scroll");
+});
+
 it("gives the strip role=tablist and each button role=tab with aria-selected reflecting the active lane", () => {
   render(
     <RunningLaneTabs

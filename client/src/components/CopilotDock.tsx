@@ -1,56 +1,27 @@
-import { useState } from "react";
-
 import { useActiveChatSession } from "../hooks/useActiveChatSession";
 import { useApprovalResolution } from "../hooks/useApprovalResolution";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
+import { TRY_ASKING } from "../lib/dockChatPrompts";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useUiStore } from "../state/uiStore";
-import { StudioChatComposer, StudioChatMessages } from "./studio/StudioChat";
+import { StudioChatMessages } from "./studio/StudioChat";
 import { TerminalPanel } from "./TerminalPanel";
 import "./CopilotDock.css";
 
 /**
- * A persistent way into whichever chat the current screen is showing.
+ * The panels the global action bar opens: the turns of whichever chat the screen
+ * owns, and a shell in the workspace it names.
  *
- * Not a new assistant and not an autonomous actor: it binds to the session the
- * screen already owns, so a message sent here is the same turn the panel would
- * have sent, and appears in both.
- *
- * Collapsed it is a single bar; expanded it shows the turns above the composer.
- * It mounts inside AppUtilityDock (global chrome), which is why the binding is
- * resolved from the route rather than handed down by a page.
+ * It binds to the session the screen already owns, so a turn shown here is the
+ * same turn the on-screen panel shows. Composing happens in `AppActionBar`;
+ * this is the thread, not the input.
  */
-/**
- * Openers for the questions this dock is usually opened to ask.
- *
- * Prompt shortcuts, not suggestions: nothing infers them from the ticket, and
- * clicking one only fills the composer. The operator still sends it.
- */
-const COMPOSER_PLACEHOLDER: Record<string, string> = {
-  "ticket-triage": "Message about this ticket…",
-  "branch-triage": "Message about this branch…",
-};
-
-const TRY_ASKING: Record<string, string[]> = {
-  "ticket-triage": [
-    "What is blocking this ticket?",
-    "Summarise what the last run changed",
-    "Why did the last stage fail?",
-  ],
-  "branch-triage": [
-    "What changed on this branch?",
-    "Is this branch safe to delete?",
-    "commit and push",
-  ],
-};
-
 export function CopilotDock() {
   const open = useUiStore((s) => s.copilotOpen);
-  const setOpen = useUiStore((s) => s.setCopilotOpen);
   const height = useUiStore((s) => s.copilotHeight);
   const edge = useUiStore((s) => s.utilityDockEdge);
-  const { session, label, ticketId, pendingApprovals } = useActiveChatSession();
+  const { session, ticketId, pendingApprovals } = useActiveChatSession();
   const resolveApproval = useApprovalResolution(ticketId ?? undefined);
   const terminalOpen = useUiStore((s) => s.terminalOpen);
   const terminal = useTerminalTarget();
@@ -61,167 +32,80 @@ export function CopilotDock() {
   // explicit ask and a workspace to run in.
   const showTerminal = terminalOpen && Boolean(terminal.workspaceSlug);
   const showChat = open && Boolean(session);
-  const expanded = showChat || showTerminal;
   const edgeClass = edge === "right" ? " copilot-dock--edge-right" : " copilot-dock--edge-bottom";
 
-  const [draft, setDraft] = useState("");
-  const [autoApprove, setAutoApprove] = useState(false);
-
-  const send = () => {
-    const content = draft.trim();
-    if (!content || !session) return;
-    // Clear optimistically so the composer is ready for the next message; a
-    // failed send surfaces through session.error rather than by restoring text.
-    setDraft("");
-    void session.send(content, { autoApprove }).catch(() => {});
-  };
+  // Collapsed is the action bar on its own; there is no second bar to draw.
+  if (!showChat && !showTerminal) return null;
 
   const sendQuick = (content: string) => {
     if (!session || session.isBusy || session.loadError) return;
-    setDraft("");
-    setOpen(true);
-    void session.send(content, { autoApprove }).catch(() => {});
+    void session.send(content, { autoApprove: false }).catch(() => {});
   };
-
-  // Nothing on this screen to chat about, and no shell asked for.
-  if (!session && !showTerminal) {
-    return (
-      <div className={`copilot-dock copilot-dock--empty${edgeClass}`}>
-        <span className="copilot-dock-hint">
-          Open a ticket or a branch to chat about it.
-        </span>
-      </div>
-    );
-  }
 
   return (
     <div
-      className={`copilot-dock${edgeClass}${expanded ? " copilot-dock--open" : ""}`}
-      style={expanded && edge === "bottom" ? { height } : undefined}
+      className={`copilot-dock copilot-dock--open${edgeClass}`}
+      style={edge === "bottom" ? { height } : undefined}
     >
-      <div className="copilot-dock-bar">
-        {session ? (
-          <button
-            type="button"
-            className="copilot-dock-toggle"
-            aria-expanded={showChat}
-            aria-label={showChat ? "Collapse copilot" : "Expand copilot"}
-            onClick={() => setOpen(!open)}
-          >
-            <span className="copilot-dock-chevron" aria-hidden>
-              {showChat ? "▾" : "▴"}
-            </span>
-            <span className="copilot-dock-label">{label}</span>
-          </button>
-        ) : (
-          // No conversation here, so the bar names what the shell is attached to.
-          <span className="copilot-dock-label">{terminal.workspaceSlug}</span>
+      <div className="copilot-dock-body">
+        {showChat && session && (
+          <div className="copilot-dock-chat">
+            {/* Above the turns: an agent question arrives as an approval, not a
+                message, so it would otherwise be invisible here. */}
+            <PendingApprovalsSection
+              approvals={pendingApprovals}
+              submittingApprovalId={
+                resolveApproval.isPending ? resolveApproval.variables?.id ?? null : null
+              }
+              submitError={
+                resolveApproval.isError ? formatApprovalResolveError(resolveApproval.error) : null
+              }
+              onApprove={(approval, payload) =>
+                resolveApproval.mutate({ id: approval.id, action: "approve", ...payload })
+              }
+              onReject={(approval, payload) =>
+                resolveApproval.mutate({ id: approval.id, action: "reject", ...payload })
+              }
+            />
+            <StudioChatMessages
+              messages={session.messages}
+              emptyMessage="No messages yet."
+              isThinking={session.isBusy}
+              assistantLabel="Baxter"
+              className="copilot-dock-messages"
+            />
+            {session.messages.length === 0 && (TRY_ASKING[session.kind]?.length ?? 0) > 0 && (
+              <div className="copilot-dock-chips lg-chat-chip-row">
+                <span className="copilot-dock-chips-label">Try asking</span>
+                {TRY_ASKING[session.kind].map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    className="lg-chat-chip copilot-dock-chip"
+                    disabled={session.isBusy || session.loadError}
+                    onClick={() => sendQuick(prompt)}
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
-        {pendingApprovals.length > 0 && (
-          <span className="copilot-dock-waiting">
-            {pendingApprovals.length} waiting on you
-          </span>
-        )}
-        {session?.isBusy && pendingApprovals.length === 0 && (
-          <span className="copilot-dock-busy">working…</span>
-        )}
-        {session?.loadError && (
-          <span className="copilot-dock-error">conversation unavailable</span>
+
+        {showTerminal && (
+          <div className="copilot-dock-terminal">
+            <TerminalPanel
+              // Remount on a workspace change rather than letting the panel
+              // swap repos under a live shell: the old shell is reaped and a
+              // new one starts in the right place.
+              key={terminal.workspaceSlug}
+              workspaceSlug={terminal.workspaceSlug}
+              agent={terminal.agent}
+            />
+          </div>
         )}
       </div>
-
-      {expanded && (
-        <div className="copilot-dock-body">
-          {showChat && session && (
-          <div className="copilot-dock-chat">
-          {/* Above the turns: an agent question arrives as an approval, not a
-              message, so it would otherwise be invisible here. */}
-          <PendingApprovalsSection
-            approvals={pendingApprovals}
-            submittingApprovalId={
-              resolveApproval.isPending ? resolveApproval.variables?.id ?? null : null
-            }
-            submitError={
-              resolveApproval.isError ? formatApprovalResolveError(resolveApproval.error) : null
-            }
-            onApprove={(approval, payload) =>
-              resolveApproval.mutate({ id: approval.id, action: "approve", ...payload })
-            }
-            onReject={(approval, payload) =>
-              resolveApproval.mutate({ id: approval.id, action: "reject", ...payload })
-            }
-          />
-          <StudioChatMessages
-            messages={session.messages}
-            emptyMessage="No messages yet."
-            isThinking={session.isBusy}
-            assistantLabel="Baxter"
-            className="copilot-dock-messages"
-          />
-          {session.messages.length === 0 && (TRY_ASKING[session.kind]?.length ?? 0) > 0 && (
-            <div className="copilot-dock-chips lg-chat-chip-row">
-              <span className="copilot-dock-chips-label">Try asking</span>
-              {TRY_ASKING[session.kind].map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  className="lg-chat-chip copilot-dock-chip"
-                  onClick={() => setDraft(prompt)}
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-          )}
-          <StudioChatComposer
-            value={draft}
-            onChange={setDraft}
-            onSubmit={send}
-            placeholder={COMPOSER_PLACEHOLDER[session.kind] ?? "Message this conversation…"}
-            isSending={session.isBusy}
-            disabled={session.loadError}
-            error={session.error}
-            variant="dock"
-            optionsRow={
-              <div className="studio-chat-composer-options-inline">
-                <label className="copilot-dock-option">
-                  <input
-                    type="checkbox"
-                    checked={autoApprove}
-                    onChange={(e) => setAutoApprove(e.target.checked)}
-                  />
-                  Auto-approve
-                </label>
-                {session.kind === "branch-triage" ? (
-                  <button
-                    type="button"
-                    className="btn-secondary btn-compact chat-composer-quick-action"
-                    disabled={session.isBusy || session.loadError}
-                    onClick={() => sendQuick("commit and push")}
-                  >
-                    {session.isBusy ? "Sending…" : "Commit & push"}
-                  </button>
-                ) : null}
-              </div>
-            }
-          />
-          </div>
-          )}
-
-          {showTerminal && (
-            <div className="copilot-dock-terminal">
-              <TerminalPanel
-                // Remount on a workspace change rather than letting the panel
-                // swap repos under a live shell: the old shell is reaped and a
-                // new one starts in the right place.
-                key={terminal.workspaceSlug}
-                workspaceSlug={terminal.workspaceSlug}
-                agent={terminal.agent}
-              />
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

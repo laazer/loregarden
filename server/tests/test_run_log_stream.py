@@ -116,6 +116,70 @@ def test_run_log_streamer_accumulates_stream_deltas():
         stream_mod.engine = original_engine
 
 
+def test_run_log_streamer_coalesces_cursor_partial_assistant_tokens():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    import loregarden.services.run_log_stream as stream_mod
+
+    original_engine = stream_mod.engine
+    stream_mod.engine = engine
+    try:
+        with Session(engine) as session:
+            seed_database(session)
+            ticket = session.exec(select(Ticket).limit(1)).first()
+            assert ticket
+
+            first = (
+                "I need to take a closer look at the code before deciding how "
+                "startup recovery should work."
+            )
+            remainder = " Then I will inspect the tests."
+            complete = first + remainder
+            streamer = RunLogStreamer(
+                run_id="run_cursor_partial",
+                ticket_id=ticket.id,
+                run_code="run_cursor_partial",
+                agent_id="planner",
+                skill_name="plan",
+                partial_output=True,
+            )
+            for index, token in enumerate(complete.split(" ")):
+                prefix = "" if index == 0 else " "
+                streamer.append_stream_line(
+                    json.dumps(
+                        {
+                            "type": "assistant",
+                            "message": {"content": [{"type": "text", "text": f"{prefix}{token}"}]},
+                        }
+                    )
+                )
+
+            artifact = session.exec(
+                select(Artifact).where(
+                    Artifact.run_id == "run_cursor_partial", Artifact.kind == "log"
+                )
+            ).first()
+            assert artifact is not None
+            content = json.loads(artifact.content_json)
+            out_lines = [line for line in content["lines"] if line["tag"] == "OUT"]
+            assert [line["text"] for line in out_lines] == [first]
+            assert content["live"] == remainder.strip()
+
+            streamer.append_stream_line(json.dumps({"type": "result", "result": complete}))
+            session.refresh(artifact)
+            content = json.loads(artifact.content_json)
+            out_lines = [line for line in content["lines"] if line["tag"] == "OUT"]
+            assert [line["text"] for line in out_lines] == [first, remainder.strip()]
+            assert content["live"] is None
+    finally:
+        stream_mod.engine = original_engine
+
+
 def test_run_log_streamer_persists_live_log():
     engine = create_engine(
         "sqlite://",
