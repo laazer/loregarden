@@ -42,6 +42,7 @@ from loregarden.services.rework_feedback import (
     rework_reroute_count,
 )
 from loregarden.services.run_cancellation import orchestration_cancel_requested
+from loregarden.services.run_interruption import blocked_by_interruption, interrupted_stage_key
 from loregarden.services.stage_report import (
     StageReport,
     is_transient_failure,
@@ -114,11 +115,7 @@ class BuiltinOrchestrator:
         stages_run = 0
         try:
             while True:
-                if ticket.state in (
-                    TicketState.BLOCKED,
-                    TicketState.DONE,
-                    TicketState.WONT_DO,
-                ) or orchestration_cancel_requested(orch_run.id):
+                if self._should_stop_orchestration(ticket, orch_run):
                     break
 
                 child_pause = self._orchestrate_incomplete_children(
@@ -344,6 +341,14 @@ class BuiltinOrchestrator:
         )
         self.session.refresh(orch_run)
         return orch_run
+
+    @staticmethod
+    def _should_stop_orchestration(ticket: Ticket, orch_run: OrchestrationRun) -> bool:
+        if orchestration_cancel_requested(orch_run.id):
+            return True
+        if ticket.state in (TicketState.DONE, TicketState.WONT_DO):
+            return True
+        return ticket.state == TicketState.BLOCKED and not blocked_by_interruption(ticket)
 
     def _resolve_stages_with_recovery(
         self, ticket: Ticket
@@ -974,34 +979,27 @@ class BuiltinOrchestrator:
     def _recover_interrupted_stage(self, ticket: Ticket, instance, stages) -> str | None:
         """Clear a stage blocked only by a server restart, not a genuine failure.
 
-        fail_interrupted_runs() marks an orphaned AgentRun FAILED and its stage
-        BLOCKED with INTERRUPTED_RUN_MESSAGE, without touching ticket.state — unlike
-        block_ticket(), which real agent/test failures go through and which does set
-        ticket.state to BLOCKED (and is excluded by the loop's state check above this
-        method's call site). _next_executable_stage() otherwise refuses to touch any
-        BLOCKED stage, so without this, Continue Run would silently no-op forever on
-        a stage that only needs a retry, per that message's own guidance.
+        Startup reconciliation marks both the stage and ticket BLOCKED. The execute
+        loop admits only exact interruption markers so this method can re-arm that
+        stage; genuine failures remain stopped. _next_executable_stage() otherwise
+        refuses every BLOCKED stage, so Continue Run would silently no-op forever.
 
         Returns the recovered stage key (so callers can tell _execute_parallel_stage
         this is a resume, not a fresh attempt) or None if nothing needed recovering.
         """
-        from loregarden.services.run_service import INTERRUPTED_RUN_MESSAGE
-
-        cursor_key = ticket.workflow_stage_key
-        if not cursor_key:
-            return None
         stage_map = parse_stage_map(instance, stages)
-        if stage_map.get(cursor_key) != StageStatus.BLOCKED:
+        if not blocked_by_interruption(ticket):
             return None
-        if ticket.blocking_issues != INTERRUPTED_RUN_MESSAGE:
+        stage_key = interrupted_stage_key(self.session, ticket, stage_map)
+        if not stage_key:
             return None
 
-        set_stage_status(ticket, instance, stages, cursor_key, StageStatus.PENDING)
+        set_stage_status(ticket, instance, stages, stage_key, StageStatus.PENDING)
         ticket.blocking_issues = ""
         self.session.add(ticket)
         self.session.add(instance)
         self.session.commit()
-        return cursor_key
+        return stage_key
 
     def _next_executable_stage(self, ticket: Ticket, stages, stage_map) -> str | None:
         """Pick the next stage to run: earliest-in-template-order wins.

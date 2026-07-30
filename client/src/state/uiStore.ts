@@ -74,9 +74,9 @@ interface UiState {
   /**
    * Whether the dock is also showing a shell.
    *
-   * Off by default and remembered: opening the terminal spawns a real login
-   * shell, so it happens because someone asked for one, not because they
-   * opened the chat.
+   * Off by default and remembered. Opening the first time spawns a real login
+   * shell; closing only hides the panel — the process stays alive until the
+   * screen names a different workspace (see CopilotDock).
    */
   terminalOpen: boolean;
   /**

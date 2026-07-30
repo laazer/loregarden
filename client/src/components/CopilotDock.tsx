@@ -1,56 +1,29 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useActiveChatSession } from "../hooks/useActiveChatSession";
 import { useApprovalResolution } from "../hooks/useApprovalResolution";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
+import { TRY_ASKING } from "../lib/dockChatPrompts";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useUiStore } from "../state/uiStore";
-import { StudioChatComposer, StudioChatMessages } from "./studio/StudioChat";
-import { TerminalPanel } from "./TerminalPanel";
+import { StudioChatMessages } from "./studio/StudioChat";
+import { TerminalWorkspace } from "./TerminalWorkspace";
 import "./CopilotDock.css";
 
 /**
- * A persistent way into whichever chat the current screen is showing.
+ * The panels the global action bar opens: the turns of whichever chat the screen
+ * owns, and a shell in the workspace it names.
  *
- * Not a new assistant and not an autonomous actor: it binds to the session the
- * screen already owns, so a message sent here is the same turn the panel would
- * have sent, and appears in both.
- *
- * Collapsed it is a single bar; expanded it shows the turns above the composer.
- * It mounts inside AppUtilityDock (global chrome), which is why the binding is
- * resolved from the route rather than handed down by a page.
+ * It binds to the session the screen already owns, so a turn shown here is the
+ * same turn the on-screen panel shows. Composing happens in `AppActionBar`;
+ * this is the thread, not the input.
  */
-/**
- * Openers for the questions this dock is usually opened to ask.
- *
- * Prompt shortcuts, not suggestions: nothing infers them from the ticket, and
- * clicking one only fills the composer. The operator still sends it.
- */
-const COMPOSER_PLACEHOLDER: Record<string, string> = {
-  "ticket-triage": "Message about this ticket…",
-  "branch-triage": "Message about this branch…",
-};
-
-const TRY_ASKING: Record<string, string[]> = {
-  "ticket-triage": [
-    "What is blocking this ticket?",
-    "Summarise what the last run changed",
-    "Why did the last stage fail?",
-  ],
-  "branch-triage": [
-    "What changed on this branch?",
-    "Is this branch safe to delete?",
-    "commit and push",
-  ],
-};
-
 export function CopilotDock() {
   const open = useUiStore((s) => s.copilotOpen);
-  const setOpen = useUiStore((s) => s.setCopilotOpen);
   const height = useUiStore((s) => s.copilotHeight);
   const edge = useUiStore((s) => s.utilityDockEdge);
-  const { session, label, ticketId, pendingApprovals } = useActiveChatSession();
+  const { session, ticketId, pendingApprovals } = useActiveChatSession();
   const resolveApproval = useApprovalResolution(ticketId ?? undefined);
   const terminalOpen = useUiStore((s) => s.terminalOpen);
   const terminal = useTerminalTarget();
@@ -59,169 +32,122 @@ export function CopilotDock() {
   // the terminal on the chat's expanded state meant you could never have just a
   // terminal. Mounting the panel spawns a real shell, so it still takes an
   // explicit ask and a workspace to run in.
-  const showTerminal = terminalOpen && Boolean(terminal.workspaceSlug);
+  //
+  // Closing the panel must not reap the shell. Toggling the omnibar is hide /
+  // show, not kill / spawn — otherwise cwd, jobs, and scrollback vanish every
+  // time the dock collapses. Keep the panel mounted under the last workspace it
+  // was opened for until the screen names a different one (or never opened).
+  const [keptSlug, setKeptSlug] = useState<string | null>(null);
+  useEffect(() => {
+    if (terminalOpen && terminal.workspaceSlug) {
+      setKeptSlug(terminal.workspaceSlug);
+      return;
+    }
+    if (
+      !terminalOpen &&
+      keptSlug !== null &&
+      terminal.workspaceSlug !== "" &&
+      terminal.workspaceSlug !== keptSlug
+    ) {
+      setKeptSlug(null);
+    }
+  }, [terminalOpen, terminal.workspaceSlug, keptSlug]);
+
+  const showTerminal = terminalOpen && Boolean(keptSlug);
+  const mountTerminal = Boolean(keptSlug);
   const showChat = open && Boolean(session);
-  const expanded = showChat || showTerminal;
+  const panelsVisible = showChat || showTerminal;
   const edgeClass = edge === "right" ? " copilot-dock--edge-right" : " copilot-dock--edge-bottom";
+  const keptOnlyClass = !panelsVisible && mountTerminal ? " copilot-dock--kept-only" : "";
 
-  const [draft, setDraft] = useState("");
-  const [autoApprove, setAutoApprove] = useState(false);
-
-  const send = () => {
-    const content = draft.trim();
-    if (!content || !session) return;
-    // Clear optimistically so the composer is ready for the next message; a
-    // failed send surfaces through session.error rather than by restoring text.
-    setDraft("");
-    void session.send(content, { autoApprove }).catch(() => {});
-  };
+  // Collapsed is the action bar on its own; there is no second bar to draw.
+  // A kept-but-hidden shell still mounts so the process survives the toggle.
+  if (!panelsVisible && !mountTerminal) return null;
 
   const sendQuick = (content: string) => {
     if (!session || session.isBusy || session.loadError) return;
-    setDraft("");
-    setOpen(true);
-    void session.send(content, { autoApprove }).catch(() => {});
+    void session.send(content, { autoApprove: false }).catch(() => {});
   };
-
-  // Nothing on this screen to chat about, and no shell asked for.
-  if (!session && !showTerminal) {
-    return (
-      <div className={`copilot-dock copilot-dock--empty${edgeClass}`}>
-        <span className="copilot-dock-hint">
-          Open a ticket or a branch to chat about it.
-        </span>
-      </div>
-    );
-  }
 
   return (
     <div
-      className={`copilot-dock${edgeClass}${expanded ? " copilot-dock--open" : ""}`}
-      style={expanded && edge === "bottom" ? { height } : undefined}
+      className={`copilot-dock${edgeClass}${keptOnlyClass}`}
+      style={edge === "bottom" && panelsVisible ? { height } : undefined}
+      aria-hidden={!panelsVisible ? true : undefined}
     >
-      <div className="copilot-dock-bar">
-        {session ? (
-          <button
-            type="button"
-            className="copilot-dock-toggle"
-            aria-expanded={showChat}
-            aria-label={showChat ? "Collapse copilot" : "Expand copilot"}
-            onClick={() => setOpen(!open)}
-          >
-            <span className="copilot-dock-chevron" aria-hidden>
-              {showChat ? "▾" : "▴"}
-            </span>
-            <span className="copilot-dock-label">{label}</span>
-          </button>
-        ) : (
-          // No conversation here, so the bar names what the shell is attached to.
-          <span className="copilot-dock-label">{terminal.workspaceSlug}</span>
-        )}
-        {pendingApprovals.length > 0 && (
-          <span className="copilot-dock-waiting">
-            {pendingApprovals.length} waiting on you
-          </span>
-        )}
-        {session?.isBusy && pendingApprovals.length === 0 && (
-          <span className="copilot-dock-busy">working…</span>
-        )}
-        {session?.loadError && (
-          <span className="copilot-dock-error">conversation unavailable</span>
-        )}
-      </div>
-
-      {expanded && (
-        <div className="copilot-dock-body">
-          {showChat && session && (
+      <div className="copilot-dock-body">
+        {showChat && session && (
           <div className="copilot-dock-chat">
-          {/* Above the turns: an agent question arrives as an approval, not a
-              message, so it would otherwise be invisible here. */}
-          <PendingApprovalsSection
-            approvals={pendingApprovals}
-            submittingApprovalId={
-              resolveApproval.isPending ? resolveApproval.variables?.id ?? null : null
-            }
-            submitError={
-              resolveApproval.isError ? formatApprovalResolveError(resolveApproval.error) : null
-            }
-            onApprove={(approval, payload) =>
-              resolveApproval.mutate({ id: approval.id, action: "approve", ...payload })
-            }
-            onReject={(approval, payload) =>
-              resolveApproval.mutate({ id: approval.id, action: "reject", ...payload })
-            }
-          />
-          <StudioChatMessages
-            messages={session.messages}
-            emptyMessage="No messages yet."
-            isThinking={session.isBusy}
-            assistantLabel="Baxter"
-            className="copilot-dock-messages"
-          />
-          {session.messages.length === 0 && (TRY_ASKING[session.kind]?.length ?? 0) > 0 && (
-            <div className="copilot-dock-chips lg-chat-chip-row">
-              <span className="copilot-dock-chips-label">Try asking</span>
-              {TRY_ASKING[session.kind].map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  className="lg-chat-chip copilot-dock-chip"
-                  onClick={() => setDraft(prompt)}
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-          )}
-          <StudioChatComposer
-            value={draft}
-            onChange={setDraft}
-            onSubmit={send}
-            placeholder={COMPOSER_PLACEHOLDER[session.kind] ?? "Message this conversation…"}
-            isSending={session.isBusy}
-            disabled={session.loadError}
-            error={session.error}
-            variant="dock"
-            optionsRow={
-              <div className="studio-chat-composer-options-inline">
-                <label className="copilot-dock-option">
-                  <input
-                    type="checkbox"
-                    checked={autoApprove}
-                    onChange={(e) => setAutoApprove(e.target.checked)}
-                  />
-                  Auto-approve
-                </label>
-                {session.kind === "branch-triage" ? (
-                  <button
-                    type="button"
-                    className="btn-secondary btn-compact chat-composer-quick-action"
-                    disabled={session.isBusy || session.loadError}
-                    onClick={() => sendQuick("commit and push")}
-                  >
-                    {session.isBusy ? "Sending…" : "Commit & push"}
-                  </button>
-                ) : null}
-              </div>
-            }
-          />
-          </div>
-          )}
-
-          {showTerminal && (
-            <div className="copilot-dock-terminal">
-              <TerminalPanel
-                // Remount on a workspace change rather than letting the panel
-                // swap repos under a live shell: the old shell is reaped and a
-                // new one starts in the right place.
-                key={terminal.workspaceSlug}
-                workspaceSlug={terminal.workspaceSlug}
-                agent={terminal.agent}
+            <div className="copilot-dock-chat-main">
+              {/* Above the turns: an agent question arrives as an approval, not a
+                  message, so it would otherwise be invisible here. */}
+              <PendingApprovalsSection
+                approvals={pendingApprovals}
+                submittingApprovalId={
+                  resolveApproval.isPending ? resolveApproval.variables?.id ?? null : null
+                }
+                submitError={
+                  resolveApproval.isError ? formatApprovalResolveError(resolveApproval.error) : null
+                }
+                onApprove={(approval, payload) =>
+                  resolveApproval.mutate({ id: approval.id, action: "approve", ...payload })
+                }
+                onReject={(approval, payload) =>
+                  resolveApproval.mutate({ id: approval.id, action: "reject", ...payload })
+                }
+              />
+              <StudioChatMessages
+                messages={session.messages}
+                emptyMessage="No messages yet."
+                isThinking={session.isBusy}
+                assistantLabel="Baxter"
+                className="copilot-dock-messages"
               />
             </div>
-          )}
-        </div>
-      )}
+            {session.messages.length === 0 && (TRY_ASKING[session.kind]?.length ?? 0) > 0 && (
+              // Beside the turns rather than beneath them: stacked, the openers
+              // sat between the thread and the composer and pushed the turns up
+              // every time the thread was empty.
+              <aside className="copilot-dock-rail">
+                <span className="copilot-dock-rail-label">Try asking</span>
+                {TRY_ASKING[session.kind].map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    className="copilot-dock-rail-btn"
+                    disabled={session.isBusy || session.loadError}
+                    onClick={() => sendQuick(prompt)}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="var(--ac2)" aria-hidden>
+                      <ellipse cx="7" cy="8" rx="1.9" ry="2.5" />
+                      <ellipse cx="12" cy="6" rx="1.9" ry="2.7" />
+                      <ellipse cx="17" cy="8" rx="1.9" ry="2.5" />
+                      <path d="M12 11c3 0 5 2.1 5 4.3 0 1.9-1.7 2.5-3 2.5-.9 0-1.3-.4-2-.4s-1.1.4-2 .4c-1.3 0-3-.6-3-2.5C7 13.1 9 11 12 11z" />
+                    </svg>
+                    <span>{prompt}</span>
+                  </button>
+                ))}
+              </aside>
+            )}
+          </div>
+        )}
+
+        {mountTerminal && keptSlug && (
+          <div
+            className={`copilot-dock-terminal${showTerminal ? "" : " is-kept"}`}
+            // Remount on a workspace change rather than letting the panel
+            // swap repos under a live shell: the old shell is reaped and a
+            // new one starts in the right place.
+            key={keptSlug}
+          >
+            <TerminalWorkspace
+              workspaceSlug={keptSlug}
+              visible={showTerminal}
+              onEmpty={() => useUiStore.getState().setTerminalOpen(false)}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     lmstudio_model: str = ""
     claude_permission_mode: str = "default"
     claude_output_format: str = "text"
-    cursor_output_format: str = "text"
+    cursor_output_format: str = "stream-json"
     allow_permission_bypass: bool = False
     permission_approval_timeout_seconds: float = 3600.0
     triage_timeout_seconds: int = 300

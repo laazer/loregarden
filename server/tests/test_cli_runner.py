@@ -1,7 +1,12 @@
-from loregarden.agents.cli_adapters import resolve_cli_invocation
+import pytest
+from loregarden.agents.cli_adapters import (
+    build_interactive_invocation,
+    resolve_cli_invocation,
+)
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.executors.lmstudio_runner import main as lmstudio_runner_main
 from loregarden.agents.executors.local_runner import main as local_runner_main
+from loregarden.config import settings
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, TicketState, Workspace
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -127,9 +132,81 @@ def test_resolve_cursor_adapter(tmp_path, monkeypatch):
     assert inv.argv[0] == "cursor-agent"
     assert inv.argv[1] == "agent"
     assert "-p" in inv.argv
+    assert inv.argv[inv.argv.index("--output-format") + 1] == "stream-json"
+    assert "--stream-partial-output" in inv.argv
     assert "--approve-mcps" in inv.argv
     assert "--workspace" in inv.argv
     assert str(workspace) in inv.argv
+    assert any(prompt in arg for arg in inv.argv)
+
+
+def test_resolve_cursor_adapter_text_skips_partial_stream(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "cursor")
+    monkeypatch.setenv("LOREGARDEN_ALLOW_PERMISSION_BYPASS", "1")
+    monkeypatch.setenv("LOREGARDEN_CURSOR_BIN", "cursor-agent")
+    monkeypatch.setenv("LOREGARDEN_CURSOR_OUTPUT_FORMAT", "text")
+    prompt_file = tmp_path / "prompt.md"
+    prompt = "implement feature X"
+    prompt_file.write_text(prompt, encoding="utf-8")
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+
+    inv = resolve_cli_invocation(
+        agent_id="backend_implementer",
+        adapter="cursor",
+        prompt=prompt,
+        prompt_file=prompt_file,
+        skill_name="implement",
+        workspace_root=workspace,
+    )
+
+    assert inv.argv[inv.argv.index("--output-format") + 1] == "text"
+    assert "--stream-partial-output" not in inv.argv
+
+
+def test_resolve_cursor_adapter_carries_prompt_without_bypass(tmp_path, monkeypatch):
+    """`cursor-agent -p` with no prompt exits immediately: "No prompt provided for
+    print mode". Cursor cannot use the permission bridge (no `--input-format`), so
+    a gated run must still be a fully-formed print-mode invocation."""
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "cursor")
+    monkeypatch.delenv("LOREGARDEN_ALLOW_PERMISSION_BYPASS", raising=False)
+    monkeypatch.setattr(settings, "allow_permission_bypass", False)
+    monkeypatch.setenv("LOREGARDEN_CURSOR_BIN", "cursor-agent")
+    prompt_file = tmp_path / "prompt.md"
+    prompt = "implement feature X"
+    prompt_file.write_text(prompt, encoding="utf-8")
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+
+    inv = resolve_cli_invocation(
+        agent_id="backend_implementer",
+        adapter="cursor",
+        prompt=prompt,
+        prompt_file=prompt_file,
+        skill_name="implement",
+        workspace_root=workspace,
+    )
+
+    assert inv.adapter == "cursor"
+    assert [arg for arg in inv.argv if arg.endswith(prompt)]
+    # Print mode reads no stdin and the executor opens none, so the prompt has to
+    # be in argv — neither stdin nor the prompt file would reach the CLI.
+    assert inv.stdin_prompt is None
+    assert inv.use_prompt_file is False
+    assert inv.interactive is False
+
+
+def test_build_interactive_invocation_rejects_cursor(tmp_path):
+    """The bridge speaks stream-json into stdin; cursor-agent has no --input-format."""
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("stage task", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Interactive invocation unsupported"):
+        build_interactive_invocation(
+            adapter="cursor",
+            prompt_file=prompt_file,
+            workspace_root=tmp_path,
+        )
 
 
 def test_resolve_adapter_env_override(tmp_path, monkeypatch):

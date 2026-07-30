@@ -14,25 +14,15 @@ import "./TerminalPanel.css";
 
 interface TerminalPanelProps {
   workspaceSlug: string;
-  /** Shown in the title bar for orientation; not bound to the shell. */
-  agent?: string | null;
 }
 
 /**
  * A real shell in the workspace, rendered by xterm.
  *
- * The badge says `your shell`, not `sandbox`: this runs a login shell with the
- * same privileges as the process serving the API, and labelling it a sandbox
- * would promise containment that does not exist.
- *
- * The header names the workspace, never a branch. The comp asked for
- * `▸ {agent} — {branch}`, which assumed a tty bound to a run; this shell opens
- * in the workspace root, so the ticket's branch is true only by coincidence.
- * Observed disagreeing in the dock — header saying `feat/bootstrap-ui` over a
- * prompt reading `u3d-terminal-dock`. The shell's own prompt is authoritative
- * about the branch, and it already shows it.
+ * Tabs and split controls live in `TerminalWorkspace`; this component owns
+ * exactly one xterm instance and one websocket-backed shell.
  */
-export function TerminalPanel({ workspaceSlug, agent }: TerminalPanelProps) {
+export function TerminalPanel({ workspaceSlug }: TerminalPanelProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<TerminalStatus>("connecting");
   const [end, setEnd] = useState<TerminalEnd | null>(null);
@@ -110,26 +100,12 @@ export function TerminalPanel({ workspaceSlug, agent }: TerminalPanelProps) {
 
   return (
     <section className="terminal-panel" aria-label={`Terminal for ${workspaceSlug}`}>
-      <header className="terminal-panel-bar">
-        <span className="terminal-lights" aria-hidden>
-          <i className="terminal-light terminal-light--close" />
-          <i className="terminal-light terminal-light--min" />
-          <i className="terminal-light terminal-light--max" />
-        </span>
-        <span className="terminal-panel-title">
-          ▸ {agent?.trim() ? `${agent.trim()} — ` : ""}
-          {workspaceSlug}
-        </span>
-        <span
-          className="terminal-panel-badge"
-          title="No sandbox: this shell has the same privileges as the control plane."
-        >
-          pty · your shell
-        </span>
-        {status === "connecting" && <span className="terminal-panel-status">connecting…</span>}
-      </header>
-
       <div className="terminal-panel-surface" ref={mountRef} />
+      {status === "connecting" && (
+        <span className="terminal-panel-status" role="status">
+          connecting…
+        </span>
+      )}
 
       {end && (
         <footer className="terminal-panel-ended">

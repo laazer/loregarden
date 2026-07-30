@@ -82,7 +82,7 @@ function renderPanel(ticket: TicketDetail, queryClient = new QueryClient({ defau
     queryClient,
     ...render(
       <QueryClientProvider client={queryClient}>
-        <LogsPanel ticket={ticket} runtimeOptions={undefined} />
+        <LogsPanel ticket={ticket} />
       </QueryClientProvider>,
     ),
   };

@@ -80,35 +80,11 @@ describe("TerminalPanel", () => {
     expect(opened[0].url).toBe("ws://127.0.0.1:8000/terminal/loregarden");
   });
 
-  it("does not call itself a sandbox", () => {
+  it("does not render fake window controls", () => {
     render(<TerminalPanel workspaceSlug="loregarden" />);
 
-    // The comp said `pty · sandbox`. The shell runs with the control plane's
-    // own privileges, so that badge would promise containment there is none of.
-    expect(screen.getByText("pty · your shell")).toBeInTheDocument();
-    expect(screen.queryByText(/sandbox/)).not.toBeInTheDocument();
-  });
-
-  it("names the workspace the shell is actually in", () => {
-    render(<TerminalPanel workspaceSlug="loregarden" agent="implementer" />);
-
-    expect(screen.getByText("▸ implementer — loregarden")).toBeInTheDocument();
-  });
-
-  it("shows the workspace alone when no agent is named", () => {
-    render(<TerminalPanel workspaceSlug="loregarden" agent="  " />);
-
-    expect(screen.getByText("▸ loregarden")).toBeInTheDocument();
-  });
-
-  it("never labels the shell with a branch", () => {
-    // The shell opens in the workspace root, so a ticket's branch is true only
-    // by coincidence — observed in the dock reading `feat/bootstrap-ui` over a
-    // prompt on `u3d-terminal-dock`. The prompt is authoritative; it says so.
-    render(<TerminalPanel workspaceSlug="loregarden" agent="implementer" />);
-
-    const header = screen.getByText(/▸/).textContent ?? "";
-    expect(header).toBe("▸ implementer — loregarden");
+    expect(document.querySelector(".terminal-lights")).not.toBeInTheDocument();
+    expect(document.querySelector(".terminal-panel-bar")).not.toBeInTheDocument();
   });
 
   it("tells the shell its size once the socket is actually open", () => {

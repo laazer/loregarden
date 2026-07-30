@@ -96,6 +96,7 @@ Environment variables use the `LOREGARDEN_` prefix. Common options:
 | `LOREGARDEN_CLI_ADAPTER` | `local` | Agent runner: `local`, `claude`, `cursor`, `lmstudio` |
 | `LOREGARDEN_MCP_URL` | `http://127.0.0.1:8000/mcp` | MCP endpoint for agent tools |
 | `LOREGARDEN_ALLOW_PERMISSION_BYPASS` | `false` | Dev-only escape hatch for permission prompts |
+| `LOREGARDEN_CURSOR_OUTPUT_FORMAT` | `stream-json` | Cursor stage-run print format (`stream-json` live-streams; `text` buffers until done) |
 
 See `scripts/dev-server.sh` for the full list, including optional iCloud and Obsidian memory backends.
 

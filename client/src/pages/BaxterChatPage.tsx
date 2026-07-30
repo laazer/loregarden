@@ -420,7 +420,7 @@ export function BaxterChatPage() {
                             className="baxter-chat-card-review"
                             onClick={() => {
                               setInboxOpen(true);
-                              navigate(ticketPath(a.ticket_id, "triage"));
+                              navigate(ticketPath(a.ticket_id));
                             }}
                           >
                             Review

@@ -148,9 +148,9 @@ export function BranchTriageOverviewPanel({
           <button
             type="button"
             className="btn-secondary btn-compact"
-            onClick={() => navigate(ticketPath(linkedTicket.id, "triage"))}
+            onClick={() => navigate(ticketPath(linkedTicket.id))}
           >
-            Open ticket triage
+            Open ticket
           </button>
         ) : null}
       </div>

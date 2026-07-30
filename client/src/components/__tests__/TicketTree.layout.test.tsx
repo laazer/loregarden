@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 
 import type { TicketTreeNode } from "../../api/client";
 import { TicketTree } from "../TicketTree";
+import "../chat/primitives/PrimitiveCard.css";
 
 const noop = () => {};
 
@@ -57,7 +58,13 @@ describe("TicketTree layout structure", () => {
   it("renders a chevron only for nodes with children", () => {
     const { container } = render(
       <TicketTree
-        nodes={[makeNode({ work_item_type: "feature", child_count: 2, children: [makeNode({ id: "c1" })] })]}
+        nodes={[
+          makeNode({
+            work_item_type: "feature",
+            child_count: 2,
+            children: [makeNode({ id: "c1" })],
+          }),
+        ]}
         selectedId={null}
         expandedIds={new Set()}
         onSelect={noop}
@@ -71,5 +78,59 @@ describe("TicketTree layout structure", () => {
     expect(meta?.querySelector(".tree-row-trail")).not.toBeNull();
     expect(meta?.querySelector(".tree-card-meta-main")).not.toBeNull();
     expect(container.querySelector(".tree-chevron-btn")).not.toBeNull();
+  });
+
+  it("stacks the expand control under the priority badge on v6 parents", () => {
+    const { container } = render(
+      <TicketTree
+        nodes={[
+          makeNode({
+            work_item_type: "feature",
+            child_count: 2,
+            children: [makeNode({ id: "c1" }), makeNode({ id: "c2" })],
+          }),
+        ]}
+        selectedId={null}
+        expandedIds={new Set()}
+        onSelect={noop}
+        onToggle={noop}
+        onAddChild={noop}
+        presentation="v6"
+      />,
+    );
+
+    const prioCol = container.querySelector(".lg-primitive-ticket-prio-col");
+    const expand = screen.getByRole("button", { name: "Expand" });
+    expect(prioCol?.querySelector(".lg-primitive-ticket-prio")).not.toBeNull();
+    expect(prioCol?.contains(expand)).toBe(true);
+    expect(container.querySelector(".tree-row-v6-layout")).toBeNull();
+  });
+
+  it("puts the add-child control after the child count on parent rows", () => {
+    const { container } = render(
+      <TicketTree
+        nodes={[
+          makeNode({
+            work_item_type: "feature",
+            child_count: 2,
+            children: [makeNode({ id: "c1" }), makeNode({ id: "c2" })],
+          }),
+        ]}
+        selectedId={null}
+        expandedIds={new Set()}
+        onSelect={noop}
+        onToggle={noop}
+        onAddChild={noop}
+        presentation="v6"
+      />,
+    );
+
+    const trail = container.querySelector(".tree-row-trail");
+    expect(trail).not.toBeNull();
+    const kids = Array.from(trail!.children).map((el) => el.className);
+    expect(kids[0]).toContain("tree-child-count");
+    expect(kids[1]).toContain("tree-add-child-btn");
+    expect(trail!.textContent).toContain("2");
+    expect(screen.getByRole("button", { name: "Add capability or bug" })).toBeInTheDocument();
   });
 });

@@ -1,5 +1,5 @@
-import type { TicketDetail, WorkflowStageView } from "../api/client";
-import { currentStageRunLabel } from "../lib/stageDisplay";
+import type { TicketDetail } from "../api/client";
+import { agentsAssembleLabel } from "../lib/workflowHelpers";
 import { isAgentWorkflowTicket } from "../lib/terminalCommands";
 import { OverflowMenu, OverflowMenuItem, OverflowMenuSection } from "./OverflowMenu";
 
@@ -21,44 +21,23 @@ async function copyText(text: string) {
 interface WorkflowRunOverflowMenuProps {
   ticket: TicketDetail;
   orchestrateCommand: string;
-  cursorStage: WorkflowStageView | undefined;
-  cursorRun: { allowed: boolean; reason: string };
-  runningCursor: boolean;
-  workflowBusy: boolean;
-  startRunPending: boolean;
-  advancePending: boolean;
-  onRunCurrentStage: () => void;
-  onAdvance: () => void;
+  assemblePending: boolean;
+  onAssemble: () => void;
   onDelete: () => void;
 }
 
 export function WorkflowRunOverflowMenu({
   ticket,
   orchestrateCommand,
-  cursorStage,
-  cursorRun,
-  runningCursor,
-  workflowBusy,
-  startRunPending,
-  advancePending,
-  onRunCurrentStage,
-  onAdvance,
+  assemblePending,
+  onAssemble,
   onDelete,
 }: WorkflowRunOverflowMenuProps) {
-  const currentStageLabel = currentStageRunLabel(cursorStage, runningCursor);
-
   return (
     <OverflowMenu label="More workflow actions" align="right">
-      <OverflowMenuSection title="Stage" />
-      <OverflowMenuItem
-        disabled={workflowBusy || startRunPending || !cursorRun.allowed}
-        title={cursorRun.reason}
-        onSelect={onRunCurrentStage}
-      >
-        {currentStageLabel}
-      </OverflowMenuItem>
-      <OverflowMenuItem disabled={advancePending} onSelect={onAdvance}>
-        {advancePending ? "Advancing…" : "Advance stage"}
+      <OverflowMenuSection title="Pipeline" />
+      <OverflowMenuItem disabled={assemblePending} onSelect={onAssemble}>
+        {agentsAssembleLabel(ticket, assemblePending)}
       </OverflowMenuItem>
       {isAgentWorkflowTicket(ticket) ? (
         <>

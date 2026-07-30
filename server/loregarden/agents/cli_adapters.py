@@ -117,10 +117,17 @@ def build_interactive_invocation(
     workspace_root: Path,
     resume_session_id: str = "",
     claude_model: str = "",
-    cursor_model: str = "",
     db_session=None,
 ) -> CliInvocation:
-    """Headless CLIs with permission prompts routed through Loregarden."""
+    """A headless `claude` session with permission prompts routed through Loregarden.
+
+    Claude-only, and that is a property of the tools rather than a gap here: the
+    bridge holds stdin open and speaks stream-json into the session, which needs
+    `--input-format stream-json`. `cursor-agent` has no such flag (see
+    `services.run_steering`), so it cannot be driven this way at all — cursor
+    stage runs go through `_cursor_print_invocation` regardless of permission
+    bypass.
+    """
     cwd = str(workspace_root)
 
     if adapter == "claude":
@@ -151,31 +158,6 @@ def build_interactive_invocation(
             cwd=cwd,
             resume_session_id=resume_session_id,
             use_prompt_file=True,
-        )
-
-    if adapter == "cursor":
-        argv = [
-            _bin("cursor-agent", "LOREGARDEN_CURSOR_BIN"),
-            "agent",
-            "-p",
-            "--output-format",
-            os.environ.get("LOREGARDEN_CURSOR_OUTPUT_FORMAT", settings.cursor_output_format),
-            "--workspace",
-            cwd,
-        ]
-        _append_model_flag(argv, cursor_model)
-        if permission_bypass_enabled():
-            argv.extend(["--trust", "--force"])
-        extra = os.environ.get("LOREGARDEN_CURSOR_AGENT_ARGS")
-        if extra:
-            argv[2:2] = shlex.split(extra)
-        append_mcp_cli_args(argv, adapter="cursor", session=db_session, orchestrated=True)
-        return CliInvocation(
-            argv=argv,
-            interactive=False,
-            adapter="cursor",
-            cwd=cwd,
-            resume_session_id=resume_session_id,
         )
 
     raise ValueError(f"Interactive invocation unsupported for adapter: {adapter}")
@@ -359,19 +341,33 @@ def _cursor_print_invocation(
     cursor_model: str = "",
     orchestrated: bool = False,
 ) -> CliInvocation:
-    """Shared by a stage run's print-mode fallback (`orchestrated=True`) and a human
-    terminal handoff (`orchestrated=False`, the default) — see `resolve_cli_invocation`
-    vs `resolve_terminal_handoff_invocation`."""
+    """Shared by every cursor stage run (`orchestrated=True`) and a human terminal
+    handoff (`orchestrated=False`, the default) — see `resolve_cli_invocation` vs
+    `resolve_terminal_handoff_invocation`.
+
+    Print mode is cursor's only usable stage mode: it cannot be bridged (no
+    `--input-format`), so `--trust --force` is the one permission lever, and with
+    bypass off the CLI applies its own defaults instead.
+
+    Default ``stream-json`` (+ ``--stream-partial-output``) feeds the live run log
+    as the agent thinks and tools fire; ``text`` only prints when the run ends.
+    """
+    output_format = os.environ.get("LOREGARDEN_CURSOR_OUTPUT_FORMAT", settings.cursor_output_format)
     argv = [
         _bin("cursor-agent", "LOREGARDEN_CURSOR_BIN"),
         "agent",
         "-p",
         "--output-format",
-        os.environ.get("LOREGARDEN_CURSOR_OUTPUT_FORMAT", settings.cursor_output_format),
+        output_format,
         "--workspace",
         str(workspace_root),
         f"{os.environ.get('LOREGARDEN_CURSOR_USER_PROMPT', DEFAULT_CURSOR_USER_PROMPT)}{prompt}",
     ]
+    # Partial deltas only apply with print + stream-json; skip when the operator
+    # forces text (or another format) via LOREGARDEN_CURSOR_OUTPUT_FORMAT.
+    if output_format == "stream-json":
+        fmt_idx = argv.index("--output-format")
+        argv.insert(fmt_idx + 2, "--stream-partial-output")
     _append_model_flag(argv, cursor_model)
     if permission_bypass_enabled():
         argv[3:3] = ["--trust", "--force"]
@@ -494,15 +490,14 @@ def resolve_cli_invocation(
             prompt_file=prompt_file,
         )
 
-    if selected in {"claude", "cursor"} and not permission_bypass_enabled():
+    if selected == "claude" and not permission_bypass_enabled():
         return build_interactive_invocation(
             adapter=selected,
             db_session=db_session,
             prompt_file=prompt_file,
             workspace_root=workspace_root,
             resume_session_id=resume_session_id,
-            claude_model=model if selected == "claude" else "",
-            cursor_model=model if selected == "cursor" else "",
+            claude_model=model,
         )
 
     if selected == "claude":

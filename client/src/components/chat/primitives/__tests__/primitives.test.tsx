@@ -229,9 +229,9 @@ describe("resource action buttons", () => {
       "/editor",
     ],
     [
-      "Open triage",
-      () => <OpenTicketButton ticketId="ticket/42" tab="triage" label="Open triage" />,
-      "/tickets/ticket%2F42/triage",
+      "Open ticket",
+      () => <OpenTicketButton ticketId="ticket/42" label="Open ticket" />,
+      "/tickets/ticket%2F42/diff",
     ],
   ])("navigates %s to its resource surface", (label, renderButton, path) => {
     renderResourceAction(renderButton());
@@ -402,7 +402,7 @@ describe("Gate primitive", () => {
     expect(screen.getByText("CI green")).toBeInTheDocument();
     expect(screen.getByText("Approve quality gate")).toBeInTheDocument();
     expect(screen.getByText("Pending sign-off · 1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open triage" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open ticket" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
   });
 

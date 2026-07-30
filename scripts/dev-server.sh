@@ -4,9 +4,18 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT/server"
 export LOREGARDEN_REPO_ROOT="$ROOT"
 
+# Optional local overrides (gitignored). Example: LOREGARDEN_ALLOW_PERMISSION_BYPASS=1
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/.env"
+  set +a
+fi
+
 # CLI adapters — Loregarden routes permission prompts to the approval inbox by default.
 #   LOREGARDEN_CLI_ADAPTER=local|claude|cursor|lmstudio
 #   LOREGARDEN_ALLOW_PERMISSION_BYPASS=1   — dev-only escape hatch (NOT for normal use)
+#   LOREGARDEN_CURSOR_OUTPUT_FORMAT=stream-json|text  — stage runs; stream-json is live
 #   LOREGARDEN_CLAUDE_BIN=claude
 #   LOREGARDEN_CURSOR_BIN=cursor-agent
 #   LOREGARDEN_LMSTUDIO_BASE_URL=http://127.0.0.1:1234/v1

@@ -268,7 +268,6 @@ export function GatePrimitive({ part }: { part: GatePart }) {
         ticketId ? (
           <>
             <OpenTicketButton ticketId={ticketId} />
-            <OpenTicketButton ticketId={ticketId} tab="triage" label="Open triage" />
           </>
         ) : (
           <OpenGateStudioButton />

@@ -1,3 +1,12 @@
+/* Compact horizontal strip — must NOT use .tab-bar-scroll (flex:1), which
+   expands this row to half the Logs panel height in a column flex parent. */
+.running-lane-tabs {
+  flex: none;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 .log-feed {
   font-family: var(--mono);
   font-size: 12px;

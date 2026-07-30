@@ -164,7 +164,7 @@ export function HomePage() {
               className="home-row"
               onClick={() => {
                 setInboxOpen(true);
-                navigate(ticketPath(a.ticket_id, "triage"));
+                navigate(ticketPath(a.ticket_id));
               }}
             >
               <span className="home-row-title">{a.title || a.tool_name || "Approval"}</span>

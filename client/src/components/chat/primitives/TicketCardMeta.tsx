@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import type { StageStatus, TicketState, WorkflowStageView } from "../../../api/types";
 import {
   priorityStyle,
@@ -61,6 +63,7 @@ export function childProgressSegments(
 /** The v6 console ticket card body: P-badge, state, segmented progress, stage line. */
 export function TicketCardBody({
   title,
+  externalId,
   priority,
   state,
   workspaceSlug,
@@ -69,8 +72,11 @@ export function TicketCardBody({
   segments,
   progressLabel,
   compact = false,
+  underPriority,
 }: {
   title: string;
+  /** Optional id shown ahead of the title (ticket lists). */
+  externalId?: string;
   priority: number;
   state: TicketState;
   workspaceSlug?: string;
@@ -81,6 +87,8 @@ export function TicketCardBody({
   progressLabel?: string | null;
   /** Board tiles are too narrow for the badge-aligned indent. */
   compact?: boolean;
+  /** Stacked under the P-badge — expand chevron on parent tree rows. */
+  underPriority?: ReactNode;
 }) {
   const prio = priorityStyle(priority);
   const stateColor = ticketStateColor(state);
@@ -95,17 +103,31 @@ export function TicketCardBody({
       }
     >
       <div className="lg-primitive-ticket-v6-title-row">
-        <span
-          className="lg-primitive-ticket-prio"
-          style={{
-            color: prio.color,
-            background: prio.background,
-            borderColor: prio.border,
-          }}
-        >
-          {prio.code}
-        </span>
-        <h3 className="lg-primitive-ticket-v6-title">{title}</h3>
+        <div className="lg-primitive-ticket-prio-col">
+          <span
+            className="lg-primitive-ticket-prio"
+            style={{
+              color: prio.color,
+              background: prio.background,
+              borderColor: prio.border,
+            }}
+          >
+            {prio.code}
+          </span>
+          {underPriority}
+        </div>
+        <h3 className="lg-primitive-ticket-v6-title">
+          {externalId ? (
+            <>
+              <span className="lg-primitive-ticket-external-id">{externalId}</span>
+              <span className="lg-primitive-ticket-title-sep" aria-hidden>
+                {" "}
+                ·{" "}
+              </span>
+            </>
+          ) : null}
+          {title}
+        </h3>
       </div>
 
       <div className="lg-primitive-ticket-v6-meta">
