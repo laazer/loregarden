@@ -186,7 +186,7 @@ def test_ticket_studio_scope_and_commit(client: TestClient, monkeypatch):
     session_id = create.json()["id"]
 
     scope = client.post(f"/api/ticket-studio/sessions/{session_id}/scope")
-    assert scope.status_code == 200, scope.text
+    assert scope.status_code == 202, scope.text
     scoped = scope.json()
     assert len(scoped["draft"]) == 3
     assert scoped["summary"]
@@ -230,7 +230,7 @@ def test_ticket_studio_scope_surfaces_root_milestone_in_draft(client: TestClient
     session_id = create.json()["id"]
 
     scope = client.post(f"/api/ticket-studio/sessions/{session_id}/scope")
-    assert scope.status_code == 200, scope.text
+    assert scope.status_code == 202, scope.text
     draft = scope.json()["draft"]
     # 3 model-proposed tickets + 1 milestone synthesized to give the root feature a legal parent
     assert len(draft) == 4
@@ -322,7 +322,7 @@ def test_ticket_studio_scope_survives_large_json_payload(client: TestClient, mon
     session_id = create.json()["id"]
 
     scope = client.post(f"/api/ticket-studio/sessions/{session_id}/scope")
-    assert scope.status_code == 200, scope.text
+    assert scope.status_code == 202, scope.text
     draft = scope.json()["draft"]
     # Every model-proposed task survives the large payload...
     assert sum(1 for item in draft if item["work_item_type"] == "task") == 60
@@ -348,7 +348,7 @@ def test_ticket_studio_clarify_then_scope(client: TestClient, monkeypatch):
     session_id = create.json()["id"]
 
     clarify = client.post(f"/api/ticket-studio/sessions/{session_id}/clarify")
-    assert clarify.status_code == 200, clarify.text
+    assert clarify.status_code == 202, clarify.text
     body = clarify.json()
     assert len(body["clarifying_questions"]) == 2
     assert body["clarifying_resolved"] is False
@@ -361,12 +361,12 @@ def test_ticket_studio_clarify_then_scope(client: TestClient, monkeypatch):
         f"/api/ticket-studio/sessions/{session_id}/clarifications",
         json={"answers": ["Yes, keep sessions.", "Manual commit only."]},
     )
-    assert saved.status_code == 200
+    assert saved.status_code == 202
     assert saved.json()["clarifying_resolved"] is True
 
     monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", SCOPE_STUB)
     scope = client.post(f"/api/ticket-studio/sessions/{session_id}/scope")
-    assert scope.status_code == 200, scope.text
+    assert scope.status_code == 202, scope.text
     # 3 model-proposed tickets + 1 milestone synthesized for the parentless root feature
     assert len(scope.json()["draft"]) == 4
 
@@ -391,7 +391,7 @@ def test_saving_answers_hands_straight_back_to_the_scoper(client: TestClient, mo
         f"/api/ticket-studio/sessions/{session_id}/clarifications",
         json={"answers": ["Yes, keep them.", "Manual only."]},
     )
-    assert saved.status_code == 200, saved.text
+    assert saved.status_code == 202, saved.text
     body = saved.json()
 
     # The scoper had nothing left to ask, so the round is closed out rather than left
@@ -409,7 +409,7 @@ def test_saving_answers_hands_straight_back_to_the_scoper(client: TestClient, mo
 
     # Generation is unblocked without a further round trip.
     monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", SCOPE_STUB)
-    assert client.post(f"/api/ticket-studio/sessions/{session_id}/scope").status_code == 200
+    assert client.post(f"/api/ticket-studio/sessions/{session_id}/scope").status_code == 202
 
 
 def test_a_follow_up_round_of_questions_starts_blank(client: TestClient, monkeypatch):
@@ -422,7 +422,7 @@ def test_a_follow_up_round_of_questions_starts_blank(client: TestClient, monkeyp
         f"/api/ticket-studio/sessions/{session_id}/clarifications",
         json={"answers": ["Yes, keep them.", "Manual only."]},
     )
-    assert saved.status_code == 200, saved.text
+    assert saved.status_code == 202, saved.text
     body = saved.json()
 
     assert body["clarifying_questions"] == [
@@ -445,7 +445,7 @@ def test_a_repeated_question_keeps_its_answer(client: TestClient, monkeypatch):
         f"/api/ticket-studio/sessions/{session_id}/clarifications",
         json={"answers": ["Yes, keep them.", "Manual only."]},
     )
-    assert saved.status_code == 200, saved.text
+    assert saved.status_code == 202, saved.text
     assert saved.json()["clarifying_answers"] == ["Yes, keep them.", "Manual only."]
     assert saved.json()["clarifying_resolved"] is True
 
@@ -467,7 +467,7 @@ def test_ticket_studio_chat_applies_scope_from_stub(client: TestClient, monkeypa
         f"/api/ticket-studio/sessions/{session_id}/messages",
         json={"content": "Please scope this into tickets"},
     )
-    assert msg.status_code == 200, msg.text
+    assert msg.status_code == 202, msg.text
     body = msg.json()
     assert len(body["messages"]) == 2
     assert body["messages"][-1]["display_content"]
@@ -536,3 +536,144 @@ def test_ticket_studio_runtime_persists(client: TestClient):
 
     detail = client.get(f"/api/ticket-studio/sessions/{session_id}").json()
     assert detail["runtime"]["cli_adapter"] == "lmstudio"
+
+
+def _draft_session(client: TestClient, title: str) -> str:
+    create = client.post(
+        "/api/ticket-studio/sessions",
+        json={"workspace_slug": "loregarden", "title": title, "brief": "Feature brief"},
+    )
+    assert create.status_code == 200
+    return create.json()["id"]
+
+
+def test_scope_turn_does_not_run_on_the_request_thread(client: TestClient, monkeypatch):
+    """The POST records the turn and hands off — it does not call the CLI inline.
+
+    Patching the scheduler proves it: the old blocking endpoint held the request
+    open for the length of a scope call, so a reload or a restart lost the work.
+    """
+    from unittest.mock import patch
+
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", SCOPE_STUB)
+    session_id = _draft_session(client, "Async scope")
+
+    with patch("loregarden.api.ticket_studio.schedule_studio_turn") as scheduled:
+        res = client.post(f"/api/ticket-studio/sessions/{session_id}/scope")
+
+    assert res.status_code == 202
+    assert scheduled.call_count == 1
+    body = res.json()
+    assert body["run_status"] == "running"
+    assert body["active_turn_id"]
+    # Nothing was applied: the turn has not run.
+    assert body["draft"] == []
+
+
+def test_pending_turn_is_not_shown_as_a_message(client: TestClient, monkeypatch):
+    from unittest.mock import patch
+
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", SCOPE_STUB)
+    session_id = _draft_session(client, "Pending turn")
+
+    with patch("loregarden.api.ticket_studio.schedule_studio_turn"):
+        client.post(f"/api/ticket-studio/sessions/{session_id}/scope")
+
+    detail = client.get(f"/api/ticket-studio/sessions/{session_id}").json()
+    # The operator's turn is there; the empty assistant row in flight is not.
+    assert [m["role"] for m in detail["messages"]] == ["user"]
+    assert detail["run_status"] == "running"
+
+
+def test_second_turn_rejected_while_one_is_in_flight(client: TestClient, monkeypatch):
+    from unittest.mock import patch
+
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", SCOPE_STUB)
+    session_id = _draft_session(client, "Busy session")
+
+    with patch("loregarden.api.ticket_studio.schedule_studio_turn"):
+        assert client.post(f"/api/ticket-studio/sessions/{session_id}/scope").status_code == 202
+        clash = client.post(
+            f"/api/ticket-studio/sessions/{session_id}/messages",
+            json={"content": "and another thing"},
+        )
+    assert clash.status_code == 409
+    assert "still working" in clash.json()["detail"]
+
+
+def test_interrupted_studio_turn_is_settled_not_stranded(client: TestClient, monkeypatch):
+    """A turn orphaned by a restart must fail loudly rather than block the session."""
+    from unittest.mock import patch
+
+    from loregarden.db.session import engine
+    from loregarden.services.ticket_studio_run_service import fail_interrupted_studio_turns
+    from sqlmodel import Session
+
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", SCOPE_STUB)
+    session_id = _draft_session(client, "Interrupted")
+
+    with patch("loregarden.api.ticket_studio.schedule_studio_turn"):
+        client.post(f"/api/ticket-studio/sessions/{session_id}/scope")
+
+    with Session(engine) as db:
+        assert len(fail_interrupted_studio_turns(db)) == 1
+
+    detail = client.get(f"/api/ticket-studio/sessions/{session_id}").json()
+    assert detail["run_status"] == "idle"
+    assert "interrupted" in detail["messages"][-1]["content"].lower()
+    # And the session takes work again rather than staying wedged.
+    assert client.post(f"/api/ticket-studio/sessions/{session_id}/scope").status_code == 202
+
+
+def test_failed_turn_is_recorded_as_failed(client: TestClient, monkeypatch):
+    from loregarden.services import ticket_studio_service
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("model exploded")
+
+    monkeypatch.delenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", raising=False)
+    session_id = _draft_session(client, "Failing turn")
+    monkeypatch.setattr(ticket_studio_service, "run_cli_agent_turn", boom)
+
+    res = client.post(f"/api/ticket-studio/sessions/{session_id}/scope")
+    assert res.status_code == 202
+    body = res.json()
+    # Settled, not stuck — and the failure reads in the thread.
+    assert body["run_status"] == "idle"
+    assert "unavailable" in body["messages"][-1]["content"]
+    assert "model exploded" in body["messages"][-1]["content"]
+
+
+def test_bootstrap_clarify_chains_scope_when_nothing_is_unclear(client: TestClient, monkeypatch):
+    """New-session bootstrap: no questions means generate, without a second call.
+
+    The chain used to live in the client, which awaited two blocking requests —
+    a reload between them left the session on an empty draft forever.
+    """
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", SCOPE_STUB)
+    session_id = _draft_session(client, "Bootstrap")
+
+    res = client.post(
+        f"/api/ticket-studio/sessions/{session_id}/clarify", json={"auto_scope": True}
+    )
+    assert res.status_code == 202
+    body = res.json()
+    assert body["clarifying_questions"] == []
+    # The scope turn ran off the back of the clarify turn: the draft is populated
+    # (under the synthesized root the repair adds for a parentless session).
+    titles = [item["title"] for item in body["draft"]]
+    assert "Ticket Studio" in titles
+    assert "Add ticket studio routes" in titles
+    assert body["run_status"] == "idle"
+
+
+def test_bootstrap_clarify_stops_when_the_scoper_has_questions(client: TestClient, monkeypatch):
+    monkeypatch.setenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", CLARIFY_STUB)
+    session_id = _draft_session(client, "Bootstrap with questions")
+
+    body = client.post(
+        f"/api/ticket-studio/sessions/{session_id}/clarify", json={"auto_scope": True}
+    ).json()
+    assert body["clarifying_questions"]
+    # Questions are open, so nothing was generated over the top of them.
+    assert body["draft"] == []

@@ -13,6 +13,7 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
 )
 from loregarden.services.branch_triage_service import branch_triage_snapshot
+from loregarden.services.chat_primitives import load_parts_json
 from loregarden.services.cli_agent_runner import run_cli_agent_turn, stub_response
 from loregarden.services.triage_service import (
     TRIAGE_AGENT_NAME,
@@ -119,6 +120,7 @@ def branch_chat_snapshot(session: Session, workspace: Workspace, branch: str) ->
                 "id": msg.id,
                 "role": msg.role,
                 "content": msg.content,
+                "parts": load_parts_json(msg.parts_json),
                 "created_at": msg.created_at.isoformat(),
             }
             for msg in messages

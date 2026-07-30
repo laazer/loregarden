@@ -93,6 +93,14 @@ interface UiState {
   /** Whether the Baxter chat history drawer is visible. */
   baxterHistoryOpen: boolean;
   /**
+   * The Home Baxter conversation currently on screen, or "" for a fresh one.
+   *
+   * Persisted: the thread itself lives on the server, and returning to Home
+   * with no memory of which one was open would show an empty composer above a
+   * conversation the operator was in the middle of.
+   */
+  baxterChatSessionId: string;
+  /**
    * Per-run auto-follow-to-bottom choice for LogsPanel's running-lane views.
    *
    * Not persisted: run ids are meaningless across sessions/reloads of a
@@ -122,6 +130,7 @@ interface UiState {
   setBranchTriageWorkspaceSlug: (slug: string) => void;
   setBranchTriageBranch: (branch: string) => void;
   requestBaxterChatReset: () => void;
+  setBaxterChatSessionId: (id: string) => void;
   setBaxterHistoryOpen: (open: boolean) => void;
   toggleBaxterHistory: () => void;
   setCopilotOpen: (open: boolean) => void;
@@ -191,6 +200,7 @@ export const useUiStore = create<UiState>()(
       branchTriageBranch: "",
       baxterChatResetNonce: 0,
       baxterHistoryOpen: false,
+      baxterChatSessionId: "",
       autoFollowByRunId: {},
       setAutoFollow: (runId, value) =>
         set((state) => ({ autoFollowByRunId: { ...state.autoFollowByRunId, [runId]: value } })),
@@ -256,7 +266,11 @@ export const useUiStore = create<UiState>()(
         set((state) => ({
           baxterChatResetNonce: state.baxterChatResetNonce + 1,
           baxterHistoryOpen: false,
+          // A new chat is an unsaved one: the row appears in the archive when
+          // the first message gives it a name, not before.
+          baxterChatSessionId: "",
         })),
+      setBaxterChatSessionId: (baxterChatSessionId) => set({ baxterChatSessionId }),
       setBaxterHistoryOpen: (baxterHistoryOpen) => set({ baxterHistoryOpen }),
       toggleBaxterHistory: () =>
         set((state) => ({ baxterHistoryOpen: !state.baxterHistoryOpen })),
@@ -286,9 +300,12 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "loregarden-ui",
-      version: 11,
+      version: 12,
       migrate: (persistedState, version) => {
         const state = { ...(persistedState as Record<string, unknown>) };
+        if (version < 12 && typeof state.baxterChatSessionId !== "string") {
+          state.baxterChatSessionId = "";
+        }
         if (version < 11 && typeof state.chatWorkspaceSlug !== "string") {
           state.chatWorkspaceSlug = "";
         }
@@ -358,6 +375,7 @@ export const useUiStore = create<UiState>()(
         queueWorkspaceSlug: s.queueWorkspaceSlug,
         branchTriageWorkspaceSlug: s.branchTriageWorkspaceSlug,
         chatWorkspaceSlug: s.chatWorkspaceSlug,
+        baxterChatSessionId: s.baxterChatSessionId,
         copilotOpen: s.copilotOpen,
         copilotHeight: s.copilotHeight,
         copilotWidth: s.copilotWidth,

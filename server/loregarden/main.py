@@ -38,6 +38,7 @@ from loregarden.api import (
 from loregarden.config import settings
 from loregarden.core.auth import TokenAuthMiddleware
 from loregarden.db.session import engine, init_db
+from loregarden.services.baxter_chat_run_service import fail_interrupted_baxter_chat_turns
 from loregarden.services.branch_triage_run_service import fail_interrupted_branch_triage_turns
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
 from loregarden.services.run_service import (
@@ -46,6 +47,7 @@ from loregarden.services.run_service import (
     settle_stranded_stages,
 )
 from loregarden.services.seed import seed_database
+from loregarden.services.ticket_studio_run_service import fail_interrupted_studio_turns
 from loregarden.services.triage_run_service import fail_interrupted_triage_turns
 
 logger = logging.getLogger(__name__)
@@ -66,6 +68,8 @@ async def lifespan(app: FastAPI):
         fail_interrupted_orchestration_runs(session)
         fail_interrupted_triage_turns(session)
         fail_interrupted_branch_triage_turns(session)
+        fail_interrupted_baxter_chat_turns(session)
+        fail_interrupted_studio_turns(session)
         # Last: the reaps above settle stages as they complete their runs, so this
         # only sees stages no run will ever account for.
         settle_stranded_stages(session)

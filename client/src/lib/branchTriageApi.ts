@@ -1,4 +1,5 @@
 import type { DiffArtifact } from "../api/client";
+import type { ChatPart } from "../components/chat/primitives/types";
 import { VITE_API_BASE } from "../api/viteEnv";
 
 export interface BranchDiffComment {
@@ -102,6 +103,8 @@ export interface BranchTriageChatMessage {
   id: string;
   role: string;
   content: string;
+  /** Resolved at write time and stored, so cards survive a reload. */
+  parts?: ChatPart[];
   created_at: string;
 }
 

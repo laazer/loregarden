@@ -18,6 +18,7 @@ from loregarden.models.domain.chat_primitives import (
 )
 from loregarden.services.chat_primitives.parser import parse_primitive_parts, parts_to_jsonable
 from loregarden.services.chat_primitives.resolver import resolve_parts
+from loregarden.services.chat_primitives.storage import load_parts_json
 from sqlmodel import Session, select
 
 
@@ -193,17 +194,46 @@ def test_resolve_parts_picks_the_external_id_in_its_own_workspace(db_session: Se
     assert parts[0].title == "Theirs"
 
 
-def test_baxter_reply_includes_parts(client, monkeypatch):
+def test_baxter_reply_persists_parts(client, monkeypatch):
+    """Parts are stored with the message, so a reload still renders the card."""
     monkeypatch.setenv(
         "LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE",
         'Here you go:\n```loregarden\n{"primitive":"thinking","content":"ok"}\n```\n',
     )
+    session_id = client.post("/api/workspaces/loregarden/baxter-chat/sessions", json={}).json()[
+        "id"
+    ]
     res = client.post(
-        "/api/workspaces/loregarden/baxter-chat/messages",
-        json={"content": "Show a thinking card", "history": []},
+        f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/messages",
+        json={"content": "Show a thinking card"},
     )
-    assert res.status_code == 200
-    body = res.json()
-    assert "reply" in body
-    assert isinstance(body["parts"], list)
-    assert any(p.get("primitive") == "thinking" for p in body["parts"])
+    assert res.status_code == 202
+
+    snapshot = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").json()
+    parts = snapshot["messages"][-1]["parts"]
+    assert any(p.get("primitive") == "thinking" for p in parts)
+
+
+def test_stored_parts_survive_a_malformed_column():
+    """A bad parts blob degrades to plain text; it must not break the thread."""
+    assert load_parts_json("not json") == []
+    assert load_parts_json('{"primitive":"text"}') == []
+    assert load_parts_json(None) == []
+    assert load_parts_json('[{"primitive":"text","content":"hi"},7]') == [
+        {"primitive": "text", "content": "hi"}
+    ]
+
+
+def test_ticket_triage_reply_persists_parts(client, monkeypatch):
+    """Ticket triage stored no parts at all before — the column was dead."""
+    monkeypatch.setenv(
+        "LOREGARDEN_TRIAGE_STUB_RESPONSE",
+        'On it:\n```loregarden\n{"primitive":"thinking","content":"ok"}\n```\n',
+    )
+    ticket_id = client.get("/api/tickets").json()[0]["id"]
+    sent = client.post(f"/api/tickets/{ticket_id}/triage/messages", json={"content": "status?"})
+    assert sent.status_code in (200, 202)
+
+    snapshot = client.get(f"/api/tickets/{ticket_id}/triage").json()
+    assistant = [m for m in snapshot["messages"] if m["role"] == "assistant"][-1]
+    assert any(p.get("primitive") == "thinking" for p in assistant["parts"])

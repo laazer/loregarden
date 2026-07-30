@@ -626,11 +626,9 @@ export function Dashboard() {
         imported_tickets: preview.tickets,
       });
       try {
-        const clarified = await api.requestTicketStudioClarifications(created.id);
-        if (clarified.clarifying_resolved && clarified.clarifying_questions.length === 0) {
-          return api.generateTicketStudioScope(clarified.id);
-        }
-        return clarified;
+        // auto_scope: the server generates the breakdown itself when the scoper
+        // has nothing to ask, so the chain is not lost if this page goes away.
+        return await api.requestTicketStudioClarifications(created.id, true);
       } catch {
         return created;
       }

@@ -22,6 +22,7 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
 )
+from loregarden.services.chat_primitives import load_parts_json, parts_json_for_reply
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
     run_cli_agent_turn,
@@ -41,9 +42,28 @@ from loregarden.services.draft_hierarchy import (
 from loregarden.services.integration_review import ensure_reviews_for_tickets
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.workflow_service import WorkflowService
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 TICKET_STUDIO_AGENT_ID = "ticket_scoper"
+
+# Which scoper turn a pending row is, recorded on the row itself. The mode picks
+# the prompt AND how the reply is applied to the session, so a worker that did
+# not start the turn can still finish it exactly as the starter intended.
+STUDIO_TURN_CHAT = "chat"
+STUDIO_TURN_CLARIFY = "clarify"
+# A clarify turn that generates the breakdown itself when nothing is unclear —
+# how a brand-new session bootstraps without stranding the operator on an empty draft.
+STUDIO_TURN_BOOTSTRAP_CLARIFY = "bootstrap_clarify"
+STUDIO_TURN_SCOPE = "scope"
+
+# The prompt (and reply cap) each turn mode runs with.
+STUDIO_PROMPT_MODES = {
+    STUDIO_TURN_CHAT: "chat",
+    STUDIO_TURN_CLARIFY: "clarify",
+    STUDIO_TURN_BOOTSTRAP_CLARIFY: "clarify",
+    STUDIO_TURN_SCOPE: "scope",
+}
+
 MAX_STUDIO_HISTORY_MESSAGES = 16
 MAX_STUDIO_MESSAGE_CHARS = 3000
 MAX_STUDIO_BRIEF_CHARS = 8000
@@ -226,8 +246,26 @@ def _message_view(msg: TicketStudioMessage) -> dict:
         "display_content": format_studio_reply_for_display(msg.content)
         if msg.role == "assistant"
         else msg.content,
+        "parts": load_parts_json(msg.parts_json),
         "created_at": msg.created_at.isoformat(),
     }
+
+
+def _assistant_message(
+    session: Session, session_row: TicketStudioSession, reply: str
+) -> TicketStudioMessage:
+    """An assistant turn with its parts resolved at write time.
+
+    Every scoper path builds its assistant row through here so none of them can
+    forget the parts and leave that turn rendering as raw fenced JSON after a
+    reload.
+    """
+    return TicketStudioMessage(
+        session_id=session_row.id,
+        role="assistant",
+        content=reply,
+        parts_json=parts_json_for_reply(session, reply, workspace_id=session_row.workspace_id),
+    )
 
 
 def _load_draft(session_row: TicketStudioSession) -> list[TicketStudioDraftItem]:
@@ -252,6 +290,7 @@ def _session_view(
     questions = json.loads(session_row.clarifying_questions_json or "[]")
     answers = _load_clarifying_answers(session_row)
     imported_tickets = json.loads(session_row.imported_tickets_json or "[]")
+    run_status, active_turn_id = studio_run_status(session, session_row.id)
     return TicketStudioSessionView(
         id=session_row.id,
         workspace_slug=workspace.slug if workspace else "",
@@ -269,6 +308,8 @@ def _session_view(
         runtime=get_studio_runtime(session_row).model_dump(),
         is_preview=session_row.is_preview,
         imported_tickets=imported_tickets,
+        run_status=run_status,
+        active_turn_id=active_turn_id,
         created_at=session_row.created_at,
         updated_at=session_row.updated_at,
     )
@@ -277,14 +318,42 @@ def _session_view(
 def list_studio_messages(
     session: Session, session_id: str, *, limit: int = 200
 ) -> list[TicketStudioMessage]:
+    """Settled messages only. A pending assistant row has no content yet — it is a
+    turn in flight, surfaced through ``studio_run_status`` instead. Prompt history
+    reads through here too, so an in-flight turn never feeds itself back.
+    """
     return list(
         session.exec(
             select(TicketStudioMessage)
-            .where(TicketStudioMessage.session_id == session_id)
+            .where(
+                TicketStudioMessage.session_id == session_id,
+                TicketStudioMessage.status != "pending",
+            )
             .order_by(TicketStudioMessage.created_at.asc())
             .limit(limit)
         ).all()
     )
+
+
+def latest_pending_studio_turn(session: Session, session_id: str) -> TicketStudioMessage | None:
+    """The session's in-flight turn, if any."""
+    return session.exec(
+        select(TicketStudioMessage)
+        .where(
+            TicketStudioMessage.session_id == session_id,
+            TicketStudioMessage.status == "pending",
+        )
+        .order_by(col(TicketStudioMessage.created_at).desc())
+        .limit(1)
+    ).first()
+
+
+def studio_run_status(session: Session, session_id: str) -> tuple[str, str | None]:
+    """Return (run_status, active_turn_id) for the session's latest scoper turn."""
+    pending = latest_pending_studio_turn(session, session_id)
+    if pending:
+        return "running", pending.id
+    return "idle", None
 
 
 def build_studio_prompt(
@@ -524,6 +593,61 @@ def _apply_scope_to_session(
     return bool(items or summary or questions)
 
 
+class TicketStudioConflictError(ValueError):
+    """Raised when a turn can't start because one is already in flight for the session."""
+
+
+def apply_settled_turn(
+    session: Session,
+    session_row: TicketStudioSession,
+    reply: str,
+    *,
+    mode: str,
+) -> None:
+    """Fold a finished scoper reply into the session, the way its mode requires.
+
+    This is the half of each path that used to run inline after the model call.
+    It lives here, keyed by mode, so the background worker applies exactly what
+    the request thread used to — no second copy to drift.
+    """
+    if mode == STUDIO_TURN_CHAT:
+        _apply_scope_to_session(session_row, reply, apply_tickets=False)
+        return
+    if mode in (STUDIO_TURN_CLARIFY, STUDIO_TURN_BOOTSTRAP_CLARIFY):
+        _apply_scope_to_session(
+            session_row, reply, apply_tickets=False, clear_questions_when_empty=True
+        )
+        return
+
+    parent = (
+        session.get(Ticket, session_row.parent_ticket_id) if session_row.parent_ticket_id else None
+    )
+    applied = False
+    try:
+        applied = _apply_scope_to_session(
+            session_row,
+            reply,
+            apply_tickets=True,
+            parent_type=parent.work_item_type if parent else None,
+        )
+    except DraftHierarchyError as exc:
+        session_row.summary = (
+            "Scope generation returned a ticket hierarchy that cannot be repaired, so the "
+            "draft was left unchanged. Generate again, or fix the brief:\n"
+            + "\n".join(f"- {violation}" for violation in exc.violations)
+        )
+        applied = True
+    if not applied:
+        session_row.summary = (
+            session_row.summary
+            or "Scope generation did not return structured tickets — refine the brief or chat further."
+        )
+
+
+def has_open_questions(session_row: TicketStudioSession) -> bool:
+    return bool(json.loads(session_row.clarifying_questions_json or "[]"))
+
+
 def _validate_draft_hierarchy(
     items: list[TicketStudioDraftItem],
     *,
@@ -734,6 +858,48 @@ class TicketStudioService:
         self.session.refresh(row)
         return _session_view(self.session, row)
 
+    def _require_idle(self, row: TicketStudioSession) -> None:
+        """Refuse a turn while one is in flight.
+
+        Checked before a caller mutates the session as well as inside
+        ``_start_turn``: ``save_clarifications`` writes the answers first, and a
+        conflict raised after that would leave the request holding changes it
+        never meant to keep.
+        """
+        if latest_pending_studio_turn(self.session, row.id):
+            raise TicketStudioConflictError(
+                "The scoper is still working on this session — wait for the current turn to finish."
+            )
+
+    def _start_turn(
+        self,
+        row: TicketStudioSession,
+        *,
+        user_content: str,
+        mode: str,
+    ) -> TicketStudioSessionView:
+        """Record the operator's turn and a pending scoper turn, then return.
+
+        Executes nothing — the caller schedules ``view.active_turn_id`` next.
+        Every path that hands work to the scoper goes through here, so none of
+        them can go back to running the model on the request thread.
+        """
+        self._require_idle(row)
+        self.session.add(TicketStudioMessage(session_id=row.id, role="user", content=user_content))
+        assistant_message = TicketStudioMessage(
+            session_id=row.id,
+            role="assistant",
+            content="",
+            status="pending",
+            turn_mode=mode,
+        )
+        self.session.add(assistant_message)
+        row.updated_at = datetime.now(timezone.utc)
+        self.session.add(row)
+        self.session.commit()
+        self.session.refresh(row)
+        return _session_view(self.session, row)
+
     def send_message(self, session_id: str, content: str) -> TicketStudioSessionView:
         text = content.strip()
         if not text:
@@ -745,30 +911,19 @@ class TicketStudioService:
         if row.status != TicketStudioSessionStatus.DRAFT:
             raise ValueError("Cannot chat on a committed session")
 
-        user_message = TicketStudioMessage(session_id=row.id, role="user", content=text)
-        self.session.add(user_message)
-        row.updated_at = datetime.now(timezone.utc)
-        self.session.add(row)
-        self.session.commit()
-        self.session.refresh(user_message)
+        return self._start_turn(row, user_content=text, mode=STUDIO_TURN_CHAT)
 
-        try:
-            reply = invoke_ticket_studio_model(self.session, row, text, mode="chat")
-        except Exception as exc:
-            reply = f"Ticket studio assistant unavailable: {exc}"
+    def request_clarifications(
+        self, session_id: str, *, auto_scope: bool = False
+    ) -> TicketStudioSessionView:
+        """Ask the scoper what is unclear.
 
-        assistant_message = TicketStudioMessage(session_id=row.id, role="assistant", content=reply)
-        self.session.add(assistant_message)
-        _apply_scope_to_session(row, reply, apply_tickets=False)
-        row.updated_at = datetime.now(timezone.utc)
-        self.session.add(row)
-        self.session.commit()
-
-        messages = list_studio_messages(self.session, row.id)
-        self.session.refresh(row)
-        return _session_view(self.session, row, messages=messages)
-
-    def request_clarifications(self, session_id: str) -> TicketStudioSessionView:
+        ``auto_scope`` is what bootstrapping a brand-new session wants: if the
+        scoper comes back with nothing to ask, generate the breakdown rather
+        than leaving the operator on an empty draft. The chain lives on the
+        turn, not in the caller, so it survives the reload that the caller's
+        await would not.
+        """
         row = self.session.get(TicketStudioSession, session_id)
         if not row:
             raise ValueError("Ticket studio session not found")
@@ -776,25 +931,8 @@ class TicketStudioService:
             raise ValueError("Cannot clarify a committed session")
 
         prompt = "Review this feature brief and return clarifying questions only (no tickets yet)."
-        user_message = TicketStudioMessage(session_id=row.id, role="user", content=prompt)
-        self.session.add(user_message)
-        row.updated_at = datetime.now(timezone.utc)
-        self.session.add(row)
-        self.session.commit()
-
-        try:
-            reply = invoke_ticket_studio_model(self.session, row, prompt, mode="clarify")
-        except Exception as exc:
-            reply = f"Ticket studio assistant unavailable: {exc}"
-
-        assistant_message = TicketStudioMessage(session_id=row.id, role="assistant", content=reply)
-        self.session.add(assistant_message)
-        _apply_scope_to_session(row, reply, apply_tickets=False, clear_questions_when_empty=True)
-        row.updated_at = datetime.now(timezone.utc)
-        self.session.add(row)
-        self.session.commit()
-        self.session.refresh(row)
-        return _session_view(self.session, row)
+        mode = STUDIO_TURN_BOOTSTRAP_CLARIFY if auto_scope else STUDIO_TURN_CLARIFY
+        return self._start_turn(row, user_content=prompt, mode=mode)
 
     def save_clarifications(self, session_id: str, answers: list[str]) -> TicketStudioSessionView:
         row = self.session.get(TicketStudioSession, session_id)
@@ -802,6 +940,8 @@ class TicketStudioService:
             raise ValueError("Ticket studio session not found")
         if row.status != TicketStudioSessionStatus.DRAFT:
             raise ValueError("Only draft sessions can be edited")
+
+        self._require_idle(row)
 
         questions = json.loads(row.clarifying_questions_json or "[]")
         if not questions:
@@ -816,29 +956,11 @@ class TicketStudioService:
 
         row.clarifying_answers_json = json.dumps(normalized)
         # The answers join the conversation so that a follow-up round can replace the open
-        # questions without discarding what the operator already told the scoper.
+        # questions without discarding what the operator already told the scoper. Answering
+        # is the operator's turn; hand straight back to the scoper rather than making them
+        # press a button to find out whether anything is still unclear.
         transcript = _format_answers_message(questions, normalized)
-        self.session.add(TicketStudioMessage(session_id=row.id, role="user", content=transcript))
-        row.updated_at = datetime.now(timezone.utc)
-        self.session.add(row)
-        self.session.commit()
-
-        # Answering is the operator's turn; hand straight back to the scoper rather than
-        # making them press a button to find out whether anything is still unclear.
-        try:
-            reply = invoke_ticket_studio_model(self.session, row, transcript, mode="clarify")
-        except Exception as exc:
-            reply = f"Ticket studio assistant unavailable: {exc}"
-
-        self.session.add(TicketStudioMessage(session_id=row.id, role="assistant", content=reply))
-        _apply_scope_to_session(row, reply, apply_tickets=False, clear_questions_when_empty=True)
-        row.updated_at = datetime.now(timezone.utc)
-        self.session.add(row)
-        self.session.commit()
-
-        messages = list_studio_messages(self.session, row.id)
-        self.session.refresh(row)
-        return _session_view(self.session, row, messages=messages)
+        return self._start_turn(row, user_content=transcript, mode=STUDIO_TURN_CLARIFY)
 
     def generate_scope(self, session_id: str) -> TicketStudioSessionView:
         row = self.session.get(TicketStudioSession, session_id)
@@ -853,45 +975,7 @@ class TicketStudioService:
             raise ValueError("Answer all clarifying questions before generating tickets")
 
         prompt = "Generate the full ticket breakdown for this feature. Output tickets in the JSON scope block."
-        user_message = TicketStudioMessage(session_id=row.id, role="user", content=prompt)
-        self.session.add(user_message)
-        row.updated_at = datetime.now(timezone.utc)
-        self.session.add(row)
-        self.session.commit()
-
-        try:
-            reply = invoke_ticket_studio_model(self.session, row, prompt, mode="scope")
-        except Exception as exc:
-            reply = f"Ticket studio assistant unavailable: {exc}"
-
-        assistant_message = TicketStudioMessage(session_id=row.id, role="assistant", content=reply)
-        self.session.add(assistant_message)
-        parent = self.session.get(Ticket, row.parent_ticket_id) if row.parent_ticket_id else None
-        applied = False
-        try:
-            applied = _apply_scope_to_session(
-                row,
-                reply,
-                apply_tickets=True,
-                parent_type=parent.work_item_type if parent else None,
-            )
-        except DraftHierarchyError as exc:
-            row.summary = (
-                "Scope generation returned a ticket hierarchy that cannot be repaired, so the "
-                "draft was left unchanged. Generate again, or fix the brief:\n"
-                + "\n".join(f"- {violation}" for violation in exc.violations)
-            )
-            applied = True
-        if not applied:
-            row.summary = (
-                row.summary
-                or "Scope generation did not return structured tickets — refine the brief or chat further."
-            )
-        row.updated_at = datetime.now(timezone.utc)
-        self.session.add(row)
-        self.session.commit()
-        self.session.refresh(row)
-        return _session_view(self.session, row)
+        return self._start_turn(row, user_content=prompt, mode=STUDIO_TURN_SCOPE)
 
     def commit_session(self, session_id: str) -> TicketStudioCommitResult:
         row = self.session.get(TicketStudioSession, session_id)

@@ -1177,6 +1177,93 @@ def _m_run_cancel_requested(conn: Connection) -> None:
     )
 
 
+def _m_baxter_chat_tables(conn: Connection) -> None:
+    """Persist Home Baxter conversations as named sessions.
+
+    Home chat previously lived only in React state and replayed its history from
+    the client each turn, so a reload lost the thread and the archive had nothing
+    to list. ``triage_messages`` gains the ``parts_json`` its siblings got in
+    0048 so ticket triage primitives survive a reload too.
+    """
+    if not table_exists(conn, "baxter_chat_sessions"):
+        conn.execute(
+            text(
+                """
+                CREATE TABLE baxter_chat_sessions (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    title TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX ix_baxter_chat_sessions_workspace_updated "
+                "ON baxter_chat_sessions (workspace_id, updated_at)"
+            )
+        )
+    if not table_exists(conn, "baxter_chat_messages"):
+        conn.execute(
+            text(
+                """
+                CREATE TABLE baxter_chat_messages (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'complete',
+                    parts_json TEXT NOT NULL DEFAULT '[]',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    FOREIGN KEY(session_id) REFERENCES baxter_chat_sessions(id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX ix_baxter_chat_messages_session_created "
+                "ON baxter_chat_messages (session_id, created_at)"
+            )
+        )
+    add_columns_if_missing(
+        conn,
+        "triage_messages",
+        {
+            "parts_json": (
+                "ALTER TABLE triage_messages ADD COLUMN parts_json TEXT NOT NULL DEFAULT '[]'"
+            ),
+        },
+    )
+
+
+def _m_ticket_studio_turn_lifecycle(conn: Connection) -> None:
+    """Give Ticket Studio turns the durable lifecycle the other chats have.
+
+    The scoper ran its model call on the request thread, so a restart or a
+    dropped connection lost the turn with no record it had ever started.
+    ``status`` makes an in-flight turn recoverable; ``turn_mode`` records which
+    kind of turn it is, because the reply is applied to the session differently
+    per mode and the worker settling it did not start it.
+    """
+    add_columns_if_missing(
+        conn,
+        "ticket_studio_messages",
+        {
+            "status": (
+                "ALTER TABLE ticket_studio_messages ADD COLUMN status "
+                "TEXT NOT NULL DEFAULT 'complete'"
+            ),
+            "turn_mode": (
+                "ALTER TABLE ticket_studio_messages ADD COLUMN turn_mode TEXT NOT NULL DEFAULT ''"
+            ),
+        },
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1227,6 +1314,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0047_ticket_dependencies_table", _m_ticket_dependencies_table),
     ("0048_chat_message_parts", _m_chat_message_parts),
     ("0049_run_cancel_requested", _m_run_cancel_requested),
+    ("0050_baxter_chat_tables", _m_baxter_chat_tables),
+    ("0051_ticket_studio_turn_lifecycle", _m_ticket_studio_turn_lifecycle),
 ]
 
 

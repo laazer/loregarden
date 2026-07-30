@@ -99,12 +99,18 @@ export function TicketStudioPanel({
     queryKey: ["ticket-studio-sessions", workspaceSlug],
     queryFn: () => api.ticketStudioSessions(workspaceSlug),
     enabled: !!workspaceSlug && !!qc,
+    // A scoper turn runs in the background now, so the reply arrives by polling
+    // rather than in the response to whatever started it.
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some((s) => s.run_status && s.run_status !== "idle") ? 2000 : false,
   });
 
   const sessionById = useQuery({
     queryKey: ["ticket-studio-session", selectedSessionId],
     queryFn: () => api.ticketStudioSession(selectedSessionId!),
     enabled: Boolean(selectedSessionId) && !!qc,
+    refetchInterval: (query) =>
+      query.state.data && query.state.data.run_status !== "idle" ? 2000 : false,
   });
 
   const studioWorkflows = useQuery({
@@ -221,11 +227,9 @@ export function TicketStudioPanel({
         parent_ticket_id: newDraft.parent_ticket_id || null,
       });
       try {
-        const clarified = await api.requestTicketStudioClarifications(created.id);
-        if (clarified.clarifying_resolved && clarified.clarifying_questions.length === 0) {
-          return api.generateTicketStudioScope(clarified.id);
-        }
-        return clarified;
+        // auto_scope: the server generates the breakdown itself when the scoper
+        // has nothing to ask, so the chain is not lost if this page goes away.
+        return await api.requestTicketStudioClarifications(created.id, true);
       } catch {
         return created;
       }
@@ -265,11 +269,9 @@ export function TicketStudioPanel({
         imported_tickets: preview.tickets,
       });
       try {
-        const clarified = await api.requestTicketStudioClarifications(created.id);
-        if (clarified.clarifying_resolved && clarified.clarifying_questions.length === 0) {
-          return api.generateTicketStudioScope(clarified.id);
-        }
-        return clarified;
+        // auto_scope: the server generates the breakdown itself when the scoper
+        // has nothing to ask, so the chain is not lost if this page goes away.
+        return await api.requestTicketStudioClarifications(created.id, true);
       } catch {
         return created;
       }
@@ -380,7 +382,10 @@ export function TicketStudioPanel({
     !hasOpenQuestions ||
     (selectedSession?.clarifying_questions.every((_, index) => answerDraft[index]?.trim()) ?? false);
   // Saving answers hands straight back to the scoper, so it is a thinking turn like any other.
+  // The server's run_status is what keeps this true across a reload — the mutation
+  // flags only cover the gap before the first poll reports the turn running.
   const isAssistantThinking =
+    (selectedSession?.run_status ?? "idle") !== "idle" ||
     sendMessage.isPending ||
     requestClarifications.isPending ||
     generateScope.isPending ||

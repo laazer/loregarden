@@ -59,6 +59,8 @@ import type {
   OrchestrationProfileView,
   WorkspaceWorkflow,
   Approval,
+  BaxterChatSessionSummary,
+  BaxterChatSnapshot,
   TriageSendResult,
   TriageSnapshot,
   StudioAgent,
@@ -417,19 +419,34 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ content, auto_approve: options?.auto_approve ?? false }),
     }),
-  sendBaxterChatMessage: (
-    slug: string,
-    body: {
-      content: string;
-      history?: { role: "user" | "assistant"; content: string }[];
-    },
-  ) =>
-    request<{ reply: string; parts?: unknown[] }>(
-      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/messages`,
-      {
-        method: "POST",
-        body: JSON.stringify(body),
-      },
+  baxterChatSessions: (slug: string) =>
+    request<BaxterChatSessionSummary[]>(
+      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions`,
+    ),
+  baxterChatSession: (slug: string, sessionId: string) =>
+    request<BaxterChatSnapshot>(
+      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}`,
+    ),
+  createBaxterChatSession: (slug: string, title = "") =>
+    request<BaxterChatSnapshot>(
+      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions`,
+      { method: "POST", body: JSON.stringify({ title }) },
+    ),
+  renameBaxterChatSession: (slug: string, sessionId: string, title: string) =>
+    request<BaxterChatSnapshot>(
+      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}`,
+      { method: "PATCH", body: JSON.stringify({ title }) },
+    ),
+  deleteBaxterChatSession: (slug: string, sessionId: string) =>
+    request<{ deleted: string }>(
+      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}`,
+      { method: "DELETE" },
+    ),
+  /** Accepted, not answered: the reply lands on the thread and arrives by polling. */
+  sendBaxterChatMessage: (slug: string, sessionId: string, content: string) =>
+    request<BaxterChatSnapshot>(
+      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/messages`,
+      { method: "POST", body: JSON.stringify({ content }) },
     ),
   skills: () => request<string[]>("/api/agents/skills"),
   studioMcpTools: () => request<string[]>("/api/studio/mcp-tools"),
@@ -541,8 +558,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ content }),
     }),
-  requestTicketStudioClarifications: (id: string) =>
-    request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}/clarify`, { method: "POST" }),
+  /**
+   * `autoScope` bootstraps a new session: the server generates the breakdown
+   * itself when the scoper has nothing to ask, so the chain survives a reload
+   * that an await here would not.
+   */
+  requestTicketStudioClarifications: (id: string, autoScope = false) =>
+    request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}/clarify`, {
+      method: "POST",
+      body: JSON.stringify({ auto_scope: autoScope }),
+    }),
   saveTicketStudioClarifications: (id: string, answers: string[]) =>
     request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}/clarifications`, {
       method: "PATCH",

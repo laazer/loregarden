@@ -695,6 +695,10 @@ class TicketStudioSessionView(SQLModel):
     runtime: dict[str, str] = Field(default_factory=dict)
     is_preview: bool = False
     imported_tickets: list[dict[str, Any]] = Field(default_factory=list)
+    # idle | running. Server-derived, so a reload mid-turn still shows the
+    # scoper working instead of an idle panel that silently changes later.
+    run_status: str = "idle"
+    active_turn_id: str | None = None
     created_at: datetime
     updated_at: datetime
 

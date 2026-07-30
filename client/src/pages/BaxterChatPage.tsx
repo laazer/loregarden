@@ -2,11 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { ApiError, api, type Approval, type TicketSummary } from "../api/client";
+import { api, type Approval, type TicketSummary } from "../api/client";
 import { BaxterAvatar } from "../components/chat/BaxterAvatar";
 import { ChatHistorySidebar } from "../components/chat/ChatHistorySidebar";
 import { primitiveGallerySections } from "../components/chat/primitiveGallery";
 import { StudioChatComposer, StudioChatMessages } from "../components/studio/StudioChat";
+import { useBaxterChatSession } from "../hooks/useBaxterChatSession";
 import { useChatWorkspace } from "../hooks/useChatWorkspace";
 import { ticketPath } from "../lib/appNavigation";
 import { takeHomeBaxterPrompt } from "../lib/homeBaxter";
@@ -33,10 +34,6 @@ const EMPTY_CHIPS = [
 
 function pendingApprovals(approvals: Approval[] | undefined): Approval[] {
   return (approvals ?? []).filter((a) => !a.status || a.status === "pending");
-}
-
-function nextId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function greetingFor(now: Date): string {
@@ -181,11 +178,17 @@ export function BaxterChatPage() {
   const setHistoryOpen = useUiStore((s) => s.setBaxterHistoryOpen);
 
   const { slug: workspaceSlug } = useChatWorkspace();
+  const chat = useBaxterChatSession(workspaceSlug);
 
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
-  const [busy, setBusy] = useState(false);
+  /**
+   * The primitive gallery only — a canned thread with nothing behind it.
+   *
+   * Real conversations live on the server and are read through `chat`; this
+   * holds the one that has no server side, so opening the gallery cannot be
+   * mistaken for a saved conversation or write one.
+   */
+  const [galleryTurns, setGalleryTurns] = useState<ChatTurn[] | null>(null);
   const initialPromptRef = useRef(takeHomeBaxterPrompt());
-  const turnsRef = useRef<ChatTurn[]>([]);
   const resetNonce = useUiStore((s) => s.baxterChatResetNonce);
   const resetSeenRef = useRef(resetNonce);
   const now = useMemo(() => new Date(), []);
@@ -219,13 +222,11 @@ export function BaxterChatPage() {
     [approvalsQ.data, workspaceSlug],
   );
   const tickets = ticketsQ.data ?? [];
-  const latestSuggestions = [...turns].reverse().find((t) => t.role === "assistant" && t.suggestions?.length)
-    ?.suggestions;
-  const isEmpty = turns.length === 0 && !busy;
 
-  useEffect(() => {
-    turnsRef.current = turns;
-  }, [turns]);
+  const inGallery = galleryTurns !== null;
+  const busy = !inGallery && chat.isBusy;
+  const hasThread = inGallery ? galleryTurns.length > 0 : chat.messages.length > 0;
+  const isEmpty = !hasThread && !busy;
 
   const summaryLine = useMemo(() => {
     const parts: string[] = [];
@@ -240,60 +241,21 @@ export function BaxterChatPage() {
     return parts.join(" · ");
   }, [approvals.length, tickets]);
 
-  const respond = async (prompt: string) => {
+  const respond = (prompt: string) => {
     const content = prompt.trim();
     if (!content || busy || !workspaceSlug) return;
-    setBusy(true);
-    const history = turnsRef.current.map((t) => ({ role: t.role, content: t.text }));
-    const userTurn: ChatTurn = { id: nextId("user"), role: "user", text: content };
-    setTurns((prev) => [...prev, userTurn]);
-
-    try {
-      const { reply, parts } = await api.sendBaxterChatMessage(workspaceSlug, {
-        content,
-        history,
-      });
-      setTurns((prev) => [
-        ...prev,
-        {
-          id: nextId("assistant"),
-          role: "assistant",
-          text: reply.trim() || "Baxter returned an empty reply.",
-          parts: parts as ChatTurn["parts"],
-          approvals: approvals.slice(0, 5),
-          suggestions: suggestionChips(approvals, tickets),
-        },
-      ]);
-    } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : "Baxter could not answer right now.";
-      setTurns((prev) => [
-        ...prev,
-        {
-          id: nextId("assistant"),
-          role: "assistant",
-          text: message,
-          suggestions: ["Try again", "Open the Console", "Check workspace runtime"],
-        },
-      ]);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const startNewChat = () => {
-    setTurns([]);
-    setBusy(false);
+    // Sending from the gallery leaves it: the canned thread is a reference, not
+    // a conversation to continue.
+    setGalleryTurns(null);
+    // The failure is shown from `chat.error`; swallowing here keeps a failed
+    // send from surfacing as an unhandled rejection as well.
+    void chat.send(content).catch(() => undefined);
   };
 
   const openPrimitiveGallery = () => {
     const liveTickets = historyTicketsQ.data ?? tickets;
     const sections = primitiveGallerySections({ tickets: liveTickets });
-    setTurns(
+    setGalleryTurns(
       sections.flatMap((section, index) => [
         {
           id: `primitive-gallery-${section.id}-ask`,
@@ -312,46 +274,82 @@ export function BaxterChatPage() {
         },
       ]),
     );
-    setBusy(false);
     setHistoryOpen(false);
+  };
+
+  const startNewChat = () => {
+    setGalleryTurns(null);
+    chat.startNewChat();
   };
 
   useEffect(() => {
     if (resetNonce === resetSeenRef.current) return;
     resetSeenRef.current = resetNonce;
     startNewChat();
+    // Only the nonce should trigger this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetNonce]);
 
   useEffect(() => {
     const handedOff = initialPromptRef.current;
     if (!handedOff) return;
-    // A turn snapshots the approvals it was answered with, so bootstrapping
-    // before the inbox lands would strip the first reply of its context.
+    // A turn's approval card is snapshotted from the inbox, so bootstrapping
+    // before it lands would strip the first reply of its context.
     if (!workspaceSlug || approvalsQ.isLoading) return;
     initialPromptRef.current = "";
-    void respond(handedOff);
+    respond(handedOff);
     // Bootstrap once the workspace and its inbox are known.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceSlug, approvalsQ.isLoading]);
 
   const threadMessages = useMemo(
     () =>
-      turns.map((t) => ({
-        id: t.id,
-        role: t.role,
-        content: t.text,
-        parts: t.parts,
-      })),
-    [turns],
+      galleryTurns
+        ? galleryTurns.map((t) => ({
+            id: t.id,
+            role: t.role,
+            content: t.text,
+            parts: t.parts,
+          }))
+        : chat.messages,
+    [galleryTurns, chat.messages],
   );
 
-  const approvalsByTurnId = useMemo(() => {
-    const map = new Map<string, Approval[]>();
-    for (const turn of turns) {
-      if (turn.approvals?.length) map.set(turn.id, turn.approvals);
+  const latestSuggestions = useMemo(() => {
+    if (galleryTurns) {
+      return [...galleryTurns]
+        .reverse()
+        .find((t) => t.role === "assistant" && t.suggestions?.length)?.suggestions;
     }
-    return map;
-  }, [turns]);
+    const last = threadMessages[threadMessages.length - 1];
+    return last?.role === "assistant" ? suggestionChips(approvals, tickets) : undefined;
+  }, [galleryTurns, threadMessages, approvals, tickets]);
+
+  /**
+   * Approvals ride under the newest reply only.
+   *
+   * The pending inbox is live state, not something a past turn owns — pinning a
+   * stale copy to every historical reply would show the operator work that is
+   * already resolved, and pinning it to none loses the prompt entirely.
+   */
+  const approvalsMessageId = useMemo(() => {
+    if (galleryTurns || !approvals.length) return null;
+    const last = threadMessages[threadMessages.length - 1];
+    return last?.role === "assistant" ? last.id : null;
+  }, [galleryTurns, approvals.length, threadMessages]);
+
+  /**
+   * A failed send, shown as chrome rather than as a reply.
+   *
+   * The old page pushed the error into the thread as an assistant turn; with
+   * the thread server-owned that would be a message Baxter never sent, and it
+   * would vanish on the next read anyway.
+   */
+  const sendError = chat.error ? (
+    <p className="baxter-chat-error" role="alert">
+      {chat.error}
+    </p>
+  ) : null;
 
   return (
     <div className={`baxter-chat lg-chat-surface${isEmpty ? " baxter-chat--empty" : ""}`}>
@@ -368,6 +366,7 @@ export function BaxterChatPage() {
             busy={busy}
             blocked={!workspaceSlug}
           />
+          {sendError}
         </div>
       ) : (
         <>
@@ -382,8 +381,8 @@ export function BaxterChatPage() {
               showAssistantAvatar={false}
               onPrimitiveSubmit={(content) => void respond(content)}
               renderAfterMessage={(message) => {
-                const turnApprovals = approvalsByTurnId.get(message.id);
-                if (!turnApprovals?.length) return null;
+                if (message.id !== approvalsMessageId) return null;
+                const turnApprovals = approvals.slice(0, 5);
                 return (
                   <div className="baxter-chat-card">
                     <div className="baxter-chat-card-head">
@@ -434,6 +433,7 @@ export function BaxterChatPage() {
             />
           </div>
 
+          {sendError}
           <BaxterReplyDock
             onSend={(text) => void respond(text)}
             busy={busy}
@@ -446,6 +446,14 @@ export function BaxterChatPage() {
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         onOpenPrimitiveGallery={openPrimitiveGallery}
+        workspaceSlug={workspaceSlug}
+        activeSessionId={galleryTurns ? "" : chat.sessionId}
+        onSelectSession={(id) => {
+          setGalleryTurns(null);
+          chat.openSession(id);
+          setHistoryOpen(false);
+        }}
+        onDeleteSession={(id) => void chat.deleteSession(id)}
       />
     </div>
   );

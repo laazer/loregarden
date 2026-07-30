@@ -56,6 +56,8 @@ function buildSession(overrides: Partial<TicketStudioSession> = {}): TicketStudi
     parent_ticket_id: null,
     parent_ticket_title: "",
     status: "draft",
+    run_status: "idle",
+    active_turn_id: null,
     summary: "Scoped into a feature with tasks.",
     clarifying_questions: [],
     clarifying_answers: [],

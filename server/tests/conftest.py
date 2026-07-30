@@ -24,6 +24,8 @@ _ENGINE_BINDINGS = (
     "loregarden.agents.executors.permission_bridge.engine",
     "loregarden.services.triage_run_service.engine",
     "loregarden.services.branch_triage_run_service.engine",
+    "loregarden.services.baxter_chat_run_service.engine",
+    "loregarden.services.ticket_studio_run_service.engine",
 )
 
 
