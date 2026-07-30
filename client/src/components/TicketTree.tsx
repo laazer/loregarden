@@ -4,13 +4,61 @@ import type { TicketTreeNode } from "../api/client";
 import {
   TICKET_STATE_COLORS,
   TICKET_STATE_LABELS,
-  priorityStyle,
   stageStatusColor,
-  stageStatusLabel,
 } from "../lib/ticketStates";
 import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
 import { TreeExpandChevron } from "./icons/TicketTreeIcons";
 import { PrioBars } from "./PrioBars";
+import {
+  TicketCardBody,
+  childProgressSegments,
+} from "./chat/primitives/TicketCardMeta";
+import "./chat/primitives/PrimitiveCard.css";
+
+function TreeRowTrail({
+  node,
+  workflowRunning,
+  showAddChild,
+  onAddChild,
+  renderRowAction,
+}: {
+  node: TicketTreeNode;
+  workflowRunning: boolean;
+  showAddChild: boolean;
+  onAddChild?: (node: TicketTreeNode) => void;
+  renderRowAction?: (node: TicketTreeNode) => ReactNode;
+}) {
+  const hasChildren = node.children.length > 0;
+  return (
+    <div className="tree-row-trail">
+      {workflowRunning && (
+        <span
+          className="tree-workflow-dot running"
+          title="Workflow running"
+          aria-label="Workflow running"
+        />
+      )}
+      {hasChildren && (
+        <span className="count-pill tree-child-count">{node.child_count}</span>
+      )}
+      {showAddChild && (
+        <button
+          type="button"
+          className="tree-add-child-btn"
+          title={addChildActionLabel(node.work_item_type)}
+          aria-label={addChildActionLabel(node.work_item_type)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onAddChild?.(node);
+          }}
+        >
+          +
+        </button>
+      )}
+      {renderRowAction?.(node)}
+    </div>
+  );
+}
 
 function TreeRow({
   node,
@@ -42,10 +90,10 @@ function TreeRow({
   const showAddChild = !!onAddChild && canHaveChildren(node.work_item_type);
   const stateColor = TICKET_STATE_COLORS[node.state];
   const wfColor = stageStatusColor(node.workflow_stage_status);
-  const priority = priorityStyle(node.priority);
   const isV6 = presentation === "v6";
 
   const showTrail = workflowRunning || showAddChild || Boolean(renderRowAction) || hasChildren;
+  const childProgress = hasChildren ? childProgressSegments(node.children) : null;
 
   const handleRowClick = () => {
     onSelect(node.id);
@@ -77,102 +125,125 @@ function TreeRow({
         aria-expanded={hasChildren ? expanded : undefined}
         tabIndex={0}
       >
-        <div className={`tree-row-head${hasChildren ? "" : " tree-row-head--no-chevron"}`}>
-          {hasChildren ? (
-            <button
-              type="button"
-              className="tree-chevron-btn"
-              aria-label={expanded ? "Collapse" : "Expand"}
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggle(node.id);
-              }}
-            >
-              <TreeExpandChevron expanded={expanded} />
-            </button>
-          ) : null}
-          {isV6 ? (
-            <span
-              className="lg-primitive-ticket-prio"
-              style={{
-                color: priority.color,
-                background: priority.background,
-                borderColor: priority.border,
-              }}
-            >
-              {priority.code}
-            </span>
-          ) : (
-            <PrioBars priority={node.priority} />
-          )}
-          <div className="tree-card-title">
-            {showExternalId ? (
-              <>
-                <span className="tree-external-id">{node.external_id}</span>
-                <span className="tree-title-sep"> · </span>
-                {node.title}
-              </>
-            ) : (
-              node.title
-            )}
-          </div>
-        </div>
-        <div className="tree-card-meta">
-          <div className="tree-card-meta-main">
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 500, color: stateColor }}>
-              <span className="tree-state-dot" style={{ background: stateColor }} />
-              {TICKET_STATE_LABELS[node.state]}
-            </span>
-            {node.workspace_slug ? (
-              <>
-                <span style={{ color: "var(--bd2)" }}>·</span>
-                <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}>
-                  {node.workspace_slug}
-                </span>
-              </>
+        {isV6 ? (
+          <>
+            <div className="tree-row-v6-body">
+              <TicketCardBody
+                title={node.title}
+                externalId={showExternalId ? node.external_id : undefined}
+                priority={node.priority}
+                state={node.state}
+                workspaceSlug={node.workspace_slug}
+                stageName={node.workflow_stage_name || undefined}
+                stageStatus={node.workflow_stage_status}
+                segments={childProgress?.segments ?? []}
+                progressLabel={
+                  childProgress?.total
+                    ? `${childProgress.done}/${childProgress.total}`
+                    : null
+                }
+                underPriority={
+                  hasChildren ? (
+                    <button
+                      type="button"
+                      className="tree-chevron-btn"
+                      aria-label={expanded ? "Collapse" : "Expand"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggle(node.id);
+                      }}
+                    >
+                      <TreeExpandChevron expanded={expanded} />
+                    </button>
+                  ) : null
+                }
+              />
+            </div>
+            {showTrail ? (
+              <TreeRowTrail
+                node={node}
+                workflowRunning={workflowRunning}
+                showAddChild={showAddChild}
+                onAddChild={onAddChild}
+                renderRowAction={renderRowAction}
+              />
             ) : null}
-          </div>
-          {showTrail ? (
-            <div className="tree-row-trail">
-              {workflowRunning && (
-                <span
-                  className="tree-workflow-dot running"
-                  title="Workflow running"
-                  aria-label="Workflow running"
-                />
-              )}
-              {showAddChild && (
+          </>
+        ) : (
+          <>
+            <div className={`tree-row-head${hasChildren ? "" : " tree-row-head--no-chevron"}`}>
+              {hasChildren ? (
                 <button
                   type="button"
-                  className="tree-add-child-btn"
-                  title={addChildActionLabel(node.work_item_type)}
-                  aria-label={addChildActionLabel(node.work_item_type)}
+                  className="tree-chevron-btn"
+                  aria-label={expanded ? "Collapse" : "Expand"}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onAddChild?.(node);
+                    onToggle(node.id);
                   }}
                 >
-                  +
+                  <TreeExpandChevron expanded={expanded} />
                 </button>
-              )}
-              {hasChildren && (
-                <span className="count-pill tree-child-count">{node.child_count}</span>
-              )}
-              {renderRowAction?.(node)}
+              ) : null}
+              <PrioBars priority={node.priority} />
+              <div className="tree-card-title">
+                {showExternalId ? (
+                  <>
+                    <span className="tree-external-id">{node.external_id}</span>
+                    <span className="tree-title-sep"> · </span>
+                    {node.title}
+                  </>
+                ) : (
+                  node.title
+                )}
+              </div>
             </div>
-          ) : null}
-        </div>
-        {node.workflow_stage_name ? (
-          <div className="tree-card-workflow">
-            <span className="tree-workflow-dot-inline" style={{ background: wfColor }} />
-            <span style={{ color: wfColor, fontWeight: 500 }}>{node.workflow_stage_name}</span>
-            <span style={{ color: "var(--txl)" }}>
-              {isV6
-                ? stageStatusLabel(node.workflow_stage_status)
-                : node.workflow_stage_status.replace("_", " ")}
-            </span>
-          </div>
-        ) : null}
+            <div className="tree-card-meta">
+              <div className="tree-card-meta-main">
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    fontWeight: 500,
+                    color: stateColor,
+                  }}
+                >
+                  <span className="tree-state-dot" style={{ background: stateColor }} />
+                  {TICKET_STATE_LABELS[node.state]}
+                </span>
+                {node.workspace_slug ? (
+                  <>
+                    <span style={{ color: "var(--bd2)" }}>·</span>
+                    <span
+                      style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)" }}
+                    >
+                      {node.workspace_slug}
+                    </span>
+                  </>
+                ) : null}
+              </div>
+              {showTrail ? (
+                <TreeRowTrail
+                  node={node}
+                  workflowRunning={workflowRunning}
+                  showAddChild={showAddChild}
+                  onAddChild={onAddChild}
+                  renderRowAction={renderRowAction}
+                />
+              ) : null}
+            </div>
+            {node.workflow_stage_name ? (
+              <div className="tree-card-workflow">
+                <span className="tree-workflow-dot-inline" style={{ background: wfColor }} />
+                <span style={{ color: wfColor, fontWeight: 500 }}>{node.workflow_stage_name}</span>
+                <span style={{ color: "var(--txl)" }}>
+                  {node.workflow_stage_status.replace("_", " ")}
+                </span>
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
       {hasChildren && expanded && (
         <div className="tree-children" role="group">

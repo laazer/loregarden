@@ -9,7 +9,6 @@ import { ArtifactView } from "../components/dashboard/ArtifactView";
 import { ArtifactsHub } from "../components/dashboard/ArtifactsHub";
 import { HiveSimulationPanel } from "../components/dashboard/HiveSimulationPanel";
 import { LogsPanel } from "../components/LogsPanel";
-import { TriagePanel } from "../components/TriagePanel";
 import { findAncestorIds, TicketTree } from "../components/TicketTree";
 import { findTicketTreeNode } from "../lib/parentTicketTree";
 import { AgentsAssembleModal, type AgentsAssembleOptions } from "../components/AgentsAssembleModal";
@@ -44,7 +43,6 @@ import {
   buildOrchestrateTerminalCommand,
   buildStageTerminalHandoffCommand,
 } from "../lib/terminalCommands";
-import { useTriageSession } from "../hooks/useTriageSession";
 
 const DEFAULT_ORCHESTRATION_RUNTIME: import("../api/client").WorkspaceRuntimeSettings = {
   cli_adapter: "default",
@@ -362,6 +360,15 @@ export function Dashboard() {
       qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
+    },
+  });
+
+  const stopTicket = useMutation({
+    mutationFn: () => api.stopTicket(selectedId!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
+      qc.invalidateQueries({ queryKey: ["ticket-tree"] });
+      qc.invalidateQueries({ queryKey: ["runs", selectedId] });
     },
   });
 
@@ -911,12 +918,6 @@ export function Dashboard() {
     (sel?.workflow_stage_key === stageKey && workflowBusy) ||
     (startRun.isPending && startRun.variables?.stageKey === stageKey);
 
-  // 8000, not the panels' 5000: the dashboard polls an idle ticket less often.
-  // Preserved as-is — collapsing the two would be a behaviour change.
-  const { pending: triagePending } = useTriageSession(selectedId, 8000);
-
-  const triagePendingCount = triagePending.length;
-
   const hasRunErrors = Boolean(
     sel?.blocking_issues ||
       sel?.artifacts?.error ||
@@ -930,7 +931,7 @@ export function Dashboard() {
     if (lastAutoTabTicketId.current === sel.id) return;
     lastAutoTabTicketId.current = sel.id;
 
-    // Respect explicit artifact tabs in the URL (e.g. /tickets/:id/triage).
+    // Respect explicit artifact tabs in the URL (e.g. /tickets/:id/logs).
     if (artifactTab !== "diff") return;
 
     if (sel.blocking_issues || sel.artifacts?.error) {
@@ -1114,7 +1115,7 @@ export function Dashboard() {
                     onClearStates={clearStateFilters}
                   />
                 </div>
-                <div className="scroll-list">
+                <div className="scroll-list lg-primitive-ticket-list--v6">
                   {ticketTree.data?.length ? (
                     <TicketTree
                       nodes={ticketTree.data}
@@ -1123,6 +1124,7 @@ export function Dashboard() {
                       onSelect={selectTicket}
                       onToggle={toggleExpanded}
                       onAddChild={openCreateSubTicket}
+                      presentation="v6"
                     />
                   ) : (
                     <div className="empty-tree">No work items match filters</div>
@@ -1192,15 +1194,18 @@ export function Dashboard() {
                     <div className="state-label workflow-lifecycle-label" style={{ marginBottom: 6 }}>
                       Child tickets
                     </div>
-                    <TicketTree
-                      nodes={selChildren}
-                      selectedId={selectedId}
-                      expandedIds={expandedSet}
-                      onSelect={selectTicket}
-                      onToggle={toggleExpanded}
-                      onAddChild={openCreateSubTicket}
-                      showExternalId
-                    />
+                    <div className="lg-primitive-ticket-list--v6">
+                      <TicketTree
+                        nodes={selChildren}
+                        selectedId={selectedId}
+                        expandedIds={expandedSet}
+                        onSelect={selectTicket}
+                        onToggle={toggleExpanded}
+                        onAddChild={openCreateSubTicket}
+                        showExternalId
+                        presentation="v6"
+                      />
+                    </div>
                   </div>
                 ) : (
                 <>
@@ -1483,41 +1488,125 @@ export function Dashboard() {
                 )}
               </div>
               <div className="run-controls">
-                <button
-                  className="btn-primary"
-                  disabled={
-                    !selectedId ||
-                    (orchestrate.isPending && orchestrate.variables?.ticketId === selectedId)
-                  }
-                  onClick={() => setAssembleModalOpen(true)}
-                >
-                  {agentsAssembleLabel(
-                    sel,
-                    orchestrate.isPending && orchestrate.variables?.ticketId === selectedId,
-                  )}
-                </button>
-                <div style={{ flex: 1 }} />
-                {sel.child_count === 0 &&
+                {sel.child_count === 0 ? (
                   (() => {
                     const cursorStage = sel.stages.find((s) => s.key === sel.workflow_stage_key);
-                    const cursorRun = cursorStage ? canRunStage(sel, cursorStage) : { allowed: false, reason: "No cursor stage" };
+                    const cursorRun = cursorStage
+                      ? canRunStage(sel, cursorStage)
+                      : { allowed: false, reason: "No cursor stage" };
                     const runningCursor = isStageRunning(sel.workflow_stage_key);
+                    const canPause =
+                      hasActiveRun ||
+                      sel.workflow_stage_status === "running" ||
+                      sel.workflow_stage_status === "awaiting";
+                    const templateLabel =
+                      workflowTemplates.data?.find((t) => t.slug === sel.workflow_template_slug)
+                        ?.name ??
+                      sel.workflow_template_slug ??
+                      "";
                     return (
-                      <WorkflowRunOverflowMenu
-                        ticket={sel}
-                        orchestrateCommand={buildOrchestrateTerminalCommand(sel, API_BASE)}
-                        cursorStage={cursorStage}
-                        cursorRun={cursorRun}
-                        runningCursor={runningCursor}
-                        workflowBusy={workflowBusy}
-                        startRunPending={startRun.isPending}
-                        advancePending={advance.isPending}
-                        onRunCurrentStage={() => requestStageRun(sel.workflow_stage_key)}
-                        onAdvance={() => advance.mutate()}
-                        onDelete={() => setDeleteTicketTarget(sel)}
-                      />
+                      <>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          disabled={!selectedId || advance.isPending}
+                          onClick={() => advance.mutate()}
+                        >
+                          {advance.isPending ? "Advancing…" : "Advance stage"}
+                          <svg
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.6"
+                            aria-hidden
+                          >
+                            <path d="m9 18 6-6-6-6" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={!canPause || stopTicket.isPending}
+                          title={canPause ? "Pause the running stage" : "Nothing to pause"}
+                          onClick={() => stopTicket.mutate()}
+                        >
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            aria-hidden
+                          >
+                            <rect x="6" y="4" width="4" height="16" />
+                            <rect x="14" y="4" width="4" height="16" />
+                          </svg>
+                          {stopTicket.isPending ? "Pausing…" : "Pause"}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          disabled={
+                            workflowBusy ||
+                            startRun.isPending ||
+                            !cursorRun.allowed ||
+                            runningCursor
+                          }
+                          title={cursorRun.reason}
+                          onClick={() => requestStageRun(sel.workflow_stage_key)}
+                        >
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            aria-hidden
+                          >
+                            <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+                            <path d="M3 3v5h5" />
+                          </svg>
+                          Re-run
+                        </button>
+                        <div style={{ flex: 1 }} />
+                        {templateLabel ? (
+                          <span className="run-controls-template">{templateLabel}</span>
+                        ) : null}
+                        <WorkflowRunOverflowMenu
+                          ticket={sel}
+                          orchestrateCommand={buildOrchestrateTerminalCommand(sel, API_BASE)}
+                          assemblePending={
+                            orchestrate.isPending && orchestrate.variables?.ticketId === selectedId
+                          }
+                          onAssemble={() => setAssembleModalOpen(true)}
+                          onDelete={() => setDeleteTicketTarget(sel)}
+                        />
+                      </>
                     );
-                  })()}
+                  })()
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={
+                        !selectedId ||
+                        (orchestrate.isPending && orchestrate.variables?.ticketId === selectedId)
+                      }
+                      onClick={() => setAssembleModalOpen(true)}
+                    >
+                      {agentsAssembleLabel(
+                        sel,
+                        orchestrate.isPending && orchestrate.variables?.ticketId === selectedId,
+                      )}
+                    </button>
+                    <div style={{ flex: 1 }} />
+                  </>
+                )}
               </div>
             </>
           ) : (
@@ -1545,9 +1634,7 @@ export function Dashboard() {
                   style={
                     t === "artifacts" && hasRunErrors
                       ? { color: "var(--rdl)" }
-                      : t === "triage" && triagePendingCount > 0
-                        ? { color: "var(--amb)" }
-                        : undefined
+                      : undefined
                   }
                 >
                   {t === "pr" ? "PR" : t.charAt(0).toUpperCase() + t.slice(1)}
@@ -1562,11 +1649,6 @@ export function Dashboard() {
                         display: "inline-block",
                       }}
                     />
-                  )}
-                  {t === "triage" && triagePendingCount > 0 && (
-                    <span className="count-pill" style={{ marginLeft: 6, fontSize: 9 }}>
-                      {triagePendingCount}
-                    </span>
                   )}
                   {t === "artifacts" && (artifactsFeed.data?.total ?? 0) > 0 && (
                     <span className="count-pill" style={{ marginLeft: 6, fontSize: 9 }}>
@@ -1597,27 +1679,9 @@ export function Dashboard() {
               />
             </div>
           </div>
-          <div className={`artifact-tab-body${artifactTab === "triage" ? " artifact-tab-body--fill" : ""}`}>
-            {artifactTab === "triage" ? (
-              <TriagePanel
-                ticket={sel}
-                runtimeOptions={runtimeOptions.data}
-                onResolved={() => {
-                  qc.invalidateQueries({ queryKey: ["triage", selectedId] });
-                  qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
-                  qc.invalidateQueries({ queryKey: ["runs", selectedId] });
-                }}
-              />
-            ) : artifactTab === "logs" && sel ? (
-              <LogsPanel
-                ticket={sel}
-                runtimeOptions={runtimeOptions.data}
-                onResolved={() => {
-                  qc.invalidateQueries({ queryKey: ["triage", selectedId] });
-                  qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
-                  qc.invalidateQueries({ queryKey: ["runs", selectedId] });
-                }}
-              />
+          <div className="artifact-tab-body">
+            {artifactTab === "logs" && sel ? (
+              <LogsPanel ticket={sel} />
             ) : isArtifactsSubTab(artifactTab) && sel ? (
               <ArtifactsHub
                 ticket={sel}

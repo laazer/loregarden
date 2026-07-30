@@ -8,7 +8,6 @@ export type ArtifactTab =
   | "context"
   | "ledger"
   | "errors"
-  | "triage"
   | "pr"
   | "artifacts";
 
@@ -21,7 +20,6 @@ export type StudioSection = "agents" | "workflows" | "tickets" | "gates";
 export const ARTIFACT_TABS: ArtifactTab[] = [
   "diff",
   "errors",
-  "triage",
   "logs",
   "artifacts",
   "tests",
@@ -34,7 +32,6 @@ export const ARTIFACT_TABS: ArtifactTab[] = [
 /** Top tab bar only — errors/context/ledger live under Artifacts. */
 export const PRIMARY_ARTIFACT_TABS: ArtifactTab[] = [
   "diff",
-  "triage",
   "logs",
   "artifacts",
   "tests",

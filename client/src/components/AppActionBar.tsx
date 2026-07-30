@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 
+import { api } from "../api/client";
 import { useActiveChatSession } from "../hooks/useActiveChatSession";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import {
@@ -8,6 +10,7 @@ import {
   TRY_ASKING,
 } from "../lib/dockChatPrompts";
 import { useUiStore, type UtilityDockEdge } from "../state/uiStore";
+import { formatLogExcerpt } from "../utils/logExcerpt";
 import { BaxterAvatar } from "./chat/BaxterAvatar";
 
 const NO_SESSION_PLACEHOLDER = "Open a ticket or a branch to chat about it";
@@ -21,7 +24,7 @@ const NO_SESSION_PLACEHOLDER = "Open a ticket or a branch to chat about it";
  * a message sent here is the same turn the on-screen panel would have sent.
  */
 export function AppActionBar() {
-  const { session, label, pendingApprovals } = useActiveChatSession();
+  const { session, label, ticketId, pendingApprovals } = useActiveChatSession();
   const terminal = useTerminalTarget();
 
   const chatOpen = useUiStore((s) => s.copilotOpen);
@@ -33,6 +36,25 @@ export function AppActionBar() {
 
   const [draft, setDraft] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
+  const [attachLogs, setAttachLogs] = useState(false);
+
+  // Same key the dashboard and the terminal target use, so the log lines to
+  // attach cost no extra request.
+  const { data: ticket } = useQuery({
+    queryKey: ["ticket", ticketId],
+    queryFn: () => api.ticket(ticketId as string),
+    enabled: Boolean(ticketId),
+  });
+
+  const logLines = ticket?.artifacts?.logs ?? [];
+  const liveLog = ticket?.artifacts?.live ?? null;
+  const hasLogs = logLines.length > 0 || Boolean(liveLog?.trim());
+
+  // A run's output belongs to the ticket it came from; carrying the choice over
+  // would attach one ticket's logs to a question about another.
+  useEffect(() => {
+    setAttachLogs(false);
+  }, [ticketId]);
 
   const expanded = chatOpen && Boolean(session);
   const sendable = Boolean(session) && !session?.loadError;
@@ -43,11 +65,16 @@ export function AppActionBar() {
 
   const submit = (content: string) => {
     if (!session || !content.trim()) return;
+    const question = content.trim();
+    const excerpt = attachLogs && hasLogs ? formatLogExcerpt(logLines, liveLog).trim() : "";
     setDraft("");
     // Open the thread on the way out: a reply arriving behind a collapsed dock
     // is a message the operator never sees.
     setChatOpen(true);
-    void session.send(content.trim(), { autoApprove }).catch(() => {});
+    const message = excerpt
+      ? `Question about the run logs below:\n\n\`\`\`\n${excerpt}\n\`\`\`\n\n${question}`
+      : question;
+    void session.send(message, { autoApprove }).catch(() => {});
   };
 
   return (
@@ -113,6 +140,23 @@ export function AppActionBar() {
         sendError={session?.error ?? null}
         busy={Boolean(session?.isBusy)}
       />
+
+      {ticketId ? (
+        <button
+          type="button"
+          className={`app-action-bar-logs${attachLogs ? " is-on" : ""}`}
+          aria-pressed={attachLogs}
+          disabled={!hasLogs}
+          title={
+            hasLogs
+              ? "Send the tail of this ticket's run log with your question"
+              : "No run log output on this ticket yet"
+          }
+          onClick={() => setAttachLogs(!attachLogs)}
+        >
+          Run logs
+        </button>
+      ) : null}
 
       {session ? (
         <button

@@ -43,7 +43,7 @@ beforeEach(() => {
 
 it("binds to the ticket named in the path", () => {
   const { result } = renderHook(() => useActiveChatSession(), {
-    wrapper: wrapperFor("/tickets/abc-123/triage"),
+    wrapper: wrapperFor("/tickets/abc-123/diff"),
   });
 
   expect(result.current.session?.kind).toBe("ticket-triage");

@@ -76,7 +76,7 @@ export function ParentTicketPrimitive({ part }: { part: ParentTicketPart }) {
         />
       ) : null}
       {nodes.length ? (
-        <div className="lg-primitive-ticket-children">
+        <div className="lg-primitive-ticket-children lg-primitive-ticket-list--v6">
           <TicketTree
             nodes={nodes}
             selectedId={selectedId}
@@ -84,6 +84,7 @@ export function ParentTicketPrimitive({ part }: { part: ParentTicketPart }) {
             onSelect={setSelectedId}
             onToggle={setSelectedId}
             showExternalId
+            presentation="v6"
             renderRowAction={(node) => (
               <OpenTicketButton ticketId={node.id} compact label={`Open ${node.title}`} />
             )}

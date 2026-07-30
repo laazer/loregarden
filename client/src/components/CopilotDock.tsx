@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 import { useActiveChatSession } from "../hooks/useActiveChatSession";
 import { useApprovalResolution } from "../hooks/useApprovalResolution";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
@@ -6,7 +8,7 @@ import { TRY_ASKING } from "../lib/dockChatPrompts";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useUiStore } from "../state/uiStore";
 import { StudioChatMessages } from "./studio/StudioChat";
-import { TerminalPanel } from "./TerminalPanel";
+import { TerminalWorkspace } from "./TerminalWorkspace";
 import "./CopilotDock.css";
 
 /**
@@ -30,12 +32,37 @@ export function CopilotDock() {
   // the terminal on the chat's expanded state meant you could never have just a
   // terminal. Mounting the panel spawns a real shell, so it still takes an
   // explicit ask and a workspace to run in.
-  const showTerminal = terminalOpen && Boolean(terminal.workspaceSlug);
+  //
+  // Closing the panel must not reap the shell. Toggling the omnibar is hide /
+  // show, not kill / spawn — otherwise cwd, jobs, and scrollback vanish every
+  // time the dock collapses. Keep the panel mounted under the last workspace it
+  // was opened for until the screen names a different one (or never opened).
+  const [keptSlug, setKeptSlug] = useState<string | null>(null);
+  useEffect(() => {
+    if (terminalOpen && terminal.workspaceSlug) {
+      setKeptSlug(terminal.workspaceSlug);
+      return;
+    }
+    if (
+      !terminalOpen &&
+      keptSlug !== null &&
+      terminal.workspaceSlug !== "" &&
+      terminal.workspaceSlug !== keptSlug
+    ) {
+      setKeptSlug(null);
+    }
+  }, [terminalOpen, terminal.workspaceSlug, keptSlug]);
+
+  const showTerminal = terminalOpen && Boolean(keptSlug);
+  const mountTerminal = Boolean(keptSlug);
   const showChat = open && Boolean(session);
+  const panelsVisible = showChat || showTerminal;
   const edgeClass = edge === "right" ? " copilot-dock--edge-right" : " copilot-dock--edge-bottom";
+  const keptOnlyClass = !panelsVisible && mountTerminal ? " copilot-dock--kept-only" : "";
 
   // Collapsed is the action bar on its own; there is no second bar to draw.
-  if (!showChat && !showTerminal) return null;
+  // A kept-but-hidden shell still mounts so the process survives the toggle.
+  if (!panelsVisible && !mountTerminal) return null;
 
   const sendQuick = (content: string) => {
     if (!session || session.isBusy || session.loadError) return;
@@ -44,64 +71,79 @@ export function CopilotDock() {
 
   return (
     <div
-      className={`copilot-dock copilot-dock--open${edgeClass}`}
-      style={edge === "bottom" ? { height } : undefined}
+      className={`copilot-dock${edgeClass}${keptOnlyClass}`}
+      style={edge === "bottom" && panelsVisible ? { height } : undefined}
+      aria-hidden={!panelsVisible ? true : undefined}
     >
       <div className="copilot-dock-body">
         {showChat && session && (
           <div className="copilot-dock-chat">
-            {/* Above the turns: an agent question arrives as an approval, not a
-                message, so it would otherwise be invisible here. */}
-            <PendingApprovalsSection
-              approvals={pendingApprovals}
-              submittingApprovalId={
-                resolveApproval.isPending ? resolveApproval.variables?.id ?? null : null
-              }
-              submitError={
-                resolveApproval.isError ? formatApprovalResolveError(resolveApproval.error) : null
-              }
-              onApprove={(approval, payload) =>
-                resolveApproval.mutate({ id: approval.id, action: "approve", ...payload })
-              }
-              onReject={(approval, payload) =>
-                resolveApproval.mutate({ id: approval.id, action: "reject", ...payload })
-              }
-            />
-            <StudioChatMessages
-              messages={session.messages}
-              emptyMessage="No messages yet."
-              isThinking={session.isBusy}
-              assistantLabel="Baxter"
-              className="copilot-dock-messages"
-            />
+            <div className="copilot-dock-chat-main">
+              {/* Above the turns: an agent question arrives as an approval, not a
+                  message, so it would otherwise be invisible here. */}
+              <PendingApprovalsSection
+                approvals={pendingApprovals}
+                submittingApprovalId={
+                  resolveApproval.isPending ? resolveApproval.variables?.id ?? null : null
+                }
+                submitError={
+                  resolveApproval.isError ? formatApprovalResolveError(resolveApproval.error) : null
+                }
+                onApprove={(approval, payload) =>
+                  resolveApproval.mutate({ id: approval.id, action: "approve", ...payload })
+                }
+                onReject={(approval, payload) =>
+                  resolveApproval.mutate({ id: approval.id, action: "reject", ...payload })
+                }
+              />
+              <StudioChatMessages
+                messages={session.messages}
+                emptyMessage="No messages yet."
+                isThinking={session.isBusy}
+                assistantLabel="Baxter"
+                className="copilot-dock-messages"
+              />
+            </div>
             {session.messages.length === 0 && (TRY_ASKING[session.kind]?.length ?? 0) > 0 && (
-              <div className="copilot-dock-chips lg-chat-chip-row">
-                <span className="copilot-dock-chips-label">Try asking</span>
+              // Beside the turns rather than beneath them: stacked, the openers
+              // sat between the thread and the composer and pushed the turns up
+              // every time the thread was empty.
+              <aside className="copilot-dock-rail">
+                <span className="copilot-dock-rail-label">Try asking</span>
                 {TRY_ASKING[session.kind].map((prompt) => (
                   <button
                     key={prompt}
                     type="button"
-                    className="lg-chat-chip copilot-dock-chip"
+                    className="copilot-dock-rail-btn"
                     disabled={session.isBusy || session.loadError}
                     onClick={() => sendQuick(prompt)}
                   >
-                    {prompt}
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="var(--ac2)" aria-hidden>
+                      <ellipse cx="7" cy="8" rx="1.9" ry="2.5" />
+                      <ellipse cx="12" cy="6" rx="1.9" ry="2.7" />
+                      <ellipse cx="17" cy="8" rx="1.9" ry="2.5" />
+                      <path d="M12 11c3 0 5 2.1 5 4.3 0 1.9-1.7 2.5-3 2.5-.9 0-1.3-.4-2-.4s-1.1.4-2 .4c-1.3 0-3-.6-3-2.5C7 13.1 9 11 12 11z" />
+                    </svg>
+                    <span>{prompt}</span>
                   </button>
                 ))}
-              </div>
+              </aside>
             )}
           </div>
         )}
 
-        {showTerminal && (
-          <div className="copilot-dock-terminal">
-            <TerminalPanel
-              // Remount on a workspace change rather than letting the panel
-              // swap repos under a live shell: the old shell is reaped and a
-              // new one starts in the right place.
-              key={terminal.workspaceSlug}
-              workspaceSlug={terminal.workspaceSlug}
-              agent={terminal.agent}
+        {mountTerminal && keptSlug && (
+          <div
+            className={`copilot-dock-terminal${showTerminal ? "" : " is-kept"}`}
+            // Remount on a workspace change rather than letting the panel
+            // swap repos under a live shell: the old shell is reaped and a
+            // new one starts in the right place.
+            key={keptSlug}
+          >
+            <TerminalWorkspace
+              workspaceSlug={keptSlug}
+              visible={showTerminal}
+              onEmpty={() => useUiStore.getState().setTerminalOpen(false)}
             />
           </div>
         )}

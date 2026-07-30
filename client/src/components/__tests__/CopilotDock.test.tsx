@@ -7,11 +7,19 @@ import { useUiStore } from "../../state/uiStore";
 
 jest.mock("../../hooks/useActiveChatSession");
 jest.mock("../../hooks/useTerminalTarget");
-// The panel opens a real websocket and paints through a canvas; neither exists
-// here, and what these tests are about is the dock's layout around it.
-jest.mock("../TerminalPanel", () => ({
-  TerminalPanel: ({ workspaceSlug }: { workspaceSlug: string }) => (
-    <div data-testid="terminal-panel">{workspaceSlug}</div>
+// The workspace opens real websockets and paints through canvases; neither
+// exists here, and these tests cover the dock lifecycle around it.
+jest.mock("../TerminalWorkspace", () => ({
+  TerminalWorkspace: ({
+    workspaceSlug,
+    visible,
+  }: {
+    workspaceSlug: string;
+    visible: boolean;
+  }) => (
+    <div data-testid="terminal-panel" data-visible={visible}>
+      {workspaceSlug}
+    </div>
   ),
 }));
 jest.mock("../../hooks/useApprovalResolution", () => ({
@@ -57,98 +65,73 @@ beforeEach(() => {
   mockTerminal.mockReturnValue({ workspaceSlug: "loregarden", agent: "implementer" });
 });
 
-it("says what to do when no screen owns a conversation", () => {
+it("draws nothing while collapsed — the action bar is the collapsed state", () => {
+  // Two bars stacked was the pre-v6 shape. The dock is now only the panels.
+  mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+
+  const { container } = render(<CopilotDock />);
+
+  expect(container).toBeEmptyDOMElement();
+});
+
+it("shows the bound conversation's turns once opened", () => {
+  mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+  useUiStore.setState({ copilotOpen: true });
+
+  render(<CopilotDock />);
+
+  expect(screen.getByText("No messages yet.")).toBeInTheDocument();
+});
+
+it("stays empty when no screen owns a conversation and no shell was asked for", () => {
   mockResolver.mockReturnValue(bind({ session: null, label: "" }));
+  useUiStore.setState({ copilotOpen: true });
 
-  render(<CopilotDock />);
-  expect(screen.getByText(/open a ticket or a branch/i)).toBeInTheDocument();
+  const { container } = render(<CopilotDock />);
+
+  expect(container).toBeEmptyDOMElement();
 });
 
-it("names the bound conversation while collapsed", () => {
-  mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
-
-  render(<CopilotDock />);
-  expect(screen.getByText("Ticket triage")).toBeInTheDocument();
-  // Collapsed: the bar only. No composer until it is opened.
-  expect(screen.queryByPlaceholderText(/message about this ticket/i)).not.toBeInTheDocument();
-});
-
-it("opens and closes from the bar", () => {
-  mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
-
-  render(<CopilotDock />);
-  fireEvent.click(screen.getByRole("button", { name: /expand copilot/i }));
-  expect(screen.getByPlaceholderText(/message about this ticket/i)).toBeInTheDocument();
-  expect(useUiStore.getState().copilotOpen).toBe(true);
-
-  fireEvent.click(screen.getByRole("button", { name: /collapse copilot/i }));
-  expect(useUiStore.getState().copilotOpen).toBe(false);
-});
-
-it("sends through the bound session, not its own transport", () => {
+it("sends an opener through the bound session rather than filling a composer", () => {
+  // The composer moved to the action bar, so an opener that only set draft text
+  // would land in a box the operator is not looking at.
   const bound = session();
   mockResolver.mockReturnValue(bind({ session: bound, label: "Ticket triage" }));
   useUiStore.setState({ copilotOpen: true });
 
   render(<CopilotDock />);
-  const input = screen.getByPlaceholderText(/message about this ticket/i);
-  fireEvent.change(input, { target: { value: "why did verify reject?" } });
-  fireEvent.click(screen.getByRole("button", { name: /^send$/i }));
+  fireEvent.click(screen.getByRole("button", { name: "What is blocking this ticket?" }));
 
-  expect(bound.send).toHaveBeenCalledWith("why did verify reject?", { autoApprove: false });
+  expect(bound.send).toHaveBeenCalledWith("What is blocking this ticket?", {
+    autoApprove: false,
+  });
 });
 
-it("shows a send failure without claiming the chat is gone", () => {
-  mockResolver.mockReturnValue(bind({
-    session: session({ error: "Failed to send message" }),
-    label: "Ticket triage",
-  }));
+it("keeps the openers beside the turns, not between them and the composer", () => {
+  mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+  useUiStore.setState({ copilotOpen: true });
+
+  const { container } = render(<CopilotDock />);
+
+  const rail = container.querySelector(".copilot-dock-rail");
+  expect(rail).not.toBeNull();
+  expect(rail).toContainElement(
+    screen.getByRole("button", { name: "What is blocking this ticket?" }),
+  );
+});
+
+it("offers no openers once the thread has turns", () => {
+  mockResolver.mockReturnValue(
+    bind({
+      session: session({ messages: [{ role: "user", content: "hi" }] }),
+      label: "Ticket triage",
+    }),
+  );
   useUiStore.setState({ copilotOpen: true });
 
   render(<CopilotDock />);
-  expect(screen.getByText("Failed to send message")).toBeInTheDocument();
-  expect(screen.queryByText(/conversation unavailable/i)).not.toBeInTheDocument();
-});
 
-it("distinguishes an unavailable conversation from a failed send", () => {
-  // The distinction U2a's descriptor grew a field for.
-  mockResolver.mockReturnValue(bind({
-    session: session({ loadError: true }),
-    label: "Ticket triage",
-  }));
-
-  render(<CopilotDock />);
-  expect(screen.getByText(/conversation unavailable/i)).toBeInTheDocument();
-});
-
-it("surfaces a decision waiting on the operator while collapsed", () => {
-  // An agent question becomes an approval, never a chat message. A dock that
-  // showed only messages would sit on "working…" with nothing to answer.
-  mockResolver.mockReturnValue(
-    bind({
-      session: session(),
-      label: "Ticket triage",
-      pendingApprovals: [{ id: "a1", title: "Which shape?", kind: "cli_question" }] as never,
-    }),
-  );
-
-  render(<CopilotDock />);
-  expect(screen.getByText(/1 waiting on you/i)).toBeInTheDocument();
-});
-
-it("prefers the waiting decision over the busy indicator", () => {
-  // Both are true while an agent waits on an answer; only one is actionable.
-  mockResolver.mockReturnValue(
-    bind({
-      session: session({ isBusy: true }),
-      label: "Ticket triage",
-      pendingApprovals: [{ id: "a1", title: "Which shape?", kind: "cli_question" }] as never,
-    }),
-  );
-
-  render(<CopilotDock />);
-  expect(screen.getByText(/waiting on you/i)).toBeInTheDocument();
-  expect(screen.queryByText(/working…/)).not.toBeInTheDocument();
+  expect(screen.queryByText("Try asking")).not.toBeInTheDocument();
 });
 
 describe("the terminal pane", () => {
@@ -167,7 +150,7 @@ describe("the terminal pane", () => {
   });
 
   it("opens a shell in the workspace the screen is showing", () => {
-    // The control lives in the status bar now; the dock follows the store.
+    // The control lives in the action bar now; the dock follows the store.
     openDock();
     useUiStore.setState({ copilotOpen: true, terminalOpen: true });
 
@@ -184,7 +167,7 @@ describe("the terminal pane", () => {
     render(<CopilotDock />);
 
     expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Message about this ticket…")).toBeInTheDocument();
+    expect(screen.getByText("No messages yet.")).toBeInTheDocument();
   });
 
   it("will not open a shell with nowhere to run it", () => {
@@ -204,57 +187,56 @@ describe("the terminal pane", () => {
     // Reaping it here is what made "just a terminal" impossible.
     openDock();
     useUiStore.setState({ copilotOpen: true, terminalOpen: true });
-    render(<CopilotDock />);
+    const { rerender } = render(<CopilotDock />);
     expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Collapse copilot" }));
+    act(() => useUiStore.setState({ copilotOpen: false }));
+    rerender(<CopilotDock />);
 
     expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Message about this ticket…")).not.toBeInTheDocument();
+    expect(screen.queryByText("No messages yet.")).not.toBeInTheDocument();
   });
 
-  it("reaps the shell when the terminal itself is closed", () => {
-    // The panel unmounts, which closes the socket and reaps the shell. Leaving
-    // it mounted would keep a login shell per session.
+  it("keeps the shell when the terminal itself is closed", () => {
+    // Closing the omnibar is hide, not kill: cwd, jobs, and scrollback have to
+    // survive a toggle. The panel stays mounted (kept) until the screen names
+    // a different workspace.
     openDock();
     useUiStore.setState({ copilotOpen: true, terminalOpen: true });
-    const { rerender } = render(<CopilotDock />);
+    const { rerender, container } = render(<CopilotDock />);
     expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
 
     act(() => useUiStore.setState({ terminalOpen: false }));
     rerender(<CopilotDock />);
 
+    expect(screen.getByTestId("terminal-panel")).toBeInTheDocument();
+    expect(container.querySelector(".copilot-dock-terminal.is-kept")).not.toBeNull();
+  });
+
+  it("reaps the kept shell when the screen names a different workspace", () => {
+    openDock();
+    useUiStore.setState({ copilotOpen: false, terminalOpen: true });
+    const { rerender } = render(<CopilotDock />);
+    expect(screen.getByTestId("terminal-panel")).toHaveTextContent("loregarden");
+
+    act(() => {
+      useUiStore.setState({ terminalOpen: false });
+      mockTerminal.mockReturnValue({ workspaceSlug: "other-repo", agent: "" });
+    });
+    rerender(<CopilotDock />);
+
     expect(screen.queryByTestId("terminal-panel")).not.toBeInTheDocument();
   });
 
-  it("shows a shell with the chat collapsed and no conversation at all", () => {
+  it("hosts a shell on a screen with no conversation", () => {
+    // A shell is scoped to the workspace, not to a chat. Returning early when
+    // no session exists is what made the action bar's button do nothing on the
+    // console screen.
     mockResolver.mockReturnValue(bind({ session: null, label: "" }));
     useUiStore.setState({ copilotOpen: false, terminalOpen: true });
 
     render(<CopilotDock />);
 
     expect(screen.getByTestId("terminal-panel")).toHaveTextContent("loregarden");
-  });
-
-  it("hosts a shell on a screen with no conversation", () => {
-    // A shell is scoped to the workspace, not to a chat. Returning early when
-    // no session exists is what made the status bar's button do nothing on the
-    // console screen.
-    mockResolver.mockReturnValue(bind({ session: null, label: "" }));
-    useUiStore.setState({ copilotOpen: true, terminalOpen: true });
-
-    render(<CopilotDock />);
-
-    expect(screen.getByTestId("terminal-panel")).toHaveTextContent("loregarden");
-    expect(screen.queryByText(/Open a ticket or a branch/)).not.toBeInTheDocument();
-  });
-
-  it("still explains itself when there is neither a conversation nor a shell", () => {
-    mockResolver.mockReturnValue(bind({ session: null, label: "" }));
-    useUiStore.setState({ copilotOpen: true, terminalOpen: false });
-
-    render(<CopilotDock />);
-
-    expect(screen.getByText(/Open a ticket or a branch/)).toBeInTheDocument();
   });
 });

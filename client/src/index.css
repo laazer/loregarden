@@ -1901,7 +1901,7 @@ button {
   color: var(--rdl);
 }
 
-/* Shared pending-approvals strip (triage + logs). TriagePanel overrides colors. */
+/* Shared pending-approvals strip (logs + dock). */
 .pending-approvals {
   flex: none;
   padding: 12px 16px;
@@ -2264,74 +2264,243 @@ button {
   overflow: hidden;
 }
 
-.status-bar {
+/* v6 combined bar: Baxter, one composer, and the shell switch on one line. */
+.app-action-bar {
   flex: none;
-  min-height: 30px;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 14px;
-  border-top: 1px solid var(--bd);
-  background: var(--bg1);
+  gap: 11px;
+  padding: 9px 14px 9px 16px;
+  border-top: 1px solid var(--bd2);
+  background: linear-gradient(180deg, var(--bg1), #070a10);
   font-size: 11px;
   color: var(--txm);
+  z-index: 6;
 }
 
-.app-utility-dock--right .status-bar {
-  border-top: none;
-  border-bottom: 1px solid var(--bd);
+.app-utility-dock--right .app-action-bar {
   flex-wrap: wrap;
-  row-gap: 6px;
-  padding: 6px 10px;
+  row-gap: 8px;
+  padding: 9px 10px;
+  /* Docked right the column is taller than its contents, and a bar floating at
+     the top of the empty space reads as a header for nothing. */
+  margin-top: auto;
 }
 
-.status-bar-branch {
-  display: inline-flex;
+.app-action-bar-baxter {
+  flex: none;
+  display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(140deg, var(--ac), #4d8468);
+  box-shadow: 0 2px 10px rgba(111, 174, 143, 0.38);
+  cursor: pointer;
 }
 
-.status-bar-run {
-  font-family: var(--mono);
+.app-action-bar-baxter:disabled {
+  opacity: 0.5;
+  cursor: default;
+  box-shadow: none;
+}
+
+.app-action-bar-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--tx);
+  font-family: var(--ui);
+  font-size: 14px;
+}
+
+.app-action-bar-input:disabled {
   color: var(--txl);
 }
 
-.status-bar-spacer {
-  flex: 1;
+.app-action-bar-quick {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   min-width: 0;
 }
 
-.status-bar-live {
+.app-action-bar-quick-btn {
+  flex: 0 1 auto;
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ui);
+  font-size: 11.5px;
+  color: var(--txm);
+  background: var(--bg2);
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.app-action-bar-quick-btn:hover:not(:disabled) {
+  color: var(--tx);
+  border-color: var(--bd2);
+}
+
+.app-action-bar-quick-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.app-action-bar-pill {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--grl);
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--bd);
+  border-radius: 9px;
+  background: var(--bg2);
+  font-size: 11px;
+  color: var(--txm);
+  white-space: nowrap;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.status-bar-live-dot {
+.app-action-bar-pill--context {
+  background: rgba(111, 174, 143, 0.09);
+  border-color: rgba(111, 174, 143, 0.2);
+  color: var(--ac2);
+}
+
+.app-action-bar-pill-dot {
   width: 6px;
   height: 6px;
+  border-radius: 50%;
+  background: var(--ac);
+}
+
+.app-action-bar-pill--waiting {
+  background: rgba(229, 167, 44, 0.14);
+  border-color: rgba(229, 167, 44, 0.28);
+  color: var(--aml);
+}
+
+.app-action-bar-pill--error {
+  background: rgba(255, 106, 84, 0.12);
+  border-color: rgba(255, 106, 84, 0.28);
+  color: var(--rdl);
+}
+
+.app-action-bar-auto,
+.app-action-bar-logs {
+  flex: none;
+  font-family: var(--ui);
+  font-size: 11px;
+  color: var(--txl);
+  background: transparent;
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  padding: 4px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.app-action-bar-auto:hover,
+.app-action-bar-logs:hover:not(:disabled) {
+  color: var(--txm);
+  border-color: var(--bd2);
+}
+
+.app-action-bar-auto.is-on {
+  color: var(--aml);
+  border-color: rgba(229, 167, 44, 0.4);
+  background: rgba(229, 167, 44, 0.12);
+}
+
+.app-action-bar-logs.is-on {
+  color: var(--ac2);
+  border-color: rgba(111, 174, 143, 0.4);
+  background: rgba(111, 174, 143, 0.12);
+}
+
+.app-action-bar-logs:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.app-action-bar-send {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 11px;
+  background: var(--ac);
+  color: var(--onac);
+  box-shadow: 0 3px 12px rgba(111, 174, 143, 0.35);
+  cursor: pointer;
+}
+
+.app-action-bar-send:hover:not(:disabled) {
+  background: var(--ac2);
+}
+
+.app-action-bar-send:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.app-action-bar-divider {
+  flex: none;
+  width: 1px;
+  height: 22px;
+  background: var(--bd);
+}
+
+.app-action-bar-live {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.app-action-bar-live-dot {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--grn);
   box-shadow: 0 0 6px var(--grn);
 }
 
-.status-bar-dock-edge {
-  flex: 0 0 auto;
+.app-action-bar-dock-edge {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: 1px solid var(--bd);
+  border-radius: 10px;
   background: transparent;
-  border-radius: 999px;
-  padding: 1px 10px;
-  font: inherit;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--txm, var(--txl));
+  color: var(--txl);
   cursor: pointer;
 }
 
-.status-bar-dock-edge:hover {
+.app-action-bar-dock-edge:hover {
   color: var(--tx);
-  border-color: var(--ac, var(--bd));
+  border-color: var(--bd2);
 }
 
 .topbar-center {
@@ -3420,6 +3589,21 @@ button {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.run-controls .btn-primary,
+.run-controls .btn-secondary {
+  border-radius: 11px;
+}
+
+.run-controls-template {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txl);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .btn-primary,
@@ -4975,30 +5159,42 @@ button {
 
 /* Terminal toggle in the status bar. The shell itself lives in the dock below;
    this is the way in, kept beside the other run-context readouts. */
-.status-bar-terminal {
-  flex: 0 0 auto;
+.app-action-bar-terminal {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   border: 1px solid var(--bd);
-  background: transparent;
-  border-radius: 999px;
-  padding: 1px 10px;
-  font: inherit;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--txm, var(--txl));
+  background: var(--bg2);
+  border-radius: 10px;
+  padding: 7px 11px;
+  font-family: var(--ui);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--txm);
   cursor: pointer;
 }
 
-.status-bar-terminal:hover:not(:disabled) {
+.app-action-bar-terminal:hover:not(:disabled) {
   color: var(--tx);
-  border-color: var(--ac, var(--bd));
+  border-color: var(--bd2);
 }
 
-.status-bar-terminal.is-on {
-  color: var(--tx);
-  border-color: var(--ac, var(--bd));
+.app-action-bar-terminal.is-on {
+  color: var(--ac2);
+  border-color: rgba(111, 174, 143, 0.35);
+  background: rgba(111, 174, 143, 0.1);
 }
 
-.status-bar-terminal:disabled {
+.app-action-bar-terminal:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.app-action-bar-chevron {
+  transition: transform 0.16s ease;
+}
+
+.app-action-bar-chevron.is-open {
+  transform: rotate(180deg);
 }
