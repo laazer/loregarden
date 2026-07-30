@@ -1,0 +1,226 @@
+.terminal-workspace {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid #27313b;
+  border-radius: 7px;
+  background: #0b0f14;
+}
+
+.terminal-workspace-toolbar {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 32px;
+  min-width: 0;
+  border-bottom: 1px solid #27313b;
+  background: #111820;
+}
+
+.terminal-tabs {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.terminal-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.terminal-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: 118px;
+  max-width: 190px;
+  border-right: 1px solid #27313b;
+  color: #81909e;
+}
+
+.terminal-tab::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: transparent;
+  content: "";
+}
+
+.terminal-tab.is-active {
+  background: #0b0f14;
+  color: #d5dee7;
+}
+
+.terminal-tab.is-active::after {
+  background: var(--ac2, #6fae8f);
+}
+
+.terminal-tab-select {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0 5px 0 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: 500 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  cursor: pointer;
+}
+
+.terminal-tab-select > span:not(.terminal-tab-count) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-tab-select svg,
+.terminal-toolbar-button svg,
+.terminal-tab-close svg,
+.terminal-pane-close svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.35;
+}
+
+.terminal-tab-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border: 1px solid #34414d;
+  border-radius: 8px;
+  color: #9cabb8;
+  font-size: 9px;
+}
+
+.terminal-tab-close,
+.terminal-toolbar-button,
+.terminal-pane-close {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #82909e;
+  cursor: pointer;
+}
+
+.terminal-tab-close {
+  width: 27px;
+  height: 100%;
+  opacity: 0;
+}
+
+.terminal-tab:hover .terminal-tab-close,
+.terminal-tab.is-active .terminal-tab-close,
+.terminal-tab-close:focus-visible {
+  opacity: 1;
+}
+
+.terminal-tab-close:hover,
+.terminal-toolbar-button:hover:not(:disabled),
+.terminal-pane-close:hover {
+  background: #202a34;
+  color: #dce5ed;
+}
+
+.terminal-toolbar-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 0 4px 0 8px;
+  border-left: 1px solid #27313b;
+}
+
+.terminal-workspace-safety {
+  max-width: 150px;
+  margin-right: 5px;
+  overflow: hidden;
+  color: #82909e;
+  font: 10px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-toolbar-button {
+  width: 27px;
+  height: 26px;
+  border-radius: 4px;
+}
+
+.terminal-toolbar-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.terminal-tabpanels,
+.terminal-tabpanel {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.terminal-tabpanel {
+  display: none;
+}
+
+.terminal-tabpanel.is-active {
+  display: flex;
+}
+
+.terminal-split-pane {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid #27313b;
+}
+
+.terminal-split-pane:last-child {
+  border-right: 0;
+}
+
+.terminal-split-pane.is-active {
+  box-shadow: inset 0 2px 0 rgba(111, 174, 143, 0.35);
+}
+
+.terminal-pane-close {
+  position: absolute;
+  z-index: 2;
+  top: 4px;
+  right: 7px;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  opacity: 0;
+}
+
+.terminal-split-pane:hover .terminal-pane-close,
+.terminal-pane-close:focus-visible {
+  opacity: 1;
+}
+
+@container (max-width: 520px) {
+  .terminal-workspace-safety {
+    display: none;
+  }
+
+  .terminal-tab {
+    min-width: 104px;
+  }
+}
