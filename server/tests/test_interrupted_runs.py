@@ -266,7 +266,8 @@ def test_recovery_targets_the_interrupted_stage_not_an_earlier_block(isolated_db
         instance, stages = builtin.orch._resolve_stages(ticket)
         testing_order = next(stage.order for stage in stages if stage.key == "testing")
         interrupted_key = next(
-            stage.key for stage in sorted(stages, key=lambda stage: stage.order)
+            stage.key
+            for stage in sorted(stages, key=lambda stage: stage.order)
             if stage.order > testing_order
         )
         set_stage_status(ticket, instance, stages, "testing", StageStatus.BLOCKED)

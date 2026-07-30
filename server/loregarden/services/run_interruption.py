@@ -37,9 +37,7 @@ def interrupted_stage_key(
         return None
 
     runs = session.exec(
-        select(AgentRun)
-        .where(AgentRun.ticket_id == ticket.id)
-        .order_by(AgentRun.created_at.desc())
+        select(AgentRun).where(AgentRun.ticket_id == ticket.id).order_by(AgentRun.created_at.desc())
     ).all()
     for run in runs:
         if run.agent_id == TRIAGE_AGENT_ID or run.stage_key not in blocked_keys:
