@@ -174,7 +174,7 @@ class RunLogStreamer:
             self._flush_stream_buffer(force=True)
             self.set_live("")
             return
-        self._update_live_from_buffer()
+        self.set_live(self._stream_buffer.lstrip())
 
     def _update_live_from_buffer(self) -> None:
         if not self._stream_buffer:

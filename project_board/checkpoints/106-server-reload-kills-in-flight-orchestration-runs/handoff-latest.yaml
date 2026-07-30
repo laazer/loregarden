@@ -3,7 +3,7 @@ handoff:
   ticket_id: 106-server-reload-kills-in-flight-orchestration-runs
   from_agent: ticket_scoper
   to_agent: planner
-  validated_at: '2026-07-30T00:35:39Z'
+  validated_at: '2026-07-30T12:41:32Z'
   required_items_met: 2
   total_required_items: 2
   checklist:
@@ -11,15 +11,20 @@ handoff:
     item: Ticket scope is complete and actionable
     required: true
     status: complete
-    evidence: 'Single backend lifecycle bug: reconcile orphaned agent/orchestration records, automatically
-      continue the interrupted stage, preserve completed work, and defer managed reloads while work is
-      active.'
+    evidence: 'One backend orchestration-lifecycle bug, no children: add a startup eligibility scan that
+      resumes builtin runs orphaned by a reload, and widen the recovery predicate to accept STRANDED_STAGE_MESSAGE
+      as well as INTERRUPTED_RUN_MESSAGE. Both acceptance criteria depend on the same invariant, so splitting
+      them would separate the scan from its only consumer. Seams verified in main.lifespan, run_service.py,
+      and builtin_orchestrator.py.'
     evidence_type: attestation
   - item_key: acceptance_criteria_complete
     item: Acceptance criteria are testable and complete
     required: true
     status: complete
-    evidence: Tests must prove automatic same-stage continuation after startup, idempotency, parallel-member
-      preservation, genuine-block exclusion, and recovery of stranded planning tickets without manual
-      action.
+    evidence: 'Seven criteria, each with an automatable boundary: automatic same-stage resume after reload
+      with old rows left FAILED for audit; exact-marker eligibility with both messages recoverable and
+      genuine blocks excluded; terminal-state exclusion so no run row is created for the five done tickets
+      that still carry a marker; builtin-only resume; per-startup idempotency preserving auto_approve
+      and stop_at_stage_key; parallel lanes rerunning only incomplete members; full backend suite plus
+      Python gates green. Hard-coded ticket IDs removed since zero tickets remain stranded at planning.'
     evidence_type: attestation
