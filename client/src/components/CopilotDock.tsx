@@ -4,7 +4,7 @@ import { useActiveChatSession } from "../hooks/useActiveChatSession";
 import { useApprovalResolution } from "../hooks/useApprovalResolution";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { PendingApprovalsSection } from "./PendingApprovalsSection";
-import { TRY_ASKING } from "../lib/dockChatPrompts";
+import { quickPrompts as promptsFor } from "../lib/dockChatPrompts";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useUiStore } from "../state/uiStore";
 import { StudioChatMessages } from "./studio/StudioChat";
@@ -23,7 +23,7 @@ export function CopilotDock() {
   const open = useUiStore((s) => s.copilotOpen);
   const height = useUiStore((s) => s.copilotHeight);
   const edge = useUiStore((s) => s.utilityDockEdge);
-  const { session, ticketId, pendingApprovals } = useActiveChatSession();
+  const { session, ticketId, pendingApprovals, branch } = useActiveChatSession();
   const resolveApproval = useApprovalResolution(ticketId ?? undefined);
   const terminalOpen = useUiStore((s) => s.terminalOpen);
   const terminal = useTerminalTarget();
@@ -104,13 +104,13 @@ export function CopilotDock() {
                 className="copilot-dock-messages"
               />
             </div>
-            {session.messages.length === 0 && (TRY_ASKING[session.kind]?.length ?? 0) > 0 && (
+            {session.messages.length === 0 && promptsFor(session.kind, branch).length > 0 && (
               // Beside the turns rather than beneath them: stacked, the openers
               // sat between the thread and the composer and pushed the turns up
               // every time the thread was empty.
               <aside className="copilot-dock-rail">
                 <span className="copilot-dock-rail-label">Try asking</span>
-                {TRY_ASKING[session.kind].map((prompt) => (
+                {promptsFor(session.kind, branch).map((prompt) => (
                   <button
                     key={prompt}
                     type="button"

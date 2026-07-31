@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { BranchTriageDiffPanel } from "../components/BranchTriageDiffPanel";
 import { BranchTriageOverviewPanel } from "../components/BranchTriageOverviewPanel";
 import { BranchTriageList } from "../components/BranchTriageList";
+import { PageTopbar } from "../components/TopbarPageSlot";
 import { fetchBranchTriage } from "../lib/branchTriageApi";
 import { useUiStore } from "../state/uiStore";
 import "../components/BranchTriagePanel.css";
@@ -83,42 +84,29 @@ export function BranchTriagePage() {
 
   return (
     <div className="screen-view screen-view--branch-triage">
-      <header className="page-hero-header">
-        <div className="page-hero-copy">
-          <div className="page-hero-eyebrow">
-            <span>Branch Triage</span>
-            <span className="page-hero-eyebrow-dot" aria-hidden />
-            <span className="page-hero-eyebrow-muted">Triage · Diff review</span>
-          </div>
-          <h1 className="page-hero-title">Branch cleanup</h1>
-          <p className="page-hero-sub">
-            Workspace: <span style={{ color: "var(--tx)" }}>{activeWorkspace?.name ?? "—"}</span>
-            {triage.data ? (
-              <>
-                {" "}
-                · <span style={{ color: "var(--txm)" }}>{triage.data.issue_count} branch(es) need attention</span>
-              </>
-            ) : null}
-          </p>
-        </div>
-        <div className="page-hero-actions">
-          <label className="editor-workspace-picker">
-            <span className="page-hero-field-label">Workspace</span>
-            <select
-              className="btn-secondary page-hero-field-select"
-              value={activeSlug}
-              disabled={!workspaces.data?.length}
-              onChange={(event) => setBranchTriageWorkspaceSlug(event.target.value)}
-            >
-              {(workspaces.data ?? []).map((ws) => (
-                <option key={ws.slug} value={ws.slug}>
-                  {ws.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </header>
+      <PageTopbar title="Branch cleanup">
+        {triage.data ? (
+          <span className="topbar-page-note">
+            {triage.data.issue_count} branch(es) need attention
+          </span>
+        ) : null}
+        <label className="topbar-workspace-picker">
+          <span className="topbar-workspace-picker-label">Workspace</span>
+          <select
+            className="btn-secondary topbar-workspace-picker-select"
+            value={activeSlug}
+            disabled={!workspaces.data?.length}
+            aria-label="Branch triage workspace"
+            onChange={(event) => setBranchTriageWorkspaceSlug(event.target.value)}
+          >
+            {(workspaces.data ?? []).map((ws) => (
+              <option key={ws.slug} value={ws.slug}>
+                {ws.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </PageTopbar>
 
       <div className="branch-triage-page-body">
         {!activeWorkspace ? (

@@ -5,6 +5,7 @@ import { api, type McpServerInput, type McpServerView } from "../api/client";
 import { McpActivityFeed } from "../components/mcp/McpActivityFeed";
 import { McpHealthBadge } from "../components/mcp/McpHealthBadge";
 import { McpServerForm } from "../components/mcp/McpServerForm";
+import { PageTopbar } from "../components/TopbarPageSlot";
 import "./McpGatewayPage.css";
 
 const LOREGARDEN_SERVER = "loregarden";
@@ -107,32 +108,21 @@ export function McpGatewayPage() {
 
   return (
     <div className="screen-view screen-view--mcp">
-      <header className="page-hero-header">
-        <div className="page-hero-copy">
-          <div className="page-hero-eyebrow">
-            <span>MCP Gateway</span>
-            <span className="page-hero-eyebrow-dot" aria-hidden />
-            <span className="page-hero-eyebrow-muted">Register · Configure</span>
-          </div>
-          <h1 className="page-hero-title">Servers agents can reach</h1>
-          <p className="page-hero-sub">
-            Registered servers are added to every agent&rsquo;s MCP configuration when it
-            starts.
-          </p>
-        </div>
-        <div className="page-hero-actions">
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => {
-              setAdding(true);
-              setSelectedId(null);
-            }}
-          >
-            Add server
-          </button>
-        </div>
-      </header>
+      <PageTopbar title="MCP Gateway">
+        <span className="topbar-page-note">
+          Registered servers join every agent&rsquo;s MCP configuration at start
+        </span>
+        <button
+          type="button"
+          className="btn-primary topbar-page-btn"
+          onClick={() => {
+            setAdding(true);
+            setSelectedId(null);
+          }}
+        >
+          Add server
+        </button>
+      </PageTopbar>
 
       <div className="mcp-page-body">
         <aside className="mcp-servers-rail">

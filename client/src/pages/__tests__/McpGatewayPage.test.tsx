@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import { api } from "../../api/client";
+import { TopbarPageSlot, TopbarPageSlotProvider } from "../../components/TopbarPageSlot";
 import { McpGatewayPage } from "../McpGatewayPage";
 
 jest.mock("../../api/client");
@@ -32,7 +33,11 @@ function renderPage() {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <McpGatewayPage />
+        {/* The page's title and its "Add server" control live in the topbar. */}
+        <TopbarPageSlotProvider>
+          <TopbarPageSlot />
+          <McpGatewayPage />
+        </TopbarPageSlotProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );

@@ -406,7 +406,7 @@ button {
   border-color: var(--bd);
 }
 
-/* Inline, unlike the stacked .editor-workspace-picker — the topbar is one row. */
+/* Every picker the topbar hosts is inline — the bar is a single row. */
 .topbar-workspace-picker {
   display: inline-flex;
   align-items: center;
@@ -423,6 +423,9 @@ button {
 
 .topbar-workspace-picker-select.btn-secondary {
   height: 34px;
+  /* An empty picker still has to hold its place, or the labels either side of
+     it collide. */
+  min-width: 130px;
   max-width: 180px;
   padding: 0 10px;
   font-size: 12.5px;
@@ -431,95 +434,53 @@ button {
   border-color: var(--bd);
 }
 
-.page-hero-header {
-  flex: none;
-  display: flex;
-  align-items: flex-end;
-  gap: 18px;
-  padding: 16px 24px 0;
-  border-bottom: 1px solid var(--bd);
-  background: var(--bg1);
-}
-
-.page-hero-copy {
-  flex: 1;
-  min-width: 0;
-  padding-bottom: 14px;
-}
-
-.page-hero-eyebrow {
+/* Where a screen's own title and controls land — the topbar is the only header
+   a page gets, so everything here has to fit one 54px row. */
+.topbar-page {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 5px;
-  font-size: 10px;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  font-weight: 600;
-  color: var(--ac);
+  gap: 12px;
+  /* Takes what its controls need and no more — the spacer after it is what
+     keeps the global actions pinned right. */
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
-.page-hero-eyebrow-muted {
-  color: var(--txl);
-  letter-spacing: 0.06em;
+.topbar-page:not(:empty) {
+  padding-left: 14px;
+  border-left: 1px solid var(--bd);
 }
 
-.page-hero-eyebrow-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--txl);
-}
-
-.page-hero-title {
+.topbar-page-title {
   margin: 0;
   font-family: var(--dp);
   font-weight: 700;
-  font-size: 24px;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
-.page-hero-sub {
-  margin: 6px 0 0;
-  font-size: 13px;
-  color: var(--txm);
-  max-width: 560px;
-}
-
-.page-hero-actions {
+.topbar-page-actions {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
-  padding-bottom: 16px;
+  min-width: 0;
+  overflow: hidden;
 }
 
-.page-hero-field-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.topbar-page-note {
+  font-size: 11.5px;
+  color: var(--txm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.page-hero-field-label {
-  font-size: 10px;
-  color: var(--txl);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  line-height: 12px;
-}
-
-.page-hero-field-select.btn-secondary {
-  min-width: 160px;
+.topbar-page-btn.btn-primary {
   height: 34px;
-  padding: 0 28px 0 12px;
+  padding: 0 14px;
   font-size: 12.5px;
-  font-weight: 500;
-  line-height: 1.2;
-  box-sizing: border-box;
-}
-
-.page-hero-field-group .topbar-actions {
-  height: 34px;
+  border-radius: 9px;
 }
 
 .studio-subtabs {
@@ -4798,37 +4759,37 @@ button {
   font-weight: 600;
 }
 
-.editor-page .editor-topbar {
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.editor-workspace-picker,
+/* Inline, like the rest of the topbar: the switcher shares one row with the
+   page title and the global actions. */
 .git-ref-switcher-label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.editor-workspace-picker > span,
 .git-ref-switcher-label > span {
   font-size: 10px;
   color: var(--txl);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  line-height: 12px;
 }
 
-.editor-workspace-picker select,
-.git-ref-select {
-  min-width: 160px;
+.git-ref-select.btn-secondary {
+  min-width: 130px;
+  max-width: 180px;
+  height: 34px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  border-radius: 9px;
+  border-color: var(--bd);
 }
 
 .git-ref-switcher {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .git-ref-current {
@@ -4912,32 +4873,34 @@ button {
   color: var(--rdl);
 }
 
-.queue-hero-metrics {
+.queue-topbar-metrics {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
-.queue-hero-metric {
-  min-width: 88px;
-  padding: 8px 14px;
+.queue-topbar-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  height: 30px;
+  padding: 0 11px;
   background: var(--bg2);
   border: 1px solid var(--bd);
-  border-radius: 11px;
+  border-radius: 9px;
 }
 
-.queue-hero-metric-label {
+.queue-topbar-metric-label {
   font-size: 9px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--txl);
   font-weight: 600;
-  margin-bottom: 3px;
 }
 
-.queue-hero-metric-value {
+.queue-topbar-metric-value {
   font-family: var(--dp);
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--tx);
 }
@@ -4946,7 +4909,8 @@ button {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 9px 14px;
+  height: 30px;
+  padding: 0 11px;
   background: rgba(255, 152, 0, 0.12);
   border: 1px solid rgba(255, 152, 0, 0.3);
   border-radius: 11px;

@@ -354,15 +354,6 @@ export function Dashboard() {
     },
   });
 
-  const advance = useMutation({
-    mutationFn: () => api.advance(selectedId!),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
-      qc.invalidateQueries({ queryKey: ["tickets"] });
-      qc.invalidateQueries({ queryKey: ["ticket-tree"] });
-    },
-  });
-
   const stopTicket = useMutation({
     mutationFn: () => api.stopTicket(selectedId!),
     onSuccess: () => {
@@ -1502,15 +1493,19 @@ export function Dashboard() {
                         ?.name ??
                       sel.workflow_template_slug ??
                       "";
+                    const assemblePending =
+                      orchestrate.isPending && orchestrate.variables?.ticketId === selectedId;
+                    const rerunDisabled =
+                      workflowBusy || startRun.isPending || !cursorRun.allowed || runningCursor;
                     return (
                       <>
                         <button
                           type="button"
                           className="btn-primary"
-                          disabled={!selectedId || advance.isPending}
-                          onClick={() => advance.mutate()}
+                          disabled={!selectedId || assemblePending}
+                          onClick={() => setAssembleModalOpen(true)}
                         >
-                          {advance.isPending ? "Advancing…" : "Advance stage"}
+                          {agentsAssembleLabel(sel, assemblePending)}
                           <svg
                             width="13"
                             height="13"
@@ -1544,32 +1539,6 @@ export function Dashboard() {
                           </svg>
                           {stopTicket.isPending ? "Pausing…" : "Pause"}
                         </button>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          disabled={
-                            workflowBusy ||
-                            startRun.isPending ||
-                            !cursorRun.allowed ||
-                            runningCursor
-                          }
-                          title={cursorRun.reason}
-                          onClick={() => requestStageRun(sel.workflow_stage_key)}
-                        >
-                          <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            aria-hidden
-                          >
-                            <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-                            <path d="M3 3v5h5" />
-                          </svg>
-                          Re-run
-                        </button>
                         <div style={{ flex: 1 }} />
                         {templateLabel ? (
                           <span className="run-controls-template">{templateLabel}</span>
@@ -1577,10 +1546,9 @@ export function Dashboard() {
                         <WorkflowRunOverflowMenu
                           ticket={sel}
                           orchestrateCommand={buildOrchestrateTerminalCommand(sel, API_BASE)}
-                          assemblePending={
-                            orchestrate.isPending && orchestrate.variables?.ticketId === selectedId
-                          }
-                          onAssemble={() => setAssembleModalOpen(true)}
+                          rerunDisabled={rerunDisabled}
+                          rerunTitle={cursorRun.reason}
+                          onRerun={() => requestStageRun(sel.workflow_stage_key)}
                           onDelete={() => setDeleteTicketTarget(sel)}
                         />
                       </>

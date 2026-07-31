@@ -3,6 +3,7 @@ import { useEffect, useMemo } from "react";
 
 import { api } from "../api/client";
 import { QueueDashboard } from "../components/QueueDashboard";
+import { PageTopbar } from "../components/TopbarPageSlot";
 import { useParallelExecutionWS } from "../hooks/useParallelExecutionWS";
 import { useUiStore } from "../state/uiStore";
 
@@ -42,58 +43,46 @@ export function QueuePage() {
 
   return (
     <div className="screen-view screen-view--queue">
-      <header className="page-hero-header">
-        <div className="page-hero-copy">
-          <div className="page-hero-eyebrow">
-            <span>Parallel Execution</span>
-            <span className="page-hero-eyebrow-dot" aria-hidden />
-            <span className="page-hero-eyebrow-muted">Queue · Review · Approve</span>
+      <PageTopbar title="Queue Dashboard">
+        {activeWorkspace && (
+          <div className="queue-topbar-metrics">
+            <span className="queue-topbar-metric">
+              <span className="queue-topbar-metric-label">Utilization</span>
+              <span className="queue-topbar-metric-value">{utilization}%</span>
+            </span>
+            <span className="queue-topbar-metric">
+              <span className="queue-topbar-metric-label">Active</span>
+              <span className="queue-topbar-metric-value">
+                {stats?.active_count ?? 0}/{stats?.max_concurrent ?? 3}
+              </span>
+            </span>
+            <span className="queue-topbar-metric">
+              <span className="queue-topbar-metric-label">Queued</span>
+              <span className="queue-topbar-metric-value">{stats?.queued_count ?? 0}</span>
+            </span>
+            <span className={`queue-live-badge${isWebSocket ? " connected" : ""}`}>
+              <span className="queue-live-badge-dot" aria-hidden />
+              {isWebSocket ? "Real-time" : "Polling"}
+            </span>
           </div>
-          <h1 className="page-hero-title">Queue Dashboard</h1>
-          <p className="page-hero-sub">
-            Workspace: <span style={{ color: "var(--tx)" }}>{activeWorkspace?.name ?? "—"}</span>
-          </p>
-        </div>
-        <div className="page-hero-actions">
-          {activeWorkspace && (
-            <div className="queue-hero-metrics">
-              <div className="queue-hero-metric">
-                <div className="queue-hero-metric-label">Utilization</div>
-                <div className="queue-hero-metric-value">{utilization}%</div>
-              </div>
-              <div className="queue-hero-metric">
-                <div className="queue-hero-metric-label">Active</div>
-                <div className="queue-hero-metric-value">
-                  {stats?.active_count ?? 0}/{stats?.max_concurrent ?? 3}
-                </div>
-              </div>
-              <div className="queue-hero-metric">
-                <div className="queue-hero-metric-label">Queued</div>
-                <div className="queue-hero-metric-value">{stats?.queued_count ?? 0}</div>
-              </div>
-              <div className={`queue-live-badge${isWebSocket ? " connected" : ""}`}>
-                <span className="queue-live-badge-dot" aria-hidden />
-                {isWebSocket ? "Real-time" : "Polling"}
-              </div>
-            </div>
-          )}
-          <label className="editor-workspace-picker">
-            <span className="page-hero-field-label">Workspace</span>
-            <select
-              className="btn-secondary page-hero-field-select"
-              value={activeSlug}
-              disabled={!workspaces.data?.length}
-              onChange={(event) => setQueueWorkspaceSlug(event.target.value)}
-            >
-              {(workspaces.data ?? []).map((ws) => (
-                <option key={ws.slug} value={ws.slug}>
-                  {ws.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </header>
+        )}
+        <label className="topbar-workspace-picker">
+          <span className="topbar-workspace-picker-label">Workspace</span>
+          <select
+            className="btn-secondary topbar-workspace-picker-select"
+            value={activeSlug}
+            disabled={!workspaces.data?.length}
+            aria-label="Queue workspace"
+            onChange={(event) => setQueueWorkspaceSlug(event.target.value)}
+          >
+            {(workspaces.data ?? []).map((ws) => (
+              <option key={ws.slug} value={ws.slug}>
+                {ws.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </PageTopbar>
 
       <div className="queue-page-body">
         {activeWorkspace ? (
