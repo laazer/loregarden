@@ -25,6 +25,7 @@ export function TicketDependencies({ ticket }: TicketDependenciesProps) {
   };
 
   const addDep = useMutation({
+    meta: { errorTitle: "Add dependency" },
     mutationFn: (dependsOn: string) => api.addDependency(ticket.id, dependsOn),
     onSuccess: () => {
       setValue("");
@@ -36,6 +37,7 @@ export function TicketDependencies({ ticket }: TicketDependenciesProps) {
   });
 
   const removeDep = useMutation({
+    meta: { errorTitle: "Remove dependency" },
     mutationFn: (dependsOnId: string) => api.removeDependency(ticket.id, dependsOnId),
     onSuccess: invalidate,
   });

@@ -1,0 +1,104 @@
+.toast-host {
+  /* Inset comes from the component, which measures the page area so the stack
+     clears the utility dock on whichever edge it is docked. */
+  position: fixed;
+  z-index: 4000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 12px 12px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--bd2);
+  border-left: 3px solid var(--txm);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  font-family: var(--ui);
+  color: var(--tx);
+  pointer-events: auto;
+  animation: toast-in 0.18s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.toast--error {
+  border-left-color: var(--red);
+}
+
+.toast--warning {
+  border-left-color: var(--amb);
+}
+
+.toast--success {
+  border-left-color: var(--grn);
+}
+
+.toast--info {
+  border-left-color: var(--blue);
+}
+
+.toast__glyph {
+  flex: 0 0 auto;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.toast--error .toast__glyph {
+  color: var(--rdl);
+}
+
+.toast--warning .toast__glyph {
+  color: var(--aml);
+}
+
+.toast--success .toast__glyph {
+  color: var(--grl);
+}
+
+.toast--info .toast__glyph {
+  color: var(--bll);
+}
+
+.toast__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.toast__title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.toast__message {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--txm);
+  /* Server detail can be a stack-sized string; keep the toast a toast. */
+  max-height: 5.8em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}

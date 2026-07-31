@@ -86,6 +86,7 @@ export function BranchTriageList({
   const [worktreesBranchName, setWorktreesBranchName] = useState<string | null>(null);
 
   const checkout = useMutation({
+    meta: { errorTitle: "Checkout branch" },
     mutationFn: (branch: string) => checkoutBranchTriage(workspaceSlug, branch),
     onSuccess: () => {
       setBranchPendingCheckout(null);
@@ -99,6 +100,7 @@ export function BranchTriageList({
   };
 
   const remove = useMutation({
+    meta: { errorTitle: "Delete branch" },
     mutationFn: ({ branch, removeWorktrees }: { branch: string; removeWorktrees: boolean }) =>
       deleteBranchTriage(workspaceSlug, branch, true, removeWorktrees),
     onSuccess: (result, { branch, removeWorktrees }) => {

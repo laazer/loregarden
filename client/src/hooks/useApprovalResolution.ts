@@ -27,6 +27,7 @@ export function useApprovalResolution(
   const qc = useQueryClient();
 
   return useMutation({
+    meta: { errorTitle: "Resolve approval" },
     mutationFn: ({ id, action, ...payload }: ResolveApprovalVariables) =>
       api.resolveApproval(id, { action, ...payload }),
     onSuccess: () => {

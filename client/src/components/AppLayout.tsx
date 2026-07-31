@@ -8,6 +8,7 @@ import { AppIconRail } from "./AppIconRail";
 import { AppTopbar } from "./AppTopbar";
 import { AppUtilityDock } from "./AppUtilityDock";
 import { SettingsModal } from "./SettingsModal";
+import { ToastHost } from "./ToastHost";
 import { TopbarPageSlotProvider } from "./TopbarPageSlot";
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -29,6 +30,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   });
 
   const setRuntime = useMutation({
+    meta: { errorTitle: "Save runtime settings" },
     mutationFn: ({
       slug,
       runtime,
@@ -89,6 +91,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
           await setRuntime.mutateAsync({ slug, runtime });
         }}
       />
+
+      <ToastHost />
     </div>
   );
 }

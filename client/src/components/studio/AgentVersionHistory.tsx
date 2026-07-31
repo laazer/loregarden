@@ -30,6 +30,7 @@ export function AgentVersionHistory({ slug, currentVersion }: Props) {
   });
 
   const restore = useMutation({
+    meta: { errorTitle: "Restore agent version" },
     mutationFn: (version: number) => api.restoreStudioAgentVersion(slug, version),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["studio-agents"] });

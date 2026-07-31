@@ -110,6 +110,7 @@ function LiveGateBody({
 }) {
   const qc = useQueryClient();
   const advance = useMutation({
+    meta: { errorTitle: "Advance ticket" },
     mutationFn: () => api.advance(ticket.id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["ticket", ticket.id] });

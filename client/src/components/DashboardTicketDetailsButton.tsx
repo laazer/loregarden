@@ -23,6 +23,7 @@ export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButton
   });
 
   const saveDetails = useMutation({
+    meta: { errorTitle: "Save ticket details" },
     mutationFn: async (draft: TicketDetailsSaveDraft) => {
       const patch: Parameters<typeof apiClient.api.updateTicket>[1] = {};
       const current = ticketDetail;
