@@ -107,9 +107,28 @@ describe("WorkspaceGatesPanel", () => {
     renderPanel([workspace(), workspace({ slug: "loregarden", name: "Loregarden" })]);
 
     await screen.findByDisplayValue("lefthook run pre-commit --files-from-stdin");
-    fireEvent.click(screen.getByRole("button", { name: "Loregarden" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Workspace" }), {
+      target: { value: "loregarden" },
+    });
 
     expect(await screen.findByDisplayValue("ruff check .")).toBeInTheDocument();
+  });
+
+  it("opens on the app-wide active workspace rather than the first in the list", async () => {
+    api.orchestrationProfile.mockResolvedValue(profile({ slug: "loregarden", name: "Loregarden" }));
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <WorkspaceGatesPanel
+          workspaces={[workspace(), workspace({ slug: "loregarden", name: "Loregarden" })]}
+          workspaceSlug="loregarden"
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(api.orchestrationProfile).toHaveBeenCalledWith("loregarden"));
+    expect(api.orchestrationProfile).not.toHaveBeenCalledWith("blobert");
   });
 
   it("prompts to select a workspace when none exist", () => {

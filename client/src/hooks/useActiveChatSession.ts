@@ -5,7 +5,9 @@ import { api, type Approval } from "../api/client";
 import { ticketIdFromPath } from "../lib/appNavigation";
 import type { ChatSession } from "../lib/chatSession";
 import { useUiStore } from "../state/uiStore";
+import { useBaxterChatSession } from "./useBaxterChatSession";
 import { useBranchChatSession } from "./useBranchChatSession";
+import { useChatWorkspaceSlug } from "./useChatWorkspace";
 import { useTicketChatSession } from "./useTicketChatSession";
 import { useTriageSession } from "./useTriageSession";
 
@@ -52,6 +54,11 @@ export interface ActiveChatSession {
  *
  * The ticket id is read from the path rather than `useParams`: this runs above
  * `<Routes>`, where no route has matched and params are always empty.
+ *
+ * A screen that owns no conversation of its own — Studio, Queue, the Console —
+ * still gets one: the workspace's Baxter thread, the same thread `/chat` shows.
+ * The bar is dead weight otherwise, and there is nothing screen-specific about
+ * asking Baxter a question.
  */
 export function useActiveChatSession(): ActiveChatSession {
   const { pathname } = useLocation();
@@ -60,6 +67,13 @@ export function useActiveChatSession(): ActiveChatSession {
 
   const onBranchTriage = pathname.startsWith("/branch-triage");
   const ticketId = onBranchTriage ? null : ticketIdFromPath(pathname);
+  // `/chat` composes for this thread itself; a second composer for the same
+  // conversation would only open the dock on top of the page showing it.
+  const onBaxterChat = pathname === "/chat" || pathname.startsWith("/chat/");
+  const chatWorkspaceSlug = useChatWorkspaceSlug();
+  const baxterSession = useBaxterChatSession(
+    !onBranchTriage && !ticketId && !onBaxterChat ? chatWorkspaceSlug : "",
+  );
 
   const ticketSession = useTicketChatSession(ticketId ?? undefined);
   const { pending } = useTriageSession(ticketId ?? undefined);
@@ -88,13 +102,21 @@ export function useActiveChatSession(): ActiveChatSession {
         }
       : none;
   }
-  return ticketId
-    ? {
-        session: ticketSession,
-        label: "Ticket triage",
-        ticketId,
-        pendingApprovals: pending,
-        branch: ticket?.branch || null,
-      }
-    : none;
+  if (ticketId) {
+    return {
+      session: ticketSession,
+      label: "Ticket triage",
+      ticketId,
+      pendingApprovals: pending,
+      branch: ticket?.branch || null,
+    };
+  }
+  if (onBaxterChat || !chatWorkspaceSlug) return none;
+  return {
+    session: baxterSession,
+    label: `Baxter · ${chatWorkspaceSlug}`,
+    ticketId: null,
+    pendingApprovals: [],
+    branch: null,
+  };
 }

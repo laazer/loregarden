@@ -24,8 +24,12 @@ jest.mock("../SettingsModal", () => ({
 }));
 
 jest.mock("../../api/client", () => ({
+  // The action bar's Baxter fallback narrows load failures with `instanceof
+  // ApiError`, which throws when the mock omits the class.
+  ApiError: class ApiError extends Error {},
   api: {
     workspaces: jest.fn(async () => []),
+    baxterChatSession: jest.fn(async () => ({ messages: [], run_status: "idle" })),
     runtimeOptions: jest.fn(async () => ({})),
     approvals: jest.fn(async () => []),
     usage: jest.fn(async () => null),

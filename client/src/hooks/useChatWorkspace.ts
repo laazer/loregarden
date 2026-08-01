@@ -26,20 +26,38 @@ export interface ChatWorkspace {
  * Shared by the page and the topbar picker on purpose — if each resolved the
  * fallback itself they could disagree, and the picker would name a workspace
  * other than the one answering.
+ *
+ * @see useChatWorkspaceSlug for the read-only half.
  */
+
+/**
+ * The chat workspace without the pin.
+ *
+ * Read by surfaces that merely follow the conversation — the global action bar,
+ * for one. They must not pin: pinning on app start would freeze chat to
+ * whatever the Console filter happened to be then, before the user ever opened
+ * a conversation.
+ */
+export function useChatWorkspaceSlug(): string {
+  const chatWorkspaceSlug = useUiStore((s) => s.chatWorkspaceSlug);
+  const filterWorkspace = useUiStore((s) => s.workspace);
+  const { data } = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
+
+  return useMemo(() => {
+    if (chatWorkspaceSlug) return chatWorkspaceSlug;
+    if (filterWorkspace && filterWorkspace !== ALL_WORKSPACES) return filterWorkspace;
+    return data?.[0]?.slug ?? "";
+  }, [chatWorkspaceSlug, filterWorkspace, data]);
+}
+
+/** The chat workspace, pinning the inherited slug on first resolve. */
 export function useChatWorkspace(): ChatWorkspace {
   const chatWorkspaceSlug = useUiStore((s) => s.chatWorkspaceSlug);
   const setSlug = useUiStore((s) => s.setChatWorkspaceSlug);
-  const filterWorkspace = useUiStore((s) => s.workspace);
 
   const { data } = useQuery({ queryKey: ["workspaces"], queryFn: api.workspaces });
   const workspaces = data ?? [];
-
-  const slug = useMemo(() => {
-    if (chatWorkspaceSlug) return chatWorkspaceSlug;
-    if (filterWorkspace && filterWorkspace !== ALL_WORKSPACES) return filterWorkspace;
-    return workspaces[0]?.slug ?? "";
-  }, [chatWorkspaceSlug, filterWorkspace, workspaces]);
+  const slug = useChatWorkspaceSlug();
 
   // Pin the inherited slug so a later Console change cannot silently move an
   // open conversation to another workspace.

@@ -608,7 +608,7 @@ export function StudioPage() {
             />
           </div>
         ) : tab === "gates" ? (
-          <WorkspaceGatesPanel workspaces={workspaces.data ?? []} />
+          <WorkspaceGatesPanel workspaces={workspaces.data ?? []} workspaceSlug={activeWorkspaceSlug} />
         ) : tab === "agents" ? (
           <div className="studio-shell">
             {layoutMode === "workbench" && (
