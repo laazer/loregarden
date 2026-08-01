@@ -13,6 +13,7 @@ from loregarden.models.domain import (
 from loregarden.services.cli_settings import (
     VALID_CLI_ADAPTERS,
     runtime_options_payload,
+    validated_effort_pins,
     workspace_cli_settings,
 )
 from loregarden.services.workflow_service import WorkflowService, resolve_workspace_stages
@@ -65,14 +66,17 @@ def get_runtime_options(
     """Static Claude/Cursor catalogs + live LM Studio chat models when reachable.
 
     Optional ``lmstudio_base_url`` or ``workspace`` (slug) selects which LM Studio
-    server to probe — otherwise the global default URL is used.
+    server to probe — otherwise the global default URL is used. ``workspace`` also
+    resolves the ``effective`` block: the adapter/model/effort a run started now
+    would actually use, which the pin selects alone cannot show.
     """
     base_url = lmstudio_base_url.strip()
-    if not base_url and workspace.strip():
+    ws: Workspace | None = None
+    if workspace.strip():
         ws = session.exec(select(Workspace).where(Workspace.slug == workspace.strip())).first()
-        if ws and ws.lmstudio_base_url:
-            base_url = ws.lmstudio_base_url
-    return runtime_options_payload(lmstudio_base_url=base_url)
+    if not base_url and ws and ws.lmstudio_base_url:
+        base_url = ws.lmstudio_base_url
+    return runtime_options_payload(lmstudio_base_url=base_url, workspace=ws)
 
 
 @router.get("/{slug}/runtime", response_model=WorkspaceRuntimeSettings)
@@ -96,11 +100,18 @@ def update_workspace_runtime(
         raise HTTPException(404, "Workspace not found")
     if body.cli_adapter not in VALID_CLI_ADAPTERS:
         raise HTTPException(400, f"Invalid cli_adapter: {body.cli_adapter}")
+    try:
+        efforts = validated_effort_pins(body)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     ws.cli_adapter = body.cli_adapter
     ws.claude_model = body.claude_model.strip()
     ws.cursor_model = body.cursor_model.strip()
     ws.lmstudio_base_url = body.lmstudio_base_url.strip()
     ws.lmstudio_model = body.lmstudio_model.strip()
+    ws.claude_effort = efforts["claude_effort"]
+    ws.cursor_effort = efforts["cursor_effort"]
+    ws.lmstudio_effort = efforts["lmstudio_effort"]
     session.add(ws)
     session.commit()
     session.refresh(ws)

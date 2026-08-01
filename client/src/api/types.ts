@@ -332,6 +332,9 @@ export interface WorkspaceSummary {
   cursor_model: string;
   lmstudio_base_url: string;
   lmstudio_model: string;
+  claude_effort?: string;
+  cursor_effort?: string;
+  lmstudio_effort?: string;
 }
 
 export interface RuntimeOption {
@@ -339,11 +342,31 @@ export interface RuntimeOption {
   label: string;
 }
 
+/** Which adapter/model/effort a run started right now would actually use, and
+ *  the precedence tier that decided each one. The pin selects usually read
+ *  "Default", which says nothing about what the CLI will pick. */
+export interface RuntimeEffective {
+  cli_adapter: string;
+  cli_adapter_source: string;
+  model: string;
+  model_source: string;
+  effort: string;
+  effort_source: string;
+  supports_model: boolean;
+  supports_effort: boolean;
+}
+
 export interface RuntimeOptions {
   cli_adapters: RuntimeOption[];
   claude_models: RuntimeOption[];
   cursor_models: RuntimeOption[];
   lmstudio_models?: RuntimeOption[];
+  claude_efforts?: RuntimeOption[];
+  cursor_efforts?: RuntimeOption[];
+  lmstudio_efforts?: RuntimeOption[];
+  /** Cursor model ids that accept an `[effort=...]` bracket override. */
+  cursor_effort_models?: string[];
+  effective?: RuntimeEffective;
 }
 
 export interface WorkspaceRuntimeSettings {
@@ -352,6 +375,9 @@ export interface WorkspaceRuntimeSettings {
   cursor_model: string;
   lmstudio_base_url: string;
   lmstudio_model: string;
+  claude_effort?: string;
+  cursor_effort?: string;
+  lmstudio_effort?: string;
 }
 
 export interface WorkflowTemplateSummary {
