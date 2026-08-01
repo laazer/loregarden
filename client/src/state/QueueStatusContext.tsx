@@ -2,15 +2,19 @@
  * One queue subscription for the queue screen.
  *
  * The page used to hold three: the page, the dashboard and the visualization
- * each called `useParallelExecutionWS` for the same workspace, so a single
- * open tab meant three sockets and — whenever one of them was down — three
- * pollers.
+ * each called `useParallelExecutionWS`, so a single open tab meant three
+ * sockets and — whenever one of them was down — three pollers.
  *
- * The workspace resolution that was inlined in QueuePage comes with it, since
- * there is exactly one answer to "which workspace is the queue showing" and
- * both the topbar controls and the body need it. `PageTopbar` portals those
- * controls into the topbar's DOM node while leaving them in this provider's
- * React subtree, which is what lets them share the subscription from up there.
+ * There is no workspace to resolve. The execution slots are one shared pool, so
+ * the queue this reports is the whole machine's — the page used to pick a
+ * workspace and show a slice, which made two workspaces look like two
+ * independent queues when they were competing for the same three slots.
+ *
+ * The workspace *list* is still here: staging a ticket needs to offer tickets
+ * from every workspace, and every card has to say which one it belongs to.
+ * `PageTopbar` portals the topbar controls into the topbar's DOM node while
+ * leaving them in this provider's React subtree, which is what lets them share
+ * the subscription from up there.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -18,7 +22,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useRef,
   type ReactNode,
@@ -34,14 +37,10 @@ import type {
 } from "../lib/queueSocket";
 import { DEFAULT_PARALLEL_STATS } from "../lib/queueSocket";
 import type { WorkspaceSummary } from "../api/types";
-import { useUiStore } from "./uiStore";
 
 export interface QueueStatusValue {
-  workspace: WorkspaceSummary | null;
   workspaces: WorkspaceSummary[];
   workspacesLoading: boolean;
-  activeSlug: string;
-  setWorkspaceSlug: (slug: string) => void;
 
   activeRuns: ActiveRun[];
   queuedRuns: QueuedRun[];
@@ -57,11 +56,8 @@ export interface QueueStatusValue {
 const QueueStatusContext = createContext<QueueStatusValue | null>(null);
 
 const EMPTY_VALUE: QueueStatusValue = {
-  workspace: null,
   workspaces: [],
   workspacesLoading: false,
-  activeSlug: "",
-  setWorkspaceSlug: () => {},
   activeRuns: [],
   queuedRuns: [],
   stats: DEFAULT_PARALLEL_STATS,
@@ -83,32 +79,10 @@ export function useQueueStatus(): QueueStatusValue {
 }
 
 export function QueueStatusProvider({ children }: { children: ReactNode }) {
-  const workspaceSlug = useUiStore((s) => s.workspace);
-  const queueWorkspaceSlug = useUiStore((s) => s.queueWorkspaceSlug);
-  const setQueueWorkspaceSlug = useUiStore((s) => s.setQueueWorkspaceSlug);
-
   const workspaces = useQuery({
     queryKey: ["workspaces"],
     queryFn: api.workspaces,
   });
-
-  const activeSlug = useMemo(() => {
-    if (queueWorkspaceSlug) return queueWorkspaceSlug;
-    // "all" is a console filter, not a workspace — the queue is per-workspace.
-    if (workspaceSlug && workspaceSlug !== "all") return workspaceSlug;
-    return workspaces.data?.[0]?.slug ?? "";
-  }, [queueWorkspaceSlug, workspaceSlug, workspaces.data]);
-
-  const workspace = useMemo(
-    () => workspaces.data?.find((ws) => ws.slug === activeSlug) ?? null,
-    [workspaces.data, activeSlug],
-  );
-
-  useEffect(() => {
-    if (!queueWorkspaceSlug && activeSlug) {
-      setQueueWorkspaceSlug(activeSlug);
-    }
-  }, [activeSlug, queueWorkspaceSlug, setQueueWorkspaceSlug]);
 
   // A Set rather than a single handler: the toast stack and anything else that
   // wants events both get them, and neither has to know about the other.
@@ -125,19 +99,12 @@ export function QueueStatusProvider({ children }: { children: ReactNode }) {
     for (const listener of listeners.current) listener(event);
   }, []);
 
-  const status = useParallelExecutionWS(
-    workspace?.id ?? "",
-    Boolean(workspace?.id),
-    emit,
-  );
+  const status = useParallelExecutionWS(true, emit);
 
   const value = useMemo<QueueStatusValue>(
     () => ({
-      workspace,
       workspaces: workspaces.data ?? [],
       workspacesLoading: workspaces.isLoading,
-      activeSlug,
-      setWorkspaceSlug: setQueueWorkspaceSlug,
       activeRuns: status.activeRuns,
       queuedRuns: status.queuedRuns,
       stats: status.stats,
@@ -146,15 +113,7 @@ export function QueueStatusProvider({ children }: { children: ReactNode }) {
       loading: status.loading,
       onQueueEvent,
     }),
-    [
-      workspace,
-      workspaces.data,
-      workspaces.isLoading,
-      activeSlug,
-      setQueueWorkspaceSlug,
-      status,
-      onQueueEvent,
-    ],
+    [workspaces.data, workspaces.isLoading, status, onQueueEvent],
   );
 
   return <QueueStatusContext.Provider value={value}>{children}</QueueStatusContext.Provider>;

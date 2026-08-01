@@ -7,6 +7,7 @@ import pytest
 from loregarden.models.domain import AgentRun, Ticket, Workspace, Worktree
 from loregarden.services.event_hub import event_hub
 from loregarden.services.parallel_queue import ParallelQueueService
+from loregarden.websocket_events import QUEUE_TOPIC
 
 
 @pytest.mark.asyncio
@@ -35,7 +36,7 @@ class TestParallelQueueEventEmissions:
         service = ParallelQueueService(db_session, max_concurrent=1)
 
         # Create a run that will be queued (no available slots)
-        service.initialize_slots("ws-1")
+        service.initialize_slots()
 
         # Occupy the single slot first, so the next run actually has to queue —
         # with only 1 slot, queuing the very first run starts it immediately.
@@ -45,9 +46,10 @@ class TestParallelQueueEventEmissions:
             # Queue second run — no slots available now.
             await service.queue_run("ws-1", "ticket-1", "run-1")
 
-            # The event names the workspace whose queue changed; subscribers
-            # re-read the state rather than trust a payload assembled here.
-            mock_emit.assert_called_once_with("ws-1")
+            # The event carries nothing: the queue is one shared line, and
+            # subscribers re-read the state rather than trust a payload
+            # assembled here.
+            mock_emit.assert_called_once_with()
 
     async def test_queue_run_emits_execution_update_when_started(self, db_session):
         """Verify execution_update event emitted when run starts immediately."""
@@ -66,13 +68,13 @@ class TestParallelQueueEventEmissions:
         with patch("loregarden.services.parallel_queue.emit_execution_update") as mock_emit:
             service = ParallelQueueService(db_session, max_concurrent=2)
 
-            service.initialize_slots("ws-1")
+            service.initialize_slots()
 
             # Queue run - should start immediately with 2 slots
             result = await service.queue_run("ws-1", "ticket-1", "run-1")
 
             assert result["status"] == "started"
-            mock_emit.assert_called_once_with("ws-1")
+            mock_emit.assert_called_once_with()
 
     async def test_queue_run_emits_error_on_failure(self, db_session):
         """Verify emit_error called when queue_run fails."""
@@ -101,17 +103,16 @@ class TestParallelQueueEventEmissions:
             service = ParallelQueueService(db_session, max_concurrent=1)
 
             # Setup: fill slot, then queue a run
-            service.initialize_slots("ws-1")
+            service.initialize_slots()
             await service.queue_run("ws-1", "ticket-1", "run-1")
             await service.queue_run("ws-1", "ticket-2", "run-2")
 
             # Complete first run to trigger promotion
-            await service.on_run_complete("ws-1", "run-1")
+            await service.on_run_complete("run-1")
 
             # Verify queue_promoted was called
             mock_promoted.assert_called()
             call_args = mock_promoted.call_args
-            assert call_args[1]["workspace_id"] == "ws-1"
             assert call_args[1]["run_id"] == "run-2"
 
     async def test_on_run_complete_emits_run_completed(self, db_session):
@@ -124,15 +125,14 @@ class TestParallelQueueEventEmissions:
             service = ParallelQueueService(db_session, max_concurrent=2)
 
             # Setup: create run in database
-            service.initialize_slots("ws-1")
+            service.initialize_slots()
             await service.queue_run("ws-1", "ticket-1", "run-1")
 
             # Complete run
-            await service.on_run_complete("ws-1", "run-1")
+            await service.on_run_complete("run-1")
 
             mock_completed.assert_called_once()
             call_args = mock_completed.call_args
-            assert call_args[1]["workspace_id"] == "ws-1"
             assert call_args[1]["run_id"] == "run-1"
 
     async def test_on_run_complete_emits_execution_update(self, db_session):
@@ -144,9 +144,9 @@ class TestParallelQueueEventEmissions:
         ):
             service = ParallelQueueService(db_session, max_concurrent=2)
 
-            service.initialize_slots("ws-1")
+            service.initialize_slots()
             await service.queue_run("ws-1", "ticket-1", "run-1")
-            await service.on_run_complete("ws-1", "run-1")
+            await service.on_run_complete("run-1")
 
             # Should be called at least twice (once for queue_run, once for on_run_complete)
             assert mock_update.call_count >= 2
@@ -165,10 +165,10 @@ class TestParallelQueueEventEmissions:
 
         with (
             patch.object(hub, "_loop", loop),
-            patch.object(hub, "_topics", {"workspace:ws-1": {asyncio.Queue()}}),
+            patch.object(hub, "_topics", {QUEUE_TOPIC: {asyncio.Queue()}}),
         ):
             service = ParallelQueueService(db_session, max_concurrent=2)
-            service.initialize_slots("ws-1")
+            service.initialize_slots()
 
             result = await service.queue_run("ws-1", "ticket-1", "run-1")
 

@@ -21,6 +21,7 @@ from loregarden.core.auth import websocket_token_ok
 from loregarden.db.session import engine
 from loregarden.services.event_hub import event_hub
 from loregarden.services.queue_status import build_queue_status
+from loregarden.websocket_events import QUEUE_TOPIC
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -47,11 +48,7 @@ REFRESH_INTERVAL_SECONDS = 5.0
 NOTIFIABLE_EVENTS = frozenset({"queue_promoted", "run_completed", "error"})
 
 
-def _topic(workspace_id: str) -> str:
-    return f"workspace:{workspace_id}"
-
-
-async def _snapshot(workspace_id: str) -> dict:
+async def _snapshot() -> dict:
     """Read current queue state.
 
     A fresh session per snapshot on purpose: a session held for the life of the
@@ -60,11 +57,11 @@ async def _snapshot(workspace_id: str) -> dict:
     connected.
     """
     with Session(engine) as session:
-        return await build_queue_status(session, workspace_id)
+        return await build_queue_status(session)
 
 
-async def _send_snapshot(websocket: WebSocket, workspace_id: str) -> None:
-    await websocket.send_json({"type": "queue_status", "data": await _snapshot(workspace_id)})
+async def _send_snapshot(websocket: WebSocket) -> None:
+    await websocket.send_json({"type": "queue_status", "data": await _snapshot()})
 
 
 def _notifiable(events: list[dict]) -> list[dict]:
@@ -103,20 +100,19 @@ async def _await_disconnect(websocket: WebSocket) -> None:
         await websocket.receive_text()
 
 
-@router.websocket("/queue/{workspace_id}")
-async def queue_socket(websocket: WebSocket, workspace_id: str) -> None:
+@router.websocket("/queue")
+async def queue_socket(websocket: WebSocket) -> None:
     if not websocket_token_ok(websocket):
         await websocket.close(code=POLICY_VIOLATION, reason="Missing or invalid API token")
         return
 
     await websocket.accept()
 
-    topic = _topic(workspace_id)
-    queue = event_hub.subscribe(topic)
+    queue = event_hub.subscribe(QUEUE_TOPIC)
     disconnected = asyncio.create_task(_await_disconnect(websocket))
 
     try:
-        await _send_snapshot(websocket, workspace_id)
+        await _send_snapshot(websocket)
 
         while not disconnected.done():
             pending = asyncio.create_task(queue.get())
@@ -142,11 +138,11 @@ async def queue_socket(websocket: WebSocket, workspace_id: str) -> None:
             if disconnected.done():
                 break
             await _send_events(websocket, batch)
-            await _send_snapshot(websocket, workspace_id)
+            await _send_snapshot(websocket)
     except WebSocketDisconnect:
         pass
     except Exception:  # noqa: BLE001 - one bad socket must not take the loop down
-        logger.warning("Queue socket for workspace %s failed", workspace_id, exc_info=True)
+        logger.warning("Queue socket failed", exc_info=True)
     finally:
         disconnected.cancel()
-        event_hub.unsubscribe(topic, queue)
+        event_hub.unsubscribe(QUEUE_TOPIC, queue)

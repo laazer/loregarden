@@ -99,19 +99,17 @@ function build() {
 
 describe('queueSocketUrl', () => {
   it('turns the API base into a websocket URL', () => {
-    expect(queueSocketUrl('ws-1', 'http://127.0.0.1:8000')).toBe(
-      'ws://127.0.0.1:8000/ws/queue/ws-1',
-    );
+    expect(queueSocketUrl('http://127.0.0.1:8000')).toBe('ws://127.0.0.1:8000/ws/queue');
   });
 
   it('upgrades https to wss', () => {
-    expect(queueSocketUrl('ws-1', 'https://example.test')).toBe(
-      'wss://example.test/ws/queue/ws-1',
-    );
+    expect(queueSocketUrl('https://example.test')).toBe('wss://example.test/ws/queue');
   });
 
-  it('escapes a workspace id so it cannot alter the path', () => {
-    expect(queueSocketUrl('a/../b', 'http://x')).toBe('ws://x/ws/queue/a%2F..%2Fb');
+  it('takes no workspace, because the queue has none', () => {
+    // The path used to end in a workspace id, which is why it had to escape
+    // one. One shared slot pool means one socket and a fixed path.
+    expect(queueSocketUrl('http://x/')).toBe('ws://x/ws/queue');
   });
 });
 

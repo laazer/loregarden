@@ -16,6 +16,7 @@ from loregarden.services.parallel_run_service import ParallelRunService
 from loregarden.services.queue_status import build_queue_status
 from loregarden.services.worktree_service import WorktreeService, repo_path_for_worktree
 from loregarden.websocket_events import (
+    QUEUE_TOPIC,
     emit_conflict_detected,
     emit_conflict_resolved,
     emit_error,
@@ -33,6 +34,7 @@ async def create_parallel_run(
     ticket_id: str = Path(...),
     stage_key: str | None = Query(None),
     max_concurrent: int = Query(3),
+    slot_number: int | None = Query(None, ge=1),
     session: Session = Depends(get_session),
 ):
     """
@@ -44,6 +46,8 @@ async def create_parallel_run(
         ticket_id: Ticket ID
         stage_key: Optional stage key to start
         max_concurrent: Max concurrent runs (default 3)
+        slot_number: Slot the caller staged this ticket into. Honoured when
+            free, otherwise the lowest free slot takes it.
 
     Returns:
         {
@@ -63,9 +67,10 @@ async def create_parallel_run(
             ticket,
             stage_key=stage_key,
             max_concurrent=max_concurrent,
+            preferred_slot=slot_number,
         )
 
-        emit_execution_update(ticket.workspace_id)
+        emit_execution_update()
 
         return result
 
@@ -79,7 +84,7 @@ async def create_parallel_run(
             ticket = session.get(Ticket, ticket_id)
             if ticket:
                 emit_error(
-                    target_room=f"workspace:{ticket.workspace_id}",
+                    target_room=QUEUE_TOPIC,
                     message=f"Failed to create run: {str(e)}",
                     code="RUN_CREATION_ERROR",
                     context={"ticket_id": ticket_id},
@@ -90,13 +95,15 @@ async def create_parallel_run(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.get("/status/{workspace_id}")
+@router.get("/status")
 async def get_parallel_status(
-    workspace_id: str = Path(...),
     session: Session = Depends(get_session),
 ):
     """
-    Get parallel execution status for a workspace.
+    Get parallel execution status for the shared queue.
+
+    Not scoped to a workspace: the slot pool is global, so a per-workspace view
+    would show a slice of a queue whose contention is not sliceable.
 
     Returns:
         {
@@ -111,7 +118,7 @@ async def get_parallel_status(
     try:
         # Shared with the queue websocket, so a client that falls back to
         # polling sees the identical payload rather than a second dialect.
-        return await build_queue_status(session, workspace_id)
+        return await build_queue_status(session)
 
     except Exception as e:
         logger.error(f"Error getting parallel status: {e}", exc_info=True)
@@ -147,7 +154,7 @@ async def cancel_queued_run(
         if not cancelled:
             raise HTTPException(status_code=404, detail="Queued run not found")
 
-        emit_execution_update(run.workspace_id)
+        emit_execution_update()
 
         return {
             "status": "cancelled",
@@ -164,7 +171,7 @@ async def cancel_queued_run(
             run = session.get(AgentRun, run_id)
             if run:
                 emit_error(
-                    target_room=f"workspace:{run.workspace_id}",
+                    target_room=QUEUE_TOPIC,
                     message=f"Failed to cancel run: {str(e)}",
                     code="RUN_CANCELLATION_ERROR",
                     context={"run_id": run_id},
@@ -523,16 +530,12 @@ async def get_conflict_reports(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.get("/active-runs/{workspace_id}")
+@router.get("/active-runs")
 async def get_active_runs(
-    workspace_id: str = Path(...),
     session: Session = Depends(get_session),
 ):
     """
-    Get all active (executing) runs for a workspace.
-
-    Args:
-        workspace_id: Workspace ID
+    Get all active (executing) runs, across every workspace.
 
     Returns:
         {
@@ -550,7 +553,7 @@ async def get_active_runs(
     """
     try:
         queue_service = ParallelQueueService(session)
-        active_runs = await queue_service.get_active_runs(workspace_id)
+        active_runs = await queue_service.get_active_runs()
 
         return {"active_runs": active_runs}
 
@@ -559,16 +562,12 @@ async def get_active_runs(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.get("/queued-runs/{workspace_id}")
+@router.get("/queued-runs")
 async def get_queued_runs(
-    workspace_id: str = Path(...),
     session: Session = Depends(get_session),
 ):
     """
-    Get all queued (waiting) runs for a workspace.
-
-    Args:
-        workspace_id: Workspace ID
+    Get all queued (waiting) runs, across every workspace.
 
     Returns:
         {
@@ -586,7 +585,7 @@ async def get_queued_runs(
     """
     try:
         queue_service = ParallelQueueService(session)
-        queued_runs = await queue_service.get_queued_runs(workspace_id)
+        queued_runs = await queue_service.get_queued_runs()
 
         return {"queued_runs": queued_runs}
 

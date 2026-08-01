@@ -23,6 +23,13 @@ export interface RunLabels {
   ticket_state?: string;
   agent_name?: string;
   stage_key?: string;
+  /**
+   * Which workspace this run belongs to. The slot pool is shared across all of
+   * them, so without this a board of three cards says nothing about whose work
+   * is running.
+   */
+  workspace_name?: string;
+  workspace_slug?: string;
 }
 
 export interface ActiveRun extends RunLabels {
@@ -68,7 +75,7 @@ export const DEFAULT_PARALLEL_STATS: ParallelStats = {
   queue_wait_time_minutes: 0,
 };
 
-/** What `/api/parallel/status/{id}` returns, and what the socket pushes. */
+/** What `/api/parallel/status` returns, and what the socket pushes. */
 export interface QueueStatusSnapshot {
   active_runs: ActiveRun[];
   queued_runs: QueuedRun[];
@@ -122,9 +129,10 @@ export const BASE_RECONNECT_DELAY_MS = 1000;
  * backend restart is picked up while the operator is still looking. */
 export const MAX_RECONNECT_DELAY_MS = 30000;
 
-export function queueSocketUrl(workspaceId: string, apiBase: string): string {
+export function queueSocketUrl(apiBase: string): string {
   const base = apiBase.replace(/\/$/, "").replace(/^http/, "ws");
-  return `${base}/ws/queue/${encodeURIComponent(workspaceId)}`;
+  // One socket, not one per workspace: the queue it reports is shared.
+  return `${base}/ws/queue`;
 }
 
 /**

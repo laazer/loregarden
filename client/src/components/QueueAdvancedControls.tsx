@@ -11,7 +11,6 @@ import './QueueAdvancedControls.css';
 export type { ActiveRun, QueuedRun };
 
 export interface QueueAdvancedControlsProps {
-  workspaceId: string;
   activeRuns: ActiveRun[];
   queuedRuns: QueuedRun[];
   onRunControl?: (action: string, runId: string) => Promise<void>;

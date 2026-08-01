@@ -19,32 +19,25 @@ describe("useParallelExecution", () => {
     global.fetch = originalFetch;
   });
 
-  it("does not query before a workspace is resolved", () => {
-    // Callers resolve the workspace from a query, so the first render always
-    // has an empty id. Querying anyway hits /api/parallel/status/ with no id.
-    renderHook(() => useParallelExecution("", 5000));
-    expect(global.fetch).not.toHaveBeenCalled();
+  it("queries the shared queue endpoint", async () => {
+    renderHook(() => useParallelExecution(5000));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    // Absolute, via API_BASE. A relative URL only resolves behind the Vite dev
+    // proxy and 404s in a packaged Tauri build. No workspace in the path: the
+    // slot pool is shared, so there is only one queue to ask about.
+    expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe(
+      `${API_BASE}/api/parallel/status`,
+    );
   });
 
-  it("does not keep polling with an empty workspace", () => {
-    // The failure was a repeating 404, not a one-off: the poll fired forever.
-    renderHook(() => useParallelExecution("", 5000));
+  it("does not query while disabled", () => {
+    renderHook(() => useParallelExecution(5000, false));
     jest.advanceTimersByTime(20000);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it("stops loading rather than hanging when there is no workspace", () => {
-    const { result } = renderHook(() => useParallelExecution("", 5000));
+  it("stops loading rather than hanging while disabled", () => {
+    const { result } = renderHook(() => useParallelExecution(5000, false));
     expect(result.current.loading).toBe(false);
-  });
-
-  it("queries once a workspace is known", async () => {
-    renderHook(() => useParallelExecution("ws-1", 5000));
-    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    // Absolute, via API_BASE. A relative URL only resolves behind the Vite dev
-    // proxy and 404s in a packaged Tauri build.
-    expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe(
-      `${API_BASE}/api/parallel/status/ws-1`,
-    );
   });
 });

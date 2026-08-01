@@ -863,7 +863,10 @@ class AgentSlot(SQLModel, table=True):
     __tablename__ = "agent_slots"
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    #: Null on every slot in the shared pool. Capacity belongs to the machine,
+    #: not to a workspace — the column survives only for rows written before
+    #: migration 0058 collapsed the per-workspace pools.
+    workspace_id: str | None = Field(default=None, foreign_key="workspaces.id", index=True)
     slot_number: int = 1
     is_available: bool = True
     current_run_id: str | None = Field(default=None, foreign_key="agent_runs.id")

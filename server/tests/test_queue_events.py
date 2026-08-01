@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 from loregarden.api.queue_events import REFRESH_INTERVAL_SECONDS
 from loregarden.services.event_hub import event_hub
+from loregarden.websocket_events import QUEUE_TOPIC
 from starlette.websockets import WebSocketDisconnect
 
 
@@ -25,7 +26,7 @@ def ws_client_fixture(client, isolated_db):
 def test_connecting_delivers_a_snapshot_without_being_asked(ws_client):
     """First paint must not wait for a state change; an idle queue still has to
     render, and it renders from this."""
-    with ws_client.websocket_connect("/ws/queue/ws-1") as socket:
+    with ws_client.websocket_connect("/ws/queue") as socket:
         message = socket.receive_json()
 
     assert message["type"] == "queue_status"
@@ -40,10 +41,10 @@ def test_connecting_delivers_a_snapshot_without_being_asked(ws_client):
     }
 
 
-def test_an_idle_workspace_reports_no_clear_estimate(ws_client):
+def test_an_idle_queue_reports_no_clear_estimate(ws_client):
     """With no completed runs there is nothing to estimate from, and the
     dashboard must be told that rather than handed a made-up number."""
-    with ws_client.websocket_connect("/ws/queue/ws-1") as socket:
+    with ws_client.websocket_connect("/ws/queue") as socket:
         snapshot = socket.receive_json()["data"]
 
     assert snapshot["estimated_clear_seconds"] is None
@@ -51,10 +52,10 @@ def test_an_idle_workspace_reports_no_clear_estimate(ws_client):
 
 def test_the_snapshot_matches_the_rest_endpoint(ws_client):
     """A client that falls back to polling must not see a different shape."""
-    with ws_client.websocket_connect("/ws/queue/ws-1") as socket:
+    with ws_client.websocket_connect("/ws/queue") as socket:
         pushed = socket.receive_json()["data"]
 
-    polled = ws_client.get("/api/parallel/status/ws-1").json()
+    polled = ws_client.get("/api/parallel/status").json()
 
     assert pushed == polled
 
@@ -64,11 +65,11 @@ def test_an_event_pushes_a_fresh_snapshot_promptly(ws_client):
     distinguishes 'the event woke us' from 'the periodic tick fired anyway' —
     without this margin the test would pass on a socket that ignores events
     entirely."""
-    with ws_client.websocket_connect("/ws/queue/ws-1") as socket:
+    with ws_client.websocket_connect("/ws/queue") as socket:
         socket.receive_json()  # the connect snapshot
 
         started = time.monotonic()
-        event_hub.publish("workspace:ws-1", {"type": "execution_update"})
+        event_hub.publish(QUEUE_TOPIC, {"type": "execution_update"})
         message = socket.receive_json()
         elapsed = time.monotonic() - started
 
@@ -79,11 +80,11 @@ def test_an_event_pushes_a_fresh_snapshot_promptly(ws_client):
 def test_a_notifiable_event_is_forwarded_alongside_the_snapshot(ws_client):
     """The snapshot says what the queue looks like now; it cannot say that a run
     just finished. Toasts need the event itself, so both go out."""
-    with ws_client.websocket_connect("/ws/queue/ws-1") as socket:
+    with ws_client.websocket_connect("/ws/queue") as socket:
         socket.receive_json()  # the connect snapshot
 
         event_hub.publish(
-            "workspace:ws-1",
+            QUEUE_TOPIC,
             {"type": "run_completed", "data": {"runId": "run-1", "status": "succeeded"}},
         )
         forwarded = socket.receive_json()
@@ -98,10 +99,10 @@ def test_a_notifiable_event_is_forwarded_alongside_the_snapshot(ws_client):
 def test_execution_update_produces_a_snapshot_but_no_toast(ws_client):
     """'The queue changed' is what the snapshot already conveys. Forwarding it
     too would fire a toast on every reorder."""
-    with ws_client.websocket_connect("/ws/queue/ws-1") as socket:
+    with ws_client.websocket_connect("/ws/queue") as socket:
         socket.receive_json()  # the connect snapshot
 
-        event_hub.publish("workspace:ws-1", {"type": "execution_update"})
+        event_hub.publish(QUEUE_TOPIC, {"type": "execution_update"})
         message = socket.receive_json()
 
     assert message["type"] == "queue_status"
@@ -110,15 +111,15 @@ def test_execution_update_produces_a_snapshot_but_no_toast(ws_client):
 def test_a_burst_coalesces_to_one_snapshot_and_one_toast_per_run(ws_client):
     """A completion promotes the next run, which updates the queue. That is one
     thing happening, so it must not stack duplicate toasts or snapshots."""
-    with ws_client.websocket_connect("/ws/queue/ws-1") as socket:
+    with ws_client.websocket_connect("/ws/queue") as socket:
         socket.receive_json()  # the connect snapshot
 
         for _ in range(3):
             event_hub.publish(
-                "workspace:ws-1",
+                QUEUE_TOPIC,
                 {"type": "queue_promoted", "data": {"runId": "run-1", "slotNumber": 1}},
             )
-        event_hub.publish("workspace:ws-1", {"type": "execution_update"})
+        event_hub.publish(QUEUE_TOPIC, {"type": "execution_update"})
 
         started = time.monotonic()
         messages = []
@@ -136,7 +137,7 @@ def test_a_burst_coalesces_to_one_snapshot_and_one_toast_per_run(ws_client):
 def test_an_event_for_another_workspace_does_not_wake_this_socket(ws_client):
     """Every workspace's queue changes constantly; a dashboard must not be
     pushed to for a workspace nobody is looking at."""
-    with ws_client.websocket_connect("/ws/queue/ws-1") as socket:
+    with ws_client.websocket_connect("/ws/queue") as socket:
         socket.receive_json()  # the connect snapshot
 
         started = time.monotonic()
@@ -154,25 +155,25 @@ def test_the_socket_enforces_the_api_token(ws_client):
     with patch("loregarden.core.auth.settings") as cfg:
         cfg.api_token = "s3cret"
         with pytest.raises(WebSocketDisconnect):
-            with ws_client.websocket_connect("/ws/queue/ws-1?token=wrong") as socket:
+            with ws_client.websocket_connect("/ws/queue?token=wrong") as socket:
                 socket.receive_json()
 
 
 def test_a_valid_token_is_accepted(ws_client):
     with patch("loregarden.core.auth.settings") as cfg:
         cfg.api_token = "s3cret"
-        with ws_client.websocket_connect("/ws/queue/ws-1?token=s3cret") as socket:
+        with ws_client.websocket_connect("/ws/queue?token=s3cret") as socket:
             assert socket.receive_json()["type"] == "queue_status"
 
 
 def test_disconnecting_releases_the_subscription(ws_client):
     """Otherwise every closed tab leaves a queue the hub keeps filling."""
-    with ws_client.websocket_connect("/ws/queue/ws-1") as socket:
+    with ws_client.websocket_connect("/ws/queue") as socket:
         socket.receive_json()
-        assert event_hub.subscriber_count("workspace:ws-1") == 1
+        assert event_hub.subscriber_count(QUEUE_TOPIC) == 1
 
     deadline = time.monotonic() + 5
-    while event_hub.subscriber_count("workspace:ws-1") and time.monotonic() < deadline:
+    while event_hub.subscriber_count(QUEUE_TOPIC) and time.monotonic() < deadline:
         time.sleep(0.05)
 
-    assert event_hub.subscriber_count("workspace:ws-1") == 0
+    assert event_hub.subscriber_count(QUEUE_TOPIC) == 0

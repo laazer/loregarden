@@ -49,7 +49,6 @@ export interface ParallelExecutionWSStatus {
 const FALLBACK_POLL_INTERVAL = 5000;
 
 export function useParallelExecutionWS(
-  workspaceId: string,
   enabled: boolean = true,
   /**
    * Notified for each forwarded queue event. Held in a ref so a caller passing
@@ -63,23 +62,22 @@ export function useParallelExecutionWS(
   const eventHandler = useRef(onEvent);
   eventHandler.current = onEvent;
 
-  const live = enabled && Boolean(workspaceId) && status === 'open';
+  const live = enabled && status === 'open';
 
   // Polls only while the socket is not carrying the data, and only while this
   // hook is wanted at all. `!live` alone is not enough: a disabled hook is also
   // not live, so a caller that switched off — the provider, once you navigate
-  // off the queue page — would keep polling for a workspace nobody is looking
-  // at, on every other page in the app.
-  const fallback = useParallelExecution(workspaceId, FALLBACK_POLL_INTERVAL, enabled && !live);
+  // off the queue page — would keep polling on every other page in the app.
+  const fallback = useParallelExecution(FALLBACK_POLL_INTERVAL, enabled && !live);
 
   useEffect(() => {
-    if (!enabled || !workspaceId) {
+    if (!enabled) {
       setStatus('closed');
       return;
     }
 
     setStatus('connecting');
-    const socket = new QueueSocket(queueSocketUrl(workspaceId, API_BASE), {
+    const socket = new QueueSocket(queueSocketUrl(API_BASE), {
       onSnapshot: setSnapshot,
       onStatus: setStatus,
       onEvent: (event) => eventHandler.current?.(event),
@@ -88,12 +86,11 @@ export function useParallelExecutionWS(
 
     return () => {
       socket.close();
-      // Drop the snapshot with the socket it came from: keeping it would show
-      // one workspace's queue under another workspace's name for as long as
-      // the new socket takes to deliver its first push.
+      // Drop the snapshot with the socket it came from, so a reconnect does
+      // not render a stale queue until its first push lands.
       setSnapshot(null);
     };
-  }, [workspaceId, enabled]);
+  }, [enabled]);
 
   return useMemo(() => {
     if (live && snapshot) {

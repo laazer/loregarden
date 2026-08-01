@@ -96,22 +96,22 @@ afterEach(() => {
 
 const latest = () => FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
 
-it('opens a socket for the workspace', () => {
-  renderHook(() => useParallelExecutionWS('ws-1'));
+it('opens the shared queue socket', () => {
+  renderHook(() => useParallelExecutionWS());
 
   expect(FakeWebSocket.instances).toHaveLength(1);
-  expect(latest().url).toContain('/ws/queue/ws-1');
+  expect(latest().url).toContain('/ws/queue');
 });
 
 it('does not claim real-time before the handshake completes', () => {
-  const { result } = renderHook(() => useParallelExecutionWS('ws-1'));
+  const { result } = renderHook(() => useParallelExecutionWS());
 
   expect(result.current.isWebSocket).toBe(false);
   expect(result.current.connectionState).toBe('connecting');
 });
 
 it('does not claim real-time while connected but before the first snapshot', () => {
-  const { result } = renderHook(() => useParallelExecutionWS('ws-1'));
+  const { result } = renderHook(() => useParallelExecutionWS());
 
   act(() => latest().finishHandshake());
 
@@ -121,7 +121,7 @@ it('does not claim real-time while connected but before the first snapshot', () 
 });
 
 it('reports real-time and the pushed data once a snapshot arrives', () => {
-  const { result } = renderHook(() => useParallelExecutionWS('ws-1'));
+  const { result } = renderHook(() => useParallelExecutionWS());
 
   act(() => {
     latest().finishHandshake();
@@ -136,7 +136,7 @@ it('reports real-time and the pushed data once a snapshot arrives', () => {
 });
 
 it('stops polling once the socket is carrying the data', async () => {
-  renderHook(() => useParallelExecutionWS('ws-1'));
+  renderHook(() => useParallelExecutionWS());
   await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
   const pollsBefore = (global.fetch as jest.Mock).mock.calls.length;
@@ -151,7 +151,7 @@ it('stops polling once the socket is carrying the data', async () => {
 });
 
 it('falls back to polling the moment the connection drops', async () => {
-  const { result } = renderHook(() => useParallelExecutionWS('ws-1'));
+  const { result } = renderHook(() => useParallelExecutionWS());
   act(() => {
     latest().finishHandshake();
     latest().push(SNAPSHOT);
@@ -167,7 +167,7 @@ it('falls back to polling the moment the connection drops', async () => {
 });
 
 it('opens no socket when disabled', () => {
-  const { result } = renderHook(() => useParallelExecutionWS('ws-1', false));
+  const { result } = renderHook(() => useParallelExecutionWS(false));
 
   expect(FakeWebSocket.instances).toHaveLength(0);
   expect(result.current.isWebSocket).toBe(false);
@@ -179,7 +179,7 @@ it('does not poll when disabled, even with a workspace in hand', async () => {
   // poll forever. The provider does exactly that when you leave the queue page,
   // with the workspace still resolved from cache, so this polled the queue on
   // every other page in the app.
-  renderHook(() => useParallelExecutionWS('ws-1', false));
+  renderHook(() => useParallelExecutionWS(false));
 
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(global.fetch).not.toHaveBeenCalled();
@@ -187,7 +187,7 @@ it('does not poll when disabled, even with a workspace in hand', async () => {
 
 it('resumes polling when re-enabled without a socket', async () => {
   const { rerender } = renderHook(
-    ({ on }) => useParallelExecutionWS('ws-1', on),
+    ({ on }) => useParallelExecutionWS(on),
     { initialProps: { on: false } },
   );
   expect(global.fetch).not.toHaveBeenCalled();
@@ -197,16 +197,16 @@ it('resumes polling when re-enabled without a socket', async () => {
   await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 });
 
-it('opens no socket without a workspace', () => {
-  renderHook(() => useParallelExecutionWS(''));
+it('opens no socket while disabled', () => {
+  renderHook(() => useParallelExecutionWS(false));
 
   expect(FakeWebSocket.instances).toHaveLength(0);
 });
 
-it('drops the previous workspace data when the workspace changes', () => {
+it('drops its snapshot when the socket goes away', () => {
   const { result, rerender } = renderHook(
-    ({ id }) => useParallelExecutionWS(id),
-    { initialProps: { id: 'ws-1' } },
+    ({ on }) => useParallelExecutionWS(on),
+    { initialProps: { on: true } },
   );
   act(() => {
     latest().finishHandshake();
@@ -214,16 +214,16 @@ it('drops the previous workspace data when the workspace changes', () => {
   });
   expect(result.current.activeRuns).toEqual(SNAPSHOT.active_runs);
 
-  rerender({ id: 'ws-2' });
+  rerender({ on: false });
 
-  // Showing ws-1's runs under ws-2's name, even briefly, is a wrong answer
-  // rather than a slow one.
+  // A snapshot outlives the socket it came from only as a stale answer, which
+  // is worse than a slow one.
   expect(result.current.activeRuns).toEqual([]);
   expect(result.current.isWebSocket).toBe(false);
 });
 
 it('closes the socket on unmount', () => {
-  const { unmount } = renderHook(() => useParallelExecutionWS('ws-1'));
+  const { unmount } = renderHook(() => useParallelExecutionWS());
   act(() => latest().finishHandshake());
 
   const socket = latest();

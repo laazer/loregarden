@@ -7,6 +7,7 @@ from loregarden.db.session import get_session
 from loregarden.models.domain import QueuedRun, QueuePosition
 from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.websocket_events import (
+    QUEUE_TOPIC,
     emit_error,
     emit_execution_update,
 )
@@ -53,13 +54,11 @@ async def reorder_queued_run(
                 detail=f"Run is not queued (status: {queued_run.status.value})",
             )
 
-        workspace_id = queued_run.workspace_id
         old_position = queued_run.position
 
-        # Validate new position
-        queue_stmt = select(QueuedRun).where(
-            (QueuedRun.workspace_id == workspace_id) & (QueuedRun.status == QueuePosition.QUEUED)
-        )
+        # Validate new position against the one shared line — the queue is not
+        # sliceable by workspace any more, so neither is a position in it.
+        queue_stmt = select(QueuedRun).where(QueuedRun.status == QueuePosition.QUEUED)
         queued_runs = session.exec(queue_stmt).all()
         queue_length = len(queued_runs)
 
@@ -81,18 +80,14 @@ async def reorder_queued_run(
         # Reorder the queue
         await _reorder_queue_internal(
             session,
-            workspace_id,
             run_id,
             old_position,
             new_position,
         )
 
-        logger.info(
-            f"Reordered run {run_id} from position {old_position} to {new_position} "
-            f"in workspace {workspace_id}"
-        )
+        logger.info(f"Reordered run {run_id} from position {old_position} to {new_position}")
 
-        emit_execution_update(workspace_id)
+        emit_execution_update()
 
         return {
             "status": "reordered",
@@ -112,7 +107,7 @@ async def reorder_queued_run(
             queued_run = session.exec(select(QueuedRun).where(QueuedRun.run_id == run_id)).first()
             if queued_run:
                 emit_error(
-                    target_room=f"workspace:{queued_run.workspace_id}",
+                    target_room=QUEUE_TOPIC,
                     message=f"Failed to reorder run: {str(e)}",
                     code="QUEUE_REORDER_ERROR",
                     context={"run_id": run_id, "new_position": new_position},
@@ -125,17 +120,15 @@ async def reorder_queued_run(
 
 async def _reorder_queue_internal(
     session: Session,
-    workspace_id: str,
     run_id: str,
     old_position: int,
     new_position: int,
 ) -> None:
     """
-    Internal function to reorder queue positions.
+    Internal function to reorder positions in the shared queue.
 
     Args:
         session: Database session
-        workspace_id: Workspace ID
         run_id: Run ID to move
         old_position: Current position
         new_position: Target position
@@ -143,9 +136,7 @@ async def _reorder_queue_internal(
     # Get all queued runs ordered by position
     stmt = (
         select(QueuedRun)
-        .where(
-            (QueuedRun.workspace_id == workspace_id) & (QueuedRun.status == QueuePosition.QUEUED)
-        )
+        .where(QueuedRun.status == QueuePosition.QUEUED)
         .order_by(QueuedRun.position)
     )
 
@@ -173,25 +164,18 @@ async def _reorder_queue_internal(
 
     session.commit()
 
-    logger.debug(
-        f"Queue reordered in {workspace_id}: run {run_id} from pos {old_position} to {new_position}"
-    )
+    logger.debug(f"Queue reordered: run {run_id} from pos {old_position} to {new_position}")
 
 
-@router.get("/{workspace_id}/info")
+@router.get("/info")
 async def get_queue_info(
-    workspace_id: str = Path(...),
     session: Session = Depends(get_session),
 ):
     """
-    Get detailed queue information for a workspace.
-
-    Args:
-        workspace_id: Workspace ID
+    Get detailed information about the shared queue.
 
     Returns:
         {
-            "workspace_id": str,
             "queue_length": int,
             "max_position": int,
             "runs": [
@@ -210,8 +194,8 @@ async def get_queue_info(
         queue_service = ParallelQueueService(session)
 
         # Get queue data
-        queued_runs = await queue_service.get_queued_runs(workspace_id)
-        active_runs = await queue_service.get_active_runs(workspace_id)
+        queued_runs = await queue_service.get_queued_runs()
+        active_runs = await queue_service.get_active_runs()
 
         # Calculate estimated clear time
         # Assume 5 minutes per active run, 5 minutes per queued run
@@ -220,7 +204,6 @@ async def get_queue_info(
         estimated_clear = active_time + queued_time
 
         return {
-            "workspace_id": workspace_id,
             "queue_length": len(queued_runs),
             "max_position": len(queued_runs),
             "runs": queued_runs,
@@ -265,13 +248,11 @@ async def promote_run(
                 detail=f"Run is not queued (status: {queued_run.status.value})",
             )
 
-        workspace_id = queued_run.workspace_id
-
         # Promote this specific run. Passing run_id matters: without it the
         # service promotes the head of the queue, which would start the wrong
         # run and still report failure back to the caller.
         queue_service = ParallelQueueService(session)
-        promoted = await queue_service.promote_from_queue(workspace_id, run_id=run_id)
+        promoted = await queue_service.promote_from_queue(run_id=run_id)
 
         if not promoted:
             return {
@@ -279,7 +260,7 @@ async def promote_run(
                 "message": "No available slots for promotion",
             }
 
-        logger.info(f"Manually promoted run {run_id} in workspace {workspace_id}")
+        logger.info(f"Manually promoted run {run_id}")
 
         return {
             "status": "promoted",
@@ -296,7 +277,7 @@ async def promote_run(
             queued_run = session.exec(select(QueuedRun).where(QueuedRun.run_id == run_id)).first()
             if queued_run:
                 emit_error(
-                    target_room=f"workspace:{queued_run.workspace_id}",
+                    target_room=QUEUE_TOPIC,
                     message=f"Failed to promote run: {str(e)}",
                     code="QUEUE_PROMOTION_ERROR",
                     context={"run_id": run_id},

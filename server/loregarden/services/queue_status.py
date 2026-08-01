@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from loregarden.models.domain import StudioAgent, Ticket
+from loregarden.models.domain import StudioAgent, Ticket, Workspace
 from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.services.run_duration_stats import (
     estimate_for,
@@ -18,7 +18,8 @@ from loregarden.services.run_duration_stats import (
 )
 from sqlmodel import Session, select
 
-#: Slots per workspace. Matches the default the REST endpoint has always used.
+#: Slots in the shared pool. Matches the default the REST endpoint has always
+#: used. Not per workspace — see parallel_queue for why that changed.
 DEFAULT_MAX_CONCURRENT = 3
 
 
@@ -32,6 +33,7 @@ def _label_runs(session: Session, runs: list[dict[str, Any]]) -> None:
     """
     ticket_ids = {run["ticket_id"] for run in runs if run.get("ticket_id")}
     agent_slugs = {run["agent_id"] for run in runs if run.get("agent_id")}
+    workspace_ids = {run["workspace_id"] for run in runs if run.get("workspace_id")}
 
     tickets: dict[str, Ticket] = {}
     if ticket_ids:
@@ -42,6 +44,11 @@ def _label_runs(session: Session, runs: list[dict[str, Any]]) -> None:
     if agent_slugs:
         rows = session.exec(select(StudioAgent).where(StudioAgent.slug.in_(agent_slugs))).all()
         agents = {agent.slug: agent for agent in rows}
+
+    workspaces: dict[str, Workspace] = {}
+    if workspace_ids:
+        rows = session.exec(select(Workspace).where(Workspace.id.in_(workspace_ids))).all()
+        workspaces = {workspace.id: workspace for workspace in rows}
 
     for run in runs:
         ticket = tickets.get(run.get("ticket_id", ""))
@@ -54,22 +61,29 @@ def _label_runs(session: Session, runs: list[dict[str, Any]]) -> None:
         # definition was deleted still has a meaningful slug to show.
         run["agent_name"] = agent.name if agent else run.get("agent_id", "")
 
+        # The pool is shared, so a card has to say whose work it is — without
+        # this the board shows three runs and no way to tell them apart.
+        workspace = workspaces.get(run.get("workspace_id", ""))
+        run["workspace_name"] = workspace.name if workspace else ""
+        run["workspace_slug"] = workspace.slug if workspace else ""
 
-async def build_queue_status(session: Session, workspace_id: str) -> dict[str, Any]:
-    """Active runs, queued runs and slot statistics for one workspace."""
+
+async def build_queue_status(session: Session) -> dict[str, Any]:
+    """Active runs, queued runs and slot statistics for the shared queue."""
     queue_service = ParallelQueueService(session, max_concurrent=DEFAULT_MAX_CONCURRENT)
 
-    active_runs = await queue_service.get_active_runs(workspace_id)
-    queued_runs = await queue_service.get_queued_runs(workspace_id)
-    stats = queue_service.get_queue_stats(workspace_id)
+    active_runs = await queue_service.get_active_runs()
+    queued_runs = await queue_service.get_queued_runs()
+    stats = queue_service.get_queue_stats()
 
     _label_runs(session, active_runs)
     _label_runs(session, queued_runs)
 
-    # Empty when the workspace has no completed runs to learn from, which makes
-    # every estimate below None. The dashboard renders that as "unknown" rather
-    # than substituting a constant — see run_duration_stats.
-    medians = median_duration_by_agent(session, workspace_id)
+    # Empty when nothing has ever completed, which makes every estimate below
+    # None. The dashboard renders that as "unknown" rather than substituting a
+    # constant — see run_duration_stats. Drawn from every workspace, because
+    # they all contend for the same slots.
+    medians = median_duration_by_agent(session)
     max_concurrent = stats.get("max_concurrent", DEFAULT_MAX_CONCURRENT)
     for run in active_runs:
         run["estimated_duration_seconds"] = estimate_for(medians, run.get("agent_id"))

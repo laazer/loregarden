@@ -6,7 +6,7 @@
  * tests drive the context directly.
  */
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { QueueTopbarControls } from '../QueueTopbarControls';
 import { useQueueStatus, type QueueStatusValue } from '../../state/QueueStatusContext';
 
@@ -16,17 +16,13 @@ jest.mock('../../state/QueueStatusContext', () => ({
 
 const mockUseQueueStatus = useQueueStatus as jest.MockedFunction<typeof useQueueStatus>;
 
-const setWorkspaceSlug = jest.fn();
 
 const baseStatus: QueueStatusValue = {
-  workspace: null,
   workspaces: [
     { slug: 'loregarden', name: 'loregarden' },
     { slug: 'blobert', name: 'blobert' },
   ] as QueueStatusValue['workspaces'],
   workspacesLoading: false,
-  activeSlug: 'loregarden',
-  setWorkspaceSlug,
   activeRuns: [],
   queuedRuns: [],
   stats: {
@@ -85,21 +81,11 @@ test('shows zero utilization rather than dividing by nothing', () => {
   expect(screen.getByText('0%')).toBeInTheDocument();
 });
 
-test('lists the workspaces and reports a change', () => {
+test('offers no workspace picker', () => {
   render(<QueueTopbarControls />);
 
-  const picker = screen.getByLabelText('Queue workspace');
-  expect(picker).toHaveValue('loregarden');
-
-  fireEvent.change(picker, { target: { value: 'blobert' } });
-
-  expect(setWorkspaceSlug).toHaveBeenCalledWith('blobert');
-});
-
-test('disables the picker when there are no workspaces', () => {
-  withStatus({ workspaces: [], activeSlug: '' });
-
-  render(<QueueTopbarControls />);
-
-  expect(screen.getByLabelText('Queue workspace')).toBeDisabled();
+  // There used to be one, back when each workspace had its own slot pool.
+  // They share a pool now, so picking a workspace could only hide part of the
+  // queue you are competing with.
+  expect(screen.queryByLabelText('Queue workspace')).not.toBeInTheDocument();
 });

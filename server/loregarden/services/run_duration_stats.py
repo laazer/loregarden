@@ -38,10 +38,14 @@ def _duration_seconds(run: AgentRun) -> float | None:
 
 def median_duration_by_agent(
     session: Session,
-    workspace_id: str,
+    workspace_id: str | None = None,
     lookback_days: int = DEFAULT_LOOKBACK_DAYS,
 ) -> dict[str, float]:
     """Median seconds per successful run, keyed by agent slug.
+
+    `workspace_id=None` draws on every workspace's history, which is what the
+    queue wants: one shared slot pool means one shared waiting line, and the
+    estimate for a queued run cannot depend on which workspace asks.
 
     Only successes count. A run that failed after ten seconds is a real
     duration but not a useful prediction of how long the same work takes when
@@ -53,13 +57,16 @@ def median_duration_by_agent(
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
 
-    stmt = select(AgentRun).where(
-        (AgentRun.workspace_id == workspace_id)
-        & (AgentRun.status == RunStatus.SUCCEEDED)
-        & (AgentRun.started_at.isnot(None))
-        & (AgentRun.finished_at.isnot(None))
-        & (AgentRun.finished_at >= cutoff)
-    )
+    conditions = [
+        AgentRun.status == RunStatus.SUCCEEDED,
+        AgentRun.started_at.isnot(None),
+        AgentRun.finished_at.isnot(None),
+        AgentRun.finished_at >= cutoff,
+    ]
+    if workspace_id is not None:
+        conditions.append(AgentRun.workspace_id == workspace_id)
+
+    stmt = select(AgentRun).where(*conditions)
 
     samples: dict[str, list[float]] = defaultdict(list)
     for run in session.exec(stmt).all():

@@ -29,22 +29,23 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _workspace_topic(workspace_id: str) -> str:
-    return f"workspace:{workspace_id}"
+#: The queue's topic. One, not one per workspace: the execution slots are a
+#: single shared pool, so every subscriber watches the same line.
+QUEUE_TOPIC = "queue"
 
 
 def _worktree_topic(worktree_id: str) -> str:
     return f"worktree:{worktree_id}"
 
 
-def emit_execution_update(workspace_id: str) -> None:
-    """The queue for this workspace changed.
+def emit_execution_update() -> None:
+    """The queue changed.
 
     Called when a run starts, completes, is promoted out of the queue, or the
     queue is otherwise reordered.
     """
     event_hub.publish(
-        _workspace_topic(workspace_id),
+        QUEUE_TOPIC,
         {"type": "execution_update", "timestamp": _now_iso()},
     )
 
@@ -82,10 +83,10 @@ def emit_conflict_resolved(worktree_id: str, run_id: str) -> None:
     )
 
 
-def emit_queue_promoted(workspace_id: str, run_id: str, slot_number: int) -> None:
+def emit_queue_promoted(run_id: str, slot_number: int) -> None:
     """A queued run took a freed slot."""
     event_hub.publish(
-        _workspace_topic(workspace_id),
+        QUEUE_TOPIC,
         {
             "type": "queue_promoted",
             "timestamp": _now_iso(),
@@ -94,10 +95,10 @@ def emit_queue_promoted(workspace_id: str, run_id: str, slot_number: int) -> Non
     )
 
 
-def emit_run_completed(workspace_id: str, run_id: str, status: str) -> None:
+def emit_run_completed(run_id: str, status: str) -> None:
     """A run reached a final state, whatever that state is."""
     event_hub.publish(
-        _workspace_topic(workspace_id),
+        QUEUE_TOPIC,
         {
             "type": "run_completed",
             "timestamp": _now_iso(),

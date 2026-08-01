@@ -5,12 +5,16 @@
  * section); we render the same content in the shared topbar instead, which is
  * the pattern the app is moving to. The metrics read from QueueStatusContext,
  * so this adds no second subscription — see that module.
+ *
+ * There is no workspace picker. There used to be, back when each workspace had
+ * its own pool of slots; they share one pool now, so picking a workspace could
+ * only ever hide part of the queue you are contending with.
  */
 
 import { useQueueStatus } from "../state/QueueStatusContext";
 
 export function QueueTopbarControls() {
-  const { workspaces, activeSlug, setWorkspaceSlug, stats, isWebSocket } = useQueueStatus();
+  const { stats, isWebSocket } = useQueueStatus();
 
   const utilization =
     stats.max_concurrent && stats.active_count
@@ -43,23 +47,6 @@ export function QueueTopbarControls() {
         {isWebSocket ? "Real-time" : "Polling"}
       </div>
 
-      <label className="topbar-workspace-picker">
-        <span className="topbar-workspace-picker-label">Workspace</span>
-        <select
-          className="btn-secondary topbar-workspace-picker-select"
-          value={activeSlug}
-          disabled={!workspaces.length}
-          aria-label="Queue workspace"
-          onChange={(event) => setWorkspaceSlug(event.target.value)}
-        >
-          {workspaces.length ? null : <option value="">No workspaces</option>}
-          {workspaces.map((ws) => (
-            <option key={ws.slug} value={ws.slug}>
-              {ws.name}
-            </option>
-          ))}
-        </select>
-      </label>
     </div>
   );
 }

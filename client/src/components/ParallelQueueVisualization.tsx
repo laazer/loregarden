@@ -10,17 +10,26 @@
  * when there is no history to draw on the UI says so rather than guessing.
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { API_BASE } from '../api/client';
 import { IconCloseButton } from './IconCloseButton';
-import { QueueDispatchButton } from './QueueDispatchButton';
+import { QueueSlotTicketPicker } from './QueueSlotTicketPicker';
 import { useQueueStatus } from '../state/QueueStatusContext';
+import { useQueueStagingStore, type StagedTicket } from '../state/queueStagingStore';
 import './ParallelQueueVisualization.css';
+
+/**
+ * A slot is either running something, holding a ticket someone lined up, or
+ * empty. Only the first is the server's word; the middle one is local until
+ * Start is pressed.
+ */
+type SlotMode = 'running' | 'staged' | 'empty';
 
 interface SlotView {
   slotNumber: number;
-  isActive: boolean;
+  mode: SlotMode;
   runId?: string;
+  staged?: StagedTicket;
   title: string;
   subtitle: string;
   elapsedSeconds: number;
@@ -60,6 +69,24 @@ export function ParallelQueueVisualization() {
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [hoverPosition, setHoverPosition] = useState<number | null>(null);
   const [reorderError, setReorderError] = useState<string | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
+  const [startingSlots, setStartingSlots] = useState<number[]>([]);
+
+  const staged = useQueueStagingStore((state) => state.staged);
+  const stageTicket = useQueueStagingStore((state) => state.stage);
+  const unstageTicket = useQueueStagingStore((state) => state.unstage);
+  const reconcileStaged = useQueueStagingStore((state) => state.reconcile);
+
+  // A staged card is a plan, and the server can overtake a plan: the slot fills
+  // with something else, or the ticket gets started from another surface. Drop
+  // those rather than drawing a ticket as "ready to start" when it is running.
+  useEffect(() => {
+    const busySlots = (activeRuns ?? []).map((run) => run.slot_number);
+    const liveTicketIds = [...(activeRuns ?? []), ...(queuedRuns ?? [])].map(
+      (run) => run.ticket_id
+    );
+    reconcileStaged(busySlots, liveTicketIds);
+  }, [activeRuns, queuedRuns, reconcileStaged]);
 
   const slotViews = useMemo(() => {
     const slots: SlotView[] = [];
@@ -68,13 +95,17 @@ export function ParallelQueueVisualization() {
       const run = activeRuns?.find((r) => r.slot_number === i);
 
       if (!run) {
+        const stagedTicket = staged[i];
         slots.push({
           slotNumber: i,
-          isActive: false,
-          title: 'Available',
-          subtitle: 'Idle · ready for dispatch',
+          mode: stagedTicket ? 'staged' : 'empty',
+          staged: stagedTicket,
+          title: stagedTicket ? stagedTicket.title : 'Available',
+          subtitle: stagedTicket
+            ? [stagedTicket.code, stagedTicket.workspaceName].filter(Boolean).join(' · ')
+            : 'Idle · add a ticket to fill it',
           elapsedSeconds: 0,
-          status: 'available',
+          status: stagedTicket ? 'staged' : 'available',
           progress: 0,
         });
         continue;
@@ -83,12 +114,16 @@ export function ParallelQueueVisualization() {
       const estimate = run.estimated_duration_seconds;
       slots.push({
         slotNumber: i,
-        isActive: true,
+        mode: 'running',
         runId: run.run_id,
         // The id is the fallback, not the label: a slot card is the one place
         // in the app where you should be able to read what is running.
         title: run.ticket_title || run.ticket_id,
-        subtitle: [run.agent_name || run.agent_id, run.stage_key].filter(Boolean).join(' · '),
+        // The workspace leads: with one shared pool, "whose work is this" is
+        // the first thing a slot card has to answer.
+        subtitle: [run.workspace_name, run.agent_name || run.agent_id, run.stage_key]
+          .filter(Boolean)
+          .join(' · '),
         elapsedSeconds: run.elapsed_seconds,
         status: run.status,
         progress:
@@ -99,14 +134,26 @@ export function ParallelQueueVisualization() {
     }
 
     return slots;
-  }, [activeRuns, stats?.max_concurrent]);
+  }, [activeRuns, stats?.max_concurrent, staged]);
+
+  const stagedSlots = useMemo(
+    () => slotViews.filter((slot) => slot.mode === 'staged'),
+    [slotViews]
+  );
+
+  const stagedTicketIds = useMemo(
+    () => Object.values(staged).map((ticket) => ticket.ticketId),
+    [staged]
+  );
 
   const queueItems = useMemo<QueueItemView[]>(
     () =>
       (queuedRuns || []).map((run, index) => ({
         runId: run.run_id,
         title: run.ticket_title || run.ticket_id,
-        subtitle: [run.agent_name || run.agent_id, run.stage_key].filter(Boolean).join(' · '),
+        subtitle: [run.workspace_name, run.agent_name || run.agent_id, run.stage_key]
+          .filter(Boolean)
+          .join(' · '),
         position: index + 1,
         waitSeconds: run.wait_seconds || 0,
         estimatedStartAt: run.estimated_start_at || '',
@@ -118,6 +165,53 @@ export function ParallelQueueVisualization() {
   const slotUsagePercent = stats?.max_concurrent
     ? ((stats.active_count || 0) / stats.max_concurrent) * 100
     : 0;
+
+  /**
+   * Launch one staged slot. `slot_number` asks the server for the slot the card
+   * is drawn in, so the card starts where it was put instead of jumping.
+   *
+   * Nothing optimistic happens on success: the staged entry is dropped and the
+   * socket snapshot draws the running slot. An optimistic slot the server
+   * declined to fill would be a lie the dashboard could not take back.
+   */
+  const startSlot = async (slot: SlotView): Promise<boolean> => {
+    if (!slot.staged) return false;
+
+    setStartError(null);
+    setStartingSlots((prev) => [...prev, slot.slotNumber]);
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/parallel/runs/${slot.staged.ticketId}?slot_number=${slot.slotNumber}`,
+        { method: 'POST' }
+      );
+
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}));
+        setStartError(detail.detail || `Failed to start (${response.status})`);
+        return false;
+      }
+
+      unstageTicket(slot.slotNumber);
+      return true;
+    } catch (error) {
+      setStartError(error instanceof Error ? error.message : 'Failed to start run');
+      return false;
+    } finally {
+      setStartingSlots((prev) => prev.filter((n) => n !== slot.slotNumber));
+    }
+  };
+
+  /**
+   * Sequential, not `Promise.all` — each start claims a slot server-side, and
+   * firing them together races them onto the same slot.
+   */
+  const startAllStaged = async () => {
+    for (const slot of stagedSlots) {
+      const ok = await startSlot(slot);
+      if (!ok) return;
+    }
+  };
 
   const handleReorderDrop = async (draggedRunId: string, newPosition: number) => {
     setReorderError(null);
@@ -197,29 +291,70 @@ export function ParallelQueueVisualization() {
 
       <div className="queue-section-head">
         <span className="queue-section-title">Execution slots</span>
-        <QueueDispatchButton />
+        {stagedSlots.length > 0 ? (
+          <button
+            type="button"
+            className="queue-start-all-btn"
+            disabled={startingSlots.length > 0}
+            onClick={() => void startAllStaged()}
+            data-testid="start-all-staged"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <path d="m5 3 14 9-14 9z" />
+            </svg>
+            Start {stagedSlots.length} staged
+          </button>
+        ) : (
+          <span className="queue-section-hint">Add a ticket to an open slot to line up work</span>
+        )}
       </div>
 
       <div className="queue-slot-grid">
         {slotViews.map((slot) => (
           <div
             key={`slot-${slot.slotNumber}`}
-            className={`queue-slot${slot.isActive ? ' queue-slot--busy' : ''}`}
+            className={`queue-slot${slot.mode === 'running' ? ' queue-slot--busy' : ''}${
+              slot.mode === 'staged' ? ' queue-slot--staged' : ''
+            }`}
             data-testid={`slot-${slot.slotNumber}`}
           >
             <div className="queue-slot-head">
               <span className="queue-slot-dot" aria-hidden />
               <span className="queue-slot-name">Slot {slot.slotNumber}</span>
-              <span className="queue-slot-badge">
-                {slot.isActive ? 'running' : 'available'}
-              </span>
+              <span className="queue-slot-badge">{slot.status}</span>
+              {slot.mode === 'staged' ? (
+                <IconCloseButton
+                  onClick={() => unstageTicket(slot.slotNumber)}
+                  aria-label={`Remove ${slot.staged?.code || slot.title} from slot ${slot.slotNumber}`}
+                />
+              ) : null}
             </div>
 
             <div className="queue-slot-body">
               <div className="queue-slot-title">{slot.title}</div>
               <div className="queue-slot-sub">{slot.subtitle}</div>
 
-              {slot.isActive ? (
+              {slot.mode === 'empty' ? (
+                <QueueSlotTicketPicker
+                  slotNumber={slot.slotNumber}
+                  excludedTicketIds={stagedTicketIds}
+                  onPick={(ticket) => stageTicket(slot.slotNumber, ticket)}
+                />
+              ) : null}
+
+              {slot.mode === 'staged' ? (
+                <button
+                  type="button"
+                  className="queue-slot-start-btn"
+                  disabled={startingSlots.includes(slot.slotNumber)}
+                  onClick={() => void startSlot(slot)}
+                  data-testid={`slot-${slot.slotNumber}-start`}
+                >
+                  {startingSlots.includes(slot.slotNumber) ? 'Starting…' : 'Start'}
+                </button>
+              ) : null}
+
+              {slot.mode === 'running' ? (
                 <>
                   <div className="queue-slot-time">
                     {formatDuration(slot.elapsedSeconds)} elapsed
@@ -247,6 +382,14 @@ export function ParallelQueueVisualization() {
           </div>
         ))}
       </div>
+
+      {startError ? (
+        <div className="queue-inline-error" role="alert">
+          <span className="queue-inline-error-dot" aria-hidden />
+          <span className="queue-inline-error-message">{startError}</span>
+          <IconCloseButton onClick={() => setStartError(null)} aria-label="Dismiss error" />
+        </div>
+      ) : null}
 
       {reorderError ? (
         <div className="queue-inline-error" role="alert">
@@ -310,8 +453,8 @@ export function ParallelQueueVisualization() {
         </div>
       ) : null}
 
-      {!activeRuns?.length && !queuedRuns?.length ? (
-        <div className="queue-idle">All slots open — dispatch a run to get started.</div>
+      {!activeRuns?.length && !queuedRuns?.length && !stagedSlots.length ? (
+        <div className="queue-idle">All slots open — add a ticket to one to get started.</div>
       ) : null}
     </div>
   );
