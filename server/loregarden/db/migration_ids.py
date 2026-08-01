@@ -76,6 +76,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0054_workspace_scoped_runs_and_approvals",
     "0055_branch_triage_message_run",
     "0056_reference_repos",
+    "0057_mcp_server_tool_catalog",
 )
 
 

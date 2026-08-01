@@ -46,6 +46,12 @@ _INITIALIZE = {
     },
 }
 
+#: Required by the protocol before a server will answer anything else.
+_INITIALIZED = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+
+_TOOLS_LIST_ID = 2
+_TOOLS_LIST = {"jsonrpc": "2.0", "id": _TOOLS_LIST_ID, "method": "tools/list"}
+
 
 @dataclass
 class HealthResult:
@@ -55,12 +61,35 @@ class HealthResult:
     error: str
     #: Server name reported by the handshake, when it gave one.
     server_name: str = ""
+    #: Tool names the server listed, or None if it was never asked or refused.
+    #: None and [] are different answers — one is "we do not know", the other is
+    #: "this server exposes nothing" — so a refused listing must not overwrite a
+    #: catalogue an earlier check collected.
+    tools: list[str] | None = None
 
 
 def _handshake_name(payload: dict) -> str:
     result = payload.get("result") or {}
     info = result.get("serverInfo") or {}
     return str(info.get("name") or "")
+
+
+def _tool_names(payload: dict | None) -> list[str] | None:
+    """Tool names from a `tools/list` result, or None if that is not one.
+
+    A malformed or errored listing returns None rather than an empty list: the
+    gateway shows a tool count, and "0 tools" claimed from a failed call is a
+    number an operator would act on.
+    """
+    if not payload or payload.get("error"):
+        return None
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return None
+    tools = result.get("tools")
+    if not isinstance(tools, list):
+        return None
+    return [str(tool["name"]) for tool in tools if isinstance(tool, dict) and tool.get("name")]
 
 
 def _looks_like_initialize_result(payload: dict) -> bool:
@@ -133,34 +162,89 @@ def _check_http(server: McpServer) -> HealthResult:
             error=detail or "Did not answer an MCP initialize",
         )
     return HealthResult(
-        ok=True, latency_ms=latency_ms, error="", server_name=_handshake_name(payload)
+        ok=True,
+        latency_ms=latency_ms,
+        error="",
+        server_name=_handshake_name(payload),
+        tools=_list_tools_http(server.url, headers, response.headers.get("mcp-session-id", "")),
     )
 
 
-def _first_json_payload(body: str) -> dict | None:
-    """The first JSON object in a response body.
+def _list_tools_http(url: str, headers: dict[str, str], session_id: str) -> list[str] | None:
+    """Ask an http server what tools it exposes, after a successful handshake.
 
-    Streamable-HTTP servers answer in SSE frames (`data: {...}`), so the body is
-    not always bare JSON.
+    Best effort by design. A server that handshakes but will not list is
+    healthy — the operator's question was "does this answer", and a listing that
+    failed must not turn into a health failure or into a claim of zero tools.
+    """
+    listing_headers = dict(headers)
+    if session_id:
+        listing_headers["Mcp-Session-Id"] = session_id
+    try:
+        # The protocol wants the initialized notification before any request.
+        httpx.post(
+            url,
+            json=_INITIALIZED,
+            headers=listing_headers,
+            timeout=TIMEOUT_SECONDS,
+            follow_redirects=False,
+        )
+        response = httpx.post(
+            url,
+            json=_TOOLS_LIST,
+            headers=listing_headers,
+            timeout=TIMEOUT_SECONDS,
+            follow_redirects=False,
+        )
+    except httpx.HTTPError:
+        logger.debug("tools/list failed for %s", url, exc_info=True)
+        return None
+    if response.status_code >= 400:
+        return None
+    return _tool_names(_payload_with_id(response.text, _TOOLS_LIST_ID))
+
+
+def _json_payloads(body: str) -> list[dict]:
+    """Every JSON object in a response body, in order.
+
+    Streamable-HTTP servers answer in SSE frames (`data: {...}`), and a stdio
+    server answers several requests down one pipe, so a body is not always one
+    bare JSON object.
     """
     text = body.strip()
     if not text:
-        return None
+        return []
     try:
         parsed = json.loads(text)
-        return parsed if isinstance(parsed, dict) else None
+        return [parsed] if isinstance(parsed, dict) else []
     except json.JSONDecodeError:
         pass
+
+    payloads: list[dict] = []
     for line in text.splitlines():
         line = line.strip()
-        if not line.startswith("data:"):
+        if not line:
             continue
+        candidate = line[len("data:") :].strip() if line.startswith("data:") else line
         try:
-            parsed = json.loads(line[len("data:") :].strip())
+            parsed = json.loads(candidate)
         except json.JSONDecodeError:
             continue
         if isinstance(parsed, dict):
-            return parsed
+            payloads.append(parsed)
+    return payloads
+
+
+def _first_json_payload(body: str) -> dict | None:
+    payloads = _json_payloads(body)
+    return payloads[0] if payloads else None
+
+
+def _payload_with_id(body: str, message_id: int) -> dict | None:
+    """The response to one request, picked out of a multiplexed body."""
+    for payload in _json_payloads(body):
+        if payload.get("id") == message_id:
+            return payload
     return None
 
 
@@ -188,7 +272,13 @@ def _check_stdio(server: McpServer) -> HealthResult:
             env=env,
             text=True,
         )
-        stdout, stderr = proc.communicate(json.dumps(_INITIALIZE) + "\n", timeout=TIMEOUT_SECONDS)
+        # All three messages go down the pipe at once and the server answers
+        # them in order. Keeping it to one `communicate` means one timeout and
+        # one process teardown, rather than hand-rolled deadline reads.
+        request = "".join(
+            json.dumps(message) + "\n" for message in (_INITIALIZE, _INITIALIZED, _TOOLS_LIST)
+        )
+        stdout, stderr = proc.communicate(request, timeout=TIMEOUT_SECONDS)
     except FileNotFoundError:
         return HealthResult(ok=False, latency_ms=0, error=f"Command not found: {server.command}")
     except subprocess.TimeoutExpired:
@@ -217,7 +307,11 @@ def _check_stdio(server: McpServer) -> HealthResult:
             ok=False, latency_ms=latency_ms, error="Did not answer an MCP initialize"
         )
     return HealthResult(
-        ok=True, latency_ms=latency_ms, error="", server_name=_handshake_name(payload)
+        ok=True,
+        latency_ms=latency_ms,
+        error="",
+        server_name=_handshake_name(payload),
+        tools=_tool_names(_payload_with_id(stdout, _TOOLS_LIST_ID)),
     )
 
 
@@ -246,10 +340,17 @@ def record_health(session: Session, server: McpServer, result: HealthResult) -> 
     Lives here rather than in the registry so the dependency runs one way —
     health reads the registry, never the reverse.
     """
-    server.last_checked_at = datetime.now(timezone.utc).isoformat()
+    checked_at = datetime.now(timezone.utc).isoformat()
+    server.last_checked_at = checked_at
     server.last_health_ok = result.ok
     server.last_health_latency_ms = result.latency_ms
     server.last_health_error = result.error
+    # None means the listing was never answered, so the last catalogue we do
+    # have stands. Overwriting it with nothing would report a server that went
+    # briefly unreachable as one exposing no tools.
+    if result.tools is not None:
+        server.tools_json = json.dumps(result.tools)
+        server.tools_listed_at = checked_at
     session.add(server)
     session.commit()
     session.refresh(server)

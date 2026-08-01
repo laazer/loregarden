@@ -168,3 +168,97 @@ def test_the_endpoint_checks_and_returns_the_updated_server(client, db_session: 
 
 def test_checking_an_unknown_server_is_404(client):
     assert client.post("/api/mcp-servers/nope/health-check").status_code == 404
+
+
+def _tools_body(*names: str) -> str:
+    return json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {"tools": [{"name": name} for name in names]},
+        }
+    )
+
+
+def test_a_healthy_http_server_is_asked_what_tools_it_exposes():
+    """The gateway shows a tool count, so the check has to collect one."""
+    with patch(
+        "httpx.post",
+        side_effect=[
+            _initialize_response(_ok_body()),
+            _initialize_response(""),  # notifications/initialized
+            _initialize_response(_tools_body("create_issue", "list_repos")),
+        ],
+    ):
+        result = check_server(_http_server())
+
+    assert result.ok
+    assert result.tools == ["create_issue", "list_repos"]
+
+
+def test_a_server_that_refuses_to_list_is_still_healthy():
+    """Answering `initialize` was the question. A refused listing leaves the
+    catalogue unknown rather than turning into a health failure."""
+    with patch(
+        "httpx.post",
+        side_effect=[
+            _initialize_response(_ok_body()),
+            _initialize_response(""),
+            _initialize_response("nope", status=500),
+        ],
+    ):
+        result = check_server(_http_server())
+
+    assert result.ok
+    assert result.tools is None
+
+
+def test_a_listing_that_never_answered_does_not_erase_the_known_tools(db_session: Session):
+    """None and [] are different answers.
+
+    A server that went briefly unreachable must not be recorded as one exposing
+    no tools — the operator would read that as the server having changed.
+    """
+    server = McpServer(name="github", transport="http", url="https://mcp.example/sse")
+    db_session.add(server)
+    db_session.commit()
+
+    record_health(
+        db_session, server, HealthResult(ok=True, latency_ms=10, error="", tools=["create_issue"])
+    )
+    listed_at = server.tools_listed_at
+    record_health(db_session, server, HealthResult(ok=False, latency_ms=0, error="HTTP 502"))
+
+    assert json.loads(server.tools_json) == ["create_issue"]
+    assert server.tools_listed_at == listed_at
+
+
+def test_a_server_that_lists_nothing_is_recorded_as_listing_nothing(db_session: Session):
+    server = McpServer(name="empty", transport="http", url="https://mcp.example/sse")
+    db_session.add(server)
+    db_session.commit()
+
+    record_health(db_session, server, HealthResult(ok=True, latency_ms=10, error="", tools=[]))
+
+    assert json.loads(server.tools_json) == []
+    # Listed and empty, which the UI must be able to tell from never listed.
+    assert server.tools_listed_at != ""
+
+
+def test_the_view_carries_the_tools_the_last_check_found(client, db_session: Session):
+    server = McpServer(name="github", transport="http", url="https://mcp.example/sse")
+    db_session.add(server)
+    db_session.commit()
+
+    with patch(
+        "httpx.post",
+        side_effect=[
+            _initialize_response(_ok_body()),
+            _initialize_response(""),
+            _initialize_response(_tools_body("create_issue")),
+        ],
+    ):
+        response = client.post(f"/api/mcp-servers/{server.id}/health-check")
+
+    assert response.json()["tools"] == ["create_issue"]
+    assert client.get("/api/mcp-servers").json()[0]["tools"] == ["create_issue"]

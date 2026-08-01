@@ -857,6 +857,11 @@ class McpServerView(SQLModel):
     last_health_ok: bool = False
     last_health_latency_ms: int = 0
     last_health_error: str = ""
+    #: Tools the server reported when it was last checked.
+    tools: list[str] = Field(default_factory=list)
+    #: Empty means the tools were never listed — distinct from a server that
+    #: answered `tools/list` with nothing.
+    tools_listed_at: str = ""
     created_at: datetime
     updated_at: datetime
 

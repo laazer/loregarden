@@ -93,6 +93,7 @@ import type {
   TicketLedger,
   TicketArtifactsFeed,
   McpServerInput,
+  McpPolicy,
   McpTelemetry,
   McpServerView,
 } from "./types";
@@ -211,6 +212,7 @@ export const api = {
 
   mcpServers: () => request<McpServerView[]>("/api/mcp-servers"),
   mcpTelemetry: () => request<McpTelemetry>("/api/mcp-servers/telemetry"),
+  mcpPolicy: () => request<McpPolicy>("/api/mcp-servers/policy"),
   checkMcpServerHealth: (id: string) =>
     request<McpServerView>(`/api/mcp-servers/${id}/health-check`, { method: "POST" }),
   createMcpServer: (body: McpServerInput) =>

@@ -1,30 +1,7 @@
 import { render, screen } from "@testing-library/react";
 
-import type { McpServerView } from "../../api/client";
+import { mcpServer as server } from "../../test/mcpFixtures";
 import { McpHealthBadge } from "../mcp/McpHealthBadge";
-
-function server(overrides: Partial<McpServerView> = {}): McpServerView {
-  return {
-    id: "s1",
-    name: "github",
-    description: "",
-    transport: "http",
-    url: "https://mcp.example/sse",
-    command: "",
-    args: [],
-    auth_env_var: "",
-    auth_present: false,
-    enabled: true,
-    tool_policy: "prompt",
-    last_checked_at: "",
-    last_health_ok: false,
-    last_health_latency_ms: 0,
-    last_health_error: "",
-    created_at: "2026-07-20T00:00:00",
-    updated_at: "2026-07-20T00:00:00",
-    ...overrides,
-  };
-}
 
 it("says never checked rather than guessing a verdict", () => {
   // A registered server defaults to last_health_ok=false. Rendering that as

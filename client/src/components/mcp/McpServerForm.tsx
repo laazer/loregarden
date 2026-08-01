@@ -15,6 +15,7 @@ function blank(): McpServerInput {
     auth_env_var: "",
     enabled: true,
     tool_policy: "prompt",
+    rate_limit_per_min: 0,
   };
 }
 
@@ -53,6 +54,7 @@ export function McpServerForm({
             auth_env_var: server.auth_env_var,
             enabled: server.enabled,
             tool_policy: server.tool_policy,
+            rate_limit_per_min: server.rate_limit_per_min,
           }
         : blank(),
     );
@@ -82,6 +84,19 @@ export function McpServerForm({
           value={draft.name}
           onChange={(e) => set({ name: e.target.value })}
           placeholder="github"
+        />
+      </div>
+
+      <div className="modal-field">
+        <label className="modal-field-label" htmlFor="mcp-description">
+          What it is for
+        </label>
+        <input
+          id="mcp-description"
+          className="btn-secondary filter-select"
+          value={draft.description ?? ""}
+          onChange={(e) => set({ description: e.target.value })}
+          placeholder="Repos, pull requests, issues"
         />
       </div>
 
@@ -164,6 +179,24 @@ export function McpServerForm({
         <p className="modal-subtitle mcp-form-hint">
           Trust applies to the whole server. An unattended run stops on every call
           while this is set to ask.
+        </p>
+      </div>
+
+      <div className="modal-field">
+        <label className="modal-field-label" htmlFor="mcp-rate-limit">
+          Rate limit (calls per minute)
+        </label>
+        <input
+          id="mcp-rate-limit"
+          className="btn-secondary filter-select"
+          type="number"
+          min={0}
+          value={draft.rate_limit_per_min ?? 0}
+          onChange={(e) => set({ rate_limit_per_min: Math.max(0, Number(e.target.value) || 0) })}
+        />
+        <p className="modal-subtitle mcp-form-hint">
+          0 means no ceiling. Above it, calls are refused rather than queued, and the refusal
+          is what the agent sees.
         </p>
       </div>
 
