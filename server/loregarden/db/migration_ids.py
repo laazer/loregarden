@@ -72,6 +72,9 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0050_baxter_chat_tables",
     "0051_ticket_studio_turn_lifecycle",
     "0052_git_automation",
+    "0053_workspace_effort_columns",
+    "0054_workspace_scoped_runs_and_approvals",
+    "0055_branch_triage_message_run",
 )
 
 
