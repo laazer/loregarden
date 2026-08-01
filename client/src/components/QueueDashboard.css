@@ -1,5 +1,7 @@
-/**
- * Queue Dashboard — v2 design tokens
+/* Queue dashboard shell — v6.
+ *
+ * Main column plus a fixed 326px rail, per the QUEUE section of
+ * docs/design/v6. index.css tokens only.
  */
 
 .queue-dashboard {
@@ -8,292 +10,237 @@
   flex: 1;
   min-height: 0;
   background: var(--bg0);
-  color: var(--tx);
-  overflow: hidden;
 }
 
-.dashboard-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 24px;
-  background: var(--bg1);
-  border-bottom: 1px solid var(--bd);
-  gap: 20px;
-}
-
-@media (max-width: 768px) {
-  .dashboard-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-}
-
-.header-title h1 {
-  margin: 0 0 4px;
-  font-family: var(--dp);
-  font-size: 24px;
-  font-weight: 700;
-}
-
-.workspace-indicator {
-  margin: 0;
-  font-size: 12px;
-  color: var(--txm);
-}
-
-.header-metrics {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.metric-badge {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 8px 14px;
-  background: var(--bg2);
-  border-radius: 11px;
-  border: 1px solid var(--bd);
-}
-
-.metric-label {
-  font-size: 9px;
-  color: var(--txl);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 600;
-}
-
-.metric-value {
-  font-family: var(--dp);
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--tx);
-}
-
-.connection-badge {
-  padding: 9px 14px;
-  border-radius: 11px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--aml);
-  background: rgba(255, 152, 0, 0.12);
-  border: 1px solid rgba(255, 152, 0, 0.3);
-}
-
-.connection-badge.connected {
-  color: var(--grl);
-  background: rgba(53, 196, 106, 0.12);
-  border-color: rgba(53, 196, 106, 0.3);
-  animation: pulse 2s ease-in-out infinite;
-}
-
-.dashboard-layout {
-  display: flex;
-  flex-direction: column;
+.queue-layout {
   flex: 1;
-  overflow: hidden;
-}
-
-.dashboard-content {
-  display: grid;
-  grid-template-columns: 1fr 326px;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
   gap: 20px;
   padding: 22px 24px;
-  overflow: hidden;
+}
+
+.queue-layout-main {
   flex: 1;
-}
-
-@media (max-width: 1200px) {
-  .dashboard-content {
-    grid-template-columns: 1fr;
-  }
-}
-
-.visualization-section {
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.dashboard-sidebar {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg1);
-  border-radius: 16px;
-  border: 1px solid var(--bd);
-  overflow: hidden;
-  min-height: 0;
+  gap: 20px;
 }
 
-.sidebar-tabs {
+.queue-review-main {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+/* ---- side rail ---- */
+
+.queue-rail {
+  width: 326px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.queue-rail-card {
+  flex: none;
+  background: var(--bg1);
+  border: 1px solid var(--bd);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.queue-rail-tabs {
   display: flex;
   gap: 2px;
   padding: 8px;
   border-bottom: 1px solid var(--bd);
 }
 
-.tab-btn {
+.queue-rail-tab {
   flex: 1;
-  padding: 8px 4px;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 8px;
-  cursor: pointer;
+  font-family: var(--ui);
   font-size: 11.5px;
   font-weight: 600;
+  padding: 8px 4px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
   color: var(--txm);
-  transition: color 0.15s, background 0.15s;
 }
 
-.tab-btn:hover {
+.queue-rail-tab:hover {
   color: var(--tx);
 }
 
-.tab-btn.active {
-  color: var(--tx);
-  background: var(--bg2);
+.queue-rail-tab.is-active {
+  background: var(--bg3);
+  color: var(--ac2);
   border-bottom-color: var(--ac);
 }
 
-.sidebar-content {
-  flex: 1;
-  overflow-y: auto;
+.queue-rail-body {
   padding: 18px;
 }
 
-.overview-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.overview-panel h3 {
-  margin: 0;
+.queue-rail-heading {
   font-family: var(--dp);
   font-size: 14px;
   font-weight: 600;
+  color: var(--tx);
+  margin-bottom: 14px;
 }
 
-.status-grid {
+.queue-rail-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 11px;
 }
 
-.status-item {
-  display: flex;
-  flex-direction: column;
-  padding: 13px 14px;
+.queue-rail-tile {
   background: var(--bg2);
   border: 1px solid var(--bd);
-  border-radius: 11px;
+  border-radius: 13px;
+  padding: 13px 14px;
 }
 
-.status-label {
+.queue-rail-tile-label {
   font-size: 9px;
-  color: var(--txl);
-  text-transform: uppercase;
   letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--txl);
   font-weight: 600;
   margin-bottom: 6px;
 }
 
-.status-value {
+.queue-rail-tile-value {
   font-family: var(--dp);
   font-size: 20px;
   font-weight: 700;
   color: var(--tx);
 }
 
-.review-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  height: 100%;
-  overflow: hidden;
+.queue-rail-empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--txl);
 }
 
-.operations-list {
-  flex: 1;
-  overflow-y: auto;
+.queue-rail-divider {
+  height: 1px;
+  margin: 16px 0;
+  background: var(--bd);
+}
+
+/* ---- operations list ---- */
+
+.queue-op-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.operation-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  background: var(--bg2);
+.queue-op {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  padding: 11px 12px;
   border: 1px solid var(--bd);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  border-radius: 11px;
+  background: var(--bg2);
+  color: var(--tx);
+  font-family: var(--ui);
   text-align: left;
-  font-size: 12px;
-  color: inherit;
-  width: 100%;
+  cursor: pointer;
 }
 
-.operation-item:hover {
+.queue-op:hover {
   border-color: var(--bd2);
 }
 
-.operation-item.selected {
-  background: rgba(111, 174, 143, 0.06);
-  border-color: rgba(111, 174, 143, 0.35);
+.queue-op.is-selected {
+  border-color: var(--ac);
 }
 
-.operation-item .op-type {
+.queue-op-type {
+  font-size: 12.5px;
   font-weight: 600;
-  color: var(--ac2);
-  min-width: 100px;
 }
 
-.operation-item .op-status {
+.queue-op-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--txm);
+}
+
+.queue-op-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amb);
+}
+
+.queue-op-status.is-approved {
+  color: var(--grl);
+}
+
+.queue-op-status.is-approved .queue-op-dot {
+  background: var(--grn);
+}
+
+.queue-op-affects {
+  grid-column: 1 / -1;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txl);
+}
+
+/* ---- Baxter idle card ---- */
+
+.queue-rail-baxter {
   flex: 1;
-  text-align: center;
-  font-size: 11px;
-}
-
-.operation-item .op-affects {
-  font-size: 11px;
-  color: var(--txl);
-}
-
-.no-items {
-  text-align: center;
-  padding: 20px;
-  color: var(--txl);
-  font-size: 12px;
-}
-
-.review-main-panel {
+  min-height: 180px;
+  background: var(--bg1);
+  border: 1px solid var(--bd);
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  overflow: hidden;
-  flex: 1;
-  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  padding: 30px;
+  text-align: center;
 }
 
-.review-main-back {
-  align-self: flex-start;
+.queue-rail-baxter img {
+  object-fit: contain;
+  opacity: 0.9;
 }
 
-@media (max-width: 768px) {
-  .dashboard-content {
-    grid-template-columns: 1fr;
-    gap: 12px;
-    padding: 12px;
+.queue-rail-baxter-copy {
+  font-family: var(--dp);
+  font-size: 13.5px;
+  color: var(--txm);
+}
+
+@media (max-width: 1100px) {
+  .queue-layout {
+    flex-direction: column;
   }
 
-  .dashboard-sidebar {
-    max-height: 40vh;
+  .queue-rail {
+    width: auto;
+  }
+
+  .queue-rail-baxter {
+    min-height: 140px;
   }
 }

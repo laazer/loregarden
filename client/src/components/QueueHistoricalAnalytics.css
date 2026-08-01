@@ -1,38 +1,25 @@
-/**
- * Queue Historical Analytics Styling
- * Run performance metrics and trends
+/* Queue historical analytics — v6.
+ *
+ * Was raw hex on a `background: white` card with a prefers-color-scheme dark
+ * branch, which rendered a light panel inside the dark v6 shell. Tokens only
+ * now, and no media branch: v6 is one theme.
+ *
+ * The success scale keeps four steps, but reads off the palette's semantic
+ * colours (grn → ball → amb → red) instead of its own material greens.
  */
 
 .queue-analytics-container {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 20px;
-  background: white;
-  border-radius: 8px;
-  border: 1px solid #e0e0e0;
-}
-
-@media (prefers-color-scheme: dark) {
-  .queue-analytics-container {
-    background: #1e1e1e;
-    border-color: #444;
-    color: #e0e0e0;
-  }
+  gap: 18px;
 }
 
 .analytics-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 16px;
-  border-bottom: 2px solid #e0e0e0;
-}
-
-@media (prefers-color-scheme: dark) {
-  .analytics-header {
-    border-bottom-color: #444;
-  }
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--bd);
 }
 
 @media (max-width: 600px) {
@@ -45,207 +32,160 @@
 
 .analytics-header h3 {
   margin: 0;
-  font-size: 18px;
+  font-family: var(--dp);
+  font-size: 14px;
   font-weight: 600;
+  color: var(--tx);
 }
 
 .time-range-selector {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 .range-btn {
-  padding: 6px 12px;
-  background: #f5f5f5;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  padding: 5px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--bd);
+  border-radius: 9px;
+  color: var(--txm);
   cursor: pointer;
-  font-size: 12px;
+  font-family: var(--ui);
+  font-size: 11.5px;
   font-weight: 600;
-  transition: all 0.2s;
-}
-
-@media (prefers-color-scheme: dark) {
-  .range-btn {
-    background: #2a2a2a;
-    border-color: #555;
-  }
+  transition: border-color 0.2s;
 }
 
 .range-btn:hover {
-  border-color: #999;
+  border-color: var(--bd2);
+  color: var(--tx);
 }
 
 .range-btn.active {
-  background: #2196f3;
-  color: white;
-  border-color: #2196f3;
-}
-
-@media (prefers-color-scheme: dark) {
-  .range-btn.active {
-    background: #1976d2;
-  }
+  background: var(--bg4);
+  color: var(--ac2);
+  border-color: var(--ac);
 }
 
 .analytics-error {
-  padding: 12px;
-  background: #ffebee;
-  border: 1px solid #ef5350;
-  border-radius: 6px;
-  color: #c62828;
-  font-size: 13px;
-}
-
-@media (prefers-color-scheme: dark) {
-  .analytics-error {
-    background: #b71c1c;
-    border-color: #ff5252;
-    color: #ffebee;
-  }
+  padding: 10px 12px;
+  background: var(--bg2);
+  border: 1px solid var(--red);
+  border-radius: 11px;
+  color: var(--rdl);
+  font-size: 12.5px;
 }
 
 .analytics-loading {
-  padding: 40px;
+  padding: 32px;
   text-align: center;
-  color: #999;
+  color: var(--txl);
+  font-size: 12.5px;
 }
 
 .analytics-empty {
-  padding: 40px;
+  padding: 32px;
   text-align: center;
 }
 
 .analytics-empty p {
   margin: 8px 0;
-  color: #999;
+  color: var(--txl);
+  font-size: 12.5px;
 }
 
 .empty-hint {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .analytics-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  grid-template-columns: 1fr;
+  gap: 12px;
 }
 
 .analytics-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  background: #f9f9f9;
-  border-radius: 8px;
-  border: 1px solid #e0e0e0;
-  transition: all 0.2s;
-}
-
-@media (prefers-color-scheme: dark) {
-  .analytics-card {
-    background: #2a2a2a;
-    border-color: #444;
-  }
+  gap: 11px;
+  padding: 14px 15px;
+  background: var(--bg2);
+  border: 1px solid var(--bd);
+  border-radius: 13px;
+  transition: border-color 0.2s;
 }
 
 .analytics-card:hover {
-  border-color: #999;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-@media (prefers-color-scheme: dark) {
-  .analytics-card:hover {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
+  border-color: var(--bd2);
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
 }
 
 .ticket-type {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
+  color: var(--tx);
 }
 
 .success-badge {
-  padding: 4px 8px;
-  border-radius: 12px;
-  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 9px;
+  font-size: 10.5px;
   font-weight: 600;
-  color: white;
 }
 
 .success-badge.excellent {
-  background: #4caf50;
+  background: var(--bg4);
+  color: var(--grl);
 }
 
 .success-badge.good {
-  background: #8bc34a;
+  background: var(--bg4);
+  color: var(--ball);
 }
 
 .success-badge.fair {
-  background: #ff9800;
+  background: var(--bg4);
+  color: var(--aml);
 }
 
 .success-badge.poor {
-  background: #f44336;
-}
-
-@media (prefers-color-scheme: dark) {
-  .success-badge.excellent {
-    background: #66bb6a;
-  }
-
-  .success-badge.good {
-    background: #9ccc65;
-  }
-
-  .success-badge.fair {
-    background: #ffa726;
-  }
-
-  .success-badge.poor {
-    background: #ef5350;
-  }
+  background: var(--bg4);
+  color: var(--rdl);
 }
 
 .card-metrics {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .metric-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .metric-label {
-  color: #999;
+  color: var(--txl);
 }
 
 .metric-value {
+  font-family: var(--mono);
   font-weight: 600;
+  color: var(--tx);
 }
 
 .success-bar {
-  height: 6px;
-  background: #e0e0e0;
+  height: 5px;
+  background: var(--bg4);
   border-radius: 3px;
   overflow: hidden;
-}
-
-@media (prefers-color-scheme: dark) {
-  .success-bar {
-    background: #444;
-  }
 }
 
 .success-fill {
@@ -255,19 +195,19 @@
 }
 
 .success-fill.excellent {
-  background: linear-gradient(90deg, #4caf50, #8bc34a);
+  background: linear-gradient(90deg, var(--grn), var(--grl));
 }
 
 .success-fill.good {
-  background: linear-gradient(90deg, #8bc34a, #ff9800);
+  background: linear-gradient(90deg, var(--ball), var(--grn));
 }
 
 .success-fill.fair {
-  background: linear-gradient(90deg, #ff9800, #f44336);
+  background: linear-gradient(90deg, var(--amb), var(--ball));
 }
 
 .success-fill.poor {
-  background: linear-gradient(90deg, #f44336, #c62828);
+  background: linear-gradient(90deg, var(--red), var(--amb));
 }
 
 .card-insights {
@@ -275,53 +215,37 @@
   flex-direction: column;
   gap: 4px;
   padding-top: 8px;
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
-}
-
-@media (prefers-color-scheme: dark) {
-  .card-insights {
-    border-top-color: rgba(255, 255, 255, 0.1);
-  }
+  border-top: 1px solid var(--bd);
 }
 
 .insight {
-  font-size: 12px;
+  font-size: 11.5px;
   padding: 4px 6px;
-  border-radius: 3px;
-  background: rgba(0, 0, 0, 0.05);
-}
-
-@media (prefers-color-scheme: dark) {
-  .insight {
-    background: rgba(255, 255, 255, 0.05);
-  }
+  border-radius: 6px;
+  background: var(--bg3);
+  color: var(--txm);
 }
 
 .insight.fast {
-  color: #ff9800;
+  color: var(--aml);
 }
 
 .insight.reliable {
-  color: #4caf50;
+  color: var(--grl);
 }
 
 .insight.concerning {
-  color: #f44336;
+  color: var(--rdl);
 }
 
 .analytics-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-  padding: 16px;
-  background: #f5f5f5;
-  border-radius: 8px;
-}
-
-@media (prefers-color-scheme: dark) {
-  .analytics-summary {
-    background: #2a2a2a;
-  }
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  padding: 14px;
+  background: var(--bg2);
+  border: 1px solid var(--bd);
+  border-radius: 13px;
 }
 
 .summary-card {
@@ -330,21 +254,18 @@
 
 .summary-label {
   display: block;
-  font-size: 12px;
-  color: #999;
-  margin-bottom: 8px;
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  color: var(--txl);
+  font-weight: 600;
+  margin-bottom: 6px;
   text-transform: uppercase;
 }
 
 .summary-value {
   display: block;
-  font-size: 28px;
-  font-weight: 600;
-  color: #2196f3;
-}
-
-@media (prefers-color-scheme: dark) {
-  .summary-value {
-    color: #42a5f5;
-  }
+  font-family: var(--dp);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ac2);
 }

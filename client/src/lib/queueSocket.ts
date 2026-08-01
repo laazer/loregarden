@@ -11,16 +11,36 @@
  * "Polling".
  */
 
-export interface ActiveRun {
+/**
+ * The names behind the ids, resolved server-side in `queue_status.py`.
+ *
+ * Optional because a snapshot from an older backend will not carry them, and a
+ * slot card showing a stale-but-readable id beats one that crashes.
+ */
+export interface RunLabels {
+  ticket_title?: string;
+  ticket_code?: string;
+  ticket_state?: string;
+  agent_name?: string;
+  stage_key?: string;
+}
+
+export interface ActiveRun extends RunLabels {
   run_id: string;
   ticket_id: string;
   slot_number: number;
   elapsed_seconds: number;
   status: string;
   agent_id: string;
+  /**
+   * Median duration for this agent in this workspace, or null when the
+   * workspace has no completed runs to learn from. Null means "no estimate" —
+   * never substitute a default, that is the fabrication this replaced.
+   */
+  estimated_duration_seconds?: number | null;
 }
 
-export interface QueuedRun {
+export interface QueuedRun extends RunLabels {
   run_id: string;
   ticket_id: string;
   position: number;
@@ -55,7 +75,28 @@ export interface QueueStatusSnapshot {
   available_slots: number;
   total_slots: number;
   queue_length: number;
+  /** Projected seconds until the queue empties, or null with no run history. */
+  estimated_clear_seconds?: number | null;
   stats: ParallelStats;
+}
+
+/**
+ * Something happened, as opposed to something is the case.
+ *
+ * The snapshot describes the queue as it stands; it cannot say that a run just
+ * finished, which is what a notification is about. The server forwards these
+ * alongside each snapshot — see NOTIFIABLE_EVENTS in `queue_events.py`.
+ */
+export interface QueueEvent {
+  type: "queue_promoted" | "run_completed" | "error";
+  timestamp?: string;
+  data?: {
+    runId?: string;
+    slotNumber?: number;
+    status?: string;
+    message?: string;
+    code?: string;
+  };
 }
 
 /**
@@ -70,6 +111,8 @@ export type QueueSocketStatus = "connecting" | "open" | "closed";
 export interface QueueSocketHandlers {
   onSnapshot: (snapshot: QueueStatusSnapshot) => void;
   onStatus: (status: QueueSocketStatus) => void;
+  /** Optional: a caller that only renders state need not handle events. */
+  onEvent?: (event: QueueEvent) => void;
 }
 
 /** First reconnect delay, doubling from here. */
@@ -129,7 +172,7 @@ export class QueueSocket {
 
     socket.onmessage = (event: MessageEvent) => {
       if (typeof event.data !== "string") return;
-      let message: { type?: string; data?: QueueStatusSnapshot };
+      let message: { type?: string; data?: QueueStatusSnapshot | QueueEvent };
       try {
         message = JSON.parse(event.data);
       } catch {
@@ -138,7 +181,9 @@ export class QueueSocket {
         return;
       }
       if (message?.type === "queue_status" && message.data) {
-        this.handlers.onSnapshot(message.data);
+        this.handlers.onSnapshot(message.data as QueueStatusSnapshot);
+      } else if (message?.type === "queue_event" && message.data) {
+        this.handlers.onEvent?.(message.data as QueueEvent);
       }
     };
 

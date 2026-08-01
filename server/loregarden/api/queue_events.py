@@ -39,6 +39,14 @@ POLICY_VIOLATION = 1008
 REFRESH_INTERVAL_SECONDS = 5.0
 
 
+#: Event types worth telling the client about individually.
+#:
+#: ``execution_update`` is deliberately absent: it means "the queue changed",
+#: which is what the snapshot already says, and forwarding it would fire a
+#: toast for every reorder.
+NOTIFIABLE_EVENTS = frozenset({"queue_promoted", "run_completed", "error"})
+
+
 def _topic(workspace_id: str) -> str:
     return f"workspace:{workspace_id}"
 
@@ -57,6 +65,31 @@ async def _snapshot(workspace_id: str) -> dict:
 
 async def _send_snapshot(websocket: WebSocket, workspace_id: str) -> None:
     await websocket.send_json({"type": "queue_status", "data": await _snapshot(workspace_id)})
+
+
+def _notifiable(events: list[dict]) -> list[dict]:
+    """The events a person should be told about, each at most once.
+
+    A burst that promotes the same run twice is one promotion as far as the
+    dashboard is concerned; without the dedupe a chain of completions would
+    stack duplicate toasts.
+    """
+    seen: set[tuple] = set()
+    forwarded = []
+    for event in events:
+        if event.get("type") not in NOTIFIABLE_EVENTS:
+            continue
+        key = (event.get("type"), (event.get("data") or {}).get("runId"))
+        if key in seen:
+            continue
+        seen.add(key)
+        forwarded.append(event)
+    return forwarded
+
+
+async def _send_events(websocket: WebSocket, events: list[dict]) -> None:
+    for event in _notifiable(events):
+        await websocket.send_json({"type": "queue_event", "data": event})
 
 
 async def _await_disconnect(websocket: WebSocket) -> None:
@@ -92,17 +125,23 @@ async def queue_socket(websocket: WebSocket, workspace_id: str) -> None:
                 timeout=REFRESH_INTERVAL_SECONDS,
                 return_when=asyncio.FIRST_COMPLETED,
             )
+            batch: list[dict] = []
             if pending in done:
                 # Coalesce: a burst of events (a run finishing promotes the
                 # next, which updates the queue, which...) should cost one
-                # snapshot, not one per event.
+                # snapshot, not one per event. The events themselves are kept
+                # rather than dropped — the snapshot says what the queue looks
+                # like now, not that a run just finished, and the toast stack
+                # needs the latter.
+                batch.append(pending.result())
                 while not queue.empty():
-                    queue.get_nowait()
+                    batch.append(queue.get_nowait())
             else:
                 pending.cancel()
 
             if disconnected.done():
                 break
+            await _send_events(websocket, batch)
             await _send_snapshot(websocket, workspace_id)
     except WebSocketDisconnect:
         pass

@@ -13,7 +13,7 @@
  * both are acted on immediately.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { API_BASE } from '../api/client';
 import {
@@ -25,17 +25,20 @@ import type {
   ActiveRun,
   ParallelStats,
   QueuedRun,
+  QueueEvent,
   QueueSocketStatus,
   QueueStatusSnapshot,
 } from '../lib/queueSocket';
 import { useParallelExecution } from './useParallelExecution';
 
-export type { ActiveRun, ParallelStats, QueuedRun };
+export type { ActiveRun, ParallelStats, QueuedRun, QueueEvent };
 
 export interface ParallelExecutionWSStatus {
   activeRuns: ActiveRun[];
   queuedRuns: QueuedRun[];
   stats: ParallelStats;
+  /** Projected seconds to clear, or null when the server has no history. */
+  estimatedClearSeconds: number | null;
   loading: boolean;
   error: string | null;
   connectionState: QueueSocketStatus;
@@ -47,16 +50,27 @@ const FALLBACK_POLL_INTERVAL = 5000;
 
 export function useParallelExecutionWS(
   workspaceId: string,
-  enabled: boolean = true
+  enabled: boolean = true,
+  /**
+   * Notified for each forwarded queue event. Held in a ref so a caller passing
+   * an inline closure does not tear the socket down on every render.
+   */
+  onEvent?: (event: QueueEvent) => void
 ): ParallelExecutionWSStatus {
   const [snapshot, setSnapshot] = useState<QueueStatusSnapshot | null>(null);
   const [status, setStatus] = useState<QueueSocketStatus>('connecting');
 
+  const eventHandler = useRef(onEvent);
+  eventHandler.current = onEvent;
+
   const live = enabled && Boolean(workspaceId) && status === 'open';
 
-  // Polls only while the socket is not carrying the data. This is the whole
-  // saving: a healthy dashboard makes no status requests at all.
-  const fallback = useParallelExecution(workspaceId, FALLBACK_POLL_INTERVAL, !live);
+  // Polls only while the socket is not carrying the data, and only while this
+  // hook is wanted at all. `!live` alone is not enough: a disabled hook is also
+  // not live, so a caller that switched off — the provider, once you navigate
+  // off the queue page — would keep polling for a workspace nobody is looking
+  // at, on every other page in the app.
+  const fallback = useParallelExecution(workspaceId, FALLBACK_POLL_INTERVAL, enabled && !live);
 
   useEffect(() => {
     if (!enabled || !workspaceId) {
@@ -68,6 +82,7 @@ export function useParallelExecutionWS(
     const socket = new QueueSocket(queueSocketUrl(workspaceId, API_BASE), {
       onSnapshot: setSnapshot,
       onStatus: setStatus,
+      onEvent: (event) => eventHandler.current?.(event),
     });
     socket.open();
 
@@ -86,6 +101,7 @@ export function useParallelExecutionWS(
         activeRuns: snapshot.active_runs,
         queuedRuns: snapshot.queued_runs,
         stats: snapshot.stats ?? DEFAULT_PARALLEL_STATS,
+        estimatedClearSeconds: snapshot.estimated_clear_seconds ?? null,
         loading: false,
         error: null,
         connectionState: status,
@@ -97,6 +113,7 @@ export function useParallelExecutionWS(
       activeRuns: fallback.activeRuns,
       queuedRuns: fallback.queuedRuns,
       stats: fallback.stats,
+      estimatedClearSeconds: fallback.estimatedClearSeconds,
       // Connected but still waiting on the first frame is loading too, or the
       // dashboard would flash an empty queue before its first snapshot.
       loading: live ? true : fallback.loading,

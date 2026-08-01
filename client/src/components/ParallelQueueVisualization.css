@@ -1,430 +1,498 @@
-/**
- * Parallel Queue Visualization — v2 design tokens
+/* Queue main panel — v6.
+ *
+ * Measurements track the QUEUE section of docs/design/v6. Colours are index.css
+ * tokens only: no raw hex, and no prefers-color-scheme block, because v6 is one
+ * dark theme and a light-mode branch renders a white card in a dark shell.
  */
 
-.queue-visualization-container {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  padding: 22px 24px;
+.queue-panel {
   background: var(--bg1);
   border: 1px solid var(--bd);
   border-radius: 16px;
+  padding: 22px 24px;
 }
 
-.queue-header {
+.queue-panel-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 4px;
+  gap: 12px;
+  margin-bottom: 20px;
 }
 
-.queue-header h2 {
+.queue-panel-title {
   margin: 0;
   font-family: var(--dp);
   font-size: 17px;
   font-weight: 600;
+  color: var(--tx);
 }
 
-.connection-indicator {
+.queue-conn {
+  margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--grl);
-}
-
-.ws-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.ws-indicator.connected {
-  color: var(--grl);
-}
-
-.ws-indicator.connected::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--grn);
-  box-shadow: 0 0 7px var(--grn);
-}
-
-.ws-indicator.polling {
   color: var(--aml);
 }
 
-.connection-state {
-  color: var(--txl);
-  font-size: 10px;
-  text-transform: uppercase;
+.queue-conn--live {
+  color: var(--grl);
 }
 
-.queue-overview {
+.queue-conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--amb);
+}
+
+.queue-conn--live .queue-conn-dot {
+  background: var(--grn);
+}
+
+/* ---- stat tiles ---- */
+
+.queue-stat-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
+  margin-bottom: 26px;
 }
 
-@media (max-width: 900px) {
-  .queue-overview {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.overview-card {
+.queue-stat {
   background: var(--bg2);
   border: 1px solid var(--bd);
   border-radius: 13px;
   padding: 15px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
-.overview-label {
+.queue-stat-label {
   font-size: 9.5px;
-  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--txl);
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  margin-bottom: 10px;
 }
 
-.overview-value {
+.queue-stat-value {
   font-family: var(--dp);
   font-size: 26px;
   font-weight: 700;
   color: var(--tx);
+  letter-spacing: -0.01em;
   line-height: 1;
 }
 
-.overview-hint {
+.queue-stat-bar {
+  margin-top: 11px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--bg4);
+  overflow: hidden;
+}
+
+.queue-stat-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--ac), var(--ac2));
+  border-radius: 3px;
+  transition: width 0.4s;
+}
+
+.queue-stat-sub {
+  margin-top: 8px;
   font-size: 11px;
   color: var(--txl);
 }
 
-.overview-bar {
-  height: 5px;
-  background: var(--bg4);
-  border-radius: 3px;
-  overflow: hidden;
-  margin-top: 4px;
-}
+/* ---- section headers ---- */
 
-.overview-bar-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--ac), var(--ac2));
-  border-radius: 3px;
-  transition: width 0.4s ease;
-}
-
-.queue-slots-section {
+.queue-section-head {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
 }
 
-.queue-slots-section h3 {
-  margin: 0;
+.queue-section-title {
   font-family: var(--dp);
   font-size: 14px;
   font-weight: 600;
+  color: var(--tx);
 }
 
-.queue-slots {
+.queue-section-hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--txl);
+}
+
+/* ---- dispatch ---- */
+
+.queue-dispatch {
+  position: relative;
+  margin-left: auto;
+}
+
+.queue-dispatch-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--onac);
+  background: var(--ac);
+  border: none;
+  border-radius: 11px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.queue-dispatch-btn:hover {
+  background: var(--ac2);
+}
+
+.queue-dispatch-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: 340px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--bd2);
+  border-radius: 13px;
+  padding: 6px;
+}
+
+.queue-dispatch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.queue-dispatch-item {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--tx);
+  font-family: var(--ui);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.queue-dispatch-item:hover:not(:disabled) {
+  background: var(--bg3);
+}
+
+.queue-dispatch-item:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.queue-dispatch-item-code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+}
+
+.queue-dispatch-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-dispatch-item-state {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--txm);
+}
+
+.queue-dispatch-empty {
+  padding: 16px 12px;
+  font-size: 12.5px;
+  color: var(--txl);
+  text-align: center;
+}
+
+.queue-dispatch-error {
+  margin-top: 4px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: var(--bg3);
+  color: var(--rdl);
+  font-size: 12px;
+}
+
+/* ---- execution slots ---- */
+
+.queue-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
 }
 
-@media (max-width: 768px) {
-  .queue-slots {
-    grid-template-columns: 1fr;
-  }
-}
-
-.slot-card {
-  background: var(--bg2);
+.queue-slot {
+  background: var(--bg1);
   border: 1px solid var(--bd);
   border-radius: 13px;
   padding: 15px 16px;
   min-height: 150px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
 }
 
-.slot-card.active {
-  border-color: rgba(75, 155, 255, 0.35);
-  background: rgba(75, 155, 255, 0.06);
+.queue-slot--busy {
+  background: var(--bg2);
+  border-color: var(--blue);
 }
 
-.slot-card.available {
-  opacity: 0.85;
-}
-
-.slot-header {
+.queue-slot-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 8px;
+  margin-bottom: 14px;
 }
 
-.slot-number {
+.queue-slot-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--bd2);
+}
+
+.queue-slot--busy .queue-slot-dot {
+  background: var(--blue);
+  box-shadow: 0 0 8px var(--blue);
+  animation: pulse 1.6s infinite;
+}
+
+.queue-slot-name {
   font-family: var(--dp);
-  font-weight: 600;
   font-size: 13px;
+  font-weight: 600;
+  color: var(--tx);
 }
 
-.slot-status {
+.queue-slot-badge {
+  margin-left: auto;
   font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
   padding: 2px 8px;
-  border-radius: 6px;
-  background: rgba(75, 155, 255, 0.14);
-  color: var(--bll);
-}
-
-.slot-card.available .slot-status {
+  border-radius: 8px;
   background: var(--bg3);
-  color: var(--txm);
-}
-
-.slot-content.empty {
-  align-items: center;
-  justify-content: center;
-  flex: 1;
   color: var(--txl);
 }
 
-.empty-text {
-  font-size: 13px;
+.queue-slot--busy .queue-slot-badge {
+  background: var(--bg4);
+  color: var(--bll);
 }
 
-.slot-run-info {
+.queue-slot-body {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
 }
 
-.run-id {
-  font-weight: 600;
+.queue-slot-title {
   font-size: 13.5px;
-  white-space: nowrap;
+  font-weight: 600;
+  color: var(--tx);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.queue-slot-sub,
+.queue-slot-time {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txm);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.run-time {
+.queue-slot-time {
+  color: var(--txl);
+}
+
+.queue-slot-bar {
+  margin-top: 2px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--bg4);
+  overflow: hidden;
+}
+
+.queue-slot-bar-fill {
+  height: 100%;
+  background: var(--blue);
+  border-radius: 3px;
+  transition: width 0.4s;
+}
+
+/* No median to measure against: a travelling sliver says "running, duration
+ * unknown" without claiming a percentage. */
+.queue-slot-bar--indeterminate .queue-slot-bar-fill {
+  width: 35%;
+  transition: none;
+  animation: queue-slot-sweep 1.5s ease-in-out infinite;
+}
+
+@keyframes queue-slot-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+/* ---- waiting list ---- */
+
+.queue-waiting {
+  margin-top: 26px;
+}
+
+.queue-waiting-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.queue-waiting-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg2);
+  border: 1px solid var(--bd);
+  border-radius: 13px;
+  padding: 12px 14px;
+  cursor: grab;
+}
+
+.queue-waiting-row.is-dragging {
+  opacity: 0.5;
+}
+
+.queue-waiting-row.is-drop-target {
+  border-color: var(--ac);
+}
+
+.queue-waiting-position {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--bg3);
   font-family: var(--mono);
   font-size: 11px;
   color: var(--txm);
 }
 
-.slot-progress {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.progress-bar {
-  flex: 1;
-  height: 5px;
-  background: rgba(75, 155, 255, 0.15);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  background: var(--blue);
-  border-radius: 3px;
-  transition: width 0.3s ease;
-}
-
-.progress-fill.running {
-  background: var(--blue);
-}
-
-.progress-label {
-  font-size: 10px;
-  font-weight: 600;
-  min-width: 35px;
-  text-align: right;
-  color: var(--txl);
-}
-
-.queue-list-section h3 {
-  margin: 0;
-  font-family: var(--dp);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.queue-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.queue-item {
-  background: var(--bg2);
-  border: 1px solid var(--bd);
-  border-radius: 11px;
-  padding: 12px 14px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  cursor: grab;
-  user-select: none;
-}
-
-.queue-item:hover {
-  border-color: var(--bd2);
-}
-
-.queue-item.dragging {
-  opacity: 0.5;
-  cursor: grabbing;
-}
-
-.queue-item.drag-over {
-  border-color: var(--ac);
-  background: rgba(111, 174, 143, 0.06);
-}
-
-.queue-item-handle {
-  color: var(--txl);
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
-.queue-item-content {
+.queue-waiting-copy {
   flex: 1;
   min-width: 0;
 }
 
-.queue-position {
-  background: rgba(111, 174, 143, 0.14);
-  color: var(--ac2);
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--mono);
-}
-
-.queue-ticket {
-  font-weight: 600;
+.queue-waiting-title {
   font-size: 13px;
+  font-weight: 600;
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.queue-item-time {
+.queue-waiting-sub {
+  font-family: var(--mono);
   font-size: 11px;
   color: var(--txm);
-  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.badge-text {
-  background: rgba(229, 167, 44, 0.14);
-  color: var(--aml);
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 9.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.queue-hint {
-  font-size: 11px;
-  color: var(--txl);
-  text-align: center;
-  padding-top: 8px;
-}
-
-.queue-empty {
+.queue-waiting-times {
+  flex: none;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 20px;
+  align-items: flex-end;
+  gap: 3px;
+  font-size: 11px;
   color: var(--txl);
-  text-align: center;
-  background: var(--bg1);
+}
+
+/* ---- states ---- */
+
+.queue-inline-error {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  background: var(--bg2);
+  border: 1px solid var(--red);
+  border-radius: 11px;
+  font-size: 12.5px;
+  color: var(--rdl);
+}
+
+.queue-inline-error-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+}
+
+.queue-inline-error-message {
+  flex: 1;
+  min-width: 0;
+}
+
+.queue-idle {
+  margin-top: 20px;
+  padding: 18px;
+  border-radius: 13px;
+  background: var(--bg2);
   border: 1px solid var(--bd);
-  border-radius: 16px;
-  min-height: 180px;
-}
-
-.empty-icon {
-  font-size: 30px;
-  margin-bottom: 12px;
-  opacity: 0.7;
-}
-
-.queue-empty p {
-  margin: 4px 0;
+  text-align: center;
   font-family: var(--dp);
   font-size: 13.5px;
   color: var(--txm);
 }
 
-.empty-hint {
-  font-size: 12px;
-  color: var(--txl);
-}
-
-.queue-legend {
-  display: flex;
-  justify-content: center;
-  gap: 24px;
-  padding-top: 12px;
-  font-size: 11px;
-  color: var(--txl);
-  border-top: 1px solid var(--bd);
-}
-
-.legend-color.active {
-  background: var(--bll);
-}
-
-.legend-color.queued {
-  background: var(--aml);
-}
-
-.legend-color.available {
-  background: var(--bg4);
-}
-
-.queue-error-notification {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: rgba(255, 106, 84, 0.1);
-  border: 1px solid rgba(255, 106, 84, 0.25);
-  border-radius: 10px;
-  color: var(--rdl);
-  font-size: 13px;
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
+@media (max-width: 1100px) {
+  .queue-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 
-.queue-error-notification {
-  animation: slideDown 0.3s ease-out;
+  .queue-slot-grid {
+    grid-template-columns: 1fr;
+  }
 }

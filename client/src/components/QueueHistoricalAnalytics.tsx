@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { API_BASE } from '../api/client';
 import './QueueHistoricalAnalytics.css';
 
 export interface RunMetrics {
@@ -36,7 +37,7 @@ export function QueueHistoricalAnalytics({
 
       try {
         const response = await fetch(
-          `/api/parallel/workspace/${workspaceId}/analytics?range=${timeRange}`
+          `${API_BASE}/api/parallel/workspace/${workspaceId}/analytics?range=${timeRange}`
         );
 
         if (!response.ok) {

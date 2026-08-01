@@ -64,6 +64,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: mockActiveRuns,
       queuedRuns: mockQueuedRuns,
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -81,6 +82,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: [],
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -97,6 +99,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: [],
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: true,
       error: null,
     });
@@ -111,6 +114,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: [],
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: 'Failed to fetch timeline data',
     });
@@ -126,6 +130,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: mockActiveRuns,
       queuedRuns: mockQueuedRuns,
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -143,6 +148,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: mockActiveRuns,
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -158,6 +164,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: [],
       queuedRuns: mockQueuedRuns,
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -172,6 +179,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: [mockActiveRuns[0]],
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -187,6 +195,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: mockActiveRuns,
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -203,6 +212,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: mockActiveRuns,
       queuedRuns: mockQueuedRuns,
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -218,6 +228,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: [],
       queuedRuns: mockQueuedRuns,
       stats: { ...mockStats, queue_wait_time_minutes: 5 },
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -232,6 +243,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: mockActiveRuns,
       queuedRuns: [],
       stats: { ...mockStats, queue_wait_time_minutes: 0 },
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -246,6 +258,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: [mockActiveRuns[0]],
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -264,6 +277,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: [mockActiveRuns[0]],
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -282,6 +296,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: mockActiveRuns,
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -297,6 +312,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: [],
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -311,6 +327,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: mockActiveRuns,
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -327,6 +344,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: [],
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -341,6 +359,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: mockActiveRuns,
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -355,6 +374,7 @@ describe('ParallelExecutionTimeline', () => {
       activeRuns: mockActiveRuns,
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -383,6 +403,7 @@ describe('ParallelExecutionTimeline', () => {
       ],
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });

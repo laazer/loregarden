@@ -1,301 +1,274 @@
 /**
- * Enhanced queue visualization with timeline, drag-to-reorder, and resource allocation.
- * Shows active slots, queued runs, and estimated completion times.
+ * The queue, as the v6 design draws it: slot usage, execution slots, and the
+ * runs waiting behind them.
+ *
+ * Two things here used to be invented. Every progress bar measured against a
+ * hardcoded 300-second run, and "estimated clear" was 300 plus 300 per queued
+ * run — so a two-second run and a twenty-minute run drew identical bars, and a
+ * queue of three across three slots read as three times the wait it was. Both
+ * now come from the server's median of what that agent has actually taken, and
+ * when there is no history to draw on the UI says so rather than guessing.
  */
 
 import { useState, useMemo } from 'react';
+import { API_BASE } from '../api/client';
 import { IconCloseButton } from './IconCloseButton';
-import { useParallelExecutionWS } from '../hooks/useParallelExecutionWS';
+import { QueueDispatchButton } from './QueueDispatchButton';
+import { useQueueStatus } from '../state/QueueStatusContext';
 import './ParallelQueueVisualization.css';
-
-export interface ParallelQueueVisualizationProps {
-  workspaceId: string;
-}
 
 interface SlotView {
   slotNumber: number;
   isActive: boolean;
   runId?: string;
-  ticketId?: string;
+  title: string;
+  subtitle: string;
   elapsedSeconds: number;
-  estimatedTotalSeconds: number;
   status: string;
-  progress: number;
+  /** Null when the workspace has no run history — render indeterminate. */
+  progress: number | null;
 }
 
 interface QueueItemView {
   runId: string;
-  ticketId: string;
+  title: string;
+  subtitle: string;
   position: number;
   waitSeconds: number;
   estimatedStartAt: string;
   isDragging: boolean;
 }
 
-export function ParallelQueueVisualization({
-  workspaceId,
-}: ParallelQueueVisualizationProps) {
-  const { activeRuns, queuedRuns, stats, connectionState, isWebSocket } =
-    useParallelExecutionWS(workspaceId);
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${minutes}m ${secs}s`;
+}
+
+function formatClock(dateString: string): string {
+  if (!dateString) return '—';
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+export function ParallelQueueVisualization() {
+  const { activeRuns, queuedRuns, stats, estimatedClearSeconds, isWebSocket } =
+    useQueueStatus();
 
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [hoverPosition, setHoverPosition] = useState<number | null>(null);
-  const [, setIsReordering] = useState(false);
   const [reorderError, setReorderError] = useState<string | null>(null);
 
-  // Compute slot views
   const slotViews = useMemo(() => {
     const slots: SlotView[] = [];
 
     for (let i = 1; i <= (stats?.max_concurrent || 3); i++) {
-      const activeRun = activeRuns?.find((r) => r.slot_number === i);
+      const run = activeRuns?.find((r) => r.slot_number === i);
 
-      if (activeRun) {
-        const estimatedTotal = 300; // 5 minutes default estimate
-        const progress = Math.min(100, (activeRun.elapsed_seconds / estimatedTotal) * 100);
-
-        slots.push({
-          slotNumber: i,
-          isActive: true,
-          runId: activeRun.run_id,
-          ticketId: activeRun.ticket_id,
-          elapsedSeconds: activeRun.elapsed_seconds,
-          estimatedTotalSeconds: estimatedTotal,
-          status: activeRun.status,
-          progress,
-        });
-      } else {
+      if (!run) {
         slots.push({
           slotNumber: i,
           isActive: false,
-          estimatedTotalSeconds: 0,
+          title: 'Available',
+          subtitle: 'Idle · ready for dispatch',
           elapsedSeconds: 0,
           status: 'available',
           progress: 0,
         });
+        continue;
       }
+
+      const estimate = run.estimated_duration_seconds;
+      slots.push({
+        slotNumber: i,
+        isActive: true,
+        runId: run.run_id,
+        // The id is the fallback, not the label: a slot card is the one place
+        // in the app where you should be able to read what is running.
+        title: run.ticket_title || run.ticket_id,
+        subtitle: [run.agent_name || run.agent_id, run.stage_key].filter(Boolean).join(' · '),
+        elapsedSeconds: run.elapsed_seconds,
+        status: run.status,
+        progress:
+          estimate && estimate > 0
+            ? Math.min(100, (run.elapsed_seconds / estimate) * 100)
+            : null,
+      });
     }
 
     return slots;
   }, [activeRuns, stats?.max_concurrent]);
 
-  // Compute queue item views
-  const queueItems = useMemo<QueueItemView[]>(() => {
-    return (queuedRuns || []).map((run, index) => ({
-      runId: run.run_id,
-      ticketId: run.ticket_id,
-      position: index + 1,
-      waitSeconds: run.wait_seconds || 0,
-      estimatedStartAt: run.estimated_start_at || '',
-      isDragging: draggedItem === run.run_id,
-    }));
-  }, [queuedRuns, draggedItem]);
+  const queueItems = useMemo<QueueItemView[]>(
+    () =>
+      (queuedRuns || []).map((run, index) => ({
+        runId: run.run_id,
+        title: run.ticket_title || run.ticket_id,
+        subtitle: [run.agent_name || run.agent_id, run.stage_key].filter(Boolean).join(' · '),
+        position: index + 1,
+        waitSeconds: run.wait_seconds || 0,
+        estimatedStartAt: run.estimated_start_at || '',
+        isDragging: draggedItem === run.run_id,
+      })),
+    [queuedRuns, draggedItem]
+  );
 
-  // Calculate estimated system clear time
-  const estimatedClearTime = useMemo(() => {
-    if (!activeRuns || !queuedRuns) return 0;
-
-    const activeRunsTime = 300; // Assume 5 min per active run
-    const queuedTime = (queuedRuns.length || 0) * 300;
-    return activeRunsTime + queuedTime;
-  }, [activeRuns, queuedRuns]);
-
-  const formatTime = (seconds: number) => {
-    if (seconds < 60) return `${Math.round(seconds)}s`;
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${minutes}m ${Math.round(secs)}s`;
-  };
-
-  const formatEstimatedComplete = (dateString: string) => {
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return 'Unknown';
-    }
-  };
+  const slotUsagePercent = stats?.max_concurrent
+    ? ((stats.active_count || 0) / stats.max_concurrent) * 100
+    : 0;
 
   const handleReorderDrop = async (draggedRunId: string, newPosition: number) => {
-    setIsReordering(true);
     setReorderError(null);
 
     try {
       const response = await fetch(
-        `/api/parallel/queue/${draggedRunId}/reorder?new_position=${newPosition}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
+        `${API_BASE}/api/parallel/queue/${draggedRunId}/reorder?new_position=${newPosition}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' } }
       );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        const errorMessage =
-          errorData.detail || `Failed to reorder (${response.status})`;
-        setReorderError(errorMessage);
-        console.error('Reorder failed:', errorMessage);
+        setReorderError(errorData.detail || `Failed to reorder (${response.status})`);
         return;
       }
 
       const result = await response.json();
-      if (result.status === 'no_change') {
-        // Run already at this position, no action needed
-        return;
-      }
-
+      if (result.status === 'no_change') return;
       if (result.status !== 'reordered') {
         setReorderError(`Reorder failed: ${result.status}`);
-        return;
       }
-
-      // Success - WebSocket will update the UI with new queue state
-      console.log(`Reordered ${draggedRunId} to position ${newPosition}`);
+      // Success needs no local update — the socket pushes the new order.
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Failed to reorder run';
-      setReorderError(errorMessage);
-      console.error('Reorder error:', error);
-    } finally {
-      setIsReordering(false);
+      setReorderError(error instanceof Error ? error.message : 'Failed to reorder run');
     }
   };
 
   return (
-    <div className="queue-visualization-container">
-      {/* Header with connection status */}
-      <div className="queue-header">
-        <h2>Parallel Execution Queue</h2>
-        <div className="connection-indicator">
-          {isWebSocket ? (
-            <span className="ws-indicator connected">Connected</span>
-          ) : (
-            <span className="ws-indicator polling">Polling</span>
-          )}
-          {connectionState && (
-            <span className="connection-state">{connectionState}</span>
-          )}
+    <div className="queue-panel">
+      <div className="queue-panel-head">
+        <h2 className="queue-panel-title">Parallel Execution Queue</h2>
+        <div className={`queue-conn${isWebSocket ? ' queue-conn--live' : ''}`}>
+          <span className="queue-conn-dot" aria-hidden />
+          {isWebSocket ? 'Connected' : 'Polling'}
         </div>
       </div>
 
-      {/* System Status Overview */}
-      <div className="queue-overview">
-        <div className="overview-card">
-          <div className="overview-label">Slot Usage</div>
-          <div className="overview-value">
+      <div className="queue-stat-grid">
+        <div className="queue-stat">
+          <div className="queue-stat-label">Slot usage</div>
+          <div className="queue-stat-value">
             {stats?.active_count || 0}/{stats?.max_concurrent || 3}
           </div>
-          <div className="overview-bar">
-            <div
-              className="overview-bar-fill"
-              style={{
-                width: `${(((stats?.active_count || 0) / (stats?.max_concurrent || 3)) * 100)}%`,
-              }}
-            />
+          <div className="queue-stat-bar">
+            <div className="queue-stat-bar-fill" style={{ width: `${slotUsagePercent}%` }} />
           </div>
         </div>
 
-        <div className="overview-card">
-          <div className="overview-label">Queue Length</div>
-          <div className="overview-value">{queuedRuns?.length || 0}</div>
-          {(queuedRuns?.length || 0) > 0 && (
-            <div className="overview-hint">
-              {(queuedRuns?.length || 0) === 1 ? '1 waiting' : `${queuedRuns?.length} waiting`}
-            </div>
-          )}
-        </div>
-
-        <div className="overview-card">
-          <div className="overview-label">Estimated Clear</div>
-          <div className="overview-value">{formatTime(estimatedClearTime)}</div>
-          {estimatedClearTime > 0 && (
-            <div className="overview-hint">All runs complete in</div>
-          )}
-        </div>
-
-        <div className="overview-card">
-          <div className="overview-label">Wait Time</div>
-          <div className="overview-value">
-            {stats?.queue_wait_time_minutes || 0}m
+        <div className="queue-stat">
+          <div className="queue-stat-label">Queue length</div>
+          <div className="queue-stat-value">{queuedRuns?.length || 0}</div>
+          <div className="queue-stat-sub">
+            {queuedRuns?.length ? 'runs waiting' : 'no queue'}
           </div>
-          {stats?.queue_wait_time_minutes ? (
-            <div className="overview-hint">Oldest item waiting</div>
-          ) : (
-            <div className="overview-hint">No queue</div>
-          )}
+        </div>
+
+        <div className="queue-stat">
+          <div className="queue-stat-label">Est. clear</div>
+          <div className="queue-stat-value">
+            {estimatedClearSeconds === null ? '—' : formatDuration(estimatedClearSeconds)}
+          </div>
+          <div className="queue-stat-sub">
+            {estimatedClearSeconds === null
+              ? 'no run history yet'
+              : 'all runs complete in'}
+          </div>
+        </div>
+
+        <div className="queue-stat">
+          <div className="queue-stat-label">Wait time</div>
+          <div className="queue-stat-value">{stats?.queue_wait_time_minutes || 0}m</div>
+          <div className="queue-stat-sub">
+            {stats?.queue_wait_time_minutes ? 'oldest item waiting' : 'no queue'}
+          </div>
         </div>
       </div>
 
-      {/* Execution Slots Timeline */}
-      <div className="queue-slots-section">
-        <h3>Execution Slots</h3>
-        <div className="queue-slots">
-          {slotViews.map((slot) => (
-            <div
-              key={`slot-${slot.slotNumber}`}
-              className={`slot-card ${slot.isActive ? 'active' : 'available'}`}
-              data-testid={`slot-${slot.slotNumber}`}
-            >
-              <div className="slot-header">
-                <span className="slot-number">Slot {slot.slotNumber}</span>
-                <span className="slot-status">{slot.status}</span>
-              </div>
+      <div className="queue-section-head">
+        <span className="queue-section-title">Execution slots</span>
+        <QueueDispatchButton />
+      </div>
+
+      <div className="queue-slot-grid">
+        {slotViews.map((slot) => (
+          <div
+            key={`slot-${slot.slotNumber}`}
+            className={`queue-slot${slot.isActive ? ' queue-slot--busy' : ''}`}
+            data-testid={`slot-${slot.slotNumber}`}
+          >
+            <div className="queue-slot-head">
+              <span className="queue-slot-dot" aria-hidden />
+              <span className="queue-slot-name">Slot {slot.slotNumber}</span>
+              <span className="queue-slot-badge">
+                {slot.isActive ? 'running' : 'available'}
+              </span>
+            </div>
+
+            <div className="queue-slot-body">
+              <div className="queue-slot-title">{slot.title}</div>
+              <div className="queue-slot-sub">{slot.subtitle}</div>
 
               {slot.isActive ? (
-                <div className="slot-content">
-                  <div className="slot-run-info">
-                    <div className="run-id" title={slot.runId}>
-                      {slot.ticketId}
-                    </div>
-                    <div className="run-time">
-                      {formatTime(slot.elapsedSeconds)} / {formatTime(slot.estimatedTotalSeconds)}
-                    </div>
+                <>
+                  <div className="queue-slot-time">
+                    {formatDuration(slot.elapsedSeconds)} elapsed
                   </div>
-
-                  <div className="slot-progress">
-                    <div className="progress-bar">
+                  {slot.progress === null ? (
+                    // No median to measure against. An indeterminate bar says
+                    // "running, duration unknown"; a percentage would be made up.
+                    <div
+                      className="queue-slot-bar queue-slot-bar--indeterminate"
+                      data-testid={`slot-${slot.slotNumber}-progress-unknown`}
+                    >
+                      <div className="queue-slot-bar-fill" />
+                    </div>
+                  ) : (
+                    <div className="queue-slot-bar">
                       <div
-                        className={`progress-fill ${slot.status}`}
+                        className="queue-slot-bar-fill"
                         style={{ width: `${slot.progress}%` }}
                       />
                     </div>
-                    <div className="progress-label">{Math.round(slot.progress)}%</div>
-                  </div>
-                </div>
-              ) : (
-                <div className="slot-content empty">
-                  <div className="empty-text">Available</div>
-                </div>
-              )}
+                  )}
+                </>
+              ) : null}
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
 
-      {/* Reorder Error Notification */}
-      {reorderError && (
-        <div className="queue-error-notification">
-          <span className="error-icon">⚠️</span>
-          <span className="error-message">{reorderError}</span>
-          <IconCloseButton
-            onClick={() => setReorderError(null)}
-            aria-label="Dismiss error"
-          />
+      {reorderError ? (
+        <div className="queue-inline-error" role="alert">
+          <span className="queue-inline-error-dot" aria-hidden />
+          <span className="queue-inline-error-message">{reorderError}</span>
+          <IconCloseButton onClick={() => setReorderError(null)} aria-label="Dismiss error" />
         </div>
-      )}
+      ) : null}
 
-      {/* Queue List with Drag-to-Reorder */}
-      {queuedRuns && queuedRuns.length > 0 && (
-        <div className="queue-list-section">
-          <h3>Queue ({queuedRuns.length})</h3>
-          <div className="queue-list">
+      {queuedRuns && queuedRuns.length > 0 ? (
+        <div className="queue-waiting">
+          <div className="queue-section-head">
+            <span className="queue-section-title">Waiting</span>
+            <span className="queue-section-hint">Drag to reorder priority</span>
+          </div>
+
+          <div className="queue-waiting-list">
             {queueItems.map((item, index) => (
               <div
                 key={item.runId}
-                className={`queue-item ${item.isDragging ? 'dragging' : ''} ${
-                  hoverPosition === index ? 'drag-over' : ''
+                className={`queue-waiting-row${item.isDragging ? ' is-dragging' : ''}${
+                  hoverPosition === index ? ' is-drop-target' : ''
                 }`}
                 draggable
                 onDragStart={() => setDraggedItem(item.runId)}
@@ -306,9 +279,8 @@ export function ParallelQueueVisualization({
                 onDragLeave={() => setHoverPosition(null)}
                 onDrop={async () => {
                   if (draggedItem && draggedItem !== item.runId) {
-                    // Calculate new position: hoverPosition is 0-indexed, but positions are 1-indexed
-                    const newPosition = (hoverPosition ?? index) + 1;
-                    await handleReorderDrop(draggedItem, newPosition);
+                    // hoverPosition is 0-indexed; queue positions are 1-indexed.
+                    await handleReorderDrop(draggedItem, (hoverPosition ?? index) + 1);
                   }
                   setDraggedItem(null);
                   setHoverPosition(null);
@@ -319,60 +291,28 @@ export function ParallelQueueVisualization({
                 }}
                 data-testid={`queue-item-${item.position}`}
               >
-                <div className="queue-item-handle">⋮⋮</div>
-
-                <div className="queue-item-content">
-                  <div className="queue-item-info">
-                    <span className="queue-position">#{item.position}</span>
-                    <span className="queue-ticket" title={item.ticketId}>
-                      {item.ticketId}
-                    </span>
-                  </div>
-
-                  <div className="queue-item-time">
-                    <span className="queue-wait-label">Wait:</span>
-                    <span className="queue-wait-time">{formatTime(item.waitSeconds)}</span>
-                    <span className="queue-est-label">Est. start:</span>
-                    <span className="queue-est-time">
-                      {formatEstimatedComplete(item.estimatedStartAt)}
-                    </span>
-                  </div>
+                <span className="queue-waiting-position">{item.position}</span>
+                <div className="queue-waiting-copy">
+                  <div className="queue-waiting-title">{item.title}</div>
+                  <div className="queue-waiting-sub">{item.subtitle}</div>
                 </div>
-
-                <div className="queue-item-badge">
-                  <span className="badge-text">Queued</span>
+                <div className="queue-waiting-times">
+                  <span className="queue-waiting-wait">
+                    waited {formatDuration(item.waitSeconds)}
+                  </span>
+                  <span className="queue-waiting-start">
+                    starts ~{formatClock(item.estimatedStartAt)}
+                  </span>
                 </div>
               </div>
             ))}
           </div>
-          <div className="queue-hint">💡 Drag items to reorder queue priority</div>
         </div>
-      )}
+      ) : null}
 
-      {/* Empty State */}
-      {(!activeRuns || activeRuns.length === 0) && (!queuedRuns || queuedRuns.length === 0) && (
-        <div className="queue-empty">
-          <div className="empty-icon">✨</div>
-          <p>All slots available</p>
-          <p className="empty-hint">Ready for parallel execution</p>
-        </div>
-      )}
-
-      {/* Legend */}
-      <div className="queue-legend">
-        <div className="legend-item">
-          <div className="legend-color active" />
-          <span>Running</span>
-        </div>
-        <div className="legend-item">
-          <div className="legend-color queued" />
-          <span>Queued</span>
-        </div>
-        <div className="legend-item">
-          <div className="legend-color available" />
-          <span>Available</span>
-        </div>
-      </div>
+      {!activeRuns?.length && !queuedRuns?.length ? (
+        <div className="queue-idle">All slots open — dispatch a run to get started.</div>
+      ) : null}
     </div>
   );
 }
