@@ -17,6 +17,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from loregarden.db.migration_ids import assert_migration_ids_are_sound
 from loregarden.db.migration_utils import (
     add_columns_if_missing,
     table_columns,
@@ -1377,6 +1378,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0051_ticket_studio_turn_lifecycle", _m_ticket_studio_turn_lifecycle),
     ("0052_git_automation", _m_git_automation),
 ]
+
+assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
 
 
 def _ensure_migrations_table(conn: Connection) -> None:
