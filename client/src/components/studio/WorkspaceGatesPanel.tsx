@@ -2,8 +2,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { api, type OrchestrationProfileView, type WorkspaceSummary } from "../../api/client";
+import { StudioWorkspacePicker } from "./StudioWorkspacePicker";
 
-export function WorkspaceGatesPanel({ workspaces }: { workspaces: WorkspaceSummary[] }) {
+export function WorkspaceGatesPanel({
+  workspaces,
+  workspaceSlug,
+}: {
+  workspaces: WorkspaceSummary[];
+  /** The app-wide active workspace, so this panel opens where the user is working. */
+  workspaceSlug?: string;
+}) {
   const qc = useQueryClient();
   const [selectedSlug, setSelectedSlug] = useState("");
   const [enabled, setEnabled] = useState(false);
@@ -11,9 +19,13 @@ export function WorkspaceGatesPanel({ workspaces }: { workspaces: WorkspaceSumma
   const [transitionScript, setTransitionScript] = useState("");
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
+  // Seed from the app-wide workspace once the list arrives; fall back to the
+  // first one when that workspace isn't in it (or nothing is active yet).
   useEffect(() => {
-    if (!selectedSlug && workspaces.length > 0) setSelectedSlug(workspaces[0].slug);
-  }, [workspaces, selectedSlug]);
+    if (selectedSlug || workspaces.length === 0) return;
+    const preferred = workspaces.find((ws) => ws.slug === workspaceSlug);
+    setSelectedSlug(preferred?.slug ?? workspaces[0].slug);
+  }, [workspaces, workspaceSlug, selectedSlug]);
 
   const profile = useQuery({
     queryKey: ["orchestration-profile", selectedSlug],
@@ -62,17 +74,15 @@ export function WorkspaceGatesPanel({ workspaces }: { workspaces: WorkspaceSumma
     <div className="studio-shell">
       <aside className="studio-library-rail">
         <div className="studio-library-section-label">Workspace</div>
-        {workspaces.map((ws) => (
-          <button
-            key={ws.slug}
-            type="button"
-            className={`studio-library-cta${selectedSlug === ws.slug ? " active" : ""}`}
-            onClick={() => setSelectedSlug(ws.slug)}
-          >
-            {ws.name}
-          </button>
-        ))}
-        {workspaces.length === 0 && <p className="studio-preview-hint">No workspaces yet.</p>}
+        {workspaces.length === 0 ? (
+          <p className="studio-preview-hint">No workspaces yet.</p>
+        ) : (
+          <StudioWorkspacePicker
+            workspaces={workspaces}
+            value={selectedSlug}
+            onChange={setSelectedSlug}
+          />
+        )}
       </aside>
 
       <div className="studio-editor">

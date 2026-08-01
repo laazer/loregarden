@@ -1611,7 +1611,7 @@ button {
   background: var(--bg1);
 }
 
-.ticket-studio-workspace-card {
+.studio-workspace-card {
   position: relative;
   display: flex;
   align-items: center;
@@ -1623,7 +1623,7 @@ button {
   margin-bottom: 18px;
 }
 
-.ticket-studio-workspace-mark {
+.studio-workspace-mark {
   position: relative;
   z-index: 1;
   /* Decorative: let clicks fall through to the full-card <select> beneath. */
@@ -1645,7 +1645,7 @@ button {
 /* Fill the whole card so a click anywhere on it opens the menu — not just the thin
    line-height-tall strip a statically-placed <select> would occupy. The mark and chevron
    render on top as pointer-events:none overlays; the padding clears them. */
-.ticket-studio-workspace-select {
+.studio-workspace-select {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -1661,7 +1661,7 @@ button {
   appearance: none;
 }
 
-.ticket-studio-workspace-chevron {
+.studio-workspace-chevron {
   position: relative;
   z-index: 1;
   flex: none;
@@ -4887,9 +4887,13 @@ button {
   gap: 8px;
 }
 
+/* `align-items: baseline` left the label/value pair sitting high in the pill —
+ * a baseline group is placed at the top of the flex line, not centred in it.
+ * Both spans are uppercase/numeric with no descenders, so centring boxes at
+ * `line-height: 1` reads as baseline-aligned and sits level with the pill. */
 .queue-topbar-metric {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 7px;
   height: 30px;
   padding: 0 11px;
@@ -4900,6 +4904,7 @@ button {
 
 .queue-topbar-metric-label {
   font-size: 9px;
+  line-height: 1;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--txl);
@@ -4909,6 +4914,7 @@ button {
 .queue-topbar-metric-value {
   font-family: var(--dp);
   font-size: 13px;
+  line-height: 1;
   font-weight: 700;
   color: var(--tx);
 }

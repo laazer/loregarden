@@ -7,10 +7,15 @@ import { useActiveChatSession } from "../useActiveChatSession";
 import { useUiStore } from "../../state/uiStore";
 
 jest.mock("../../api/client", () => ({
+  // Named export, not just `api`: the Baxter session narrows load failures with
+  // `instanceof ApiError`, which throws on an undefined right-hand side.
+  ApiError: class ApiError extends Error {},
   api: {
     triage: jest.fn().mockResolvedValue({ messages: [], run_status: "idle" }),
     approvals: jest.fn().mockResolvedValue([]),
     sendTriageMessage: jest.fn().mockResolvedValue({}),
+    workspaces: jest.fn().mockResolvedValue([{ slug: "loregarden", name: "Loregarden" }]),
+    baxterChatSession: jest.fn().mockResolvedValue({ messages: [], run_status: "idle" }),
   },
 }));
 jest.mock("../../lib/branchTriageApi", () => ({
@@ -38,7 +43,11 @@ function wrapperFor(path: string) {
 }
 
 beforeEach(() => {
-  useUiStore.setState({ branchTriageWorkspaceSlug: "", branchTriageBranch: "" });
+  useUiStore.setState({
+    branchTriageWorkspaceSlug: "",
+    branchTriageBranch: "",
+    chatWorkspaceSlug: "loregarden",
+  });
 });
 
 it("binds to the ticket named in the path", () => {
@@ -82,9 +91,26 @@ it("binds to nothing when the branch screen has no branch selected", () => {
   expect(result.current.session).toBeNull();
 });
 
-it("binds to nothing on a screen that owns no conversation", () => {
+it("falls back to the workspace Baxter thread on a screen that owns no conversation", () => {
   const { result } = renderHook(() => useActiveChatSession(), {
     wrapper: wrapperFor("/studio/agents"),
+  });
+
+  expect(result.current.session?.kind).toBe("baxter-home");
+  expect(result.current.label).toBe("Baxter · loregarden");
+});
+
+it("falls back to Baxter on the queue screen too", () => {
+  const { result } = renderHook(() => useActiveChatSession(), {
+    wrapper: wrapperFor("/queue"),
+  });
+
+  expect(result.current.session?.kind).toBe("baxter-home");
+});
+
+it("binds to nothing on the Baxter chat screen, which composes for itself", () => {
+  const { result } = renderHook(() => useActiveChatSession(), {
+    wrapper: wrapperFor("/chat"),
   });
 
   expect(result.current.session).toBeNull();

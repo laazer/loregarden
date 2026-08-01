@@ -7,6 +7,7 @@
 export const COMPOSER_PLACEHOLDER: Record<string, string> = {
   "ticket-triage": "Message about this ticket…",
   "branch-triage": "Message about this branch…",
+  "baxter-home": "Ask Baxter anything about this workspace…",
 };
 
 /**
@@ -24,6 +25,11 @@ export const TRY_ASKING: Record<string, string[]> = {
     "What changed on this branch?",
     "Is this branch safe to delete?",
     "commit and push",
+  ],
+  "baxter-home": [
+    "What should I work on next?",
+    "What is blocked right now?",
+    "Summarise today's runs",
   ],
 };
 

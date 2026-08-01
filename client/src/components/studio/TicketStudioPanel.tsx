@@ -37,6 +37,7 @@ import { TriageModelModal } from "../TriageModelModal";
 import { ImportTicketsModal } from "../ImportTicketsModal";
 import { TicketStudioChatMessages, TicketStudioComposer } from "./TicketStudioChat";
 import { TicketStudioDraftModal } from "./TicketStudioDraftModal";
+import { StudioWorkspacePicker } from "./StudioWorkspacePicker";
 import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 
 function draftSummaryLine(item: TicketStudioDraftItem): string {
@@ -411,7 +412,6 @@ export function TicketStudioPanel({
     expandedDraftIndex != null ? (localDraft[expandedDraftIndex] ?? null) : null;
 
   const selectedWorkspace = workspaces.find((ws) => ws.slug === workspaceSlug);
-  const workspaceInitial = (selectedWorkspace?.name ?? workspaceSlug).charAt(0).toUpperCase();
 
   const renderDraftPanel = () => (
     <aside className="ticket-studio-drafts">
@@ -596,35 +596,14 @@ export function TicketStudioPanel({
       <div className="ticket-studio-shell">
         <aside className="ticket-studio-rail">
           <div className="studio-library-section-label">Workspace</div>
-          <div className="ticket-studio-workspace-card">
-            <span className="ticket-studio-workspace-mark">{workspaceInitial}</span>
-            <select
-              className="ticket-studio-workspace-select"
-              value={workspaceSlug}
-              onChange={(e) => {
-                setWorkspaceSlug(e.target.value);
-                navigateToStudio("tickets");
-              }}
-            >
-              {workspaces.map((ws) => (
-                <option key={ws.slug} value={ws.slug}>
-                  {ws.name}
-                </option>
-              ))}
-            </select>
-            <svg
-              className="ticket-studio-workspace-chevron"
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--txl)"
-              strokeWidth="2"
-              aria-hidden
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </div>
+          <StudioWorkspacePicker
+            workspaces={workspaces}
+            value={workspaceSlug}
+            onChange={(slug) => {
+              setWorkspaceSlug(slug);
+              navigateToStudio("tickets");
+            }}
+          />
 
           <button
             type="button"
