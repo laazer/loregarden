@@ -181,6 +181,88 @@ def test_branch_triage_includes_pr_status_and_caches(
     assert call_count["n"] == calls_after_first
 
 
+def test_branch_triage_reads_pr_status_from_a_single_gh_listing(
+    triage_workspace, triage_repo, triage_session: Session, monkeypatch
+):
+    subprocess.run(
+        ["git", "branch", "feature/listed-pr"], cwd=triage_repo, check=True, capture_output=True
+    )
+
+    listing = {
+        "feature/listed-pr": {
+            "state": "open",
+            "is_draft": False,
+            "url": "https://github.com/example/repo/pull/9",
+            "number": 9,
+            "title": "Listed",
+        }
+    }
+
+    def fail_if_called(repo_root, branch):  # pragma: no cover - asserts it is never reached
+        raise AssertionError(f"per-branch gh lookup for {branch} should not run")
+
+    monkeypatch.setattr(
+        "loregarden.services.branch_triage_service._fetch_pr_list",
+        lambda repo_root: (listing, True),
+    )
+    monkeypatch.setattr(
+        "loregarden.services.branch_triage_service._fetch_pr_status_live", fail_if_called
+    )
+
+    snapshot = branch_triage_snapshot(triage_session, triage_workspace)
+    listed = next(b for b in snapshot["branches"] if b["name"] == "feature/listed-pr")
+    assert listed["pr"] == listing["feature/listed-pr"]
+    other = next(b for b in snapshot["branches"] if b["name"] == "loregarden/orphan")
+    assert other["pr"] is None
+
+
+def test_branch_triage_falls_back_to_per_branch_gh_when_the_listing_is_truncated(
+    triage_workspace, triage_repo, triage_session: Session, monkeypatch
+):
+    subprocess.run(
+        ["git", "branch", "feature/beyond-page"], cwd=triage_repo, check=True, capture_output=True
+    )
+    pr_payload = {
+        "state": "merged",
+        "is_draft": False,
+        "url": "https://github.com/example/repo/pull/1",
+        "number": 1,
+        "title": "Old",
+    }
+
+    monkeypatch.setattr(
+        "loregarden.services.branch_triage_service._fetch_pr_list", lambda repo_root: ({}, False)
+    )
+    monkeypatch.setattr(
+        "loregarden.services.branch_triage_service._fetch_pr_status_live",
+        lambda repo_root, branch: pr_payload if branch == "feature/beyond-page" else None,
+    )
+
+    snapshot = branch_triage_snapshot(triage_session, triage_workspace)
+    beyond = next(b for b in snapshot["branches"] if b["name"] == "feature/beyond-page")
+    assert beyond["pr"] == pr_payload
+
+
+def test_branch_triage_matches_the_batched_scan_when_for_each_ref_is_unavailable(
+    triage_workspace, triage_repo, triage_session: Session, monkeypatch
+):
+    subprocess.run(
+        ["git", "branch", "feature/fallback"], cwd=triage_repo, check=True, capture_output=True
+    )
+    monkeypatch.setattr(
+        "loregarden.services.branch_triage_service._fetch_pr_list", lambda repo_root: ({}, True)
+    )
+
+    batched = branch_triage_snapshot(triage_session, triage_workspace)
+    monkeypatch.setattr(
+        "loregarden.services.branch_triage_service._branch_refs_batch",
+        lambda repo_root, base, remote_names: None,
+    )
+    per_branch = branch_triage_snapshot(triage_session, triage_workspace)
+
+    assert per_branch == batched
+
+
 def test_pr_status_ttl_is_longer_for_closed_and_merged_prs():
     assert _pr_status_ttl(None) == PR_STATUS_TTL_SECONDS
     assert _pr_status_ttl({"state": "open", "is_draft": False}) == PR_STATUS_TTL_SECONDS

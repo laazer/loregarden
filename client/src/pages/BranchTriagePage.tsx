@@ -12,6 +12,8 @@ import "../components/BranchTriagePanel.css";
 
 type BranchTriageTab = "triage" | "diff";
 
+const BRANCH_TRIAGE_STALE_MS = 60_000;
+
 export function BranchTriagePage() {
   const workspaceSlug = useUiStore((s) => s.workspace);
   const branchTriageWorkspaceSlug = useUiStore((s) => s.branchTriageWorkspaceSlug);
@@ -46,6 +48,11 @@ export function BranchTriagePage() {
     queryKey: ["branch-triage", activeSlug],
     queryFn: () => fetchBranchTriage(activeSlug),
     enabled: Boolean(activeSlug),
+    // A snapshot walks every branch in the repo, so leaving it fresh for a
+    // while keeps navigating back to this page — or refocusing the window —
+    // from re-scanning and blanking the list behind "Scanning branches…".
+    staleTime: BRANCH_TRIAGE_STALE_MS,
+    refetchOnWindowFocus: false,
   });
 
   const selectedBranchEntry = useMemo(
@@ -90,6 +97,14 @@ export function BranchTriagePage() {
             {triage.data.issue_count} branch(es) need attention
           </span>
         ) : null}
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => triage.refetch()}
+          disabled={!activeSlug || triage.isFetching}
+        >
+          {triage.isFetching ? "Scanning…" : "Rescan"}
+        </button>
         <label className="topbar-workspace-picker">
           <span className="topbar-workspace-picker-label">Workspace</span>
           <select
