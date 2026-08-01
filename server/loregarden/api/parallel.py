@@ -11,10 +11,10 @@ from loregarden.models.domain import (
     WorktreeState,
 )
 from loregarden.services.conflict_detector import ConflictDetectorService
-from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.parallel_queue import ParallelQueueService
+from loregarden.services.parallel_run_service import ParallelRunService
 from loregarden.services.queue_status import build_queue_status
-from loregarden.services.worktree_service import WorktreeService
+from loregarden.services.worktree_service import WorktreeService, repo_path_for_worktree
 from loregarden.websocket_events import (
     emit_conflict_detected,
     emit_conflict_resolved,
@@ -59,9 +59,7 @@ async def create_parallel_run(
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket not found")
 
-        # Create parallel run
-        orchestration = OrchestrationService(session)
-        result = await orchestration.create_parallel_run(
+        result = await ParallelRunService(session).create_parallel_run(
             ticket,
             stage_key=stage_key,
             max_concurrent=max_concurrent,
@@ -207,7 +205,9 @@ async def check_conflicts(
             raise HTTPException(status_code=404, detail="Worktree not found")
 
         # Get conflict preview
-        conflict_service = ConflictDetectorService(session, repo_path=".")
+        conflict_service = ConflictDetectorService(
+            session, repo_path=repo_path_for_worktree(session, worktree)
+        )
         preview = await conflict_service.get_conflict_preview(worktree, target_branch)
 
         if not preview.get("has_conflicts"):
@@ -299,7 +299,9 @@ async def merge_worktree(
             )
 
         # Merge worktree
-        worktree_service = WorktreeService(session, repo_path=".")
+        worktree_service = WorktreeService(
+            session, repo_path=repo_path_for_worktree(session, worktree)
+        )
         success = worktree_service.merge_worktree(
             worktree,
             target_branch=target_branch,
@@ -394,7 +396,9 @@ async def cleanup_worktree(
             raise HTTPException(status_code=404, detail="Worktree not found")
 
         # Cleanup worktree
-        worktree_service = WorktreeService(session, repo_path=".")
+        worktree_service = WorktreeService(
+            session, repo_path=repo_path_for_worktree(session, worktree)
+        )
         success = worktree_service.cleanup_worktree(worktree)
 
         if success:
@@ -451,6 +455,7 @@ async def get_worktree_details(
             "has_conflicts": worktree.has_conflicts,
             "conflict_files": worktree.conflict_files,
             "agent_run_id": worktree.agent_run_id,
+            "branch": worktree.branch,
             "parent_branch": worktree.parent_branch,
             "created_at": worktree.created_at.isoformat() if worktree.created_at else None,
             "merged_at": worktree.merged_at.isoformat() if worktree.merged_at else None,
@@ -489,8 +494,13 @@ async def get_conflict_reports(
         }
     """
     try:
-        # Get conflict reports
-        conflict_service = ConflictDetectorService(session, repo_path=".")
+        worktree = session.get(Worktree, worktree_id)
+        if not worktree:
+            raise HTTPException(status_code=404, detail="Worktree not found")
+
+        conflict_service = ConflictDetectorService(
+            session, repo_path=repo_path_for_worktree(session, worktree)
+        )
         reports = conflict_service.get_worktree_conflicts(worktree_id)
 
         return {
@@ -506,6 +516,8 @@ async def get_conflict_reports(
             ]
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting conflict reports: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e)) from e

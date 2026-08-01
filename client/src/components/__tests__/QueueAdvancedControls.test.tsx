@@ -4,6 +4,7 @@
  */
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { API_BASE } from '../../api/client';
 import { QueueAdvancedControls } from '../QueueAdvancedControls';
 
 describe('QueueAdvancedControls', () => {
@@ -389,7 +390,7 @@ describe('QueueAdvancedControls', () => {
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith(
-          '/api/parallel/queue/run-2/promote',
+          `${API_BASE}/api/parallel/queue/run-2/promote`,
           expect.any(Object)
         );
       });

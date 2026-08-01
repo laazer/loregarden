@@ -144,6 +144,11 @@ class Ticket(SQLModel, table=True):
     is_integration_review: bool = Field(default=False)
     state_locked: bool = Field(default=False)
     workflow_disabled: bool = Field(default=False)
+    # Per-ticket override of the workspace's git automation policy, as a JSON
+    # object holding only the keys that differ (see GitAutomationConfig). Empty
+    # means "inherit the profile" — which is not the same as "everything off",
+    # so this cannot be a set of boolean columns defaulting to false.
+    git_automation_json: str = ""
     triage_runtime_json: str = "{}"
     orchestration_runtime_json: str = "{}"
     permission_allowlist_json: str = "[]"
@@ -236,6 +241,16 @@ class AgentRun(SQLModel, table=True):
     # Cooperative stop: set by the API, observed by the permission bridge /
     # print-mode loop. Null means no cancel has been requested.
     cancel_requested_at: datetime | None = None
+    # The isolated checkout this run executes in, when it has one. Null means
+    # the run uses the shared workspace root. Orchestration set this attribute
+    # before the column existed, so it silently did not persist and every
+    # worktree created for a parallel run was orphaned.
+    #
+    # Indexed but deliberately not a foreign key: `worktrees.agent_run_id`
+    # already points back here, and declaring both directions gives SQLAlchemy
+    # a table cycle it cannot order ("unresolvable cycles between tables
+    # agent_runs, worktrees"). The worktree side owns the constraint.
+    worktree_id: str | None = Field(default=None, index=True)
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
@@ -734,11 +749,17 @@ class Worktree(SQLModel, table=True):
         default=WorktreeState.ACTIVE,
         sa_column=_str_enum_column(WorktreeState, WorktreeState.ACTIVE, index=True),
     )
+    #: The branch checked out in this worktree, as opposed to `parent_branch`
+    #: (what it was cut from) or the directory name. Merging needs this: the
+    #: directory is named after the run, which is not a ref.
+    branch: str = ""
     merge_base: str | None = None
     has_conflicts: bool = False
     conflict_files_json: str = "[]"
     conflict_summary: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
     merged_at: datetime | None = None
+    cleaned_at: datetime | None = None
 
     @property
     def conflict_files(self) -> list[str]:
@@ -772,6 +793,7 @@ class ConflictReport(SQLModel, table=True):
     conflicting_files_json: str = "[]"
     conflict_details: str = ""
     resolution_attempted: bool = False
+    resolution_successful: bool = False
     created_at: datetime = Field(default_factory=utcnow)
 
     @property

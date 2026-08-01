@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react';
 
+import { API_BASE } from '../api/client';
 import { DEFAULT_PARALLEL_STATS } from '../lib/queueSocket';
 import type { ActiveRun, ParallelStats, QueuedRun } from '../lib/queueSocket';
 
@@ -16,6 +17,7 @@ export interface ParallelExecutionStatus {
   activeRuns: ActiveRun[];
   queuedRuns: QueuedRun[];
   stats: ParallelStats;
+  estimatedClearSeconds: number | null;
   loading: boolean;
   error: string | null;
 }
@@ -36,6 +38,7 @@ export function useParallelExecution(
   const [activeRuns, setActiveRuns] = useState<ActiveRun[]>([]);
   const [queuedRuns, setQueuedRuns] = useState<QueuedRun[]>([]);
   const [stats, setStats] = useState<ParallelStats>(DEFAULT_PARALLEL_STATS);
+  const [estimatedClearSeconds, setEstimatedClearSeconds] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,7 +58,7 @@ export function useParallelExecution(
     const fetchStatus = async () => {
       try {
         const response = await fetch(
-          `/api/parallel/status/${workspaceId}`
+          `${API_BASE}/api/parallel/status/${workspaceId}`
         );
 
         if (!response.ok) {
@@ -75,6 +78,9 @@ export function useParallelExecution(
             total_slots_occupied: data.active_runs?.length || 0,
             queue_wait_time_minutes: 0,
           });
+          // Absent (older backend) and null (no run history) mean the same
+          // thing to the dashboard: no estimate to show.
+          setEstimatedClearSeconds(data.estimated_clear_seconds ?? null);
           setError(null);
         }
       } catch (err) {
@@ -105,6 +111,7 @@ export function useParallelExecution(
     activeRuns,
     queuedRuns,
     stats,
+    estimatedClearSeconds,
     loading,
     error,
   };

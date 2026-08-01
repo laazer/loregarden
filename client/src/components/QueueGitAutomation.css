@@ -1,0 +1,106 @@
+/* Git automation toggles — v6 tokens, matching the rest of the side rail. */
+
+.queue-git-automation {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.queue-git-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.queue-git-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 11px;
+  background: var(--bg2);
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--bd2);
+  border-radius: 11px;
+  cursor: pointer;
+}
+
+.queue-git-toggle:hover {
+  border-color: var(--bd2);
+}
+
+.queue-git-toggle:has(input:checked) {
+  border-left-color: var(--ac);
+}
+
+/* A step whose predecessor is off would be skipped server-side anyway. */
+.queue-git-toggle.is-blocked {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.queue-git-toggle input {
+  flex: none;
+  margin-top: 2px;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--ac);
+  cursor: inherit;
+}
+
+.queue-git-toggle-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.queue-git-toggle-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.queue-git-toggle-hint {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--txl);
+}
+
+.queue-git-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.queue-git-field-label {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--txl);
+  font-weight: 600;
+}
+
+.queue-git-field-input {
+  background: var(--bg2);
+  border: 1px solid var(--bd);
+  border-radius: 9px;
+  padding: 7px 10px;
+  color: var(--tx);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.queue-git-field-input:focus {
+  outline: none;
+  border-color: var(--ac);
+}
+
+.queue-git-error {
+  margin: 0;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: var(--bg2);
+  border: 1px solid var(--red);
+  color: var(--rdl);
+  font-size: 11.5px;
+}

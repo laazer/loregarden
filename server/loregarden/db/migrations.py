@@ -1264,6 +1264,65 @@ def _m_ticket_studio_turn_lifecycle(conn: Connection) -> None:
     )
 
 
+def _m_git_automation(conn: Connection) -> None:
+    """Columns for running a queued ticket in a worktree and landing its work.
+
+    Three separate gaps closed together because they are one feature:
+
+    * ``agent_runs.worktree_id`` — orchestration has always assigned this
+      attribute after creating a worktree, but the column never existed, so
+      SQLModel dropped it on flush and every worktree was orphaned the moment
+      the run finished.
+    * ``worktrees.branch`` / ``created_at`` / ``cleaned_at`` — the merge path
+      guessed the branch from the worktree's directory name (which is named
+      after the run and is not a ref), and two API handlers read timestamps
+      that were never stored.
+    * ``tickets.git_automation_json`` — per-ticket override of the workspace
+      policy. Empty string, not an empty object, so "inherit" stays
+      distinguishable from "explicitly everything off".
+
+    The worktrees and conflict_reports tables predate this registry — they have
+    only ever been created by ``SQLModel.metadata.create_all`` — so this is
+    their first migration. ``add_columns_if_missing`` no-ops on a fresh
+    database where create_all already produced the new shape.
+    """
+    add_columns_if_missing(
+        conn,
+        "agent_runs",
+        {
+            "worktree_id": "ALTER TABLE agent_runs ADD COLUMN worktree_id TEXT",
+        },
+    )
+    add_columns_if_missing(
+        conn,
+        "worktrees",
+        {
+            "branch": "ALTER TABLE worktrees ADD COLUMN branch TEXT NOT NULL DEFAULT ''",
+            "created_at": "ALTER TABLE worktrees ADD COLUMN created_at TEXT",
+            "cleaned_at": "ALTER TABLE worktrees ADD COLUMN cleaned_at TEXT",
+        },
+    )
+    add_columns_if_missing(
+        conn,
+        "conflict_reports",
+        {
+            "resolution_successful": (
+                "ALTER TABLE conflict_reports ADD COLUMN resolution_successful "
+                "BOOLEAN NOT NULL DEFAULT 0"
+            ),
+        },
+    )
+    add_columns_if_missing(
+        conn,
+        "tickets",
+        {
+            "git_automation_json": (
+                "ALTER TABLE tickets ADD COLUMN git_automation_json TEXT NOT NULL DEFAULT ''"
+            ),
+        },
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1316,6 +1375,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0049_run_cancel_requested", _m_run_cancel_requested),
     ("0050_baxter_chat_tables", _m_baxter_chat_tables),
     ("0051_ticket_studio_turn_lifecycle", _m_ticket_studio_turn_lifecycle),
+    ("0052_git_automation", _m_git_automation),
 ]
 
 

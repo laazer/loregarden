@@ -4873,6 +4873,14 @@ button {
   color: var(--rdl);
 }
 
+/* Wraps the metrics, live badge and workspace picker as one topbar group. */
+.queue-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .queue-topbar-metrics {
   display: flex;
   align-items: center;
@@ -4903,6 +4911,14 @@ button {
   font-size: 13px;
   font-weight: 700;
   color: var(--tx);
+}
+
+.queue-topbar-metric-value--accent {
+  color: var(--ac2);
+}
+
+.queue-topbar-metric-value--blue {
+  color: var(--bll);
 }
 
 .queue-live-badge {
@@ -4936,6 +4952,34 @@ button {
   background: var(--grn);
   box-shadow: 0 0 8px var(--grn);
   animation: pulse 1.6s infinite;
+}
+
+/* Same badge at topbar height, on one line — "Real-time" wrapping mid-word
+ * grows the row. */
+.queue-live-badge--compact {
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 9px;
+  font-size: 12px;
+  flex: none;
+  white-space: nowrap;
+}
+
+/* The topbar slot shrinks (`flex: 0 1 auto`), so this group has to shrink with
+ * it. Pinning the metrics to `flex: none` made them spill past the slot and
+ * under the action buttons, which silently covered the workspace picker.
+ * Metrics are supplementary, so they clip first; the picker never gives way. */
+.queue-topbar-metrics {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.queue-topbar-metric {
+  flex: none;
+}
+
+.queue-topbar .topbar-workspace-picker {
+  flex: none;
 }
 
 .queue-page-body {

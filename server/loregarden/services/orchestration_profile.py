@@ -10,12 +10,13 @@ of which workspace uses them.
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
-import yaml
 from loregarden.config import settings
 from loregarden.models.domain import OrchestrationDriver, Workspace
 from pydantic import BaseModel, Field
+from ruamel.yaml import YAML
 
 
 class OrchestratorConfig(BaseModel):
@@ -40,6 +41,37 @@ class GatesConfig(BaseModel):
     autofix_max_agent_attempts: int = 2
 
 
+class GitAutomationConfig(BaseModel):
+    """What a run is allowed to do with git once its work is done.
+
+    Each step is its own switch because each one is a different amount of
+    trust. The pipeline runs them in the order below and stops at the first
+    switch that is off — pushing without committing is meaningless, and
+    merging without a PR has nothing to merge — so turning off an early step
+    disables everything after it regardless of its own flag.
+
+    ``worktree`` is separate from the rest: it isolates the run's checkout so
+    parallel runs stop fighting over one working tree. Everything else is
+    about what happens to that work afterwards.
+    """
+
+    #: Run in a dedicated git worktree instead of the shared workspace root.
+    worktree: bool = True
+    commit: bool = False
+    push: bool = False
+    open_pr: bool = False
+    #: `gh pr merge --auto`, so the PR lands when its checks pass.
+    auto_merge: bool = False
+    #: On a merge conflict, hand the conflicted files to an implementer agent
+    #: rather than blocking. Independent of auto_merge: a conflict can surface
+    #: from the pre-merge check even when nothing is auto-merging.
+    auto_resolve_conflicts: bool = False
+    #: How many times the resolver agent may try before the ticket blocks.
+    max_conflict_resolve_attempts: int = 2
+    #: Branch PRs target, and the branch a worktree is cut from.
+    base_branch: str = "main"
+
+
 class RetryBudgetConfig(BaseModel):
     enabled: bool = True
     max_attempts_per_stage: int = 5
@@ -60,6 +92,7 @@ class OrchestrationProfile(BaseModel):
     workflow_template: str = "loregarden-tdd"
     orchestrator: OrchestratorConfig = Field(default_factory=OrchestratorConfig)
     gates: GatesConfig = Field(default_factory=GatesConfig)
+    git: GitAutomationConfig = Field(default_factory=GitAutomationConfig)
     retry_budget: RetryBudgetConfig = Field(default_factory=RetryBudgetConfig)
     subagents: SubagentsConfig = Field(default_factory=SubagentsConfig)
     callbacks: CallbacksConfig = Field(default_factory=CallbacksConfig)
@@ -75,9 +108,23 @@ def orchestration_dir() -> Path:
     return settings.repo_root / "agent_context" / "orchestration"
 
 
+def _round_trip_yaml() -> YAML:
+    """A loader that keeps comments and formatting attached to the parsed data.
+
+    PyYAML's loader produces a plain dict, so the comments never survive to the
+    dumper — saving a profile from the UI erased the prose explaining why its
+    gate policy is what it is. The indent settings match the hand-written files
+    so a save is not also a whitespace reflow of every list in them.
+    """
+    yaml_rt = YAML()
+    yaml_rt.preserve_quotes = True
+    yaml_rt.indent(mapping=2, sequence=4, offset=2)
+    return yaml_rt
+
+
 def _load_yaml(path: Path) -> dict:
     with path.open(encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+        return _round_trip_yaml().load(f) or {}
 
 
 def load_profile_from_path(path: Path) -> OrchestrationProfile:
@@ -132,8 +179,27 @@ def _profile_path_for_write(workspace: Workspace) -> Path:
 def _write_yaml_atomic(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    buffer = io.StringIO()
+    _round_trip_yaml().dump(data, buffer)
+    tmp.write_text(buffer.getvalue(), encoding="utf-8")
     tmp.replace(path)
+
+
+def _merge_block(raw: dict, key: str, values: dict) -> None:
+    """Update `raw[key]`'s entries in place, rather than replacing the block.
+
+    This is the half of comment preservation that the loader cannot do for you.
+    ruamel attaches each comment to the node it precedes, so assigning
+    ``raw["gates"] = {...}`` throws that node away and takes every comment
+    inside the block with it — round-trip loader or not. Updating the existing
+    mapping's keys leaves the nodes, and their comments, in place.
+    """
+    block = raw.get(key)
+    if not isinstance(block, dict):
+        raw[key] = dict(values)
+        return
+    for name, value in values.items():
+        block[name] = value
 
 
 def update_gates_config(workspace: Workspace, gates: GatesConfig) -> OrchestrationProfile:
@@ -151,6 +217,17 @@ def update_gates_config(workspace: Workspace, gates: GatesConfig) -> Orchestrati
     for key in ("autofix_commands", "autofix_agent_fallback", "autofix_max_agent_attempts"):
         if key in existing_gates:
             new_gates[key] = existing_gates[key]
-    raw["gates"] = new_gates
+    _merge_block(raw, "gates", new_gates)
+    _write_yaml_atomic(path, raw)
+    return load_profile_from_path(path)
+
+
+def update_git_config(workspace: Workspace, git: GitAutomationConfig) -> OrchestrationProfile:
+    """Persist `git` into the workspace's orchestration profile YAML, leaving
+    every other field in that file untouched."""
+    path = _profile_path_for_write(workspace)
+    raw = _load_yaml(path) if path.is_file() else {}
+    raw.setdefault("slug", workspace.orchestration_profile_slug or workspace.slug)
+    _merge_block(raw, "git", git.model_dump(mode="json"))
     _write_yaml_atomic(path, raw)
     return load_profile_from_path(path)

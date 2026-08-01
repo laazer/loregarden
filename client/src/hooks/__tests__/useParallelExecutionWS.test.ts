@@ -173,6 +173,30 @@ it('opens no socket when disabled', () => {
   expect(result.current.isWebSocket).toBe(false);
 });
 
+it('does not poll when disabled, even with a workspace in hand', async () => {
+  // The fallback runs while the socket is not live, and a disabled hook is not
+  // live either — so gating it on `!live` alone made a caller that switched off
+  // poll forever. The provider does exactly that when you leave the queue page,
+  // with the workspace still resolved from cache, so this polled the queue on
+  // every other page in the app.
+  renderHook(() => useParallelExecutionWS('ws-1', false));
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(global.fetch).not.toHaveBeenCalled();
+});
+
+it('resumes polling when re-enabled without a socket', async () => {
+  const { rerender } = renderHook(
+    ({ on }) => useParallelExecutionWS('ws-1', on),
+    { initialProps: { on: false } },
+  );
+  expect(global.fetch).not.toHaveBeenCalled();
+
+  rerender({ on: true });
+
+  await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+});
+
 it('opens no socket without a workspace', () => {
   renderHook(() => useParallelExecutionWS(''));
 

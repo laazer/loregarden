@@ -490,6 +490,24 @@ export interface OrchestrationProfileView {
   max_stages_per_run: number;
 }
 
+/**
+ * What a queue is allowed to do with a finished run's work.
+ *
+ * The four publish steps are a chain, not independent switches: the server
+ * stops at the first one that is off, because pushing an uncommitted tree does
+ * nothing and a PR needs a pushed branch.
+ */
+export interface GitAutomationView {
+  worktree: boolean;
+  commit: boolean;
+  push: boolean;
+  open_pr: boolean;
+  auto_merge: boolean;
+  auto_resolve_conflicts: boolean;
+  max_conflict_resolve_attempts: number;
+  base_branch: string;
+}
+
 export interface OrchestrationRunView {
   id: string;
   run_code: string;
