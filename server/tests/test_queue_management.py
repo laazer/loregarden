@@ -54,7 +54,7 @@ class TestQueueReordering:
         db_session.commit()
 
         # Move run-3 (pos 3) to position 1
-        await _reorder_queue_internal(db_session, "ws-1", "run-3", 3, 1)
+        await _reorder_queue_internal(db_session, "run-3", 3, 1)
 
         # Verify positions: run-3 should be at 1, run-1 at 2, run-2 at 3
         updated_run3 = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-3")).first()
@@ -97,7 +97,7 @@ class TestQueueReordering:
         db_session.commit()
 
         # Move run-1 (pos 1) to position 3
-        await _reorder_queue_internal(db_session, "ws-2", "run-1", 1, 3)
+        await _reorder_queue_internal(db_session, "run-1", 1, 3)
 
         # Verify positions: run-2 at 1, run-3 at 2, run-1 at 3
         updated_run1 = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-1")).first()
@@ -250,65 +250,62 @@ class TestQueueReordering:
             result = await reorder_queued_run("run-2", 1, db_session)
 
             assert result["status"] == "reordered"
-            # The event names the workspace whose queue changed; subscribers
-            # re-read it rather than trust a payload assembled here.
-            mock_emit.assert_called_once_with("ws-7")
+            # The event carries nothing — one shared queue, one topic.
+            # Subscribers re-read it rather than trust a payload assembled here.
+            mock_emit.assert_called_once_with()
 
-    async def test_reorder_preserves_other_workspace_queues(self, db_session: Session):
-        """Test that reordering in one workspace doesn't affect others."""
+    async def test_reorder_moves_within_the_one_shared_queue(self, db_session: Session):
+        """Runs from different workspaces share a single line, so a reorder
+        shifts whatever sits between the two positions — including another
+        workspace's run.
+
+        This used to assert the opposite: that reordering in one workspace left
+        the others untouched. There are no longer 'the others' — one slot pool
+        means one queue, and a position in it is global.
+        """
         ws1 = Workspace(id="ws-8", slug="ws-8", name="Workspace 1")
         ws2 = Workspace(id="ws-9", slug="ws-9", name="Workspace 2")
         db_session.add_all([ws1, ws2])
         db_session.commit()
 
-        # Create runs in workspace 1
-        run1_ws1 = QueuedRun(
-            run_id="run-1-ws1",
-            ticket_id="ticket-1",
-            workspace_id="ws-8",
-            position=1,
-            status=QueuePosition.QUEUED,
-        )
-        run2_ws1 = QueuedRun(
-            run_id="run-2-ws1",
-            ticket_id="ticket-2",
-            workspace_id="ws-8",
-            position=2,
-            status=QueuePosition.QUEUED,
-        )
-
-        # Create runs in workspace 2
-        run1_ws2 = QueuedRun(
-            run_id="run-1-ws2",
-            ticket_id="ticket-3",
-            workspace_id="ws-9",
-            position=1,
-            status=QueuePosition.QUEUED,
-        )
-        run2_ws2 = QueuedRun(
-            run_id="run-2-ws2",
-            ticket_id="ticket-4",
-            workspace_id="ws-9",
-            position=2,
-            status=QueuePosition.QUEUED,
-        )
-
-        db_session.add_all([run1_ws1, run2_ws1, run1_ws2, run2_ws2])
+        # Interleaved on purpose: positions 1 and 3 belong to ws-8, 2 and 4 to
+        # ws-9, which is what a shared queue actually looks like.
+        for position, (run_id, ws_id) in enumerate(
+            [
+                ("run-a-ws1", "ws-8"),
+                ("run-b-ws2", "ws-9"),
+                ("run-c-ws1", "ws-8"),
+                ("run-d-ws2", "ws-9"),
+            ],
+            start=1,
+        ):
+            db_session.add(
+                QueuedRun(
+                    run_id=run_id,
+                    ticket_id=f"ticket-{position}",
+                    workspace_id=ws_id,
+                    position=position,
+                    status=QueuePosition.QUEUED,
+                )
+            )
         db_session.commit()
 
-        # Reorder in workspace 1
-        await _reorder_queue_internal(db_session, "ws-8", "run-2-ws1", 2, 1)
+        # Move the third run to the front.
+        await _reorder_queue_internal(db_session, "run-c-ws1", 3, 1)
 
-        # Verify workspace 2 unchanged
-        updated_run1_ws2 = db_session.exec(
-            select(QueuedRun).where(QueuedRun.run_id == "run-1-ws2")
-        ).first()
-        updated_run2_ws2 = db_session.exec(
-            select(QueuedRun).where(QueuedRun.run_id == "run-2-ws2")
-        ).first()
+        ordered = db_session.exec(
+            select(QueuedRun)
+            .where(QueuedRun.status == QueuePosition.QUEUED)
+            .order_by(QueuedRun.position)
+        ).all()
 
-        assert updated_run1_ws2.position == 1
-        assert updated_run2_ws2.position == 2
+        assert [run.run_id for run in ordered] == [
+            "run-c-ws1",
+            "run-a-ws1",
+            "run-b-ws2",
+            "run-d-ws2",
+        ]
+        assert [run.position for run in ordered] == [1, 2, 3, 4]
 
 
 @pytest.mark.asyncio
@@ -357,7 +354,7 @@ class TestQueueInfo:
         db_session.add_all([run1, run2])
         db_session.commit()
 
-        result = await get_queue_info("ws-10", db_session)
+        result = await get_queue_info(db_session)
 
         assert result["queue_length"] == 2
         assert "active_runs_count" in result
@@ -372,7 +369,7 @@ class TestQueueInfo:
         db_session.add(ws)
         db_session.commit()
 
-        result = await get_queue_info("ws-11", db_session)
+        result = await get_queue_info(db_session)
 
         assert result["queue_length"] == 0
         assert result["max_position"] == 0
@@ -409,20 +406,10 @@ class TestQueueInfo:
             db_session.add(run)
         db_session.commit()
 
-        result = await get_queue_info("ws-12", db_session)
+        result = await get_queue_info(db_session)
 
         # 3 queued runs * 300s = 900s
         assert result["estimated_clear_time_seconds"] == 900
-
-    async def test_get_queue_info_invalid_workspace(self, db_session: Session):
-        """Get info for non-existent workspace."""
-        from loregarden.api.queue_management import get_queue_info
-
-        result = await get_queue_info("non-existent-ws", db_session)
-
-        # Should return valid response with empty queue
-        assert result["workspace_id"] == "non-existent-ws"
-        assert result["queue_length"] == 0
 
 
 @pytest.mark.asyncio
@@ -675,10 +662,10 @@ class TestQueueErrorHandling:
         db_session.commit()
 
         # Should return graceful response
-        result = await get_queue_info("ws-17", db_session)
+        result = await get_queue_info(db_session)
 
-        assert "workspace_id" in result
         assert isinstance(result["queue_length"], int)
+        assert isinstance(result["runs"], list)
 
 
 @pytest.mark.asyncio
@@ -706,7 +693,7 @@ class TestQueueConcurrency:
 
         # Simulate concurrent reorders (use internal function to avoid API layer concerns)
         async def reorder_task(run_id, old_pos, new_pos):
-            await _reorder_queue_internal(db_session, "ws-18", run_id, old_pos, new_pos)
+            await _reorder_queue_internal(db_session, run_id, old_pos, new_pos)
 
         # Execute two reorders in sequence (asyncio doesn't actually run concurrently in test context)
         await reorder_task("run-1", 1, 2)
@@ -721,40 +708,47 @@ class TestQueueConcurrency:
         # Should have consistent positions 1, 2, 3
         assert sorted(positions) == [1, 2, 3]
 
-    async def test_multiple_workspaces_concurrent_reorder(self, db_session: Session):
-        """Reordering in multiple workspaces at same time."""
+    async def test_reorders_from_different_workspaces_compose(self, db_session: Session):
+        """Two reorders of runs owned by different workspaces still leave one
+        coherent ordering, because they act on the same line."""
         ws1 = Workspace(id="ws-19", slug="ws-19", name="Workspace 1")
         ws2 = Workspace(id="ws-20", slug="ws-20", name="Workspace 2")
         db_session.add_all([ws1, ws2])
         db_session.commit()
 
-        # Create runs in both workspaces
-        for ws_id in ["ws-19", "ws-20"]:
-            for i in range(1, 3):
-                run = QueuedRun(
-                    run_id=f"run-{i}-{ws_id}",
-                    ticket_id=f"ticket-{i}",
+        for position, (run_id, ws_id) in enumerate(
+            [
+                ("run-1-ws-19", "ws-19"),
+                ("run-2-ws-19", "ws-19"),
+                ("run-1-ws-20", "ws-20"),
+                ("run-2-ws-20", "ws-20"),
+            ],
+            start=1,
+        ):
+            db_session.add(
+                QueuedRun(
+                    run_id=run_id,
+                    ticket_id=f"ticket-{position}",
                     workspace_id=ws_id,
-                    position=i,
+                    position=position,
                     status=QueuePosition.QUEUED,
                 )
-                db_session.add(run)
+            )
         db_session.commit()
 
-        # Reorder in both workspaces
-        await _reorder_queue_internal(db_session, "ws-19", "run-2-ws-19", 2, 1)
-        await _reorder_queue_internal(db_session, "ws-20", "run-2-ws-20", 2, 1)
+        await _reorder_queue_internal(db_session, "run-2-ws-19", 2, 1)
+        await _reorder_queue_internal(db_session, "run-2-ws-20", 4, 1)
 
-        # Verify each workspace is correctly reordered independently
-        runs_ws1 = db_session.exec(
-            select(QueuedRun).where(QueuedRun.workspace_id == "ws-19").order_by(QueuedRun.position)
-        ).all()
-        runs_ws2 = db_session.exec(
-            select(QueuedRun).where(QueuedRun.workspace_id == "ws-20").order_by(QueuedRun.position)
+        ordered = db_session.exec(
+            select(QueuedRun)
+            .where(QueuedRun.status == QueuePosition.QUEUED)
+            .order_by(QueuedRun.position)
         ).all()
 
-        assert runs_ws1[0].run_id == "run-2-ws-19"
-        assert runs_ws2[0].run_id == "run-2-ws-20"
+        assert ordered[0].run_id == "run-2-ws-20"
+        assert ordered[1].run_id == "run-2-ws-19"
+        # No duplicates and no gaps — the invariant that matters.
+        assert [run.position for run in ordered] == [1, 2, 3, 4]
 
 
 @pytest.mark.asyncio
@@ -793,7 +787,7 @@ class TestQueueIntegration:
         db_session.commit()
 
         # Reorder: move run-3 to position 1
-        await _reorder_queue_internal(db_session, "ws-21", "run-3", 2, 1)
+        await _reorder_queue_internal(db_session, "run-3", 2, 1)
 
         # Verify reorder worked
         updated_run3 = db_session.exec(select(QueuedRun).where(QueuedRun.run_id == "run-3")).first()
@@ -903,7 +897,7 @@ class TestOnRunCompleteFailureWiring:
         service = ParallelQueueService(db_session)
         p1, p2, p3, p4 = self._patched_emits()
         with p1, p2, p3, p4:
-            await service.on_run_complete("ws-fail-1", "run-fail-1")
+            await service.on_run_complete("run-fail-1")
 
         db_session.refresh(queued)
         assert queued.status == QueuePosition.FAILED
@@ -943,7 +937,7 @@ class TestOnRunCompleteFailureWiring:
         service = ParallelQueueService(db_session)
         p1, p2, p3, p4 = self._patched_emits()
         with p1, p2, p3, p4:
-            await service.on_run_complete("ws-fail-2", "run-fail-2")
+            await service.on_run_complete("run-fail-2")
 
         failed = await get_failed_runs("ws-fail-2", db_session)
         assert len(failed) == 1
@@ -981,7 +975,7 @@ class TestOnRunCompleteFailureWiring:
         service = ParallelQueueService(db_session)
         p1, p2, p3, p4 = self._patched_emits()
         with p1, p2, p3, p4:
-            await service.on_run_complete("ws-ok-1", "run-ok-1")
+            await service.on_run_complete("run-ok-1")
 
         db_session.refresh(queued)
         assert queued.status == QueuePosition.PROMOTED

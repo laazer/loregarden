@@ -78,11 +78,10 @@ const baseStatus: QueueStatusValue = {
   estimatedClearSeconds: 300,
   isWebSocket: true,
   loading: false,
-  workspace: null,
-  workspaces: [],
+  // The rail's git-automation and analytics panels are still per-workspace —
+  // only the board went global — so the dashboard needs one to render them.
+  workspaces: [{ id: 'ws-1', slug: 'loregarden', name: 'loregarden' }] as QueueStatusValue['workspaces'],
   workspacesLoading: false,
-  activeSlug: 'loregarden',
-  setWorkspaceSlug: jest.fn(),
   onQueueEvent: jest.fn(),
 };
 
@@ -108,14 +107,14 @@ const toasts = () => useToastStore.getState().toasts;
 
 describe('layout', () => {
   test('renders the main panel and the side rail', () => {
-    render(<QueueDashboard workspaceId="ws-1" />);
+    render(<QueueDashboard />);
 
     expect(screen.getByTestId('queue-visualization')).toBeInTheDocument();
     expect(screen.getByText('Queue status')).toBeInTheDocument();
   });
 
   test('does not render a page header — that lives in the topbar now', () => {
-    render(<QueueDashboard workspaceId="ws-1" />);
+    render(<QueueDashboard />);
 
     expect(screen.queryByText('Queue Dashboard')).not.toBeInTheDocument();
   });
@@ -123,7 +122,7 @@ describe('layout', () => {
 
 describe('tabs', () => {
   test('renders every tab', () => {
-    render(<QueueDashboard workspaceId="ws-1" />);
+    render(<QueueDashboard />);
 
     expect(screen.getByText('Overview')).toBeInTheDocument();
     expect(screen.getByText('Review')).toBeInTheDocument();
@@ -132,7 +131,7 @@ describe('tabs', () => {
   });
 
   test('switching to controls marks it active and mounts the panel', () => {
-    render(<QueueDashboard workspaceId="ws-1" />);
+    render(<QueueDashboard />);
 
     const tab = screen.getByText('Controls');
     fireEvent.click(tab);
@@ -142,7 +141,7 @@ describe('tabs', () => {
   });
 
   test('switching to analytics marks it active and mounts the panel', () => {
-    render(<QueueDashboard workspaceId="ws-1" />);
+    render(<QueueDashboard />);
 
     const tab = screen.getByText('Analytics');
     fireEvent.click(tab);
@@ -152,13 +151,13 @@ describe('tabs', () => {
   });
 
   test('hides controls when showControls is false', () => {
-    render(<QueueDashboard workspaceId="ws-1" showControls={false} />);
+    render(<QueueDashboard showControls={false} />);
 
     expect(screen.queryByText('Controls')).not.toBeInTheDocument();
   });
 
   test('hides analytics when showAnalytics is false', () => {
-    render(<QueueDashboard workspaceId="ws-1" showAnalytics={false} />);
+    render(<QueueDashboard showAnalytics={false} />);
 
     expect(screen.queryByText('Analytics')).not.toBeInTheDocument();
   });
@@ -166,7 +165,7 @@ describe('tabs', () => {
 
 describe('overview tiles', () => {
   test('shows the four queue-status tiles', () => {
-    const { container } = render(<QueueDashboard workspaceId="ws-1" />);
+    const { container } = render(<QueueDashboard />);
 
     const grid = within(container.querySelector('.queue-rail-grid')!);
     expect(grid.getByText('Total runs')).toBeInTheDocument();
@@ -176,7 +175,7 @@ describe('overview tiles', () => {
   });
 
   test('computes utilization and slot usage from stats', () => {
-    const { container } = render(<QueueDashboard workspaceId="ws-1" />);
+    const { container } = render(<QueueDashboard />);
 
     const grid = within(container.querySelector('.queue-rail-grid')!);
     expect(grid.getByText('33%')).toBeInTheDocument();
@@ -184,13 +183,13 @@ describe('overview tiles', () => {
   });
 
   test('follows the context when it changes', () => {
-    const { container, rerender } = render(<QueueDashboard workspaceId="ws-1" />);
+    const { container, rerender } = render(<QueueDashboard />);
 
     expect(within(container.querySelector('.queue-rail-grid')!).getByText('1/3'))
       .toBeInTheDocument();
 
     withStatus({ stats: { ...baseStatus.stats, active_count: 2 } });
-    rerender(<QueueDashboard workspaceId="ws-1" />);
+    rerender(<QueueDashboard />);
 
     expect(within(container.querySelector('.queue-rail-grid')!).getByText('2/3'))
       .toBeInTheDocument();
@@ -199,7 +198,7 @@ describe('overview tiles', () => {
 
 describe('queue event toasts', () => {
   test('a completed run raises a success toast', () => {
-    render(<QueueDashboard workspaceId="ws-1" />);
+    render(<QueueDashboard />);
 
     act(() => {
       emit({
@@ -215,7 +214,7 @@ describe('queue event toasts', () => {
   });
 
   test('a failed run raises an error toast, not a success one', () => {
-    render(<QueueDashboard workspaceId="ws-1" />);
+    render(<QueueDashboard />);
 
     act(() => {
       emit({
@@ -229,7 +228,7 @@ describe('queue event toasts', () => {
   });
 
   test('a promotion raises an info toast naming the slot', () => {
-    render(<QueueDashboard workspaceId="ws-1" />);
+    render(<QueueDashboard />);
 
     act(() => {
       emit({
@@ -244,7 +243,7 @@ describe('queue event toasts', () => {
   });
 
   test('an error event carries the server message', () => {
-    render(<QueueDashboard workspaceId="ws-1" />);
+    render(<QueueDashboard />);
 
     act(() => {
       emit({
@@ -273,7 +272,7 @@ describe('resilience', () => {
       isWebSocket: false,
     });
 
-    expect(() => render(<QueueDashboard workspaceId="ws-1" />)).not.toThrow();
+    expect(() => render(<QueueDashboard />)).not.toThrow();
     expect(screen.getByText(/All slots open/)).toBeInTheDocument();
   });
 });

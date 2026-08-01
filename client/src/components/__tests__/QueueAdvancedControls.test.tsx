@@ -44,7 +44,6 @@ describe('QueueAdvancedControls', () => {
     test('renders control panel', () => {
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
         />
@@ -56,7 +55,6 @@ describe('QueueAdvancedControls', () => {
     test('displays active runs section', () => {
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
         />
@@ -69,7 +67,6 @@ describe('QueueAdvancedControls', () => {
     test('displays queued runs section', () => {
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
         />
@@ -83,7 +80,6 @@ describe('QueueAdvancedControls', () => {
     test('shows empty state when no runs', () => {
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={[]}
           queuedRuns={[]}
         />
@@ -97,7 +93,6 @@ describe('QueueAdvancedControls', () => {
     test('toggles run selection with checkbox', async () => {
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
         />
@@ -114,7 +109,6 @@ describe('QueueAdvancedControls', () => {
     test('displays selection count', async () => {
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
         />
@@ -132,7 +126,6 @@ describe('QueueAdvancedControls', () => {
     test('highlights selected runs', async () => {
       const { container } = render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
         />
@@ -152,7 +145,6 @@ describe('QueueAdvancedControls', () => {
     test('shows action buttons on toggle', async () => {
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
         />
@@ -171,7 +163,6 @@ describe('QueueAdvancedControls', () => {
       // runtime doesn't have, so active runs expose no actions at all.
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={[]}
         />
@@ -187,7 +178,6 @@ describe('QueueAdvancedControls', () => {
     test('queued run shows promote/cancel actions', async () => {
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
         />
@@ -209,7 +199,6 @@ describe('QueueAdvancedControls', () => {
 
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
           onRunControl={mockOnRunControl}
@@ -232,7 +221,6 @@ describe('QueueAdvancedControls', () => {
     test('shows bulk cancel button when runs selected', async () => {
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
         />
@@ -249,7 +237,6 @@ describe('QueueAdvancedControls', () => {
     test('bulk action includes selection count', async () => {
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
         />
@@ -266,7 +253,6 @@ describe('QueueAdvancedControls', () => {
     test('clear selection button deselects all', async () => {
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
         />
@@ -295,7 +281,6 @@ describe('QueueAdvancedControls', () => {
 
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
           onRunControl={mockOnRunControl}
@@ -321,7 +306,6 @@ describe('QueueAdvancedControls', () => {
 
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
           onRunControl={mockOnRunControl}
@@ -351,7 +335,6 @@ describe('QueueAdvancedControls', () => {
 
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
           onRunControl={mockOnRunControl}
@@ -377,7 +360,6 @@ describe('QueueAdvancedControls', () => {
 
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
         />
@@ -401,7 +383,6 @@ describe('QueueAdvancedControls', () => {
     test('checkboxes have accessible labels', () => {
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
         />
@@ -416,7 +397,6 @@ describe('QueueAdvancedControls', () => {
     test('toggle buttons have aria-expanded', () => {
       render(
         <QueueAdvancedControls
-          workspaceId="ws-1"
           activeRuns={mockActiveRuns}
           queuedRuns={mockQueuedRuns}
         />

@@ -10,6 +10,7 @@ import {
 } from "../lib/queueReviewApi";
 import type { QueueEvent } from "../lib/queueSocket";
 import { useQueueStatus } from "../state/QueueStatusContext";
+import { useUiStore } from "../state/uiStore";
 import { pushToast, type ToastInput } from "../state/toastStore";
 import { OperationDiffReviewView } from "./OperationDiffReviewView";
 import { ParallelQueueVisualization } from "./ParallelQueueVisualization";
@@ -19,7 +20,6 @@ import { QueueHistoricalAnalytics } from "./QueueHistoricalAnalytics";
 import "./QueueDashboard.css";
 
 export interface QueueDashboardProps {
-  workspaceId: string;
   showAnalytics?: boolean;
   showControls?: boolean;
 }
@@ -65,11 +65,24 @@ function toToast(event: QueueEvent): ToastInput {
 }
 
 export function QueueDashboard({
-  workspaceId,
   showAnalytics = true,
   showControls = true,
 }: QueueDashboardProps) {
-  const { activeRuns, queuedRuns, stats, activeSlug, onQueueEvent } = useQueueStatus();
+  const { activeRuns, queuedRuns, stats, workspaces, onQueueEvent } = useQueueStatus();
+
+  /**
+   * The board is global, but two rail panels are not: git automation is a
+   * workspace's own policy and the analytics are its own history. They follow
+   * the app-wide workspace selection rather than a picker of their own — the
+   * queue page no longer has one, because the queue no longer has a workspace.
+   */
+  const appWorkspaceSlug = useUiStore((s) => s.workspace);
+  const railWorkspace = useMemo(() => {
+    const chosen = workspaces.find((ws) => ws.slug === appWorkspaceSlug);
+    return chosen ?? workspaces[0] ?? null;
+  }, [workspaces, appWorkspaceSlug]);
+
+  const railWorkspaceId = railWorkspace?.id ?? "";
 
   const [activeSidebarTab, setActiveSidebarTab] = useState<SidebarTab>("overview");
 
@@ -89,16 +102,16 @@ export function QueueDashboard({
 
   const fetchOperations = useCallback(async () => {
     try {
-      const data = await listQueueOperations(workspaceId, { limit: 20 });
+      const data = await listQueueOperations(railWorkspaceId, { limit: 20 });
       setOperations(data.operations || []);
     } catch (error) {
       console.error("Failed to fetch operations:", error);
     }
-  }, [workspaceId]);
+  }, [railWorkspaceId]);
 
   const refreshOperationDetails = useCallback(async () => {
     if (!selectedOperationId) return;
-    const data = await getQueueOperationDiff(workspaceId, selectedOperationId);
+    const data = await getQueueOperationDiff(railWorkspaceId, selectedOperationId);
     setOperationDetails(data);
 
     const runIds = [
@@ -126,7 +139,7 @@ export function QueueDashboard({
       }),
     );
     setRunOutputById(outputs);
-  }, [selectedOperationId, workspaceId]);
+  }, [selectedOperationId, railWorkspaceId]);
 
   useEffect(() => {
     if (activeSidebarTab === "review") {
@@ -184,7 +197,7 @@ export function QueueDashboard({
                 ← All operations
               </button>
               <OperationDiffReviewView
-                workspaceId={workspaceId}
+                workspaceId={railWorkspaceId}
                 operation={operationDetails}
                 runOutputById={runOutputById}
                 onRefresh={refreshOperationDetails}
@@ -268,18 +281,21 @@ export function QueueDashboard({
 
               {activeSidebarTab === "controls" && showControls ? (
                 <>
-                  <QueueGitAutomation workspaceSlug={activeSlug} />
-                  <div className="queue-rail-divider" />
+                  {railWorkspace ? (
+                    <>
+                      <QueueGitAutomation workspaceSlug={railWorkspace.slug} />
+                      <div className="queue-rail-divider" />
+                    </>
+                  ) : null}
                   <QueueAdvancedControls
-                    workspaceId={workspaceId}
                     activeRuns={activeRuns || []}
                     queuedRuns={queuedRuns || []}
                   />
                 </>
               ) : null}
 
-              {activeSidebarTab === "analytics" && showAnalytics ? (
-                <QueueHistoricalAnalytics workspaceId={workspaceId} />
+              {activeSidebarTab === "analytics" && showAnalytics && railWorkspace ? (
+                <QueueHistoricalAnalytics workspaceId={railWorkspace.id} />
               ) : null}
             </div>
           </div>

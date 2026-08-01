@@ -32,6 +32,7 @@ from loregarden.db.migrations_mcp import (
     m_mcp_servers_table,
     m_mcp_tool_calls_table,
 )
+from loregarden.db.migrations_queue import m_global_agent_slots
 from loregarden.db.migrations_templates import (
     m_adversarial_planning,
     m_ensure_terminal_stage,
@@ -1212,6 +1213,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0055_branch_triage_message_run", _m_branch_triage_message_run),
     ("0056_reference_repos", m_reference_repos),
     ("0057_mcp_server_tool_catalog", m_mcp_server_tool_catalog),
+    ("0058_global_agent_slots", m_global_agent_slots),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

@@ -20,7 +20,7 @@ export function QueuePage() {
 }
 
 function QueueScreen() {
-  const { workspace, workspacesLoading } = useQueueStatus();
+  const { workspaces, workspacesLoading } = useQueueStatus();
 
   return (
     <div className="screen-view screen-view--queue">
@@ -29,8 +29,10 @@ function QueueScreen() {
       </PageTopbar>
 
       <div className="queue-page-body">
-        {workspace ? (
-          <QueueDashboard workspaceId={workspace.id} />
+        {/* The board itself is global — it does not wait on a workspace. The
+            empty state is about having nothing to run, not nothing to show. */}
+        {workspaces.length ? (
+          <QueueDashboard />
         ) : workspacesLoading ? (
           <div className="queue-page-empty">Loading workspaces…</div>
         ) : (

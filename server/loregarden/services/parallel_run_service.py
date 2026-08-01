@@ -34,6 +34,7 @@ class ParallelRunService:
         *,
         stage_key: str | None = None,
         max_concurrent: int = 3,
+        preferred_slot: int | None = None,
     ) -> dict:
         """
         Create a run with parallel execution support.
@@ -46,6 +47,8 @@ class ParallelRunService:
             ticket: Ticket to run
             stage_key: Stage to start (optional)
             max_concurrent: Max concurrent runs (default 3)
+            preferred_slot: Slot the caller staged this ticket into, honoured
+                when it is still free (optional)
 
         Returns:
             {
@@ -73,6 +76,7 @@ class ParallelRunService:
                 workspace_id=ticket.workspace_id,
                 ticket_id=ticket.id,
                 run_id=run.id,
+                preferred_slot=preferred_slot,
             )
 
             if queue_result.get("status") == "started":
@@ -187,7 +191,6 @@ class ParallelRunService:
                 # slot still has to be freed and the queue still has to drain —
                 # holding a slot for work nobody can land stops the whole queue.
                 await ParallelQueueService(self.session, max_concurrent=3).on_run_complete(
-                    workspace_id=run.workspace_id,
                     run_id=run.id,
                 )
                 return {
@@ -198,10 +201,7 @@ class ParallelRunService:
 
             # Free slot and promote from queue
             queue_service = ParallelQueueService(self.session, max_concurrent=3)
-            promotion = await queue_service.on_run_complete(
-                workspace_id=run.workspace_id,
-                run_id=run.id,
-            )
+            promotion = await queue_service.on_run_complete(run_id=run.id)
 
             if promotion and promotion.get("status") == "promoted":
                 return {

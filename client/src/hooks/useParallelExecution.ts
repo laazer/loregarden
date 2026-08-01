@@ -25,7 +25,6 @@ export interface ParallelExecutionStatus {
 const DEFAULT_POLL_INTERVAL = 5000; // 5 seconds
 
 export function useParallelExecution(
-  workspaceId: string,
   pollInterval: number = DEFAULT_POLL_INTERVAL,
   /**
    * Off while the queue socket is carrying this data. React forbids calling a
@@ -46,11 +45,7 @@ export function useParallelExecution(
     let isMounted = true;
     let intervalId: ReturnType<typeof setInterval>;
 
-    // No workspace, nothing to ask about. Callers resolve the workspace from a
-    // query, so the first render always has an empty id. Without this guard it
-    // polled `/api/parallel/status/` with no id every few seconds, 404ing each
-    // time while the page looked fine.
-    if (!workspaceId || !enabled) {
+    if (!enabled) {
       setLoading(false);
       return;
     }
@@ -58,7 +53,7 @@ export function useParallelExecution(
     const fetchStatus = async () => {
       try {
         const response = await fetch(
-          `${API_BASE}/api/parallel/status/${workspaceId}`
+          `${API_BASE}/api/parallel/status`
         );
 
         if (!response.ok) {
@@ -105,7 +100,7 @@ export function useParallelExecution(
       isMounted = false;
       clearInterval(intervalId);
     };
-  }, [workspaceId, pollInterval, enabled]);
+  }, [pollInterval, enabled]);
 
   return {
     activeRuns,

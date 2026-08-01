@@ -46,7 +46,7 @@ def _run(session: Session, workspace_id: str, code: str) -> AgentRun:
 @pytest.mark.asyncio
 async def test_promotion_dispatches_the_run(session, workspace):
     service = ParallelQueueService(session, max_concurrent=1)
-    service.initialize_slots(workspace.id)
+    service.initialize_slots()
 
     first = _run(session, workspace.id, "run_first")
     waiting = _run(session, workspace.id, "run_waiting")
@@ -57,7 +57,7 @@ async def test_promotion_dispatches_the_run(session, workspace):
 
     # Free the only slot, which promotes the waiting run.
     with patch("loregarden.services.run_service.schedule_agent_run") as dispatch:
-        await service.on_run_complete(workspace.id, first.id)
+        await service.on_run_complete(first.id)
 
     dispatch.assert_called_once_with(waiting.id)
 
@@ -65,7 +65,7 @@ async def test_promotion_dispatches_the_run(session, workspace):
 @pytest.mark.asyncio
 async def test_a_promoted_run_takes_the_slot(session, workspace):
     service = ParallelQueueService(session, max_concurrent=1)
-    service.initialize_slots(workspace.id)
+    service.initialize_slots()
 
     first = _run(session, workspace.id, "run_first")
     waiting = _run(session, workspace.id, "run_waiting")
@@ -73,9 +73,10 @@ async def test_a_promoted_run_takes_the_slot(session, workspace):
     await service.queue_run(workspace.id, "ticket-1", waiting.id)
 
     with patch("loregarden.services.run_service.schedule_agent_run"):
-        await service.on_run_complete(workspace.id, first.id)
+        await service.on_run_complete(first.id)
 
-    slot = session.exec(select(AgentSlot).where(AgentSlot.workspace_id == workspace.id)).first()
+    # The pool is global — slots carry no workspace to filter on.
+    slot = session.exec(select(AgentSlot)).first()
     assert slot.current_run_id == waiting.id
     assert slot.is_available is False
 
@@ -88,7 +89,7 @@ async def test_a_failed_dispatch_does_not_undo_the_promotion(session, workspace)
     """The bookkeeping already committed. Raising here would leave a slot
     claimed by a run the queue no longer knows is waiting."""
     service = ParallelQueueService(session, max_concurrent=1)
-    service.initialize_slots(workspace.id)
+    service.initialize_slots()
 
     first = _run(session, workspace.id, "run_first")
     waiting = _run(session, workspace.id, "run_waiting")
@@ -99,7 +100,7 @@ async def test_a_failed_dispatch_does_not_undo_the_promotion(session, workspace)
         "loregarden.services.run_service.schedule_agent_run",
         side_effect=RuntimeError("no threads"),
     ):
-        result = await service.on_run_complete(workspace.id, first.id)
+        result = await service.on_run_complete(first.id)
 
     assert result is not None
     row = session.exec(select(QueuedRun).where(QueuedRun.run_id == waiting.id)).first()
@@ -123,7 +124,7 @@ async def test_start_estimate_uses_run_history_not_a_flat_ten_minutes(session, w
     """Without history there is nothing to project, so the estimate is now
     rather than a made-up ten minutes per queue position."""
     service = ParallelQueueService(session, max_concurrent=3)
-    service.initialize_slots(workspace.id)
+    service.initialize_slots()
 
     for index in range(4):
         await service.queue_run(

@@ -7,17 +7,20 @@
  * instead of a percentage.
  */
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ParallelQueueVisualization } from '../ParallelQueueVisualization';
 import { useQueueStatus, type QueueStatusValue } from '../../state/QueueStatusContext';
+import { useQueueStagingStore } from '../../state/queueStagingStore';
 
 jest.mock('../../state/QueueStatusContext', () => ({
   useQueueStatus: jest.fn(),
 }));
 
-// The dispatch picker owns its own query and endpoint; it has its own test.
-jest.mock('../QueueDispatchButton', () => ({
-  QueueDispatchButton: () => <button type="button">Dispatch run</button>,
+// The slot picker owns its own ticket query; it has its own test.
+jest.mock('../QueueSlotTicketPicker', () => ({
+  QueueSlotTicketPicker: ({ slotNumber }: { slotNumber: number }) => (
+    <button type="button">Add ticket to slot {slotNumber}</button>
+  ),
 }));
 
 const mockUseQueueStatus = useQueueStatus as jest.MockedFunction<typeof useQueueStatus>;
@@ -73,11 +76,8 @@ const baseStatus: QueueStatusValue = {
   estimatedClearSeconds: 480,
   isWebSocket: true,
   loading: false,
-  workspace: null,
   workspaces: [],
   workspacesLoading: false,
-  activeSlug: 'loregarden',
-  setWorkspaceSlug: jest.fn(),
   onQueueEvent: jest.fn(() => () => {}),
 };
 
@@ -87,6 +87,7 @@ const withStatus = (overrides: Partial<QueueStatusValue> = {}) => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  useQueueStagingStore.setState({ staged: {} });
   withStatus();
 });
 
@@ -205,6 +206,136 @@ describe('execution slots', () => {
 
     expect(screen.getAllByText('available')).toHaveLength(2);
     expect(screen.getAllByText('Available')).toHaveLength(2);
+  });
+});
+
+describe('slot staging', () => {
+  const stage = (slotNumber: number, ticketId = 'ticket-uuid-9') =>
+    useQueueStagingStore.getState().stage(slotNumber, {
+      ticketId,
+      code: 'LG-9',
+      title: 'Rework the approval bridge',
+      workspaceName: 'loregarden',
+    });
+
+  test('offers a picker on every open slot, and none on a busy one', () => {
+    render(<ParallelQueueVisualization />);
+
+    expect(screen.getByText('Add ticket to slot 2')).toBeInTheDocument();
+    expect(screen.getByText('Add ticket to slot 3')).toBeInTheDocument();
+    // Slot 1 is running.
+    expect(screen.queryByText('Add ticket to slot 1')).not.toBeInTheDocument();
+  });
+
+  test('a staged ticket names itself in the slot it was put in', () => {
+    stage(3);
+
+    render(<ParallelQueueVisualization />);
+
+    expect(screen.getByText('Rework the approval bridge')).toBeInTheDocument();
+    expect(screen.getByTestId('slot-3')).toHaveTextContent('LG-9');
+    // Staging is not starting.
+    expect(screen.getByTestId('slot-3-start')).toBeInTheDocument();
+    expect(screen.getByTestId('slot-2')).toHaveTextContent('Available');
+  });
+
+  test('starting asks for the slot the card is drawn in', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    stage(3);
+
+    render(<ParallelQueueVisualization />);
+    fireEvent.click(screen.getByTestId('slot-3-start'));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain('/api/parallel/runs/ticket-uuid-9');
+    expect(url).toContain('slot_number=3');
+    expect(init.method).toBe('POST');
+  });
+
+  test('a started ticket stops being staged', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({}) }) as unknown as typeof fetch;
+    stage(3);
+
+    render(<ParallelQueueVisualization />);
+    fireEvent.click(screen.getByTestId('slot-3-start'));
+
+    await waitFor(() =>
+      expect(useQueueStagingStore.getState().staged[3]).toBeUndefined(),
+    );
+  });
+
+  test('a refused start keeps the ticket staged and says why', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ detail: 'Ticket is blocked' }),
+    }) as unknown as typeof fetch;
+    stage(3);
+
+    render(<ParallelQueueVisualization />);
+    fireEvent.click(screen.getByTestId('slot-3-start'));
+
+    expect(await screen.findByText('Ticket is blocked')).toBeInTheDocument();
+    expect(useQueueStagingStore.getState().staged[3]).toBeDefined();
+  });
+
+  test('start-all is offered once per staged slot and only while some are staged', () => {
+    const { rerender } = render(<ParallelQueueVisualization />);
+    expect(screen.queryByTestId('start-all-staged')).not.toBeInTheDocument();
+
+    stage(2, 'ticket-uuid-8');
+    stage(3, 'ticket-uuid-9');
+    rerender(<ParallelQueueVisualization />);
+
+    expect(screen.getByTestId('start-all-staged')).toHaveTextContent('Start 2 staged');
+  });
+
+  test('drops a staged ticket the server has already put to work', () => {
+    // Staged in slot 2, but the snapshot now reports it running in slot 2.
+    stage(2, 'ticket-uuid-2');
+    withStatus({
+      activeRuns: [
+        { ...baseStatus.activeRuns[0], slot_number: 2, ticket_id: 'ticket-uuid-2' },
+      ],
+    });
+
+    render(<ParallelQueueVisualization />);
+
+    expect(useQueueStagingStore.getState().staged[2]).toBeUndefined();
+    expect(screen.queryByTestId('slot-2-start')).not.toBeInTheDocument();
+  });
+
+  test('drops a staged ticket that got queued from elsewhere', () => {
+    stage(3, 'ticket-uuid-3');
+
+    render(<ParallelQueueVisualization />);
+
+    // ticket-uuid-3 is in the waiting list of the base snapshot.
+    expect(useQueueStagingStore.getState().staged[3]).toBeUndefined();
+  });
+
+  test('staging a ticket again moves it rather than duplicating it', () => {
+    stage(2, 'ticket-uuid-9');
+    stage(3, 'ticket-uuid-9');
+
+    render(<ParallelQueueVisualization />);
+
+    expect(screen.getByTestId('slot-3-start')).toBeInTheDocument();
+    expect(screen.queryByTestId('slot-2-start')).not.toBeInTheDocument();
+  });
+
+  test('a staged ticket can be taken back out of its slot', () => {
+    stage(3);
+
+    render(<ParallelQueueVisualization />);
+    fireEvent.click(screen.getByLabelText('Remove LG-9 from slot 3'));
+
+    expect(screen.queryByTestId('slot-3-start')).not.toBeInTheDocument();
+    expect(screen.getByText('Add ticket to slot 3')).toBeInTheDocument();
   });
 });
 
