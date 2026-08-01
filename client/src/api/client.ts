@@ -83,6 +83,8 @@ import type {
   TicketStudioCommitResult,
   TicketStudioDraftItem,
   TicketStudioSession,
+  TicketStudioSurveyFinding,
+  ReferenceRepo,
   UsageSnapshot,
   CIStatusResponse,
   ReloadStatus,
@@ -535,6 +537,7 @@ export const api = {
     parent_ticket_id?: string | null;
     is_preview?: boolean;
     imported_tickets?: TicketImportItem[];
+    reference_repo_ids?: string[];
   }) =>
     request<TicketStudioSession>("/api/ticket-studio/sessions", {
       method: "POST",
@@ -585,6 +588,31 @@ export const api = {
     request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}/scope`, { method: "POST" }),
   commitTicketStudioSession: (id: string) =>
     request<TicketStudioCommitResult>(`/api/ticket-studio/sessions/${id}/commit`, { method: "POST" }),
+  referenceRepos: (workspace: string) =>
+    request<ReferenceRepo[]>(`/api/reference-repos?workspace=${encodeURIComponent(workspace)}`),
+  addReferenceRepo: (body: { workspace_slug: string; url: string; notes?: string }) =>
+    request<ReferenceRepo>("/api/reference-repos", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  syncReferenceRepo: (id: string) =>
+    request<ReferenceRepo>(`/api/reference-repos/${id}/sync`, { method: "POST" }),
+  deleteReferenceRepo: (id: string, removeClone = false) =>
+    request<{ ok: boolean }>(`/api/reference-repos/${id}?remove_clone=${removeClone}`, {
+      method: "DELETE",
+    }),
+  setTicketStudioReferenceRepos: (id: string, referenceRepoIds: string[]) =>
+    request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}/reference-repos`, {
+      method: "PATCH",
+      body: JSON.stringify({ reference_repo_ids: referenceRepoIds }),
+    }),
+  generateTicketStudioSurvey: (id: string) =>
+    request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}/survey`, { method: "POST" }),
+  saveTicketStudioSurvey: (id: string, findings: TicketStudioSurveyFinding[]) =>
+    request<TicketStudioSession>(`/api/ticket-studio/sessions/${id}/survey`, {
+      method: "PATCH",
+      body: JSON.stringify({ findings }),
+    }),
   usage: () => request<UsageSnapshot>("/api/usage"),
   memoryConfig: () => request<MemoryConfigResponse>("/api/memory/config"),
   setMemoryConfig: (body: MemoryConfigSettings) =>

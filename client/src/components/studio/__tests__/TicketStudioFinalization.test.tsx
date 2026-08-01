@@ -94,6 +94,8 @@ function buildSession(overrides: Partial<TicketStudioSession> = {}): TicketStudi
     },
     is_preview: false,
     imported_tickets: [],
+    reference_repos: [],
+    survey: [],
     created_at: "2026-07-01T00:00:00Z",
     updated_at: "2026-07-01T00:00:00Z",
     ...overrides,
