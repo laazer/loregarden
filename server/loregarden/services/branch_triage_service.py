@@ -6,10 +6,12 @@ import json
 import re
 import subprocess
 import time
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.artifact_service import (
@@ -32,8 +34,25 @@ PR_STATUS_TTL_SECONDS = 120
 PR_STATUS_TERMINAL_TTL_SECONDS = 600
 PR_STATUS_TERMINAL_STATES = ("closed", "merged")
 PR_STATUS_MAX_WORKERS = 6
+PR_LIST_LIMIT = 500
+BRANCH_SCAN_MAX_WORKERS = 8
+REF_FIELD_SEP = "\x1f"
 
 _pr_status_cache: dict[tuple[str, str], tuple[float, dict[str, Any] | None]] = {}
+
+_T = TypeVar("_T")
+_R = TypeVar("_R")
+
+
+def _map_parallel(fn: Callable[[_T], _R], items: Iterable[_T]) -> list[_R]:
+    """Run `fn` over `items` on a small pool — every caller here shells out to git."""
+    values = list(items)
+    if not values:
+        return []
+    if len(values) == 1:
+        return [fn(values[0])]
+    with ThreadPoolExecutor(max_workers=min(BRANCH_SCAN_MAX_WORKERS, len(values))) as pool:
+        return list(pool.map(fn, values))
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -50,7 +69,103 @@ def _is_git_repo(repo_root: Path) -> bool:
     return (repo_root / ".git").exists()
 
 
+@dataclass(frozen=True)
+class _BranchRef:
+    """Everything one `refs/heads` entry contributes to the snapshot."""
+
+    ahead: int
+    behind: int
+    last_commit: dict[str, str]
+    upstream: str | None
+
+
+def _unknown_branch_ref() -> _BranchRef:
+    """Stand-in for a branch git did not report on, so the snapshot still lists it."""
+    return _BranchRef(ahead=0, behind=0, last_commit={"date": "", "message": ""}, upstream=None)
+
+
+def _remote_ref_names(repo_root: Path) -> set[str]:
+    proc = _git(repo_root, "for-each-ref", "--format=%(refname:short)", "refs/remotes")
+    if proc.returncode != 0:
+        return set()
+    return {line.strip() for line in (proc.stdout or "").splitlines() if line.strip()}
+
+
+def _upstream_from_ref_names(branch: str, configured: str, remote_names: set[str]) -> str | None:
+    """`_resolve_upstream_ref` against an already-read ref list, so it costs no subprocess.
+
+    The configured upstream is only honoured when the remote-tracking ref still
+    exists: `branch.<name>.merge` outlives a deleted remote branch, and
+    reporting a ref nothing resolves to would break the "vs remote" diff.
+    """
+    if configured and configured != "HEAD" and configured in remote_names:
+        return configured
+    for prefix in ("origin", "upstream"):
+        candidate = f"{prefix}/{branch}"
+        if candidate in remote_names:
+            return candidate
+    return None
+
+
+def _branch_refs_batch(
+    repo_root: Path, base: str, remote_names: set[str]
+) -> dict[str, _BranchRef] | None:
+    """Read ahead/behind, last commit and upstream for every branch in one git call.
+
+    Returns None when git cannot count against `base` — an unresolvable base ref,
+    or a git older than 2.41, which has no `ahead-behind` atom — so the caller can
+    fall back to the per-branch commands.
+    """
+    fmt = REF_FIELD_SEP.join(
+        (
+            "%(refname:short)",
+            "%(committerdate:iso-strict)",
+            "%(upstream:short)",
+            f"%(ahead-behind:{base})",
+            "%(contents:subject)",
+        )
+    )
+    proc = _git(repo_root, "for-each-ref", f"--format={fmt}", "refs/heads")
+    if proc.returncode != 0:
+        return None
+
+    refs: dict[str, _BranchRef] = {}
+    for line in (proc.stdout or "").splitlines():
+        parts = line.split(REF_FIELD_SEP)
+        if len(parts) != 5:
+            continue
+        name, date, configured, ahead_behind, subject = parts
+        counts = ahead_behind.split()
+        if len(counts) != 2 or not all(count.isdigit() for count in counts):
+            return None
+        refs[name] = _BranchRef(
+            ahead=int(counts[0]),
+            behind=int(counts[1]),
+            last_commit={"date": date, "message": subject},
+            upstream=_upstream_from_ref_names(name, configured, remote_names),
+        )
+    return refs
+
+
+def _branch_refs_per_branch(
+    repo_root: Path, base: str, branch_names: list[str]
+) -> dict[str, _BranchRef]:
+    """Fallback for `_branch_refs_batch`: one set of git calls per branch, in parallel."""
+
+    def read(name: str) -> tuple[str, _BranchRef]:
+        ahead, behind = _branch_ahead_behind(repo_root, base, name)
+        return name, _BranchRef(
+            ahead=ahead,
+            behind=behind,
+            last_commit=_branch_last_commit(repo_root, name),
+            upstream=_resolve_upstream_ref(repo_root, name),
+        )
+
+    return dict(_map_parallel(read, branch_names))
+
+
 def _branch_ahead_behind(repo_root: Path, base: str, branch: str) -> tuple[int, int]:
+    """Raw commit counts. The squash-merge correction is applied by the caller."""
     proc = _git(repo_root, "rev-list", "--left-right", "--count", f"{base}...{branch}")
     if proc.returncode != 0:
         return 0, 0
@@ -62,35 +177,20 @@ def _branch_ahead_behind(repo_root: Path, base: str, branch: str) -> tuple[int, 
         ahead = int(parts[1])
     except ValueError:
         return 0, 0
-
-    if ahead > 0 and _branch_squash_merged(repo_root, base, branch):
-        ahead = 0
-
     return ahead, behind
-
-
-def _merge_base(repo_root: Path, base: str, branch: str) -> str | None:
-    proc = _git(repo_root, "merge-base", base, branch)
-    if proc.returncode != 0:
-        return None
-    return (proc.stdout or "").strip() or None
 
 
 def _branch_squash_merged(repo_root: Path, base: str, branch: str) -> bool:
     """Detect a branch whose commits were squashed and merged into base.
 
-    `rev-list --left-right --count` compares commits by SHA, so a branch that
-    was squashed into a single commit on `base` still looks "ahead" even
-    though its changes already landed — the squash commit has a different SHA
-    than the branch's original commits. Treat the branch as merged if every
-    file it touched since the merge-base is byte-identical between the branch
-    tip and `base`.
+    Commit counts compare by SHA, so a branch that was squashed into a single
+    commit on `base` still looks "ahead" even though its changes already landed
+    — the squash commit has a different SHA than the branch's original commits.
+    Treat the branch as merged if every file it touched since the merge-base is
+    byte-identical between the branch tip and `base`. `base...branch` already
+    diffs from the merge-base, so no separate merge-base lookup is needed.
     """
-    merge_base = _merge_base(repo_root, base, branch)
-    if not merge_base:
-        return False
-
-    files_proc = _git(repo_root, "diff", "--name-only", f"{merge_base}..{branch}")
+    files_proc = _git(repo_root, "diff", "--name-only", f"{base}...{branch}")
     if files_proc.returncode != 0:
         return False
     changed_files = [line for line in (files_proc.stdout or "").splitlines() if line.strip()]
@@ -143,13 +243,80 @@ def _fetch_pr_status_live(repo_root: Path, branch: str) -> dict[str, Any] | None
         return None
     if not data:
         return None
+    return _serialize_pr_row(data)
+
+
+def _serialize_pr_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
-        "state": str(data.get("state", "")).lower(),
-        "is_draft": bool(data.get("isDraft")),
-        "url": data.get("url", ""),
-        "number": data.get("number"),
-        "title": data.get("title", ""),
+        "state": str(row.get("state", "")).lower(),
+        "is_draft": bool(row.get("isDraft")),
+        "url": row.get("url", ""),
+        "number": row.get("number"),
+        "title": row.get("title", ""),
     }
+
+
+def _pr_row_rank(row: dict[str, Any]) -> tuple[int, int]:
+    """Rank PRs sharing a head branch the way `gh pr view` picks one: open, then newest."""
+    state = str(row.get("state", "")).lower()
+    try:
+        number = int(row.get("number") or 0)
+    except (TypeError, ValueError):
+        number = 0
+    return (0 if state == "open" else 1, -number)
+
+
+def _fetch_pr_list(repo_root: Path) -> tuple[dict[str, dict[str, Any]], bool]:
+    """Every PR in one `gh` call, keyed by head branch.
+
+    Returns the mapping plus whether the listing is exhaustive. A truncated page
+    (or a failed call) means a branch missing from the mapping may still have a
+    PR, so the caller falls back to a per-branch lookup for those rather than
+    reporting "no PR".
+    """
+    try:
+        proc = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "list",
+                "--state",
+                "all",
+                "--limit",
+                str(PR_LIST_LIMIT),
+                "--json",
+                "headRefName,state,url,number,isDraft,title",
+            ],
+            cwd=repo_root,
+            # `gh` resolves the repo by shelling out to git, so an inherited
+            # GIT_DIR would have it report the wrong repository's PRs.
+            env=scrubbed_git_env(),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {}, False
+    if proc.returncode != 0:
+        return {}, False
+    try:
+        rows = json.loads(proc.stdout or "[]")
+    except ValueError:
+        return {}, False
+    if not isinstance(rows, list):
+        return {}, False
+
+    best: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        head = str(row.get("headRefName") or "")
+        if not head:
+            continue
+        current = best.get(head)
+        if current is None or _pr_row_rank(row) < _pr_row_rank(current):
+            best[head] = row
+    return {head: _serialize_pr_row(row) for head, row in best.items()}, len(rows) < PR_LIST_LIMIT
 
 
 def _pr_status_ttl(value: dict[str, Any] | None) -> int:
@@ -175,8 +342,26 @@ def _branch_pr_statuses(repo_root: Path, branches: list[str]) -> dict[str, dict[
     if not stale:
         return results
 
-    with ThreadPoolExecutor(max_workers=min(PR_STATUS_MAX_WORKERS, len(stale))) as pool:
-        future_map = {pool.submit(_fetch_pr_status_live, repo_root, name): name for name in stale}
+    listed, exhaustive = _fetch_pr_list(repo_root)
+    unresolved: list[str] = []
+    for name in stale:
+        if name in listed:
+            value = listed[name]
+        elif exhaustive:
+            value = None
+        else:
+            unresolved.append(name)
+            continue
+        _pr_status_cache[(str(repo_root), name)] = (now, value)
+        results[name] = value
+
+    if not unresolved:
+        return results
+
+    with ThreadPoolExecutor(max_workers=min(PR_STATUS_MAX_WORKERS, len(unresolved))) as pool:
+        future_map = {
+            pool.submit(_fetch_pr_status_live, repo_root, name): name for name in unresolved
+        }
         for future in as_completed(future_map):
             name = future_map[future]
             try:
@@ -330,19 +515,40 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
     ticket_map = _ticket_branch_map(session, workspace.id)
 
     main_repo_path = str(repo_root.resolve())
+    branch_worktrees = [item for item in worktrees if item.get("branch")]
+    dirty_by_path = dict(
+        _map_parallel(
+            lambda path: (path, _worktree_dirty(path)),
+            sorted({item["path"] for item in branch_worktrees}),
+        )
+    )
     worktrees_by_branch: dict[str, list[dict[str, Any]]] = {}
-    for item in worktrees:
-        branch_name = item.get("branch") or ""
-        if not branch_name:
-            continue
-        worktrees_by_branch.setdefault(branch_name, []).append(
+    for item in branch_worktrees:
+        worktrees_by_branch.setdefault(item["branch"], []).append(
             {
                 "path": item["path"],
                 "label": item["label"],
-                "dirty": _worktree_dirty(item["path"]),
+                "dirty": dirty_by_path.get(item["path"], False),
                 "is_primary": item["path"] == main_repo_path,
             }
         )
+
+    remote_names = _remote_ref_names(repo_root)
+    read_refs = _branch_refs_batch(repo_root, base, remote_names)
+    if read_refs is None:
+        read_refs = _branch_refs_per_branch(repo_root, base, branch_names)
+    branch_refs = {name: read_refs.get(name) or _unknown_branch_ref() for name in branch_names}
+
+    # Only branches that still look ahead can be squash-merged, and the check is
+    # two git calls each — so it runs on the pool, over that subset alone.
+    squash_merged = {
+        name
+        for name, merged in _map_parallel(
+            lambda name: (name, _branch_squash_merged(repo_root, base, name)),
+            [name for name in branch_names if branch_refs[name].ahead > 0],
+        )
+        if merged
+    }
 
     pr_statuses = _branch_pr_statuses(repo_root, [name for name in branch_names if name != base])
 
@@ -350,8 +556,10 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
     issue_count = 0
 
     for name in branch_names:
-        ahead, behind = _branch_ahead_behind(repo_root, base, name)
-        last = _branch_last_commit(repo_root, name)
+        ref = branch_refs[name]
+        ahead = 0 if name in squash_merged else ref.ahead
+        behind = ref.behind
+        last = ref.last_commit
         linked = ticket_map.get(name, [])
         wt_list = worktrees_by_branch.get(name, [])
         dirty = any(wt["dirty"] for wt in wt_list)
@@ -379,7 +587,7 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
         if issues:
             issue_count += 1
 
-        upstream = _resolve_upstream_ref(repo_root, name)
+        upstream = ref.upstream
         diff_options = _branch_diff_options(
             repo_root,
             base=base,
