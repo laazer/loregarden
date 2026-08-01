@@ -35,6 +35,12 @@ from loregarden.db.migrations_templates import (
     m_require_verify_evidence,
     m_verify_stage_in_v3,
 )
+from loregarden.db.migrations_ticket_studio import (
+    m_reference_repos,
+    m_ticket_studio_preview_state,
+    m_ticket_studio_tables,
+    m_ticket_studio_turn_lifecycle,
+)
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
@@ -210,77 +216,6 @@ def _m_triage_messages_table(conn: Connection) -> None:
     conn.execute(text("CREATE INDEX ix_triage_messages_ticket_id ON triage_messages (ticket_id)"))
 
 
-def _m_ticket_studio_tables(conn: Connection) -> None:
-    if not table_exists(conn, "ticket_studio_sessions"):
-        conn.execute(
-            text(
-                """
-                CREATE TABLE ticket_studio_sessions (
-                    id TEXT PRIMARY KEY,
-                    workspace_id TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    brief TEXT NOT NULL DEFAULT '',
-                    parent_ticket_id TEXT,
-                    status TEXT NOT NULL DEFAULT 'draft',
-                    draft_json TEXT NOT NULL DEFAULT '[]',
-                    summary TEXT NOT NULL DEFAULT '',
-                    clarifying_questions_json TEXT NOT NULL DEFAULT '[]',
-                    clarifying_answers_json TEXT NOT NULL DEFAULT '[]',
-                    runtime_json TEXT NOT NULL DEFAULT '{}',
-                    is_preview INTEGER NOT NULL DEFAULT 0,
-                    imported_tickets_json TEXT NOT NULL DEFAULT '[]',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    FOREIGN KEY(workspace_id) REFERENCES workspaces(id),
-                    FOREIGN KEY(parent_ticket_id) REFERENCES tickets(id)
-                )
-                """
-            )
-        )
-        conn.execute(
-            text(
-                "CREATE INDEX ix_ticket_studio_sessions_workspace_id "
-                "ON ticket_studio_sessions (workspace_id)"
-            )
-        )
-        conn.execute(
-            text("CREATE INDEX ix_ticket_studio_sessions_status ON ticket_studio_sessions (status)")
-        )
-    else:
-        add_columns_if_missing(
-            conn,
-            "ticket_studio_sessions",
-            {
-                "clarifying_answers_json": (
-                    "ALTER TABLE ticket_studio_sessions "
-                    "ADD COLUMN clarifying_answers_json TEXT NOT NULL DEFAULT '[]'"
-                ),
-            },
-        )
-
-    if not table_exists(conn, "ticket_studio_messages"):
-        conn.execute(
-            text(
-                """
-                CREATE TABLE ticket_studio_messages (
-                    id TEXT PRIMARY KEY,
-                    session_id TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY(session_id) REFERENCES ticket_studio_sessions(id)
-                )
-                """
-            )
-        )
-        conn.execute(
-            text(
-                "CREATE INDEX ix_ticket_studio_messages_session_id "
-                "ON ticket_studio_messages (session_id)"
-            )
-        )
-
-
 def _m_ticket_diff_comments(conn: Connection) -> None:
     if table_exists(conn, "ticket_diff_comments"):
         return
@@ -374,23 +309,6 @@ def _m_branch_triage_messages(conn: Connection) -> None:
             "CREATE INDEX ix_branch_triage_messages_workspace_branch "
             "ON branch_triage_messages (workspace_id, branch)"
         )
-    )
-
-
-def _m_ticket_studio_preview_state(conn: Connection) -> None:
-    add_columns_if_missing(
-        conn,
-        "ticket_studio_sessions",
-        {
-            "is_preview": (
-                "ALTER TABLE ticket_studio_sessions "
-                "ADD COLUMN is_preview INTEGER NOT NULL DEFAULT 0"
-            ),
-            "imported_tickets_json": (
-                "ALTER TABLE ticket_studio_sessions "
-                "ADD COLUMN imported_tickets_json TEXT NOT NULL DEFAULT '[]'"
-            ),
-        },
     )
 
 
@@ -1260,30 +1178,6 @@ def _m_baxter_chat_tables(conn: Connection) -> None:
     )
 
 
-def _m_ticket_studio_turn_lifecycle(conn: Connection) -> None:
-    """Give Ticket Studio turns the durable lifecycle the other chats have.
-
-    The scoper ran its model call on the request thread, so a restart or a
-    dropped connection lost the turn with no record it had ever started.
-    ``status`` makes an in-flight turn recoverable; ``turn_mode`` records which
-    kind of turn it is, because the reply is applied to the session differently
-    per mode and the worker settling it did not start it.
-    """
-    add_columns_if_missing(
-        conn,
-        "ticket_studio_messages",
-        {
-            "status": (
-                "ALTER TABLE ticket_studio_messages ADD COLUMN status "
-                "TEXT NOT NULL DEFAULT 'complete'"
-            ),
-            "turn_mode": (
-                "ALTER TABLE ticket_studio_messages ADD COLUMN turn_mode TEXT NOT NULL DEFAULT ''"
-            ),
-        },
-    )
-
-
 def _m_git_automation(conn: Connection) -> None:
     """Columns for running a queued ticket in a worktree and landing its work.
 
@@ -1383,12 +1277,12 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0005_agent_run_orchestration_id", _m_agent_run_orchestration_id),
     ("0006_orchestration_run_columns", _m_orchestration_run_columns),
     ("0007_triage_messages_table", _m_triage_messages_table),
-    ("0008_ticket_studio_tables", _m_ticket_studio_tables),
+    ("0008_ticket_studio_tables", m_ticket_studio_tables),
     ("0009_ticket_diff_comments", _m_ticket_diff_comments),
     ("0010_branch_diff_comments", _m_branch_diff_comments),
     ("0011_branch_triage_messages", _m_branch_triage_messages),
     ("0012_agent_run_auto_approve", _m_agent_run_auto_approve),
-    ("0013_ticket_studio_preview_state", _m_ticket_studio_preview_state),
+    ("0013_ticket_studio_preview_state", m_ticket_studio_preview_state),
     ("0014_queued_run_failure_columns", _m_queued_run_failure_columns),
     ("0015_agent_model_columns", _m_agent_model_columns),
     ("0016_triage_message_run_id", _m_triage_message_run_id),
@@ -1426,11 +1320,12 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0048_chat_message_parts", _m_chat_message_parts),
     ("0049_run_cancel_requested", _m_run_cancel_requested),
     ("0050_baxter_chat_tables", _m_baxter_chat_tables),
-    ("0051_ticket_studio_turn_lifecycle", _m_ticket_studio_turn_lifecycle),
+    ("0051_ticket_studio_turn_lifecycle", m_ticket_studio_turn_lifecycle),
     ("0052_git_automation", _m_git_automation),
     ("0053_workspace_effort_columns", _m_workspace_effort_columns),
     ("0054_workspace_scoped_runs_and_approvals", _m_workspace_scoped_runs_and_approvals),
     ("0055_branch_triage_message_run", _m_branch_triage_message_run),
+    ("0056_reference_repos", m_reference_repos),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

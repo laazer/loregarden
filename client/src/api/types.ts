@@ -905,6 +905,37 @@ export interface TicketStudioMessage {
   created_at: string;
 }
 
+export interface ReferenceRepo {
+  id: string;
+  workspace_slug: string;
+  url: string;
+  slug: string;
+  name: string;
+  local_path: string;
+  default_branch: string;
+  head_sha: string;
+  notes: string;
+  cloned: boolean;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SurveyVerdict = "adopt" | "adapt" | "inspire" | "skip";
+
+export interface TicketStudioSurveyFinding {
+  ref: string;
+  title: string;
+  repo_slug: string;
+  source_paths: string[];
+  what_it_gives: string;
+  fit: string;
+  risks: string;
+  verdict: SurveyVerdict;
+  effort: string;
+  selected: boolean;
+}
+
 export interface TicketStudioSession {
   id: string;
   workspace_slug: string;
@@ -925,6 +956,8 @@ export interface TicketStudioSession {
   /** Server-derived, so a reload mid-turn still shows the scoper working. */
   run_status: TriageRunStatus;
   active_turn_id: string | null;
+  reference_repos: ReferenceRepo[];
+  survey: TicketStudioSurveyFinding[];
   created_at: string;
   updated_at: string;
 }

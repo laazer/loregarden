@@ -6,8 +6,11 @@ import json
 import re
 from datetime import datetime, timezone
 
+from loregarden.agents.cli_adapters import resolve_effective_adapter
+from loregarden.agents.registry import get_agent
 from loregarden.models.domain import (
     VALID_HIERARCHY,
+    ReferenceRepo,
     Ticket,
     TicketStudioCommitResult,
     TicketStudioDraftItem,
@@ -17,6 +20,7 @@ from loregarden.models.domain import (
     TicketStudioSessionStatus,
     TicketStudioSessionUpdate,
     TicketStudioSessionView,
+    TicketStudioSurveyFinding,
     WorkItemType,
     Workspace,
     WorkspaceRuntimeSettings,
@@ -40,6 +44,7 @@ from loregarden.services.draft_hierarchy import (
     topo_sort_draft_items,
 )
 from loregarden.services.integration_review import ensure_reviews_for_tickets
+from loregarden.services.reference_repo_service import ReferenceRepoService, is_cloned
 from loregarden.services.ticket_service import TicketService
 from loregarden.services.workflow_service import WorkflowService
 from sqlmodel import Session, col, select
@@ -105,6 +110,29 @@ SCOPE_JSON_SCHEMA = """```json
   ]
 }
 ```"""
+
+
+SURVEY_JSON_SCHEMA = """```json
+{
+  "summary": "What this reference repo is and how much of it is relevant here",
+  "clarifying_questions": [],
+  "findings": [
+    {
+      "ref": "find-1",
+      "title": "Short name for the part",
+      "repo_slug": "github.com/owner/repo",
+      "source_paths": ["path/in/reference/repo", "another/path"],
+      "what_it_gives": "The capability we would gain, in our terms",
+      "fit": "How it lines up with our stack and where it would live here",
+      "risks": "Licensing, dependencies, conflicts with what we already have",
+      "verdict": "adopt | adapt | inspire | skip",
+      "effort": "S | M | L"
+    }
+  ]
+}
+```"""
+
+VALID_SURVEY_VERDICTS = ("adopt", "adapt", "inspire", "skip")
 
 
 def get_studio_runtime(session_row: TicketStudioSession) -> WorkspaceRuntimeSettings:
@@ -173,6 +201,100 @@ def parse_scope_payload(text: str) -> tuple[str, list[str], list[TicketStudioDra
             )
         )
     return summary, questions, items
+
+
+def parse_survey_payload(text: str) -> tuple[str, list[str], list[TicketStudioSurveyFinding]]:
+    payload = extract_json_block(text)
+    if not payload:
+        return "", [], []
+
+    summary = str(payload.get("summary") or "").strip()
+    questions = [
+        str(item).strip()
+        for item in (payload.get("clarifying_questions") or [])
+        if str(item).strip()
+    ]
+
+    findings: list[TicketStudioSurveyFinding] = []
+    for raw in payload.get("findings") or []:
+        if not isinstance(raw, dict):
+            continue
+        title = str(raw.get("title") or "").strip()
+        if not title:
+            continue
+        verdict = str(raw.get("verdict") or "adapt").strip().lower()
+        if verdict not in VALID_SURVEY_VERDICTS:
+            verdict = "adapt"
+        paths = [str(path).strip() for path in (raw.get("source_paths") or []) if str(path).strip()]
+        findings.append(
+            TicketStudioSurveyFinding(
+                ref=str(raw.get("ref") or f"find-{len(findings) + 1}"),
+                title=title,
+                repo_slug=str(raw.get("repo_slug") or "").strip(),
+                source_paths=paths,
+                what_it_gives=str(raw.get("what_it_gives") or "").strip(),
+                fit=str(raw.get("fit") or "").strip(),
+                risks=str(raw.get("risks") or "").strip(),
+                verdict=verdict,
+                effort=str(raw.get("effort") or "").strip(),
+                # Pre-check everything the scoper did not dismiss: the operator
+                # prunes a shortlist rather than re-selecting the whole survey.
+                selected=verdict != "skip",
+            )
+        )
+    return summary, questions, findings
+
+
+def _load_survey(session_row: TicketStudioSession) -> list[TicketStudioSurveyFinding]:
+    data = json.loads(session_row.survey_json or "[]")
+    return [TicketStudioSurveyFinding.model_validate(item) for item in data]
+
+
+def _load_reference_repo_ids(session_row: TicketStudioSession) -> list[str]:
+    data = json.loads(session_row.reference_repo_ids_json or "[]")
+    return [str(item) for item in data]
+
+
+def _reference_repo_block(session: Session, session_row: TicketStudioSession) -> list[str]:
+    repos = ReferenceRepoService(session).get_many(_load_reference_repo_ids(session_row))
+    available = [repo for repo in repos if repo.local_path and is_cloned(repo.local_path)]
+    if not available:
+        return []
+    lines = [
+        "## Reference repos",
+        "Read-only checkouts of other projects, outside this repo. Read and grep them "
+        "freely; never edit them, and never copy a file across without saying so in the "
+        "scope.",
+    ]
+    for repo in available:
+        lines.append(f"- {repo.slug} ({repo.url}) at `{repo.local_path}`")
+        if repo.notes:
+            lines.append(f"  Operator note: {repo.notes}")
+    return lines
+
+
+def _selected_findings_block(session_row: TicketStudioSession) -> list[str]:
+    selected = [finding for finding in _load_survey(session_row) if finding.selected]
+    if not selected:
+        return []
+    lines = [
+        "## Reference parts the operator selected",
+        "These are the surveyed parts to build tickets around. Anything not listed here "
+        "was reviewed and dropped — do not scope it.",
+    ]
+    for finding in selected:
+        paths = ", ".join(finding.source_paths) or "—"
+        lines.append(
+            f"- [{finding.ref}] {finding.title} ({finding.verdict}, effort {finding.effort or '?'})"
+        )
+        lines.append(f"  Source: {finding.repo_slug or '—'} :: {paths}")
+        if finding.what_it_gives:
+            lines.append(f"  Value: {finding.what_it_gives}")
+        if finding.fit:
+            lines.append(f"  Fit: {finding.fit}")
+        if finding.risks:
+            lines.append(f"  Risks: {finding.risks}")
+    return lines
 
 
 def _load_clarifying_answers(session_row: TicketStudioSession) -> list[str]:
@@ -310,6 +432,10 @@ def _session_view(
         imported_tickets=imported_tickets,
         run_status=run_status,
         active_turn_id=active_turn_id,
+        reference_repos=ReferenceRepoService(session).views_for(
+            _load_reference_repo_ids(session_row)
+        ),
+        survey=_load_survey(session_row),
         created_at=session_row.created_at,
         updated_at=session_row.updated_at,
     )
@@ -414,6 +540,15 @@ def build_studio_prompt(
         "",
     ]
 
+    reference_lines = _reference_repo_block(session, session_row)
+    if reference_lines:
+        sections.extend([*reference_lines, ""])
+
+    if mode != "survey":
+        findings_lines = _selected_findings_block(session_row)
+        if findings_lines:
+            sections.extend([*findings_lines, ""])
+
     if current_draft:
         sections.extend(["## Current draft tickets", *draft_lines, ""])
 
@@ -433,7 +568,33 @@ def build_studio_prompt(
 
     sections.extend(["## Latest operator message", latest_user_message, ""])
 
-    if mode == "clarify":
+    if mode == "survey":
+        sections.extend(
+            [
+                "## Task",
+                "Survey the reference repos above against this repo and report which parts "
+                "are worth bringing over for the brief. This is the only job this turn — "
+                "do not propose tickets.",
+                "Work from the actual source: read and grep both the reference repo and "
+                "this repo before judging anything. A finding that does not name real "
+                "paths in the reference repo is worthless.",
+                "For each candidate part, decide honestly between:",
+                "- adopt: port it largely as-is, it fits our stack",
+                "- adapt: the idea and much of the code carry over, but it needs reshaping "
+                "to our models/services",
+                "- inspire: worth copying the approach, not the code",
+                "- skip: looked at it, not worth it here (say why — a skipped finding saves "
+                "the next person the same look)",
+                "Reject parts we already have. Check this repo first and say so in `fit` "
+                "when something duplicates existing code.",
+                "Order findings by value to this project, highest first. Ten sharp findings "
+                "beat forty shallow ones.",
+                "Output JSON with `summary`, `clarifying_questions` (usually empty), and "
+                "`findings`.",
+                SURVEY_JSON_SCHEMA,
+            ]
+        )
+    elif mode == "clarify":
         sections.extend(
             [
                 "## Task",
@@ -472,6 +633,10 @@ def build_studio_prompt(
                 "- Use unique `ref` values and `parent_ref` pointers (null for roots).",
                 "- Each ticket needs testable acceptance_criteria.",
                 "- Keep tasks small enough for one agent run.",
+                "- When a ticket comes from a selected reference part, name the reference "
+                "  repo and the exact source paths in its description, and say whether the "
+                "  implementer should port, adapt, or merely take the approach. The "
+                "  implementer cannot see this survey.",
             ]
         )
     else:
@@ -494,6 +659,31 @@ def build_studio_prompt(
     return "\n".join(sections)
 
 
+def _readable_reference_dirs(session: Session, session_row: TicketStudioSession) -> list[str]:
+    repos: list[ReferenceRepo] = ReferenceRepoService(session).get_many(
+        _load_reference_repo_ids(session_row)
+    )
+    return [repo.local_path for repo in repos if repo.local_path and is_cloned(repo.local_path)]
+
+
+def _assert_adapter_can_read_extra_dirs(workspace: Workspace) -> None:
+    """Only the claude adapter takes --add-dir.
+
+    Without this the survey still runs, reads nothing outside the workspace, and
+    reports confident findings invented from the repo name alone.
+    """
+    agent = get_agent(TICKET_STUDIO_AGENT_ID) or {}
+    adapter = resolve_effective_adapter(
+        agent_adapter=agent.get("adapter", "claude"), workspace=workspace
+    )
+    if adapter != "claude":
+        raise ValueError(
+            f"Reference repos need the claude CLI adapter to be readable (this session "
+            f"runs '{adapter}'). Switch the session runtime to claude, or detach the "
+            f"reference repos."
+        )
+
+
 def invoke_ticket_studio_model(
     session: Session,
     session_row: TicketStudioSession,
@@ -509,6 +699,11 @@ def invoke_ticket_studio_model(
     if not workspace:
         raise ValueError("Session workspace not found")
 
+    effective_workspace = apply_studio_runtime_overrides(workspace, session_row)
+    extra_dirs = _readable_reference_dirs(session, session_row)
+    if extra_dirs:
+        _assert_adapter_can_read_extra_dirs(effective_workspace)
+
     history = list_studio_messages(session, session_row.id)
     prompt = build_studio_prompt(
         session_row,
@@ -520,11 +715,13 @@ def invoke_ticket_studio_model(
     )
     return run_cli_agent_turn(
         TICKET_STUDIO_CLI_PROFILE,
-        workspace=apply_studio_runtime_overrides(workspace, session_row),
+        workspace=effective_workspace,
         prompt=prompt,
-        # "clarify"/"scope" replies carry a JSON block whose size scales with ticket count;
-        # truncating those mid-JSON breaks parsing, so only guard against runaway output.
+        # "clarify"/"scope"/"survey" replies carry a JSON block whose size scales with
+        # ticket count; truncating those mid-JSON breaks parsing, so only guard against
+        # runaway output.
         reply_cap=None if mode == "chat" else SCOPE_REPLY_CAP,
+        extra_dirs=extra_dirs,
     )
 
 
@@ -757,10 +954,13 @@ class TicketStudioService:
                 root_description=body.brief.strip(),
             )
 
+        reference_repo_ids = self._validated_repo_ids(ws.id, body.reference_repo_ids)
+
         row = TicketStudioSession(
             workspace_id=ws.id,
             title=title,
             brief=body.brief.strip(),
+            reference_repo_ids_json=json.dumps(reference_repo_ids),
             parent_ticket_id=body.parent_ticket_id,
             is_preview=is_preview,
             imported_tickets_json=imported_tickets_json,
@@ -838,6 +1038,105 @@ class TicketStudioService:
         self.session.commit()
         self.session.refresh(row)
         return get_studio_runtime(row)
+
+    def _validated_repo_ids(self, workspace_id: str, repo_ids: list[str]) -> list[str]:
+        """Keep the given ids, in order, minus duplicates and anything outside this
+        workspace — a session must not read a repo attached to another project."""
+        seen: set[str] = set()
+        valid: list[str] = []
+        for repo_id in repo_ids:
+            if repo_id in seen:
+                continue
+            repo = self.session.get(ReferenceRepo, repo_id)
+            if not repo or repo.workspace_id != workspace_id:
+                raise ValueError(f"Reference repo not found in workspace: {repo_id}")
+            seen.add(repo_id)
+            valid.append(repo_id)
+        return valid
+
+    def set_reference_repos(self, session_id: str, repo_ids: list[str]) -> TicketStudioSessionView:
+        row = self.session.get(TicketStudioSession, session_id)
+        if not row:
+            raise ValueError("Ticket studio session not found")
+        if row.status != TicketStudioSessionStatus.DRAFT:
+            raise ValueError("Only draft sessions can be edited")
+
+        valid = self._validated_repo_ids(row.workspace_id, repo_ids)
+        detached = set(_load_reference_repo_ids(row)) - set(valid)
+        row.reference_repo_ids_json = json.dumps(valid)
+        if detached:
+            # Findings cite a repo by slug and path; keeping them after that repo is
+            # detached would scope tickets against source nobody can open.
+            kept_slugs = {repo.slug for repo in ReferenceRepoService(self.session).get_many(valid)}
+            survey = [finding for finding in _load_survey(row) if finding.repo_slug in kept_slugs]
+            row.survey_json = json.dumps([item.model_dump(mode="json") for item in survey])
+        row.updated_at = datetime.now(timezone.utc)
+        self.session.add(row)
+        self.session.commit()
+        self.session.refresh(row)
+        return _session_view(self.session, row)
+
+    def generate_survey(self, session_id: str) -> TicketStudioSessionView:
+        """Have the scoper read the attached reference repos and report what is worth taking."""
+        row = self.session.get(TicketStudioSession, session_id)
+        if not row:
+            raise ValueError("Ticket studio session not found")
+        if row.status != TicketStudioSessionStatus.DRAFT:
+            raise ValueError("Cannot survey a committed session")
+        if not _readable_reference_dirs(self.session, row):
+            raise ValueError("Attach at least one cloned reference repo before surveying")
+
+        prompt = (
+            "Survey the attached reference repos against this project and this brief. "
+            "Return findings in the JSON survey block."
+        )
+        self.session.add(TicketStudioMessage(session_id=row.id, role="user", content=prompt))
+        row.updated_at = datetime.now(timezone.utc)
+        self.session.add(row)
+        self.session.commit()
+
+        try:
+            reply = invoke_ticket_studio_model(self.session, row, prompt, mode="survey")
+        except Exception as exc:
+            reply = f"Ticket studio assistant unavailable: {exc}"
+
+        self.session.add(TicketStudioMessage(session_id=row.id, role="assistant", content=reply))
+        summary, questions, findings = parse_survey_payload(reply)
+        if findings:
+            row.survey_json = json.dumps([item.model_dump(mode="json") for item in findings])
+        if summary:
+            row.summary = summary
+        if questions:
+            row.clarifying_questions_json = json.dumps(questions)
+            row.clarifying_answers_json = json.dumps(_carry_over_answers(row, questions))
+        if not findings and not summary:
+            row.summary = (
+                "The survey did not return structured findings — check the reference repo "
+                "clone, or refine the brief and run it again."
+            )
+        row.updated_at = datetime.now(timezone.utc)
+        self.session.add(row)
+        self.session.commit()
+
+        messages = list_studio_messages(self.session, row.id)
+        self.session.refresh(row)
+        return _session_view(self.session, row, messages=messages)
+
+    def save_survey(
+        self, session_id: str, findings: list[TicketStudioSurveyFinding]
+    ) -> TicketStudioSessionView:
+        row = self.session.get(TicketStudioSession, session_id)
+        if not row:
+            raise ValueError("Ticket studio session not found")
+        if row.status != TicketStudioSessionStatus.DRAFT:
+            raise ValueError("Only draft sessions can be edited")
+
+        row.survey_json = json.dumps([item.model_dump(mode="json") for item in findings])
+        row.updated_at = datetime.now(timezone.utc)
+        self.session.add(row)
+        self.session.commit()
+        self.session.refresh(row)
+        return _session_view(self.session, row)
 
     def update_draft(
         self, session_id: str, items: list[TicketStudioDraftItem]

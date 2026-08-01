@@ -689,6 +689,31 @@ class TicketStudioSession(SQLModel, table=True):
     runtime_json: str = "{}"
     is_preview: bool = Field(default=False)
     imported_tickets_json: str = "[]"
+    # Ids of the workspace reference repos this session scopes against, and the
+    # survey findings the scoper produced from them (see ReferenceRepo).
+    reference_repo_ids_json: str = "[]"
+    survey_json: str = "[]"
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class ReferenceRepo(SQLModel, table=True):
+    """A third-party repo cloned locally so the scoper can read it alongside the
+    workspace repo. Workspace-scoped and reusable: the clone is cached on disk and
+    any number of ticket studio sessions can attach the same row."""
+
+    __tablename__ = "reference_repos"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    url: str = ""
+    slug: str = Field(default="", index=True)  # host/owner/name
+    name: str = ""
+    local_path: str = ""
+    default_branch: str = ""
+    head_sha: str = ""
+    notes: str = ""
+    last_synced_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

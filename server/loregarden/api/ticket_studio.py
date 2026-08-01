@@ -4,9 +4,11 @@ from loregarden.models.domain import (
     TicketStudioClarificationsUpdate,
     TicketStudioDraftUpdate,
     TicketStudioMessageCreate,
+    TicketStudioReferenceReposUpdate,
     TicketStudioSessionCreate,
     TicketStudioSessionUpdate,
     TicketStudioSessionView,
+    TicketStudioSurveyUpdate,
     WorkspaceRuntimeUpdate,
 )
 from loregarden.services.ticket_studio_run_service import schedule_studio_turn
@@ -192,6 +194,46 @@ def generate_ticket_studio_scope(session_id: str, session: Session = Depends(get
         return _accept_turn(session, TicketStudioService(session).generate_scope(session_id))
     except TicketStudioConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/sessions/{session_id}/reference-repos")
+def set_ticket_studio_reference_repos(
+    session_id: str,
+    body: TicketStudioReferenceReposUpdate,
+    session: Session = Depends(get_session),
+) -> dict:
+    try:
+        return (
+            TicketStudioService(session)
+            .set_reference_repos(session_id, body.reference_repo_ids)
+            .model_dump(mode="json")
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/sessions/{session_id}/survey")
+def generate_ticket_studio_survey(session_id: str, session: Session = Depends(get_session)) -> dict:
+    try:
+        return TicketStudioService(session).generate_survey(session_id).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/sessions/{session_id}/survey")
+def save_ticket_studio_survey(
+    session_id: str,
+    body: TicketStudioSurveyUpdate,
+    session: Session = Depends(get_session),
+) -> dict:
+    try:
+        return (
+            TicketStudioService(session)
+            .save_survey(session_id, body.findings)
+            .model_dump(mode="json")
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

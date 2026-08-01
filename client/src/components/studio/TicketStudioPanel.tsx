@@ -35,6 +35,7 @@ import { workItemTypeLabel } from "../../lib/workItemHierarchy";
 import { runtimeSummaryLabel } from "../WorkspaceRuntimeFields";
 import { TriageModelModal } from "../TriageModelModal";
 import { ImportTicketsModal } from "../ImportTicketsModal";
+import { ReferenceRepoPicker, ReferenceReposSection } from "./ReferenceRepos";
 import { TicketStudioChatMessages, TicketStudioComposer } from "./TicketStudioChat";
 import { TicketStudioDraftModal } from "./TicketStudioDraftModal";
 import { StudioWorkspacePicker } from "./StudioWorkspacePicker";
@@ -84,6 +85,7 @@ export function TicketStudioPanel({
     routeSessionId && !isStudioNewResource(routeSessionId) ? routeSessionId : null;
   const [workspaceSlug, setWorkspaceSlug] = useState(propsWorkspaceSlug ?? workspaces[0]?.slug ?? "loregarden");
   const [newDraft, setNewDraft] = useState(emptySessionDraft);
+  const [newReferenceRepoIds, setNewReferenceRepoIds] = useState<string[]>([]);
   const [chatDraft, setChatDraft] = useState("");
   const [modelModalOpen, setModelModalOpen] = useState(false);
   const [smartImportOpen, setSmartImportOpen] = useState(false);
@@ -156,6 +158,7 @@ export function TicketStudioPanel({
       /* ignore storage failures */
     }
     setNewDraft(next);
+    setNewReferenceRepoIds([]);
   }, [isNewSession]);
 
   useEffect(() => {
@@ -229,7 +232,17 @@ export function TicketStudioPanel({
         title: newDraft.title.trim(),
         brief: newDraft.brief.trim(),
         parent_ticket_id: newDraft.parent_ticket_id || null,
+        reference_repo_ids: newReferenceRepoIds,
       });
+      if (newReferenceRepoIds.length > 0) {
+        // With reference repos attached the survey comes first: the operator picks
+        // which parts to pursue before anything is scoped into tickets.
+        try {
+          return await api.generateTicketStudioSurvey(created.id);
+        } catch {
+          return created;
+        }
+      }
       try {
         // auto_scope: the server generates the breakdown itself when the scoper
         // has nothing to ask, so the chain is not lost if this page goes away.
@@ -248,6 +261,7 @@ export function TicketStudioPanel({
       navigateToStudioTicketSession(updated.id, true);
       setAnswerDraft(updated.clarifying_answers);
       setNewDraft(emptySessionDraft());
+      setNewReferenceRepoIds([]);
     },
   });
 
@@ -314,6 +328,14 @@ export function TicketStudioPanel({
       setChatDraft("");
     },
   });
+
+  const cacheSession = (updated: TicketStudioSession) => {
+    if (!qc) return;
+    qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
+      current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
+    );
+    qc.setQueryData(["ticket-studio-session", updated.id], updated);
+  };
 
   const generateScope = useMutation({
     meta: { errorTitle: "Generate scope" },
@@ -480,6 +502,14 @@ export function TicketStudioPanel({
             ))}
           </div>
         </div>
+      )}
+
+      {selectedSession && (
+        <ReferenceReposSection
+          session={selectedSession}
+          isReadOnly={isReadOnly}
+          onSessionUpdated={cacheSession}
+        />
       )}
 
       {!selectedSession ? (
@@ -697,6 +727,13 @@ export function TicketStudioPanel({
                       placeholder="Problem, users, constraints, success metrics, technical notes…"
                     />
                   </div>
+
+                  <ReferenceRepoPicker
+                    workspaceSlug={workspaceSlug}
+                    selectedIds={newReferenceRepoIds}
+                    onChange={setNewReferenceRepoIds}
+                    disabled={createSession.isPending}
+                  />
 
                   <button
                     type="button"
