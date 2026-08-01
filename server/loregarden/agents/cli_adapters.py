@@ -2,6 +2,7 @@ import os
 import shlex
 import shutil
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -583,6 +584,7 @@ def build_triage_invocation(
     workspace_slug: str = "",
     granted_tools: list[str] | None = None,
     read_only: bool = False,
+    extra_dirs: Sequence[Path | str] = (),
 ) -> CliInvocation:
     """One-shot, non-interactive CLI for the triage chat channel.
 
@@ -592,6 +594,10 @@ def build_triage_invocation(
     ``run_id`` / ``granted_tools`` matter for LM Studio only: that runner has no
     native MCP, so the subprocess needs the control-plane endpoint + tool grant.
     Claude/Cursor CLIs configure MCP themselves.
+    `extra_dirs` grants read access to directories outside the workspace root — the
+    ticket studio uses it to hand the scoper a cloned reference repo. Only the
+    claude adapter can express this, so callers that need it must check the
+    effective adapter first rather than assume the grant took.
     """
     override = _env_command_override(
         agent_id=agent_id,
@@ -638,6 +644,15 @@ def build_triage_invocation(
             str(prompt_file),
             triage_user_prompt,
         ]
+        for extra in extra_dirs:
+            argv.extend(["--add-dir", str(extra)])
+        argv.extend(
+            [
+                "--append-system-prompt-file",
+                str(prompt_file),
+                triage_user_prompt,
+            ]
+        )
         _append_model_flag(argv, triage_model)
         _append_claude_effort_flag(argv, effort)
         return CliInvocation(

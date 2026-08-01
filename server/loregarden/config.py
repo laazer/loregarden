@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     # narrower directory (e.g. your projects folder) to restrict how far the
     # unauthenticated browse/import endpoints can read.
     browse_root: str = ""
+    # Reference repos: third-party checkouts the ticket studio scoper reads
+    # alongside the workspace repo. Empty defaults to ~/.loregarden/reference_repos.
+    reference_repo_cache_dir: str = ""
+    reference_repo_clone_timeout: int = 600
     # iCloud + Obsidian memory (optional — empty disables external memory backends)
     icloud_root: str = ""
     obsidian_vault_dir: str = ""

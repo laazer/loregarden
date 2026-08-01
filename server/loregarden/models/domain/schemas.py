@@ -675,6 +675,53 @@ class TicketStudioDraftItem(SQLModel):
     selected: bool = True
 
 
+class TicketStudioSurveyFinding(SQLModel):
+    """One part of a reference repo the scoper thinks is worth pulling over."""
+
+    ref: str
+    title: str
+    repo_slug: str = ""
+    source_paths: list[str] = Field(default_factory=list)
+    what_it_gives: str = ""
+    fit: str = ""
+    risks: str = ""
+    # adopt (port largely as-is) | adapt (rework to our shape) | inspire (idea
+    # only, own implementation) | skip (looked, not worth it)
+    verdict: str = "adapt"
+    effort: str = ""  # S | M | L
+    selected: bool = False
+
+
+class TicketStudioSurveyUpdate(SQLModel):
+    findings: list[TicketStudioSurveyFinding]
+
+
+class TicketStudioReferenceReposUpdate(SQLModel):
+    reference_repo_ids: list[str]
+
+
+class ReferenceRepoCreate(SQLModel):
+    workspace_slug: str
+    url: str
+    notes: str = ""
+
+
+class ReferenceRepoView(SQLModel):
+    id: str
+    workspace_slug: str
+    url: str
+    slug: str
+    name: str
+    local_path: str
+    default_branch: str = ""
+    head_sha: str = ""
+    notes: str = ""
+    cloned: bool = False
+    last_synced_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class TicketStudioSessionCreate(SQLModel):
     workspace_slug: str
     title: str
@@ -682,6 +729,7 @@ class TicketStudioSessionCreate(SQLModel):
     parent_ticket_id: str | None = None
     is_preview: bool = False
     imported_tickets: list[dict[str, Any]] = Field(default_factory=list)
+    reference_repo_ids: list[str] = Field(default_factory=list)
 
 
 class TicketStudioSessionUpdate(SQLModel):
@@ -723,6 +771,8 @@ class TicketStudioSessionView(SQLModel):
     # scoper working instead of an idle panel that silently changes later.
     run_status: str = "idle"
     active_turn_id: str | None = None
+    reference_repos: list[ReferenceRepoView] = Field(default_factory=list)
+    survey: list[TicketStudioSurveyFinding] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

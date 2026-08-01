@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -72,6 +73,7 @@ def run_cli_agent_turn(
     workspace_slug: str = "",
     granted_tools: list[str] | None = None,
     read_only: bool = False,
+    extra_dirs: Sequence[Path | str] = (),
 ) -> str:
     """Run one turn to completion and return the assistant's reply.
 
@@ -80,6 +82,7 @@ def run_cli_agent_turn(
 
     ``run_id`` / ``granted_tools`` are forwarded for LM Studio so the runner can
     speak MCP; Claude/Cursor ignore them (they configure MCP themselves).
+    `extra_dirs` grants read access to directories outside the workspace repo.
     """
     repo_root = resolve_workspace_root(workspace)
     if not repo_root.is_dir():
@@ -110,6 +113,7 @@ def run_cli_agent_turn(
             workspace_slug=workspace_slug or workspace.slug or "",
             granted_tools=tools,
             read_only=read_only,
+            extra_dirs=extra_dirs,
         )
         proc = subprocess.Popen(
             invocation.argv,
