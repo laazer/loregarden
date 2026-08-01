@@ -17,6 +17,7 @@ export function BranchWorktreesModal({
   const qc = useQueryClient();
 
   const remove = useMutation({
+    meta: { errorTitle: "Remove worktree" },
     mutationFn: (path: string) => removeBranchWorktree(workspaceSlug, branch!.name, path),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["branch-triage", workspaceSlug] });

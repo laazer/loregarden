@@ -16,6 +16,7 @@ import {
 import { AgentPreviewPanel } from "../components/studio/AgentPreviewPanel";
 import { AgentVersionHistory } from "../components/studio/AgentVersionHistory";
 import { StageRouteHints } from "../components/StageRouteHints";
+import { PageTopbar } from "../components/TopbarPageSlot";
 import { McpToolGuideSection } from "../components/studio/McpToolGuideSection";
 import { GateHandoffEditor } from "../components/studio/GateHandoffEditor";
 import { StudioDescribeBar } from "../components/studio/StudioDescribeBar";
@@ -234,6 +235,7 @@ export function StudioPage() {
   });
 
   const saveAgent = useMutation({
+    meta: { errorTitle: "Save agent" },
     mutationFn: async () => {
       const payload = {
         ...agentDraft,
@@ -254,6 +256,7 @@ export function StudioPage() {
   });
 
   const deleteAgent = useMutation({
+    meta: { errorTitle: "Delete agent" },
     mutationFn: (slug: string) => api.deleteStudioAgent(slug),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["studio-agents"] });
@@ -263,6 +266,7 @@ export function StudioPage() {
   });
 
   const generateAgentDraft = useMutation({
+    meta: { errorTitle: "Generate agent draft" },
     mutationFn: () => api.generateStudioAgent(agentDescribePrompt),
     onSuccess: (generated) => {
       setAgentDraft((draft) => ({
@@ -280,6 +284,7 @@ export function StudioPage() {
   });
 
   const generateWorkflowDraft = useMutation({
+    meta: { errorTitle: "Generate workflow draft" },
     mutationFn: () => api.generateStudioWorkflow(workflowDescribePrompt),
     onSuccess: (generated) => {
       setWorkflowDraft({
@@ -293,6 +298,7 @@ export function StudioPage() {
   });
 
   const saveWorkflow = useMutation({
+    meta: { errorTitle: "Save workflow" },
     mutationFn: async () => {
       const { transitions, ...rest } = workflowDraft;
       const payload = {
@@ -317,6 +323,7 @@ export function StudioPage() {
   });
 
   const publishWorkflow = useMutation({
+    meta: { errorTitle: "Publish workflow" },
     mutationFn: (slug: string) => api.publishStudioWorkflow(slug),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["studio-workflows"] });
@@ -325,6 +332,7 @@ export function StudioPage() {
   });
 
   const deleteWorkflow = useMutation({
+    meta: { errorTitle: "Delete workflow" },
     mutationFn: (slug: string) => api.deleteStudioWorkflow(slug),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["studio-workflows"] });
@@ -529,62 +537,45 @@ export function StudioPage() {
 
   return (
     <div className="screen-view screen-view--studio">
-      <header className="page-hero-header">
-        <div className="page-hero-copy">
-          <div className="page-hero-eyebrow">
-            <span>Studios</span>
-            <span className="page-hero-eyebrow-dot" aria-hidden />
-            <span className="page-hero-eyebrow-muted">Agents · Workflows · Scoping</span>
+      <PageTopbar
+        title={
+          tab === "agents"
+            ? "Agent Studio"
+            : tab === "workflows"
+              ? "Workflow Studio"
+              : tab === "gates"
+                ? "Transition Gates"
+                : "Ticket Studio"
+        }
+      >
+        {(tab === "agents" || tab === "workflows") && (
+          <div className="studio-layout-toggle" role="group" aria-label="Layout mode">
+            <button
+              type="button"
+              className={layoutMode === "workbench" ? "active" : ""}
+              onClick={() => setLayoutMode("workbench")}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                <rect x="3" y="3" width="6" height="18" rx="1.5" />
+                <rect x="11" y="3" width="10" height="10" rx="1.5" />
+                <rect x="11" y="15" width="10" height="6" rx="1.5" />
+              </svg>
+              Workbench
+            </button>
+            <button
+              type="button"
+              className={layoutMode === "focus" ? "active" : ""}
+              onClick={() => setLayoutMode("focus")}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                <rect x="3" y="3" width="12" height="18" rx="1.5" />
+                <rect x="17" y="3" width="4" height="18" rx="1.5" />
+              </svg>
+              Focus
+            </button>
           </div>
-          <h1 className="page-hero-title">
-            {tab === "agents"
-              ? "Agent Studio"
-              : tab === "workflows"
-                ? "Workflow Studio"
-                : tab === "gates"
-                  ? "Transition Gates"
-                  : "Ticket Studio"}
-          </h1>
-          <p className="page-hero-sub">
-            {tab === "agents"
-              ? "Define role instructions, MCP tools, gates, and handoff rules."
-              : tab === "workflows"
-                ? "Chain agents together with classify steps, gates, and human approvals."
-                : tab === "gates"
-                  ? "Run commands between stages to block a bad handoff before it happens."
-                  : "Chat with the scoper to refine scope and generate draft tickets."}
-          </p>
-        </div>
-        <div className="page-hero-actions">
-          {(tab === "agents" || tab === "workflows") && (
-            <div className="studio-layout-toggle" role="group" aria-label="Layout mode">
-              <button
-                type="button"
-                className={layoutMode === "workbench" ? "active" : ""}
-                onClick={() => setLayoutMode("workbench")}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
-                  <rect x="3" y="3" width="6" height="18" rx="1.5" />
-                  <rect x="11" y="3" width="10" height="10" rx="1.5" />
-                  <rect x="11" y="15" width="10" height="6" rx="1.5" />
-                </svg>
-                Workbench
-              </button>
-              <button
-                type="button"
-                className={layoutMode === "focus" ? "active" : ""}
-                onClick={() => setLayoutMode("focus")}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
-                  <rect x="3" y="3" width="12" height="18" rx="1.5" />
-                  <rect x="17" y="3" width="4" height="18" rx="1.5" />
-                </svg>
-                Focus
-              </button>
-            </div>
-          )}
-        </div>
-      </header>
+        )}
+      </PageTopbar>
 
       <div className="studio-subtabs" role="tablist" aria-label="Studio sections">
         {(

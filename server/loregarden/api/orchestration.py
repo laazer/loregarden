@@ -8,6 +8,7 @@ from loregarden.models.domain import (
     CompleteOrchestrationRequest,
     CompleteStageRequest,
     GatesConfigUpdate,
+    GitAutomationView,
     OrchestrationDriver,
     OrchestrationProfileView,
     OrchestrationRun,
@@ -24,9 +25,11 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import (
     GatesConfig,
+    GitAutomationConfig,
     list_profiles,
     resolve_orchestration_profile,
     update_gates_config,
+    update_git_config,
 )
 from sqlmodel import Session, select
 
@@ -104,6 +107,30 @@ def update_workspace_gates(
     )
     profile = update_gates_config(ws, gates)
     return _profile_view(profile, ws)
+
+
+@router.get("/workspaces/{slug}/profile/git", response_model=GitAutomationView)
+def get_workspace_git_automation(
+    slug: str, session: Session = Depends(get_session)
+) -> GitAutomationView:
+    ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
+    if not ws:
+        raise HTTPException(404, "Workspace not found")
+    profile = resolve_orchestration_profile(ws)
+    return GitAutomationView.model_validate(profile.git.model_dump(mode="json"))
+
+
+@router.put("/workspaces/{slug}/profile/git", response_model=GitAutomationView)
+def update_workspace_git_automation(
+    slug: str, body: GitAutomationView, session: Session = Depends(get_session)
+) -> GitAutomationView:
+    ws = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
+    if not ws:
+        raise HTTPException(404, "Workspace not found")
+    profile = update_git_config(
+        ws, GitAutomationConfig.model_validate(body.model_dump(mode="json"))
+    )
+    return GitAutomationView.model_validate(profile.git.model_dump(mode="json"))
 
 
 @router.post("/tickets/{ticket_id}/start", response_model=OrchestrationRunView)

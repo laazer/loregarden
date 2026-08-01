@@ -121,12 +121,14 @@ export function BranchTriageOverviewPanel({
   };
 
   const saveTicketRuntime = useMutation({
+    meta: { errorTitle: "Save ticket runtime" },
     mutationFn: (runtime: WorkspaceRuntimeSettings) =>
       api.setTriageRuntime(linkedTicketId!, runtime),
     onSuccess: applyRuntime,
   });
 
   const saveWorkspaceRuntime = useMutation({
+    meta: { errorTitle: "Save workspace runtime" },
     mutationFn: (runtime: WorkspaceRuntimeSettings) =>
       api.setWorkspaceRuntime(workspaceSlug, runtime),
     onSuccess: applyRuntime,

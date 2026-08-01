@@ -57,6 +57,7 @@ import type {
   MemoryStatus,
   MemoryConfigResponse,
   OrchestrationProfileView,
+  GitAutomationView,
   WorkspaceWorkflow,
   Approval,
   BaxterChatSessionSummary,
@@ -317,6 +318,13 @@ export const api = {
     body: { enabled: boolean; commands: string[]; transition_script: string },
   ) =>
     request<OrchestrationProfileView>(`/api/orchestration/workspaces/${slug}/profile/gates`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  gitAutomation: (slug: string) =>
+    request<GitAutomationView>(`/api/orchestration/workspaces/${slug}/profile/git`),
+  updateGitAutomation: (slug: string, body: GitAutomationView) =>
+    request<GitAutomationView>(`/api/orchestration/workspaces/${slug}/profile/git`, {
       method: "PUT",
       body: JSON.stringify(body),
     }),

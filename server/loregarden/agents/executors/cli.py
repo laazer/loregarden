@@ -49,7 +49,11 @@ from loregarden.services.run_log_stream import RunLogStreamer
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
 from loregarden.services.studio_service import build_studio_prompt_sections
 from loregarden.services.subprocess_lines import SubprocessLineReader
-from loregarden.services.workspace_paths import resolve_agent_context_dir, resolve_workspace_root
+from loregarden.services.workspace_paths import (
+    resolve_agent_context_dir,
+    resolve_run_root,
+    resolve_workspace_root,
+)
 from loregarden.skills.registry import SKILL_PROMPT_CAP, get_skill
 from sqlmodel import Session
 
@@ -117,17 +121,28 @@ class CliAgentExecutor:
                 advance_workflow=advance_workflow,
             )
 
-        repo_root = resolve_workspace_root(workspace)
         agent_context_dir = resolve_agent_context_dir(workspace)
-        if not repo_root.is_dir():
+        workspace_root = resolve_workspace_root(workspace)
+        if not workspace_root.is_dir():
             return self.orchestration.complete_run(
                 run,
                 status=RunStatus.FAILED,
-                stderr=f"Workspace repo path does not exist: {repo_root}",
+                stderr=f"Workspace repo path does not exist: {workspace_root}",
                 advance_workflow=advance_workflow,
             )
 
-        if not skip_git_branch:
+        # A run with a worktree executes inside it. Without this the worktree
+        # was created, recorded, and then ignored — every run, parallel or not,
+        # ran in the one shared checkout and fought over its working tree.
+        # A worktree whose directory has gone falls back to the checkout above,
+        # so this is always a real directory.
+        repo_root = resolve_run_root(self.session, run, workspace_root)
+        in_worktree = repo_root != workspace_root
+
+        # A worktree is already on its own branch, created with it. Running
+        # `checkout -B` there would be a no-op at best and, if two runs share a
+        # ticket branch, a fight at worst.
+        if not skip_git_branch and not in_worktree:
             try:
                 ensure_ticket_branch(repo_root, ticket)
             except (ValueError, subprocess.CalledProcessError) as exc:

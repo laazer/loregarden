@@ -94,6 +94,7 @@ describe('Parallel Execution Integration Tests', () => {
         activeRuns: mockActiveRuns,
         queuedRuns: mockQueuedRuns,
         stats: mockStats,
+        estimatedClearSeconds: null,
         loading: false,
         error: null,
       });
@@ -132,6 +133,7 @@ describe('Parallel Execution Integration Tests', () => {
         activeRuns: mockActiveRuns,
         queuedRuns: [],
         stats: { ...mockStats, queued_count: 0 },
+        estimatedClearSeconds: null,
         loading: false,
         error: null,
       });
@@ -160,6 +162,7 @@ describe('Parallel Execution Integration Tests', () => {
         activeRuns: mockActiveRuns,
         queuedRuns: mockQueuedRuns,
         stats: mockStats,
+        estimatedClearSeconds: null,
         loading: false,
         error: null,
       });
@@ -179,6 +182,7 @@ describe('Parallel Execution Integration Tests', () => {
         activeRuns: mockActiveRuns,
         queuedRuns: [],
         stats: mockStats,
+        estimatedClearSeconds: null,
         loading: false,
         error: null,
       });
@@ -217,6 +221,7 @@ describe('Parallel Execution Integration Tests', () => {
         activeRuns: [mockActiveRuns[0]],
         queuedRuns: mockQueuedRuns,
         stats: { ...mockStats, active_count: 1, available_slots: 2 },
+        estimatedClearSeconds: null,
         loading: false,
         error: null,
       });
@@ -248,6 +253,7 @@ describe('Parallel Execution Integration Tests', () => {
         ],
         queuedRuns: [],
         stats: { ...mockStats, active_count: 2, available_slots: 1, queued_count: 0 },
+        estimatedClearSeconds: null,
         loading: false,
         error: null,
       });
@@ -268,6 +274,7 @@ describe('Parallel Execution Integration Tests', () => {
         activeRuns: mockActiveRuns,
         queuedRuns: [],
         stats: mockStats,
+        estimatedClearSeconds: null,
         loading: false,
         error: null,
       });
@@ -318,6 +325,7 @@ describe('Parallel Execution Integration Tests', () => {
         activeRuns: [],
         queuedRuns: [],
         stats: mockStats,
+        estimatedClearSeconds: null,
         loading: false,
         error: 'Failed to fetch parallel status',
       });
@@ -346,6 +354,7 @@ describe('Parallel Execution Integration Tests', () => {
         activeRuns: mockActiveRuns,
         queuedRuns: [],
         stats: mockStats,
+        estimatedClearSeconds: null,
         loading: false,
         error: null,
       });
@@ -377,6 +386,7 @@ describe('Parallel Execution Integration Tests', () => {
         activeRuns: [],
         queuedRuns: [],
         stats: mockStats,
+        estimatedClearSeconds: null,
         loading: true,
         error: null,
       });
@@ -415,6 +425,7 @@ describe('Parallel Execution Integration Tests', () => {
           total_slots_occupied: 0,
           queue_wait_time_minutes: 0,
         },
+        estimatedClearSeconds: null,
         loading: false,
         error: null,
       });
@@ -448,6 +459,7 @@ describe('Parallel Execution Integration Tests', () => {
           total_slots_occupied: 0,
           queue_wait_time_minutes: 0,
         },
+        estimatedClearSeconds: null,
         loading: false,
         error: null,
       });
@@ -472,6 +484,7 @@ describe('Parallel Execution Integration Tests', () => {
         activeRuns: mockActiveRuns,
         queuedRuns: [],
         stats: mockStats,
+        estimatedClearSeconds: null,
         loading: false,
         error: null,
       });
@@ -501,6 +514,7 @@ describe('Parallel Execution Integration Tests', () => {
               total_slots_occupied: 0,
               queue_wait_time_minutes: 0,
             },
+            estimatedClearSeconds: null,
             loading: false,
             error: null,
           },
@@ -514,6 +528,7 @@ describe('Parallel Execution Integration Tests', () => {
               available_slots: 2,
               queued_count: 1,
             },
+            estimatedClearSeconds: null,
             loading: false,
             error: null,
           },
@@ -527,6 +542,7 @@ describe('Parallel Execution Integration Tests', () => {
               available_slots: 1,
               queued_count: 0,
             },
+            estimatedClearSeconds: null,
             loading: false,
             error: null,
           },

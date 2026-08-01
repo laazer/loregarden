@@ -20,6 +20,7 @@ export function useTicketChatSession(ticketId: string | undefined): ChatSession 
   const { triage, isBusy } = useTriageSession(ticketId);
 
   const sendMessage = useMutation({
+    meta: { errorTitle: "Send message" },
     mutationFn: ({ content, options }: { content: string; options?: ChatSendOptions }) =>
       api.sendTriageMessage(ticketId!, content, { auto_approve: options?.autoApprove ?? false }),
     onSuccess: () => {

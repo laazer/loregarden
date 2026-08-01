@@ -2,6 +2,7 @@ import { AppTopbarActions } from "./AppTopbarActions";
 import { useChatWorkspace } from "../hooks/useChatWorkspace";
 import { useAppPage } from "../lib/useAppNavigation";
 import { useUiStore } from "../state/uiStore";
+import { TopbarPageSlot } from "./TopbarPageSlot";
 
 const PAGE_SUBTITLES: Partial<Record<string, string>> = {
   dashboard: "Agent SDLC · Console",
@@ -66,6 +67,7 @@ export function AppTopbar() {
           <kbd>⌘K</kbd>
         </label>
       ) : null}
+      <TopbarPageSlot />
       <div className="topbar-spacer" />
       {isChat ? (
         <>

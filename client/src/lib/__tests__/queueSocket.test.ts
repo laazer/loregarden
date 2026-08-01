@@ -12,7 +12,7 @@ import {
   QueueSocket,
   queueSocketUrl,
 } from '../queueSocket';
-import type { QueueSocketStatus, QueueStatusSnapshot } from '../queueSocket';
+import type { QueueEvent, QueueSocketStatus, QueueStatusSnapshot } from '../queueSocket';
 
 class FakeWebSocket {
   static readonly CONNECTING = 0;
@@ -78,12 +78,14 @@ function build() {
   const sockets: FakeWebSocket[] = [];
   const statuses: QueueSocketStatus[] = [];
   const snapshots: QueueStatusSnapshot[] = [];
+  const events: QueueEvent[] = [];
 
   const socket = new QueueSocket(
     'ws://localhost:8000/ws/queue/ws-1',
     {
       onSnapshot: (snapshot) => snapshots.push(snapshot),
       onStatus: (status) => statuses.push(status),
+      onEvent: (event) => events.push(event),
     },
     (url) => {
       const fake = new FakeWebSocket(url);
@@ -92,7 +94,7 @@ function build() {
     },
   );
 
-  return { socket, sockets, statuses, snapshots };
+  return { socket, sockets, statuses, snapshots, events };
 }
 
 describe('queueSocketUrl', () => {
@@ -258,5 +260,68 @@ describe('QueueSocket', () => {
     jest.advanceTimersByTime(MAX_RECONNECT_DELAY_MS * 10);
 
     expect(sockets).toHaveLength(1);
+  });
+
+  describe('queue_event frames', () => {
+    it('routes an event to onEvent, not onSnapshot', () => {
+      const { socket, sockets, events, snapshots } = build();
+      socket.open();
+      sockets[0].finishHandshake();
+
+      sockets[0].deliver({
+        type: 'queue_event',
+        data: { type: 'run_completed', data: { runId: 'run-1', status: 'succeeded' } },
+      });
+
+      expect(events).toEqual([
+        { type: 'run_completed', data: { runId: 'run-1', status: 'succeeded' } },
+      ]);
+      expect(snapshots).toHaveLength(0);
+    });
+
+    it('keeps carrying snapshots alongside events', () => {
+      const { socket, sockets, events, snapshots } = build();
+      socket.open();
+      sockets[0].finishHandshake();
+
+      sockets[0].deliver({
+        type: 'queue_event',
+        data: { type: 'queue_promoted', data: { runId: 'run-1', slotNumber: 1 } },
+      });
+      sockets[0].deliver({ type: 'queue_status', data: SNAPSHOT });
+
+      expect(events).toHaveLength(1);
+      expect(snapshots).toEqual([SNAPSHOT]);
+    });
+
+    it('ignores an event frame with no payload', () => {
+      const { socket, sockets, events } = build();
+      socket.open();
+      sockets[0].finishHandshake();
+
+      sockets[0].deliver({ type: 'queue_event' });
+
+      expect(events).toHaveLength(0);
+    });
+
+    it('survives a caller that does not handle events', () => {
+      const sockets: FakeWebSocket[] = [];
+      const snapshots: QueueStatusSnapshot[] = [];
+      const socket = new QueueSocket(
+        'ws://localhost:8000/ws/queue/ws-1',
+        { onSnapshot: (s) => snapshots.push(s), onStatus: () => {} },
+        (url) => {
+          const fake = new FakeWebSocket(url);
+          sockets.push(fake);
+          return fake as unknown as WebSocket;
+        },
+      );
+      socket.open();
+      sockets[0].finishHandshake();
+
+      expect(() =>
+        sockets[0].deliver({ type: 'queue_event', data: { type: 'error' } }),
+      ).not.toThrow();
+    });
   });
 });

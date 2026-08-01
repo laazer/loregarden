@@ -8,6 +8,8 @@ import { AppIconRail } from "./AppIconRail";
 import { AppTopbar } from "./AppTopbar";
 import { AppUtilityDock } from "./AppUtilityDock";
 import { SettingsModal } from "./SettingsModal";
+import { ToastHost } from "./ToastHost";
+import { TopbarPageSlotProvider } from "./TopbarPageSlot";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
@@ -28,6 +30,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   });
 
   const setRuntime = useMutation({
+    meta: { errorTitle: "Save runtime settings" },
     mutationFn: ({
       slug,
       runtime,
@@ -66,13 +69,15 @@ export function AppLayout({ children }: { children: ReactNode }) {
     <div className="app-frame">
       <div className="app-ambient" aria-hidden />
       <AppIconRail onOpenSettings={openSettings} />
-      <div className="app-main">
-        <AppTopbar />
-        <div className={`app-body app-body--dock-${utilityDockEdge}`}>
-          <div className="screen-area">{children}</div>
-          {showUtilityDock ? <AppUtilityDock /> : null}
+      <TopbarPageSlotProvider>
+        <div className="app-main">
+          <AppTopbar />
+          <div className={`app-body app-body--dock-${utilityDockEdge}`}>
+            <div className="screen-area">{children}</div>
+            {showUtilityDock ? <AppUtilityDock /> : null}
+          </div>
         </div>
-      </div>
+      </TopbarPageSlotProvider>
 
       <SettingsModal
         open={settingsOpen}
@@ -86,6 +91,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
           await setRuntime.mutateAsync({ slug, runtime });
         }}
       />
+
+      <ToastHost />
     </div>
   );
 }

@@ -29,6 +29,49 @@ class ParallelQueueService:
         self.session = session
         self.max_concurrent = max_concurrent
 
+    def _dispatch(self, run_id: str) -> None:
+        """Hand a promoted run to the executor.
+
+        Imported at call time: run_service imports orchestration, which reaches
+        this module, so a module-level import here closes the cycle.
+        """
+        if not run_id:
+            logger.warning("Refusing to dispatch an empty run id")
+            return
+
+        from loregarden.services.run_service import schedule_agent_run
+
+        try:
+            schedule_agent_run(run_id)
+        except Exception:
+            # A failed hand-off must not leave the slot claimed with nothing in
+            # it — but it also must not take down the promotion bookkeeping that
+            # already committed. Log and let the run reap as failed.
+            logger.error("Failed to dispatch promoted run %s", run_id, exc_info=True)
+
+    def _estimate_start(self, workspace_id: str, position: int) -> datetime:
+        """When a run at this queue position is likely to start.
+
+        From the workspace's own median run duration, not a flat ten minutes
+        per position — that ignored both how long this workspace's runs take
+        and the fact that `max_concurrent` of them drain at once, so it
+        overstated the wait by roughly the slot count.
+        """
+        from loregarden.services.run_duration_stats import (
+            FALLBACK_KEY,
+            median_duration_by_agent,
+        )
+
+        medians = median_duration_by_agent(self.session, workspace_id)
+        per_run = medians.get(FALLBACK_KEY)
+        if not per_run:
+            # No history to project from. The caller stores this as a hint, and
+            # the dashboard renders a missing estimate as "—".
+            return datetime.now(timezone.utc)
+
+        waves = max(0, (position - 1) // max(1, self.max_concurrent))
+        return datetime.now(timezone.utc) + timedelta(seconds=per_run * (waves + 1))
+
     def initialize_slots(self, workspace_id: str) -> None:
         """
         Initialize execution slots for a workspace (one-time setup).
@@ -122,8 +165,7 @@ class ParallelQueueService:
             queued_runs = self.session.exec(queue_length_stmt).all()
             position = len(queued_runs) + 1
 
-            # Estimate start time (assuming 10 min per run)
-            estimated_start = datetime.now(timezone.utc) + timedelta(minutes=10 * position)
+            estimated_start = self._estimate_start(workspace_id, position)
 
             queued_run = QueuedRun(
                 id=str(uuid4()),
@@ -213,6 +255,7 @@ class ParallelQueueService:
                             "slot_number": slot.slot_number,
                             "ticket_id": run.ticket_id,
                             "agent_id": run.agent_id,
+                            "stage_key": run.stage_key,
                             "assigned_at": slot.assigned_at.isoformat()
                             if slot.assigned_at
                             else None,
@@ -273,6 +316,7 @@ class ParallelQueueService:
                             "run_id": run.id,
                             "ticket_id": run.ticket_id,
                             "agent_id": run.agent_id,
+                            "stage_key": run.stage_key,
                             "position": qr.position,
                             "estimated_start_at": qr.estimated_start_at.isoformat()
                             if qr.estimated_start_at
@@ -351,6 +395,11 @@ class ParallelQueueService:
                 f"Promoted run {queued_run.run_id} from position {queued_run.position} "
                 f"to slot {available_slot.slot_number}"
             )
+
+            # Actually start it. Promotion used to move DB rows and stop there,
+            # so a run that waited for a slot got the slot and then never ran —
+            # the queue only ever drained by hand.
+            self._dispatch(queued_run.run_id)
 
             # Emit queue promoted event
             try:

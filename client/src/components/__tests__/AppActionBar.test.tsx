@@ -33,6 +33,7 @@ function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
     label: "",
     ticketId: "t1",
     pendingApprovals: [],
+    branch: null,
     ...overrides,
   } as ReturnType<typeof useActiveChatSession>;
 }
@@ -136,6 +137,32 @@ it("sends a quick opener while collapsed", () => {
   expect(bound.send).toHaveBeenCalledWith("What is blocking this ticket?", {
     autoApprove: false,
   });
+});
+
+it("offers shipping the work when the conversation sits on its own branch", () => {
+  const bound = session();
+  mockResolver.mockReturnValue(
+    bind({ session: bound, label: "Ticket triage", branch: "feat/thing" }),
+  );
+
+  renderBar();
+  fireEvent.click(screen.getByRole("button", { name: "Commit, push, and open a PR" }));
+
+  expect(bound.send).toHaveBeenCalledWith("Commit, push, and open a PR", {
+    autoApprove: false,
+  });
+});
+
+it("withholds shipping on the default branch — there is nothing to open a PR against", () => {
+  mockResolver.mockReturnValue(
+    bind({ session: session({ kind: "branch-triage" }), label: "Branch · main", branch: "main" }),
+  );
+
+  renderBar();
+
+  expect(
+    screen.queryByRole("button", { name: "Commit, push, and open a PR" }),
+  ).not.toBeInTheDocument();
 });
 
 it("drops the openers once the thread is open, leaving the composer the width", () => {

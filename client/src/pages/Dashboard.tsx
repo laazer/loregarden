@@ -295,6 +295,7 @@ export function Dashboard() {
   });
 
   const orchestrate = useMutation({
+    meta: { errorTitle: "Start orchestration" },
     mutationFn: ({
       ticketId,
       options,
@@ -313,6 +314,7 @@ export function Dashboard() {
   });
 
   const openPr = useMutation({
+    meta: { errorTitle: "Open pull request" },
     mutationFn: (ticketId: string) => api.openPr(ticketId),
     onSuccess: (_data, ticketId) => {
       qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
@@ -322,6 +324,7 @@ export function Dashboard() {
   });
 
   const commitPush = useMutation({
+    meta: { errorTitle: "Commit and push" },
     mutationFn: (ticketId: string) => api.commitPush(ticketId),
     onSuccess: (_data, ticketId) => {
       qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
@@ -336,6 +339,7 @@ export function Dashboard() {
   });
 
   const startRun = useMutation({
+    meta: { errorTitle: "Start run" },
     mutationFn: (vars?: { stageKey?: string; autoApprove?: boolean; timeoutSeconds?: number }) =>
       api.startRun(selectedId!, {
         stage_key: vars?.stageKey,
@@ -354,16 +358,8 @@ export function Dashboard() {
     },
   });
 
-  const advance = useMutation({
-    mutationFn: () => api.advance(selectedId!),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
-      qc.invalidateQueries({ queryKey: ["tickets"] });
-      qc.invalidateQueries({ queryKey: ["ticket-tree"] });
-    },
-  });
-
   const stopTicket = useMutation({
+    meta: { errorTitle: "Stop ticket" },
     mutationFn: () => api.stopTicket(selectedId!),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
@@ -373,6 +369,7 @@ export function Dashboard() {
   });
 
   const setCompatibilityPosture = useMutation({
+    meta: { errorTitle: "Set compatibility posture" },
     mutationFn: (posture: string) =>
       api.updateTicket(selectedId!, { compatibility_posture: posture }),
     onSuccess: () => {
@@ -390,6 +387,7 @@ export function Dashboard() {
   };
 
   const routeWorkflow = useMutation({
+    meta: { errorTitle: "Route workflow" },
     mutationFn: (body: {
       from_stage_key: string;
       next_stage_key: string;
@@ -400,11 +398,13 @@ export function Dashboard() {
   });
 
   const patchStageWorkflow = useMutation({
+    meta: { errorTitle: "Update ticket" },
     mutationFn: (body: Parameters<typeof api.updateTicket>[1]) => api.updateTicket(selectedId!, body),
     onSuccess: invalidateTicketQueries,
   });
 
   const deleteTicket = useMutation({
+    meta: { errorTitle: "Delete ticket" },
     mutationFn: (ticketId: string) => api.deleteTicket(ticketId),
     onSuccess: (_result, ticketId) => {
       qc.removeQueries({ queryKey: ["ticket", ticketId] });
@@ -441,6 +441,7 @@ export function Dashboard() {
   const [logRunId, setLogRunId] = useState<string | null>(null);
 
   const saveStateFromModal = useMutation({
+    meta: { errorTitle: "Update ticket state" },
     mutationFn: async ({
       draft,
       original,
@@ -487,6 +488,7 @@ export function Dashboard() {
   });
 
   const setTemplate = useMutation({
+    meta: { errorTitle: "Set workspace workflow" },
     mutationFn: ({ slug, template }: { slug: string; template: string }) =>
       api.setWorkspaceTemplate(slug, template),
     onSuccess: () => {
@@ -502,6 +504,7 @@ export function Dashboard() {
   } | null>(null);
 
   const setTicketTemplate = useMutation({
+    meta: { errorTitle: "Set ticket workflow" },
     mutationFn: ({ ticketId, template }: { ticketId: string; template: string }) =>
       api.updateTicket(ticketId, { workflow_template_slug: template }),
     onSuccess: (_data, vars) => {
@@ -539,6 +542,7 @@ export function Dashboard() {
   });
 
   const setRuntime = useMutation({
+    meta: { errorTitle: "Save runtime settings" },
     mutationFn: ({
       slug,
       runtime,
@@ -553,6 +557,7 @@ export function Dashboard() {
   });
 
   const setTicketRuntime = useMutation({
+    meta: { errorTitle: "Save ticket runtime" },
     mutationFn: (runtime: import("../api/client").WorkspaceRuntimeSettings) => {
       if (!selectedId) throw new Error("No ticket selected");
       return api.setTicketRuntime(selectedId, runtime);
@@ -563,6 +568,7 @@ export function Dashboard() {
   });
 
   const createWorkspace = useMutation({
+    meta: { errorTitle: "Create workspace" },
     mutationFn: (draft: AddWorkspaceDraft) =>
       api.createWorkspace({
         slug: draft.slug,
@@ -580,6 +586,7 @@ export function Dashboard() {
   });
 
   const previewTicketImport = useMutation({
+    meta: { errorTitle: "Preview import" },
     mutationFn: ({
       workspaceSlug,
       filePaths,
@@ -599,6 +606,7 @@ export function Dashboard() {
   });
 
   const startSmartImport = useMutation({
+    meta: { errorTitle: "Start smart import" },
     mutationFn: async ({
       workspaceSlug,
       filePaths,
@@ -640,6 +648,7 @@ export function Dashboard() {
   });
 
   const importTickets = useMutation({
+    meta: { errorTitle: "Import tickets" },
     mutationFn: ({
       workspaceSlug,
       tickets,
@@ -679,6 +688,7 @@ export function Dashboard() {
   });
 
   const createWorkItem = useMutation({
+    meta: { errorTitle: "Create work item" },
     mutationFn: ({
       draft,
       workspaceSlug,
@@ -1502,15 +1512,19 @@ export function Dashboard() {
                         ?.name ??
                       sel.workflow_template_slug ??
                       "";
+                    const assemblePending =
+                      orchestrate.isPending && orchestrate.variables?.ticketId === selectedId;
+                    const rerunDisabled =
+                      workflowBusy || startRun.isPending || !cursorRun.allowed || runningCursor;
                     return (
                       <>
                         <button
                           type="button"
                           className="btn-primary"
-                          disabled={!selectedId || advance.isPending}
-                          onClick={() => advance.mutate()}
+                          disabled={!selectedId || assemblePending}
+                          onClick={() => setAssembleModalOpen(true)}
                         >
-                          {advance.isPending ? "Advancing…" : "Advance stage"}
+                          {agentsAssembleLabel(sel, assemblePending)}
                           <svg
                             width="13"
                             height="13"
@@ -1544,32 +1558,6 @@ export function Dashboard() {
                           </svg>
                           {stopTicket.isPending ? "Pausing…" : "Pause"}
                         </button>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          disabled={
-                            workflowBusy ||
-                            startRun.isPending ||
-                            !cursorRun.allowed ||
-                            runningCursor
-                          }
-                          title={cursorRun.reason}
-                          onClick={() => requestStageRun(sel.workflow_stage_key)}
-                        >
-                          <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            aria-hidden
-                          >
-                            <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-                            <path d="M3 3v5h5" />
-                          </svg>
-                          Re-run
-                        </button>
                         <div style={{ flex: 1 }} />
                         {templateLabel ? (
                           <span className="run-controls-template">{templateLabel}</span>
@@ -1577,10 +1565,9 @@ export function Dashboard() {
                         <WorkflowRunOverflowMenu
                           ticket={sel}
                           orchestrateCommand={buildOrchestrateTerminalCommand(sel, API_BASE)}
-                          assemblePending={
-                            orchestrate.isPending && orchestrate.variables?.ticketId === selectedId
-                          }
-                          onAssemble={() => setAssembleModalOpen(true)}
+                          rerunDisabled={rerunDisabled}
+                          rerunTitle={cursorRun.reason}
+                          onRerun={() => requestStageRun(sel.workflow_stage_key)}
                           onDelete={() => setDeleteTicketTarget(sel)}
                         />
                       </>

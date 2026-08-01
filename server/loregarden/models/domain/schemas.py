@@ -318,6 +318,19 @@ class GatesConfigUpdate(SQLModel):
     transition_script: str = ""
 
 
+class GitAutomationView(SQLModel):
+    """What a queue is allowed to do with a finished run's work."""
+
+    worktree: bool = True
+    commit: bool = False
+    push: bool = False
+    open_pr: bool = False
+    auto_merge: bool = False
+    auto_resolve_conflicts: bool = False
+    max_conflict_resolve_attempts: int = 2
+    base_branch: str = "main"
+
+
 class AdvanceStageRequest(SQLModel):
     # backend decides transition; optional hint only for logging
     reason: str = ""
@@ -355,6 +368,11 @@ class UpdateTicketRequest(SQLModel):
     auto_state: bool | None = None
     #: "" clears the override so the ticket inherits again.
     compatibility_posture: str | None = None
+    #: Per-ticket git automation overrides, as {key: value} for the keys that
+    #: differ from the workspace policy (see GitAutomationConfig). {} clears the
+    #: override so the ticket inherits again — which is not the same as an
+    #: override with every flag false.
+    git_automation: dict[str, bool | int | str] | None = None
 
 
 class TicketCreate(SQLModel):

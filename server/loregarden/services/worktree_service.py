@@ -8,13 +8,35 @@ from uuid import uuid4
 
 from loregarden.models.domain import (
     AgentRun,
+    Workspace,
     Worktree,
     WorktreeState,
 )
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
+
+
+def repo_path_for_workspace(session: Session, workspace_id: str) -> str:
+    """The checkout a workspace's worktrees hang off.
+
+    Every caller used to pass ``"."``, which resolves against the server
+    process's CWD — loregarden's own server directory — so worktrees were cut
+    from the control plane's repository instead of the workspace being
+    orchestrated. It happened to look right only when orchestrating loregarden
+    itself.
+    """
+    workspace = session.get(Workspace, workspace_id)
+    if not workspace:
+        raise ValueError(f"Workspace not found: {workspace_id}")
+    return str(resolve_workspace_root(workspace))
+
+
+def repo_path_for_worktree(session: Session, worktree: Worktree) -> str:
+    """Same, for a handler that starts from a worktree row."""
+    return repo_path_for_workspace(session, worktree.workspace_id)
 
 
 class WorktreeService:
@@ -30,6 +52,7 @@ class WorktreeService:
         workspace_id: str,
         agent_run_id: str,
         parent_branch: str = "main",
+        branch: str = "",
     ) -> Worktree | None:
         """
         Create an isolated git worktree for an agent run.
@@ -37,7 +60,9 @@ class WorktreeService:
         Args:
             workspace_id: Workspace ID
             agent_run_id: Agent run ID
-            parent_branch: Branch to base worktree on (default: main)
+            parent_branch: Branch to base the worktree's branch on
+            branch: Branch to check out in the worktree. Defaults to a branch
+                named after the run.
 
         Returns:
             Worktree record if successful, None on error
@@ -56,11 +81,16 @@ class WorktreeService:
             # Generate unique worktree path: .worktrees/run-{run_id}-{random}
             worktree_name = f"run-{agent_run_id[:8]}-{str(uuid4())[:8]}"
             worktree_path = self.worktree_base / worktree_name
+            branch = branch or worktree_name
 
-            # Create worktree: git worktree add <path> <branch>
-            logger.info(f"Creating worktree: {worktree_path} from {parent_branch}")
+            # `add <path> <parent_branch>` checked *parent_branch itself* out
+            # here, which git refuses when the root already has it checked out
+            # — and when it did work, the run committed straight onto main.
+            # `-B <branch> <parent_branch>` cuts the run its own branch instead,
+            # and -B rather than -b so a retried run reuses its branch.
+            logger.info(f"Creating worktree: {worktree_path} on {branch} from {parent_branch}")
             run_git(
-                ["worktree", "add", str(worktree_path), parent_branch],
+                ["worktree", "add", "-B", branch, str(worktree_path), parent_branch],
                 cwd=str(self.repo_path),
                 check=True,
                 capture_output=True,
@@ -82,6 +112,7 @@ class WorktreeService:
                 workspace_id=workspace_id,
                 agent_run_id=agent_run_id,
                 parent_branch=parent_branch,
+                branch=branch,
                 worktree_path=str(worktree_path),
                 state=WorktreeState.ACTIVE,
                 merge_base=merge_base,
@@ -243,19 +274,24 @@ class WorktreeService:
                 capture_output=True,
             )
 
-            # Merge worktree branch into main
-            # Validate the worktree HEAD resolves to a branch before merging
-            run_git(
-                ["rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=str(worktree_path),
-                check=True,
-                capture_output=True,
-                text=True,
-            )
+            # Merge the worktree's *branch*. The directory name is not a ref —
+            # merging it resolved nothing and failed on every worktree whose
+            # branch was not coincidentally named after its folder. Prefer the
+            # recorded branch, and fall back to asking the worktree itself for
+            # rows written before the column existed.
+            branch = worktree.branch
+            if not branch:
+                head = run_git(
+                    ["rev-parse", "--abbrev-ref", "HEAD"],
+                    cwd=str(worktree_path),
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                branch = head.stdout.strip()
 
-            # Cherry-pick or merge commits from worktree
             result = run_git(
-                ["merge", f"{worktree_path.name}"],
+                ["merge", branch],
                 cwd=str(self.repo_path),
                 capture_output=True,
                 text=True,

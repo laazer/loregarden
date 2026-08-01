@@ -37,6 +37,7 @@ export function WorkspaceGatesPanel({ workspaces }: { workspaces: WorkspaceSumma
   }, [profile.data]);
 
   const saveGates = useMutation({
+    meta: { errorTitle: "Save gates" },
     mutationFn: () =>
       api.updateWorkspaceGates(selectedSlug, {
         enabled,

@@ -70,6 +70,7 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
   }, [qc, workspaceSlug]);
 
   const sendMessage = useMutation({
+    meta: { errorTitle: "Send message" },
     mutationFn: async (content: string) => {
       let id = sessionId;
       if (!id) {
@@ -91,6 +92,7 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
   });
 
   const renameSession = useMutation({
+    meta: { errorTitle: "Rename session" },
     mutationFn: ({ id, title }: { id: string; title: string }) =>
       api.renameBaxterChatSession(workspaceSlug, id, title),
     onSuccess: (result) => {
@@ -100,6 +102,7 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
   });
 
   const deleteSession = useMutation({
+    meta: { errorTitle: "Delete session" },
     mutationFn: (id: string) => api.deleteBaxterChatSession(workspaceSlug, id),
     onSuccess: (_result, id) => {
       if (id === sessionId) setSessionId("");

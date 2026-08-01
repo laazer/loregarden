@@ -42,6 +42,7 @@ export function useBranchChatSession(
   });
 
   const sendMessage = useMutation({
+    meta: { errorTitle: "Send message" },
     mutationFn: (content: string) => sendBranchChatMessage(workspaceSlug, branch, content),
     onMutate: async (content) => {
       await qc.cancelQueries({ queryKey: chatQueryKey });

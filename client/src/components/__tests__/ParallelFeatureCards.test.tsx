@@ -65,6 +65,7 @@ describe('ParallelFeatureCards', () => {
       activeRuns: mockActiveRuns,
       queuedRuns: mockQueuedRuns,
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -92,6 +93,7 @@ describe('ParallelFeatureCards', () => {
       activeRuns: [],
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: true,
       error: null,
     });
@@ -106,6 +108,7 @@ describe('ParallelFeatureCards', () => {
       activeRuns: [],
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: 'Failed to fetch status',
     });
@@ -126,6 +129,7 @@ describe('ParallelFeatureCards', () => {
         available_slots: 3,
         queued_count: 0,
       },
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -144,6 +148,7 @@ describe('ParallelFeatureCards', () => {
         ...mockStats,
         queued_count: 0,
       },
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -162,6 +167,7 @@ describe('ParallelFeatureCards', () => {
         ...mockStats,
         active_count: 0,
       },
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -182,6 +188,7 @@ describe('ParallelFeatureCards', () => {
       ],
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -196,6 +203,7 @@ describe('ParallelFeatureCards', () => {
       activeRuns: [],
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -210,6 +218,7 @@ describe('ParallelFeatureCards', () => {
       activeRuns: mockActiveRuns,
       queuedRuns: [],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -226,6 +235,7 @@ describe('ParallelFeatureCards', () => {
       activeRuns: mockActiveRuns,
       queuedRuns: mockQueuedRuns,
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });
@@ -253,6 +263,7 @@ describe('ParallelFeatureCards', () => {
         },
       ],
       stats: mockStats,
+      estimatedClearSeconds: null,
       loading: false,
       error: null,
     });

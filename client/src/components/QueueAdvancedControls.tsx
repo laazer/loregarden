@@ -4,6 +4,7 @@
  */
 
 import { useState } from 'react';
+import { API_BASE } from '../api/client';
 import type { ActiveRun, QueuedRun } from '../hooks/useParallelExecution';
 import './QueueAdvancedControls.css';
 
@@ -36,7 +37,7 @@ export function QueueAdvancedControls({
       } else {
         // Default API call
         const response = await fetch(
-          `/api/parallel/queue/${runId}/${action}`,
+          `${API_BASE}/api/parallel/queue/${runId}/${action}`,
           { method: 'POST' }
         );
 
@@ -65,7 +66,7 @@ export function QueueAdvancedControls({
     try {
       const results = await Promise.allSettled(
         Array.from(selectedRuns).map((runId) =>
-          fetch(`/api/parallel/queue/${runId}/${action}`, {
+          fetch(`${API_BASE}/api/parallel/queue/${runId}/${action}`, {
             method: 'POST',
           })
         )
@@ -128,7 +129,7 @@ export function QueueAdvancedControls({
             {activeRuns.map((run) => (
               <div key={run.run_id} className="run-control-item active">
                 <div className="run-info">
-                  <div className="run-ticket">{run.ticket_id}</div>
+                  <div className="run-ticket">{run.ticket_title || run.ticket_id}</div>
                   <div className="run-detail">
                     Slot {run.slot_number} • {run.elapsed_seconds}s elapsed
                   </div>
@@ -155,11 +156,11 @@ export function QueueAdvancedControls({
                   type="checkbox"
                   checked={selectedRuns.has(run.run_id)}
                   onChange={() => toggleRunSelection(run.run_id)}
-                  aria-label={`Select ${run.ticket_id}`}
+                  aria-label={`Select ${run.ticket_title || run.ticket_id}`}
                 />
 
                 <div className="run-info">
-                  <div className="run-ticket">{run.ticket_id}</div>
+                  <div className="run-ticket">{run.ticket_title || run.ticket_id}</div>
                   <div className="run-detail">
                     #{run.position} • Waiting {Math.round(run.wait_seconds / 60)}m
                   </div>

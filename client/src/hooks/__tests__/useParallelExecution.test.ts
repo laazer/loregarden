@@ -1,5 +1,6 @@
 import { renderHook, waitFor } from "@testing-library/react";
 
+import { API_BASE } from "../../api/client";
 import { useParallelExecution } from "../useParallelExecution";
 
 describe("useParallelExecution", () => {
@@ -40,8 +41,10 @@ describe("useParallelExecution", () => {
   it("queries once a workspace is known", async () => {
     renderHook(() => useParallelExecution("ws-1", 5000));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    // Absolute, via API_BASE. A relative URL only resolves behind the Vite dev
+    // proxy and 404s in a packaged Tauri build.
     expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe(
-      "/api/parallel/status/ws-1",
+      `${API_BASE}/api/parallel/status/ws-1`,
     );
   });
 });
