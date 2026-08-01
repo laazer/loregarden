@@ -22,12 +22,37 @@ so neither produces rows.
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta, timezone
 
 from loregarden.models.domain import McpToolCall
 from loregarden.services.tool_policy import split_mcp_tool
 from sqlmodel import Session, func, select
 
 logger = logging.getLogger(__name__)
+
+#: Window the per-server rate is measured over. An hour rather than a minute:
+#: agent traffic is bursty, and a one-minute sample reads as a server that
+#: stopped working every time a stage is thinking.
+RATE_WINDOW_MINUTES = 60
+
+
+@dataclass
+class ServerActivity:
+    """What one server's traffic looked like, as the bridge saw it."""
+
+    calls: int
+    calls_in_window: int
+    calls_per_min: float
+    window_minutes: int
+    #: Agents that actually called this server, not agents that could.
+    agent_ids: list[str] = field(default_factory=list)
+    #: Empty when this server has never been called.
+    last_call_at: str = ""
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
 
 #: How a request was resolved.
 DECISION_TRUSTED_SERVER = "auto_server"  # registered server with tool_policy=auto
@@ -105,3 +130,58 @@ def counts_by_decision(session: Session) -> dict[str, int]:
         select(McpToolCall.decision, func.count()).group_by(McpToolCall.decision)  # type: ignore[arg-type]
     ).all()
     return {str(decision): int(count) for decision, count in rows if decision}
+
+
+def server_activity(
+    session: Session, *, window_minutes: int = RATE_WINDOW_MINUTES
+) -> dict[str, ServerActivity]:
+    """Per-server traffic, for the gateway's rails and metrics.
+
+    The rate is calls the bridge *decided* on, divided by the window — not
+    requests a proxy counted, because there is no proxy. A run with permissions
+    bypassed produces no rows and so appears here as silence, which is why the
+    UI names the window rather than showing a bare "req/m".
+    """
+    since = datetime.now(timezone.utc) - timedelta(minutes=max(1, window_minutes))
+    minutes = float(max(1, window_minutes))
+
+    totals = counts_by_server(session)
+    windowed = session.exec(
+        select(McpToolCall.server_name, func.count())  # type: ignore[arg-type]
+        .where(McpToolCall.created_at >= since)
+        .group_by(McpToolCall.server_name)
+    ).all()
+    recent_counts = {str(server): int(count) for server, count in windowed if server}
+
+    latest = session.exec(
+        select(McpToolCall.server_name, func.max(McpToolCall.created_at)).group_by(  # type: ignore[arg-type]
+            McpToolCall.server_name
+        )
+    ).all()
+    last_seen = {str(server): last for server, last in latest if server}
+
+    agent_rows = session.exec(
+        select(McpToolCall.server_name, McpToolCall.agent_id).distinct()  # type: ignore[arg-type]
+    ).all()
+    agents: dict[str, set[str]] = {}
+    for server, agent_id in agent_rows:
+        if server and agent_id:
+            agents.setdefault(str(server), set()).add(str(agent_id))
+
+    return {
+        server: ServerActivity(
+            calls=calls,
+            calls_in_window=recent_counts.get(server, 0),
+            calls_per_min=round(recent_counts.get(server, 0) / minutes, 2),
+            window_minutes=int(minutes),
+            agent_ids=sorted(agents.get(server, set())),
+            last_call_at=_isoformat(last_seen.get(server)),
+        )
+        for server, calls in totals.items()
+    }
+
+
+def _isoformat(value: datetime | str | None) -> str:
+    if value is None:
+        return ""
+    return value.isoformat() if isinstance(value, datetime) else str(value)

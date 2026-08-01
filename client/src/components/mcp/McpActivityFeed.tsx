@@ -21,12 +21,15 @@ function decisionLabel(decision: string): string {
 /**
  * What agents actually asked for, and how each request was resolved.
  *
- * There is no request rate and no execution latency here on purpose. The
- * permission bridge sees the request and the decision, never the result, so
- * either number would be invented — and a plausible invented number is worse
- * than an absent one. `decision_ms` is shown only where a human waited.
+ * There is no execution latency here on purpose. The permission bridge sees the
+ * request and the decision, never the result, so that number would be invented
+ * — and a plausible invented number is worse than an absent one. `decision_ms`
+ * is shown only where a human waited.
+ *
+ * `server` narrows the feed to one server's calls; the counts strip is dropped
+ * there, since a single server's share of itself says nothing.
  */
-export function McpActivityFeed() {
+export function McpActivityFeed({ server }: { server?: string }) {
   const telemetry = useQuery({
     queryKey: ["mcp-telemetry"],
     queryFn: api.mcpTelemetry,
@@ -41,14 +44,17 @@ export function McpActivityFeed() {
   }
 
   const data = telemetry.data;
-  const servers = Object.entries(data?.by_server ?? {}).sort((a, b) => b[1] - a[1]);
-  const recent = data?.recent ?? [];
+  const servers = server
+    ? []
+    : Object.entries(data?.by_server ?? {}).sort((a, b) => b[1] - a[1]);
+  const recent = (data?.recent ?? []).filter((call) => !server || call.server_name === server);
 
   if (servers.length === 0 && recent.length === 0) {
     return (
       <div className="mcp-empty">
-        No tool calls recorded yet. Calls are recorded when an agent asks permission, so
-        runs with permissions bypassed do not appear.
+        {server ? `No calls to ${server} recorded yet.` : "No tool calls recorded yet."} Calls
+        are recorded when an agent asks permission, so runs with permissions bypassed do not
+        appear.
       </div>
     );
   }
@@ -57,9 +63,9 @@ export function McpActivityFeed() {
     <div className="mcp-activity">
       {servers.length > 0 && (
         <div className="mcp-activity-counts">
-          {servers.map(([server, count]) => (
-            <span key={server} className="mcp-activity-count">
-              <span className="mcp-activity-count-name">{server}</span>
+          {servers.map(([name, count]) => (
+            <span key={name} className="mcp-activity-count">
+              <span className="mcp-activity-count-name">{name}</span>
               <span className="mcp-activity-count-value">{count}</span>
             </span>
           ))}

@@ -27,6 +27,7 @@ export const api = {
   ticketArtifacts: jest.fn(),
   mcpServers: jest.fn(),
   mcpTelemetry: jest.fn(),
+  mcpPolicy: jest.fn(),
   checkMcpServerHealth: jest.fn(),
   createMcpServer: jest.fn(),
   updateMcpServer: jest.fn(),

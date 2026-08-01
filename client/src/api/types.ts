@@ -258,11 +258,17 @@ export interface McpServerView {
   enabled: boolean;
   /** "prompt" — every call asks; "auto" — the server is trusted to run unattended. */
   tool_policy: string;
+  /** Calls per minute the server will accept. 0 means no ceiling. */
+  rate_limit_per_min: number;
   /** Empty means never checked — not the same as checked and failing. */
   last_checked_at: string;
   last_health_ok: boolean;
   last_health_latency_ms: number;
   last_health_error: string;
+  /** Tools the server reported when it was last checked. */
+  tools: string[];
+  /** Empty means never listed — not the same as a server that listed nothing. */
+  tools_listed_at: string;
   created_at: string;
   updated_at: string;
 }
@@ -281,10 +287,33 @@ export interface McpToolCallView {
   created_at: string;
 }
 
+/** One server's traffic, as the permission bridge saw it. */
+export interface McpServerActivity {
+  calls: number;
+  calls_in_window: number;
+  /** Decisions per minute over `window_minutes` — not proxied requests. */
+  calls_per_min: number;
+  window_minutes: number;
+  /** Agents that actually called this server, not agents that could. */
+  agent_ids: string[];
+  /** Empty when this server has never been called. */
+  last_call_at: string;
+}
+
 export interface McpTelemetry {
   by_server: Record<string, number>;
   by_decision: Record<string, number>;
+  per_server: Record<string, McpServerActivity>;
+  window_minutes: number;
+  calls_per_min: number;
   recent: McpToolCallView[];
+}
+
+/** Which of Loregarden's own tools run without stopping for an approval. */
+export interface McpPolicy {
+  auto_approved: string[];
+  /** Denied outright to an orchestrated agent, however it was granted. */
+  orchestrated_denied: string[];
 }
 
 export interface McpServerInput {
@@ -297,6 +326,7 @@ export interface McpServerInput {
   auth_env_var?: string;
   enabled?: boolean;
   tool_policy?: string;
+  rate_limit_per_min?: number;
 }
 
 export interface TestArtifact {

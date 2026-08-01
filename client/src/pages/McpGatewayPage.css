@@ -4,11 +4,11 @@
   min-height: 0;
 }
 
+/* Registry · routing · one server in full, which is the order the question
+   gets asked in. The middle column is the only one that grows. */
 .mcp-page-body {
   display: grid;
-  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
-  gap: 18px;
-  padding: 16px 20px 20px;
+  grid-template-columns: 300px minmax(0, 1fr) 344px;
   min-height: 0;
   flex: 1 1 auto;
 }
@@ -16,37 +16,122 @@
 .mcp-servers-rail {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
   min-height: 0;
   overflow-y: auto;
+  padding: 16px 14px 24px;
+  border-right: 1px solid var(--bd);
+  background: var(--bg1);
+}
+
+.mcp-main {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 18px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mcp-detail {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  border-left: 1px solid var(--bd);
+  background: linear-gradient(180deg, var(--bg1), var(--bg0));
+  padding: 16px 18px 40px;
 }
 
 .mcp-empty {
   font-size: 12px;
   color: var(--txl);
-  padding: 10px 2px;
+  padding: 8px 2px;
+  line-height: 1.5;
 }
 
-.mcp-detail-empty {
-  padding: 40px 0;
-  text-align: center;
+/* ── metrics ─────────────────────────────────────────────────────────── */
+
+.mcp-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
+
+.mcp-metric {
+  min-width: 88px;
+  padding: 8px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--bd);
+  border-radius: 13px;
+}
+
+.mcp-metric-label {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--txl);
+  font-weight: 600;
+  margin-bottom: 3px;
+  white-space: nowrap;
+}
+
+.mcp-metric-value {
+  font-family: var(--dp);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--tx);
+}
+
+.mcp-metric--accent .mcp-metric-value {
+  color: var(--ac2);
+}
+
+.mcp-metric--warn .mcp-metric-value {
+  color: var(--aml);
+}
+
+.mcp-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.mcp-section-title {
+  font-family: var(--dp);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--txm);
+}
+
+.mcp-section-note {
+  font-size: 11px;
+  color: var(--txl);
+}
+
+/* ── registry rail ───────────────────────────────────────────────────── */
 
 .mcp-server-row {
+  position: relative;
   display: block;
   width: 100%;
   text-align: left;
-  border: 1px solid var(--ln);
-  border-radius: 10px;
-  background: transparent;
-  padding: 9px 11px;
+  border: 1px solid var(--bd);
+  border-radius: 14px;
+  background: var(--bg2);
+  padding: 12px 13px;
   font: inherit;
   color: var(--tx);
   cursor: pointer;
 }
 
 .mcp-server-row.selected {
-  border-color: var(--ac, var(--ln));
+  border-color: var(--ac);
+  background: var(--bg3);
 }
 
 /* Not selectable — it is not a registry row, it is always present. */
@@ -57,19 +142,53 @@
 
 .mcp-server-row-head {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 9px;
 }
 
 .mcp-server-name {
   font-family: var(--mono);
   font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.mcp-transport-pill {
+  flex: none;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--txl);
+  background: var(--bg3);
+  border: 1px solid var(--bd);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+
+.mcp-server-row-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 10.5px;
+  color: var(--txm);
+  margin-top: 8px;
+}
+
+.mcp-server-row-rate {
+  margin-left: auto;
+  font-family: var(--mono);
+  color: var(--txl);
 }
 
 .mcp-server-row-meta {
   font-size: 11px;
   color: var(--txl);
-  margin-top: 3px;
+  margin-top: 4px;
   overflow-wrap: anywhere;
 }
 
@@ -81,33 +200,414 @@
 }
 
 .mcp-server-auth.missing {
-  color: var(--amb, var(--txl));
+  color: var(--amb);
 }
 
 .mcp-builtin-label {
   margin-top: 14px;
 }
 
-.mcp-detail {
-  min-width: 0;
-  overflow-y: auto;
+/* Trust is the security-relevant state, so it reads as a claim rather than a
+   neutral tag. */
+.mcp-server-trusted {
+  color: var(--amb);
 }
 
-.mcp-detail-head {
+/* ── switchboard ─────────────────────────────────────────────────────── */
+
+.mcp-switchboard {
+  position: relative;
+  height: 380px;
+  border: 1px solid var(--bd);
+  border-radius: 16px;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 50%, rgba(111, 174, 143, 0.05), transparent 60%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 34px,
+      rgba(255, 255, 255, 0.016) 34px,
+      rgba(255, 255, 255, 0.016) 35px
+    );
+}
+
+.mcp-switchboard-wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.mcp-wire {
+  stroke: var(--ac);
+  stroke-width: 1;
+  opacity: 0.4;
+}
+
+/* A link the registry has but that carries nothing. */
+.mcp-wire--idle {
+  stroke: var(--bd2);
+  stroke-dasharray: 3 4;
+  opacity: 0.7;
+}
+
+.mcp-node {
+  position: absolute;
+  z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 8px;
 }
 
-.mcp-detail-title {
-  font-size: 16px;
-  margin: 0;
+/* Badges line up in a column either side of the hub, labels facing outward, so
+   a wire never crosses a name. */
+.mcp-node--agent {
+  flex-direction: row-reverse;
+  transform: translate(-100%, -50%);
 }
+
+.mcp-node--server {
+  transform: translate(0, -50%);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  font: inherit;
+  color: inherit;
+  padding: 0;
+}
+
+.mcp-node-badge {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 11px;
+  background: var(--bg3);
+  border: 1.5px solid var(--bd2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--dp);
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--txm);
+}
+
+.mcp-node--server.selected .mcp-node-badge {
+  border-color: var(--ac);
+}
+
+.mcp-node-badge--idle {
+  opacity: 0.5;
+}
+
+.mcp-node-label {
+  font-size: 10.5px;
+  color: var(--txm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Long agent names ellipsize rather than running off the plot; the full name
+     is on the node's title. */
+  max-width: 116px;
+}
+
+.mcp-node-label--mono {
+  font-family: var(--mono);
+}
+
+.mcp-node--server.selected .mcp-node-label {
+  color: var(--tx);
+}
+
+.mcp-node-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+}
+
+.mcp-node-dot--ok {
+  background: var(--grn);
+  box-shadow: 0 0 7px var(--grn);
+}
+
+.mcp-node-dot--bad {
+  background: var(--red);
+  box-shadow: 0 0 7px var(--red);
+}
+
+/* Never checked is its own state — not healthy, not failing. */
+.mcp-node-dot--unknown {
+  background: var(--txl);
+}
+
+.mcp-gateway-hub {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  width: 104px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 16px 12px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, var(--bg3), var(--bg2));
+  border: 1px solid var(--bd2);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+}
+
+.mcp-gateway-hub-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  background: linear-gradient(140deg, var(--ac), #4d8468);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--onac);
+  box-shadow: 0 4px 16px rgba(111, 174, 143, 0.4);
+}
+
+.mcp-gateway-hub-title {
+  font-family: var(--dp);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--tx);
+}
+
+.mcp-gateway-hub-sub {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--txl);
+}
+
+/* ── routing rules ───────────────────────────────────────────────────── */
+
+.mcp-rules {
+  border: 1px solid var(--bd);
+  border-radius: 13px;
+  overflow: hidden;
+}
+
+.mcp-rules-head,
+.mcp-rules-row {
+  display: grid;
+  grid-template-columns: 1.1fr 1.1fr 2fr 0.9fr;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 15px;
+}
+
+.mcp-rules-head {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--bd);
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--txl);
+  font-weight: 600;
+}
+
+.mcp-rules-row {
+  border-bottom: 1px solid var(--bd);
+}
+
+.mcp-rules-row:last-child {
+  border-bottom: none;
+}
+
+.mcp-rules-agent {
+  font-size: 12.5px;
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcp-rules-server {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--txm);
+}
+
+.mcp-rules-scope {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-policy-pill {
+  font-size: 10.5px;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 2px 8px;
+  border: 1px solid currentcolor;
+  white-space: nowrap;
+}
+
+.mcp-policy-pill--auto {
+  color: var(--grl);
+}
+
+.mcp-policy-pill--prompt {
+  color: var(--aml);
+}
+
+.mcp-policy-pill--disabled {
+  color: var(--txl);
+}
+
+/* ── server detail ───────────────────────────────────────────────────── */
+
+.mcp-detail-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.mcp-detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.mcp-detail-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--txm);
+  line-height: 1.5;
+}
+
+.mcp-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mcp-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.mcp-stat-card {
+  background: var(--bg2);
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  padding: 9px 11px;
+  min-width: 0;
+}
+
+.mcp-stat-card-label {
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--txl);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.mcp-stat-card-value {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcp-tool-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mcp-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 11px;
+  border: 1px solid var(--bd);
+  border-radius: 11px;
+  background: var(--bg2);
+}
+
+.mcp-tool-name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--txm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcp-tool-pill {
+  flex: none;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--txl);
+  background: var(--bg3);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+
+.mcp-agent-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mcp-agent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--txm);
+  background: var(--bg2);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  padding: 4px 9px 4px 5px;
+}
+
+.mcp-agent-chip-badge {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--bg4);
+  color: var(--txm);
+  font-family: var(--dp);
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mcp-registry-health {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mcp-registry-health-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+/* ── form ────────────────────────────────────────────────────────────── */
 
 .mcp-form {
-  max-width: 520px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -123,19 +623,15 @@
   align-items: center;
   gap: 7px;
   font-size: 12px;
-  color: var(--txm, var(--txl));
+  color: var(--txm);
 }
 
 .mcp-form-error {
   font-size: 12px;
-  color: var(--rdl, var(--amb));
+  color: var(--rdl);
 }
 
-/* Trust is the security-relevant state, so it reads as a claim rather than a
-   neutral tag. */
-.mcp-server-trusted {
-  color: var(--amb, var(--txl));
-}
+/* ── activity feed ───────────────────────────────────────────────────── */
 
 .mcp-activity-counts {
   display: flex;
@@ -148,7 +644,7 @@
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
-  border: 1px solid var(--ln);
+  border: 1px solid var(--bd);
   border-radius: 999px;
   padding: 3px 10px;
 }
@@ -167,6 +663,10 @@
   margin: 0;
   padding: 0;
   list-style: none;
+  background: var(--bg0);
+  border: 1px solid var(--bd2);
+  border-radius: 14px;
+  padding: 6px 12px;
 }
 
 .mcp-activity-row {
@@ -174,9 +674,13 @@
   align-items: baseline;
   gap: 10px;
   padding: 5px 0;
-  border-top: 1px solid var(--ln);
+  border-top: 1px solid var(--bd);
   font-size: 11.5px;
   flex-wrap: wrap;
+}
+
+.mcp-activity-row:first-child {
+  border-top: none;
 }
 
 .mcp-activity-tool {
@@ -197,10 +701,7 @@
   color: var(--txl);
 }
 
-.mcp-detail-actions {
-  display: flex;
-  gap: 8px;
-}
+/* ── health badge ────────────────────────────────────────────────────── */
 
 .mcp-health {
   display: inline-block;
@@ -216,13 +717,27 @@
 }
 
 .mcp-health--ok {
-  color: var(--ac, var(--txl));
+  color: var(--ac);
 }
 
 .mcp-health--bad {
-  color: var(--rdl, var(--amb));
+  color: var(--rdl);
 }
 
 .mcp-health-when {
   color: var(--txl);
+}
+
+/* The three-pane board needs width; below it the detail pane drops under the
+   routing column rather than squeezing both. */
+@media (max-width: 1200px) {
+  .mcp-page-body {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+
+  .mcp-detail {
+    grid-column: 1 / -1;
+    border-left: none;
+    border-top: 1px solid var(--bd);
+  }
 }

@@ -315,6 +315,14 @@ class McpServer(SQLModel, table=True):
     #: Why the last check failed, in terms an operator can act on. Empty when
     #: the check passed.
     last_health_error: str = ""
+    #: Tool names the server reported to `tools/list` during the last check.
+    #: Cached rather than fetched per request: listing means dialling the
+    #: server, which is not something a page render should do.
+    tools_json: str = "[]"
+    #: When that catalogue was collected. Empty means the tools were never
+    #: listed — a server can answer `initialize` and still refuse `tools/list`,
+    #: and "no tools" and "we never asked" are not the same answer.
+    tools_listed_at: str = ""
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

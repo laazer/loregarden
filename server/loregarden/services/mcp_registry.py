@@ -32,12 +32,19 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def parse_args(raw: str) -> list[str]:
+def parse_string_list(raw: str) -> list[str]:
+    """A JSON array column as a list of strings. Never raises on bad JSON —
+    a column an operator or an older build wrote badly should not 500 a read."""
     try:
         parsed = json.loads(raw or "[]")
     except (TypeError, ValueError):
         return []
     return [str(item) for item in parsed] if isinstance(parsed, list) else []
+
+
+def parse_args(raw: str) -> list[str]:
+    """Launch arguments for a stdio server."""
+    return parse_string_list(raw)
 
 
 def to_view(server: McpServer) -> McpServerView:
@@ -57,6 +64,8 @@ def to_view(server: McpServer) -> McpServerView:
         last_health_ok=server.last_health_ok,
         last_health_latency_ms=server.last_health_latency_ms,
         last_health_error=server.last_health_error,
+        tools=parse_string_list(server.tools_json),
+        tools_listed_at=server.tools_listed_at,
         # Presence only. The value never leaves the process it is read in.
         auth_present=bool(server.auth_env_var and os.environ.get(server.auth_env_var)),
         created_at=server.created_at,
