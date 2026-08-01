@@ -213,7 +213,9 @@ class AgentRun(SQLModel, table=True):
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     run_code: str = Field(index=True)
-    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    # Null for workspace-scoped runs (Home Baxter chat), which answer about the
+    # whole workspace rather than one work item.
+    ticket_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
     orchestration_run_id: str | None = Field(
         default=None, foreign_key="orchestration_runs.id", index=True
@@ -387,7 +389,8 @@ class Approval(SQLModel, table=True):
     __tablename__ = "approvals"
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    # Null for workspace-scoped approvals raised by Home Baxter chat.
+    ticket_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
     run_id: str | None = Field(default=None, foreign_key="agent_runs.id", index=True)
     kind: ApprovalKind = Field(
@@ -627,6 +630,9 @@ class BranchTriageMessage(SQLModel, table=True):
     status: str = Field(default="complete", index=True)
     # Ordered ChatPart JSON (see chat_primitives). Empty when the turn is plain text.
     parts_json: str = "[]"
+    # Set on assistant turns so their background lifecycle and approval prompts
+    # are tied to the workspace-scoped AgentRun that owns the live CLI process.
+    run_id: str | None = Field(default=None, foreign_key="agent_runs.id", index=True)
     created_at: datetime = Field(default_factory=utcnow)
 
 

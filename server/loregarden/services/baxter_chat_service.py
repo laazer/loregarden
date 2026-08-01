@@ -5,25 +5,60 @@ a navigation, or a server restart does not lose the conversation, and so the
 archive has real threads to list. History is read from the database rather than
 replayed by the client: a client-supplied history is unverifiable and drifts
 from what the thread actually contains.
+
+A turn runs in the same two shapes as ticket triage: a tool-using turn through
+the permission bridge when the resolved adapter can be driven that way, and a
+read-only one-shot otherwise. Unlike triage there is no work item, so the run
+and its approvals are workspace-scoped (see ``ApprovalScope.for_workspace``).
 """
 
 from __future__ import annotations
 
+import os
 from dataclasses import replace
+from datetime import datetime, timezone
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
+from loregarden.agents.cli_adapters import build_interactive_invocation
+from loregarden.agents.executors.permission_bridge import (
+    HOME_CHAT_STAGE_KEY,
+    PermissionBridgeRunner,
+)
+from loregarden.agents.registry import get_agent
 from loregarden.models.domain import (
+    AgentRun,
     Approval,
     ApprovalStatus,
     BaxterChatMessage,
     BaxterChatSession,
+    RunStatus,
     Ticket,
     TicketState,
     Workspace,
 )
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.chat_primitives import load_parts_json
-from loregarden.services.cli_agent_runner import run_cli_agent_turn, stub_response
-from loregarden.services.triage_service import TRIAGE_CLI_PROFILE
+from loregarden.services.cli_agent_runner import (
+    resolve_agent_timeout,
+    run_cli_agent_turn,
+    stub_response,
+)
+from loregarden.services.cli_output import extract_triage_reply
+from loregarden.services.cli_settings import (
+    resolve_effective_adapter,
+    resolve_model_for_adapter,
+)
+from loregarden.services.run_concurrency import (
+    find_active_workspace_chat_run,
+    new_run_code,
+)
+from loregarden.services.triage_service import (
+    TRIAGE_AGENT_ID,
+    TRIAGE_AGENT_NAME,
+    TRIAGE_CLI_PROFILE,
+)
+from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
 
 BAXTER_CHAT_CLI_PROFILE = replace(
@@ -232,14 +267,37 @@ def build_baxter_chat_prompt(
     latest_user_message: str,
     approvals: list[Approval],
     tickets: list[Ticket],
+    interactive: bool = False,
 ) -> str:
     sections = [
         "# Baxter — Home chat",
         "",
         f"Workspace: {workspace.slug}",
         "",
-        "## Live snapshot",
     ]
+    if interactive:
+        sections.extend(
+            [
+                "You have real tool access in this workspace — file read/write, Bash, and the "
+                "Loregarden MCP tools.",
+                "Investigate before answering: read code, run tests, reproduce failures.",
+                "When you find an actionable fix, make it directly rather than only describing it.",
+                "This channel is not scoped to a work item, so no ticket is implied — name the "
+                "ticket explicitly on any MCP call that needs one.",
+                "Destructive or high-risk actions route through Loregarden's approval prompt "
+                "automatically — request them when needed rather than avoiding the work.",
+                "",
+            ]
+        )
+    else:
+        sections.extend(
+            [
+                "You are advisory only in this channel — do not claim to have executed tools "
+                "or changed the repo.",
+                "",
+            ]
+        )
+    sections.append("## Live snapshot")
     if approvals:
         sections.append(f"Pending approvals ({len(approvals)}):")
         for approval in approvals:
@@ -284,6 +342,10 @@ def build_baxter_chat_prompt(
     return "\n".join(sections)
 
 
+class BaxterChatConflictError(ValueError):
+    """Raised when a Home chat turn can't start because one is already running."""
+
+
 def invoke_baxter_chat_model(
     session: Session,
     workspace: Workspace,
@@ -300,16 +362,111 @@ def invoke_baxter_chat_model(
     if stub is not None:
         return stub
 
+    agent = get_agent(TRIAGE_AGENT_ID) or {}
+    selected = resolve_effective_adapter(
+        agent_adapter=agent.get("adapter", "claude"), workspace=workspace
+    )
+    interactive = selected == "claude"
+
     prompt = build_baxter_chat_prompt(
         workspace=workspace,
         history=list(history or []),
         latest_user_message=message,
         approvals=_pending_approvals(session, workspace.id),
         tickets=_active_tickets(session, workspace.id),
+        interactive=interactive,
     )
+    if interactive:
+        return _run_interactive_turn(session, workspace, prompt, agent=agent)
     return run_cli_agent_turn(
         BAXTER_CHAT_CLI_PROFILE,
         workspace=workspace,
         prompt=prompt,
         user_prompt=DEFAULT_BAXTER_CHAT_USER_PROMPT,
+        read_only=True,
     )
+
+
+def _start_run(session: Session, workspace: Workspace) -> AgentRun:
+    if find_active_workspace_chat_run(session, workspace.id, stage_key=HOME_CHAT_STAGE_KEY):
+        raise BaxterChatConflictError(
+            f"{TRIAGE_AGENT_NAME} is still working on the previous message — wait for it to finish."
+        )
+    run = AgentRun(
+        run_code=new_run_code(),
+        ticket_id=None,
+        workspace_id=workspace.id,
+        agent_id=TRIAGE_AGENT_ID,
+        stage_key=HOME_CHAT_STAGE_KEY,
+        status=RunStatus.RUNNING,
+        started_at=datetime.now(timezone.utc),
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    return run
+
+
+def _finish_run(session: Session, run_id: str, *, status: RunStatus, stderr: str) -> None:
+    run = session.get(AgentRun, run_id)
+    if not run:
+        return
+    run.status = status
+    run.stderr = stderr[:4000]
+    run.finished_at = datetime.now(timezone.utc)
+    session.add(run)
+    session.commit()
+
+
+def _run_interactive_turn(
+    session: Session, workspace: Workspace, prompt: str, *, agent: dict
+) -> str:
+    """Tool-using turn: permission prompts land in the workspace approval inbox."""
+    repo_root = resolve_workspace_root(workspace)
+    if not repo_root.is_dir():
+        raise ValueError(f"Workspace repo path does not exist: {repo_root}")
+
+    claude_model = (
+        os.environ.get("LOREGARDEN_BAXTER_CHAT_CLAUDE_MODEL", "").strip()
+        or resolve_model_for_adapter("claude", workspace)
+        or "haiku"
+    )
+    timeout = resolve_agent_timeout(agent, BAXTER_CHAT_CLI_PROFILE.timeout_env)
+
+    run = _start_run(session, workspace)
+    try:
+        with TemporaryDirectory(prefix=BAXTER_CHAT_CLI_PROFILE.tmp_prefix) as tmp:
+            prompt_file = Path(tmp) / "prompt.md"
+            prompt_file.write_text(prompt, encoding="utf-8")
+            invocation = build_interactive_invocation(
+                adapter="claude",
+                prompt_file=prompt_file,
+                workspace_root=repo_root,
+                claude_model=claude_model,
+                db_session=session,
+            )
+            bridge = PermissionBridgeRunner(session, track_workflow_stage=False)
+            result = bridge.run(
+                run_id=run.id,
+                workspace=workspace,
+                invocation=invocation,
+                prompt=prompt,
+                timeout_seconds=timeout,
+            )
+    except Exception as exc:
+        _finish_run(session, run.id, status=RunStatus.FAILED, stderr=str(exc))
+        raise
+
+    reply = extract_triage_reply(result.stdout)[: BAXTER_CHAT_CLI_PROFILE.reply_cap]
+    if result.status == RunStatus.SUCCEEDED and not reply:
+        _finish_run(
+            session,
+            run.id,
+            status=RunStatus.FAILED,
+            stderr=result.stderr or "empty response",
+        )
+        raise RuntimeError(f"{TRIAGE_AGENT_NAME} returned an empty response")
+    _finish_run(session, run.id, status=result.status, stderr=result.stderr)
+    if result.status != RunStatus.SUCCEEDED:
+        raise RuntimeError(result.stderr or f"{TRIAGE_AGENT_NAME} run {result.status.value}")
+    return reply

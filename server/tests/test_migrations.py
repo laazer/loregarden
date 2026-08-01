@@ -714,3 +714,164 @@ def test_a_current_database_is_not_flagged_as_ahead(tmp_path):
         applied = {r[0] for r in conn.execute(text("SELECT id FROM schema_migrations"))}
 
     assert _warn_if_database_is_ahead(applied) == []
+
+
+def test_workspace_scoped_runs_and_approvals_relax_ticket_id(tmp_path):
+    """Home chat needs runs and approvals that are not hung off a ticket.
+
+    SQLite cannot ALTER COLUMN, so the migration rebuilds each table. The
+    rebuild must keep every prior column and index, and leave existing rows
+    readable with their ticket_id still set.
+    """
+    from loregarden.db.migration_utils import column_is_nullable
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'relax.db'}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE workspaces (
+                    id TEXT PRIMARY KEY,
+                    slug TEXT NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE tickets (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    title TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE agent_runs (
+                    id TEXT PRIMARY KEY,
+                    run_code TEXT NOT NULL,
+                    ticket_id TEXT NOT NULL,
+                    workspace_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL DEFAULT '',
+                    skill_name TEXT NOT NULL DEFAULT '',
+                    stage_key TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'queued',
+                    command TEXT NOT NULL DEFAULT '',
+                    stdout TEXT NOT NULL DEFAULT '',
+                    stderr TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT '',
+                    FOREIGN KEY(ticket_id) REFERENCES tickets (id),
+                    FOREIGN KEY(workspace_id) REFERENCES workspaces (id)
+                )
+                """
+            )
+        )
+        conn.execute(text("CREATE INDEX ix_agent_runs_ticket_id ON agent_runs (ticket_id)"))
+        conn.execute(
+            text(
+                """
+                CREATE TABLE approvals (
+                    id TEXT PRIMARY KEY,
+                    ticket_id TEXT NOT NULL,
+                    workspace_id TEXT NOT NULL,
+                    title TEXT NOT NULL DEFAULT '',
+                    level TEXT NOT NULL DEFAULT '',
+                    stage_key TEXT NOT NULL DEFAULT '',
+                    impact TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at TEXT NOT NULL DEFAULT '',
+                    FOREIGN KEY(ticket_id) REFERENCES tickets (id),
+                    FOREIGN KEY(workspace_id) REFERENCES workspaces (id)
+                )
+                """
+            )
+        )
+        conn.execute(text("CREATE INDEX ix_approvals_ticket_id ON approvals (ticket_id)"))
+        conn.execute(text("INSERT INTO workspaces (id, slug) VALUES ('ws1', 'demo')"))
+        conn.execute(
+            text("INSERT INTO tickets (id, workspace_id, title) VALUES ('t1', 'ws1', 'demo')")
+        )
+        conn.execute(
+            text(
+                "INSERT INTO agent_runs (id, run_code, ticket_id, workspace_id) "
+                "VALUES ('r1', 'run_old', 't1', 'ws1')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO approvals (id, ticket_id, workspace_id, title) "
+                "VALUES ('a1', 't1', 'ws1', 'Allow Bash?')"
+            )
+        )
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        assert column_is_nullable(conn, "agent_runs", "ticket_id")
+        assert column_is_nullable(conn, "approvals", "ticket_id")
+        run_ticket = conn.execute(
+            text("SELECT ticket_id FROM agent_runs WHERE id='r1'")
+        ).scalar_one()
+        approval_ticket = conn.execute(
+            text("SELECT ticket_id FROM approvals WHERE id='a1'")
+        ).scalar_one()
+        assert run_ticket == "t1"
+        assert approval_ticket == "t1"
+        # Indexes survive the rebuild.
+        index_sql = [
+            row[0]
+            for row in conn.execute(
+                text(
+                    "SELECT name FROM sqlite_master WHERE type='index' "
+                    "AND name IN ('ix_agent_runs_ticket_id', 'ix_approvals_ticket_id')"
+                )
+            ).fetchall()
+        ]
+        assert set(index_sql) == {"ix_agent_runs_ticket_id", "ix_approvals_ticket_id"}
+        # And a ticket-less row is now legal.
+        conn.execute(
+            text(
+                "INSERT INTO agent_runs (id, run_code, ticket_id, workspace_id) "
+                "VALUES ('r2', 'run_home', NULL, 'ws1')"
+            )
+        )
+        conn.commit()
+
+
+def test_branch_triage_messages_gain_agent_run_link(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'branch-run.db'}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE branch_triage_messages (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    branch TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'complete',
+                    created_at TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+        )
+
+    apply_migrations(engine)
+
+    assert "run_id" in _columns(engine, "branch_triage_messages")
+    with engine.connect() as conn:
+        indexes = {
+            row[0]
+            for row in conn.execute(
+                text(
+                    "SELECT name FROM sqlite_master WHERE type='index' "
+                    "AND tbl_name='branch_triage_messages'"
+                )
+            ).fetchall()
+        }
+    assert "ix_branch_triage_messages_run_id" in indexes

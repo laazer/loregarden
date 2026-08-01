@@ -933,14 +933,16 @@ class ApprovalService:
                     approval.tool_name,
                     tool_input,
                 )
-            if allow_for_ticket:
+            # Ticket/stage allow rules need a work item; Home chat approvals are
+            # workspace-scoped and can only persist always_allow.
+            if allow_for_ticket and approval.ticket_id:
                 add_ticket_allow_rule(
                     self.session,
                     approval.ticket_id,
                     approval.tool_name,
                     tool_input,
                 )
-            if allow_for_stage and approval.stage_key:
+            if allow_for_stage and approval.ticket_id and approval.stage_key:
                 add_ticket_allow_rule(
                     self.session,
                     approval.ticket_id,
@@ -954,7 +956,7 @@ class ApprovalService:
         self.session.add(approval)
         self.session.commit()
 
-        ticket = self.session.get(Ticket, approval.ticket_id)
+        ticket = self.session.get(Ticket, approval.ticket_id) if approval.ticket_id else None
         if ticket and approval.kind == ApprovalKind.WORKFLOW_GATE:
             self._apply_gate_resolution(
                 ticket,
@@ -998,7 +1000,7 @@ class ApprovalService:
         self.session.add(approval)
         self.session.commit()
 
-        ticket = self.session.get(Ticket, approval.ticket_id)
+        ticket = self.session.get(Ticket, approval.ticket_id) if approval.ticket_id else None
         if ticket:
             self._apply_gate_resolution(
                 ticket,

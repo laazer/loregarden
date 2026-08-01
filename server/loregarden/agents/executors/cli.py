@@ -12,6 +12,7 @@ from loregarden.agents.cli_adapters import (
     resolve_terminal_handoff_invocation,
 )
 from loregarden.agents.evidence_context import build_evidence_ledger
+from loregarden.agents.executors.launch_gate import MAX_HOLD_SECONDS, acquire_launch_slot
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.inherited_wisdom import build_inherited_wisdom
 from loregarden.agents.mcp_context import (
@@ -392,15 +393,8 @@ class CliAgentExecutor:
         logger.warning("run %s (%s): %s", run.run_code, run.agent_id, model_warning)
         streamer.append("WARN", model_warning, force=True)
 
-    def _run_print_mode(
-        self,
-        *,
-        invocation,
-        repo_root: Path,
-        timeout: int,
-        streamer: RunLogStreamer,
-        run_id: str,
-    ) -> tuple[str, str, RunStatus]:
+    def _spawn_print_process(self, invocation, repo_root: Path):
+        """Open the CLI subprocess and feed it any stdin prompt."""
         proc = subprocess.Popen(
             invocation.argv,
             cwd=invocation.cwd or str(repo_root),
@@ -412,6 +406,23 @@ class CliAgentExecutor:
         if invocation.stdin_prompt and proc.stdin:
             proc.stdin.write(invocation.stdin_prompt.encode("utf-8"))
             proc.stdin.close()
+        return proc
+
+    def _run_print_mode(
+        self,
+        *,
+        invocation,
+        repo_root: Path,
+        timeout: int,
+        streamer: RunLogStreamer,
+        run_id: str,
+    ) -> tuple[str, str, RunStatus]:
+        launch_slot = acquire_launch_slot(invocation.adapter)
+        try:
+            proc = self._spawn_print_process(invocation, repo_root)
+        except BaseException:
+            launch_slot.release()
+            raise
 
         stdout_lines: list[str] = []
         assert proc.stdout is not None
@@ -442,14 +453,20 @@ class CliAgentExecutor:
                 if line is None:
                     if proc.poll() is not None:
                         break
+                    if now - start >= MAX_HOLD_SECONDS:
+                        launch_slot.release()
                     continue
                 line = line.rstrip("\n")
                 stdout_lines.append(line)
+                # Output proves this process is past its credential read, so a
+                # sibling lane may start authenticating now.
+                launch_slot.release()
                 streamer.append_stream_line(line)
                 # Output is progress: extend the idle budget. The hard cap never
                 # moves.
                 idle_deadline = time.time() + timeout
         finally:
+            launch_slot.release()
             if proc.poll() is None:
                 try:
                     proc.wait(timeout=max(0.1, hard_deadline - time.time()))

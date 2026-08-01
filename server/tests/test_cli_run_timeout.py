@@ -34,6 +34,7 @@ def _invocation(script: str) -> SimpleNamespace:
         cwd=None,
         stdin_prompt=None,
         interactive=False,
+        adapter="local",
     )
 
 

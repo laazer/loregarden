@@ -2,12 +2,23 @@
 
 import subprocess
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from loregarden.agents.executors.permission_bridge import (
+    BRANCH_TRIAGE_STAGE_KEY,
+    BridgeResult,
+)
 from loregarden.config import settings
-from loregarden.models.domain import BranchTriageMessage, Ticket, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    BranchTriageMessage,
+    RunStatus,
+    Ticket,
+    Workspace,
+)
+from loregarden.services.branch_triage_chat_service import invoke_branch_triage_model
 from loregarden.services.branch_triage_run_service import fail_interrupted_branch_triage_turns
 from loregarden.services.branch_triage_service import (
     PR_STATUS_TERMINAL_TTL_SECONDS,
@@ -668,6 +679,15 @@ def test_branch_chat_messages(client: TestClient, triage_repo, db_session: Sessi
     # Parts are stored with the turn, so the card survives a reload.
     assert any(part.get("primitive") == "thinking" for part in body["messages"][-1]["parts"])
 
+    # ...and the turn's run is settled, so its approvals have a closed parent.
+    assistant = db_session.get(BranchTriageMessage, body["messages"][-1]["id"])
+    assert assistant is not None
+    assert assistant.run_id
+    run = db_session.get(AgentRun, assistant.run_id)
+    assert run is not None
+    assert run.status == RunStatus.SUCCEEDED
+    assert run.finished_at is not None
+
 
 def test_branch_chat_send_does_not_run_the_turn_on_the_request_thread(
     client: TestClient, triage_repo, db_session: Session
@@ -702,6 +722,102 @@ def test_branch_chat_send_does_not_run_the_turn_on_the_request_thread(
     assert body["run_status"] == "running"
     assert body["active_turn_id"] == payload["active_turn_id"]
     assert [m["role"] for m in body["messages"]] == ["user"]
+
+    assistant = db_session.get(BranchTriageMessage, payload["active_turn_id"])
+    assert assistant is not None
+    assert assistant.run_id
+    run = db_session.get(AgentRun, assistant.run_id)
+    assert run is not None
+    assert run.ticket_id is None
+    assert run.workspace_id == assistant.workspace_id
+    assert run.stage_key == BRANCH_TRIAGE_STAGE_KEY
+    assert run.status == RunStatus.QUEUED
+
+
+def test_branch_chat_uses_permission_bridge_for_checked_out_branch(
+    triage_workspace: Workspace,
+    triage_repo: Path,
+    triage_session: Session,
+    monkeypatch,
+):
+    from loregarden.services import branch_triage_chat_service
+
+    captured: dict[str, object] = {}
+    monkeypatch.delenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", raising=False)
+    monkeypatch.setattr(
+        branch_triage_chat_service, "resolve_effective_adapter", lambda **_: "claude"
+    )
+    monkeypatch.setattr(branch_triage_chat_service, "_branch_entry", lambda *_: None)
+
+    def fake_invocation(**kwargs):
+        captured["root"] = kwargs["workspace_root"]
+        return MagicMock(
+            adapter="claude",
+            argv=["claude"],
+            cwd=str(kwargs["workspace_root"]),
+            resume_session_id="",
+        )
+
+    def fake_bridge(self, **kwargs):
+        captured["bridge"] = kwargs
+        return BridgeResult(
+            status=RunStatus.SUCCEEDED,
+            stdout='{"type":"result","result":"changed the branch"}',
+            stderr="",
+        )
+
+    monkeypatch.setattr(branch_triage_chat_service, "build_interactive_invocation", fake_invocation)
+    monkeypatch.setattr(branch_triage_chat_service.PermissionBridgeRunner, "run", fake_bridge)
+
+    reply = invoke_branch_triage_model(
+        triage_session,
+        triage_workspace,
+        "main",
+        "Fix the branch",
+        run_id="run_branch",
+    )
+
+    assert reply == "changed the branch"
+    assert captured["root"] == triage_repo.resolve()
+    bridge_kwargs = captured["bridge"]
+    assert bridge_kwargs["workspace"] is triage_workspace
+    assert bridge_kwargs["workspace_stage_key"] == BRANCH_TRIAGE_STAGE_KEY
+    assert "real file, shell, git" in bridge_kwargs["prompt"]
+
+
+def test_branch_chat_stays_advisory_without_a_checkout(
+    triage_workspace: Workspace,
+    triage_session: Session,
+    monkeypatch,
+):
+    from loregarden.services import branch_triage_chat_service
+
+    captured: dict[str, str] = {}
+    monkeypatch.delenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", raising=False)
+    monkeypatch.setattr(
+        branch_triage_chat_service, "resolve_effective_adapter", lambda **_: "claude"
+    )
+    monkeypatch.setattr(branch_triage_chat_service, "_branch_entry", lambda *_: None)
+
+    def fake_one_shot(_profile, *, prompt, **_kwargs):
+        captured["prompt"] = prompt
+        captured["read_only"] = str(_kwargs.get("read_only"))
+        return "check it out first"
+
+    monkeypatch.setattr(branch_triage_chat_service, "run_cli_agent_turn", fake_one_shot)
+
+    reply = invoke_branch_triage_model(
+        triage_session,
+        triage_workspace,
+        "loregarden/orphan",
+        "Edit this branch",
+        run_id="run_branch",
+    )
+
+    assert reply == "check it out first"
+    assert "advisory only" in captured["prompt"]
+    assert "not checked out in a worktree" in captured["prompt"]
+    assert captured["read_only"] == "True"
 
 
 def test_branch_chat_rejects_a_second_turn_while_one_is_in_flight(

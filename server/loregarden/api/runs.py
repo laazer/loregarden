@@ -32,7 +32,7 @@ def list_runs(
         {
             "id": r.id,
             "run_code": r.run_code,
-            "ticket_id": r.ticket_id,
+            "ticket_id": r.ticket_id or "",
             "workspace_id": r.workspace_id,
             "agent_id": r.agent_id,
             "skill_name": r.skill_name,
@@ -197,7 +197,7 @@ def get_run(run_id: str, session: Session = Depends(get_session)) -> dict:
     return {
         "id": run.id,
         "run_code": run.run_code,
-        "ticket_id": run.ticket_id,
+        "ticket_id": run.ticket_id or "",
         "workspace_id": run.workspace_id,
         "agent_id": run.agent_id,
         "skill_name": run.skill_name,

@@ -308,9 +308,15 @@ def test_scope_reroute_budget_exhaustion_blocks(tmp_path):
         tool_input = {"file_path": str(repo_root / "server" / "loregarden" / "main.py")}
         bridge = PermissionBridgeRunner(session)
 
+        from loregarden.agents.executors.permission_bridge import ApprovalScope
+
         results = [
             bridge._try_scope_reroute(
-                ctx=ctx, ticket=ticket, tool_input=tool_input, run_id="r", message="denied"
+                ctx=ctx,
+                scope=ApprovalScope.for_ticket(ticket),
+                tool_input=tool_input,
+                run_id="r",
+                message="denied",
             )
             for _ in range(MAX_REWORK_REROUTES + 1)
         ]

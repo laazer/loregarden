@@ -45,6 +45,28 @@ def test_is_transient_failure_detects_usage_and_rate_limit_text():
     assert is_transient_failure("Overloaded", "") is True
 
 
+def test_is_transient_failure_detects_cli_auth_failure():
+    """A CLI that cannot authenticate never reached the model, so it has no
+    opinion on the work — rerouting upstream on it loops plan against triage."""
+    assert (
+        is_transient_failure(
+            "",
+            "Error: Cursor couldn't find your saved login in the macOS keychain.\n"
+            "Log out and sign back in: run `agent logout`, then start agent again.",
+        )
+        is True
+    )
+    assert (
+        is_transient_failure(
+            "",
+            "Error: The macOS keychain item already exists "
+            "(errSecDuplicateItem, security exit code 45).",
+        )
+        is True
+    )
+    assert is_transient_failure("", "Invalid API key · Please run /login") is True
+
+
 def test_is_transient_failure_ignores_genuine_failures():
     # A real crash / assertion is not transient — must not be masked as retryable.
     assert is_transient_failure("", "Traceback (most recent call last): AssertionError") is False

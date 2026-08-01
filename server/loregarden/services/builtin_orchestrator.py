@@ -1109,20 +1109,21 @@ def _handle_parallel_stage_failures(
     agent_context = rejecting[0][1].reroute_context if rejecting else ""
 
     if transient and not rejecting:
-        # The only failures were infrastructure (API/usage limit, overload), and
-        # no reviewer produced a genuine rejection. Rerouting to `implement` would
-        # waste a cycle and, via the rework loop cap, inch toward blocking for the
-        # wrong reason. Pause the stage for a human/resume instead — no reroute,
-        # no ledger entry, so the loop budget is untouched. A genuine rejection
-        # from another reviewer (rejecting non-empty) still takes precedence and
-        # is rerouted below with its real feedback.
+        # The only failures were infrastructure (API/usage limit, overload, a CLI
+        # that could not authenticate), and no reviewer produced a genuine
+        # rejection. Rerouting to `implement` would waste a cycle and, via the
+        # rework loop cap, inch toward blocking for the wrong reason. Pause the
+        # stage for a human/resume instead — no reroute, no ledger entry, so the
+        # loop budget is untouched. A genuine rejection from another reviewer
+        # (rejecting non-empty) still takes precedence and is rerouted below with
+        # its real feedback.
         builtin.callbacks.block_ticket(
             orch_run,
             ticket,
             stage_key=stage_key,
             message=(
-                f"'{stage_key}' stage hit a transient API/usage error, not a rework "
-                f"rejection. Paused — resume to retry once it clears. ({message[:300]})"
+                f"'{stage_key}' stage hit a transient infrastructure/auth error, not a "
+                f"rework rejection. Paused — resume to retry once it clears. ({message[:300]})"
             ),
         )
         builtin.session.refresh(ticket)

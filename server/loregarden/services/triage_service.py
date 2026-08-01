@@ -223,6 +223,7 @@ def invoke_triage_model(
         prompt=prompt,
         run_id=run_id,
         workspace_slug=effective.slug or workspace.slug or "",
+        read_only=True,
     )
 
 

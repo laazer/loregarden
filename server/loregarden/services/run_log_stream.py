@@ -33,6 +33,12 @@ def format_stream_payload(payload: dict[str, Any]) -> tuple[str, str] | None:
         if text:
             return "OUT", str(text)
 
+    # Cursor stream-partial-output emits token deltas as thinking events.
+    # Handled by RunLogStreamer.append_stream_line (coalesced); do not treat as
+    # a finished OUT line here.
+    if msg_type == "thinking":
+        return None
+
     if msg_type == "result":
         result = payload.get("result")
         if isinstance(result, str) and result.strip():
@@ -92,6 +98,7 @@ class RunLogStreamer:
         self._live = ""
         self._stream_buffer = ""
         self._partial_output_text = ""
+        self._partial_message_text = ""
         self._last_persist = 0.0
 
     def _timestamp(self) -> str:
@@ -160,7 +167,6 @@ class RunLogStreamer:
     def _append_partial_output(self, text: str) -> None:
         """Keep token deltas live, promoting only readable chunks to history."""
         self._stream_buffer += text
-        self._partial_output_text += text
         stripped = self._stream_buffer.rstrip()
         sentence_complete = len(stripped) >= self.PARTIAL_SENTENCE_MIN_CHARS and stripped.endswith(
             (".", "!", "?", ":")
@@ -208,6 +214,72 @@ class RunLogStreamer:
     def append(self, tag: str, text: str, *, force: bool = False) -> None:
         self._append_chunks(tag, text, force=force)
 
+    def _ingest_delta_text(self, text: str) -> None:
+        if self.partial_output:
+            self._append_partial_output(text)
+            return
+        self._stream_buffer += text
+        self._maybe_chunk_flush()
+        self._update_live_from_buffer()
+
+    def _handle_thinking_event(self, payload: dict[str, Any]) -> None:
+        # Thinking ends the assistant message it interleaves with, so the next
+        # assistant snapshot is compared against a fresh accumulation.
+        self._partial_message_text = ""
+        if (payload.get("subtype") or "") == "completed":
+            self._flush_stream_buffer(force=True)
+            self.set_live("")
+            return
+        text = payload.get("text")
+        if text:
+            self._ingest_delta_text(str(text))
+
+    def _handle_assistant_event(self, payload: dict[str, Any]) -> None:
+        message = payload.get("message") or {}
+        parts: list[str] = []
+        for block in message.get("content") or []:
+            if isinstance(block, dict):
+                chunk = block.get("text") or block.get("thinking")
+                if chunk:
+                    parts.append(str(chunk))
+        if not parts:
+            return
+        if self.partial_output:
+            chunk_text = "".join(parts)
+            # Cursor closes a partial-output message by repeating it whole after
+            # its token deltas; appending that replays the message.
+            if chunk_text == self._partial_message_text:
+                return
+            self._partial_message_text += chunk_text
+            self._partial_output_text += chunk_text
+            self._append_partial_output(chunk_text)
+            return
+        self._prefer_stream_text(" ".join(parts))
+        snapshot = self._stream_buffer
+        self._flush_stream_buffer(force=True)
+        self.set_live(snapshot)
+
+    def _handle_result_event(self, payload: dict[str, Any]) -> None:
+        result = payload.get("result")
+        if self.partial_output and self._partial_output_text:
+            if isinstance(result, str) and result.startswith(self._partial_output_text):
+                self._stream_buffer += result[len(self._partial_output_text) :]
+            self._flush_stream_buffer(force=True)
+            self._partial_output_text = ""
+            self._partial_message_text = ""
+            self.set_live("")
+            return
+        if isinstance(result, str) and result.strip():
+            self._prefer_stream_text(result.strip())
+            self._flush_stream_buffer(force=True)
+        elif isinstance(result, dict):
+            text = result.get("text") or result.get("output")
+            if text:
+                self._prefer_stream_text(str(text))
+                self._flush_stream_buffer(force=True)
+        self._stream_buffer = ""
+        self.set_live("")
+
     def append_stream_line(self, raw_line: str) -> None:
         raw_line = raw_line.strip()
         if not raw_line:
@@ -233,46 +305,20 @@ class RunLogStreamer:
                 self._update_live_from_buffer()
             return
 
+        if msg_type == "thinking":
+            self._handle_thinking_event(payload)
+            return
+
         if msg_type == "assistant":
-            message = payload.get("message") or {}
-            parts: list[str] = []
-            for block in message.get("content") or []:
-                if isinstance(block, dict):
-                    chunk = block.get("text") or block.get("thinking")
-                    if chunk:
-                        parts.append(str(chunk))
-            if parts:
-                if self.partial_output:
-                    self._append_partial_output("".join(parts))
-                    return
-                self._prefer_stream_text(" ".join(parts))
-                snapshot = self._stream_buffer
-                self._flush_stream_buffer(force=True)
-                self.set_live(snapshot)
+            self._handle_assistant_event(payload)
             return
 
         if msg_type == "result":
-            result = payload.get("result")
-            if self.partial_output and self._partial_output_text:
-                if isinstance(result, str) and result.startswith(self._partial_output_text):
-                    self._stream_buffer += result[len(self._partial_output_text) :]
-                self._flush_stream_buffer(force=True)
-                self._partial_output_text = ""
-                self.set_live("")
-                return
-            if isinstance(result, str) and result.strip():
-                self._prefer_stream_text(result.strip())
-                self._flush_stream_buffer(force=True)
-            elif isinstance(result, dict):
-                text = result.get("text") or result.get("output")
-                if text:
-                    self._prefer_stream_text(str(text))
-                    self._flush_stream_buffer(force=True)
-            self._stream_buffer = ""
-            self.set_live("")
+            self._handle_result_event(payload)
             return
 
         if self.partial_output and msg_type in {"tool_use", "tool_result", "tool_call"}:
+            self._partial_message_text = ""
             self._flush_stream_buffer(force=True)
             self.set_live("")
 
@@ -303,6 +349,13 @@ class RunLogStreamer:
 
     def finalize(self, *, status: RunStatus, stderr: str = "") -> None:
         self._flush_stream_buffer(force=True)
+        # Both the executor and run_completion.finalize_run_log_artifact finalize
+        # the same run; only the first may write the terminal marker and stderr.
+        if any(line.get("tag") in {"OK", "FAIL"} for line in self._lines):
+            self._stream_buffer = ""
+            self._live = ""
+            self._persist()
+            return
         for line in stderr.strip().splitlines()[:30]:
             self.append("ERR", line, force=False)
         tag = "OK" if status == RunStatus.SUCCEEDED else "FAIL"

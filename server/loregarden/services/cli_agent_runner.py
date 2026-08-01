@@ -71,6 +71,7 @@ def run_cli_agent_turn(
     run_id: str = "",
     workspace_slug: str = "",
     granted_tools: list[str] | None = None,
+    read_only: bool = False,
 ) -> str:
     """Run one turn to completion and return the assistant's reply.
 
@@ -108,6 +109,7 @@ def run_cli_agent_turn(
             run_id=run_id,
             workspace_slug=workspace_slug or workspace.slug or "",
             granted_tools=tools,
+            read_only=read_only,
         )
         proc = subprocess.Popen(
             invocation.argv,

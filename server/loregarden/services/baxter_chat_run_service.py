@@ -18,6 +18,7 @@ from loregarden.db.session import engine
 from loregarden.models.domain import BaxterChatMessage, BaxterChatSession, Workspace
 from loregarden.services.baxter_chat_service import (
     UNTITLED_SESSION_TITLE,
+    BaxterChatConflictError,
     derive_session_title,
     invoke_baxter_chat_model,
     latest_pending_turn,
@@ -35,10 +36,6 @@ INTERRUPTED_TURN_MESSAGE = (
     f"{TRIAGE_AGENT_NAME} was interrupted by a server restart and did not finish this turn. "
     "Send the message again."
 )
-
-
-class BaxterChatConflictError(ValueError):
-    """Raised when a turn can't start because one is already in flight for the thread."""
 
 
 def start_baxter_chat_turn(

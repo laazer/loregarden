@@ -582,6 +582,7 @@ def build_triage_invocation(
     run_id: str = "",
     workspace_slug: str = "",
     granted_tools: list[str] | None = None,
+    read_only: bool = False,
 ) -> CliInvocation:
     """One-shot, non-interactive CLI for the triage chat channel.
 
@@ -628,7 +629,11 @@ def build_triage_invocation(
             "--output-format",
             "text",
             "--permission-mode",
-            os.environ.get("LOREGARDEN_TRIAGE_PERMISSION_MODE", "bypassPermissions"),
+            (
+                "plan"
+                if read_only
+                else os.environ.get("LOREGARDEN_TRIAGE_PERMISSION_MODE", "bypassPermissions")
+            ),
             "--append-system-prompt-file",
             str(prompt_file),
             triage_user_prompt,
@@ -650,11 +655,18 @@ def build_triage_invocation(
             "--output-format",
             "text",
             "--trust",
-            "--force",
-            "--workspace",
-            str(workspace_root),
-            f"{triage_user_prompt}\n\n{prompt}",
         ]
+        if read_only:
+            argv.extend(["--mode", "ask"])
+        else:
+            argv.append("--force")
+        argv.extend(
+            [
+                "--workspace",
+                str(workspace_root),
+                f"{triage_user_prompt}\n\n{prompt}",
+            ]
+        )
         _append_model_flag(argv, apply_cursor_effort(model, effort))
         extra = os.environ.get("LOREGARDEN_CURSOR_AGENT_ARGS")
         if extra:
@@ -662,7 +674,10 @@ def build_triage_invocation(
         return CliInvocation(argv=argv, adapter="cursor", cwd=str(workspace_root))
 
     if selected == "codex":
-        return _codex_invocation(prompt=prompt, workspace_root=workspace_root)
+        invocation = _codex_invocation(prompt=prompt, workspace_root=workspace_root)
+        if read_only:
+            invocation.argv[2:2] = ["--sandbox", "read-only"]
+        return invocation
 
     if selected == "lmstudio":
         return _lmstudio_invocation(
@@ -671,9 +686,9 @@ def build_triage_invocation(
             base_url=resolve_lmstudio_base_url(workspace),
             model=model,
             effort=effort,
-            run_id=run_id,
+            run_id="" if read_only else run_id,
             workspace_slug=workspace_slug,
-            granted_tools=granted_tools,
+            granted_tools=[] if read_only else granted_tools,
         )
 
     raise ValueError(f"Unknown CLI adapter for triage: {selected}")

@@ -419,7 +419,9 @@ export function BaxterChatPage() {
                             className="baxter-chat-card-review"
                             onClick={() => {
                               setInboxOpen(true);
-                              navigate(ticketPath(a.ticket_id));
+                              if (a.ticket_id) {
+                                navigate(ticketPath(a.ticket_id));
+                              }
                             }}
                           >
                             Review

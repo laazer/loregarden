@@ -4,18 +4,42 @@ from __future__ import annotations
 
 import os
 from dataclasses import replace
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-from loregarden.agents.cli_adapters import DEFAULT_BRANCH_TRIAGE_USER_PROMPT
+from loregarden.agents.cli_adapters import (
+    DEFAULT_BRANCH_TRIAGE_USER_PROMPT,
+    build_interactive_invocation,
+)
+from loregarden.agents.executors.permission_bridge import (
+    BRANCH_TRIAGE_STAGE_KEY,
+    PermissionBridgeRunner,
+)
+from loregarden.agents.registry import get_agent
 from loregarden.models.domain import (
     BranchTriageMessage,
+    RunStatus,
     Ticket,
     Workspace,
     WorkspaceRuntimeSettings,
 )
-from loregarden.services.branch_triage_service import branch_triage_snapshot
+from loregarden.services.branch_triage_service import (
+    branch_triage_snapshot,
+    resolve_branch_checkout,
+)
 from loregarden.services.chat_primitives import load_parts_json
-from loregarden.services.cli_agent_runner import run_cli_agent_turn, stub_response
+from loregarden.services.cli_agent_runner import (
+    resolve_agent_timeout,
+    run_cli_agent_turn,
+    stub_response,
+)
+from loregarden.services.cli_output import extract_triage_reply
+from loregarden.services.cli_settings import (
+    resolve_effective_adapter,
+    resolve_model_for_adapter,
+)
 from loregarden.services.triage_service import (
+    TRIAGE_AGENT_ID,
     TRIAGE_AGENT_NAME,
     TRIAGE_CLI_PROFILE,
     apply_triage_runtime_overrides,
@@ -139,17 +163,39 @@ def build_branch_triage_prompt(
     latest_user_message: str,
     *,
     ticket: Ticket | None,
+    interactive: bool = False,
+    advisory_reason: str = "",
 ) -> str:
     sections = [
         "# Loregarden branch triage",
         "You are Baxter, the operator's triage assistant for cleaning up git branches.",
-        "You run in the workspace repository with shell and git access — execute commands when asked.",
-        "When the operator requests git work (commit, push, checkout, merge, rebase, delete, etc.), run it and report exact outcomes.",
-        "Use safe defaults: avoid force-push or branch deletion unless the operator clearly asks; confirm when intent is ambiguous.",
-        "",
-        f"Workspace: {workspace.name} ({workspace.slug})",
-        f"Branch: {branch}",
     ]
+    if interactive:
+        sections.extend(
+            [
+                "You have real file, shell, git, and Loregarden MCP access in the selected "
+                "branch's checkout.",
+                "When the operator requests git work (commit, push, checkout, merge, rebase, "
+                "delete, etc.), run it and report exact outcomes.",
+                "Use safe defaults: avoid force-push or branch deletion unless the operator "
+                "clearly asks; confirm when intent is ambiguous.",
+                "High-risk actions route through Loregarden's approval inbox automatically.",
+            ]
+        )
+    else:
+        sections.append(
+            "You are advisory only in this turn — do not claim to have run commands or changed "
+            "the repository."
+        )
+        if advisory_reason:
+            sections.append(f"Reason: {advisory_reason}")
+    sections.extend(
+        [
+            "",
+            f"Workspace: {workspace.name} ({workspace.slug})",
+            f"Branch: {branch}",
+        ]
+    )
 
     if branch_entry:
         sections.extend(
@@ -195,7 +241,12 @@ def build_branch_triage_prompt(
 
 
 def invoke_branch_triage_model(
-    session: Session, workspace: Workspace, branch: str, latest_user_message: str
+    session: Session,
+    workspace: Workspace,
+    branch: str,
+    latest_user_message: str,
+    *,
+    run_id: str = "",
 ) -> str:
     stub = stub_response(BRANCH_TRIAGE_CLI_PROFILE)
     if stub is not None:
@@ -204,6 +255,23 @@ def invoke_branch_triage_model(
     ticket = _linked_ticket(session, workspace.id, branch)
     history = list_branch_triage_messages(session, workspace.id, branch)
     branch_entry = _branch_entry(session, workspace, branch)
+    effective_workspace = apply_triage_runtime_overrides(workspace, ticket) if ticket else workspace
+    agent = get_agent(TRIAGE_AGENT_ID) or {}
+    selected = resolve_effective_adapter(
+        agent_adapter=agent.get("adapter", "claude"),
+        workspace=effective_workspace,
+    )
+    checkout_root = resolve_branch_checkout(workspace, branch)
+    interactive = selected == "claude" and bool(run_id) and checkout_root is not None
+    advisory_reason = ""
+    if selected != "claude":
+        advisory_reason = f"The selected {selected} adapter has no complete approval bridge."
+    elif checkout_root is None:
+        advisory_reason = (
+            f"Branch {branch!r} is not checked out in a worktree. Check it out before asking "
+            "Baxter to modify it."
+        )
+
     prompt = build_branch_triage_prompt(
         workspace,
         branch,
@@ -211,12 +279,49 @@ def invoke_branch_triage_model(
         history,
         latest_user_message,
         ticket=ticket,
+        interactive=interactive,
+        advisory_reason=advisory_reason,
     )
+    if interactive:
+        assert checkout_root is not None
+        model = (
+            os.environ.get("LOREGARDEN_BRANCH_TRIAGE_CLAUDE_MODEL", "").strip()
+            or os.environ.get("LOREGARDEN_TRIAGE_CLAUDE_MODEL", "").strip()
+            or resolve_model_for_adapter("claude", effective_workspace)
+            or "haiku"
+        )
+        timeout = resolve_agent_timeout(agent, BRANCH_TRIAGE_CLI_PROFILE.timeout_env)
+        with TemporaryDirectory(prefix=BRANCH_TRIAGE_CLI_PROFILE.tmp_prefix) as tmp:
+            prompt_file = Path(tmp) / "prompt.md"
+            prompt_file.write_text(prompt, encoding="utf-8")
+            invocation = build_interactive_invocation(
+                adapter="claude",
+                prompt_file=prompt_file,
+                workspace_root=checkout_root,
+                claude_model=model,
+                db_session=session,
+            )
+            result = PermissionBridgeRunner(session, track_workflow_stage=False).run(
+                run_id=run_id,
+                workspace=workspace,
+                workspace_stage_key=BRANCH_TRIAGE_STAGE_KEY,
+                invocation=invocation,
+                prompt=prompt,
+                timeout_seconds=timeout,
+            )
+        reply = extract_triage_reply(result.stdout)
+        if result.status != RunStatus.SUCCEEDED:
+            raise RuntimeError(result.stderr or f"{TRIAGE_AGENT_NAME} run {result.status.value}")
+        if not reply:
+            raise RuntimeError(f"{TRIAGE_AGENT_NAME} returned an empty response")
+        return reply[: BRANCH_TRIAGE_CLI_PROFILE.reply_cap]
+
     return run_cli_agent_turn(
         BRANCH_TRIAGE_CLI_PROFILE,
-        workspace=apply_triage_runtime_overrides(workspace, ticket) if ticket else workspace,
+        workspace=effective_workspace,
         prompt=prompt,
         user_prompt=os.environ.get(
             "LOREGARDEN_BRANCH_TRIAGE_USER_PROMPT", DEFAULT_BRANCH_TRIAGE_USER_PROMPT
         ),
+        read_only=True,
     )
