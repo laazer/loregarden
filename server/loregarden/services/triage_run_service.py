@@ -26,6 +26,7 @@ from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.cli_output import extract_triage_reply
 from loregarden.services.cli_settings import (
     resolve_effective_adapter,
+    resolve_effort_for_adapter,
     resolve_model_for_adapter,
 )
 from loregarden.services.run_concurrency import find_active_run
@@ -180,6 +181,7 @@ class TriageTurnExecutor:
                 prompt_file=prompt_file,
                 workspace_root=repo_root,
                 claude_model=triage_claude_model,
+                claude_effort=resolve_effort_for_adapter("claude", workspace),
             )
             timeout = int(os.environ.get("LOREGARDEN_TRIAGE_TIMEOUT") or agent.get("timeout", 1800))
             bridge = PermissionBridgeRunner(self.session, track_workflow_stage=False)

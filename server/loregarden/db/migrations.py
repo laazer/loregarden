@@ -111,6 +111,24 @@ def _m_workspace_runtime_columns(conn: Connection) -> None:
     )
 
 
+def _m_workspace_effort_columns(conn: Connection) -> None:
+    add_columns_if_missing(
+        conn,
+        "workspaces",
+        {
+            "claude_effort": (
+                "ALTER TABLE workspaces ADD COLUMN claude_effort TEXT NOT NULL DEFAULT ''"
+            ),
+            "cursor_effort": (
+                "ALTER TABLE workspaces ADD COLUMN cursor_effort TEXT NOT NULL DEFAULT ''"
+            ),
+            "lmstudio_effort": (
+                "ALTER TABLE workspaces ADD COLUMN lmstudio_effort TEXT NOT NULL DEFAULT ''"
+            ),
+        },
+    )
+
+
 def _m_approval_columns(conn: Connection) -> None:
     add_columns_if_missing(
         conn,
@@ -1376,6 +1394,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0050_baxter_chat_tables", _m_baxter_chat_tables),
     ("0051_ticket_studio_turn_lifecycle", _m_ticket_studio_turn_lifecycle),
     ("0052_git_automation", _m_git_automation),
+    ("0053_workspace_effort_columns", _m_workspace_effort_columns),
 ]
 
 

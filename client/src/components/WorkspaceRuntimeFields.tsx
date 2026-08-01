@@ -1,6 +1,12 @@
 import type { ReactNode } from "react";
 
-import type { RuntimeOptions, WorkspaceRuntimeSettings, WorkspaceSummary } from "../api/client";
+import type {
+  RuntimeEffective,
+  RuntimeOption,
+  RuntimeOptions,
+  WorkspaceRuntimeSettings,
+  WorkspaceSummary,
+} from "../api/client";
 
 export function claudeModelEnabled(cliAdapter: string): boolean {
   return ["default", "claude"].includes(cliAdapter || "default");
@@ -57,6 +63,54 @@ function providerNeedsModel(adapter: string): boolean {
   return ["claude", "cursor", "lmstudio"].includes(adapter);
 }
 
+type EffortKey = "claude_effort" | "cursor_effort" | "lmstudio_effort";
+
+const EFFORT_FIELD: Record<string, EffortKey> = {
+  claude: "claude_effort",
+  cursor: "cursor_effort",
+  lmstudio: "lmstudio_effort",
+};
+
+function effortOptions(options: RuntimeOptions, adapter: string): RuntimeOption[] {
+  if (adapter === "claude") return options.claude_efforts ?? [];
+  if (adapter === "cursor") return options.cursor_efforts ?? [];
+  if (adapter === "lmstudio") return options.lmstudio_efforts ?? [];
+  return [];
+}
+
+/** Cursor has no `--effort` flag — the level rides along as a bracket parameter
+ *  on a parameterized model id, so the control is meaningless for the rest. */
+function cursorEffortApplies(options: RuntimeOptions, model: string): boolean {
+  return (options.cursor_effort_models ?? []).includes(model);
+}
+
+const SOURCE_LABEL: Record<string, string> = {
+  env: "environment override",
+  ticket: "this ticket",
+  workspace: "workspace default",
+  global: "global settings",
+  "cli-default": "the CLI's own default",
+};
+
+function sourceLabel(source: string): string {
+  return SOURCE_LABEL[source] ?? source;
+}
+
+export function effectiveRuntimeSummary(effective: RuntimeEffective): string {
+  const parts = [
+    `${effective.cli_adapter} (${sourceLabel(effective.cli_adapter_source)})`,
+  ];
+  if (effective.supports_model) {
+    const model = effective.model || "model chosen by the CLI";
+    parts.push(`${model} (${sourceLabel(effective.model_source)})`);
+  }
+  if (effective.supports_effort) {
+    const effort = effective.effort || "effort chosen by the CLI";
+    parts.push(`${effort} (${sourceLabel(effective.effort_source)})`);
+  }
+  return parts.join(" · ");
+}
+
 interface WorkspaceRuntimeFieldsProps {
   runtime: WorkspaceRuntimeSettings;
   options: RuntimeOptions;
@@ -90,6 +144,7 @@ export function WorkspaceRuntimeFields({
       <select
         className="btn-secondary filter-select"
         style={selectStyle}
+        aria-label="Claude model"
         value={runtime.claude_model ?? ""}
         disabled={disabled}
         onChange={(e) =>
@@ -111,6 +166,7 @@ export function WorkspaceRuntimeFields({
       <select
         className="btn-secondary filter-select"
         style={selectStyle}
+        aria-label="Cursor model"
         value={runtime.cursor_model ?? ""}
         disabled={disabled}
         onChange={(e) =>
@@ -204,12 +260,49 @@ export function WorkspaceRuntimeFields({
     );
   }
 
+  const efforts = effortOptions(options, adapter);
+  const effortKey = EFFORT_FIELD[adapter];
+  const cursorEffortInert =
+    adapter === "cursor" && !cursorEffortApplies(options, runtime.cursor_model ?? "");
+  let effortStep: ReactNode = null;
+
+  if (effortKey && efforts.length > 0) {
+    effortStep = (
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <select
+          className="btn-secondary filter-select"
+          aria-label="Reasoning effort"
+          style={selectStyle}
+          value={runtime[effortKey] ?? ""}
+          disabled={disabled || cursorEffortInert}
+          onChange={(e) => onChange({ ...runtime, [effortKey]: e.target.value })}
+        >
+          {efforts.map((opt) => (
+            <option key={opt.id || "default"} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        {cursorEffortInert ? (
+          <p className="modal-hint" style={{ margin: 0 }}>
+            Cursor takes effort only on a parameterized model
+            {(options.cursor_effort_models ?? []).length > 0
+              ? ` (${(options.cursor_effort_models ?? []).join(", ")})`
+              : ""}
+            . Pick one above to set a level.
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap }}>
       <div className="modal-field">
         <div className="modal-field-label">1 · Provider</div>
         <select
           className="btn-secondary filter-select"
+          aria-label="Provider"
           style={selectStyle}
           value={adapter}
           disabled={disabled}
@@ -229,6 +322,19 @@ export function WorkspaceRuntimeFields({
         </div>
         {modelStep}
       </div>
+
+      {effortStep ? (
+        <div className="modal-field">
+          <div className="modal-field-label">3 · Reasoning effort</div>
+          {effortStep}
+        </div>
+      ) : null}
+
+      {options.effective ? (
+        <p className="modal-hint" style={{ margin: 0 }}>
+          Currently runs as: {effectiveRuntimeSummary(options.effective)}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -240,6 +346,9 @@ export function runtimeFromWorkspace(workspace: WorkspaceSummary | undefined): W
     cursor_model: workspace?.cursor_model ?? "",
     lmstudio_base_url: workspace?.lmstudio_base_url ?? "",
     lmstudio_model: workspace?.lmstudio_model ?? "",
+    claude_effort: workspace?.claude_effort ?? "",
+    cursor_effort: workspace?.cursor_effort ?? "",
+    lmstudio_effort: workspace?.lmstudio_effort ?? "",
   };
 }
 
@@ -249,6 +358,9 @@ export function runtimeSettingsEqual(a: WorkspaceRuntimeSettings, b: WorkspaceRu
     (a.claude_model ?? "") === (b.claude_model ?? "") &&
     (a.cursor_model ?? "") === (b.cursor_model ?? "") &&
     (a.lmstudio_base_url ?? "") === (b.lmstudio_base_url ?? "") &&
-    (a.lmstudio_model ?? "") === (b.lmstudio_model ?? "")
+    (a.lmstudio_model ?? "") === (b.lmstudio_model ?? "") &&
+    (a.claude_effort ?? "") === (b.claude_effort ?? "") &&
+    (a.cursor_effort ?? "") === (b.cursor_effort ?? "") &&
+    (a.lmstudio_effort ?? "") === (b.lmstudio_effort ?? "")
   );
 }

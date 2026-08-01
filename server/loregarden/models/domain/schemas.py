@@ -88,6 +88,9 @@ class WorkspaceRuntimeUpdate(SQLModel):
     cursor_model: str = ""
     lmstudio_base_url: str = ""
     lmstudio_model: str = ""
+    claude_effort: str = ""
+    cursor_effort: str = ""
+    lmstudio_effort: str = ""
 
 
 class WorkspaceRuntimeSettings(SQLModel):
@@ -96,6 +99,9 @@ class WorkspaceRuntimeSettings(SQLModel):
     cursor_model: str = ""
     lmstudio_base_url: str = ""
     lmstudio_model: str = ""
+    claude_effort: str = ""
+    cursor_effort: str = ""
+    lmstudio_effort: str = ""
 
 
 class TicketSummary(SQLModel):

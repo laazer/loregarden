@@ -7,4 +7,7 @@ export const DEFAULT_RUNTIME: WorkspaceRuntimeSettings = {
   cursor_model: "",
   lmstudio_base_url: "",
   lmstudio_model: "",
+  claude_effort: "",
+  cursor_effort: "",
+  lmstudio_effort: "",
 };

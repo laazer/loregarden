@@ -56,6 +56,42 @@ def _assistant_text(message: dict) -> str:
     return reasoning
 
 
+def _effort_attempts(body: dict, effort: str) -> list[dict]:
+    """Request bodies to try in order: with the effort hint, then without.
+
+    ``reasoning_effort`` is only meaningful to reasoning models, and LM Studio
+    answers 400 for a loaded model that does not know the field. Losing a whole
+    run over an optional hint is worse than running at the model's own default,
+    so every call site falls back rather than propagating that 400.
+    """
+    if not effort:
+        return [body]
+    return [{**body, "reasoning_effort": effort}, body]
+
+
+def _warn_effort_rejected(effort: str) -> None:
+    print(
+        f"[WARN] LM Studio rejected reasoning_effort={effort!r}; retrying at the model's default",
+        file=sys.stderr,
+    )
+
+
+def _post_chat(client: httpx.Client, base_url: str, body: dict, effort: str) -> httpx.Response:
+    """POST /chat/completions, dropping ``reasoning_effort`` if the server rejects it."""
+    response = None
+    for attempt_body in _effort_attempts(body, effort):
+        response = client.post(
+            f"{base_url}/chat/completions", json=attempt_body, timeout=DEFAULT_TIMEOUT_SECONDS
+        )
+        if response.status_code == 400 and "reasoning_effort" in attempt_body:
+            _warn_effort_rejected(effort)
+            continue
+        break
+    assert response is not None  # _effort_attempts is never empty
+    response.raise_for_status()
+    return response
+
+
 class McpBridge:
     """Proxies the model's tool calls to Loregarden's MCP endpoint.
 
@@ -150,6 +186,7 @@ def _chat_completion(
     model: str,
     prompt: str,
     stream: bool,
+    effort: str = "",
 ) -> str:
     body: dict = {
         "model": model,
@@ -158,35 +195,37 @@ def _chat_completion(
         "max_tokens": DEFAULT_MAX_TOKENS,
     }
     if stream:
-        text_parts: list[str] = []
-        with client.stream(
-            "POST",
-            f"{base_url}/chat/completions",
-            json=body,
-            timeout=DEFAULT_TIMEOUT_SECONDS,
-        ) as response:
-            response.raise_for_status()
-            for line in response.iter_lines():
-                if not line.startswith("data: "):
+        # Same drop-the-hint fallback as _post_chat: the status arrives with the
+        # headers, before any chunk, so a rejected effort costs nothing to retry.
+        for attempt_body in _effort_attempts(body, effort):
+            text_parts: list[str] = []
+            with client.stream(
+                "POST",
+                f"{base_url}/chat/completions",
+                json=attempt_body,
+                timeout=DEFAULT_TIMEOUT_SECONDS,
+            ) as response:
+                if response.status_code == 400 and "reasoning_effort" in attempt_body:
+                    _warn_effort_rejected(effort)
                     continue
-                chunk_raw = line[6:].strip()
-                if chunk_raw == "[DONE]":
-                    break
-                chunk = json.loads(chunk_raw)
-                delta = chunk.get("choices", [{}])[0].get("delta", {}) or {}
-                piece = delta.get("content") or delta.get("reasoning_content")
-                if piece:
-                    text_parts.append(piece)
-                    print(piece, end="", flush=True)
-        print()
-        return "".join(text_parts)
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    chunk_raw = line[6:].strip()
+                    if chunk_raw == "[DONE]":
+                        break
+                    chunk = json.loads(chunk_raw)
+                    delta = chunk.get("choices", [{}])[0].get("delta", {}) or {}
+                    piece = delta.get("content") or delta.get("reasoning_content")
+                    if piece:
+                        text_parts.append(piece)
+                        print(piece, end="", flush=True)
+            print()
+            return "".join(text_parts)
+        return ""
 
-    response = client.post(
-        f"{base_url}/chat/completions",
-        json=body,
-        timeout=DEFAULT_TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
+    response = _post_chat(client, base_url, body, effort)
     payload = response.json()
     message = payload.get("choices", [{}])[0].get("message", {}) or {}
     content = _assistant_text(message)
@@ -202,6 +241,7 @@ def _chat_with_tools(
     prompt: str,
     bridge: McpBridge,
     tools: list[dict],
+    effort: str = "",
 ) -> str:
     """Run the model until it stops asking for tools, then return its answer.
 
@@ -211,9 +251,10 @@ def _chat_with_tools(
     messages: list[dict] = [{"role": "user", "content": prompt}]
 
     for _ in range(MAX_TOOL_ROUNDS):
-        response = client.post(
-            f"{base_url}/chat/completions",
-            json={
+        response = _post_chat(
+            client,
+            base_url,
+            {
                 "model": model,
                 "messages": messages,
                 "tools": tools,
@@ -221,9 +262,8 @@ def _chat_with_tools(
                 "stream": False,
                 "max_tokens": DEFAULT_MAX_TOKENS,
             },
-            timeout=DEFAULT_TIMEOUT_SECONDS,
+            effort,
         )
-        response.raise_for_status()
         message = response.json().get("choices", [{}])[0].get("message", {}) or {}
         calls = message.get("tool_calls") or []
 
@@ -273,6 +313,7 @@ def run_chat(
     base_url: str,
     model: str,
     stream: bool,
+    effort: str = "",
     mcp_url: str = "",
     run_id: str = "",
     workspace_slug: str = "",
@@ -310,6 +351,7 @@ def run_chat(
                     prompt=prompt,
                     bridge=bridge,
                     tools=tools,
+                    effort=effort,
                 )
 
         return _chat_completion(
@@ -318,6 +360,7 @@ def run_chat(
             model=resolved_model,
             prompt=prompt,
             stream=stream,
+            effort=effort,
         )
 
 
@@ -326,6 +369,7 @@ def main() -> int:
     parser.add_argument("--prompt-file", required=True)
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--model", default="")
+    parser.add_argument("--effort", default="", help="OpenAI-compatible reasoning_effort.")
     parser.add_argument("--mcp-url", default="")
     parser.add_argument("--run-id", default="")
     parser.add_argument("--workspace-slug", default="")
@@ -351,6 +395,7 @@ def main() -> int:
             base_url=args.base_url,
             model=args.model,
             stream=args.stream,
+            effort=args.effort,
             mcp_url=args.mcp_url,
             run_id=args.run_id,
             workspace_slug=args.workspace_slug,

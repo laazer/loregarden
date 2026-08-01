@@ -13,9 +13,12 @@ from loregarden.agents.mcp_context import (
 from loregarden.config import settings
 from loregarden.services.cli_settings import (
     adapter_model_pins_apply,
+    apply_cursor_effort,
     resolve_effective_adapter,
+    resolve_effort_for_adapter,
     resolve_lmstudio_base_url,
     resolve_model_for_adapter,
+    ticket_effort_for_adapter,
     ticket_model_for_adapter,
 )
 
@@ -77,6 +80,13 @@ def _append_model_flag(argv: list[str], model: str) -> None:
         argv.extend(["--model", model])
 
 
+def _append_claude_effort_flag(argv: list[str], effort: str) -> None:
+    """`claude --effort <low|medium|high|xhigh|max>`. Claude-only — cursor folds
+    effort into the model id instead (see ``apply_cursor_effort``)."""
+    if effort:
+        argv.extend(["--effort", effort])
+
+
 def _env_command_override(
     *,
     agent_id: str,
@@ -117,6 +127,7 @@ def build_interactive_invocation(
     workspace_root: Path,
     resume_session_id: str = "",
     claude_model: str = "",
+    claude_effort: str = "",
     db_session=None,
 ) -> CliInvocation:
     """A headless `claude` session with permission prompts routed through Loregarden.
@@ -148,6 +159,7 @@ def build_interactive_invocation(
             str(prompt_file),
         ]
         _append_model_flag(argv, claude_model)
+        _append_claude_effort_flag(argv, claude_effort)
         if resume_session_id:
             argv.extend(["--resume", resume_session_id])
         append_mcp_cli_args(argv, adapter="claude", session=db_session, orchestrated=True)
@@ -168,6 +180,7 @@ def _claude_terminal_handoff_invocation(
     prompt_file: Path,
     workspace_root: Path,
     claude_model: str = "",
+    claude_effort: str = "",
 ) -> CliInvocation:
     """A normal interactive `claude` session, seeded with the stage's system prompt.
 
@@ -193,6 +206,7 @@ def _claude_terminal_handoff_invocation(
         os.environ.get("LOREGARDEN_CLAUDE_USER_PROMPT", DEFAULT_CLAUDE_USER_PROMPT),
     ]
     _append_model_flag(argv, claude_model)
+    _append_claude_effort_flag(argv, claude_effort)
     append_mcp_cli_args(argv, adapter="claude")
     return CliInvocation(
         argv=argv,
@@ -233,19 +247,21 @@ def resolve_terminal_handoff_invocation(
 
     selected = resolve_effective_adapter(agent_adapter=adapter, workspace=workspace)
     model = resolve_model_for_adapter(selected, workspace)
+    effort = resolve_effort_for_adapter(selected, workspace)
 
     if selected == "claude":
         return _claude_terminal_handoff_invocation(
             prompt_file=prompt_file,
             workspace_root=workspace_root,
             claude_model=model,
+            claude_effort=effort,
         )
 
     if selected == "cursor":
         return _cursor_print_invocation(
             prompt=prompt,
             workspace_root=workspace_root,
-            cursor_model=model,
+            cursor_model=apply_cursor_effort(model, effort),
         )
 
     raise ValueError(
@@ -314,6 +330,7 @@ def _claude_print_invocation(
     prompt_file: Path,
     workspace_root: Path,
     claude_model: str = "",
+    claude_effort: str = "",
 ) -> CliInvocation:
     output_format = os.environ.get("LOREGARDEN_CLAUDE_OUTPUT_FORMAT", settings.claude_output_format)
     argv = [
@@ -330,6 +347,7 @@ def _claude_print_invocation(
         os.environ.get("LOREGARDEN_CLAUDE_USER_PROMPT", DEFAULT_CLAUDE_USER_PROMPT),
     ]
     _append_model_flag(argv, claude_model)
+    _append_claude_effort_flag(argv, claude_effort)
     append_mcp_cli_args(argv, adapter="claude", orchestrated=True)
     return CliInvocation(argv=argv, use_prompt_file=True, adapter="claude", cwd=str(workspace_root))
 
@@ -401,6 +419,7 @@ def _lmstudio_invocation(
     workspace_root: Path,
     base_url: str,
     model: str,
+    effort: str = "",
     run_id: str = "",
     workspace_slug: str = "",
     granted_tools: list[str] | None = None,
@@ -416,6 +435,8 @@ def _lmstudio_invocation(
     ]
     if model:
         argv.extend(["--model", model])
+    if effort:
+        argv.extend(["--effort", effort])
     # LM Studio speaks no MCP of its own, so the runner is told where the
     # endpoint is and which run it belongs to. Passed as argv rather than env:
     # the subprocess inherits this process's environment, which is shared with
@@ -448,6 +469,9 @@ def resolve_cli_invocation(
     ticket_claude_model: str = "",
     ticket_cursor_model: str = "",
     ticket_lmstudio_model: str = "",
+    ticket_claude_effort: str = "",
+    ticket_cursor_effort: str = "",
+    ticket_lmstudio_effort: str = "",
     stage_model: str = "",
     agent_model: str = "",
     run_id: str = "",
@@ -482,6 +506,16 @@ def resolve_cli_invocation(
         stage_model=stage_model if pins_apply else "",
         agent_model=agent_model if pins_apply else "",
     )
+    effort = resolve_effort_for_adapter(
+        selected,
+        workspace,
+        ticket_effort=ticket_effort_for_adapter(
+            selected,
+            claude_effort=ticket_claude_effort,
+            cursor_effort=ticket_cursor_effort,
+            lmstudio_effort=ticket_lmstudio_effort,
+        ),
+    )
 
     if selected == "local":
         return _local_invocation(
@@ -498,6 +532,7 @@ def resolve_cli_invocation(
             workspace_root=workspace_root,
             resume_session_id=resume_session_id,
             claude_model=model,
+            claude_effort=effort,
         )
 
     if selected == "claude":
@@ -505,13 +540,14 @@ def resolve_cli_invocation(
             prompt_file=prompt_file,
             workspace_root=workspace_root,
             claude_model=model,
+            claude_effort=effort,
         )
 
     if selected == "cursor":
         return _cursor_print_invocation(
             prompt=prompt,
             workspace_root=workspace_root,
-            cursor_model=model,
+            cursor_model=apply_cursor_effort(model, effort),
             orchestrated=True,
         )
 
@@ -524,6 +560,7 @@ def resolve_cli_invocation(
             workspace_root=workspace_root,
             base_url=resolve_lmstudio_base_url(workspace),
             model=model,
+            effort=effort,
             run_id=run_id,
             workspace_slug=workspace_slug,
             granted_tools=granted_tools,
@@ -569,6 +606,7 @@ def build_triage_invocation(
     # Workspace already carries any triage/studio runtime overrides. Stage/agent
     # pins are not a one-shot concern — same resolver, empty pin tiers.
     model = resolve_model_for_adapter(selected, workspace)
+    effort = resolve_effort_for_adapter(selected, workspace)
     triage_user_prompt = user_prompt or os.environ.get(
         "LOREGARDEN_TRIAGE_USER_PROMPT", DEFAULT_TRIAGE_USER_PROMPT
     )
@@ -596,6 +634,7 @@ def build_triage_invocation(
             triage_user_prompt,
         ]
         _append_model_flag(argv, triage_model)
+        _append_claude_effort_flag(argv, effort)
         return CliInvocation(
             argv=argv,
             use_prompt_file=True,
@@ -616,7 +655,7 @@ def build_triage_invocation(
             str(workspace_root),
             f"{triage_user_prompt}\n\n{prompt}",
         ]
-        _append_model_flag(argv, model)
+        _append_model_flag(argv, apply_cursor_effort(model, effort))
         extra = os.environ.get("LOREGARDEN_CURSOR_AGENT_ARGS")
         if extra:
             argv[2:2] = shlex.split(extra)
@@ -631,6 +670,7 @@ def build_triage_invocation(
             workspace_root=workspace_root,
             base_url=resolve_lmstudio_base_url(workspace),
             model=model,
+            effort=effort,
             run_id=run_id,
             workspace_slug=workspace_slug,
             granted_tools=granted_tools,
