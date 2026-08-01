@@ -20,6 +20,7 @@ export function GitRefSwitcher({
   const qc = useQueryClient();
 
   const checkout = useMutation({
+    meta: { errorTitle: "Checkout ref" },
     mutationFn: (body: { branch?: string; worktree_path?: string }) =>
       api.editorCheckout(workspaceSlug, body),
     onSuccess: (data) => {

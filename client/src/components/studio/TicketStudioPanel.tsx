@@ -195,6 +195,7 @@ export function TicketStudioPanel({
   }, [openQuestionsKey, messageCount]);
 
   const requestClarifications = useMutation({
+    meta: { errorTitle: "Request clarifications" },
     mutationFn: () => api.requestTicketStudioClarifications(selectedSessionId!),
     onSuccess: (updated) => {
       if (qc) {
@@ -207,6 +208,7 @@ export function TicketStudioPanel({
   });
 
   const saveClarifications = useMutation({
+    meta: { errorTitle: "Save answers" },
     mutationFn: () => api.saveTicketStudioClarifications(selectedSessionId!, answerDraft),
     onSuccess: (updated) => {
       if (qc) {
@@ -219,6 +221,7 @@ export function TicketStudioPanel({
   });
 
   const createSession = useMutation({
+    meta: { errorTitle: "Create studio session" },
     mutationFn: async () => {
       const created = await api.createTicketStudioSession({
         workspace_slug: workspaceSlug,
@@ -248,6 +251,7 @@ export function TicketStudioPanel({
   });
 
   const startSmartImport = useMutation({
+    meta: { errorTitle: "Start smart import" },
     mutationFn: async (filePaths: string[]) => {
       const preview = await api.previewTicketImportPaths({
         workspace_slug: workspaceSlug,
@@ -298,6 +302,7 @@ export function TicketStudioPanel({
       : null;
 
   const sendMessage = useMutation({
+    meta: { errorTitle: "Send message" },
     mutationFn: (content: string) => api.sendTicketStudioMessage(selectedSessionId!, content),
     onSuccess: (updated) => {
       if (qc) {
@@ -310,6 +315,7 @@ export function TicketStudioPanel({
   });
 
   const generateScope = useMutation({
+    meta: { errorTitle: "Generate scope" },
     mutationFn: () => api.generateTicketStudioScope(selectedSessionId!),
     onSuccess: (updated) => {
       if (qc) {
@@ -321,6 +327,7 @@ export function TicketStudioPanel({
   });
 
   const saveDraft = useMutation({
+    meta: { errorTitle: "Save draft" },
     mutationFn: () => api.updateTicketStudioDraft(selectedSessionId!, localDraft),
     onSuccess: (updated) => {
       if (qc) {
@@ -333,6 +340,7 @@ export function TicketStudioPanel({
   });
 
   const commitSession = useMutation({
+    meta: { errorTitle: "Create tickets" },
     mutationFn: () => api.commitTicketStudioSession(selectedSessionId!),
     onSuccess: () => {
       if (qc) {
@@ -344,6 +352,7 @@ export function TicketStudioPanel({
   });
 
   const deleteSession = useMutation({
+    meta: { errorTitle: "Delete session" },
     mutationFn: (id: string) => api.deleteTicketStudioSession(id),
     onSuccess: () => {
       if (qc) {
@@ -354,6 +363,7 @@ export function TicketStudioPanel({
   });
 
   const saveRuntime = useMutation({
+    meta: { errorTitle: "Save runtime settings" },
     mutationFn: (runtime: WorkspaceRuntimeSettings) =>
       api.setTicketStudioRuntime(selectedSessionId!, runtime),
     onSuccess: (saved) => {

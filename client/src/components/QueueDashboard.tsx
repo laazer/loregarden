@@ -11,7 +11,6 @@ import { OperationDiffReviewView } from "./OperationDiffReviewView";
 import { ParallelQueueVisualization } from "./ParallelQueueVisualization";
 import { QueueAdvancedControls } from "./QueueAdvancedControls";
 import { QueueHistoricalAnalytics } from "./QueueHistoricalAnalytics";
-import { QueueNotifications } from "./QueueNotifications";
 import { useParallelExecutionWS } from "../hooks/useParallelExecutionWS";
 import "./QueueDashboard.css";
 
@@ -117,8 +116,6 @@ export function QueueDashboard({
 
   return (
     <div className="queue-dashboard">
-      <QueueNotifications workspaceId={workspaceId} />
-
       <div className="dashboard-layout">
         {!embedded && (
           <header className="dashboard-header">

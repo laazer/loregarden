@@ -74,6 +74,7 @@ export function McpGatewayPage() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ["mcp-servers"] });
 
   const create = useMutation({
+    meta: { errorTitle: "Add MCP server" },
     mutationFn: (body: McpServerInput) => api.createMcpServer(body),
     onSuccess: (created) => {
       invalidate();
@@ -83,17 +84,20 @@ export function McpGatewayPage() {
   });
 
   const update = useMutation({
+    meta: { errorTitle: "Update MCP server" },
     mutationFn: ({ id, body }: { id: string; body: Partial<McpServerInput> }) =>
       api.updateMcpServer(id, body),
     onSuccess: invalidate,
   });
 
   const checkHealth = useMutation({
+    meta: { errorTitle: "Check MCP server health" },
     mutationFn: (id: string) => api.checkMcpServerHealth(id),
     onSuccess: invalidate,
   });
 
   const remove = useMutation({
+    meta: { errorTitle: "Remove MCP server" },
     mutationFn: (id: string) => api.deleteMcpServer(id),
     onSuccess: () => {
       invalidate();

@@ -20,6 +20,7 @@ export function ApprovalInboxPanel() {
   });
 
   const resolveApproval = useMutation({
+    meta: { errorTitle: "Resolve approval" },
     mutationFn: ({
       id,
       action,

@@ -28,6 +28,7 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
   });
 
   const send = useMutation({
+    meta: { errorTitle: "Send steer message" },
     mutationFn: (content: string) => api.sendRunMessage(runId, content),
     onSuccess: () => {
       setDraft("");

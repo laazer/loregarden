@@ -8,7 +8,6 @@ import { QueueDashboard } from '../QueueDashboard';
 import * as useHook from '../../hooks/useParallelExecutionWS';
 
 jest.mock('../../hooks/useParallelExecutionWS');
-jest.mock('../QueueNotifications');
 jest.mock('../ParallelQueueVisualization');
 jest.mock('../QueueDiffViewer');
 jest.mock('../QueueAdvancedControls');
@@ -251,13 +250,6 @@ describe('QueueDashboard E2E Tests', () => {
 
       // Component receives workspace ID
       expect(useHook.useParallelExecutionWS).toHaveBeenCalledWith('ws-1');
-    });
-
-    test('passes workspace ID to QueueNotifications', () => {
-      render(<QueueDashboard workspaceId="ws-1" />);
-
-      // Notifications component would receive workspace ID
-      // (tested via component mock)
     });
 
     test('passes controls data to QueueAdvancedControls', () => {

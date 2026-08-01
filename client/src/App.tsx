@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
@@ -15,9 +15,10 @@ import { HomePage } from "./pages/HomePage";
 import { QueuePage } from "./pages/QueuePage";
 import { StudioPage } from "./pages/StudioPage";
 import { navigateToPage, pageFromPath } from "./lib/useAppNavigation";
+import { createQueryClient } from "./api/queryClient";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = createQueryClient();
 
 class PageErrorBoundary extends Component<
   { children: ReactNode; resetKey: string },

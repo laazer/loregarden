@@ -235,6 +235,7 @@ export function StudioPage() {
   });
 
   const saveAgent = useMutation({
+    meta: { errorTitle: "Save agent" },
     mutationFn: async () => {
       const payload = {
         ...agentDraft,
@@ -255,6 +256,7 @@ export function StudioPage() {
   });
 
   const deleteAgent = useMutation({
+    meta: { errorTitle: "Delete agent" },
     mutationFn: (slug: string) => api.deleteStudioAgent(slug),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["studio-agents"] });
@@ -264,6 +266,7 @@ export function StudioPage() {
   });
 
   const generateAgentDraft = useMutation({
+    meta: { errorTitle: "Generate agent draft" },
     mutationFn: () => api.generateStudioAgent(agentDescribePrompt),
     onSuccess: (generated) => {
       setAgentDraft((draft) => ({
@@ -281,6 +284,7 @@ export function StudioPage() {
   });
 
   const generateWorkflowDraft = useMutation({
+    meta: { errorTitle: "Generate workflow draft" },
     mutationFn: () => api.generateStudioWorkflow(workflowDescribePrompt),
     onSuccess: (generated) => {
       setWorkflowDraft({
@@ -294,6 +298,7 @@ export function StudioPage() {
   });
 
   const saveWorkflow = useMutation({
+    meta: { errorTitle: "Save workflow" },
     mutationFn: async () => {
       const { transitions, ...rest } = workflowDraft;
       const payload = {
@@ -318,6 +323,7 @@ export function StudioPage() {
   });
 
   const publishWorkflow = useMutation({
+    meta: { errorTitle: "Publish workflow" },
     mutationFn: (slug: string) => api.publishStudioWorkflow(slug),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["studio-workflows"] });
@@ -326,6 +332,7 @@ export function StudioPage() {
   });
 
   const deleteWorkflow = useMutation({
+    meta: { errorTitle: "Delete workflow" },
     mutationFn: (slug: string) => api.deleteStudioWorkflow(slug),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["studio-workflows"] });

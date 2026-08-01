@@ -47,6 +47,7 @@ export function AppTopbarActions() {
   });
 
   const setMemoryConfig = useMutation({
+    meta: { errorTitle: "Save memory settings" },
     mutationFn: api.setMemoryConfig,
     onSuccess: (data) => {
       qc.setQueryData(["memory-config"], data);

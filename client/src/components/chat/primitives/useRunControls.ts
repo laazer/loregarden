@@ -17,6 +17,7 @@ export function useRunControls(ticketId: string | undefined) {
   };
 
   const start = useMutation({
+    meta: { errorTitle: "Start run" },
     mutationFn: async (stageKey?: string) => {
       if (!ticketId) throw new Error("Missing ticket");
       if (stageKey) {
@@ -28,6 +29,7 @@ export function useRunControls(ticketId: string | undefined) {
   });
 
   const stop = useMutation({
+    meta: { errorTitle: "Stop run" },
     mutationFn: async () => {
       if (!ticketId) throw new Error("Missing ticket");
       return api.stopTicket(ticketId);

@@ -64,6 +64,7 @@ export function EditorPage() {
   }, [editorFilePath, contextRoot, workspaceSlug]);
 
   const saveFile = useMutation({
+    meta: { errorTitle: "Save file" },
     mutationFn: () =>
       api.editorWriteFile(workspaceSlug, {
         path: editorFilePath!,
