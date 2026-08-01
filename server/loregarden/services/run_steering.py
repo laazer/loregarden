@@ -44,6 +44,8 @@ def steer_refusal(run: AgentRun | None) -> str:
         return "Run not found."
     if run.status != RunStatus.RUNNING:
         return f"Run is {run.status.value.lower()}, so there is nothing to steer."
+    if not run.ticket_id:
+        return "Workspace-scoped chat runs are steered by replying in the chat, not here."
     adapter = (get_agent(run.agent_id) or {}).get("adapter", "")
     if adapter not in STEERABLE_ADAPTERS:
         return (

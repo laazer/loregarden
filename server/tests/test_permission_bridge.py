@@ -1388,3 +1388,94 @@ def test_permission_bridge_interactive_triage_create_ticket_is_not_auto_denied(t
             item for item in control_writes if item.get("type") == "control_response"
         )
         assert allow_response["response"]["response"]["behavior"] == "allow"
+
+
+def test_permission_bridge_workspace_scoped_approval_has_no_ticket(tmp_path):
+    """Home Baxter chat scopes approvals to a workspace, not a work item."""
+    from loregarden.agents.cli_adapters import build_interactive_invocation
+    from loregarden.agents.executors.permission_bridge import HOME_CHAT_STAGE_KEY
+    from loregarden.models.domain import (
+        AgentRun,
+        Approval,
+        ApprovalKind,
+        RunStatus,
+        Workspace,
+    )
+    from loregarden.services.orchestration import ApprovalService
+    from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        workspace = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+
+        run = AgentRun(
+            run_code="run_home_chat",
+            ticket_id=None,
+            workspace_id=workspace.id,
+            agent_id="triage",
+            stage_key=HOME_CHAT_STAGE_KEY,
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        prompt_file = tmp_path / "prompt.md"
+        prompt_file.write_text("home chat prompt", encoding="utf-8")
+        invocation = build_interactive_invocation(
+            adapter="claude",
+            prompt_file=prompt_file,
+            workspace_root=repo,
+        )
+
+        tool_line = json.dumps(
+            {
+                "type": "control_request",
+                "request_id": "perm_home",
+                "request": {
+                    "subtype": "can_use_tool",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "ls"},
+                },
+            }
+        )
+        result_line = json.dumps(
+            {"type": "result", "session_id": "sess_home", "subtype": "success"}
+        )
+
+        def fake_spawn(*args, **kwargs):
+            return _FakeProc([tool_line, result_line])
+
+        def fake_wait(approval_id, **kwargs):
+            ApprovalService(session).resolve(approval_id, approved=True)
+            return ApprovalResolution(approved=True)
+
+        bridge = PermissionBridgeRunner(session, track_workflow_stage=False)
+        result = bridge.run(
+            run_id=run.id,
+            workspace=workspace,
+            invocation=invocation,
+            prompt="home chat prompt",
+            timeout_seconds=30,
+            spawn_process=fake_spawn,
+            wait_for_approval=fake_wait,
+        )
+
+        assert result.status == RunStatus.SUCCEEDED
+        approval = session.exec(select(Approval).where(Approval.run_id == run.id)).first()
+        assert approval is not None
+        assert approval.ticket_id is None
+        assert approval.workspace_id == workspace.id
+        assert approval.kind == ApprovalKind.CLI_PERMISSION
+        assert approval.stage_key == HOME_CHAT_STAGE_KEY
+        assert "Home chat" in approval.impact

@@ -33,7 +33,8 @@ def _gate_route_options(session: Session, ticket: Ticket | None, gate_stage_key:
 
 
 def approval_to_view(session: Session, approval: Approval) -> dict:
-    ticket = session.get(Ticket, approval.ticket_id)
+    # Workspace-scoped approvals (Home Baxter chat) carry no ticket.
+    ticket = session.get(Ticket, approval.ticket_id) if approval.ticket_id else None
     ws = session.get(Workspace, approval.workspace_id)
     stage_name = approval.stage_key
     if ws and ws.workflow_template_id:
@@ -81,7 +82,7 @@ def approval_to_view(session: Session, approval: Approval) -> dict:
         "impact": approval.impact,
         "checklist": checklist,
         "route_options": route_options,
-        "ticket_id": approval.ticket_id,
+        "ticket_id": approval.ticket_id or "",
         "ticket_external_id": ticket.external_id if ticket else "",
         "kind": approval.kind.value if hasattr(approval.kind, "value") else str(approval.kind),
         "status": approval.status.value

@@ -138,11 +138,13 @@ def test_a_trusted_servers_calls_are_recorded(db_session: Session):
     _server(db_session, name="github", tool_policy=POLICY_AUTO)
     ticket = db_session.exec(select(Ticket)).first()
 
+    from loregarden.agents.executors.permission_bridge import ApprovalScope
+
     bridge = PermissionBridgeRunner(db_session)
     ctx = MagicMock(agent_id="planner", workspace_slug="loregarden")
     handled = bridge._try_fast_approve(
         ctx=ctx,
-        ticket=ticket,
+        scope=ApprovalScope.for_ticket(ticket),
         run_id="run-1",
         proc=MagicMock(),
         request_id="req-1",
@@ -172,11 +174,13 @@ def test_a_trusted_server_over_its_limit_is_refused(db_session: Session):
     update_server(db_session, server.id, _Update(rate_limit_per_min=1))
     ticket = db_session.exec(select(Ticket)).first()
 
+    from loregarden.agents.executors.permission_bridge import ApprovalScope
+
     bridge = PermissionBridgeRunner(db_session)
     ctx = MagicMock(agent_id="planner", workspace_slug="loregarden")
     call = {
         "ctx": ctx,
-        "ticket": ticket,
+        "scope": ApprovalScope.for_ticket(ticket),
         "run_id": "run-1",
         "proc": MagicMock(),
         "request_id": "req-1",

@@ -19,6 +19,7 @@ from uuid import uuid4
 
 from loregarden.db.migration_utils import (
     add_columns_if_missing,
+    relax_not_null,
     table_columns,
     table_exists,
 )
@@ -1341,6 +1342,38 @@ def _m_git_automation(conn: Connection) -> None:
     )
 
 
+def _m_workspace_scoped_runs_and_approvals(conn: Connection) -> None:
+    """Let a run and its approvals exist without a ticket.
+
+    Home Baxter chat is workspace-scoped: there is no work item to hang its run
+    or its permission prompts on, but it still needs both so its tool calls go
+    through the same approval inbox every other agent uses.
+    """
+    relax_not_null(conn, "agent_runs", "ticket_id")
+    relax_not_null(conn, "approvals", "ticket_id")
+
+
+def _m_branch_triage_message_run(conn: Connection) -> None:
+    """Link each background branch-chat assistant turn to its AgentRun."""
+    add_columns_if_missing(
+        conn,
+        "branch_triage_messages",
+        {
+            "run_id": (
+                "ALTER TABLE branch_triage_messages ADD COLUMN run_id TEXT "
+                "REFERENCES agent_runs(id)"
+            ),
+        },
+    )
+    if table_exists(conn, "branch_triage_messages"):
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_branch_triage_messages_run_id "
+                "ON branch_triage_messages (run_id)"
+            )
+        )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1395,6 +1428,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0051_ticket_studio_turn_lifecycle", _m_ticket_studio_turn_lifecycle),
     ("0052_git_automation", _m_git_automation),
     ("0053_workspace_effort_columns", _m_workspace_effort_columns),
+    ("0054_workspace_scoped_runs_and_approvals", _m_workspace_scoped_runs_and_approvals),
+    ("0055_branch_triage_message_run", _m_branch_triage_message_run),
 ]
 
 

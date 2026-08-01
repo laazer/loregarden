@@ -95,10 +95,14 @@ export function ApprovalInboxPanel() {
               onReject={(payload) =>
                 resolveApproval.mutate({ id: a.id, action: "reject", ...payload })
               }
-              onInspect={() => {
-                navigateToTicket(a.ticket_id, { tab: "diff" });
-                setInboxOpen(false);
-              }}
+              onInspect={
+                a.ticket_id
+                  ? () => {
+                      navigateToTicket(a.ticket_id, { tab: "diff" });
+                      setInboxOpen(false);
+                    }
+                  : undefined
+              }
               isSubmitting={resolveApproval.isPending && resolveApproval.variables?.id === a.id}
             />
           ))}

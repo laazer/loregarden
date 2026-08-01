@@ -399,6 +399,55 @@ def test_build_triage_invocation_uses_shared_cursor_model(tmp_path, monkeypatch)
     assert inv.argv[inv.argv.index("--model") + 1] == "triage-cursor"
 
 
+def test_read_only_triage_invocation_removes_cursor_force(tmp_path, monkeypatch):
+    from loregarden.agents.cli_adapters import build_triage_invocation
+
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "cursor")
+    monkeypatch.setenv("LOREGARDEN_CURSOR_BIN", "cursor-agent")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("triage", encoding="utf-8")
+    workspace_root = tmp_path / "repo"
+    workspace_root.mkdir()
+
+    inv = build_triage_invocation(
+        agent_id="triage",
+        adapter="claude",
+        prompt="advice only",
+        prompt_file=prompt_file,
+        skill_name="",
+        workspace_root=workspace_root,
+        workspace=Workspace(slug="test", name="Test"),
+        read_only=True,
+    )
+
+    assert "--force" not in inv.argv
+    assert inv.argv[inv.argv.index("--mode") + 1] == "ask"
+
+
+def test_read_only_triage_invocation_uses_claude_plan_mode(tmp_path, monkeypatch):
+    from loregarden.agents.cli_adapters import build_triage_invocation
+
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "claude")
+    monkeypatch.setenv("LOREGARDEN_CLAUDE_BIN", "claude")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("triage", encoding="utf-8")
+    workspace_root = tmp_path / "repo"
+    workspace_root.mkdir()
+
+    inv = build_triage_invocation(
+        agent_id="triage",
+        adapter="claude",
+        prompt="advice only",
+        prompt_file=prompt_file,
+        skill_name="",
+        workspace_root=workspace_root,
+        workspace=Workspace(slug="test", name="Test"),
+        read_only=True,
+    )
+
+    assert inv.argv[inv.argv.index("--permission-mode") + 1] == "plan"
+
+
 def test_resolve_adapter_ticket_override(tmp_path, monkeypatch):
     # The `force_local_cli_adapter` autouse fixture sets LOREGARDEN_CLI_ADAPTER=local for
     # every test; clear it here since this test exercises the ticket-override tier, which

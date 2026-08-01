@@ -496,6 +496,24 @@ def _branch_diff_options(
     return options
 
 
+def resolve_branch_checkout(workspace: Workspace, branch: str) -> Path | None:
+    """Checkout directory that owns ``branch``, if any.
+
+    Prefers a linked worktree, then the primary repo when that branch is
+    checked out there. Returns None when the branch is only a ref — callers
+    that would write must refuse rather than editing some other active branch.
+    """
+    repo_root = resolve_workspace_root(workspace)
+    for item in _parse_worktrees(repo_root):
+        if item.get("branch") == branch:
+            path = Path(item.get("path") or "")
+            if path.is_dir():
+                return path.resolve()
+    if _current_branch(repo_root) == branch:
+        return repo_root
+    return None
+
+
 def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, Any]:
     repo_root = resolve_workspace_root(workspace)
     if not _is_git_repo(repo_root):

@@ -15,6 +15,25 @@ from sqlmodel import Session
 if TYPE_CHECKING:
     from loregarden.services.run_log_stream import RunLogStreamer
 from loregarden.agents.cli_adapters import CliInvocation
+from loregarden.agents.executors.approval_scope import (  # noqa: F401
+    BRANCH_TRIAGE_STAGE_KEY,
+    HOME_CHAT_STAGE_KEY,
+    ApprovalScope,
+)
+from loregarden.agents.executors.tool_auto_approve import (  # noqa: F401
+    ASK_USER_QUESTION_TOOL,
+    AUTO_APPROVED_CLI_TOOLS,
+    AUTO_APPROVED_MCP_TOOLS,
+    ORCHESTRATED_DENIED_MCP_TOOLS,
+    bare_mcp_tool_name,
+    build_ask_user_question_input,
+    enrich_mcp_tool_input,
+    is_ask_user_question,
+    is_auto_approved_cli_tool,
+    is_auto_approved_mcp_tool,
+    is_orchestrated_agent_denied_mcp_tool,
+    validate_question_answers,
+)
 from loregarden.agents.registry import get_agent
 from loregarden.config import settings
 from loregarden.db.session import engine
@@ -130,173 +149,11 @@ def extract_permission_request(payload: dict[str, Any]) -> dict[str, Any] | None
     return None
 
 
-ASK_USER_QUESTION_TOOL = "AskUserQuestion"
-
-LOREGARDEN_MCP_PREFIX = "mcp__loregarden__"
-
-_READ_ONLY_MCP_TOOLS = frozenset(
-    {
-        "loregarden_get_ticket",
-        "loregarden_get_ticket_by_external",
-        "loregarden_list_tickets",
-        "loregarden_memory_status",
-        "loregarden_search_memory",
-    }
-)
-
-# Bookkeeping writes that land only in Loregarden's own stores — the Obsidian
-# vault, the memory graph, and the artifacts table. They cannot touch the repo,
-# the filesystem outside the vault, or workflow state, so gating them behind a
-# human click buys no safety: it just spends the run's timeout budget. Agents are
-# now told to route every report through these tools instead of writing markdown
-# into the repo, which makes them hot-path rather than incidental.
-#
-# Deliberately excluded — these mutate workflow state or write repo files, and
-# stay gated: complete_stage, skip_stage, block_ticket, update_ticket,
-# write_handoff, request_approval, start/complete_orchestration, start_stage.
-_CONTROL_PLANE_WRITE_MCP_TOOLS = frozenset(
-    {
-        "loregarden_append_checkpoint",
-        "loregarden_append_learning",
-        "loregarden_upsert_memory",
-        "loregarden_create_memory_relation",
-        "loregarden_upsert_blog_post",
-        "loregarden_attach_artifact",
-        "loregarden_attach_evidence",
-        "loregarden_search_prior_work",
-    }
-)
-
-AUTO_APPROVED_MCP_TOOLS = _READ_ONLY_MCP_TOOLS | _CONTROL_PLANE_WRITE_MCP_TOOLS
-
-#: Interim allowlist (a9-create-ticket-mcp-tool triage decision), pending
-#: a2-per-agent-server-policy's real per-agent x per-server policy table. Every
-#: agent run that reaches PermissionBridgeRunner — whether kicked off by the
-#: builtin autopilot or a single manually-started stage — is an orchestrated
-#: pipeline agent by definition; interactive contexts (Ticket Studio chat, a
-#: human's own terminal Claude Code session, direct operator MCP/HTTP calls)
-#: never go through this runner at all. Recorded here as debt: this must be
-#: superseded, not left to become the de facto permanent policy.
-#:
-#: This predicate is checked in two places, not one: here, in
-#: `_try_fast_approve`, which stops Claude Code from ever placing the call when
-#: `--permission-mode`/`--permission-prompt-tool stdio` is in play; and again at
-#: the real dispatch entrypoint, `mcp.tools.execute_tool`, which is what a
-#: direct HTTP POST to `/mcp` or an `external_mcp`-driven orchestrator actually
-#: hits — this runner is never invoked for those callers, so relying on this
-#: check alone left `loregarden_create_ticket` fully open to them (confirmed by
-#: running `execute_tool` directly with no orchestration context: creation
-#: succeeded unconditionally). `execute_tool` sources its own `orchestrated`
-#: flag from the `X-Loregarden-Orchestrated` header / `LOREGARDEN_MCP_ORCHESTRATED`
-#: env var that only `agents.cli_adapters.resolve_cli_invocation`'s builders
-#: attach — see its docstring for exactly which callers that still misses
-#: (plain curl, an `external_mcp` orchestrator, Ticket Studio chat).
-ORCHESTRATED_DENIED_MCP_TOOLS = frozenset({"loregarden_create_ticket"})
-
-#: CLI tools approved by policy rather than per call. The stored allowlist keys
-#: on the exact tool input, so every distinct URL would otherwise need its own
-#: rule and an unattended research run stalls on the first fetch. These only
-#: read; they cannot touch the repo or the control plane.
-AUTO_APPROVED_CLI_TOOLS = frozenset({"WebFetch", "WebSearch"})
-
-
-def is_auto_approved_cli_tool(tool_name: str) -> bool:
-    return tool_name in AUTO_APPROVED_CLI_TOOLS
-
-
-def bare_mcp_tool_name(tool_name: str) -> str | None:
-    if tool_name.startswith(LOREGARDEN_MCP_PREFIX):
-        return tool_name[len(LOREGARDEN_MCP_PREFIX) :]
-    return None
-
-
-def is_auto_approved_mcp_tool(tool_name: str) -> bool:
-    bare = bare_mcp_tool_name(tool_name)
-    return bare in AUTO_APPROVED_MCP_TOOLS if bare else False
-
-
-def is_orchestrated_agent_denied_mcp_tool(tool_name: str) -> bool:
-    """`tool_name` may arrive bare (as tests and MCP arguments do) or prefixed
-    with `mcp__loregarden__` (as the CLI permission bridge sees it) — accept
-    either form."""
-    bare = bare_mcp_tool_name(tool_name)
-    if bare is None:
-        bare = tool_name
-    return bare in ORCHESTRATED_DENIED_MCP_TOOLS
-
-
-def enrich_mcp_tool_input(
-    *,
-    bare_tool: str,
-    tool_input: dict[str, Any],
-    ticket: Ticket,
-    workspace_slug: str,
-) -> dict[str, Any]:
-    enriched = dict(tool_input)
-    if bare_tool == "loregarden_get_ticket" and not enriched.get("ticket_id"):
-        enriched["ticket_id"] = ticket.id
-    if bare_tool == "loregarden_get_ticket_by_external":
-        if not enriched.get("workspace_slug"):
-            enriched["workspace_slug"] = workspace_slug
-        if not enriched.get("external_id"):
-            enriched["external_id"] = ticket.external_id
-    if bare_tool == "loregarden_list_tickets" and not enriched.get("workspace_slug"):
-        enriched["workspace_slug"] = workspace_slug
-    return enriched
-
-
 @dataclass
 class ApprovalResolution:
     approved: bool
     updated_input: dict[str, Any] | None = None
     message: str = ""
-
-
-def is_ask_user_question(tool_name: str) -> bool:
-    return tool_name == ASK_USER_QUESTION_TOOL
-
-
-def build_ask_user_question_input(
-    tool_input: dict[str, Any],
-    *,
-    answers: dict[str, str | list[str]],
-    response: str = "",
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "questions": tool_input.get("questions", []),
-        "answers": answers,
-    }
-    if response.strip():
-        payload["response"] = response.strip()
-    return payload
-
-
-def validate_question_answers(
-    tool_input: dict[str, Any],
-    answers: dict[str, str | list[str]] | None,
-    *,
-    response: str = "",
-) -> None:
-    if response.strip():
-        return
-    questions = tool_input.get("questions") or []
-    if not questions:
-        raise ValueError("Question approval is missing question payload")
-    if not answers:
-        raise ValueError("Answers required for agent questions")
-    for item in questions:
-        if not isinstance(item, dict):
-            continue
-        question_text = str(item.get("question") or "").strip()
-        if not question_text:
-            continue
-        answer = answers.get(question_text)
-        if isinstance(answer, list):
-            if not any(str(part).strip() for part in answer):
-                raise ValueError(f"Answer required for: {question_text}")
-            continue
-        if not str(answer or "").strip():
-            raise ValueError(f"Answer required for: {question_text}")
 
 
 def build_control_response(
@@ -466,6 +323,79 @@ class _LoopStep:
     result: BridgeResult | None = None
 
 
+def _continue_while_awaiting(
+    *,
+    streamer: RunLogStreamer | None,
+    stdout_reader: SubprocessLineReader,
+    state: _LoopState,
+) -> _LoopStep:
+    line = stdout_reader.readline(timeout=0.5)
+    if line is not None:
+        line = line.rstrip("\n")
+        state.last_persist = time.time()
+        state.stdout_lines.append(line)
+        if streamer:
+            streamer.append_stream_line(line)
+        payload = _parse_ndjson_line(line)
+        if payload:
+            finished, failed = result_payload_status(payload)
+            if finished and state.pending_approval is None:
+                state.session_id = str(payload.get("session_id") or state.session_id)
+                state.finished_with_result = True
+                state.result_is_error = failed
+                return _LoopStep("break")
+    elif streamer and time.time() - state.last_persist >= 2.0:
+        streamer.touch()
+        state.last_persist = time.time()
+    return _LoopStep("continue")
+
+
+def _fail_after_rejection(
+    runner: PermissionBridgeRunner,
+    *,
+    scope: ApprovalScope,
+    run_id: str,
+    proc: Any,
+    state: _LoopState,
+) -> _LoopStep:
+    proc.kill()
+    runner._mark_stage_blocked(scope, "Permission denied via Loregarden inbox")
+    run = runner.session.get(AgentRun, run_id)
+    if run:
+        run.status = RunStatus.FAILED
+        runner.session.add(run)
+        runner.session.commit()
+    return _LoopStep(
+        "return",
+        BridgeResult(
+            status=RunStatus.FAILED,
+            stdout="\n".join(state.stdout_lines),
+            stderr="Permission denied via Loregarden inbox",
+            session_id=state.session_id,
+        ),
+    )
+
+
+def _resume_after_approval(
+    runner: PermissionBridgeRunner,
+    *,
+    scope: ApprovalScope,
+    run_id: str,
+    streamer: RunLogStreamer | None,
+) -> _LoopStep:
+    if runner._set_stage_status(scope, StageStatus.RUNNING):
+        runner.session.add(scope.ticket)
+        runner.session.commit()
+    run = runner.session.get(AgentRun, run_id)
+    if run:
+        run.status = RunStatus.RUNNING
+        runner.session.add(run)
+        runner.session.commit()
+    if streamer:
+        streamer.set_live("Agent running…")
+    return _LoopStep("continue")
+
+
 def _check_cancel(run_id: str, proc: Any, state: _LoopState) -> BridgeResult | None:
     """Kill the CLI when the API has requested a cancel."""
     now = time.time()
@@ -501,18 +431,28 @@ class PermissionBridgeRunner:
         self,
         *,
         run_id: str,
-        ticket: Ticket,
         invocation: CliInvocation,
         prompt: str,
         timeout_seconds: int,
+        ticket: Ticket | None = None,
+        workspace: Workspace | None = None,
+        workspace_stage_key: str = HOME_CHAT_STAGE_KEY,
         spawn_process: Callable[..., Any] | None = None,
         wait_for_approval: Callable[..., ApprovalResolution] | None = None,
         streamer: RunLogStreamer | None = None,
     ) -> BridgeResult:
         import subprocess
 
+        if (ticket is None) == (workspace is None):
+            raise ValueError("Pass exactly one of ticket= or workspace= to scope approvals")
+        scope = (
+            ApprovalScope.for_ticket(ticket)
+            if ticket is not None
+            else ApprovalScope.for_workspace(workspace, stage_key=workspace_stage_key)
+        )
+
         spawn = spawn_process or subprocess.Popen
-        ctx = self._prepare_context(ticket, run_id)
+        ctx = self._prepare_context(scope, run_id)
         custom_wait = wait_for_approval
         custom_wait_seen: set[str] = set()
 
@@ -568,7 +508,7 @@ class PermissionBridgeRunner:
 
                 if state.pending_approval is not None:
                     step = self._handle_pending_approval(
-                        ticket=ticket,
+                        scope=scope,
                         run_id=run_id,
                         proc=proc,
                         streamer=streamer,
@@ -581,7 +521,7 @@ class PermissionBridgeRunner:
                 else:
                     step = self._handle_next_line(
                         ctx=ctx,
-                        ticket=ticket,
+                        scope=scope,
                         run_id=run_id,
                         proc=proc,
                         invocation=invocation,
@@ -654,8 +594,8 @@ class PermissionBridgeRunner:
         except Exception:  # noqa: BLE001 - never let the side channel kill the run
             logger.warning("Could not deliver steer message for run %s", run_id, exc_info=True)
 
-    def _prepare_context(self, ticket: Ticket, run_id: str) -> _RunContext:
-        workspace = self.session.get(Workspace, ticket.workspace_id)
+    def _prepare_context(self, scope: ApprovalScope, run_id: str) -> _RunContext:
+        workspace = self.session.get(Workspace, scope.workspace_id)
         workspace_slug = workspace.slug if workspace else ""
         workspace_root = str(resolve_workspace_root(workspace)) if workspace else ""
         run = self.session.get(AgentRun, run_id)
@@ -679,7 +619,7 @@ class PermissionBridgeRunner:
     def _handle_pending_approval(
         self,
         *,
-        ticket: Ticket,
+        scope: ApprovalScope,
         run_id: str,
         proc: Any,
         streamer: RunLogStreamer | None,
@@ -702,25 +642,9 @@ class PermissionBridgeRunner:
 
         resolution = resolve_poll(state.pending_approval.id)
         if resolution is None:
-            line = stdout_reader.readline(timeout=0.5)
-            if line is not None:
-                line = line.rstrip("\n")
-                state.last_persist = time.time()
-                state.stdout_lines.append(line)
-                if streamer:
-                    streamer.append_stream_line(line)
-                payload = _parse_ndjson_line(line)
-                if payload:
-                    finished, failed = result_payload_status(payload)
-                    if finished and state.pending_approval is None:
-                        state.session_id = str(payload.get("session_id") or state.session_id)
-                        state.finished_with_result = True
-                        state.result_is_error = failed
-                        return _LoopStep("break")
-            elif streamer and time.time() - state.last_persist >= 2.0:
-                streamer.touch()
-                state.last_persist = time.time()
-            return _LoopStep("continue")
+            return _continue_while_awaiting(
+                streamer=streamer, stdout_reader=stdout_reader, state=state
+            )
 
         state.pending_approval = None
         allow_input = resolution.updated_input
@@ -735,7 +659,7 @@ class PermissionBridgeRunner:
         approving_run = self.session.get(AgentRun, run_id)
         self._record(
             approving_run.agent_id if approving_run else "",
-            ticket,
+            scope,
             run_id,
             state.pending_tool_name,
             DECISION_APPROVED if resolution.approved else DECISION_REJECTED,
@@ -749,38 +673,15 @@ class PermissionBridgeRunner:
         self._send_response(proc, response)
 
         if not resolution.approved:
-            proc.kill()
-            self._mark_stage_blocked(ticket, "Permission denied via Loregarden inbox")
-            run = self.session.get(AgentRun, run_id)
-            if run:
-                run.status = RunStatus.FAILED
-                self.session.add(run)
-                self.session.commit()
-            return _LoopStep(
-                "return",
-                BridgeResult(
-                    status=RunStatus.FAILED,
-                    stdout="\n".join(state.stdout_lines),
-                    stderr="Permission denied via Loregarden inbox",
-                    session_id=state.session_id,
-                ),
-            )
+            return _fail_after_rejection(self, scope=scope, run_id=run_id, proc=proc, state=state)
 
-        self._mark_stage_running(ticket)
-        run = self.session.get(AgentRun, run_id)
-        if run:
-            run.status = RunStatus.RUNNING
-            self.session.add(run)
-            self.session.commit()
-        if streamer:
-            streamer.set_live("Agent running…")
-        return _LoopStep("continue")
+        return _resume_after_approval(self, scope=scope, run_id=run_id, streamer=streamer)
 
     def _scope_denial_result(
         self,
         *,
         ctx: _RunContext,
-        ticket: Ticket,
+        scope: ApprovalScope,
         run_id: str,
         proc: Any,
         request_id: str,
@@ -811,7 +712,7 @@ class PermissionBridgeRunner:
             build_control_response(request_id=request_id, approved=False, message=scope_denial),
         )
         rerouted_to = self._try_scope_reroute(
-            ctx=ctx, ticket=ticket, tool_input=tool_input, run_id=run_id, message=scope_denial
+            ctx=ctx, scope=scope, tool_input=tool_input, run_id=run_id, message=scope_denial
         )
         if streamer:
             if rerouted_to:
@@ -826,7 +727,7 @@ class PermissionBridgeRunner:
         if not rerouted_to:
             # No sibling can take this path (e.g. infra) or the handoff budget is
             # spent — fall back to halting the ticket for a human.
-            self._mark_stage_blocked(ticket, scope_denial)
+            self._mark_stage_blocked(scope, scope_denial)
         run = self.session.get(AgentRun, run_id)
         if run:
             run.status = RunStatus.FAILED
@@ -844,7 +745,7 @@ class PermissionBridgeRunner:
         self,
         *,
         ctx: _RunContext,
-        ticket: Ticket,
+        scope: ApprovalScope,
         tool_input: dict[str, Any],
         run_id: str,
         message: str,
@@ -862,7 +763,8 @@ class PermissionBridgeRunner:
         sibling owns the path, or the frontend<->backend handoff budget is spent
         (so a ticket that genuinely needs both never ping-pongs forever).
         """
-        if not self.track_workflow_stage:
+        ticket = scope.ticket
+        if not self.track_workflow_stage or ticket is None:
             return None
         target = extract_target_path(tool_input)
         if not target:
@@ -916,7 +818,7 @@ class PermissionBridgeRunner:
     def _record(
         self,
         agent_id: str,
-        ticket: Ticket,
+        scope: ApprovalScope,
         run_id: str,
         tool_name: str,
         decision: str,
@@ -925,7 +827,7 @@ class PermissionBridgeRunner:
         record_tool_call(
             self.session,
             run_id=run_id,
-            ticket_id=ticket.id,
+            ticket_id=scope.ticket_id or "",
             agent_id=agent_id,
             tool_name=tool_name,
             decision=decision,
@@ -948,11 +850,76 @@ class PermissionBridgeRunner:
             return None
         return server_name if server_auto_approves(self.session, server_name) else None
 
+    def _deny_orchestrated_tool(
+        self,
+        *,
+        ctx: _RunContext,
+        scope: ApprovalScope,
+        run_id: str,
+        proc: Any,
+        request_id: str,
+        tool_name: str,
+        bare_mcp: str,
+        streamer: RunLogStreamer | None,
+    ) -> bool:
+        message = (
+            f"{bare_mcp} is denied to orchestrated pipeline agents (interim "
+            "allowlist, a9-create-ticket-mcp-tool; superseded once "
+            "a2-per-agent-server-policy lands). Use it only from interactive "
+            "contexts (Ticket Studio chat, a human's terminal session, direct "
+            "operator MCP/HTTP calls)."
+        )
+        self._send_response(
+            proc,
+            build_control_response(request_id=request_id, approved=False, message=message),
+        )
+        self._record(ctx.agent_id, scope, run_id, tool_name, DECISION_REJECTED)
+        if streamer:
+            streamer.append("TOOL", f"Denied (orchestrated agent policy): {bare_mcp}", force=True)
+            streamer.set_live("Agent running…")
+        return True
+
+    def _approve_third_party_tool(
+        self,
+        *,
+        ctx: _RunContext,
+        scope: ApprovalScope,
+        run_id: str,
+        proc: Any,
+        request_id: str,
+        tool_name: str,
+        server_name: str,
+        streamer: RunLogStreamer | None,
+    ) -> bool:
+        # Trust removed the only thing pacing this agent — a human clicking —
+        # so the server's own ceiling is what is left to enforce.
+        limited = rate_limit_denial(self.session, server_name)
+        if limited:
+            self._send_response(
+                proc,
+                build_control_response(request_id=request_id, approved=False, message=limited),
+            )
+            self._record(ctx.agent_id, scope, run_id, tool_name, DECISION_RATE_LIMITED)
+            if streamer:
+                streamer.append("TOOL", limited, force=True)
+            return True
+
+        # A registered server's tools carry no loregarden enrichment — the
+        # ticket ids that enrichment injects mean nothing to them.
+        self._send_response(proc, build_control_response(request_id=request_id, approved=True))
+        # Recording this was missing: a trusted server's calls are exactly
+        # the ones an operator wants to see, since nothing else reports them.
+        self._record(ctx.agent_id, scope, run_id, tool_name, DECISION_TRUSTED_SERVER)
+        if streamer:
+            streamer.append("TOOL", f"Auto-approved {server_name}: {tool_name}", force=True)
+            streamer.set_live("Agent running…")
+        return True
+
     def _try_fast_approve(
         self,
         *,
         ctx: _RunContext,
-        ticket: Ticket,
+        scope: ApprovalScope,
         run_id: str,
         proc: Any,
         request_id: str,
@@ -966,11 +933,13 @@ class PermissionBridgeRunner:
         True if a response was already written (caller should treat the
         permission as handled and move on to the next line)."""
         tool_input = permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
+        ticket = scope.ticket
+        tool_name = permission["tool_name"]
 
         if (
             bare_mcp
             and self.track_workflow_stage
-            and is_orchestrated_agent_denied_mcp_tool(permission["tool_name"])
+            and is_orchestrated_agent_denied_mcp_tool(tool_name)
         ):
             # Checked first, ahead of every approval path including the human
             # inbox — an orchestrated stage agent must never be able to spawn
@@ -978,62 +947,31 @@ class PermissionBridgeRunner:
             # Interactive contexts (Ticket Studio chat, a human's terminal session)
             # construct PermissionBridgeRunner with track_workflow_stage=False and
             # fall through to the normal approval gate below instead.
-            message = (
-                f"{bare_mcp} is denied to orchestrated pipeline agents (interim "
-                "allowlist, a9-create-ticket-mcp-tool; superseded once "
-                "a2-per-agent-server-policy lands). Use it only from interactive "
-                "contexts (Ticket Studio chat, a human's terminal session, direct "
-                "operator MCP/HTTP calls)."
+            return self._deny_orchestrated_tool(
+                ctx=ctx,
+                scope=scope,
+                run_id=run_id,
+                proc=proc,
+                request_id=request_id,
+                tool_name=tool_name,
+                bare_mcp=bare_mcp,
+                streamer=streamer,
             )
-            self._send_response(
-                proc,
-                build_control_response(request_id=request_id, approved=False, message=message),
-            )
-            self._record(ctx.agent_id, ticket, run_id, permission["tool_name"], DECISION_REJECTED)
-            if streamer:
-                streamer.append(
-                    "TOOL", f"Denied (orchestrated agent policy): {bare_mcp}", force=True
-                )
-                streamer.set_live("Agent running…")
-            return True
 
-        third_party = self._third_party_auto_approved(permission["tool_name"], bare_mcp)
+        third_party = self._third_party_auto_approved(tool_name, bare_mcp)
         if third_party:
-            # Trust removed the only thing pacing this agent — a human clicking
-            # — so the server's own ceiling is what is left to enforce.
-            limited = rate_limit_denial(self.session, third_party)
-            if limited:
-                self._send_response(
-                    proc,
-                    build_control_response(request_id=request_id, approved=False, message=limited),
-                )
-                self._record(
-                    ctx.agent_id,
-                    ticket,
-                    run_id,
-                    permission["tool_name"],
-                    DECISION_RATE_LIMITED,
-                )
-                if streamer:
-                    streamer.append("TOOL", limited, force=True)
-                return True
-
-            # A registered server's tools carry no loregarden enrichment — the
-            # ticket ids that enrichment injects mean nothing to them.
-            self._send_response(proc, build_control_response(request_id=request_id, approved=True))
-            # Recording this was missing: a trusted server's calls are exactly
-            # the ones an operator wants to see, since nothing else reports them.
-            self._record(
-                ctx.agent_id, ticket, run_id, permission["tool_name"], DECISION_TRUSTED_SERVER
+            return self._approve_third_party_tool(
+                ctx=ctx,
+                scope=scope,
+                run_id=run_id,
+                proc=proc,
+                request_id=request_id,
+                tool_name=tool_name,
+                server_name=third_party,
+                streamer=streamer,
             )
-            if streamer:
-                streamer.append(
-                    "TOOL", f"Auto-approved {third_party}: {permission['tool_name']}", force=True
-                )
-                streamer.set_live("Agent running…")
-            return True
 
-        if bare_mcp and is_auto_approved_mcp_tool(permission["tool_name"]):
+        if bare_mcp and is_auto_approved_mcp_tool(tool_name):
             enriched = enrich_mcp_tool_input(
                 bare_tool=bare_mcp,
                 tool_input=tool_input,
@@ -1046,21 +984,17 @@ class PermissionBridgeRunner:
                     request_id=request_id, approved=True, updated_input=enriched
                 ),
             )
-            self._record(ctx.agent_id, ticket, run_id, permission["tool_name"], DECISION_ALLOWLIST)
+            self._record(ctx.agent_id, scope, run_id, tool_name, DECISION_ALLOWLIST)
             if streamer:
                 streamer.append("TOOL", f"Auto-approved Loregarden MCP: {bare_mcp}", force=True)
                 streamer.set_live("Agent running…")
             return True
 
-        if is_auto_approved_cli_tool(permission["tool_name"]):
+        if is_auto_approved_cli_tool(tool_name):
             self._send_response(proc, build_control_response(request_id=request_id, approved=True))
-            self._record(
-                ctx.agent_id, ticket, run_id, permission["tool_name"], DECISION_READ_ONLY_CLI
-            )
+            self._record(ctx.agent_id, scope, run_id, tool_name, DECISION_READ_ONLY_CLI)
             if streamer:
-                streamer.append(
-                    "TOOL", f"Auto-approved read-only: {permission['tool_name']}", force=True
-                )
+                streamer.append("TOOL", f"Auto-approved read-only: {tool_name}", force=True)
                 streamer.set_live("Agent running…")
             return True
 
@@ -1078,19 +1012,19 @@ class PermissionBridgeRunner:
                     request_id=request_id, approved=True, updated_input=tool_input
                 ),
             )
-            self._record(ctx.agent_id, ticket, run_id, permission["tool_name"], DECISION_RUN_AUTO)
+            self._record(ctx.agent_id, scope, run_id, tool_name, DECISION_RUN_AUTO)
             if streamer:
-                streamer.append("TOOL", f"Auto-approved: {permission['tool_name']}", force=True)
+                streamer.append("TOOL", f"Auto-approved: {tool_name}", force=True)
                 streamer.set_live("Agent running…")
             return True
 
         if not question:
             allow_scope = is_permission_allowed(
                 self.session,
-                workspace_id=ticket.workspace_id,
-                ticket_id=ticket.id,
-                stage_key=ticket.workflow_stage_key,
-                tool_name=permission["tool_name"],
+                workspace_id=scope.workspace_id,
+                ticket_id=scope.ticket_id or "",
+                stage_key=ticket.workflow_stage_key if ticket else "",
+                tool_name=tool_name,
                 tool_input=tool_input,
             )
             if allow_scope:
@@ -1111,7 +1045,7 @@ class PermissionBridgeRunner:
                 if streamer:
                     streamer.append(
                         "TOOL",
-                        f"Auto-approved ({allow_scope} allowlist): {permission['tool_name']}",
+                        f"Auto-approved ({allow_scope} allowlist): {tool_name}",
                         force=True,
                     )
                     streamer.set_live("Agent running…")
@@ -1123,7 +1057,7 @@ class PermissionBridgeRunner:
         self,
         *,
         ctx: _RunContext,
-        ticket: Ticket,
+        scope: ApprovalScope,
         run_id: str,
         proc: Any,
         invocation: CliInvocation,
@@ -1169,7 +1103,7 @@ class PermissionBridgeRunner:
 
         scope_result = self._scope_denial_result(
             ctx=ctx,
-            ticket=ticket,
+            scope=scope,
             run_id=run_id,
             proc=proc,
             request_id=request_id,
@@ -1182,7 +1116,7 @@ class PermissionBridgeRunner:
 
         if self._try_fast_approve(
             ctx=ctx,
-            ticket=ticket,
+            scope=scope,
             run_id=run_id,
             proc=proc,
             request_id=request_id,
@@ -1206,7 +1140,7 @@ class PermissionBridgeRunner:
         if question:
             approval = self._create_question_approval(
                 run_id=run_id,
-                ticket=ticket,
+                scope=scope,
                 request_id=request_id,
                 tool_input=permission["tool_input"],
                 cli_adapter=invocation.adapter,
@@ -1215,7 +1149,7 @@ class PermissionBridgeRunner:
         else:
             approval = self._create_permission_approval(
                 run_id=run_id,
-                ticket=ticket,
+                scope=scope,
                 request_id=request_id,
                 tool_name=permission["tool_name"],
                 tool_input=permission["tool_input"],
@@ -1318,7 +1252,7 @@ class PermissionBridgeRunner:
         self,
         *,
         run_id: str,
-        ticket: Ticket,
+        scope: ApprovalScope,
         request_id: str,
         tool_input: Any,
         cli_adapter: str,
@@ -1332,26 +1266,16 @@ class PermissionBridgeRunner:
         if len(questions) > 1:
             summary = f"{summary} (+{len(questions) - 1} more)"
 
-        if self.track_workflow_stage:
-            instance, stages = self.orch._resolve_stages(ticket)
-            if instance and stages and ticket.workflow_stage_key:
-                set_stage_status(
-                    ticket,
-                    instance,
-                    stages,
-                    ticket.workflow_stage_key,
-                    StageStatus.AWAITING,
-                )
-                self.session.add(instance)
+        self._set_stage_status(scope, StageStatus.AWAITING)
 
         approval = Approval(
-            ticket_id=ticket.id,
-            workspace_id=ticket.workspace_id,
+            ticket_id=scope.ticket_id,
+            workspace_id=scope.workspace_id,
             run_id=run_id,
             kind=ApprovalKind.CLI_QUESTION,
             title="Agent questions",
             level="medium",
-            stage_key=ticket.workflow_stage_key if self.track_workflow_stage else "triage",
+            stage_key=scope.approval_stage_key(self.track_workflow_stage),
             impact=summary[:2000],
             permission_request_id=request_id,
             tool_name=ASK_USER_QUESTION_TOOL,
@@ -1360,10 +1284,7 @@ class PermissionBridgeRunner:
             cli_session_id=cli_session_id,
             status=ApprovalStatus.PENDING,
         )
-        ticket.revision += 1
-        ticket.last_updated_by = "permission_bridge"
-        ticket.updated_at = datetime.now(timezone.utc)
-        self.session.add(ticket)
+        self._touch_ticket(scope)
         self.session.add(approval)
         self.session.commit()
         self.session.refresh(approval)
@@ -1379,38 +1300,32 @@ class PermissionBridgeRunner:
         self,
         *,
         run_id: str,
-        ticket: Ticket,
+        scope: ApprovalScope,
         request_id: str,
         tool_name: str,
         tool_input: Any,
         cli_adapter: str,
         cli_session_id: str,
     ) -> Approval:
-        if self.track_workflow_stage:
-            instance, stages = self.orch._resolve_stages(ticket)
-            if instance and stages and ticket.workflow_stage_key:
-                set_stage_status(
-                    ticket,
-                    instance,
-                    stages,
-                    ticket.workflow_stage_key,
-                    StageStatus.AWAITING,
-                )
-                self.session.add(instance)
+        self._set_stage_status(scope, StageStatus.AWAITING)
+
+        ticket = scope.ticket
+        if self.track_workflow_stage and ticket:
+            impact = f"Agent requested `{tool_name}` during stage `{ticket.workflow_stage_key}`."
+        elif ticket:
+            impact = f"Agent requested `{tool_name}` during triage."
+        else:
+            impact = f"Agent requested `{tool_name}` during Home chat."
 
         approval = Approval(
-            ticket_id=ticket.id,
-            workspace_id=ticket.workspace_id,
+            ticket_id=scope.ticket_id,
+            workspace_id=scope.workspace_id,
             run_id=run_id,
             kind=ApprovalKind.CLI_PERMISSION,
             title=f"Allow {tool_name}?",
             level="high",
-            stage_key=ticket.workflow_stage_key if self.track_workflow_stage else "triage",
-            impact=(
-                f"Agent requested `{tool_name}` during stage `{ticket.workflow_stage_key}`."
-                if self.track_workflow_stage
-                else f"Agent requested `{tool_name}` during triage."
-            ),
+            stage_key=scope.approval_stage_key(self.track_workflow_stage),
+            impact=impact,
             permission_request_id=request_id,
             tool_name=tool_name,
             tool_input_json=serialize_tool_input(tool_input),
@@ -1418,10 +1333,7 @@ class PermissionBridgeRunner:
             cli_session_id=cli_session_id,
             status=ApprovalStatus.PENDING,
         )
-        ticket.revision += 1
-        ticket.last_updated_by = "permission_bridge"
-        ticket.updated_at = datetime.now(timezone.utc)
-        self.session.add(ticket)
+        self._touch_ticket(scope)
         self.session.add(approval)
         self.session.commit()
         self.session.refresh(approval)
@@ -1433,35 +1345,32 @@ class PermissionBridgeRunner:
             self.session.commit()
         return approval
 
-    def _mark_stage_running(self, ticket: Ticket) -> None:
-        if not self.track_workflow_stage:
+    def _touch_ticket(self, scope: ApprovalScope) -> None:
+        """Bump the ticket so watchers see the new approval. No-op without one."""
+        ticket = scope.ticket
+        if ticket is None:
             return
-        instance, stages = self.orch._resolve_stages(ticket)
-        if instance and stages and ticket.workflow_stage_key:
-            set_stage_status(
-                ticket,
-                instance,
-                stages,
-                ticket.workflow_stage_key,
-                StageStatus.RUNNING,
-            )
-            self.session.add(instance)
-            self.session.add(ticket)
-            self.session.commit()
+        ticket.revision += 1
+        ticket.last_updated_by = "permission_bridge"
+        ticket.updated_at = datetime.now(timezone.utc)
+        self.session.add(ticket)
 
-    def _mark_stage_blocked(self, ticket: Ticket, message: str) -> None:
-        if not self.track_workflow_stage:
-            return
+    def _set_stage_status(self, scope: ApprovalScope, status: StageStatus) -> bool:
+        ticket = scope.ticket
+        if not self.track_workflow_stage or ticket is None:
+            return False
         instance, stages = self.orch._resolve_stages(ticket)
-        if instance and stages and ticket.workflow_stage_key:
-            set_stage_status(
-                ticket,
-                instance,
-                stages,
-                ticket.workflow_stage_key,
-                StageStatus.BLOCKED,
-            )
-            self.session.add(instance)
+        if not (instance and stages and ticket.workflow_stage_key):
+            return False
+        set_stage_status(ticket, instance, stages, ticket.workflow_stage_key, status)
+        self.session.add(instance)
+        return True
+
+    def _mark_stage_blocked(self, scope: ApprovalScope, message: str) -> None:
+        ticket = scope.ticket
+        if not self.track_workflow_stage or ticket is None:
+            return
+        self._set_stage_status(scope, StageStatus.BLOCKED)
         ticket.blocking_issues = message[:2000]
         ticket.revision += 1
         self.session.add(ticket)

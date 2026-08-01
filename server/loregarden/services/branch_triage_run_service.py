@@ -1,11 +1,10 @@
 """Background execution for branch triage chat turns.
 
-Mirrors ``triage_run_service.py``, which does the same for ticket triage. Branch
-chats cannot reuse ``AgentRun``: it is ticket-scoped via a non-nullable FK, and a
-branch often has no linked ticket. The turn's lifecycle therefore lives on the
-assistant ``BranchTriageMessage`` row itself (``status``), which keeps the state
-durable — an interrupted turn is recoverable at startup instead of stranding the
-UI on a promise that never settles.
+Mirrors ``triage_run_service.py``, which does the same for ticket triage. Each
+assistant message owns a workspace-scoped ``AgentRun`` for tool approvals and
+keeps its chat lifecycle on ``BranchTriageMessage.status``. Both links are
+durable, so an interrupted turn is recoverable at startup instead of stranding
+the UI on a promise that never settles.
 """
 
 from __future__ import annotations
@@ -13,16 +12,24 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from datetime import datetime, timezone
 
+from loregarden.agents.executors.permission_bridge import BRANCH_TRIAGE_STAGE_KEY
 from loregarden.db.session import engine
-from loregarden.models.domain import BranchTriageMessage, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    BranchTriageMessage,
+    RunStatus,
+    Workspace,
+)
 from loregarden.services.branch_triage_chat_service import (
     invoke_branch_triage_model,
     latest_pending_turn,
 )
 from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, parts_json_for_reply
 from loregarden.services.cli_auth_errors import format_agent_unavailable
-from loregarden.services.triage_service import TRIAGE_AGENT_NAME
+from loregarden.services.run_concurrency import new_run_code
+from loregarden.services.triage_service import TRIAGE_AGENT_ID, TRIAGE_AGENT_NAME
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -68,7 +75,17 @@ def start_branch_triage_run(
         content="",
         status="pending",
     )
+    run = AgentRun(
+        run_code=new_run_code(),
+        ticket_id=None,
+        workspace_id=workspace.id,
+        agent_id=TRIAGE_AGENT_ID,
+        stage_key=BRANCH_TRIAGE_STAGE_KEY,
+        status=RunStatus.QUEUED,
+    )
+    assistant_message.run_id = run.id
     session.add(user_message)
+    session.add(run)
     session.add(assistant_message)
     session.commit()
     session.refresh(user_message)
@@ -92,6 +109,14 @@ def _settle(
     assistant.status = status
     assistant.parts_json = parts_json
     session.add(assistant)
+    if assistant.run_id:
+        run = session.get(AgentRun, assistant.run_id)
+        if run:
+            run.status = RunStatus.SUCCEEDED if status == "complete" else RunStatus.FAILED
+            if status == "failed":
+                run.stderr = content[:4000]
+            run.finished_at = datetime.now(timezone.utc)
+            session.add(run)
     session.commit()
     return assistant
 
@@ -117,7 +142,22 @@ def execute_branch_triage_turn_background(assistant_id: str) -> None:
             branch = assistant.branch
             latest_user_message = _latest_user_content(session, workspace.id, branch)
             try:
-                reply = invoke_branch_triage_model(session, workspace, branch, latest_user_message)
+                # The run row exists before the turn so its approvals have a
+                # parent; mark it running as the turn actually starts.
+                if assistant.run_id:
+                    run = session.get(AgentRun, assistant.run_id)
+                    if run:
+                        run.status = RunStatus.RUNNING
+                        run.started_at = datetime.now(timezone.utc)
+                        session.add(run)
+                        session.commit()
+                reply = invoke_branch_triage_model(
+                    session,
+                    workspace,
+                    branch,
+                    latest_user_message,
+                    run_id=assistant.run_id or "",
+                )
                 _settle(
                     session,
                     assistant_id,
@@ -191,6 +231,13 @@ def fail_interrupted_branch_triage_turns(
         assistant.content = message
         assistant.status = "failed"
         session.add(assistant)
+        if assistant.run_id:
+            run = session.get(AgentRun, assistant.run_id)
+            if run:
+                run.status = RunStatus.FAILED
+                run.stderr = message[:4000]
+                run.finished_at = datetime.now(timezone.utc)
+                session.add(run)
         settled.append(assistant)
     if settled:
         session.commit()
