@@ -78,6 +78,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0056_reference_repos",
     "0057_mcp_server_tool_catalog",
     "0058_global_agent_slots",
+    "0059_per_slot_queues",
 )
 
 

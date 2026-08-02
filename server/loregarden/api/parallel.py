@@ -35,6 +35,8 @@ async def create_parallel_run(
     stage_key: str | None = Query(None),
     max_concurrent: int = Query(3),
     slot_number: int | None = Query(None, ge=1),
+    auto_approve: bool = Query(False),
+    timeout_seconds: int | None = Query(None, ge=1),
     session: Session = Depends(get_session),
 ):
     """
@@ -48,6 +50,8 @@ async def create_parallel_run(
         max_concurrent: Max concurrent runs (default 3)
         slot_number: Slot the caller staged this ticket into. Honoured when
             free, otherwise the lowest free slot takes it.
+        auto_approve: Auto-approve the CLI's permission prompts for this run
+        timeout_seconds: Per-run timeout override; None uses the agent default
 
     Returns:
         {
@@ -68,6 +72,8 @@ async def create_parallel_run(
             stage_key=stage_key,
             max_concurrent=max_concurrent,
             preferred_slot=slot_number,
+            auto_approve=auto_approve,
+            timeout_seconds=timeout_seconds,
         )
 
         emit_execution_update()

@@ -35,6 +35,8 @@ class ParallelRunService:
         stage_key: str | None = None,
         max_concurrent: int = 3,
         preferred_slot: int | None = None,
+        auto_approve: bool = False,
+        timeout_seconds: int | None = None,
     ) -> dict:
         """
         Create a run with parallel execution support.
@@ -49,6 +51,13 @@ class ParallelRunService:
             max_concurrent: Max concurrent runs (default 3)
             preferred_slot: Slot the caller staged this ticket into, honoured
                 when it is still free (optional)
+            auto_approve: Auto-approve the CLI's permission prompts for this run
+            timeout_seconds: Per-run timeout override, or None for the agent's
+                own default
+
+        These last two are per-run, not per-workspace: the queue board asks for
+        them the same way the workflow's run dialog does, and a run started from
+        either surface should honour them identically.
 
         Returns:
             {
@@ -70,7 +79,12 @@ class ParallelRunService:
             # forever, and the dashboard had nothing but a placeholder to show
             # for it. Creating it up front also means the queue snapshot can
             # name the ticket and agent behind every waiting row.
-            run, worktree = self._prepare_parallel_run(ticket, stage_key=stage_key)
+            run, worktree = self._prepare_parallel_run(
+                ticket,
+                stage_key=stage_key,
+                auto_approve=auto_approve,
+                timeout_seconds=timeout_seconds,
+            )
 
             queue_result = await queue_service.queue_run(
                 workspace_id=ticket.workspace_id,
@@ -113,6 +127,8 @@ class ParallelRunService:
         ticket: Ticket,
         *,
         stage_key: str | None = None,
+        auto_approve: bool = False,
+        timeout_seconds: int | None = None,
     ) -> tuple[AgentRun, Worktree | None]:
         """Create the run row, and the worktree it will execute in.
 
@@ -129,7 +145,12 @@ class ParallelRunService:
             repo_path_for_workspace,
         )
 
-        run = self.orchestration.start_run(ticket, stage_key=stage_key)
+        run = self.orchestration.start_run(
+            ticket,
+            stage_key=stage_key,
+            auto_approve=auto_approve,
+            timeout_override_seconds=timeout_seconds,
+        )
 
         workspace = self.session.get(Workspace, ticket.workspace_id)
         config = resolve_git_automation(workspace, ticket) if workspace else None

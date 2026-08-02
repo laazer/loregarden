@@ -33,6 +33,7 @@ interface QueueSlotTicketPickerProps {
     code: string;
     title: string;
     workspaceName: string;
+    workspaceSlug: string;
   }) => void;
 }
 
@@ -87,6 +88,7 @@ export function QueueSlotTicketPicker({
       .map((ticket) => ({
         ticket,
         workspaceName: workspaceNameBySlug.get(ticket.workspace_slug ?? "") ?? "",
+        workspaceSlug: ticket.workspace_slug ?? "",
       }))
       .filter(
         ({ ticket, workspaceName }) =>
@@ -128,7 +130,7 @@ export function QueueSlotTicketPicker({
             <div className="queue-dispatch-empty">Loading tickets…</div>
           ) : visible.length ? (
             <div className="queue-dispatch-list">
-              {visible.map(({ ticket, workspaceName }) => (
+              {visible.map(({ ticket, workspaceName, workspaceSlug }) => (
                 <button
                   key={ticket.id}
                   type="button"
@@ -139,6 +141,7 @@ export function QueueSlotTicketPicker({
                       code: ticket.external_id ?? "",
                       title: ticket.title,
                       workspaceName,
+                      workspaceSlug,
                     });
                     setOpen(false);
                   }}

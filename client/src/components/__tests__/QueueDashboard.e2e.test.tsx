@@ -82,6 +82,7 @@ const baseStatus: QueueStatusValue = {
   // only the board went global — so the dashboard needs one to render them.
   workspaces: [{ id: 'ws-1', slug: 'loregarden', name: 'loregarden' }] as QueueStatusValue['workspaces'],
   workspacesLoading: false,
+  lanes: [],
   onQueueEvent: jest.fn(),
 };
 

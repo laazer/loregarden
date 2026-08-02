@@ -56,6 +56,24 @@ export interface QueuedRun extends RunLabels {
   agent_id: string;
 }
 
+/** A ticket waiting its turn in a lane. */
+export interface LaneEntry extends RunLabels {
+  entry_id: string;
+  ticket_id: string;
+  workspace_id: string;
+  position: number;
+  auto_approve: boolean;
+  stop_at_stage_key: string;
+  queued_at: string | null;
+}
+
+/** One execution slot: what runs in it, and what is queued behind it. */
+export interface QueueLane {
+  slot_number: number;
+  running: ActiveRun | null;
+  waiting: LaneEntry[];
+}
+
 export interface ParallelStats {
   max_concurrent: number;
   active_count: number;
@@ -79,6 +97,8 @@ export const DEFAULT_PARALLEL_STATS: ParallelStats = {
 export interface QueueStatusSnapshot {
   active_runs: ActiveRun[];
   queued_runs: QueuedRun[];
+  /** Each slot with its own pipeline. The board renders these. */
+  lanes: QueueLane[];
   available_slots: number;
   total_slots: number;
   queue_length: number;

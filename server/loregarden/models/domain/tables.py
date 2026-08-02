@@ -870,6 +870,12 @@ class AgentSlot(SQLModel, table=True):
     slot_number: int = 1
     is_available: bool = True
     current_run_id: str | None = Field(default=None, foreign_key="agent_runs.id")
+    #: The orchestration occupying this lane. A lane runs a whole ticket, which
+    #: spans many agent runs, so this — not `current_run_id` — is what holds the
+    #: lane for the duration.
+    current_orchestration_run_id: str | None = Field(
+        default=None, foreign_key="orchestration_runs.id"
+    )
     assigned_at: datetime | None = None
     released_at: datetime | None = None
 
@@ -880,8 +886,20 @@ class QueuedRun(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
     ticket_id: str = Field(foreign_key="tickets.id", index=True)
-    run_id: str = Field(foreign_key="agent_runs.id", index=True)
+    #: Null until this entry starts — a lane entry is a ticket waiting its turn,
+    #: and nothing runs on its behalf before then.
+    run_id: str | None = Field(default=None, foreign_key="agent_runs.id", index=True)
+    orchestration_run_id: str | None = Field(
+        default=None, foreign_key="orchestration_runs.id", index=True
+    )
+    #: Which lane this entry waits in. Each slot is its own serial pipeline.
+    slot_number: int = Field(default=1, index=True)
+    #: Order *within the lane*, not across the board.
     position: int = 0
+    #: Answers from the dialog that queued this, honoured whenever the lane
+    #: reaches it — which may be long after that dialog closed.
+    auto_approve: bool = False
+    stop_at_stage_key: str = ""
     status: QueuePosition = Field(
         default=QueuePosition.QUEUED,
         sa_column=_str_enum_column(QueuePosition, QueuePosition.QUEUED, index=True),

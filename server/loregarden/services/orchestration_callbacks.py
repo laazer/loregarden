@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import secrets
 from datetime import datetime, timezone
 
@@ -382,6 +383,9 @@ class OrchestrationCallbackService:
         )
         return approval
 
+    def _release_execution_lane(self, orch_run) -> None:
+        _release_execution_lane_impl(self.session, orch_run)
+
     def complete_orchestration(
         self,
         orch_run: OrchestrationRun,
@@ -404,6 +408,7 @@ class OrchestrationCallbackService:
         self.session.add(orch_run)
         self.session.add(ticket)
         self.session.commit()
+        self._release_execution_lane(orch_run)
         event_bus.publish(
             self.session,
             EventType.ORCHESTRATION_RUN_COMPLETED,
@@ -412,3 +417,28 @@ class OrchestrationCallbackService:
             payload={"run_code": orch_run.run_code, "status": status.value},
         )
         return orch_run
+
+
+logger = logging.getLogger(__name__)
+
+
+def _release_execution_lane_impl(session, orch_run) -> None:
+    """Give the queue lane back once the whole pipeline is done.
+
+    A lane runs a ticket, not a stage, so it is held for the life of this
+    orchestration and released here rather than when any single agent run
+    finishes. Whatever was queued behind it in that lane starts next.
+
+    Best-effort: the orchestration's terminal status is already committed, and
+    a lane that fails to release is recoverable — a lost completion is not.
+    """
+    from loregarden.services.queue_lanes import QueueLaneService
+
+    try:
+        QueueLaneService(session).on_orchestration_complete(orch_run.id)
+    except Exception:
+        logger.warning(
+            "Failed to release the execution lane for orchestration %s",
+            orch_run.id,
+            exc_info=True,
+        )

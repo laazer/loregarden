@@ -33,6 +33,8 @@ def test_connecting_delivers_a_snapshot_without_being_asked(ws_client):
     assert set(message["data"]) == {
         "active_runs",
         "queued_runs",
+        # Each slot with what runs in it and what waits behind it.
+        "lanes",
         "available_slots",
         "total_slots",
         "queue_length",

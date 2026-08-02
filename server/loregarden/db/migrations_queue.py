@@ -11,7 +11,11 @@ so nothing about applied history moves with this.
 
 from __future__ import annotations
 
-from loregarden.db.migration_utils import relax_not_null, table_exists
+from loregarden.db.migration_utils import (
+    add_columns_if_missing,
+    relax_not_null,
+    table_exists,
+)
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
@@ -50,3 +54,64 @@ def m_global_agent_slots(conn: Connection) -> None:
             ")"
         )
     )
+
+
+def m_per_slot_queues(conn: Connection) -> None:
+    """Give every slot its own waiting line, and let a lane hold an orchestration.
+
+    The board's slots were lanes you could put one ticket in; behind them sat a
+    single shared line, so "queue this behind that one" had no way to be said.
+    A lane is now a serial pipeline: `queued_runs.slot_number` is which lane an
+    entry belongs to, and `position` orders it within that lane rather than
+    across the whole queue.
+
+    Two other columns follow from a lane running a whole ticket rather than one
+    stage. A lane is occupied for the life of an *orchestration*, which spans
+    many agent runs, so both the slot and the queue entry need to name one —
+    and `queued_runs.run_id` stops being required, because an entry that has
+    not started yet has no run behind it at all. `auto_approve` and
+    `stop_at_stage_key` ride along too: the dialog that sets them is long gone
+    by the time a lane reaches the entry, so the entry has to carry them.
+
+    Existing entries land in lane 1 and keep their relative order: they were
+    written against one global line, and lane 1 is the honest reading of that.
+    """
+    if table_exists(conn, "queued_runs"):
+        add_columns_if_missing(
+            conn,
+            "queued_runs",
+            {
+                "slot_number": (
+                    "ALTER TABLE queued_runs ADD COLUMN slot_number INTEGER NOT NULL DEFAULT 1"
+                ),
+                "orchestration_run_id": (
+                    "ALTER TABLE queued_runs ADD COLUMN orchestration_run_id TEXT "
+                    "REFERENCES orchestration_runs(id)"
+                ),
+                "auto_approve": (
+                    "ALTER TABLE queued_runs ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 0"
+                ),
+                "stop_at_stage_key": (
+                    "ALTER TABLE queued_runs ADD COLUMN stop_at_stage_key TEXT NOT NULL DEFAULT ''"
+                ),
+            },
+        )
+        relax_not_null(conn, "queued_runs", "run_id")
+        conn.execute(text("UPDATE queued_runs SET slot_number = 1 WHERE slot_number IS NULL"))
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_queued_runs_slot_number ON queued_runs (slot_number)"
+            )
+        )
+
+    if table_exists(conn, "agent_slots"):
+        add_columns_if_missing(
+            conn,
+            "agent_slots",
+            {
+                "current_orchestration_run_id": (
+                    "ALTER TABLE agent_slots ADD COLUMN current_orchestration_run_id TEXT "
+                    "REFERENCES orchestration_runs(id)"
+                ),
+            },
+        )

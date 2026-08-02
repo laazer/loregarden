@@ -163,3 +163,137 @@ async def test_one_waiting_line_orders_across_workspaces(session, workspace):
         await service.on_run_complete(occupant.id)
 
     assert _slot_for(session, first_waiter.id).slot_number == 1
+
+
+@pytest.mark.asyncio
+async def test_run_options_reach_the_run(session, workspace):
+    """Auto-approve and the timeout override are per-run, and the queue path
+    has to carry them.
+
+    The queue board asks for both the same way the workflow's run dialog does.
+    They used to stop at `create_parallel_run`, which called `start_run` with
+    only a stage key — so a run started from the queue silently ignored them.
+    """
+    from loregarden.models.domain import Ticket
+    from loregarden.services.parallel_run_service import ParallelRunService
+
+    ticket = Ticket(external_id="LG-1", workspace_id=workspace.id, title="t")
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+
+    service = ParallelRunService(session)
+    run = AgentRun(
+        run_code="run_opts",
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        agent_id="backend_implementer",
+    )
+
+    with patch.object(service.orchestration, "start_run", return_value=run) as start:
+        with patch("loregarden.services.run_service.schedule_agent_run"):
+            await service.create_parallel_run(
+                ticket,
+                auto_approve=True,
+                timeout_seconds=900,
+            )
+
+    assert start.call_args.kwargs["auto_approve"] is True
+    assert start.call_args.kwargs["timeout_override_seconds"] == 900
+
+
+@pytest.mark.asyncio
+async def test_run_options_default_to_the_agents_own(session, workspace):
+    """Omitting them must not invent a timeout or approve anything."""
+    from loregarden.models.domain import Ticket
+    from loregarden.services.parallel_run_service import ParallelRunService
+
+    ticket = Ticket(external_id="LG-2", workspace_id=workspace.id, title="t")
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+
+    service = ParallelRunService(session)
+    run = AgentRun(
+        run_code="run_defaults",
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        agent_id="backend_implementer",
+    )
+
+    with patch.object(service.orchestration, "start_run", return_value=run) as start:
+        with patch("loregarden.services.run_service.schedule_agent_run"):
+            await service.create_parallel_run(ticket)
+
+    assert start.call_args.kwargs["auto_approve"] is False
+    assert start.call_args.kwargs["timeout_override_seconds"] is None
+
+
+@pytest.mark.asyncio
+async def test_finishing_a_run_gives_its_slot_back(session, workspace):
+    """The bug that made the queue board lose a lane per launch.
+
+    `on_parallel_run_complete` was written to free the slot and had no callers
+    anywhere, so a run started from the queue held its slot forever: three
+    Starts and nothing could ever launch again. Every run reaches its terminal
+    status through `complete_run_tail`, so the release hangs off that.
+    """
+    from loregarden.models.domain import RunStatus, Ticket
+    from loregarden.services.orchestration import OrchestrationService
+
+    ticket = Ticket(external_id="LG-1", workspace_id=workspace.id, title="t")
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+
+    service = ParallelQueueService(session, max_concurrent=3)
+    service.initialize_slots()
+
+    run = _run(session, workspace.id, "run_finishes")
+    run.ticket_id = ticket.id
+    session.add(run)
+    session.commit()
+
+    await service.queue_run(workspace.id, ticket.id, run.id, preferred_slot=2)
+    assert _slot_for(session, run.id).slot_number == 2
+
+    OrchestrationService(session).complete_run(
+        run, status=RunStatus.SUCCEEDED, advance_workflow=False
+    )
+
+    freed = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 2)).one()
+    assert freed.is_available is True
+    assert freed.current_run_id is None
+
+
+@pytest.mark.asyncio
+async def test_finishing_a_run_starts_whatever_waited_behind_it(session, workspace):
+    from loregarden.models.domain import RunStatus, Ticket
+    from loregarden.services.orchestration import OrchestrationService
+
+    ticket = Ticket(external_id="LG-2", workspace_id=workspace.id, title="t")
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+
+    service = ParallelQueueService(session, max_concurrent=1)
+    service.initialize_slots()
+
+    occupant = _run(session, workspace.id, "run_occupant")
+    occupant.ticket_id = ticket.id
+    session.add(occupant)
+    session.commit()
+    await service.queue_run(workspace.id, ticket.id, occupant.id)
+
+    waiting = _run(session, workspace.id, "run_waiting")
+    queued = await service.queue_run(workspace.id, ticket.id, waiting.id)
+    assert queued["status"] == "queued"
+
+    with patch("loregarden.services.run_service.schedule_agent_run") as dispatch:
+        OrchestrationService(session).complete_run(
+            occupant, status=RunStatus.SUCCEEDED, advance_workflow=False
+        )
+
+    # The queue drains on its own, rather than waiting for a hand-promote.
+    dispatch.assert_called_once_with(waiting.id)
+    assert _slot_for(session, waiting.id).slot_number == 1

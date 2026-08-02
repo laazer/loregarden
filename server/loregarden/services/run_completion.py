@@ -178,7 +178,29 @@ def complete_run_tail(
                 workspace=workspace,
             )
     finalize_run_log_artifact(run, status=status, stderr=stderr)
+    _release_execution_slot(orch, run)
     return run
+
+
+def _release_execution_slot(orch: OrchestrationService, run: AgentRun) -> None:
+    """Give back the queue slot this run held, if it held one.
+
+    Hooked here because this is the one place every run reaches its terminal
+    status, whatever started it. `ParallelRunService.on_parallel_run_complete`
+    was written to do this and had no callers at all, so a run started from the
+    queue claimed a slot and never gave it back — the board lost a lane per
+    launch until nothing could start.
+
+    Best-effort: a run's completion is already durable by the time we get here,
+    and failing to release a slot must not undo it. The slot is recoverable
+    (it releases on the next completion, or by hand); a lost completion is not.
+    """
+    from loregarden.services.parallel_queue import ParallelQueueService
+
+    try:
+        ParallelQueueService(orch.session).on_run_complete_sync(run.id)
+    except Exception:
+        logger.warning("Failed to release the execution slot for run %s", run.id, exc_info=True)
 
 
 def settle_stage_after_failed_completion(

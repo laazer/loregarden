@@ -76,10 +76,11 @@ test('picking hands the ticket back instead of dispatching it', async () => {
     ticketId: 'ticket-2',
     code: 'LG-2',
     title: 'Wire the approval gate',
-    // Resolved from the workspace list; empty here because the mocked context
-    // supplies none. The slot card shows it so a shared board says whose work
-    // each lane holds.
+    // Both resolved from the workspace list; empty here because the mocked
+    // context supplies none. The card shows the name so a shared board says
+    // whose work each lane holds; the slug is what the run dialog edits.
     workspaceName: '',
+    workspaceSlug: '',
   });
   expect(globalFetch).not.toHaveBeenCalled();
 });

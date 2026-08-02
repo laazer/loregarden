@@ -23,6 +23,7 @@ const baseStatus: QueueStatusValue = {
     { slug: 'blobert', name: 'blobert' },
   ] as QueueStatusValue['workspaces'],
   workspacesLoading: false,
+  lanes: [],
   activeRuns: [],
   queuedRuns: [],
   stats: {

@@ -32,6 +32,7 @@ import { useParallelExecutionWS } from "../hooks/useParallelExecutionWS";
 import type {
   ActiveRun,
   ParallelStats,
+  QueueLane,
   QueuedRun,
   QueueEvent,
 } from "../lib/queueSocket";
@@ -44,6 +45,8 @@ export interface QueueStatusValue {
 
   activeRuns: ActiveRun[];
   queuedRuns: QueuedRun[];
+  /** Each slot with what runs in it and what is queued behind it. */
+  lanes: QueueLane[];
   stats: ParallelStats;
   estimatedClearSeconds: number | null;
   isWebSocket: boolean;
@@ -60,6 +63,7 @@ const EMPTY_VALUE: QueueStatusValue = {
   workspacesLoading: false,
   activeRuns: [],
   queuedRuns: [],
+  lanes: [],
   stats: DEFAULT_PARALLEL_STATS,
   estimatedClearSeconds: null,
   isWebSocket: false,
@@ -107,6 +111,7 @@ export function QueueStatusProvider({ children }: { children: ReactNode }) {
       workspacesLoading: workspaces.isLoading,
       activeRuns: status.activeRuns,
       queuedRuns: status.queuedRuns,
+      lanes: status.lanes,
       stats: status.stats,
       estimatedClearSeconds: status.estimatedClearSeconds,
       isWebSocket: status.isWebSocket,
