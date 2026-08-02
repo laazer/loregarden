@@ -97,11 +97,28 @@ def test_triage_invoke_uses_runtime_override(client: TestClient, monkeypatch):
             prompt_file=kwargs["prompt_file"],
         )
 
+    class FakeStdout:
+        """The pipe a triage turn is now read from line by line."""
+
+        def __init__(self, text: str) -> None:
+            self._lines = text.splitlines(keepends=True)
+
+        def readline(self) -> str:
+            return self._lines.pop(0) if self._lines else ""
+
     class FakeProc:
         returncode = 0
 
+        def __init__(self) -> None:
+            self.stdout = FakeStdout("runtime override ok")
+
+        def poll(self):
+            return 0 if not self.stdout._lines else None
+
         def communicate(self, timeout=None):
-            return (b"runtime override ok", b"")
+            rest = "".join(self.stdout._lines)
+            self.stdout._lines = []
+            return (rest.encode("utf-8"), b"")
 
         def kill(self):
             return None

@@ -374,6 +374,7 @@ export function BaxterChatPage() {
             <StudioChatMessages
               messages={threadMessages}
               isThinking={busy}
+              activeTurnId={inGallery ? null : chat.activeTurnId}
               thinkingMessage="Baxter is looking…"
               thinkingSub="Fetching a reply from your workspace model"
               thinkingActivity="typing"

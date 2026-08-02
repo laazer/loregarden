@@ -100,6 +100,7 @@ export function CopilotDock() {
                 messages={session.messages}
                 emptyMessage="No messages yet."
                 isThinking={session.isBusy}
+                activeTurnId={session.activeTurnId}
                 assistantLabel="Baxter"
                 className="copilot-dock-messages"
               />

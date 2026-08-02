@@ -34,6 +34,8 @@ export function useTicketChatSession(ticketId: string | undefined): ChatSession 
     messages: triage.data?.messages ?? [],
     // Include the in-flight POST so the walker shows before run_status flips.
     isBusy: isBusy || sendMessage.isPending,
+    // Ticket triage has no pending message row: the run is the turn.
+    activeTurnId: triage.data?.active_run_id ?? null,
     isLoading: triage.isLoading,
     loadError: triage.isError,
     error: sendMessage.isError

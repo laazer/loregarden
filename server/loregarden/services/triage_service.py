@@ -20,6 +20,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.approval_views import approval_to_view
 from loregarden.services.chat_primitives import load_parts_json, parts_json_for_reply
+from loregarden.services.chat_thinking import ChatTurnThinkingSink
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
     run_cli_agent_turn,
@@ -217,14 +218,22 @@ def invoke_triage_model(
     history = list_triage_messages(session, ticket.id)
     prompt = build_triage_prompt(ticket, history, latest_user_message, session=session)
     effective = apply_triage_runtime_overrides(workspace, ticket)
-    return run_cli_agent_turn(
-        TRIAGE_CLI_PROFILE,
-        workspace=effective,
-        prompt=prompt,
-        run_id=run_id,
-        workspace_slug=effective.slug or workspace.slug or "",
-        read_only=True,
-    )
+    # The run is the turn here — `triage_run_status` publishes this same id as
+    # `active_run_id`, which is what the panel watches.
+    thinking = ChatTurnThinkingSink(run_id) if run_id else None
+    try:
+        return run_cli_agent_turn(
+            TRIAGE_CLI_PROFILE,
+            workspace=effective,
+            prompt=prompt,
+            run_id=run_id,
+            workspace_slug=effective.slug or workspace.slug or "",
+            read_only=True,
+            thinking_sink=thinking,
+        )
+    finally:
+        if thinking:
+            thinking.close()
 
 
 def current_human_gate_stage(session: Session, ticket: Ticket):

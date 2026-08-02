@@ -39,6 +39,7 @@ from loregarden.models.domain import (
 )
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.chat_primitives import load_parts_json
+from loregarden.services.chat_thinking import ChatTurnThinkingSink
 from loregarden.services.cli_agent_runner import (
     resolve_agent_timeout,
     run_cli_agent_turn,
@@ -352,8 +353,14 @@ def invoke_baxter_chat_model(
     *,
     content: str,
     history: list[BaxterChatMessage] | None = None,
+    turn_id: str = "",
 ) -> str:
-    """Run one Home chat turn against the workspace's current CLI/model runtime."""
+    """Run one Home chat turn against the workspace's current CLI/model runtime.
+
+    ``turn_id`` is the pending assistant row this turn will settle onto. Passing
+    it streams the agent's reasoning to that turn's thinking channel; omitting
+    it runs the turn silently, which is all the one-shot adapters can do anyway.
+    """
     message = (content or "").strip()
     if not message:
         raise ValueError("Message content is required")
@@ -377,14 +384,20 @@ def invoke_baxter_chat_model(
         interactive=interactive,
     )
     if interactive:
-        return _run_interactive_turn(session, workspace, prompt, agent=agent)
-    return run_cli_agent_turn(
-        BAXTER_CHAT_CLI_PROFILE,
-        workspace=workspace,
-        prompt=prompt,
-        user_prompt=DEFAULT_BAXTER_CHAT_USER_PROMPT,
-        read_only=True,
-    )
+        return _run_interactive_turn(session, workspace, prompt, agent=agent, turn_id=turn_id)
+    thinking = ChatTurnThinkingSink(turn_id) if turn_id else None
+    try:
+        return run_cli_agent_turn(
+            BAXTER_CHAT_CLI_PROFILE,
+            workspace=workspace,
+            prompt=prompt,
+            user_prompt=DEFAULT_BAXTER_CHAT_USER_PROMPT,
+            read_only=True,
+            thinking_sink=thinking,
+        )
+    finally:
+        if thinking:
+            thinking.close()
 
 
 def _start_run(session: Session, workspace: Workspace) -> AgentRun:
@@ -419,7 +432,7 @@ def _finish_run(session: Session, run_id: str, *, status: RunStatus, stderr: str
 
 
 def _run_interactive_turn(
-    session: Session, workspace: Workspace, prompt: str, *, agent: dict
+    session: Session, workspace: Workspace, prompt: str, *, agent: dict, turn_id: str = ""
 ) -> str:
     """Tool-using turn: permission prompts land in the workspace approval inbox."""
     repo_root = resolve_workspace_root(workspace)
@@ -434,6 +447,7 @@ def _run_interactive_turn(
     timeout = resolve_agent_timeout(agent, BAXTER_CHAT_CLI_PROFILE.timeout_env)
 
     run = _start_run(session, workspace)
+    thinking = ChatTurnThinkingSink(turn_id) if turn_id else None
     try:
         with TemporaryDirectory(prefix=BAXTER_CHAT_CLI_PROFILE.tmp_prefix) as tmp:
             prompt_file = Path(tmp) / "prompt.md"
@@ -443,6 +457,7 @@ def _run_interactive_turn(
                 prompt_file=prompt_file,
                 workspace_root=repo_root,
                 claude_model=claude_model,
+                partial_messages=thinking is not None,
                 db_session=session,
             )
             bridge = PermissionBridgeRunner(session, track_workflow_stage=False)
@@ -452,10 +467,14 @@ def _run_interactive_turn(
                 invocation=invocation,
                 prompt=prompt,
                 timeout_seconds=timeout,
+                streamer=thinking,
             )
     except Exception as exc:
         _finish_run(session, run.id, status=RunStatus.FAILED, stderr=str(exc))
         raise
+    finally:
+        if thinking:
+            thinking.close()
 
     reply = extract_triage_reply(result.stdout)[: BAXTER_CHAT_CLI_PROFILE.reply_cap]
     if result.status == RunStatus.SUCCEEDED and not reply:

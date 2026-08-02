@@ -22,6 +22,11 @@ from loregarden.agents.registry import get_agent
 from loregarden.db.session import engine
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, TriageMessage, Workspace
 from loregarden.services.chat_primitives import parts_json_for_reply
+from loregarden.services.chat_thinking import (
+    ChatTurnThinkingSink,
+    finish_chat_turn_thinking,
+    with_thinking_part,
+)
 from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.cli_output import extract_triage_reply
 from loregarden.services.cli_settings import (
@@ -173,25 +178,35 @@ class TriageTurnExecutor:
             or "haiku"
         )
 
-        with TemporaryDirectory(prefix="loregarden-triage-") as tmp:
-            prompt_file = Path(tmp) / "prompt.md"
-            prompt_file.write_text(prompt, encoding="utf-8")
-            invocation = build_interactive_invocation(
-                adapter="claude",
-                prompt_file=prompt_file,
-                workspace_root=repo_root,
-                claude_model=triage_claude_model,
-                claude_effort=resolve_effort_for_adapter("claude", workspace),
-            )
-            timeout = int(os.environ.get("LOREGARDEN_TRIAGE_TIMEOUT") or agent.get("timeout", 1800))
-            bridge = PermissionBridgeRunner(self.session, track_workflow_stage=False)
-            result = bridge.run(
-                run_id=run.id,
-                ticket=ticket,
-                invocation=invocation,
-                prompt=prompt,
-                timeout_seconds=timeout,
-            )
+        # Ticket triage has no pending message row, so the run *is* the turn —
+        # `triage_run_status` publishes this same id as `active_run_id`.
+        thinking = ChatTurnThinkingSink(run.id)
+        try:
+            with TemporaryDirectory(prefix="loregarden-triage-") as tmp:
+                prompt_file = Path(tmp) / "prompt.md"
+                prompt_file.write_text(prompt, encoding="utf-8")
+                invocation = build_interactive_invocation(
+                    adapter="claude",
+                    prompt_file=prompt_file,
+                    workspace_root=repo_root,
+                    claude_model=triage_claude_model,
+                    claude_effort=resolve_effort_for_adapter("claude", workspace),
+                    partial_messages=True,
+                )
+                timeout = int(
+                    os.environ.get("LOREGARDEN_TRIAGE_TIMEOUT") or agent.get("timeout", 1800)
+                )
+                bridge = PermissionBridgeRunner(self.session, track_workflow_stage=False)
+                result = bridge.run(
+                    run_id=run.id,
+                    ticket=ticket,
+                    invocation=invocation,
+                    prompt=prompt,
+                    timeout_seconds=timeout,
+                    streamer=thinking,
+                )
+        finally:
+            thinking.close()
 
         reply = extract_triage_reply(result.stdout)
         if result.status == RunStatus.SUCCEEDED and not reply:
@@ -202,6 +217,10 @@ class TriageTurnExecutor:
     def _finish(
         self, run: AgentRun, ticket: Ticket, *, status: RunStatus, reply: str, stderr: str
     ) -> None:
+        # Held before the re-read: the run row is what identifies this turn's
+        # thinking channel, and a re-read that comes back empty must still
+        # release it rather than leave the row behind.
+        turn_id = run.id
         run = self.session.get(AgentRun, run.id)
         if run:
             run.status = status
@@ -209,14 +228,18 @@ class TriageTurnExecutor:
             run.finished_at = datetime.now(timezone.utc)
             self.session.add(run)
         content = reply or (stderr[:2000] if status == RunStatus.FAILED else "(no reply)")
+        # Always taken, including on the failure paths: what the agent was
+        # working through when it died is the most useful thing it produced.
+        thinking = finish_chat_turn_thinking(self.session, turn_id)
         assistant_message = TriageMessage(
             ticket_id=ticket.id,
             role="assistant",
             content=content,
             # Resolved at write time so the thread renders its cards after a
             # reload instead of degrading to the raw fenced JSON.
-            parts_json=parts_json_for_reply(
-                self.session, content, workspace_id=ticket.workspace_id
+            parts_json=with_thinking_part(
+                parts_json_for_reply(self.session, content, workspace_id=ticket.workspace_id),
+                thinking,
             ),
             run_id=run.id if run else None,
         )

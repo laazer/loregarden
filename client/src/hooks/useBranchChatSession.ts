@@ -95,6 +95,7 @@ export function useBranchChatSession(
     // The mutation's pending flag covers the gap between the POST resolving and
     // the next poll reporting "running"; without it the composer flickers idle.
     isBusy: isRunStatusBusy(chat.data?.run_status) || sendMessage.isPending,
+    activeTurnId: chat.data?.active_turn_id ?? null,
     isLoading: chat.isLoading,
     loadError: chat.isError,
     error: sendMessage.isError

@@ -203,9 +203,10 @@ def test_baxter_chat_interactive_prompt_grants_tools(client: TestClient, monkeyp
 
     captured: dict[str, object] = {}
 
-    def fake_interactive(session, workspace, prompt, *, agent):
+    def fake_interactive(session, workspace, prompt, *, agent, turn_id=""):
         captured["prompt"] = prompt
         captured["workspace"] = workspace.slug
+        captured["turn_id"] = turn_id
         return "patched the flaky test"
 
     monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
@@ -224,6 +225,8 @@ def test_baxter_chat_interactive_prompt_grants_tools(client: TestClient, monkeyp
     prompt = str(captured["prompt"])
     assert "real tool access" in prompt
     assert "no ticket is implied" in prompt
+    # The pending assistant row's id, so the turn's reasoning has a channel.
+    assert captured["turn_id"] == snapshot["messages"][-1]["id"]
 
 
 def test_baxter_chat_interactive_creates_workspace_scoped_run(

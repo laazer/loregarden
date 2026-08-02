@@ -26,6 +26,7 @@ from loregarden.services.baxter_chat_service import (
     touch_chat_session,
 )
 from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, parts_json_for_reply
+from loregarden.services.chat_thinking import finish_chat_turn_thinking, with_thinking_part
 from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.triage_service import TRIAGE_AGENT_NAME
 from sqlmodel import Session, col, select
@@ -89,13 +90,16 @@ def _settle(
     status: str,
     parts_json: str = EMPTY_PARTS_JSON,
 ) -> BaxterChatMessage | None:
+    # Always taken, including on the failure paths: what the agent was working
+    # through when it died is the most useful thing a failed turn produced.
+    thinking = finish_chat_turn_thinking(session, assistant_id)
     assistant = session.get(BaxterChatMessage, assistant_id)
     if not assistant:
         logger.error("Baxter chat assistant message not found: %s", assistant_id)
         return None
     assistant.content = content
     assistant.status = status
-    assistant.parts_json = parts_json
+    assistant.parts_json = with_thinking_part(parts_json, thinking)
     session.add(assistant)
     session.commit()
     chat_session = session.get(BaxterChatSession, assistant.session_id)
@@ -145,6 +149,7 @@ def execute_baxter_chat_turn_background(assistant_id: str) -> None:
                     workspace,
                     content=latest_user_message,
                     history=history,
+                    turn_id=assistant_id,
                 )
             except Exception as exc:
                 logger.exception("Baxter chat turn failed: %s", assistant_id)

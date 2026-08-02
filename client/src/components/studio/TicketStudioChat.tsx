@@ -5,11 +5,14 @@ export function TicketStudioChatMessages({
   messages,
   emptyMessage,
   isThinking,
+  activeTurnId,
   thinkingMessage = `${TRIAGE_AGENT_NAME} is thinking…`,
 }: {
   messages: Parameters<typeof StudioChatMessages>[0]["messages"];
   emptyMessage?: string;
   isThinking?: boolean;
+  /** The scoper turn in flight, so its reasoning streams into the busy state. */
+  activeTurnId?: string | null;
   thinkingMessage?: string;
 }) {
   return (
@@ -17,6 +20,7 @@ export function TicketStudioChatMessages({
       messages={messages}
       emptyMessage={emptyMessage}
       isThinking={isThinking}
+      activeTurnId={activeTurnId}
       thinkingMessage={thinkingMessage}
       thinkingActivity="thinking"
       assistantLabel={TRIAGE_AGENT_NAME}

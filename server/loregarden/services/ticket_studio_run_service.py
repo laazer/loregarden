@@ -22,6 +22,7 @@ from loregarden.db.session import engine
 from loregarden.models.domain import TicketStudioMessage, TicketStudioSession
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, parts_json_for_reply
+from loregarden.services.chat_thinking import finish_chat_turn_thinking, with_thinking_part
 from loregarden.services.ticket_studio_service import (
     STUDIO_PROMPT_MODES,
     STUDIO_TURN_BOOTSTRAP_CLARIFY,
@@ -62,9 +63,12 @@ def _settle(
     status: str,
     parts_json: str = EMPTY_PARTS_JSON,
 ) -> None:
+    # Always taken, including on the failure paths: what the scoper was working
+    # through when it died is the most useful thing a failed turn produced.
+    thinking = finish_chat_turn_thinking(session, assistant.id)
     assistant.content = content
     assistant.status = status
-    assistant.parts_json = parts_json
+    assistant.parts_json = with_thinking_part(parts_json, thinking)
     session.add(assistant)
     session.commit()
 
@@ -92,7 +96,7 @@ def execute_studio_turn_background(assistant_id: str) -> None:
             latest_user_message = _latest_user_content(session, row.id)
             try:
                 reply = invoke_ticket_studio_model(
-                    session, row, latest_user_message, mode=prompt_mode
+                    session, row, latest_user_message, mode=prompt_mode, turn_id=assistant_id
                 )
             except Exception as exc:
                 logger.exception("Ticket studio turn failed: %s", assistant_id)

@@ -290,11 +290,28 @@ def test_ticket_studio_scope_survives_large_json_payload(client: TestClient, mon
     # Sanity check the fixture actually exceeds the old blanket truncation cap.
     assert len(large_reply) > 12000
 
+    class FakeStdout:
+        """The pipe a scoper turn is now read from line by line."""
+
+        def __init__(self, text: str) -> None:
+            self._lines = text.splitlines(keepends=True)
+
+        def readline(self) -> str:
+            return self._lines.pop(0) if self._lines else ""
+
     class FakeProc:
         returncode = 0
 
+        def __init__(self) -> None:
+            self.stdout = FakeStdout(large_reply)
+
+        def poll(self):
+            return 0 if not self.stdout._lines else None
+
         def communicate(self, timeout=None):
-            return (large_reply.encode("utf-8"), b"")
+            rest = "".join(self.stdout._lines)
+            self.stdout._lines = []
+            return (rest.encode("utf-8"), b"")
 
         def kill(self):
             return None

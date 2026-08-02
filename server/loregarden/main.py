@@ -12,6 +12,7 @@ from loregarden.api import (
     branch_triage,
     bulk_queue_operations,
     calendar_events,
+    chat_turn_events,
     ci,
     diff_review,
     editor,
@@ -42,6 +43,7 @@ from loregarden.core.auth import TokenAuthMiddleware
 from loregarden.db.session import engine, init_db
 from loregarden.services.baxter_chat_run_service import fail_interrupted_baxter_chat_turns
 from loregarden.services.branch_triage_run_service import fail_interrupted_branch_triage_turns
+from loregarden.services.chat_thinking import clear_orphaned_chat_turn_thinking
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
 from loregarden.services.run_service import (
     fail_interrupted_orchestration_runs,
@@ -72,6 +74,9 @@ async def lifespan(app: FastAPI):
         fail_interrupted_branch_triage_turns(session)
         fail_interrupted_baxter_chat_turns(session)
         fail_interrupted_studio_turns(session)
+        # The turns those four just settled are exactly the ones whose live
+        # thinking rows outlived them; nothing is left watching for that text.
+        clear_orphaned_chat_turn_thinking(session)
         # Last: the reaps above settle stages as they complete their runs, so this
         # only sees stages no run will ever account for.
         settle_stranded_stages(session)
@@ -125,6 +130,7 @@ app.include_router(queue_review.router)
 app.include_router(analytics.router)
 app.include_router(terminal.router)
 app.include_router(queue_events.router)
+app.include_router(chat_turn_events.router)
 app.include_router(mcp.router, prefix="/mcp")
 
 
