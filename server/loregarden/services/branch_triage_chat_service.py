@@ -28,6 +28,7 @@ from loregarden.services.branch_triage_service import (
     resolve_branch_checkout,
 )
 from loregarden.services.chat_primitives import load_parts_json
+from loregarden.services.chat_thinking import ChatTurnThinkingSink
 from loregarden.services.cli_agent_runner import (
     resolve_agent_timeout,
     run_cli_agent_turn,
@@ -247,7 +248,13 @@ def invoke_branch_triage_model(
     latest_user_message: str,
     *,
     run_id: str = "",
+    turn_id: str = "",
 ) -> str:
+    """Run one branch triage turn.
+
+    ``turn_id`` is the pending assistant row this turn settles onto; passing it
+    streams the agent's reasoning to that turn's thinking channel.
+    """
     stub = stub_response(BRANCH_TRIAGE_CLI_PROFILE)
     if stub is not None:
         return stub
@@ -291,24 +298,31 @@ def invoke_branch_triage_model(
             or "haiku"
         )
         timeout = resolve_agent_timeout(agent, BRANCH_TRIAGE_CLI_PROFILE.timeout_env)
-        with TemporaryDirectory(prefix=BRANCH_TRIAGE_CLI_PROFILE.tmp_prefix) as tmp:
-            prompt_file = Path(tmp) / "prompt.md"
-            prompt_file.write_text(prompt, encoding="utf-8")
-            invocation = build_interactive_invocation(
-                adapter="claude",
-                prompt_file=prompt_file,
-                workspace_root=checkout_root,
-                claude_model=model,
-                db_session=session,
-            )
-            result = PermissionBridgeRunner(session, track_workflow_stage=False).run(
-                run_id=run_id,
-                workspace=workspace,
-                workspace_stage_key=BRANCH_TRIAGE_STAGE_KEY,
-                invocation=invocation,
-                prompt=prompt,
-                timeout_seconds=timeout,
-            )
+        thinking = ChatTurnThinkingSink(turn_id) if turn_id else None
+        try:
+            with TemporaryDirectory(prefix=BRANCH_TRIAGE_CLI_PROFILE.tmp_prefix) as tmp:
+                prompt_file = Path(tmp) / "prompt.md"
+                prompt_file.write_text(prompt, encoding="utf-8")
+                invocation = build_interactive_invocation(
+                    adapter="claude",
+                    prompt_file=prompt_file,
+                    workspace_root=checkout_root,
+                    claude_model=model,
+                    partial_messages=thinking is not None,
+                    db_session=session,
+                )
+                result = PermissionBridgeRunner(session, track_workflow_stage=False).run(
+                    run_id=run_id,
+                    workspace=workspace,
+                    workspace_stage_key=BRANCH_TRIAGE_STAGE_KEY,
+                    invocation=invocation,
+                    prompt=prompt,
+                    timeout_seconds=timeout,
+                    streamer=thinking,
+                )
+        finally:
+            if thinking:
+                thinking.close()
         reply = extract_triage_reply(result.stdout)
         if result.status != RunStatus.SUCCEEDED:
             raise RuntimeError(result.stderr or f"{TRIAGE_AGENT_NAME} run {result.status.value}")
@@ -316,12 +330,18 @@ def invoke_branch_triage_model(
             raise RuntimeError(f"{TRIAGE_AGENT_NAME} returned an empty response")
         return reply[: BRANCH_TRIAGE_CLI_PROFILE.reply_cap]
 
-    return run_cli_agent_turn(
-        BRANCH_TRIAGE_CLI_PROFILE,
-        workspace=effective_workspace,
-        prompt=prompt,
-        user_prompt=os.environ.get(
-            "LOREGARDEN_BRANCH_TRIAGE_USER_PROMPT", DEFAULT_BRANCH_TRIAGE_USER_PROMPT
-        ),
-        read_only=True,
-    )
+    advisory_thinking = ChatTurnThinkingSink(turn_id) if turn_id else None
+    try:
+        return run_cli_agent_turn(
+            BRANCH_TRIAGE_CLI_PROFILE,
+            workspace=effective_workspace,
+            prompt=prompt,
+            user_prompt=os.environ.get(
+                "LOREGARDEN_BRANCH_TRIAGE_USER_PROMPT", DEFAULT_BRANCH_TRIAGE_USER_PROMPT
+            ),
+            read_only=True,
+            thinking_sink=advisory_thinking,
+        )
+    finally:
+        if advisory_thinking:
+            advisory_thinking.close()

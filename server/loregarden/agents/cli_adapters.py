@@ -129,6 +129,7 @@ def build_interactive_invocation(
     resume_session_id: str = "",
     claude_model: str = "",
     claude_effort: str = "",
+    partial_messages: bool = False,
     db_session=None,
 ) -> CliInvocation:
     """A headless `claude` session with permission prompts routed through Loregarden.
@@ -139,6 +140,12 @@ def build_interactive_invocation(
     `services.run_steering`), so it cannot be driven this way at all — cursor
     stage runs go through `_cursor_print_invocation` regardless of permission
     bypass.
+
+    `partial_messages` adds the token-level events a chat surface needs to show
+    reasoning as it forms; without it a thinking block only arrives once it is
+    finished, which for a long thought is one jump from nothing to everything.
+    Off by default: a stage run writes its stream to a log nobody watches
+    keystroke by keystroke, and the extra events are pure volume there.
     """
     cwd = str(workspace_root)
 
@@ -159,6 +166,8 @@ def build_interactive_invocation(
             "--append-system-prompt-file",
             str(prompt_file),
         ]
+        if partial_messages:
+            argv.append("--include-partial-messages")
         _append_model_flag(argv, claude_model)
         _append_claude_effort_flag(argv, claude_effort)
         if resume_session_id:
@@ -585,11 +594,19 @@ def build_triage_invocation(
     granted_tools: list[str] | None = None,
     read_only: bool = False,
     extra_dirs: Sequence[Path | str] = (),
+    stream_json: bool = False,
 ) -> CliInvocation:
     """One-shot, non-interactive CLI for the triage chat channel.
 
-    Stage runs use stream-json + permission bridge; triage must return plain text
-    from stdout in a single communicate() call.
+    Stage runs use stream-json + the permission bridge; this returns the reply
+    from stdout when the process exits.
+
+    `stream_json` asks the CLI for NDJSON events instead of a block of text, so
+    a caller reading stdout incrementally can show the agent's reasoning while
+    it works. It changes what stdout looks like, not what the turn returns —
+    `extract_triage_reply` reads either. Only claude and cursor can express it;
+    for any other adapter the flag is silently a no-op, which is why callers
+    treat streaming as a bonus rather than something to depend on.
 
     ``run_id`` / ``granted_tools`` matter for LM Studio only: that runner has no
     native MCP, so the subprocess needs the control-plane endpoint + tool grant.
@@ -633,7 +650,7 @@ def build_triage_invocation(
             _bin("claude", "LOREGARDEN_CLAUDE_BIN"),
             "-p",
             "--output-format",
-            "text",
+            "stream-json" if stream_json else "text",
             "--permission-mode",
             (
                 "plan"
@@ -653,6 +670,11 @@ def build_triage_invocation(
                 triage_user_prompt,
             ]
         )
+        if stream_json:
+            # `--verbose` is required alongside stream-json for `-p`, and
+            # partial messages are the whole point: without them a thinking
+            # block lands finished, which is not streaming.
+            argv[2:2] = ["--verbose", "--include-partial-messages"]
         _append_model_flag(argv, triage_model)
         _append_claude_effort_flag(argv, effort)
         return CliInvocation(
@@ -668,9 +690,13 @@ def build_triage_invocation(
             "agent",
             "-p",
             "--output-format",
-            "text",
+            "stream-json" if stream_json else "text",
             "--trust",
         ]
+        if stream_json:
+            # Cursor's token deltas ride on `--stream-partial-output`, which is
+            # only legal with stream-json (see `_cursor_print_invocation`).
+            argv.append("--stream-partial-output")
         if read_only:
             argv.extend(["--mode", "ask"])
         else:

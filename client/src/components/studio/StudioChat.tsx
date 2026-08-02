@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import { memo, useEffect, useRef, useState } from "react";
 
+import { useChatTurnThinking } from "../../hooks/useChatTurnThinking";
 import { BaxterAvatar, type BaxterAvatarState } from "../chat/BaxterAvatar";
+import { LiveThinkingStream } from "../chat/LiveThinkingStream";
 import { MarkdownContent } from "../chat/MarkdownContent";
 import { PrimitiveParts } from "../chat/primitives/PrimitiveParts";
 import { widestPrimitiveSize } from "../chat/primitives/primitiveFrame";
@@ -51,6 +53,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   thinkingSub = "Working on a reply…",
   thinkingActivity = "thinking",
   assistantLabel = "Assistant",
+  activeTurnId,
   autoScroll = true,
   className,
   renderAfterMessage,
@@ -65,6 +68,12 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   /** Which busy animation to play while waiting for the assistant. */
   thinkingActivity?: StudioAssistantActivity;
   assistantLabel?: string;
+  /**
+   * The turn in flight, from the surface's snapshot (`active_turn_id`, or
+   * `active_run_id` for ticket triage). Given one, the busy state shows the
+   * agent's reasoning as it arrives instead of a fixed "working…" line.
+   */
+  activeTurnId?: string | null;
   autoScroll?: boolean;
   className?: string;
   renderAfterMessage?: (message: ChatMessageView) => ReactNode;
@@ -76,6 +85,12 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const responding = useRespondingFlash(messages, Boolean(isThinking));
   const latestAssistantId = latestAssistantMessageId(messages);
+  // Only while the turn is actually in flight: a settled turn's id would keep
+  // a socket open against a channel that has already closed.
+  const thinking = useChatTurnThinking(isThinking ? activeTurnId : null);
+  // Activity alone is not enough to replace the placeholder: a header over an
+  // empty box reads as broken. There has to be something to actually read.
+  const hasLiveThinking = Boolean(thinking.content.trim() || thinking.answer.trim());
 
   useEffect(() => {
     if (!autoScroll) return;
@@ -102,9 +117,17 @@ export const StudioChatMessages = memo(function StudioChatMessages({
         const isUser = isUserChatRole(message.role);
         const body = chatMessageBody(message);
         const parts = message.parts;
-        const nonTextParts = (parts ?? []).filter((p) => p.primitive !== "text");
+        // Reasoning reads before the conclusion it produced, so the turn's
+        // thinking card leads rather than trailing the other primitives.
+        const leadingParts = (parts ?? []).filter((p) => p.primitive === "thinking");
+        const nonTextParts = (parts ?? []).filter(
+          (p) => p.primitive !== "text" && p.primitive !== "thinking",
+        );
         const hasNonTextParts = nonTextParts.length > 0;
         const partsSize = widestPrimitiveSize(nonTextParts);
+        const leadingReasoning = leadingParts.length ? (
+          <PrimitiveParts parts={leadingParts} onSubmit={onPrimitiveSubmit} />
+        ) : null;
         const textBody =
           parts?.length && hasNonTextParts
             ? parts
@@ -129,6 +152,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
           !isThinking && message.id === latestAssistantId ? activeState : "idle";
         const reply = (
           <>
+            {leadingReasoning}
             {textBody ? (
               <div className="lg-chat-reply ticket-studio-msg ticket-studio-msg-assistant">
                 <MarkdownContent content={textBody} className="ticket-studio-msg-body" />
@@ -152,6 +176,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
           >
             {showAssistantAvatar ? (
               <div className="lg-chat-assistant-col">
+                {leadingReasoning}
                 <div className="lg-chat-assistant-row ticket-studio-msg-row">
                   <BaxterAvatar variant="head" state={state} label={assistantLabel} />
                   {textBody ? (
@@ -184,12 +209,41 @@ export const StudioChatMessages = memo(function StudioChatMessages({
             ) : (
               <p className="lg-chat-loading-title">{thinkingMessage}</p>
             )}
-            <div className="lg-chat-loading-track" aria-hidden>
-              <div className="lg-chat-loading-walker">
-                <BaxterAvatar variant="full" state={busyState} size={56} label={assistantLabel} />
-              </div>
-            </div>
-            <p className="lg-chat-loading-sub">{thinkingSub}</p>
+            {hasLiveThinking ? (
+              // The pacing walker is a stand-in for not knowing what the agent
+              // is doing. Once it is telling us, showing both is noise.
+              <>
+                {thinking.content.trim() ? (
+                  <LiveThinkingStream
+                    content={thinking.content}
+                    activity={thinking.activity}
+                    label={assistantLabel}
+                  />
+                ) : null}
+                {thinking.answer.trim() ? (
+                  // The reply as it forms. Not marked up as markdown while it
+                  // streams: half a fenced block or half a table renders as
+                  // garbage that rearranges itself on every frame.
+                  <div className="lg-chat-reply lg-chat-reply--streaming">
+                    {thinking.answer}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <div className="lg-chat-loading-track" aria-hidden>
+                  <div className="lg-chat-loading-walker">
+                    <BaxterAvatar
+                      variant="full"
+                      state={busyState}
+                      size={56}
+                      label={assistantLabel}
+                    />
+                  </div>
+                </div>
+                <p className="lg-chat-loading-sub">{thinkingSub}</p>
+              </>
+            )}
           </div>
         </div>
       ) : null}

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 from sqlmodel import Session
 
 if TYPE_CHECKING:
-    from loregarden.services.run_log_stream import RunLogStreamer
+    from loregarden.services.run_stream_sink import RunStreamSink
 from loregarden.agents.cli_adapters import CliInvocation
 from loregarden.agents.executors.approval_scope import (  # noqa: F401
     BRANCH_TRIAGE_STAGE_KEY,
@@ -218,7 +218,7 @@ def _drain_stdout_after_result(
     stdout_reader: SubprocessLineReader,
     stdout_lines: list[str],
     *,
-    streamer: RunLogStreamer | None,
+    streamer: RunStreamSink | None,
     max_seconds: float = 5.0,
 ) -> None:
     """Read trailing stream-json lines and terminate a CLI that stayed alive after result."""
@@ -325,7 +325,7 @@ class _LoopStep:
 
 def _continue_while_awaiting(
     *,
-    streamer: RunLogStreamer | None,
+    streamer: RunStreamSink | None,
     stdout_reader: SubprocessLineReader,
     state: _LoopState,
 ) -> _LoopStep:
@@ -381,7 +381,7 @@ def _resume_after_approval(
     *,
     scope: ApprovalScope,
     run_id: str,
-    streamer: RunLogStreamer | None,
+    streamer: RunStreamSink | None,
 ) -> _LoopStep:
     if runner._set_stage_status(scope, StageStatus.RUNNING):
         runner.session.add(scope.ticket)
@@ -439,7 +439,7 @@ class PermissionBridgeRunner:
         workspace_stage_key: str = HOME_CHAT_STAGE_KEY,
         spawn_process: Callable[..., Any] | None = None,
         wait_for_approval: Callable[..., ApprovalResolution] | None = None,
-        streamer: RunLogStreamer | None = None,
+        streamer: RunStreamSink | None = None,
     ) -> BridgeResult:
         import subprocess
 
@@ -562,7 +562,7 @@ class PermissionBridgeRunner:
         run_id: str,
         proc: Any,
         state: _LoopState,
-        streamer: RunLogStreamer | None,
+        streamer: RunStreamSink | None,
     ) -> None:
         """Write any operator messages for this run into the agent's stdin.
 
@@ -622,7 +622,7 @@ class PermissionBridgeRunner:
         scope: ApprovalScope,
         run_id: str,
         proc: Any,
-        streamer: RunLogStreamer | None,
+        streamer: RunStreamSink | None,
         stdout_reader: SubprocessLineReader,
         state: _LoopState,
         resolve_poll: Callable[[str], ApprovalResolution | None],
@@ -686,7 +686,7 @@ class PermissionBridgeRunner:
         proc: Any,
         request_id: str,
         permission: dict[str, Any],
-        streamer: RunLogStreamer | None,
+        streamer: RunStreamSink | None,
         state: _LoopState,
     ) -> BridgeResult | None:
         """Hard technical boundary, checked before auto-approve/allowlist/
@@ -860,7 +860,7 @@ class PermissionBridgeRunner:
         request_id: str,
         tool_name: str,
         bare_mcp: str,
-        streamer: RunLogStreamer | None,
+        streamer: RunStreamSink | None,
     ) -> bool:
         message = (
             f"{bare_mcp} is denied to orchestrated pipeline agents (interim "
@@ -889,7 +889,7 @@ class PermissionBridgeRunner:
         request_id: str,
         tool_name: str,
         server_name: str,
-        streamer: RunLogStreamer | None,
+        streamer: RunStreamSink | None,
     ) -> bool:
         # Trust removed the only thing pacing this agent — a human clicking —
         # so the server's own ceiling is what is left to enforce.
@@ -926,7 +926,7 @@ class PermissionBridgeRunner:
         permission: dict[str, Any],
         bare_mcp: str | None,
         question: bool,
-        streamer: RunLogStreamer | None,
+        streamer: RunStreamSink | None,
     ) -> bool:
         """Auto-approve via the read-only-MCP allowlist, the run's
         auto_approve flag, or the persisted permission allowlist. Returns
@@ -1061,7 +1061,7 @@ class PermissionBridgeRunner:
         run_id: str,
         proc: Any,
         invocation: CliInvocation,
-        streamer: RunLogStreamer | None,
+        streamer: RunStreamSink | None,
         stdout_reader: SubprocessLineReader,
         deadline: float,
         timeout_seconds: int,
@@ -1193,7 +1193,7 @@ class PermissionBridgeRunner:
         timeout_seconds: int,
         state: _LoopState,
         stderr_lines: list[str],
-        streamer: RunLogStreamer | None,
+        streamer: RunStreamSink | None,
     ) -> BridgeResult:
         import subprocess
 

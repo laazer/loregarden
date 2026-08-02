@@ -118,6 +118,7 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
     messages: snapshot.data?.messages ?? [],
     // The in-flight POST covers the gap before the first poll reports "running".
     isBusy: isRunStatusBusy(snapshot.data?.run_status) || sendMessage.isPending,
+    activeTurnId: snapshot.data?.active_turn_id ?? null,
     isLoading: enabled && snapshot.isLoading,
     // A missing thread is recovered from above, so it is not a load failure.
     loadError:

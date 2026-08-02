@@ -30,6 +30,15 @@ export interface ChatSession {
    * composer with a stuck spinner or a falsely idle one.
    */
   isBusy: boolean;
+  /**
+   * The turn in flight, or null when nothing is running.
+   *
+   * Server-derived like `isBusy`, and for the same reason. Every surface
+   * already publishes it — as `active_turn_id`, or `active_run_id` where the
+   * run *is* the turn — so a consumer wanting to watch that turn's reasoning
+   * asks the session rather than working out which snapshot field to read.
+   */
+  activeTurnId: string | null;
   /** First load only — distinct from `isBusy`, which means the agent is working. */
   isLoading: boolean;
   /** Last send failure, already formatted for display, or null. */

@@ -27,6 +27,7 @@ from loregarden.models.domain import (
     WorkspaceRuntimeUpdate,
 )
 from loregarden.services.chat_primitives import load_parts_json, parts_json_for_reply
+from loregarden.services.chat_thinking import ChatTurnThinkingSink
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
     run_cli_agent_turn,
@@ -690,7 +691,15 @@ def invoke_ticket_studio_model(
     latest_user_message: str,
     *,
     mode: str = "chat",
+    turn_id: str = "",
 ) -> str:
+    """Run one scoper turn.
+
+    ``turn_id`` is the pending assistant row this turn settles onto. Passing it
+    streams the scoper's reasoning to that turn's thinking channel — a scope
+    turn returns a whole ticket hierarchy and is the longest wait in the app,
+    so it is the surface with the most to gain from not being a blank spinner.
+    """
     stub = stub_response(TICKET_STUDIO_CLI_PROFILE)
     if stub is not None:
         return stub
@@ -713,16 +722,22 @@ def invoke_ticket_studio_model(
         session=session,
         mode=mode,
     )
-    return run_cli_agent_turn(
-        TICKET_STUDIO_CLI_PROFILE,
-        workspace=effective_workspace,
-        prompt=prompt,
-        # "clarify"/"scope"/"survey" replies carry a JSON block whose size scales with
-        # ticket count; truncating those mid-JSON breaks parsing, so only guard against
-        # runaway output.
-        reply_cap=None if mode == "chat" else SCOPE_REPLY_CAP,
-        extra_dirs=extra_dirs,
-    )
+    thinking = ChatTurnThinkingSink(turn_id) if turn_id else None
+    try:
+        return run_cli_agent_turn(
+            TICKET_STUDIO_CLI_PROFILE,
+            workspace=effective_workspace,
+            prompt=prompt,
+            # "clarify"/"scope"/"survey" replies carry a JSON block whose size scales with
+            # ticket count; truncating those mid-JSON breaks parsing, so only guard against
+            # runaway output.
+            reply_cap=None if mode == "chat" else SCOPE_REPLY_CAP,
+            extra_dirs=extra_dirs,
+            thinking_sink=thinking,
+        )
+    finally:
+        if thinking:
+            thinking.close()
 
 
 def _repair_draft_for_session(

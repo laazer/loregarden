@@ -676,6 +676,39 @@ class BaxterChatMessage(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class ChatTurnThinking(SQLModel, table=True):
+    """The reasoning a chat turn is producing, while it is producing it.
+
+    Keyed by the turn id every chat surface already publishes as
+    ``active_turn_id`` — the pending assistant row for Home, branch and studio
+    chat, the ``AgentRun`` for ticket triage. One table keyed by that serves all
+    four; a column on each of the four message tables would not.
+
+    This row is the durable copy, not the transport. The websocket carries the
+    same text as it arrives; a reader who connects late, or reloads mid-turn,
+    reads it from here instead of watching an empty panel until the next event.
+    It lives exactly as long as the turn: when the turn settles, the transcript
+    folds into that message's ``parts_json`` as a thinking part and the row goes.
+    """
+
+    __tablename__ = "chat_turn_thinking"
+
+    turn_id: str = Field(primary_key=True)
+    #: Reasoning and tool activity, interleaved in arrival order.
+    content: str = ""
+    #: The reply as it is being written. Transient, unlike ``content``: the
+    #: settled message is the real copy, so this is never folded into it — it
+    #: exists so a turn that produces no reasoning (read-only turns emit an
+    #: empty thinking block) still has something live to show.
+    answer: str = ""
+    #: The one-line "what is it doing right now" header, e.g. "Read src/app.tsx".
+    activity: str = ""
+    #: Monotonic within a turn, so a frame that arrives out of order is dropped
+    #: by the client rather than rewinding the transcript on screen.
+    seq: int = 0
+    updated_at: datetime = Field(default_factory=utcnow, index=True)
+
+
 class TicketStudioSession(SQLModel, table=True):
     __tablename__ = "ticket_studio_sessions"
 

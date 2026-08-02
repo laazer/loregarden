@@ -1064,6 +1064,50 @@ def _m_baxter_chat_tables(conn: Connection) -> None:
     )
 
 
+def _m_chat_turn_thinking(conn: Connection) -> None:
+    """A place to keep a chat turn's reasoning while the turn is still running.
+
+    Keyed by the ``active_turn_id`` every chat surface already publishes, so one
+    table covers Home chat, branch triage, ticket triage and the studio without
+    a column on each of their four message tables. Rows are deleted as their
+    turn settles — the transcript is folded into the message's ``parts_json``
+    then — so this table is empty whenever nothing is running.
+    """
+    if table_exists(conn, "chat_turn_thinking"):
+        return
+    conn.execute(
+        text(
+            """
+            CREATE TABLE chat_turn_thinking (
+                turn_id TEXT PRIMARY KEY,
+                content TEXT NOT NULL DEFAULT '',
+                activity TEXT NOT NULL DEFAULT '',
+                seq INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+    )
+    conn.execute(
+        text("CREATE INDEX ix_chat_turn_thinking_updated ON chat_turn_thinking (updated_at)")
+    )
+
+
+def _m_chat_turn_answer(conn: Connection) -> None:
+    """Stream the reply as well as the reasoning.
+
+    A read-only turn — the advisory chat fallbacks and every Ticket Studio
+    scoper turn — emits an empty thinking block: the reply text is the only
+    thing that actually streams. Without somewhere to put it those surfaces get
+    a live panel with nothing in it.
+    """
+    add_columns_if_missing(
+        conn,
+        "chat_turn_thinking",
+        {"answer": "ALTER TABLE chat_turn_thinking ADD COLUMN answer TEXT NOT NULL DEFAULT ''"},
+    )
+
+
 def _m_git_automation(conn: Connection) -> None:
     """Columns for running a queued ticket in a worktree and landing its work.
 
@@ -1215,6 +1259,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0057_mcp_server_tool_catalog", m_mcp_server_tool_catalog),
     ("0058_global_agent_slots", m_global_agent_slots),
     ("0059_per_slot_queues", m_per_slot_queues),
+    ("0060_chat_turn_thinking", _m_chat_turn_thinking),
+    ("0061_chat_turn_answer", _m_chat_turn_answer),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

@@ -51,6 +51,7 @@ function session(overrides = {}) {
     id: "t1",
     messages: [],
     isBusy: false,
+    activeTurnId: null,
     isLoading: false,
     error: null,
     loadError: false,

@@ -1,3 +1,4 @@
+import type { ChatThinkingFrame } from "../lib/chatThinkingSocket";
 import { VITE_API_BASE } from "./viteEnv";
 
 export const API_BASE = VITE_API_BASE ?? "http://127.0.0.1:8000";
@@ -416,6 +417,9 @@ export const api = {
       body: JSON.stringify(body),
     }),
   triage: (ticketId: string) => request<TriageSnapshot>(`/api/tickets/${ticketId}/triage`),
+  /** One turn's reasoning so far. Surface-agnostic — keyed by the active turn. */
+  chatTurnThinking: (turnId: string) =>
+    request<ChatThinkingFrame>(`/api/chat-turns/${encodeURIComponent(turnId)}/thinking`),
   setTriageRuntime: (ticketId: string, body: WorkspaceRuntimeSettings) =>
     request<WorkspaceRuntimeSettings>(`/api/tickets/${ticketId}/triage/runtime`, {
       method: "PATCH",

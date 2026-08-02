@@ -27,6 +27,7 @@ from loregarden.services.branch_triage_chat_service import (
     latest_pending_turn,
 )
 from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, parts_json_for_reply
+from loregarden.services.chat_thinking import finish_chat_turn_thinking, with_thinking_part
 from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.run_concurrency import new_run_code
 from loregarden.services.triage_service import TRIAGE_AGENT_ID, TRIAGE_AGENT_NAME
@@ -101,13 +102,16 @@ def _settle(
     status: str,
     parts_json: str = EMPTY_PARTS_JSON,
 ) -> BranchTriageMessage | None:
+    # Always taken, including on the failure paths: what the agent was working
+    # through when it died is the most useful thing a failed turn produced.
+    thinking = finish_chat_turn_thinking(session, assistant_id)
     assistant = session.get(BranchTriageMessage, assistant_id)
     if not assistant:
         logger.error("Branch triage assistant message not found: %s", assistant_id)
         return None
     assistant.content = content
     assistant.status = status
-    assistant.parts_json = parts_json
+    assistant.parts_json = with_thinking_part(parts_json, thinking)
     session.add(assistant)
     if assistant.run_id:
         run = session.get(AgentRun, assistant.run_id)
@@ -157,6 +161,7 @@ def execute_branch_triage_turn_background(assistant_id: str) -> None:
                     branch,
                     latest_user_message,
                     run_id=assistant.run_id or "",
+                    turn_id=assistant_id,
                 )
                 _settle(
                     session,

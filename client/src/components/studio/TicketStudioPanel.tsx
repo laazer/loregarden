@@ -816,6 +816,7 @@ export function TicketStudioPanel({
                   messages={selectedSession.messages}
                   emptyMessage="Review the brief for questions, then generate tickets."
                   isThinking={isAssistantThinking}
+                  activeTurnId={selectedSession.active_turn_id}
                   thinkingMessage={`${TRIAGE_AGENT_NAME} is thinking…`}
                 />
 
