@@ -17,11 +17,17 @@
 
 import { useMemo, useState } from 'react';
 import { IconCloseButton } from './IconCloseButton';
+import { OverflowMenu, OverflowMenuItem } from './OverflowMenu';
 import { QueueSlotTicketPicker } from './QueueSlotTicketPicker';
 import { QueueAddToLaneModal, type QueueAddRequest } from './QueueAddToLaneModal';
+import {
+  useRunningChildTickets,
+  type RunningChildTicket,
+} from '../hooks/useRunningChildTickets';
 import { useQueueStatus } from '../state/QueueStatusContext';
 import { queueLanesApi } from '../lib/queueLanesApi';
 import type { LaneEntry, QueueLane } from '../lib/queueSocket';
+import { navigateToTicket } from '../lib/useAppNavigation';
 import './ParallelQueueVisualization.css';
 
 function formatDuration(seconds: number): string {
@@ -29,6 +35,31 @@ function formatDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const secs = Math.round(seconds % 60);
   return `${minutes}m ${secs}s`;
+}
+
+/** The same two jumps for either half of a lane: the ticket, or its live child. */
+function LaneTicketMenu({
+  label,
+  ticketId,
+  runningChild,
+}: {
+  label: string;
+  ticketId: string;
+  runningChild?: RunningChildTicket;
+}) {
+  return (
+    <OverflowMenu label={`${label} actions`}>
+      <OverflowMenuItem onSelect={() => navigateToTicket(ticketId)}>Go to ticket</OverflowMenuItem>
+      {runningChild ? (
+        <OverflowMenuItem
+          title={`${runningChild.code || runningChild.id} · ${runningChild.title}`}
+          onSelect={() => navigateToTicket(runningChild.id)}
+        >
+          Go to running child
+        </OverflowMenuItem>
+      ) : null}
+    </OverflowMenu>
+  );
 }
 
 export function ParallelQueueVisualization() {
@@ -48,16 +79,26 @@ export function ParallelQueueVisualization() {
     [lanes]
   );
 
+  const runningTicketIds = useMemo(
+    () => (lanes ?? []).flatMap((lane) => (lane.running ? [lane.running.ticket_id] : [])),
+    [lanes]
+  );
+
+  const waitingTicketIds = useMemo(
+    () => (lanes ?? []).flatMap((lane) => lane.waiting.map((entry) => entry.ticket_id)),
+    [lanes]
+  );
+
   // Every ticket the board already knows about, so the picker cannot offer one
   // that is running or queued somewhere else.
   const claimedTicketIds = useMemo(
-    () =>
-      (lanes ?? []).flatMap((lane) => [
-        ...(lane.running ? [lane.running.ticket_id] : []),
-        ...lane.waiting.map((entry) => entry.ticket_id),
-      ]),
-    [lanes]
+    () => [...runningTicketIds, ...waitingTicketIds],
+    [runningTicketIds, waitingTicketIds]
   );
+
+  // A running parent can be waiting on a child too, so both halves of a lane
+  // ask the same question.
+  const runningChildByParent = useRunningChildTickets(claimedTicketIds, runningTicketIds);
 
   const idle = !(lanes ?? []).some((lane) => lane.running || lane.waiting.length);
 
@@ -206,6 +247,15 @@ export function ParallelQueueVisualization() {
               <span className="queue-slot-badge">
                 {lane.running ? lane.running.status : 'available'}
               </span>
+              {lane.running ? (
+                <LaneTicketMenu
+                  label={
+                    lane.running.ticket_code || lane.running.ticket_title || lane.running.ticket_id
+                  }
+                  ticketId={lane.running.ticket_id}
+                  runningChild={runningChildByParent.get(lane.running.ticket_id)}
+                />
+              ) : null}
             </div>
 
             <div className="queue-slot-body">
@@ -223,38 +273,47 @@ export function ParallelQueueVisualization() {
                   <div className="queue-lane-queue-label">
                     Next in this lane ({lane.waiting.length})
                   </div>
-                  {lane.waiting.map((entry) => (
-                    <div
-                      key={entry.entry_id}
-                      className={`queue-lane-item${
-                        busyEntryId === entry.entry_id ? ' is-busy' : ''
-                      }`}
-                      draggable
-                      onDragStart={() => setDraggedEntry(entry)}
-                      onDragEnd={() => setDraggedEntry(null)}
-                      data-testid={`lane-entry-${entry.entry_id}`}
-                    >
-                      <span className="queue-lane-item-position">{entry.position}</span>
-                      <div className="queue-lane-item-copy">
-                        <div className="queue-lane-item-title">
-                          {entry.ticket_title || entry.ticket_id}
+                  {lane.waiting.map((entry) => {
+                    const runningChild = runningChildByParent.get(entry.ticket_id);
+                    const entryLabel = entry.ticket_code || entry.ticket_title || entry.ticket_id;
+                    return (
+                      <div
+                        key={entry.entry_id}
+                        className={`queue-lane-item${
+                          busyEntryId === entry.entry_id ? ' is-busy' : ''
+                        }`}
+                        draggable
+                        onDragStart={() => setDraggedEntry(entry)}
+                        onDragEnd={() => setDraggedEntry(null)}
+                        data-testid={`lane-entry-${entry.entry_id}`}
+                      >
+                        <span className="queue-lane-item-position">{entry.position}</span>
+                        <div className="queue-lane-item-copy">
+                          <div className="queue-lane-item-title">
+                            {entry.ticket_title || entry.ticket_id}
+                          </div>
+                          <div className="queue-lane-item-sub">
+                            {[entry.ticket_code, entry.workspace_name].filter(Boolean).join(' · ')}
+                          </div>
                         </div>
-                        <div className="queue-lane-item-sub">
-                          {[entry.ticket_code, entry.workspace_name].filter(Boolean).join(' · ')}
-                        </div>
+                        <LaneTicketMenu
+                          label={entryLabel}
+                          ticketId={entry.ticket_id}
+                          runningChild={runningChild}
+                        />
+                        <IconCloseButton
+                          disabled={busyEntryId === entry.entry_id}
+                          aria-label={`Remove ${entry.ticket_code || entry.ticket_title} from slot ${lane.slot_number}`}
+                          onClick={() =>
+                            void runLaneAction(
+                              () => queueLanesApi.remove(entry.entry_id),
+                              entry.entry_id
+                            )
+                          }
+                        />
                       </div>
-                      <IconCloseButton
-                        disabled={busyEntryId === entry.entry_id}
-                        aria-label={`Remove ${entry.ticket_code || entry.ticket_title} from slot ${lane.slot_number}`}
-                        onClick={() =>
-                          void runLaneAction(
-                            () => queueLanesApi.remove(entry.entry_id),
-                            entry.entry_id
-                          )
-                        }
-                      />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : null}
 
