@@ -177,7 +177,7 @@
 
 .queue-lane-item {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
@@ -202,6 +202,14 @@
   font-family: var(--mono);
   font-size: 10px;
   color: var(--txm);
+}
+
+/* The row is 6px tall padding-wise; the shared trigger is sized for toolbars. */
+.queue-lane-item .overflow-menu-trigger {
+  min-width: 22px;
+  height: 22px;
+  padding-inline: 4px;
+  font-size: 12px;
 }
 
 .queue-lane-item-copy {
@@ -373,6 +381,14 @@
   height: 8px;
   border-radius: 50%;
   background: var(--bd2);
+}
+
+/* Sits after the status badge, which owns the margin-left: auto. */
+.queue-slot-head .overflow-menu-trigger {
+  min-width: 24px;
+  height: 22px;
+  padding-inline: 5px;
+  font-size: 13px;
 }
 
 .queue-slot--busy .queue-slot-dot {

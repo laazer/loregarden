@@ -7,10 +7,12 @@
  * itself: each slot shows its own queue, and adding commits rather than stages.
  */
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ParallelQueueVisualization } from '../ParallelQueueVisualization';
+import { api } from '../../api/client';
 import { useQueueStatus, type QueueStatusValue } from '../../state/QueueStatusContext';
 import { queueLanesApi } from '../../lib/queueLanesApi';
+import { navigateToTicket } from '../../lib/useAppNavigation';
 
 jest.mock('../../state/QueueStatusContext', () => ({
   useQueueStatus: jest.fn(),
@@ -19,6 +21,16 @@ jest.mock('../../state/QueueStatusContext', () => ({
 jest.mock('../../lib/queueLanesApi', () => ({
   queueLanesApi: { add: jest.fn(), remove: jest.fn(), move: jest.fn() },
 }));
+
+jest.mock('../../api/client', () => ({
+  api: { tickets: jest.fn().mockResolvedValue([]) },
+}));
+
+jest.mock('../../lib/useAppNavigation', () => ({
+  navigateToTicket: jest.fn(),
+}));
+
+const mockTickets = api.tickets as jest.MockedFunction<typeof api.tickets>;
 
 // The picker owns its own ticket query; it has its own test.
 jest.mock('../QueueSlotTicketPicker', () => ({
@@ -108,8 +120,22 @@ const withStatus = (overrides: Record<string, unknown> = {}) => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Lane entries look up their running child on mount. Tests that care about
+  // the menu resolve this themselves; the rest render against a lookup still
+  // in flight, which is the board's first paint anyway.
+  mockTickets.mockReturnValue(new Promise(() => {}));
   withStatus();
 });
+
+/** An in-progress child of the queued entry, as `/api/tickets` returns it. */
+const childTicket = {
+  id: 'ticket-uuid-child',
+  external_id: 'LG-103',
+  title: 'Implement the gate check',
+  state: 'in_progress',
+  parent_ticket_id: 'ticket-uuid-2',
+  workflow_stage_status: 'running',
+} as unknown as Awaited<ReturnType<typeof api.tickets>>[number];
 
 describe('rendering', () => {
   test('renders the panel and its lanes', () => {
@@ -221,6 +247,83 @@ describe('per-lane queues', () => {
 
     // Joins the back of the target lane — position 1, since it is empty.
     await waitFor(() => expect(queueLanesApi.move).toHaveBeenCalledWith('entry-1', 2, 1));
+  });
+});
+
+/** Renders the board, settles the child lookup, then opens one card's menu. */
+const openLaneMenu = async (trigger: string, inProgress: unknown[] = []) => {
+  mockTickets.mockResolvedValue(inProgress as Awaited<ReturnType<typeof api.tickets>>);
+  render(<ParallelQueueVisualization />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: trigger }));
+};
+
+describe('a queued entry’s overflow menu', () => {
+  const openMenu = async (inProgress: unknown[] = []) =>
+    openLaneMenu('LG-102 actions', inProgress);
+
+  test('goes to the queued ticket', async () => {
+    await openMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Go to ticket' }));
+
+    expect(navigateToTicket).toHaveBeenCalledWith('ticket-uuid-2');
+  });
+
+  test('offers no running child when the ticket has none', async () => {
+    await openMenu();
+
+    expect(screen.queryByRole('menuitem', { name: 'Go to running child' })).not.toBeInTheDocument();
+  });
+
+  test('goes to the running child when one exists', async () => {
+    await openMenu([childTicket]);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Go to running child' }));
+
+    expect(navigateToTicket).toHaveBeenCalledWith('ticket-uuid-child');
+  });
+
+  test('ignores a child that is not running', async () => {
+    await openMenu([{ ...childTicket, workflow_stage_status: 'awaiting' }]);
+
+    expect(screen.queryByRole('menuitem', { name: 'Go to running child' })).not.toBeInTheDocument();
+  });
+});
+
+describe('a running card’s overflow menu', () => {
+  /** A child of the ticket running in slot 1, itself running in slot 2. */
+  const runningChildOfRunner = {
+    ...childTicket,
+    id: 'ticket-uuid-3',
+    external_id: 'LG-104',
+    parent_ticket_id: 'ticket-uuid-1',
+  };
+
+  test('goes to the running ticket', async () => {
+    await openLaneMenu('LG-101 actions');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Go to ticket' }));
+
+    expect(navigateToTicket).toHaveBeenCalledWith('ticket-uuid-1');
+  });
+
+  test('goes to the running child when one exists', async () => {
+    await openLaneMenu('LG-101 actions', [runningChildOfRunner]);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Go to running child' }));
+
+    expect(navigateToTicket).toHaveBeenCalledWith('ticket-uuid-3');
+  });
+
+  test('offers no running child when the ticket has none', async () => {
+    await openLaneMenu('LG-101 actions');
+
+    expect(screen.queryByRole('menuitem', { name: 'Go to running child' })).not.toBeInTheDocument();
+  });
+
+  test('an idle lane has no menu at all', async () => {
+    render(<ParallelQueueVisualization />);
+    await act(async () => {});
+
+    // Slot 2 is empty — there is no ticket to act on.
+    expect(within(screen.getByTestId('slot-2')).queryByRole('button', { name: /actions/ })).toBeNull();
   });
 });
 
