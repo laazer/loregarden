@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 
 import { API_BASE } from '../api/client';
 import { DEFAULT_PARALLEL_STATS } from '../lib/queueSocket';
-import type { ActiveRun, ParallelStats, QueuedRun } from '../lib/queueSocket';
+import type { ActiveRun, ParallelStats, QueueLane, QueuedRun } from '../lib/queueSocket';
 
 // The shapes moved down to lib/queueSocket, where the socket that carries them
 // lives; re-exported so components keep importing them from the hook they use.
@@ -16,6 +16,7 @@ export type { ActiveRun, ParallelStats, QueuedRun };
 export interface ParallelExecutionStatus {
   activeRuns: ActiveRun[];
   queuedRuns: QueuedRun[];
+  lanes: QueueLane[];
   stats: ParallelStats;
   estimatedClearSeconds: number | null;
   loading: boolean;
@@ -36,6 +37,7 @@ export function useParallelExecution(
 ): ParallelExecutionStatus {
   const [activeRuns, setActiveRuns] = useState<ActiveRun[]>([]);
   const [queuedRuns, setQueuedRuns] = useState<QueuedRun[]>([]);
+  const [lanes, setLanes] = useState<QueueLane[]>([]);
   const [stats, setStats] = useState<ParallelStats>(DEFAULT_PARALLEL_STATS);
   const [estimatedClearSeconds, setEstimatedClearSeconds] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -65,6 +67,7 @@ export function useParallelExecution(
         if (isMounted) {
           setActiveRuns(data.active_runs || []);
           setQueuedRuns(data.queued_runs || []);
+          setLanes(data.lanes || []);
           setStats(data.stats || {
             max_concurrent: 3,
             active_count: data.active_runs?.length || 0,
@@ -105,6 +108,7 @@ export function useParallelExecution(
   return {
     activeRuns,
     queuedRuns,
+    lanes,
     stats,
     estimatedClearSeconds,
     loading,

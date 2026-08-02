@@ -61,6 +61,7 @@ class FakeWebSocket {
 const SNAPSHOT: QueueStatusSnapshot = {
   active_runs: [],
   queued_runs: [],
+  lanes: [],
   available_slots: 3,
   total_slots: 3,
   queue_length: 0,

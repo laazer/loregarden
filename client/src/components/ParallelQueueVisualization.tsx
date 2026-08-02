@@ -1,6 +1,11 @@
 /**
- * The queue, as the v6 design draws it: slot usage, execution slots, and the
- * runs waiting behind them.
+ * The queue, as lanes.
+ *
+ * Each slot is a serial pipeline: what is running in it, and the tickets queued
+ * behind it. Adding a ticket to an idle lane starts it; adding to a busy one
+ * puts it in line, and it starts on its own when the lane frees. There is no
+ * Start button and nothing staged in the browser — adding is committing, which
+ * is the only way a queued entry can start itself later.
  *
  * Two things here used to be invented. Every progress bar measured against a
  * hardcoded 300-second run, and "estimated clear" was 300 plus 300 per queued
@@ -10,43 +15,14 @@
  * when there is no history to draw on the UI says so rather than guessing.
  */
 
-import { useState, useMemo, useEffect } from 'react';
-import { API_BASE } from '../api/client';
+import { useMemo, useState } from 'react';
 import { IconCloseButton } from './IconCloseButton';
 import { QueueSlotTicketPicker } from './QueueSlotTicketPicker';
+import { QueueAddToLaneModal, type QueueAddRequest } from './QueueAddToLaneModal';
 import { useQueueStatus } from '../state/QueueStatusContext';
-import { useQueueStagingStore, type StagedTicket } from '../state/queueStagingStore';
+import { queueLanesApi } from '../lib/queueLanesApi';
+import type { LaneEntry, QueueLane } from '../lib/queueSocket';
 import './ParallelQueueVisualization.css';
-
-/**
- * A slot is either running something, holding a ticket someone lined up, or
- * empty. Only the first is the server's word; the middle one is local until
- * Start is pressed.
- */
-type SlotMode = 'running' | 'staged' | 'empty';
-
-interface SlotView {
-  slotNumber: number;
-  mode: SlotMode;
-  runId?: string;
-  staged?: StagedTicket;
-  title: string;
-  subtitle: string;
-  elapsedSeconds: number;
-  status: string;
-  /** Null when the workspace has no run history — render indeterminate. */
-  progress: number | null;
-}
-
-interface QueueItemView {
-  runId: string;
-  title: string;
-  subtitle: string;
-  position: number;
-  waitSeconds: number;
-  estimatedStartAt: string;
-  isDragging: boolean;
-}
 
 function formatDuration(seconds: number): string {
   if (seconds < 60) return `${Math.round(seconds)}s`;
@@ -55,188 +31,86 @@ function formatDuration(seconds: number): string {
   return `${minutes}m ${secs}s`;
 }
 
-function formatClock(dateString: string): string {
-  if (!dateString) return '—';
-  const date = new Date(dateString);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
 export function ParallelQueueVisualization() {
-  const { activeRuns, queuedRuns, stats, estimatedClearSeconds, isWebSocket } =
-    useQueueStatus();
+  const { lanes, stats, estimatedClearSeconds, isWebSocket } = useQueueStatus();
 
-  const [draggedItem, setDraggedItem] = useState<string | null>(null);
-  const [hoverPosition, setHoverPosition] = useState<number | null>(null);
-  const [reorderError, setReorderError] = useState<string | null>(null);
-  const [startError, setStartError] = useState<string | null>(null);
-  const [startingSlots, setStartingSlots] = useState<number[]>([]);
-
-  const staged = useQueueStagingStore((state) => state.staged);
-  const stageTicket = useQueueStagingStore((state) => state.stage);
-  const unstageTicket = useQueueStagingStore((state) => state.unstage);
-  const reconcileStaged = useQueueStagingStore((state) => state.reconcile);
-
-  // A staged card is a plan, and the server can overtake a plan: the slot fills
-  // with something else, or the ticket gets started from another surface. Drop
-  // those rather than drawing a ticket as "ready to start" when it is running.
-  useEffect(() => {
-    const busySlots = (activeRuns ?? []).map((run) => run.slot_number);
-    const liveTicketIds = [...(activeRuns ?? []), ...(queuedRuns ?? [])].map(
-      (run) => run.ticket_id
-    );
-    reconcileStaged(busySlots, liveTicketIds);
-  }, [activeRuns, queuedRuns, reconcileStaged]);
-
-  const slotViews = useMemo(() => {
-    const slots: SlotView[] = [];
-
-    for (let i = 1; i <= (stats?.max_concurrent || 3); i++) {
-      const run = activeRuns?.find((r) => r.slot_number === i);
-
-      if (!run) {
-        const stagedTicket = staged[i];
-        slots.push({
-          slotNumber: i,
-          mode: stagedTicket ? 'staged' : 'empty',
-          staged: stagedTicket,
-          title: stagedTicket ? stagedTicket.title : 'Available',
-          subtitle: stagedTicket
-            ? [stagedTicket.code, stagedTicket.workspaceName].filter(Boolean).join(' · ')
-            : 'Idle · add a ticket to fill it',
-          elapsedSeconds: 0,
-          status: stagedTicket ? 'staged' : 'available',
-          progress: 0,
-        });
-        continue;
-      }
-
-      const estimate = run.estimated_duration_seconds;
-      slots.push({
-        slotNumber: i,
-        mode: 'running',
-        runId: run.run_id,
-        // The id is the fallback, not the label: a slot card is the one place
-        // in the app where you should be able to read what is running.
-        title: run.ticket_title || run.ticket_id,
-        // The workspace leads: with one shared pool, "whose work is this" is
-        // the first thing a slot card has to answer.
-        subtitle: [run.workspace_name, run.agent_name || run.agent_id, run.stage_key]
-          .filter(Boolean)
-          .join(' · '),
-        elapsedSeconds: run.elapsed_seconds,
-        status: run.status,
-        progress:
-          estimate && estimate > 0
-            ? Math.min(100, (run.elapsed_seconds / estimate) * 100)
-            : null,
-      });
-    }
-
-    return slots;
-  }, [activeRuns, stats?.max_concurrent, staged]);
-
-  const stagedSlots = useMemo(
-    () => slotViews.filter((slot) => slot.mode === 'staged'),
-    [slotViews]
-  );
-
-  const stagedTicketIds = useMemo(
-    () => Object.values(staged).map((ticket) => ticket.ticketId),
-    [staged]
-  );
-
-  const queueItems = useMemo<QueueItemView[]>(
-    () =>
-      (queuedRuns || []).map((run, index) => ({
-        runId: run.run_id,
-        title: run.ticket_title || run.ticket_id,
-        subtitle: [run.workspace_name, run.agent_name || run.agent_id, run.stage_key]
-          .filter(Boolean)
-          .join(' · '),
-        position: index + 1,
-        waitSeconds: run.wait_seconds || 0,
-        estimatedStartAt: run.estimated_start_at || '',
-        isDragging: draggedItem === run.run_id,
-      })),
-    [queuedRuns, draggedItem]
-  );
+  const [pendingAdd, setPendingAdd] = useState<QueueAddRequest | null>(null);
+  const [laneError, setLaneError] = useState<string | null>(null);
+  const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
+  const [draggedEntry, setDraggedEntry] = useState<LaneEntry | null>(null);
 
   const slotUsagePercent = stats?.max_concurrent
     ? ((stats.active_count || 0) / stats.max_concurrent) * 100
     : 0;
 
+  const totalWaiting = useMemo(
+    () => (lanes ?? []).reduce((sum, lane) => sum + lane.waiting.length, 0),
+    [lanes]
+  );
+
+  // Every ticket the board already knows about, so the picker cannot offer one
+  // that is running or queued somewhere else.
+  const claimedTicketIds = useMemo(
+    () =>
+      (lanes ?? []).flatMap((lane) => [
+        ...(lane.running ? [lane.running.ticket_id] : []),
+        ...lane.waiting.map((entry) => entry.ticket_id),
+      ]),
+    [lanes]
+  );
+
+  const idle = !(lanes ?? []).some((lane) => lane.running || lane.waiting.length);
+
   /**
-   * Launch one staged slot. `slot_number` asks the server for the slot the card
-   * is drawn in, so the card starts where it was put instead of jumping.
-   *
-   * Nothing optimistic happens on success: the staged entry is dropped and the
-   * socket snapshot draws the running slot. An optimistic slot the server
-   * declined to fill would be a lie the dashboard could not take back.
+   * Nothing optimistic: the socket reports what the server did, and a lane the
+   * server declined to change would be a lie the board could not take back.
    */
-  const startSlot = async (slot: SlotView): Promise<boolean> => {
-    if (!slot.staged) return false;
-
-    setStartError(null);
-    setStartingSlots((prev) => [...prev, slot.slotNumber]);
-
+  const runLaneAction = async (action: () => Promise<unknown>, entryId: string) => {
+    setLaneError(null);
+    setBusyEntryId(entryId);
     try {
-      const response = await fetch(
-        `${API_BASE}/api/parallel/runs/${slot.staged.ticketId}?slot_number=${slot.slotNumber}`,
-        { method: 'POST' }
-      );
-
-      if (!response.ok) {
-        const detail = await response.json().catch(() => ({}));
-        setStartError(detail.detail || `Failed to start (${response.status})`);
-        return false;
-      }
-
-      unstageTicket(slot.slotNumber);
-      return true;
+      await action();
     } catch (error) {
-      setStartError(error instanceof Error ? error.message : 'Failed to start run');
-      return false;
+      setLaneError(error instanceof Error ? error.message : 'Lane update failed');
     } finally {
-      setStartingSlots((prev) => prev.filter((n) => n !== slot.slotNumber));
+      setBusyEntryId(null);
     }
   };
 
-  /**
-   * Sequential, not `Promise.all` — each start claims a slot server-side, and
-   * firing them together races them onto the same slot.
-   */
-  const startAllStaged = async () => {
-    for (const slot of stagedSlots) {
-      const ok = await startSlot(slot);
-      if (!ok) return;
-    }
-  };
+  const renderRunning = (lane: QueueLane) => {
+    const run = lane.running;
+    if (!run) return null;
+    const estimate = run.estimated_duration_seconds;
+    const progress =
+      estimate && estimate > 0 ? Math.min(100, (run.elapsed_seconds / estimate) * 100) : null;
 
-  const handleReorderDrop = async (draggedRunId: string, newPosition: number) => {
-    setReorderError(null);
-
-    try {
-      const response = await fetch(
-        `${API_BASE}/api/parallel/queue/${draggedRunId}/reorder?new_position=${newPosition}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' } }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        setReorderError(errorData.detail || `Failed to reorder (${response.status})`);
-        return;
-      }
-
-      const result = await response.json();
-      if (result.status === 'no_change') return;
-      if (result.status !== 'reordered') {
-        setReorderError(`Reorder failed: ${result.status}`);
-      }
-      // Success needs no local update — the socket pushes the new order.
-    } catch (error) {
-      setReorderError(error instanceof Error ? error.message : 'Failed to reorder run');
-    }
+    return (
+      <>
+        {/* The id is the fallback, not the label: this is the one place you
+            should be able to read what is running. */}
+        <div className="queue-slot-title">{run.ticket_title || run.ticket_id}</div>
+        <div className="queue-slot-sub">
+          {[run.workspace_name, run.agent_name || run.agent_id, run.stage_key]
+            .filter(Boolean)
+            .join(' · ')}
+        </div>
+        <div className="queue-slot-time">{formatDuration(run.elapsed_seconds)} elapsed</div>
+        {progress === null ? (
+          // No median to measure against. An indeterminate bar says "running,
+          // duration unknown"; a percentage would be made up.
+          <div
+            className="queue-slot-bar queue-slot-bar--indeterminate"
+            data-testid={`slot-${lane.slot_number}-progress-unknown`}
+          >
+            <div className="queue-slot-bar-fill" />
+          </div>
+        ) : (
+          <div className="queue-slot-bar">
+            <div className="queue-slot-bar-fill" style={{ width: `${progress}%` }} />
+          </div>
+        )}
+      </>
+    );
   };
 
   return (
@@ -261,10 +135,10 @@ export function ParallelQueueVisualization() {
         </div>
 
         <div className="queue-stat">
-          <div className="queue-stat-label">Queue length</div>
-          <div className="queue-stat-value">{queuedRuns?.length || 0}</div>
+          <div className="queue-stat-label">Queued</div>
+          <div className="queue-stat-value">{totalWaiting}</div>
           <div className="queue-stat-sub">
-            {queuedRuns?.length ? 'runs waiting' : 'no queue'}
+            {totalWaiting ? 'tickets waiting in lanes' : 'no queue'}
           </div>
         </div>
 
@@ -274,9 +148,7 @@ export function ParallelQueueVisualization() {
             {estimatedClearSeconds === null ? '—' : formatDuration(estimatedClearSeconds)}
           </div>
           <div className="queue-stat-sub">
-            {estimatedClearSeconds === null
-              ? 'no run history yet'
-              : 'all runs complete in'}
+            {estimatedClearSeconds === null ? 'no run history yet' : 'all runs complete in'}
           </div>
         </div>
 
@@ -290,172 +162,128 @@ export function ParallelQueueVisualization() {
       </div>
 
       <div className="queue-section-head">
-        <span className="queue-section-title">Execution slots</span>
-        {stagedSlots.length > 0 ? (
-          <button
-            type="button"
-            className="queue-start-all-btn"
-            disabled={startingSlots.length > 0}
-            onClick={() => void startAllStaged()}
-            data-testid="start-all-staged"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-              <path d="m5 3 14 9-14 9z" />
-            </svg>
-            Start {stagedSlots.length} staged
-          </button>
-        ) : (
-          <span className="queue-section-hint">Add a ticket to an open slot to line up work</span>
-        )}
+        <span className="queue-section-title">Execution lanes</span>
+        <span className="queue-section-hint">
+          Adding runs it, or queues it behind what is already there
+        </span>
       </div>
 
+      {laneError ? (
+        <div className="queue-inline-error" role="alert">
+          <span className="queue-inline-error-dot" aria-hidden />
+          <span className="queue-inline-error-message">{laneError}</span>
+          <IconCloseButton onClick={() => setLaneError(null)} aria-label="Dismiss error" />
+        </div>
+      ) : null}
+
       <div className="queue-slot-grid">
-        {slotViews.map((slot) => (
+        {(lanes ?? []).map((lane) => (
           <div
-            key={`slot-${slot.slotNumber}`}
-            className={`queue-slot${slot.mode === 'running' ? ' queue-slot--busy' : ''}${
-              slot.mode === 'staged' ? ' queue-slot--staged' : ''
-            }`}
-            data-testid={`slot-${slot.slotNumber}`}
+            key={`slot-${lane.slot_number}`}
+            className={`queue-slot${lane.running ? ' queue-slot--busy' : ''}`}
+            data-testid={`slot-${lane.slot_number}`}
+            onDragOver={(event) => {
+              if (draggedEntry) event.preventDefault();
+            }}
+            onDrop={() => {
+              if (!draggedEntry) return;
+              // Dropped on the lane itself: join the back of that lane's queue.
+              void runLaneAction(
+                () =>
+                  queueLanesApi.move(
+                    draggedEntry.entry_id,
+                    lane.slot_number,
+                    lane.waiting.length + 1
+                  ),
+                draggedEntry.entry_id
+              );
+              setDraggedEntry(null);
+            }}
           >
             <div className="queue-slot-head">
               <span className="queue-slot-dot" aria-hidden />
-              <span className="queue-slot-name">Slot {slot.slotNumber}</span>
-              <span className="queue-slot-badge">{slot.status}</span>
-              {slot.mode === 'staged' ? (
-                <IconCloseButton
-                  onClick={() => unstageTicket(slot.slotNumber)}
-                  aria-label={`Remove ${slot.staged?.code || slot.title} from slot ${slot.slotNumber}`}
-                />
-              ) : null}
+              <span className="queue-slot-name">Slot {lane.slot_number}</span>
+              <span className="queue-slot-badge">
+                {lane.running ? lane.running.status : 'available'}
+              </span>
             </div>
 
             <div className="queue-slot-body">
-              <div className="queue-slot-title">{slot.title}</div>
-              <div className="queue-slot-sub">{slot.subtitle}</div>
-
-              {slot.mode === 'empty' ? (
-                <QueueSlotTicketPicker
-                  slotNumber={slot.slotNumber}
-                  excludedTicketIds={stagedTicketIds}
-                  onPick={(ticket) => stageTicket(slot.slotNumber, ticket)}
-                />
-              ) : null}
-
-              {slot.mode === 'staged' ? (
-                <button
-                  type="button"
-                  className="queue-slot-start-btn"
-                  disabled={startingSlots.includes(slot.slotNumber)}
-                  onClick={() => void startSlot(slot)}
-                  data-testid={`slot-${slot.slotNumber}-start`}
-                >
-                  {startingSlots.includes(slot.slotNumber) ? 'Starting…' : 'Start'}
-                </button>
-              ) : null}
-
-              {slot.mode === 'running' ? (
+              {lane.running ? (
+                renderRunning(lane)
+              ) : (
                 <>
-                  <div className="queue-slot-time">
-                    {formatDuration(slot.elapsedSeconds)} elapsed
+                  <div className="queue-slot-title">Available</div>
+                  <div className="queue-slot-sub">Idle · add a ticket to start one</div>
+                </>
+              )}
+
+              {lane.waiting.length ? (
+                <div className="queue-lane-queue" data-testid={`slot-${lane.slot_number}-queue`}>
+                  <div className="queue-lane-queue-label">
+                    Next in this lane ({lane.waiting.length})
                   </div>
-                  {slot.progress === null ? (
-                    // No median to measure against. An indeterminate bar says
-                    // "running, duration unknown"; a percentage would be made up.
+                  {lane.waiting.map((entry) => (
                     <div
-                      className="queue-slot-bar queue-slot-bar--indeterminate"
-                      data-testid={`slot-${slot.slotNumber}-progress-unknown`}
+                      key={entry.entry_id}
+                      className={`queue-lane-item${
+                        busyEntryId === entry.entry_id ? ' is-busy' : ''
+                      }`}
+                      draggable
+                      onDragStart={() => setDraggedEntry(entry)}
+                      onDragEnd={() => setDraggedEntry(null)}
+                      data-testid={`lane-entry-${entry.entry_id}`}
                     >
-                      <div className="queue-slot-bar-fill" />
-                    </div>
-                  ) : (
-                    <div className="queue-slot-bar">
-                      <div
-                        className="queue-slot-bar-fill"
-                        style={{ width: `${slot.progress}%` }}
+                      <span className="queue-lane-item-position">{entry.position}</span>
+                      <div className="queue-lane-item-copy">
+                        <div className="queue-lane-item-title">
+                          {entry.ticket_title || entry.ticket_id}
+                        </div>
+                        <div className="queue-lane-item-sub">
+                          {[entry.ticket_code, entry.workspace_name].filter(Boolean).join(' · ')}
+                        </div>
+                      </div>
+                      <IconCloseButton
+                        disabled={busyEntryId === entry.entry_id}
+                        aria-label={`Remove ${entry.ticket_code || entry.ticket_title} from slot ${lane.slot_number}`}
+                        onClick={() =>
+                          void runLaneAction(
+                            () => queueLanesApi.remove(entry.entry_id),
+                            entry.entry_id
+                          )
+                        }
                       />
                     </div>
-                  )}
-                </>
+                  ))}
+                </div>
               ) : null}
+
+              <QueueSlotTicketPicker
+                slotNumber={lane.slot_number}
+                excludedTicketIds={claimedTicketIds}
+                onPick={(ticket) =>
+                  setPendingAdd({
+                    ticketId: ticket.ticketId,
+                    slotNumber: lane.slot_number,
+                    workspaceSlug: ticket.workspaceSlug,
+                    laneIsIdle: !lane.running,
+                  })
+                }
+              />
             </div>
           </div>
         ))}
       </div>
 
-      {startError ? (
-        <div className="queue-inline-error" role="alert">
-          <span className="queue-inline-error-dot" aria-hidden />
-          <span className="queue-inline-error-message">{startError}</span>
-          <IconCloseButton onClick={() => setStartError(null)} aria-label="Dismiss error" />
-        </div>
+      {idle ? (
+        <div className="queue-idle">All lanes open — add a ticket to one to get started.</div>
       ) : null}
 
-      {reorderError ? (
-        <div className="queue-inline-error" role="alert">
-          <span className="queue-inline-error-dot" aria-hidden />
-          <span className="queue-inline-error-message">{reorderError}</span>
-          <IconCloseButton onClick={() => setReorderError(null)} aria-label="Dismiss error" />
-        </div>
-      ) : null}
-
-      {queuedRuns && queuedRuns.length > 0 ? (
-        <div className="queue-waiting">
-          <div className="queue-section-head">
-            <span className="queue-section-title">Waiting</span>
-            <span className="queue-section-hint">Drag to reorder priority</span>
-          </div>
-
-          <div className="queue-waiting-list">
-            {queueItems.map((item, index) => (
-              <div
-                key={item.runId}
-                className={`queue-waiting-row${item.isDragging ? ' is-dragging' : ''}${
-                  hoverPosition === index ? ' is-drop-target' : ''
-                }`}
-                draggable
-                onDragStart={() => setDraggedItem(item.runId)}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setHoverPosition(index);
-                }}
-                onDragLeave={() => setHoverPosition(null)}
-                onDrop={async () => {
-                  if (draggedItem && draggedItem !== item.runId) {
-                    // hoverPosition is 0-indexed; queue positions are 1-indexed.
-                    await handleReorderDrop(draggedItem, (hoverPosition ?? index) + 1);
-                  }
-                  setDraggedItem(null);
-                  setHoverPosition(null);
-                }}
-                onDragEnd={() => {
-                  setDraggedItem(null);
-                  setHoverPosition(null);
-                }}
-                data-testid={`queue-item-${item.position}`}
-              >
-                <span className="queue-waiting-position">{item.position}</span>
-                <div className="queue-waiting-copy">
-                  <div className="queue-waiting-title">{item.title}</div>
-                  <div className="queue-waiting-sub">{item.subtitle}</div>
-                </div>
-                <div className="queue-waiting-times">
-                  <span className="queue-waiting-wait">
-                    waited {formatDuration(item.waitSeconds)}
-                  </span>
-                  <span className="queue-waiting-start">
-                    starts ~{formatClock(item.estimatedStartAt)}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {!activeRuns?.length && !queuedRuns?.length && !stagedSlots.length ? (
-        <div className="queue-idle">All slots open — add a ticket to one to get started.</div>
-      ) : null}
+      <QueueAddToLaneModal
+        request={pendingAdd}
+        onClose={() => setPendingAdd(null)}
+        onError={setLaneError}
+      />
     </div>
   );
 }

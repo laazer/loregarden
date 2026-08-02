@@ -23,6 +23,7 @@ from loregarden.api import (
     orchestration,
     parallel,
     queue_events,
+    queue_lanes,
     queue_management,
     queue_review,
     reference_repos,
@@ -117,6 +118,7 @@ app.include_router(memory.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
 app.include_router(ci.router, prefix="/api")
 app.include_router(parallel.router)
+app.include_router(queue_lanes.router)
 app.include_router(queue_management.router)
 app.include_router(bulk_queue_operations.router)
 app.include_router(queue_review.router)

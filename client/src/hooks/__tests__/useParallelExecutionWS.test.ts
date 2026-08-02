@@ -25,6 +25,7 @@ const SNAPSHOT: QueueStatusSnapshot = {
     },
   ],
   queued_runs: [],
+  lanes: [],
   available_slots: 2,
   total_slots: 3,
   queue_length: 0,

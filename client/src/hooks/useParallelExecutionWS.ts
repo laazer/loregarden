@@ -24,6 +24,7 @@ import {
 import type {
   ActiveRun,
   ParallelStats,
+  QueueLane,
   QueuedRun,
   QueueEvent,
   QueueSocketStatus,
@@ -36,6 +37,7 @@ export type { ActiveRun, ParallelStats, QueuedRun, QueueEvent };
 export interface ParallelExecutionWSStatus {
   activeRuns: ActiveRun[];
   queuedRuns: QueuedRun[];
+  lanes: QueueLane[];
   stats: ParallelStats;
   /** Projected seconds to clear, or null when the server has no history. */
   estimatedClearSeconds: number | null;
@@ -97,6 +99,7 @@ export function useParallelExecutionWS(
       return {
         activeRuns: snapshot.active_runs,
         queuedRuns: snapshot.queued_runs,
+        lanes: snapshot.lanes ?? [],
         stats: snapshot.stats ?? DEFAULT_PARALLEL_STATS,
         estimatedClearSeconds: snapshot.estimated_clear_seconds ?? null,
         loading: false,
@@ -109,6 +112,7 @@ export function useParallelExecutionWS(
     return {
       activeRuns: fallback.activeRuns,
       queuedRuns: fallback.queuedRuns,
+      lanes: fallback.lanes,
       stats: fallback.stats,
       estimatedClearSeconds: fallback.estimatedClearSeconds,
       // Connected but still waiting on the first frame is loading too, or the

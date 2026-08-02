@@ -68,6 +68,38 @@ def _label_runs(session: Session, runs: list[dict[str, Any]]) -> None:
         run["workspace_slug"] = workspace.slug if workspace else ""
 
 
+def _build_lanes(session: Session, active_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each slot with what is running in it and what is queued behind it."""
+    from loregarden.services.queue_lanes import QueueLaneService
+
+    lanes_service = QueueLaneService(session, max_concurrent=DEFAULT_MAX_CONCURRENT)
+    running_by_slot = {run.get("slot_number"): run for run in active_runs}
+
+    lanes: list[dict[str, Any]] = []
+    for slot_number in lanes_service.lane_numbers():
+        waiting = [
+            {
+                "entry_id": entry.id,
+                "ticket_id": entry.ticket_id,
+                "workspace_id": entry.workspace_id,
+                "position": entry.position,
+                "auto_approve": entry.auto_approve,
+                "stop_at_stage_key": entry.stop_at_stage_key,
+                "queued_at": entry.created_at.isoformat() if entry.created_at else None,
+            }
+            for entry in lanes_service.waiting_in_lane(slot_number)
+        ]
+        _label_runs(session, waiting)
+        lanes.append(
+            {
+                "slot_number": slot_number,
+                "running": running_by_slot.get(slot_number),
+                "waiting": waiting,
+            }
+        )
+    return lanes
+
+
 async def build_queue_status(session: Session) -> dict[str, Any]:
     """Active runs, queued runs and slot statistics for the shared queue."""
     queue_service = ParallelQueueService(session, max_concurrent=DEFAULT_MAX_CONCURRENT)
@@ -91,6 +123,9 @@ async def build_queue_status(session: Session) -> dict[str, Any]:
     return {
         "active_runs": active_runs,
         "queued_runs": queued_runs,
+        # The board renders lanes, not one list: every waiting entry belongs to
+        # a slot, and its position is within that slot.
+        "lanes": _build_lanes(session, active_runs),
         "available_slots": stats.get("available_slots", 0),
         "total_slots": max_concurrent,
         "queue_length": len(queued_runs),

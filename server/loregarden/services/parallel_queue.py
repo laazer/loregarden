@@ -357,6 +357,10 @@ class ParallelQueueService:
             return []
 
     async def promote_from_queue(self, run_id: str | None = None) -> dict | None:
+        """Async wrapper kept for the API layer; the work is sync."""
+        return self.promote_from_queue_sync(run_id)
+
+    def promote_from_queue_sync(self, run_id: str | None = None) -> dict | None:
         """
         Check if queue has items and slots available.
         If yes, promote next queued run to active slot.
@@ -437,7 +441,7 @@ class ParallelQueueService:
                 logger.warning(f"Failed to emit queue_promoted: {e}")
 
             # Re-order remaining queue
-            await self._reorder_queue()
+            self._reorder_queue_sync()
 
             emit_execution_update()
 
@@ -465,9 +469,19 @@ class ParallelQueueService:
             return None
 
     async def on_run_complete(self, run_id: str) -> dict | None:
+        """Async wrapper kept for existing callers; the work is sync."""
+        return self.on_run_complete_sync(run_id)
+
+    def on_run_complete_sync(self, run_id: str) -> dict | None:
         """
         Called when an agent run completes.
         Frees up the slot and promotes next from queue.
+
+        Sync on purpose. Every run reaches its terminal status through
+        `complete_run_tail`, which is sync, and that is the only place a slot
+        release can be hooked so that it happens however the run was started.
+        Nothing here awaits — the session is sync — so the async twin above is
+        a signature, not a behaviour.
 
         Args:
             run_id: Completed agent run ID
@@ -526,7 +540,7 @@ class ParallelQueueService:
                 self.session.commit()
 
             # Promote from queue (promote_from_queue already emits events)
-            promoted = await self.promote_from_queue()
+            promoted = self.promote_from_queue_sync()
 
             emit_execution_update()
 
@@ -558,6 +572,9 @@ class ParallelQueueService:
             return None
 
     async def _reorder_queue(self) -> None:
+        self._reorder_queue_sync()
+
+    def _reorder_queue_sync(self) -> None:
         """Re-close the gaps in the one shared waiting line after a promotion."""
         try:
             queue_stmt = (
@@ -603,7 +620,7 @@ class ParallelQueueService:
             logger.info(f"Cancelled queued run {run_id}")
 
             # Re-order remaining queue
-            await self._reorder_queue()
+            self._reorder_queue_sync()
 
             return True
 
