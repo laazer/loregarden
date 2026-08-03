@@ -38,7 +38,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.websocket_events import emit_execution_update
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
@@ -228,6 +228,63 @@ class QueueLaneService:
 
         self.start_lane_head(slot_number)
         emit_execution_update()
+
+    def reconcile_lanes(self) -> list[int]:
+        """Put stranded entries back in line, reclaim dead lanes, then drain them.
+
+        `on_orchestration_complete` is the happy path; it does not run when the
+        release is interrupted — a crash, a restart, a failure in the tail of
+        run completion. What it leaves behind is a lane that never frees and
+        never starts what is queued behind it, so this runs on startup and on
+        every status read rather than waiting for a hand-reset.
+        """
+        self._requeue_stranded_entries()
+        freed = self.slots.reconcile_slots()
+        for slot_number in freed:
+            # No-op unless something is actually waiting in that lane.
+            self.start_lane_head(slot_number)
+        if freed:
+            emit_execution_update()
+        return freed
+
+    def _requeue_stranded_entries(self) -> None:
+        """Return lane entries that were started by nothing to their lane.
+
+        An entry leaves the waiting list when a lane starts it, and the
+        orchestration it started is what proves that happened. One marked
+        started with no orchestration behind it was never dispatched — the
+        shared-queue promoter used to take lane entries it could not run (see
+        `owned_by_shared_queue`) and mark them PROMOTED, which dropped the
+        ticket out of its lane while its slot stayed claimed. There is nothing
+        to reconstruct: the entry goes back in line and its lane starts it.
+        """
+        stranded = self.session.exec(
+            select(QueuedRun).where(
+                col(QueuedRun.run_id).is_(None),
+                col(QueuedRun.orchestration_run_id).is_(None),
+                col(QueuedRun.status).in_((QueuePosition.PROMOTED, QueuePosition.ACTIVE)),
+            )
+        ).all()
+        if not stranded:
+            return
+
+        for entry in stranded:
+            logger.warning(
+                "Lane entry %s (ticket %s) was marked %s without ever starting; requeueing it "
+                "in lane %d",
+                entry.id,
+                entry.ticket_id,
+                entry.status.value,
+                entry.slot_number,
+            )
+            entry.status = QueuePosition.QUEUED
+            entry.promoted_at = None
+            entry.started_at = None
+            self.session.add(entry)
+        self.session.commit()
+
+        for slot_number in {entry.slot_number for entry in stranded}:
+            self._renumber(slot_number)
 
     def remove_entry(self, entry_id: str) -> bool:
         """Take a waiting entry out of its lane. Running entries are untouched."""

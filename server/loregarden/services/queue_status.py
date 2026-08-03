@@ -113,7 +113,14 @@ def _build_lanes(session: Session, active_runs: list[dict[str, Any]]) -> list[di
 
 async def build_queue_status(session: Session) -> dict[str, Any]:
     """Active runs, queued runs and slot statistics for the shared queue."""
+    from loregarden.services.queue_lanes import QueueLaneService
+
     queue_service = ParallelQueueService(session, max_concurrent=DEFAULT_MAX_CONCURRENT)
+
+    # First, so the snapshot cannot report a lane as running a run that already
+    # finished. A slot whose occupant is terminal is free, and the board is
+    # where anyone would notice it was not.
+    QueueLaneService(session, max_concurrent=DEFAULT_MAX_CONCURRENT).reconcile_lanes()
 
     active_runs = await queue_service.get_active_runs()
     queued_runs = await queue_service.get_queued_runs()
@@ -129,7 +136,12 @@ async def build_queue_status(session: Session) -> dict[str, Any]:
     medians = median_duration_by_agent(session)
     max_concurrent = stats.get("max_concurrent", DEFAULT_MAX_CONCURRENT)
     for run in active_runs:
-        run["estimated_duration_seconds"] = estimate_for(medians, run.get("agent_id"))
+        # A lane's elapsed time covers a whole ticket, so a single agent's
+        # median is not something to measure it against — the card says
+        # "running, duration unknown" instead of drawing a bar that is wrong.
+        run["estimated_duration_seconds"] = (
+            None if run.get("orchestration_run_id") else estimate_for(medians, run.get("agent_id"))
+        )
 
     return {
         "active_runs": active_runs,

@@ -18,6 +18,8 @@ from uuid import uuid4
 from loregarden.models.domain import (
     AgentRun,
     AgentSlot,
+    OrchestrationRun,
+    OrchestrationRunStatus,
     QueuedRun,
     QueuePosition,
     RunStatus,
@@ -29,9 +31,37 @@ from loregarden.websocket_events import (
     emit_queue_promoted,
     emit_run_completed,
 )
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
+
+#: A run in one of these still has work in flight, so its slot stays claimed.
+#: QUEUED counts: a run holds its slot from the moment it is assigned one, which
+#: is before the executor picks it up.
+LIVE_RUN_STATUSES = (RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION)
+
+#: The same, for the orchestration that holds a lane for a whole ticket.
+LIVE_ORCHESTRATION_STATUSES = (
+    OrchestrationRunStatus.QUEUED,
+    OrchestrationRunStatus.RUNNING,
+)
+
+
+def owned_by_shared_queue():
+    """Entries this service may promote: the ones naming a run it can dispatch.
+
+    `queued_runs` holds two kinds of row. A shared-queue entry names an
+    `AgentRun` that is waiting for any free slot. A *lane* entry names only a
+    ticket — its run does not exist yet, and `QueueLaneService.start_lane_head`
+    is what starts it, in its own lane, by dispatching a whole orchestration.
+
+    Without this predicate the promoter took whichever came first: it claimed a
+    slot for `run_id=None`, dispatched nothing (`_dispatch` refuses an empty
+    id), and left the entry PROMOTED — out of its lane's waiting list forever.
+    The lane then showed an occupied slot with no ticket in it, and the ticket
+    never ran.
+    """
+    return col(QueuedRun.run_id).is_not(None)
 
 
 class ParallelQueueService:
@@ -241,9 +271,74 @@ class ParallelQueueService:
                 "message": str(e),
             }
 
+    def reconcile_slots(self) -> list[int]:
+        """Free slots whose occupant already finished. Returns the slot numbers freed.
+
+        Releasing a slot is the last thing a completing run does, and everything
+        before it — artifact refresh, log finalisation, the ticket load — can
+        fail or be interrupted by a restart. The residue is a slot pinned to a
+        run that reached a terminal status hours ago: capacity nothing can
+        reclaim, and a board that reports the lane as running whatever that run
+        last was, which is how slot 1 came to read "succeeded".
+
+        The same shape as `settle_stranded_stages` in `run_service`, for the
+        same reason: a terminal run will never be selected by a reap again, so
+        without a sweep over what it left behind the state is permanent.
+
+        Occupancy is whichever id the slot holds — an orchestration for a lane,
+        an agent run for a single-stage run. A slot holding neither, or holding
+        an id whose row is gone, is not occupied either.
+        """
+        freed: list[int] = []
+        try:
+            occupied = self.session.exec(
+                select(AgentSlot).where(AgentSlot.is_available == False)
+            ).all()
+            for slot in occupied:
+                if self._occupant_is_live(slot):
+                    continue
+                logger.info(
+                    "Reclaiming slot %d: its occupant (%s) is no longer running",
+                    slot.slot_number,
+                    slot.current_orchestration_run_id or slot.current_run_id or "nothing",
+                )
+                slot.is_available = True
+                slot.current_run_id = None
+                slot.current_orchestration_run_id = None
+                slot.released_at = datetime.now(timezone.utc)
+                self.session.add(slot)
+                freed.append(slot.slot_number)
+
+            if freed:
+                self.session.commit()
+        except Exception:
+            # Best-effort: a sweep that cannot run must not take the board's
+            # status read down with it.
+            self.session.rollback()
+            logger.warning("Failed to reconcile execution slots", exc_info=True)
+            return []
+
+        return freed
+
+    def _occupant_is_live(self, slot: AgentSlot) -> bool:
+        """Whether whatever holds this slot still has work in flight."""
+        if slot.current_orchestration_run_id:
+            orch_run = self.session.get(OrchestrationRun, slot.current_orchestration_run_id)
+            return bool(orch_run) and orch_run.status in LIVE_ORCHESTRATION_STATUSES
+        if slot.current_run_id:
+            run = self.session.get(AgentRun, slot.current_run_id)
+            return bool(run) and run.status in LIVE_RUN_STATUSES
+        return False
+
     async def get_active_runs(self) -> list[dict]:
         """
-        Get currently executing runs (occupying slots), across all workspaces.
+        Get what is executing in each occupied slot, across all workspaces.
+
+        A slot is held by an orchestration (a lane running a whole ticket) or by
+        a single agent run, and both have to be reported: keying this on
+        `current_run_id` alone left every lane-started ticket invisible, so the
+        board drew an occupied lane as "Available" and offered to start another
+        ticket in it.
 
         Returns:
             List of {
@@ -263,41 +358,80 @@ class ParallelQueueService:
             now = datetime.now(timezone.utc)
 
             for slot in active_slots:
-                if not slot.current_run_id:
+                card = self._occupant_card(slot)
+                if not card:
                     continue
 
-                # Get run details
-                run_stmt = select(AgentRun).where(AgentRun.id == slot.current_run_id)
-                run = self.session.exec(run_stmt).first()
-
-                if run:
-                    assigned_at = slot.assigned_at
-                    if assigned_at and assigned_at.tzinfo is None:
-                        assigned_at = assigned_at.replace(tzinfo=timezone.utc)
-                    elapsed = (now - assigned_at).total_seconds() if assigned_at else 0
-                    active_runs.append(
-                        {
-                            "run_id": run.id,
-                            "slot_number": slot.slot_number,
-                            "ticket_id": run.ticket_id,
-                            # The pool is shared, so which workspace a card
-                            # belongs to has to travel with the card.
-                            "workspace_id": run.workspace_id,
-                            "agent_id": run.agent_id,
-                            "stage_key": run.stage_key,
-                            "assigned_at": slot.assigned_at.isoformat()
-                            if slot.assigned_at
-                            else None,
-                            "elapsed_seconds": int(elapsed),
-                            "status": run.status.value,
-                        }
-                    )
+                assigned_at = slot.assigned_at
+                if assigned_at and assigned_at.tzinfo is None:
+                    assigned_at = assigned_at.replace(tzinfo=timezone.utc)
+                elapsed = (now - assigned_at).total_seconds() if assigned_at else 0
+                card.update(
+                    {
+                        "slot_number": slot.slot_number,
+                        "assigned_at": slot.assigned_at.isoformat() if slot.assigned_at else None,
+                        # The slot's own clock, not the current run's: a lane has
+                        # been busy since it was claimed, across every stage.
+                        "elapsed_seconds": int(elapsed),
+                    }
+                )
+                active_runs.append(card)
 
             return active_runs
 
         except Exception as e:
             logger.error(f"Error getting active runs: {e}", exc_info=True)
             return []
+
+    def _occupant_card(self, slot: AgentSlot) -> dict | None:
+        """What to show for an occupied slot, or None if nothing holds it."""
+        if slot.current_orchestration_run_id:
+            return self._orchestration_card(slot.current_orchestration_run_id)
+        if slot.current_run_id:
+            run = self.session.get(AgentRun, slot.current_run_id)
+            return self._run_card(run) if run else None
+        return None
+
+    def _orchestration_card(self, orchestration_run_id: str) -> dict | None:
+        """A lane's card: the ticket it is running, described by its live stage.
+
+        The status is the *lane's*, not the stage's. A ticket's pipeline spans
+        many agent runs and the lane keeps holding the slot between them, so
+        reporting whichever run finished last would have the card read
+        "succeeded" while the ticket is still going.
+        """
+        orch_run = self.session.get(OrchestrationRun, orchestration_run_id)
+        if not orch_run:
+            return None
+
+        run = self.session.exec(
+            select(AgentRun)
+            .where(AgentRun.orchestration_run_id == orchestration_run_id)
+            .order_by(col(AgentRun.started_at).desc())
+        ).first()
+        return {
+            "run_id": run.id if run else "",
+            "orchestration_run_id": orch_run.id,
+            "ticket_id": orch_run.ticket_id,
+            # The pool is shared, so which workspace a card belongs to has to
+            # travel with the card.
+            "workspace_id": orch_run.workspace_id,
+            "agent_id": run.agent_id if run else "",
+            "stage_key": run.stage_key if run else orch_run.current_stage_key,
+            "status": orch_run.status.value,
+        }
+
+    def _run_card(self, run: AgentRun) -> dict:
+        """A single-stage run's card."""
+        return {
+            "run_id": run.id,
+            "orchestration_run_id": run.orchestration_run_id or "",
+            "ticket_id": run.ticket_id,
+            "workspace_id": run.workspace_id,
+            "agent_id": run.agent_id,
+            "stage_key": run.stage_key,
+            "status": run.status.value,
+        }
 
     async def get_queued_runs(self) -> list[dict]:
         """
@@ -395,8 +529,9 @@ class ParallelQueueService:
                 logger.info("No available execution slots")
                 return None
 
-            # Find the requested queued run, or the first one if unspecified
-            conditions = [QueuedRun.status == QueuePosition.QUEUED]
+            # Find the requested queued run, or the first one if unspecified.
+            # Lane entries wait in `queued_runs` too and are not ours to start.
+            conditions = [QueuedRun.status == QueuePosition.QUEUED, owned_by_shared_queue()]
             if run_id is not None:
                 conditions.append(QueuedRun.run_id == run_id)
 
@@ -575,11 +710,16 @@ class ParallelQueueService:
         self._reorder_queue_sync()
 
     def _reorder_queue_sync(self) -> None:
-        """Re-close the gaps in the one shared waiting line after a promotion."""
+        """Re-close the gaps in the one shared waiting line after a promotion.
+
+        Only the shared line. A lane entry's position is its place in *its
+        lane*, so renumbering every waiting row into one sequence reordered
+        lanes that had nothing to do with this promotion.
+        """
         try:
             queue_stmt = (
                 select(QueuedRun)
-                .where(QueuedRun.status == QueuePosition.QUEUED)
+                .where(QueuedRun.status == QueuePosition.QUEUED, owned_by_shared_queue())
                 .order_by(QueuedRun.position)
             )
 

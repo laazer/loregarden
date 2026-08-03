@@ -178,15 +178,21 @@ def complete_run_tail(
                 workspace=workspace,
             )
     finalize_run_log_artifact(run, status=status, stderr=stderr)
-    _release_execution_slot(orch, run)
     return run
 
 
-def _release_execution_slot(orch: OrchestrationService, run: AgentRun) -> None:
+def release_execution_slot(orch: OrchestrationService, run: AgentRun) -> None:
     """Give back the queue slot this run held, if it held one.
 
-    Hooked here because this is the one place every run reaches its terminal
-    status, whatever started it. `ParallelRunService.on_parallel_run_complete`
+    Called from `complete_run`'s `finally` rather than from the tail above,
+    because everything in that tail is best-effort and any of it can raise: a
+    ticket that will not load returns early, an artifact refresh that fails
+    unwinds the rest. Releasing last *inside* the tail meant each of those
+    leaked a slot — the board then showed the lane running a run that had
+    finished, which is where a lane reading "succeeded" comes from.
+
+    Hooked at completion because this is the one place every run reaches its
+    terminal status, whatever started it. `ParallelRunService.on_parallel_run_complete`
     was written to do this and had no callers at all, so a run started from the
     queue claimed a slot and never gave it back — the board lost a lane per
     launch until nothing could start.

@@ -32,6 +32,7 @@ from loregarden.services.compatibility_posture import apply_compatibility_postur
 from loregarden.services.git_automation_config import serialize_override
 from loregarden.services.run_completion import (
     complete_run_tail,
+    release_execution_slot,
     settle_stage_after_failed_completion,
 )
 from loregarden.services.run_log_stream import bootstrap_run_log
@@ -805,6 +806,11 @@ class OrchestrationService:
             )
             settle_stage_after_failed_completion(self, run, exc)
             return run
+        finally:
+            # The run is terminal either way, so the slot it held is free either
+            # way. In the tail it was reachable only when nothing above it
+            # failed, and every leaked slot took a lane off the board for good.
+            release_execution_slot(self, run)
 
     def auto_resolve_gate_approval(self, approval: Approval, run: AgentRun) -> None:
         """Pre-resolve a gate approval raised under auto_approve.
