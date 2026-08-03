@@ -164,6 +164,25 @@ it("states that reach is not per-agent rather than implying grants", async () =>
   expect(await screen.findByText("Every agent")).toBeInTheDocument();
 });
 
+it("keeps the rules table scrollable and labelled with its size", async () => {
+  // The table outgrows the viewport once a registry has real agents in it.
+  // Letting it grow pushed the switchboard off the top of the column, so it
+  // scrolls itself — which only works if it stays reachable and countable.
+  mockApi.mcpServers.mockResolvedValue([mcpServer()]);
+  mockApi.studioAgents.mockResolvedValue([
+    studioAgent({ slug: "a", name: "Planner" }),
+    studioAgent({ slug: "b", name: "Reviewer" }),
+  ]);
+
+  renderPage();
+
+  // Two agent rows plus one server row.
+  const table = await screen.findByRole("table", { name: /routing rules, 3 rules/i });
+  // Keyboard users need the region focusable; it holds nothing focusable itself.
+  expect(table).toHaveAttribute("tabindex", "0");
+  expect(await screen.findByText("3")).toBeInTheDocument();
+});
+
 it("reports an agent's loregarden grant as partly unattended, not wholly", async () => {
   // Reads and bookkeeping writes are allowlisted; workflow-state writes still
   // stop for a human. Labelling the whole grant "allowlisted" would overstate

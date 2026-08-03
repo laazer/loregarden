@@ -218,6 +218,10 @@
 .mcp-switchboard {
   position: relative;
   height: 380px;
+  /* The node positions are percentages of this box, so letting the column
+     flex-shrink it collapses the agent labels back into each other. It keeps
+     its height and the column scrolls instead. */
+  flex: none;
   border: 1px solid var(--bd);
   border-radius: 16px;
   overflow: hidden;
@@ -388,10 +392,23 @@
 
 /* ── routing rules ───────────────────────────────────────────────────── */
 
+/* One row per agent plus one per server outgrows any viewport, and letting it
+   grow pushed the switchboard off the top of the column. The table scrolls
+   itself instead, so what sits above it stays put. */
 .mcp-rules {
   border: 1px solid var(--bd);
   border-radius: 13px;
-  overflow: hidden;
+  overflow-y: auto;
+  /* Takes the column's leftover height rather than a fixed slice: a tall
+     display shows more rules, and only the floor forces the column itself to
+     scroll. min-height is what stops flex from collapsing it to nothing. */
+  flex: 1 1 auto;
+  min-height: 200px;
+}
+
+.mcp-rules:focus-visible {
+  outline: 1px solid var(--ac);
+  outline-offset: -1px;
 }
 
 .mcp-rules-head,
@@ -404,6 +421,11 @@
 }
 
 .mcp-rules-head {
+  /* Scrolling a table away from its column labels is worse than not scrolling
+     it, so the header rides along. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
   background: var(--bg2);
   border-bottom: 1px solid var(--bd);
   font-size: 9.5px;
