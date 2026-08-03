@@ -39,6 +39,20 @@ class TicketState(str, Enum):
     WONT_DO = "wont_do"
 
 
+class TicketActivity(StrEnum):
+    """What is executing on a ticket right now — derived, never a column.
+
+    ``TicketState.IN_PROGRESS`` means started-and-unfinished, which most of the
+    board is; it does not mean an agent is on it. This is the orthogonal axis,
+    computed from the run tables by ``services.ticket_activity``.
+    """
+
+    RUNNING = "running"
+    AWAITING = "awaiting"
+    QUEUED = "queued"
+    IDLE = "idle"
+
+
 class WorkItemType(str, Enum):
     """Hierarchy types — matches lllm-charge convention."""
 

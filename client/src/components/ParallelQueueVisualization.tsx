@@ -28,13 +28,63 @@ import { useQueueStatus } from '../state/QueueStatusContext';
 import { queueLanesApi } from '../lib/queueLanesApi';
 import type { LaneEntry, QueueLane } from '../lib/queueSocket';
 import { navigateToTicket } from '../lib/useAppNavigation';
+import {
+  runStatusLabel,
+  ticketActivityColor,
+  ticketActivityLabel,
+  ticketStateColor,
+  ticketStateLabel,
+} from '../lib/ticketStates';
 import './ParallelQueueVisualization.css';
+
+/**
+ * Statuses where the run behind a slot is still alive. Anything else — it
+ * succeeded, failed, was cancelled — means the lane is holding a slot for work
+ * that has stopped, and the card has to say so instead of drawing a timer.
+ */
+const LIVE_RUN_STATUSES = new Set(['running', 'awaiting_permission']);
 
 function formatDuration(seconds: number): string {
   if (seconds < 60) return `${Math.round(seconds)}s`;
   const minutes = Math.floor(seconds / 60);
   const secs = Math.round(seconds % 60);
   return `${minutes}m ${secs}s`;
+}
+
+/**
+ * The ticket's own two axes, on the lane card.
+ *
+ * A lane says where a ticket sits in the queue; these say what the ticket
+ * itself is — open or blocked, and whether anything is executing on it. A
+ * queued entry whose ticket is already running elsewhere, or a slot whose
+ * ticket has gone blocked, was previously indistinguishable from a healthy one.
+ */
+function TicketStateChips({
+  state,
+  activity,
+}: {
+  state?: string;
+  activity?: string;
+}) {
+  if (!state && !activity) return null;
+  return (
+    <div className="queue-chip-row">
+      {state ? (
+        <span className="queue-chip" style={{ color: ticketStateColor(state) }}>
+          {ticketStateLabel(state)}
+        </span>
+      ) : null}
+      {activity ? (
+        <span
+          className="queue-chip"
+          data-activity={activity}
+          style={{ color: ticketActivityColor(activity) }}
+        >
+          {ticketActivityLabel(activity)}
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 /** The same two jumps for either half of a lane: the ticket, or its live child. */
@@ -121,9 +171,14 @@ export function ParallelQueueVisualization() {
   const renderRunning = (lane: QueueLane) => {
     const run = lane.running;
     if (!run) return null;
+    const live = LIVE_RUN_STATUSES.has(run.status);
     const estimate = run.estimated_duration_seconds;
+    // Only a run that is actually executing can have made progress. A parked
+    // run has not, and a finished one is not measuring anything at all.
     const progress =
-      estimate && estimate > 0 ? Math.min(100, (run.elapsed_seconds / estimate) * 100) : null;
+      run.status === 'running' && estimate && estimate > 0
+        ? Math.min(100, (run.elapsed_seconds / estimate) * 100)
+        : null;
 
     return (
       <>
@@ -135,10 +190,18 @@ export function ParallelQueueVisualization() {
             .filter(Boolean)
             .join(' · ')}
         </div>
-        <div className="queue-slot-time">{formatDuration(run.elapsed_seconds)} elapsed</div>
-        {progress === null ? (
-          // No median to measure against. An indeterminate bar says "running,
-          // duration unknown"; a percentage would be made up.
+        <TicketStateChips state={run.ticket_state} activity={run.ticket_activity} />
+        <div className="queue-slot-time">
+          {live
+            ? `${formatDuration(run.elapsed_seconds)} elapsed`
+            : // The slot is still occupied, but nothing is working. Saying
+              // "elapsed" here is what made a stuck lane look like a busy one.
+              `${runStatusLabel(run.status)} · slot held ${formatDuration(run.elapsed_seconds)}`}
+        </div>
+        {!live ? null : progress === null ? (
+          // No median to measure against, or the run is parked on an approval.
+          // An indeterminate bar says "live, duration unknown"; a percentage
+          // would be made up.
           <div
             className="queue-slot-bar queue-slot-bar--indeterminate"
             data-testid={`slot-${lane.slot_number}-progress-unknown`}
@@ -244,8 +307,11 @@ export function ParallelQueueVisualization() {
             <div className="queue-slot-head">
               <span className="queue-slot-dot" aria-hidden />
               <span className="queue-slot-name">Slot {lane.slot_number}</span>
-              <span className="queue-slot-badge">
-                {lane.running ? lane.running.status : 'available'}
+              <span
+                className="queue-slot-badge"
+                data-run-status={lane.running ? lane.running.status : 'available'}
+              >
+                {lane.running ? runStatusLabel(lane.running.status) : 'available'}
               </span>
               {lane.running ? (
                 <LaneTicketMenu
@@ -295,6 +361,10 @@ export function ParallelQueueVisualization() {
                           <div className="queue-lane-item-sub">
                             {[entry.ticket_code, entry.workspace_name].filter(Boolean).join(' · ')}
                           </div>
+                          <TicketStateChips
+                            state={entry.ticket_state}
+                            activity={entry.ticket_activity}
+                          />
                         </div>
                         <LaneTicketMenu
                           label={entryLabel}

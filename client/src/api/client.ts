@@ -39,6 +39,7 @@ import type {
   TicketState,
   StageStatus,
   WorkItemType,
+  TicketStatusSummary,
   TicketSummary,
   TicketTreeNode,
   TicketDetail,
@@ -244,6 +245,10 @@ export const api = {
     roots_only?: boolean;
     search?: string;
   }) => request<TicketSummary[]>(`/api/tickets${ticketQuery(params)}`),
+  ticketStatusSummary: (workspace?: string) =>
+    request<TicketStatusSummary>(
+      `/api/tickets/status-summary${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ""}`,
+    ),
   ticketTree: (params?: {
     workspace?: string;
     state?: TicketState | TicketState[];

@@ -4,6 +4,12 @@
 import type { ChatPart } from "../components/chat/primitives/types";
 
 export type TicketState = "backlog" | "in_progress" | "blocked" | "done" | "wont_do";
+/**
+ * What is executing on a ticket, which `state` does not say: most of the
+ * in-progress pile is idle between stages. Derived server-side from the run
+ * tables — see services/ticket_activity.py.
+ */
+export type TicketActivity = "running" | "awaiting" | "queued" | "idle";
 export type StageStatus = "pending" | "running" | "blocked" | "awaiting" | "done" | "wont_do";
 export type WorkItemType = "milestone" | "feature" | "capability" | "task" | "bug";
 
@@ -24,7 +30,22 @@ export interface TicketSummary {
   branch: string;
   child_count: number;
   next_agent?: string;
+  activity?: TicketActivity;
   stages?: WorkflowStageView[];
+}
+
+/** Board-wide counts: tickets per state, and how many are actually moving. */
+export interface TicketStatusSummary {
+  backlog: number;
+  in_progress: number;
+  blocked: number;
+  done: number;
+  wont_do: number;
+  running: number;
+  awaiting: number;
+  queued: number;
+  /** In progress with nothing running, queued, or awaiting an answer. */
+  idle: number;
 }
 
 export interface CalendarEventView {

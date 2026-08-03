@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-import { api } from "../../api/client";
+import { api, type TicketSummary } from "../../api/client";
 import { HOME_BAXTER_PROMPT_KEY } from "../../lib/homeBaxter";
 import { HomePage } from "../HomePage";
 
@@ -14,6 +14,7 @@ jest.mock("../../api/client", () => {
       ...actual.api,
       approvals: jest.fn(),
       tickets: jest.fn(),
+      ticketStatusSummary: jest.fn(),
       studioWorkflows: jest.fn(),
       runs: jest.fn(),
     },
@@ -21,6 +22,39 @@ jest.mock("../../api/client", () => {
 });
 
 const mockedApi = api as jest.Mocked<typeof api>;
+
+const EMPTY_STATUS = {
+  backlog: 0,
+  in_progress: 0,
+  blocked: 0,
+  done: 0,
+  wont_do: 0,
+  running: 0,
+  awaiting: 0,
+  queued: 0,
+  idle: 0,
+};
+
+function ticketFixture(overrides: Partial<TicketSummary> = {}): TicketSummary {
+  return {
+    id: "t1",
+    external_id: "feat-1",
+    title: "Ship Home",
+    state: "in_progress",
+    priority: 2,
+    workspace_slug: "loregarden",
+    workflow_stage_key: "impl",
+    workflow_stage_status: "pending",
+    workflow_stage_name: "Implement",
+    run_code: "",
+    work_item_type: "feature",
+    parent_ticket_id: null,
+    milestone: "",
+    branch: "",
+    child_count: 0,
+    ...overrides,
+  };
+}
 
 function renderHome(initial = "/") {
   const qc = new QueryClient({
@@ -44,8 +78,79 @@ describe("HomePage", () => {
     sessionStorage.clear();
     mockedApi.approvals.mockResolvedValue([]);
     mockedApi.tickets.mockResolvedValue([]);
+    mockedApi.ticketStatusSummary.mockResolvedValue(EMPTY_STATUS);
     mockedApi.studioWorkflows.mockResolvedValue([]);
     mockedApi.runs.mockResolvedValue([]);
+  });
+
+  describe("board status card", () => {
+    it("separates what is running from what is merely in progress", async () => {
+      mockedApi.ticketStatusSummary.mockResolvedValue({
+        ...EMPTY_STATUS,
+        backlog: 12,
+        in_progress: 20,
+        blocked: 3,
+        done: 40,
+        running: 2,
+        awaiting: 1,
+        queued: 5,
+        idle: 17,
+      });
+
+      renderHome();
+
+      const card = await screen.findByRole("article", { name: /Board status/i });
+      const stat = (key: string) =>
+        card.querySelector(`[data-activity="${key}"], [data-state="${key}"]`) as HTMLElement;
+
+      // The whole point: 20 in progress, but only 2 with an agent on them.
+      await waitFor(() => expect(within(stat("running")).getByText("2")).toBeInTheDocument());
+      expect(within(stat("idle")).getByText("17")).toBeInTheDocument();
+      expect(within(stat("in_progress")).getByText("20")).toBeInTheDocument();
+      expect(within(stat("queued")).getByText("5")).toBeInTheDocument();
+      expect(within(stat("blocked")).getByText("3")).toBeInTheDocument();
+      expect(within(card).getByText("35 open")).toBeInTheDocument();
+    });
+
+    it("leads the summary line with the running count", async () => {
+      mockedApi.ticketStatusSummary.mockResolvedValue({
+        ...EMPTY_STATUS,
+        in_progress: 9,
+        running: 1,
+      });
+      mockedApi.tickets.mockResolvedValue([ticketFixture()]);
+
+      renderHome();
+
+      await waitFor(() => {
+        expect(screen.getByText(/1 running/)).toBeInTheDocument();
+      });
+    });
+
+    it("says so rather than showing zeroes when the count cannot be fetched", async () => {
+      mockedApi.ticketStatusSummary.mockRejectedValue(new Error("boom"));
+
+      renderHome();
+
+      expect(await screen.findByText("Status unavailable")).toBeInTheDocument();
+    });
+  });
+
+  it("badges an in-progress ticket with whether it is actually running", async () => {
+    mockedApi.tickets.mockResolvedValue([
+      ticketFixture({ id: "t-run", title: "Live one", activity: "running" }),
+      ticketFixture({ id: "t-idle", title: "Parked one", activity: "idle" }),
+    ]);
+
+    renderHome();
+
+    const live = (await screen.findByText("Live one")).closest("button");
+    const parked = screen.getByText("Parked one").closest("button");
+    expect(within(live as HTMLElement).getByText("Running")).toBeInTheDocument();
+    expect(within(parked as HTMLElement).getByText("Idle")).toBeInTheDocument();
+    // Both are "In Progress" — the state alone could not tell them apart.
+    expect(within(live as HTMLElement).getByText("In Progress")).toBeInTheDocument();
+    expect(within(parked as HTMLElement).getByText("In Progress")).toBeInTheDocument();
   });
 
   it("renders Baxter-First hero and live cards", async () => {

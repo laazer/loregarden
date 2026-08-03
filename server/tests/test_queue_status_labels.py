@@ -1,0 +1,101 @@
+"""What a lane card is allowed to claim.
+
+The queue's own tables only know who holds a slot. Whether the work behind that
+slot is still moving comes from the run tables, so the snapshot has to carry it
+— otherwise a card cannot tell a working lane from a stuck one.
+"""
+
+from loregarden.models.domain import (
+    AgentRun,
+    AgentSlot,
+    QueuedRun,
+    QueuePosition,
+    RunStatus,
+    Ticket,
+    TicketState,
+    Workspace,
+)
+from loregarden.services.queue_status import build_queue_status
+from sqlmodel import Session, select
+
+
+def _workspace(session: Session) -> Workspace:
+    return session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
+
+
+def _ticket(session: Session, ws: Workspace, code: str, state: TicketState) -> Ticket:
+    ticket = Ticket(external_id=code, workspace_id=ws.id, title=f"Ticket {code}", state=state)
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    return ticket
+
+
+def _occupy_slot(session: Session, ticket: Ticket, status: RunStatus, slot_number: int = 1) -> None:
+    """Put a run in a slot, exactly as the dispatcher does."""
+    run = AgentRun(
+        run_code=f"run-{ticket.external_id}",
+        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id,
+        agent_id="backend_implementer",
+        status=status,
+    )
+    session.add(run)
+    session.commit()
+
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == slot_number)).first()
+    if slot is None:
+        slot = AgentSlot(slot_number=slot_number)
+    slot.is_available = False
+    slot.current_run_id = run.id
+    session.add(slot)
+    session.commit()
+
+
+async def test_a_lane_card_carries_the_ticket_state_and_activity(db_session):
+    ws = _workspace(db_session)
+    ticket = _ticket(db_session, ws, "LANE-1", TicketState.IN_PROGRESS)
+    _occupy_slot(db_session, ticket, RunStatus.RUNNING)
+
+    snapshot = await build_queue_status(db_session)
+    card = next(run for run in snapshot["active_runs"] if run["ticket_id"] == ticket.id)
+
+    assert card["ticket_state"] == "in_progress"
+    assert card["ticket_activity"] == "running"
+
+
+async def test_a_slot_held_by_a_finished_run_does_not_claim_to_be_running(db_session):
+    """The slot leak, as the card sees it: occupied, but nothing is working."""
+    ws = _workspace(db_session)
+    ticket = _ticket(db_session, ws, "LANE-2", TicketState.IN_PROGRESS)
+    _occupy_slot(db_session, ticket, RunStatus.SUCCEEDED)
+
+    snapshot = await build_queue_status(db_session)
+    card = next(run for run in snapshot["active_runs"] if run["ticket_id"] == ticket.id)
+
+    assert card["status"] == "succeeded"
+    assert card["ticket_activity"] == "idle"
+
+
+async def test_a_waiting_entry_carries_its_own_state(db_session):
+    ws = _workspace(db_session)
+    waiting = _ticket(db_session, ws, "LANE-3", TicketState.BLOCKED)
+    db_session.add(
+        QueuedRun(
+            workspace_id=ws.id,
+            ticket_id=waiting.id,
+            slot_number=1,
+            position=1,
+            status=QueuePosition.QUEUED,
+        )
+    )
+    db_session.commit()
+
+    snapshot = await build_queue_status(db_session)
+    entries = [entry for lane in snapshot["lanes"] for entry in lane["waiting"]]
+    entry = next(e for e in entries if e["ticket_id"] == waiting.id)
+
+    # Blocked, and queued behind whatever holds the lane — both worth seeing
+    # before you wonder why the lane is not moving.
+    assert entry["ticket_state"] == "blocked"
+    assert entry["ticket_activity"] == "queued"

@@ -16,6 +16,7 @@ from loregarden.services.run_duration_stats import (
     median_duration_by_agent,
     project_clear_time,
 )
+from loregarden.services.ticket_activity import classify_ticket_activity
 from sqlmodel import Session, select
 
 #: Slots in the shared pool. Matches the default the REST endpoint has always
@@ -27,9 +28,14 @@ def _label_runs(session: Session, runs: list[dict[str, Any]]) -> None:
     """Attach the names behind the ids, in place.
 
     The queue tables carry ids because that is what scheduling needs; a slot
-    card showing a bare uuid is not something anyone can read. Two batched
-    selects for the whole snapshot — a lookup per run would add an N+1 on the
-    path the websocket walks every five seconds.
+    card showing a bare uuid is not something anyone can read. Batched selects
+    for the whole snapshot — a lookup per run would add an N+1 on the path the
+    websocket walks every five seconds.
+
+    ``ticket_activity`` rides along because the queue's own bookkeeping only
+    knows about slots: it can say a ticket holds one, not whether an agent is
+    still on it. A card that reads the two together cannot claim a lane is
+    working when the run behind it has ended.
     """
     ticket_ids = {run["ticket_id"] for run in runs if run.get("ticket_id")}
     agent_slugs = {run["agent_id"] for run in runs if run.get("agent_id")}
@@ -50,11 +56,16 @@ def _label_runs(session: Session, runs: list[dict[str, Any]]) -> None:
         rows = session.exec(select(Workspace).where(Workspace.id.in_(workspace_ids))).all()
         workspaces = {workspace.id: workspace for workspace in rows}
 
+    activity = classify_ticket_activity(session, ticket_ids)
+
     for run in runs:
         ticket = tickets.get(run.get("ticket_id", ""))
         run["ticket_title"] = ticket.title if ticket else ""
         run["ticket_code"] = ticket.external_id if ticket else ""
         run["ticket_state"] = ticket.state.value if ticket else ""
+        run["ticket_activity"] = (
+            activity[run["ticket_id"]].value if run.get("ticket_id") in activity else ""
+        )
 
         agent = agents.get(run.get("agent_id", ""))
         # Falling back to the slug is not a placeholder: a run whose agent

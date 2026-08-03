@@ -232,6 +232,79 @@
   color: var(--bll);
 }
 
+.home-row-tags {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.home-row-activity {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* Two stat groups stacked; the card is a readout, not a list of rows. */
+.home-status-body {
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.home-status-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.home-status-label {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.home-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.home-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--bg2);
+  min-width: 0;
+}
+
+.home-stat dt {
+  font-size: 10px;
+  color: var(--txl);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-stat dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 18px;
+  line-height: 1.1;
+  color: var(--tx);
+}
+
+/* The point of the card: work with an agent on it reads as live. */
+.home-stat[data-activity="running"] {
+  border-color: rgba(111, 174, 143, 0.32);
+  background: rgba(111, 174, 143, 0.08);
+}
+
 .home-empty {
   margin: 12px 8px;
   font-size: 13px;

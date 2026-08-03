@@ -8,6 +8,7 @@ from loregarden.models.domain.enums import (
     OrchestrationDriver,
     OrchestrationRunStatus,
     StageStatus,
+    TicketActivity,
     TicketState,
     TicketStudioSessionStatus,
     WorkItemType,
@@ -121,7 +122,32 @@ class TicketSummary(SQLModel):
     branch: str = ""
     child_count: int = 0
     next_agent: str = ""
+    #: Whether anything is executing on this ticket — orthogonal to ``state``.
+    activity: TicketActivity = TicketActivity.IDLE
     stages: list[WorkflowStageView] = []
+
+
+class TicketStatusSummary(SQLModel):
+    """The board in one row: how many tickets sit in each state, and how many
+    of them are actually moving.
+
+    The state counts and the activity counts are different axes over the same
+    tickets, so they do not sum to each other. ``idle`` is the intersection the
+    board could not previously show: in progress, with nothing running.
+    """
+
+    backlog: int = 0
+    in_progress: int = 0
+    blocked: int = 0
+    done: int = 0
+    wont_do: int = 0
+    #: Across every open ticket, not only the in-progress ones — work can be
+    #: dispatched straight from the backlog.
+    running: int = 0
+    awaiting: int = 0
+    queued: int = 0
+    #: In progress with no run, no queue entry, and nothing awaiting.
+    idle: int = 0
 
 
 class TicketTreeNode(SQLModel):
