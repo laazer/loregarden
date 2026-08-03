@@ -12,8 +12,10 @@ tasks:
 
   claude:setup-token:
     desc: >-
-      Generate a long-lived Claude OAuth token so the Usage modal works around
-      the macOS Keychain restriction (one-time; token is valid ~1 year)
+      Generate a long-lived Claude OAuth token for CLI/agent auth around the
+      macOS Keychain restriction (one-time; valid ~1 year). NOT a fix for the
+      Usage modal's meters — that token is inference-scoped and the usage
+      endpoint 403s on it; see AGENTS.md for the session-key fallback
     dir: "{{.ROOT_DIR}}"
     cmds:
       - |

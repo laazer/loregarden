@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -95,16 +96,51 @@ def test_claude_oauth_ignores_cached_file_holding_captured_terminal_output(tmp_p
     assert oauth is None
 
 
-def test_claude_login_diagnosis_points_at_setup_token(monkeypatch):
-    """Kept short — it renders in a 240px-wide UI slot next to the provider
-    title (see .usage-provider-error in client/src/index.css), not a full
-    details panel."""
-    monkeypatch.setattr(usage_service, "_claude_keychain_item_exists", lambda: True)
+def test_claude_login_diagnosis_distinguishes_logged_out_from_unreadable():
+    """A readable Keychain item with empty token fields is a logged-out session,
+    not a Keychain ACL denial — it was previously reported as the latter, which
+    sent users at a workaround that could not fix it."""
+    empty_tokens = {"claudeAiOauth": {"accessToken": "", "refreshToken": "", "scopes": []}}
 
-    message = usage_service._claude_login_diagnosis()
+    with patch.object(
+        usage_service, "_read_claude_keychain_credentials", return_value=empty_tokens
+    ):
+        message = usage_service._claude_login_diagnosis()
 
-    assert "claude:setup-token" in message
-    assert len(message) < 100
+    assert "logged out" in message.lower()
+    assert "claude /login" in message
+
+
+def test_claude_login_diagnosis_reports_unreadable_keychain():
+    with (
+        patch.object(usage_service, "_read_claude_keychain_credentials", return_value=None),
+        patch.object(usage_service, "_claude_keychain_item_exists", return_value=True),
+    ):
+        message = usage_service._claude_login_diagnosis()
+
+    assert "unreadable" in message.lower()
+
+
+def test_claude_login_diagnosis_never_suggests_setup_token():
+    """`claude setup-token` mints an inference-scoped token; the usage endpoint
+    answers 403 `does not meet scope requirement user:profile`, so pointing
+    users there is a dead end no matter which state they're in."""
+    states = [
+        ({"claudeAiOauth": {"accessToken": ""}}, True),
+        (None, True),
+        (None, False),
+    ]
+    for keychain, item_exists in states:
+        with (
+            patch.object(usage_service, "_read_claude_keychain_credentials", return_value=keychain),
+            patch.object(usage_service, "_claude_keychain_item_exists", return_value=item_exists),
+        ):
+            message = usage_service._claude_login_diagnosis()
+
+        assert "setup-token" not in message
+        # Renders in a 240px-wide UI slot next to the provider title
+        # (.usage-provider-error in client/src/index.css), not a details panel.
+        assert len(message) < 100
 
 
 def test_usage_endpoint_returns_snapshot(client: TestClient):
@@ -432,10 +468,12 @@ def test_fetch_claude_usage_retries_after_unauthorized(monkeypatch):
 
 def test_fetch_claude_usage_reports_plain_not_logged_in_when_keychain_item_absent(monkeypatch):
     monkeypatch.setattr(usage_service, "_claude_oauth", lambda: None)
+    monkeypatch.setattr(usage_service, "_read_claude_keychain_credentials", lambda: None)
     monkeypatch.setattr(usage_service, "_claude_keychain_item_exists", lambda: False)
+    monkeypatch.setattr(usage_service, "_scan_claude_logs", lambda *a, **k: [])
+    monkeypatch.setattr(usage_service.claude_session_usage, "fetch_usage_body", lambda client: None)
 
-    with httpx.Client() as client:
-        result = usage_service._fetch_claude_usage(client)
+    result = usage_service._fetch_claude_usage(_FakeHttpClient())
 
     assert result.logged_in is False
     assert result.error == "Not logged in. Run `claude` to authenticate."
@@ -443,14 +481,15 @@ def test_fetch_claude_usage_reports_plain_not_logged_in_when_keychain_item_absen
 
 def test_fetch_claude_usage_reports_keychain_access_issue_when_item_unreadable(monkeypatch):
     monkeypatch.setattr(usage_service, "_claude_oauth", lambda: None)
+    monkeypatch.setattr(usage_service, "_read_claude_keychain_credentials", lambda: None)
     monkeypatch.setattr(usage_service, "_claude_keychain_item_exists", lambda: True)
+    monkeypatch.setattr(usage_service, "_scan_claude_logs", lambda *a, **k: [])
+    monkeypatch.setattr(usage_service.claude_session_usage, "fetch_usage_body", lambda client: None)
 
-    with httpx.Client() as client:
-        result = usage_service._fetch_claude_usage(client)
+    result = usage_service._fetch_claude_usage(_FakeHttpClient())
 
     assert result.logged_in is False
     assert "Keychain unreadable" in result.error
-    assert "claude:setup-token" in result.error
     assert "re-authenticate" not in result.error
     assert len(result.error) < 100
 
@@ -583,3 +622,332 @@ def test_usage_cache_not_used_when_not_logged_in(tmp_path, monkeypatch):
 
     assert cursor["from_cache"] is False
     assert cursor["meters"] == []
+
+
+# --- Claude transcript scanning ---------------------------------------------
+
+
+def _transcript_line(*, timestamp: str, model: str, output_tokens: int) -> str:
+    """One assistant row in the shape Claude Code actually writes.
+
+    Token counts live under `message.usage`, not at the top level, and the
+    timestamp is an ISO-8601 string rather than an epoch number.
+    """
+    return json.dumps(
+        {
+            "type": "assistant",
+            "timestamp": timestamp,
+            "message": {
+                "model": model,
+                "usage": {
+                    "input_tokens": 10,
+                    "output_tokens": output_tokens,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0,
+                },
+            },
+        }
+    )
+
+
+def _write_transcript(claude_home, lines) -> None:
+    project_dir = claude_home / "projects" / "-Users-someone-repo"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / "session.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _recent(hours_ago: int) -> str:
+    return (datetime.now(tz=timezone.utc) - timedelta(hours=hours_ago)).isoformat()
+
+
+def test_scan_claude_logs_reads_usage_nested_under_message(tmp_path):
+    """Regression: the scanner read `row["usage"]`, which Claude Code never
+    writes, so the per-model breakdown was silently always empty."""
+    _write_transcript(
+        tmp_path,
+        [
+            _transcript_line(timestamp=_recent(1), model="claude-opus-5", output_tokens=90),
+            _transcript_line(timestamp=_recent(2), model="claude-sonnet-5", output_tokens=40),
+        ],
+    )
+
+    with patch.object(usage_service, "_claude_home", return_value=tmp_path):
+        items = usage_service._scan_claude_logs()
+
+    assert [item.name for item in items] == ["claude-opus-5", "claude-sonnet-5"]
+    # 10 input + 90 output, and 10 + 40.
+    assert [item.amount for item in items] == [100.0, 50.0]
+
+
+def test_scan_claude_logs_still_reads_top_level_usage(tmp_path):
+    """Other writers and older transcripts put usage at the top level; the fix
+    must add the nested shape without dropping that one."""
+    line = json.dumps(
+        {
+            "timestamp": _recent(1),
+            "model": "claude-opus-5",
+            "usage": {"input_tokens": 5, "output_tokens": 5},
+        }
+    )
+    _write_transcript(tmp_path, [line])
+
+    with patch.object(usage_service, "_claude_home", return_value=tmp_path):
+        items = usage_service._scan_claude_logs()
+
+    assert [(item.name, item.amount) for item in items] == [("claude-opus-5", 10.0)]
+
+
+def test_scan_claude_logs_applies_the_days_back_window(tmp_path):
+    """Regression: ISO timestamps were parsed as numbers, yielding None, so the
+    window never excluded anything and every row ever written was counted."""
+    _write_transcript(
+        tmp_path,
+        [
+            _transcript_line(timestamp=_recent(1), model="claude-opus-5", output_tokens=90),
+            _transcript_line(timestamp=_recent(24 * 30), model="claude-opus-5", output_tokens=990),
+        ],
+    )
+
+    with patch.object(usage_service, "_claude_home", return_value=tmp_path):
+        items = usage_service._scan_claude_logs(days_back=7)
+
+    assert [(item.name, item.amount) for item in items] == [("claude-opus-5", 100.0)]
+
+
+def test_scan_claude_logs_shares_sum_to_one_hundred(tmp_path):
+    _write_transcript(
+        tmp_path,
+        [
+            _transcript_line(timestamp=_recent(1), model="claude-opus-5", output_tokens=140),
+            _transcript_line(timestamp=_recent(1), model="claude-sonnet-5", output_tokens=40),
+        ],
+    )
+
+    with patch.object(usage_service, "_claude_home", return_value=tmp_path):
+        items = usage_service._scan_claude_logs()
+
+    assert round(sum(item.share_percent for item in items), 1) == 100.0
+
+
+# --- Session-key fallback ----------------------------------------------------
+
+
+_SESSION_BODY = {
+    "five_hour": {"utilization": 33.0, "resets_at": "2026-08-03T12:00:00Z"},
+    "seven_day": {"utilization": 12.0, "resets_at": "2026-08-09T12:00:00Z"},
+}
+
+
+def _oauth_failure(error: str = "Not logged in. Run `claude` to authenticate."):
+    return usage_service.ProviderUsage(provider="claude", logged_in=False, error=error)
+
+
+def test_session_key_supplies_meters_when_oauth_has_none():
+    with (
+        patch.object(usage_service, "_fetch_claude_usage_oauth", return_value=_oauth_failure()),
+        patch.object(usage_service, "_scan_claude_logs", return_value=[]),
+        patch.object(
+            usage_service.claude_session_usage, "fetch_usage_body", return_value=_SESSION_BODY
+        ),
+    ):
+        provider = usage_service._fetch_claude_usage(_FakeHttpClient())
+
+    assert provider.error is None
+    assert provider.logged_in is True
+    assert [(m.key, m.used) for m in provider.meters] == [
+        ("five_hour", 33.0),
+        ("seven_day", 12.0),
+    ]
+
+
+def test_oauth_result_wins_when_it_already_has_meters():
+    """The official route is preferred; the fallback must not fire behind it."""
+    oauth_ok = usage_service.ProviderUsage(
+        provider="claude",
+        logged_in=True,
+        meters=[
+            usage_service.UsageMeter(
+                key="five_hour", label="Session (5h)", used=7.0, limit=100.0, unit="percent"
+            )
+        ],
+    )
+
+    with (
+        patch.object(usage_service, "_fetch_claude_usage_oauth", return_value=oauth_ok),
+        patch.object(usage_service.claude_session_usage, "fetch_usage_body") as fetch_body,
+    ):
+        provider = usage_service._fetch_claude_usage(_FakeHttpClient())
+
+    fetch_body.assert_not_called()
+    assert provider.meters[0].used == 7.0
+
+
+def test_oauth_error_is_kept_when_session_key_is_not_configured():
+    with (
+        patch.object(
+            usage_service,
+            "_fetch_claude_usage_oauth",
+            return_value=_oauth_failure("Claude Code session is logged out — run `claude /login`."),
+        ),
+        patch.object(usage_service, "_scan_claude_logs", return_value=[]),
+        patch.object(usage_service.claude_session_usage, "fetch_usage_body", return_value=None),
+    ):
+        provider = usage_service._fetch_claude_usage(_FakeHttpClient())
+
+    assert provider.error == "Claude Code session is logged out — run `claude /login`."
+    assert provider.meters == []
+
+
+def test_session_key_failure_is_surfaced_over_the_oauth_error():
+    """A user who deliberately configured the fallback needs to see why it is
+    failing; the OAuth message would just send them back to a dead end."""
+    unavailable = usage_service.claude_session_usage.SessionUsageUnavailable(
+        "claude.ai blocked the request (Cloudflare challenge)."
+    )
+
+    with (
+        patch.object(usage_service, "_fetch_claude_usage_oauth", return_value=_oauth_failure()),
+        patch.object(usage_service, "_scan_claude_logs", return_value=[]),
+        patch.object(
+            usage_service.claude_session_usage, "fetch_usage_body", side_effect=unavailable
+        ),
+    ):
+        provider = usage_service._fetch_claude_usage(_FakeHttpClient())
+
+    assert provider.error == "claude.ai blocked the request (Cloudflare challenge)."
+
+
+def test_session_key_fallback_preserves_rate_limit_backoff():
+    """Succeeding against claude.ai must not clear the Anthropic-side backoff,
+    or the next poll would hammer an endpoint that is still rate limiting."""
+    backing_off = usage_service.ProviderUsage(
+        provider="claude",
+        logged_in=True,
+        error="Claude usage API rate limited — backing off.",
+        rate_limited_until="2026-08-03T13:00:00+00:00",
+        rate_limit_streak=2,
+    )
+
+    with (
+        patch.object(usage_service, "_fetch_claude_usage_oauth", return_value=backing_off),
+        patch.object(usage_service, "_scan_claude_logs", return_value=[]),
+        patch.object(
+            usage_service.claude_session_usage, "fetch_usage_body", return_value=_SESSION_BODY
+        ),
+    ):
+        provider = usage_service._fetch_claude_usage(_FakeHttpClient())
+
+    assert provider.meters
+    assert provider.rate_limited_until == "2026-08-03T13:00:00+00:00"
+    assert provider.rate_limit_streak == 2
+
+
+def test_network_error_in_fallback_leaves_the_oauth_error_intact():
+    with (
+        patch.object(usage_service, "_fetch_claude_usage_oauth", return_value=_oauth_failure()),
+        patch.object(usage_service, "_scan_claude_logs", return_value=[]),
+        patch.object(
+            usage_service.claude_session_usage,
+            "fetch_usage_body",
+            side_effect=httpx.ConnectError("no route"),
+        ),
+    ):
+        provider = usage_service._fetch_claude_usage(_FakeHttpClient())
+
+    assert provider.error == "Not logged in. Run `claude` to authenticate."
+
+
+def test_empty_meters_do_not_overwrite_the_cached_readings(tmp_path, monkeypatch):
+    """An error-free response carrying no meters means the payload shape moved,
+    not that usage is zero — caching it would destroy the last good readings."""
+    cache_path = tmp_path / "data" / usage_service.USAGE_CACHE_FILENAME
+    monkeypatch.setattr(usage_service, "_usage_cache_path", lambda: cache_path)
+    cache_path.parent.mkdir(parents=True)
+    cache_path.write_text(
+        json.dumps(
+            {
+                "claude": {
+                    "provider": "claude",
+                    "logged_in": True,
+                    "error": None,
+                    "meters": [
+                        {
+                            "key": "five_hour",
+                            "label": "Session (5h)",
+                            "used": 55.0,
+                            "limit": 100.0,
+                            "unit": "percent",
+                            "percent_used": 55.0,
+                            "resets_at": None,
+                            "status": "ok",
+                        }
+                    ],
+                    "breakdown": [],
+                    "cached_at": "2026-07-05T20:00:00+00:00",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    shape_drift = usage_service.ProviderUsage(provider="claude", logged_in=True, error=None)
+    cursor = usage_service.ProviderUsage(provider="cursor", logged_in=False, error="No Cursor.")
+
+    monkeypatch.setattr(
+        usage_service, "_fetch_claude_usage", lambda client, cache_entry=None: shape_drift
+    )
+    monkeypatch.setattr(
+        usage_service, "_fetch_cursor_usage", lambda client, cache_entry=None: cursor
+    )
+
+    snapshot = usage_service.get_usage_snapshot()
+
+    cached = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert cached["claude"]["meters"][0]["used"] == 55.0
+    claude = next(p for p in snapshot["providers"] if p["provider"] == "claude")
+    assert claude["from_cache"] is True
+
+
+def test_scan_claude_logs_skips_transcripts_older_than_the_window(tmp_path):
+    """Reading every transcript ever written cost ~13s per poll against a 1.4 GB
+    tree. A file last written before the window can only hold rows outside it."""
+    project_dir = tmp_path / "projects" / "-Users-someone-repo"
+    project_dir.mkdir(parents=True)
+
+    fresh = project_dir / "fresh.jsonl"
+    fresh.write_text(
+        _transcript_line(timestamp=_recent(1), model="claude-opus-5", output_tokens=90) + "\n",
+        encoding="utf-8",
+    )
+    stale = project_dir / "stale.jsonl"
+    stale.write_text(
+        # An in-window timestamp inside a long-untouched file: only the mtime
+        # check can exclude it, so this fails if the skip regresses.
+        _transcript_line(timestamp=_recent(1), model="claude-sonnet-5", output_tokens=990) + "\n",
+        encoding="utf-8",
+    )
+    stale_mtime = (datetime.now(tz=timezone.utc) - timedelta(days=30)).timestamp()
+    os.utime(stale, (stale_mtime, stale_mtime))
+
+    with patch.object(usage_service, "_claude_home", return_value=tmp_path):
+        items = usage_service._scan_claude_logs(days_back=7)
+
+    assert [(item.name, item.amount) for item in items] == [("claude-opus-5", 100.0)]
+
+
+def test_breakdown_survives_a_missing_credential(monkeypatch):
+    """The breakdown is parsed from local transcripts, so a logged-out account
+    still gets one — the no-credential branch used to drop it on the floor."""
+    item = usage_service.UsageBreakdownItem(
+        name="claude-opus-5", amount=100.0, unit="tokens", share_percent=100.0
+    )
+    monkeypatch.setattr(usage_service, "_claude_oauth", lambda: None)
+    monkeypatch.setattr(usage_service, "_read_claude_keychain_credentials", lambda: None)
+    monkeypatch.setattr(usage_service, "_claude_keychain_item_exists", lambda: False)
+    monkeypatch.setattr(usage_service, "_scan_claude_logs", lambda *a, **k: [item])
+    monkeypatch.setattr(usage_service.claude_session_usage, "fetch_usage_body", lambda client: None)
+
+    result = usage_service._fetch_claude_usage(_FakeHttpClient())
+
+    assert result.logged_in is False
+    assert [b.name for b in result.breakdown] == ["claude-opus-5"]
