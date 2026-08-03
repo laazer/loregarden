@@ -115,3 +115,30 @@ def m_per_slot_queues(conn: Connection) -> None:
                 ),
             },
         )
+
+
+def m_lane_entry_kind(conn: Connection) -> None:
+    """Let a lane entry be a single stage, not only a whole ticket.
+
+    Lanes were fed by the queue board, which only ever runs a ticket. Admission
+    control feeds them from everywhere else too — the Dashboard, the chat
+    primitives, MCP — and "run this one stage" is a real request there. Parking
+    it as an orchestration would silently turn it into a much bigger one, so an
+    entry now says which it is and, for a stage, which stage.
+
+    Existing entries are all whole-ticket runs, which is the default.
+    """
+    if not table_exists(conn, "queued_runs"):
+        return
+
+    add_columns_if_missing(
+        conn,
+        "queued_runs",
+        {
+            "entry_kind": (
+                "ALTER TABLE queued_runs ADD COLUMN entry_kind TEXT NOT NULL "
+                "DEFAULT 'orchestration'"
+            ),
+            "stage_key": ("ALTER TABLE queued_runs ADD COLUMN stage_key TEXT NOT NULL DEFAULT ''"),
+        },
+    )

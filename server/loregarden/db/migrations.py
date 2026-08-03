@@ -32,7 +32,11 @@ from loregarden.db.migrations_mcp import (
     m_mcp_servers_table,
     m_mcp_tool_calls_table,
 )
-from loregarden.db.migrations_queue import m_global_agent_slots, m_per_slot_queues
+from loregarden.db.migrations_queue import (
+    m_global_agent_slots,
+    m_lane_entry_kind,
+    m_per_slot_queues,
+)
 from loregarden.db.migrations_templates import (
     m_adversarial_planning,
     m_ensure_terminal_stage,
@@ -1261,6 +1265,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0059_per_slot_queues", m_per_slot_queues),
     ("0060_chat_turn_thinking", _m_chat_turn_thinking),
     ("0061_chat_turn_answer", _m_chat_turn_answer),
+    ("0062_lane_entry_kind", m_lane_entry_kind),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
