@@ -10,6 +10,7 @@ from loregarden.models.domain.enums import (
     ApprovalKind,
     ApprovalStatus,
     AutoFixStatus,
+    BtwStatus,
     CIStatus,
     CycleStatus,
     EventType,
@@ -374,6 +375,42 @@ class RunMessage(SQLModel, table=True):
     content: str = ""
     created_at: datetime = Field(default_factory=utcnow)
     delivered_at: datetime | None = None
+
+
+class BtwExchange(SQLModel, table=True):
+    """A question put to a ticket while one of its runs is working.
+
+    Distinct from ``RunMessage``, which is imperative and one-way: an aside
+    expects an answer back and must not change the work. It is answered by a
+    separate read-only observer turn rather than by the run itself, so
+    ``observed_run_id`` is what the answer is *about*, not what produced it.
+
+    The row is the durable half of the exchange. The answer is also mirrored
+    into ``triage_messages`` so the ticket keeps one readable transcript, but a
+    mirror cannot carry a pending state, and a turn orphaned by a restart has to
+    be settleable — which is what ``status`` is for.
+    """
+
+    __tablename__ = "btw_exchanges"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    # Null when nothing was running: an aside asked against an idle ticket is
+    # still an aside, and refusing it would make the composer behave differently
+    # for no reason the operator can see.
+    observed_run_id: str | None = Field(default=None, foreign_key="agent_runs.id", index=True)
+    question: str = ""
+    answer: str = ""
+    status: BtwStatus = Field(
+        default=BtwStatus.PENDING,
+        sa_column=_str_enum_column(BtwStatus, BtwStatus.PENDING, index=True),
+    )
+    error: str = ""
+    # Set when the question was also written into the live run's stdin. Nothing
+    # here records what the run said back — that lands in its own log.
+    escalated_at: datetime | None = None
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+    answered_at: datetime | None = None
 
 
 class Artifact(SQLModel, table=True):

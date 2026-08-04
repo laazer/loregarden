@@ -231,6 +231,19 @@ class WorktreeState(str, Enum):
     CLEANUP = "cleanup"
 
 
+class BtwStatus(str, Enum):
+    """Lifecycle of an aside asked while a run is working.
+
+    Escalation is deliberately not a state here: a question can be put to the
+    working agent before or after the observer answers it, so it is an
+    independent fact (``escalated_at``) rather than a point on this line.
+    """
+
+    PENDING = "pending"
+    ANSWERED = "answered"
+    FAILED = "failed"
+
+
 class QueuePosition(str, Enum):
     QUEUED = "queued"
     SCHEDULED = "scheduled"

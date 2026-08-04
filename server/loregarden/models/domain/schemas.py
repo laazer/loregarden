@@ -497,6 +497,10 @@ class TriageMessageCreate(SQLModel):
     auto_approve: bool = False
 
 
+class BtwQuestionCreate(SQLModel):
+    content: str
+
+
 class StudioGateCheck(SQLModel):
     kind: str = "workflow_gate"  # workflow_gate | ac_review | human_approval
     title: str = ""

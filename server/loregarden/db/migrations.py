@@ -1112,6 +1112,40 @@ def _m_chat_turn_answer(conn: Connection) -> None:
     )
 
 
+def _m_btw_exchanges(conn: Connection) -> None:
+    """Somewhere to keep a question asked while a run is still working.
+
+    Not a column on ``run_messages``: that channel is imperative, one-way, and
+    keyed to a run that must exist and be steerable. An aside expects an answer,
+    is answered by a different agent than the one it is about, and stays valid
+    when nothing is running at all.
+    """
+    if table_exists(conn, "btw_exchanges"):
+        return
+    conn.execute(
+        text(
+            """
+            CREATE TABLE btw_exchanges (
+                id TEXT PRIMARY KEY,
+                ticket_id TEXT NOT NULL,
+                observed_run_id TEXT,
+                question TEXT NOT NULL DEFAULT '',
+                answer TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                error TEXT NOT NULL DEFAULT '',
+                escalated_at TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                answered_at TEXT
+            )
+            """
+        )
+    )
+    conn.execute(text("CREATE INDEX ix_btw_exchanges_ticket ON btw_exchanges (ticket_id)"))
+    conn.execute(text("CREATE INDEX ix_btw_exchanges_status ON btw_exchanges (status)"))
+    conn.execute(text("CREATE INDEX ix_btw_exchanges_run ON btw_exchanges (observed_run_id)"))
+    conn.execute(text("CREATE INDEX ix_btw_exchanges_created ON btw_exchanges (created_at)"))
+
+
 def _m_git_automation(conn: Connection) -> None:
     """Columns for running a queued ticket in a worktree and landing its work.
 
@@ -1266,6 +1300,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0060_chat_turn_thinking", _m_chat_turn_thinking),
     ("0061_chat_turn_answer", _m_chat_turn_answer),
     ("0062_lane_entry_kind", m_lane_entry_kind),
+    ("0063_btw_exchanges", _m_btw_exchanges),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

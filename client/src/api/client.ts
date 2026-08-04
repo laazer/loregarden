@@ -91,6 +91,7 @@ import type {
   CIStatusResponse,
   ReloadStatus,
   RunLog,
+  BtwExchange,
   RunMessage,
   TicketLedger,
   TicketArtifactsFeed,
@@ -422,6 +423,18 @@ export const api = {
       body: JSON.stringify(body),
     }),
   triage: (ticketId: string) => request<TriageSnapshot>(`/api/tickets/${ticketId}/triage`),
+  ticketAsides: (ticketId: string) =>
+    request<{ exchanges: BtwExchange[] }>(`/api/tickets/${ticketId}/btw`),
+  askAside: (ticketId: string, content: string) =>
+    request<BtwExchange>(`/api/tickets/${ticketId}/btw`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
+  /** Put an answered-from-the-record aside to the running agent itself. */
+  escalateAside: (ticketId: string, exchangeId: string) =>
+    request<BtwExchange>(`/api/tickets/${ticketId}/btw/${exchangeId}/escalate`, {
+      method: "POST",
+    }),
   /** One turn's reasoning so far. Surface-agnostic — keyed by the active turn. */
   chatTurnThinking: (turnId: string) =>
     request<ChatThinkingFrame>(`/api/chat-turns/${encodeURIComponent(turnId)}/thinking`),

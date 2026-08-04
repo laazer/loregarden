@@ -415,6 +415,26 @@ export function primitiveGallerySections(
         ],
       },
     ),
+    section(
+      "btw",
+      "btw — why is it shelling out to git there?",
+      "Asked while the run kept going; answered from its log, not by it.",
+      {
+        primitive: "btw",
+        exchange_id: "gallery-aside",
+        ticket_id: primaryId,
+        title: "Aside",
+        question: "btw — why is it shelling out to git there?",
+        answer:
+          "The log shows it calling `run_git` for the branch check before the gate. " +
+          "Nothing in the log says why it chose that over the cached ref — that part " +
+          "is inference, so it is worth asking the agent itself.",
+        observed_agent_id: "backend_implementer",
+        observed_stage_key: "implementation",
+        // Nothing to look up: this exchange id refers to no real aside.
+        interactive: false,
+      },
+    ),
     section("giphy", "React with a gif.", "Purely for fun.", {
       primitive: "giphy",
       giphy_id: "JIX9t2j0ZTN9S",

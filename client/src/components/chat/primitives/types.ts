@@ -24,6 +24,7 @@ export type PrimitiveKind =
   | "branch_history"
   | "commit"
   | "qa"
+  | "btw"
   | "giphy";
 
 export interface TextPart {
@@ -206,6 +207,29 @@ export interface QAPart {
   interactive?: boolean;
 }
 
+export interface BtwPart {
+  primitive: "btw";
+  exchange_id: string;
+  ticket_id: string;
+  question: string;
+  answer?: string;
+  /**
+   * The run the aside was *about* — never who answered it. Every answer here is
+   * an observer's reconstruction from that run's log; the working agent's own
+   * reply to an escalated aside lands in its log, not on a card.
+   */
+  observed_run_id?: string | null;
+  observed_agent_id?: string | null;
+  observed_stage_key?: string | null;
+  escalated?: boolean;
+  /**
+   * False renders the card from this part alone — no live lookup, no escalation.
+   * For previews, whose `exchange_id` refers to no real aside.
+   */
+  interactive?: boolean;
+  title?: string | null;
+}
+
 export interface GiphyPart {
   primitive: "giphy";
   giphy_id?: string | null;
@@ -237,6 +261,7 @@ export type ChatPart =
   | BranchHistoryPart
   | CommitPart
   | QAPart
+  | BtwPart
   | GiphyPart;
 
 export type UnknownPart = { primitive: string; [key: string]: unknown };
