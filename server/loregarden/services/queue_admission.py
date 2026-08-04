@@ -1,0 +1,216 @@
+"""Admission control: the slot pool is the machine's limit, not the board's.
+
+The lanes bound how much runs at once — but only for work started *from* the
+queue board. The Dashboard, the chat primitives and the MCP tools each reached
+the orchestrator directly, so an agent driving this control plane could start
+unbounded concurrent work while the board showed three idle lanes. The pool
+described itself as this machine's capacity and enforced one surface's.
+
+This is the gate those surfaces call:
+
+    reservation = QueueAdmissionService(session).reserve_orchestration(ticket)
+    if not reservation.admitted:
+        return ...  # parked in a lane; tell the caller where
+    run = ...       # the caller starts work exactly as it always did
+    reservation.bind(run_id=..., orchestration_run_id=...)
+
+**Reserve, don't dispatch.** An earlier cut had this service start the work
+itself through the lane. That quietly dropped whatever each caller passes to
+its own start path — `timeout_seconds`, the driver, `max_stages` — because the
+lane knows one way to start a thing. Reserving a slot and handing it back keeps
+every caller's semantics and still makes the claim real.
+
+**Only outside requests come here.** Promotion, approval-resume and conflict
+resolution all continue work that already holds a lane; gating them would
+deadlock, since the thing occupying the lane is the thing waiting to proceed.
+The gate lives at the external entry points rather than inside
+`schedule_orchestration` / `schedule_agent_run` for exactly that reason —
+bypass flags threaded through the internals would be one missed call site away
+from a stall.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+
+from loregarden.models.domain import AgentSlot, Ticket
+from loregarden.services.queue_lanes import QueueLaneService
+from loregarden.websocket_events import emit_execution_update
+from sqlmodel import Session, select
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class Reservation:
+    """A claimed slot, or the lane a request was parked in instead."""
+
+    admitted: bool
+    slot_number: int | None = None
+    position: int | None = None
+    message: str = ""
+    _session: Session | None = field(default=None, repr=False)
+
+    def bind(self, *, run_id: str | None = None, orchestration_run_id: str | None = None) -> None:
+        """Point the reserved slot at what the caller actually started.
+
+        Until this lands the slot is claimed but names nothing, which is what
+        stops a second request slipping into it. Callers must either bind or
+        release, or the lane stays held by a run that does not exist.
+        """
+        if not self.admitted or self.slot_number is None or self._session is None:
+            return
+        slot = _slot(self._session, self.slot_number)
+        if not slot:
+            return
+        if run_id:
+            slot.current_run_id = run_id
+        if orchestration_run_id:
+            slot.current_orchestration_run_id = orchestration_run_id
+        self._session.add(slot)
+        self._session.commit()
+        emit_execution_update()
+
+    def release(self) -> None:
+        """Give the slot back — the caller's start failed or did nothing."""
+        if not self.admitted or self.slot_number is None or self._session is None:
+            return
+        slot = _slot(self._session, self.slot_number)
+        if not slot:
+            return
+        slot.is_available = True
+        slot.current_run_id = None
+        slot.current_orchestration_run_id = None
+        slot.released_at = datetime.now(timezone.utc)
+        self._session.add(slot)
+        self._session.commit()
+        emit_execution_update()
+
+    def as_dict(self) -> dict:
+        return {
+            "admitted": self.admitted,
+            "slot_number": self.slot_number,
+            "position": self.position,
+            "message": self.message,
+        }
+
+
+def _slot(session: Session, slot_number: int) -> AgentSlot | None:
+    return session.exec(select(AgentSlot).where(AgentSlot.slot_number == slot_number)).first()
+
+
+class QueueAdmissionService:
+    def __init__(self, session: Session, max_concurrent: int = 3) -> None:
+        self.session = session
+        self.lanes = QueueLaneService(session, max_concurrent=max_concurrent)
+
+    def reserve_orchestration(
+        self,
+        ticket: Ticket,
+        *,
+        auto_approve: bool = False,
+        stop_at_stage_key: str | None = None,
+    ) -> Reservation:
+        """A slot to run the whole ticket in, or a place in line."""
+        return self._reserve(
+            ticket,
+            entry_kind="orchestration",
+            stage_key="",
+            auto_approve=auto_approve,
+            stop_at_stage_key=stop_at_stage_key,
+        )
+
+    def reserve_stage(
+        self,
+        ticket: Ticket,
+        *,
+        stage_key: str | None = None,
+        auto_approve: bool = False,
+    ) -> Reservation:
+        """A slot to run one stage in, or a place in line.
+
+        Parked as a stage rather than an orchestration: "run this one stage" and
+        "run everything left" are different requests, and silently promoting one
+        to the other would be a surprise measured in agent-hours.
+        """
+        return self._reserve(
+            ticket,
+            entry_kind="stage",
+            stage_key=stage_key or "",
+            auto_approve=auto_approve,
+            stop_at_stage_key=None,
+        )
+
+    # ---- internals -----------------------------------------------------
+
+    def _reserve(
+        self,
+        ticket: Ticket,
+        *,
+        entry_kind: str,
+        stage_key: str,
+        auto_approve: bool,
+        stop_at_stage_key: str | None,
+    ) -> Reservation:
+        self.lanes.slots.initialize_slots()
+
+        free = self.session.exec(
+            select(AgentSlot).where(AgentSlot.is_available == True).order_by(AgentSlot.slot_number)
+        ).first()
+
+        if free:
+            # Claimed before the caller starts anything, so two requests
+            # arriving together cannot both read the slot as free.
+            free.is_available = False
+            free.assigned_at = datetime.now(timezone.utc)
+            free.current_run_id = None
+            free.current_orchestration_run_id = None
+            self.session.add(free)
+            self.session.commit()
+            return Reservation(
+                admitted=True,
+                slot_number=free.slot_number,
+                message=f"Started in slot {free.slot_number}",
+                _session=self.session,
+            )
+
+        lane = self._shortest_lane()
+        result = self.lanes.add_to_lane(
+            ticket_id=ticket.id,
+            slot_number=lane,
+            auto_approve=auto_approve,
+            stop_at_stage_key=stop_at_stage_key,
+            entry_kind=entry_kind,
+            stage_key=stage_key,
+        )
+        position = result.get("position")
+        logger.info(
+            "Admission queued %s for ticket %s in lane %d at position %s",
+            entry_kind,
+            ticket.id,
+            lane,
+            position,
+        )
+        return Reservation(
+            admitted=False,
+            slot_number=lane,
+            position=position,
+            message=(
+                f"All {self.lanes.max_concurrent} execution slots are busy. "
+                f"Queued in slot {lane} at position {position}."
+            ),
+            _session=self.session,
+        )
+
+    def _shortest_lane(self) -> int:
+        """The lane with the least waiting behind it, ties going to the lowest.
+
+        Shortest rather than round-robin: the queue is a wait, and the honest
+        default is the lane that starts soonest.
+        """
+        lanes = self.lanes.lane_numbers()
+        if not lanes:
+            raise ValueError("No execution slots are configured")
+        return min(lanes, key=lambda number: (len(self.lanes.waiting_in_lane(number)), number))

@@ -182,6 +182,10 @@ class TicketDependencyRequest(SQLModel):
 
 
 class TicketDetail(TicketSummary):
+    #: Set only on the responses that start work. When the slot pool is full the
+    #: request is queued rather than started, and the caller has to be able to
+    #: tell those apart — the ticket looks the same either way.
+    admission: dict | None = None
     description: str
     acceptance_criteria: list[str]
     #: Tickets this one waits for (its prerequisites) and tickets waiting on it.

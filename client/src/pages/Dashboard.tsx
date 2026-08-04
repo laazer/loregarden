@@ -37,6 +37,7 @@ import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } f
 import { navigateToPage, navigateToStudioTicketSession, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
 import { isArtifactTab, isArtifactsSubTab, PRIMARY_ARTIFACT_TABS } from "../lib/appNavigation";
 import { useUiStore, type PaneId } from "../state/uiStore";
+import { pushToast } from "../state/toastStore";
 import { agentsAssembleLabel } from "../lib/workflowHelpers";
 import { PANE_LABELS } from "../lib/appTopbarConfig";
 import {
@@ -146,6 +147,24 @@ function canRunStage(
   return { allowed: true, reason: `${verb} ${stage.name}` };
 }
 
+
+/**
+ * Say when a start became a wait.
+ *
+ * The execution slots are shared with the queue board, so a full pool turns
+ * "run this" into "queued behind two others" — and the ticket that comes back
+ * looks the same either way. Silence here would read as nothing happening,
+ * which is exactly the confusion that made the board look broken.
+ */
+function notifyIfQueued(detail: { admission?: { admitted: boolean; message: string } | null }) {
+  const admission = detail?.admission;
+  if (!admission || admission.admitted) return;
+  pushToast({
+    tone: "info",
+    title: "Queued — all slots busy",
+    message: admission.message,
+  });
+}
 
 export function Dashboard() {
   const qc = useQueryClient();
@@ -306,7 +325,8 @@ export function Dashboard() {
         auto_approve?: boolean;
       };
     }) => api.orchestrate(ticketId, options),
-    onSuccess: (_data, { ticketId }) => {
+    onSuccess: (data, { ticketId }) => {
+      notifyIfQueued(data);
       qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
       setAssembleModalOpen(false);
@@ -346,7 +366,8 @@ export function Dashboard() {
         auto_approve: vars?.autoApprove,
         timeout_seconds: vars?.timeoutSeconds,
       }),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      notifyIfQueued(data);
       qc.invalidateQueries({ queryKey: ["ticket", selectedId] });
       qc.invalidateQueries({ queryKey: ["ticket-tree"] });
       qc.invalidateQueries({ queryKey: ["runs", selectedId] });

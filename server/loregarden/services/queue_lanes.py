@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from loregarden.models.domain import (
+    AgentRun,
     AgentSlot,
     OrchestrationRun,
     QueuedRun,
@@ -79,8 +80,15 @@ class QueueLaneService:
         slot_number: int,
         auto_approve: bool = False,
         stop_at_stage_key: str | None = None,
+        entry_kind: str = "orchestration",
+        stage_key: str = "",
     ) -> dict:
         """Put a ticket in a lane, starting it if the lane is idle.
+
+        `entry_kind` is "orchestration" (run the whole ticket, what the board
+        does) or "stage" (run one stage, what the Dashboard and MCP ask for).
+        Parking a stage request as an orchestration would silently turn "run
+        this one stage" into "run everything left", so the entry says which.
 
         Returns ``{"status": "started"|"queued", "position": int, ...}``.
         """
@@ -105,6 +113,8 @@ class QueueLaneService:
             # which may be long after the dialog that set them is gone.
             auto_approve=auto_approve,
             stop_at_stage_key=stop_at_stage_key or "",
+            entry_kind=entry_kind,
+            stage_key=stage_key,
         )
         self.session.add(entry)
         self.session.commit()
@@ -150,21 +160,29 @@ class QueueLaneService:
             self._renumber(slot_number)
             return self.start_lane_head(slot_number)
 
-        orch_run = self._dispatch_orchestration(
-            ticket,
-            auto_approve=head.auto_approve,
-            stop_at_stage_key=head.stop_at_stage_key or None,
-        )
-        if orch_run is None:
-            # Dispatch refused (already orchestrating, no workflow). Leave the
-            # entry in place rather than claiming the lane for nothing.
-            return None
-
-        slot.is_available = False
-        slot.current_orchestration_run_id = orch_run.id
+        if head.entry_kind == "stage":
+            agent_run = self._dispatch_stage(ticket, head)
+            if agent_run is None:
+                return None
+            slot.is_available = False
+            slot.current_run_id = agent_run.id
+            head.run_id = agent_run.id
+            orch_run = None
+        else:
+            orch_run = self._dispatch_orchestration(
+                ticket,
+                auto_approve=head.auto_approve,
+                stop_at_stage_key=head.stop_at_stage_key or None,
+            )
+            if orch_run is None:
+                # Dispatch refused (already orchestrating, no workflow). Leave
+                # the entry in place rather than claiming the lane for nothing.
+                return None
+            slot.is_available = False
+            slot.current_orchestration_run_id = orch_run.id
+            head.orchestration_run_id = orch_run.id
         slot.assigned_at = datetime.now(timezone.utc)
         head.status = QueuePosition.ACTIVE
-        head.orchestration_run_id = orch_run.id
         head.promoted_at = datetime.now(timezone.utc)
         head.started_at = datetime.now(timezone.utc)
         self.session.add(slot)
@@ -172,7 +190,12 @@ class QueueLaneService:
         self.session.commit()
         self._renumber(slot_number)
 
-        logger.info("Lane %d started ticket %s (%s)", slot_number, ticket.id, orch_run.run_code)
+        logger.info(
+            "Lane %d started %s for ticket %s",
+            slot_number,
+            head.entry_kind,
+            ticket.id,
+        )
         return head
 
     def on_orchestration_complete(self, orchestration_run_id: str) -> None:
@@ -267,6 +290,30 @@ class QueueLaneService:
             entry.position = index
             self.session.add(entry)
         self.session.commit()
+
+    def _dispatch_stage(self, ticket: Ticket, entry: QueuedRun) -> AgentRun | None:
+        """Start one stage and return the run that now owns the lane.
+
+        The single-stage twin of `_dispatch_orchestration`, for entries parked
+        by admission control on behalf of the Dashboard or MCP. A lane holding
+        one of these is released by `complete_run_tail` (which frees whatever
+        slot names the finished run) rather than by `complete_orchestration`.
+        """
+        from loregarden.services.orchestration import OrchestrationService
+        from loregarden.services.run_service import schedule_agent_run
+
+        try:
+            run = OrchestrationService(self.session).start_run(
+                ticket,
+                stage_key=entry.stage_key or None,
+                auto_approve=entry.auto_approve,
+            )
+        except ValueError as exc:
+            logger.warning("Lane stage dispatch failed for ticket %s: %s", ticket.id, exc)
+            return None
+
+        schedule_agent_run(run.id)
+        return run
 
     def _dispatch_orchestration(
         self,

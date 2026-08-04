@@ -933,6 +933,11 @@ class QueuedRun(SQLModel, table=True):
     #: reaches it — which may be long after that dialog closed.
     auto_approve: bool = False
     stop_at_stage_key: str = ""
+    #: "orchestration" (run the ticket) or "stage" (run one stage of it).
+    #: Admission control parks both, and they dispatch differently.
+    entry_kind: str = "orchestration"
+    #: The stage to run, for a "stage" entry.
+    stage_key: str = ""
     status: QueuePosition = Field(
         default=QueuePosition.QUEUED,
         sa_column=_str_enum_column(QueuePosition, QueuePosition.QUEUED, index=True),

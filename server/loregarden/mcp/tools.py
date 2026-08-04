@@ -8,21 +8,23 @@ from typing import Any
 from sqlmodel import Session
 
 from loregarden.agents.executors.permission_bridge import is_orchestrated_agent_denied_mcp_tool
+from loregarden.mcp.admission import (
+    queued_response,
+    run_admitted,
+    start_orchestration_admitted,
+)
 from loregarden.models.domain import (
-    OrchestrationDriver,
     OrchestrationRunStatus,
     Ticket,
     TicketState,
     UpdateTicketRequest,
     WorkItemType,
-    Workspace,
 )
 from loregarden.services.acceptance_criteria import (
     CRITERIA_MODES,
     load_criteria,
     merge_criteria,
 )
-from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.evidence import (
     ARTIFACT_KIND as EVIDENCE_ARTIFACT_KIND,
 )
@@ -33,7 +35,6 @@ from loregarden.services.evidence import (
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.prior_work import search_prior_work
 from loregarden.services.ticket_dependencies import (
     DependencyCycleError,
@@ -1233,22 +1234,9 @@ def _create_ticket(
 
 def _start_orchestration(session: Session, svc, arguments: dict[str, Any]) -> str:
     """Start a run on whichever driver the workspace profile selects."""
-    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-    ws = session.get(Workspace, ticket.workspace_id)
-    if not ws:
-        raise ValueError("Workspace not found")
-    profile = resolve_orchestration_profile(ws)
-    driver_name = arguments.get("driver") or profile.driver.value
-    driver = OrchestrationDriver(driver_name)
-
-    if driver == OrchestrationDriver.BUILTIN_AUTOPILOT:
-        run = BuiltinOrchestrator(session).execute(
-            ticket, profile, max_stages=arguments.get("max_stages")
-        )
-    elif driver == OrchestrationDriver.EXTERNAL_MCP:
-        run = svc.start_orchestration_run(ticket, driver=driver, profile_slug=profile.slug)
-    else:
-        raise ValueError(f"Unsupported driver for MCP start: {driver_name}")
+    reservation, run = start_orchestration_admitted(session, svc, arguments)
+    if not reservation.admitted:
+        return queued_response(reservation, ticket_id=arguments["ticket_id"])
     return json.dumps(_run_view(run), indent=2)
 
 
@@ -1397,12 +1385,20 @@ def execute_tool(
     ticket = svc.resolve_ticket(ticket_id=run.ticket_id)
 
     if name == "loregarden_start_stage":
-        svc.start_stage(
-            run,
+        reservation, _ = run_admitted(
+            session,
             ticket,
             stage_key=arguments["stage_key"],
-            agent_id=arguments.get("agent_id", ""),
+            start=lambda: svc.start_stage(
+                run,
+                ticket,
+                stage_key=arguments["stage_key"],
+                agent_id=arguments.get("agent_id", ""),
+            ),
         )
+        if not reservation.admitted:
+            return queued_response(reservation, stage_key=arguments["stage_key"])
+        reservation.bind(run_id=run.id)
         return json.dumps({"ok": True, "stage_key": arguments["stage_key"]}, indent=2)
 
     if name == "loregarden_complete_stage":

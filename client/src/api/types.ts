@@ -103,6 +103,17 @@ export interface TicketDependencyRef {
 }
 
 export interface TicketDetail extends TicketSummary {
+  /**
+   * Present only on responses that start work. The slot pool is shared with the
+   * queue board, so a start can come back queued rather than started — the
+   * ticket looks identical either way, which is why the server says so here.
+   */
+  admission?: {
+    admitted: boolean;
+    slot_number: number | null;
+    position: number | null;
+    message: string;
+  } | null;
   description: string;
   acceptance_criteria: string[];
   /** Tickets this one waits for (its prerequisites). */

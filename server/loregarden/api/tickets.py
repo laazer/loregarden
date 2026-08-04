@@ -51,6 +51,7 @@ from loregarden.services.hierarchy_service import build_tree, child_count
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.path_browser import read_import_files
+from loregarden.services.queue_admission import QueueAdmissionService
 from loregarden.services.run_cancellation import request_cancel, request_orchestration_cancel
 from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.run_ledger import ledger_payload
@@ -724,6 +725,20 @@ def orchestrate_ticket(
     active = OrchestrationCallbackService(session).get_active_orchestration_run(ticket.id)
     if active:
         raise HTTPException(400, f"Orchestration already running: {active.run_code}")
+    # Through the same slot pool as the queue board. Started directly, this
+    # oversubscribed the machine — the board would show idle lanes while every
+    # agent the box could run was already busy.
+    reservation = QueueAdmissionService(session).reserve_orchestration(
+        ticket,
+        auto_approve=body.auto_approve,
+        stop_at_stage_key=body.stop_at_stage_key,
+    )
+    if not reservation.admitted:
+        session.refresh(ticket)
+        detail = get_ticket(ticket_id, session)
+        detail.admission = reservation.as_dict()
+        return detail
+
     try:
         schedule_orchestration(
             ticket.id,
@@ -733,7 +748,16 @@ def orchestrate_ticket(
             auto_approve=body.auto_approve,
         )
     except ValueError as exc:
+        reservation.release()
         raise HTTPException(400, str(exc)) from exc
+
+    # The orchestration row is created on the worker, so bind by ticket once it
+    # exists; until then the slot is held but unnamed, which is what stops a
+    # second request taking it.
+    active = OrchestrationCallbackService(session).get_active_orchestration_run(ticket.id)
+    if active:
+        reservation.bind(orchestration_run_id=active.id)
+
     session.refresh(ticket)
     return get_ticket(ticket_id, session)
 
@@ -785,6 +809,19 @@ def start_run(
             400,
             "Use POST /orchestrate for default orchestration. Pass manual=true for single-stage debug runs.",
         )
+    # A debug stage run still costs an agent, so it waits its turn like anything
+    # else. Parked as a stage, not an orchestration.
+    reservation = QueueAdmissionService(session).reserve_stage(
+        ticket,
+        stage_key=body.stage_key,
+        auto_approve=body.auto_approve,
+    )
+    if not reservation.admitted:
+        session.refresh(ticket)
+        detail = get_ticket(ticket_id, session)
+        detail.admission = reservation.as_dict()
+        return detail
+
     run_svc = RunService(session)
     try:
         run = run_svc.start_stage_execution(
@@ -794,9 +831,15 @@ def start_run(
             timeout_seconds=body.timeout_seconds,
         )
     except ValueError as exc:
+        reservation.release()
         raise HTTPException(400, str(exc)) from exc
     if run:
+        reservation.bind(run_id=run.id)
         schedule_agent_run(run.id)
+    else:
+        # Nothing started, so the slot must go back rather than be held by a
+        # run that does not exist.
+        reservation.release()
     session.refresh(ticket)
     return get_ticket(ticket_id, session)
 
@@ -856,6 +899,9 @@ def build_terminal_handoff_command(
     ticket = session.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(404, "Ticket not found")
+    # Deliberately not admission-gated: this returns a command for a human to
+    # paste, which may happen minutes or hours later. Capacity now says nothing
+    # about capacity then, and holding a slot in the meantime would strand it.
     run_svc = RunService(session)
     try:
         run = run_svc.start_stage_execution(
