@@ -34,6 +34,8 @@ function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
     ticketId: "t1",
     pendingApprovals: [],
     branch: null,
+    archive: null,
+    composedOnScreen: false,
     ...overrides,
   } as ReturnType<typeof useActiveChatSession>;
 }
@@ -57,6 +59,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   useUiStore.setState({
     copilotOpen: false,
+    copilotHistoryOpen: false,
     terminalOpen: false,
     utilityDockEdge: "bottom",
   });
@@ -356,6 +359,122 @@ describe("the run-logs toggle", () => {
     expect(
       screen.queryByRole("button", { name: "Run logs" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("a screen that composes for its own thread", () => {
+  it("drops the chat half rather than offering a second composer", () => {
+    // Home and /chat show the conversation and its composer already. The bar
+    // repeating them is noise, and a disabled composer reading "open a ticket"
+    // is worse — there is a conversation, and it is on the page.
+    mockResolver.mockReturnValue(bind({ composedOnScreen: true, ticketId: null }));
+
+    renderBar();
+
+    expect(screen.queryByLabelText("Message this conversation")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Expand Baxter" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New chat" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "History" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the controls that belong to the screen, not to the chat", () => {
+    mockResolver.mockReturnValue(bind({ composedOnScreen: true, ticketId: null }));
+
+    renderBar();
+
+    expect(screen.getByRole("button", { name: "Terminal" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Dock utility panel to the right" }),
+    ).toBeInTheDocument();
+  });
+
+  it("still offers the composer where there is simply no conversation", () => {
+    // Binding nothing is not the same thing: Studio with no workspace picked
+    // wants the bar to say what to open.
+    mockResolver.mockReturnValue(bind({ session: null, label: "", ticketId: null }));
+
+    renderBar();
+
+    expect(screen.getByPlaceholderText(/open a ticket or a branch/i)).toBeInTheDocument();
+  });
+});
+
+describe("the chat options", () => {
+  const archive = (overrides = {}) => ({
+    workspaceSlug: "loregarden",
+    sessionId: "s1",
+    openSession: jest.fn(),
+    startNewChat: jest.fn(),
+    ...overrides,
+  });
+
+  it("stays off a conversation that keeps no past threads", () => {
+    // A ticket's triage chat is the ticket's; there is no other one to open,
+    // so a New chat button here would only be a control that does nothing.
+    mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+
+    renderBar();
+
+    expect(screen.queryByRole("button", { name: "New chat" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "History" })).not.toBeInTheDocument();
+  });
+
+  it("starts a fresh thread and shows it", () => {
+    const bound = archive();
+    mockResolver.mockReturnValue(
+      bind({
+        session: session({ kind: "baxter-home" }),
+        label: "Baxter · loregarden",
+        ticketId: null,
+        archive: bound,
+      }),
+    );
+    useUiStore.setState({ copilotHistoryOpen: true });
+
+    renderBar();
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+
+    expect(bound.startNewChat).toHaveBeenCalled();
+    // Started behind a collapsed dock, the new thread is invisible; and the
+    // archive rail would sit over it.
+    expect(useUiStore.getState().copilotOpen).toBe(true);
+    expect(useUiStore.getState().copilotHistoryOpen).toBe(false);
+  });
+
+  it("opens the archive in the dock rather than behind it", () => {
+    mockResolver.mockReturnValue(
+      bind({
+        session: session({ kind: "baxter-home" }),
+        label: "Baxter · loregarden",
+        ticketId: null,
+        archive: archive(),
+      }),
+    );
+
+    renderBar();
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+
+    expect(useUiStore.getState().copilotHistoryOpen).toBe(true);
+    expect(useUiStore.getState().copilotOpen).toBe(true);
+  });
+
+  it("closes the archive again without collapsing the thread", () => {
+    mockResolver.mockReturnValue(
+      bind({
+        session: session({ kind: "baxter-home" }),
+        label: "Baxter · loregarden",
+        ticketId: null,
+        archive: archive(),
+      }),
+    );
+    useUiStore.setState({ copilotOpen: true, copilotHistoryOpen: true });
+
+    renderBar();
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+
+    expect(useUiStore.getState().copilotHistoryOpen).toBe(false);
+    expect(useUiStore.getState().copilotOpen).toBe(true);
   });
 });
 

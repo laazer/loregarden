@@ -169,6 +169,64 @@
   cursor: not-allowed;
 }
 
+.copilot-dock-rail-note {
+  margin: 0;
+  padding: 0 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--txl);
+}
+
+/* An archive entry is a title, a time, and a line of the conversation — a
+   stacked block rather than the single line an opener is. */
+.copilot-dock-history-btn {
+  align-items: center;
+}
+
+.copilot-dock-history-btn.is-active {
+  border-color: rgba(111, 174, 143, 0.45);
+  background: rgba(111, 174, 143, 0.1);
+}
+
+.copilot-dock-history-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.copilot-dock-history-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.copilot-dock-history-row strong {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copilot-dock-history-row time {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--txl);
+}
+
+.copilot-dock-history-preview {
+  font-size: 11.5px;
+  color: var(--txl);
+  /* Two lines of the last turn: enough to recognise the conversation, not
+     enough to turn the rail into a transcript. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* Too narrow for a 248px rail beside the turns, and the turns win. The action
    bar still carries the first couple of openers, so nothing is unreachable. */
 @container (max-width: 620px) {
