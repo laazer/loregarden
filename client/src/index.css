@@ -2362,7 +2362,9 @@ button {
 }
 
 .app-action-bar-auto,
-.app-action-bar-logs {
+.app-action-bar-logs,
+.app-action-bar-chat-new,
+.app-action-bar-chat-history {
   flex: none;
   font-family: var(--ui);
   font-size: 11px;
@@ -2375,10 +2377,25 @@ button {
   white-space: nowrap;
 }
 
+.app-action-bar-chat-new,
+.app-action-bar-chat-history {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .app-action-bar-auto:hover,
-.app-action-bar-logs:hover:not(:disabled) {
+.app-action-bar-logs:hover:not(:disabled),
+.app-action-bar-chat-new:hover,
+.app-action-bar-chat-history:hover {
   color: var(--txm);
   border-color: var(--bd2);
+}
+
+.app-action-bar-chat-history.is-on {
+  color: var(--ac2);
+  border-color: rgba(111, 174, 143, 0.4);
+  background: rgba(111, 174, 143, 0.12);
 }
 
 .app-action-bar-auto.is-on {
@@ -2421,6 +2438,13 @@ button {
   opacity: 0.45;
   box-shadow: none;
   cursor: not-allowed;
+}
+
+/* Stands in for the composer on the screens that draw their own, so the shell
+   switch and the dock control keep the right-hand end of the bar. */
+.app-action-bar-spacer {
+  flex: 1;
+  min-width: 0;
 }
 
 .app-action-bar-divider {

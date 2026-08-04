@@ -1,5 +1,8 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
 
+import { api } from "../../api/client";
 import { CopilotDock } from "../CopilotDock";
 import { useActiveChatSession } from "../../hooks/useActiveChatSession";
 import { useTerminalTarget } from "../../hooks/useTerminalTarget";
@@ -22,6 +25,10 @@ jest.mock("../TerminalWorkspace", () => ({
     </div>
   ),
 }));
+jest.mock("../../api/client", () => {
+  const actual = jest.requireActual("../../api/client");
+  return { ...actual, api: { ...actual.api, baxterChatSessions: jest.fn() } };
+});
 jest.mock("../../hooks/useApprovalResolution", () => ({
   useApprovalResolution: () => ({
     mutate: jest.fn(),
@@ -35,14 +42,22 @@ jest.mock("../../hooks/useApprovalResolution", () => ({
 const mockResolver = useActiveChatSession as jest.MockedFunction<typeof useActiveChatSession>;
 const mockTerminal = useTerminalTarget as jest.MockedFunction<typeof useTerminalTarget>;
 
+const mockedApi = api as jest.Mocked<typeof api>;
+
 function bind(overrides: Partial<ReturnType<typeof useActiveChatSession>>) {
   return {
     session: null,
     label: "",
     ticketId: "t1",
     pendingApprovals: [],
+    archive: null,
     ...overrides,
   } as ReturnType<typeof useActiveChatSession>;
+}
+
+function renderDock(ui: ReactElement = <CopilotDock />) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
 }
 
 function session(overrides = {}) {
@@ -62,7 +77,12 @@ function session(overrides = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  useUiStore.setState({ copilotOpen: false, copilotHeight: 340, terminalOpen: false });
+  useUiStore.setState({
+    copilotOpen: false,
+    copilotHeight: 340,
+    copilotHistoryOpen: false,
+    terminalOpen: false,
+  });
   mockTerminal.mockReturnValue({ workspaceSlug: "loregarden", agent: "implementer" });
 });
 
@@ -133,6 +153,115 @@ it("offers no openers once the thread has turns", () => {
   render(<CopilotDock />);
 
   expect(screen.queryByText("Try asking")).not.toBeInTheDocument();
+});
+
+describe("the chat archive", () => {
+  const ARCHIVE_ENTRY = {
+    id: "s2",
+    title: "Queue triage",
+    message_count: 4,
+    preview: "Two lanes are idle.",
+    created_at: "2026-08-04T10:00:00Z",
+    updated_at: "2026-08-04T10:00:00Z",
+  };
+
+  const bindBaxter = (overrides = {}) =>
+    bind({
+      session: session({ kind: "baxter-home" }),
+      label: "Baxter · loregarden",
+      ticketId: null,
+      archive: {
+        workspaceSlug: "loregarden",
+        sessionId: "s1",
+        openSession: jest.fn(),
+        startNewChat: jest.fn(),
+        ...overrides,
+      },
+    });
+
+  beforeEach(() => {
+    mockedApi.baxterChatSessions.mockResolvedValue([ARCHIVE_ENTRY]);
+  });
+
+  it("takes the openers' place in the rail rather than covering the turns", async () => {
+    mockResolver.mockReturnValue(bindBaxter());
+    useUiStore.setState({ copilotOpen: true, copilotHistoryOpen: true });
+
+    const { container } = renderDock();
+
+    const rail = container.querySelector(".copilot-dock-rail");
+    expect(rail).not.toBeNull();
+    expect(rail).toContainElement(await screen.findByText("Queue triage"));
+    expect(screen.queryByText("Try asking")).not.toBeInTheDocument();
+  });
+
+  it("opens the picked conversation and gives the rail back", async () => {
+    const openSession = jest.fn();
+    mockResolver.mockReturnValue(bindBaxter({ openSession }));
+    useUiStore.setState({ copilotOpen: true, copilotHistoryOpen: true });
+
+    renderDock();
+    fireEvent.click(await screen.findByText("Queue triage"));
+
+    expect(openSession).toHaveBeenCalledWith("s2");
+    expect(useUiStore.getState().copilotHistoryOpen).toBe(false);
+  });
+
+  it("leaves the openers up while nobody asked for the archive", () => {
+    mockResolver.mockReturnValue(bindBaxter());
+    useUiStore.setState({ copilotOpen: true, copilotHistoryOpen: false });
+
+    renderDock();
+
+    expect(screen.getByText("Try asking")).toBeInTheDocument();
+    expect(mockedApi.baxterChatSessions).not.toHaveBeenCalled();
+  });
+
+  it("shows the archive over a thread that already has turns", async () => {
+    // The openers are withheld once a conversation is under way; the archive is
+    // not — switching threads is exactly what you do mid-conversation.
+    mockResolver.mockReturnValue(
+      bind({
+        session: session({ kind: "baxter-home", messages: [{ role: "user", content: "hi" }] }),
+        label: "Baxter · loregarden",
+        ticketId: null,
+        archive: {
+          workspaceSlug: "loregarden",
+          sessionId: "s1",
+          openSession: jest.fn(),
+          startNewChat: jest.fn(),
+        },
+      }),
+    );
+    useUiStore.setState({ copilotOpen: true, copilotHistoryOpen: true });
+
+    renderDock();
+
+    expect(await screen.findByText("Queue triage")).toBeInTheDocument();
+  });
+
+  it("says so when there is nothing archived yet", async () => {
+    mockedApi.baxterChatSessions.mockResolvedValue([]);
+    mockResolver.mockReturnValue(bindBaxter());
+    useUiStore.setState({ copilotOpen: true, copilotHistoryOpen: true });
+
+    renderDock();
+
+    await waitFor(() =>
+      expect(screen.getByText(/No conversations yet/i)).toBeInTheDocument(),
+    );
+  });
+
+  it("keeps the openers on a conversation that has no archive", () => {
+    // Ticket triage: the history flag may still be set from a Baxter thread,
+    // and must not blank the rail here.
+    mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+    useUiStore.setState({ copilotOpen: true, copilotHistoryOpen: true });
+
+    renderDock();
+
+    expect(screen.getByText("Try asking")).toBeInTheDocument();
+  });
 });
 
 describe("the terminal pane", () => {

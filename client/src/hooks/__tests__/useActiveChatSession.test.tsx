@@ -114,4 +114,42 @@ it("binds to nothing on the Baxter chat screen, which composes for itself", () =
   });
 
   expect(result.current.session).toBeNull();
+  expect(result.current.composedOnScreen).toBe(true);
+});
+
+it("binds to nothing on Home, whose hero is the way into the same thread", () => {
+  const { result } = renderHook(() => useActiveChatSession(), {
+    wrapper: wrapperFor("/"),
+  });
+
+  expect(result.current.session).toBeNull();
+  expect(result.current.composedOnScreen).toBe(true);
+});
+
+it("distinguishes a screen composing for itself from one with no conversation", () => {
+  // Both bind nothing; only one should lose the composer. Branch triage with no
+  // branch picked still wants the bar to say what to open.
+  useUiStore.setState({ branchTriageWorkspaceSlug: "loregarden", branchTriageBranch: "" });
+
+  const { result } = renderHook(() => useActiveChatSession(), {
+    wrapper: wrapperFor("/branch-triage"),
+  });
+
+  expect(result.current.composedOnScreen).toBe(false);
+});
+
+it("offers the archive on a screen bound to the Baxter thread", () => {
+  const { result } = renderHook(() => useActiveChatSession(), {
+    wrapper: wrapperFor("/queue"),
+  });
+
+  expect(result.current.archive?.workspaceSlug).toBe("loregarden");
+});
+
+it("keeps the archive off a ticket conversation, which has no other thread", () => {
+  const { result } = renderHook(() => useActiveChatSession(), {
+    wrapper: wrapperFor("/tickets/abc-123/diff"),
+  });
+
+  expect(result.current.archive).toBeNull();
 });

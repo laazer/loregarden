@@ -93,6 +93,17 @@ interface UiState {
   /** Whether the Baxter chat history drawer is visible. */
   baxterHistoryOpen: boolean;
   /**
+   * Whether the dock's rail is showing the chat archive instead of the openers.
+   *
+   * Separate from `baxterHistoryOpen`, which drives the chat page's drawer: the
+   * two surfaces are never on screen together, and sharing the flag would open
+   * a drawer on the page the dock was closed over.
+   *
+   * Not persisted. It is a momentary detour to pick a thread, and restoring it
+   * would reopen the dock onto a list rather than the conversation.
+   */
+  copilotHistoryOpen: boolean;
+  /**
    * The Home Baxter conversation currently on screen, or "" for a fresh one.
    *
    * Persisted: the thread itself lives on the server, and returning to Home
@@ -133,6 +144,8 @@ interface UiState {
   setBaxterChatSessionId: (id: string) => void;
   setBaxterHistoryOpen: (open: boolean) => void;
   toggleBaxterHistory: () => void;
+  setCopilotHistoryOpen: (open: boolean) => void;
+  toggleCopilotHistory: () => void;
   setCopilotOpen: (open: boolean) => void;
   setTerminalOpen: (open: boolean) => void;
   toggleCopilot: () => void;
@@ -200,6 +213,7 @@ export const useUiStore = create<UiState>()(
       branchTriageBranch: "",
       baxterChatResetNonce: 0,
       baxterHistoryOpen: false,
+      copilotHistoryOpen: false,
       baxterChatSessionId: "",
       autoFollowByRunId: {},
       setAutoFollow: (runId, value) =>
@@ -274,6 +288,9 @@ export const useUiStore = create<UiState>()(
       setBaxterHistoryOpen: (baxterHistoryOpen) => set({ baxterHistoryOpen }),
       toggleBaxterHistory: () =>
         set((state) => ({ baxterHistoryOpen: !state.baxterHistoryOpen })),
+      setCopilotHistoryOpen: (copilotHistoryOpen) => set({ copilotHistoryOpen }),
+      toggleCopilotHistory: () =>
+        set((state) => ({ copilotHistoryOpen: !state.copilotHistoryOpen })),
       setCopilotOpen: (copilotOpen) => set({ copilotOpen }),
       toggleCopilot: () => set({ copilotOpen: !get().copilotOpen }),
       setTerminalOpen: (terminalOpen) => set({ terminalOpen }),

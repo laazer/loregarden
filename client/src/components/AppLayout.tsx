@@ -63,8 +63,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
     setSettingsOpen(true);
   };
 
-  const showUtilityDock = appPage !== "chat";
-
   return (
     <div className="app-frame">
       <div className="app-ambient" aria-hidden />
@@ -74,7 +72,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <AppTopbar />
           <div className={`app-body app-body--dock-${utilityDockEdge}`}>
             <div className="screen-area">{children}</div>
-            {showUtilityDock ? <AppUtilityDock /> : null}
+            {/* Every screen, chat included: the bar carries the shell and the
+                dock control, which are screen-level tools rather than chat
+                ones. The bar itself drops its composer where the page has one
+                (see `composedOnScreen` in useActiveChatSession). */}
+            <AppUtilityDock />
           </div>
         </div>
       </TopbarPageSlotProvider>

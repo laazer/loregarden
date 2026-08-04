@@ -8,7 +8,9 @@ import { useTerminalTarget } from "../useTerminalTarget";
 import { useUiStore } from "../../state/uiStore";
 
 jest.mock("../../api/client", () => ({
-  api: { ticket: jest.fn() },
+  // `workspaces` too: the chat screen resolves its workspace through the same
+  // list the picker shows.
+  api: { ticket: jest.fn(), workspaces: jest.fn(async () => []) },
 }));
 
 const mockTicket = api.ticket as jest.MockedFunction<typeof api.ticket>;
@@ -31,6 +33,7 @@ beforeEach(() => {
     workspace: "all",
     branchTriageWorkspaceSlug: "",
     branchTriageBranch: "",
+    chatWorkspaceSlug: "",
   });
 });
 
@@ -85,6 +88,27 @@ it("names no workspace when the filter is showing all of them", () => {
   useUiStore.setState({ workspace: "all" });
 
   const { result } = renderHook(() => useTerminalTarget(), { wrapper: wrapperFor("/") });
+
+  expect(result.current.workspaceSlug).toBe("");
+});
+
+it("opens the shell in the workspace the chat screen names", () => {
+  // The chat page pins its own workspace, separate from the Console filter.
+  // Reading only the filter left the shell dead on chat whenever the Console
+  // was showing all workspaces — which is its default.
+  useUiStore.setState({ workspace: "all", chatWorkspaceSlug: "blobert" });
+
+  const { result } = renderHook(() => useTerminalTarget(), { wrapper: wrapperFor("/chat") });
+
+  expect(result.current.workspaceSlug).toBe("blobert");
+});
+
+it("leaves the chat workspace on the chat screen", () => {
+  // Elsewhere the screen's own workspace wins; chat's pin must not follow the
+  // operator onto the Console and open a shell in a repo it is not showing.
+  useUiStore.setState({ workspace: "all", chatWorkspaceSlug: "blobert" });
+
+  const { result } = renderHook(() => useTerminalTarget(), { wrapper: wrapperFor("/queue") });
 
   expect(result.current.workspaceSlug).toBe("");
 });

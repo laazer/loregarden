@@ -4,6 +4,7 @@ import { useLocation } from "react-router-dom";
 import { api } from "../api/client";
 import { ticketIdFromPath } from "../lib/appNavigation";
 import { useUiStore } from "../state/uiStore";
+import { useChatWorkspaceSlug } from "./useChatWorkspace";
 
 export interface TerminalTarget {
   /** Empty when the current screen names no single workspace. */
@@ -35,6 +36,8 @@ export function useTerminalTarget(): TerminalTarget {
 
   const onBranchTriage = pathname.startsWith("/branch-triage");
   const ticketId = onBranchTriage ? null : ticketIdFromPath(pathname);
+  const onChat = pathname === "/chat" || pathname.startsWith("/chat/");
+  const chatWorkspaceSlug = useChatWorkspaceSlug();
 
   // Same key the dashboard uses, so being on a ticket costs no extra request.
   const { data: ticket } = useQuery({
@@ -49,6 +52,13 @@ export function useTerminalTarget(): TerminalTarget {
 
   if (ticket) {
     return { workspaceSlug: ticket.workspace_slug, agent: ticket.next_agent };
+  }
+
+  // The chat screen names a workspace of its own — the one answering the turns,
+  // pinned in its picker — and it is not the Console's filter. Without this the
+  // shell is dead there whenever the Console is showing all workspaces.
+  if (onChat && chatWorkspaceSlug) {
+    return { workspaceSlug: chatWorkspaceSlug, agent: "" };
   }
 
   // Nothing on screen names a workspace, so fall back to the filter — unless

@@ -74,15 +74,26 @@ it("shows topbar and utility dock on console", () => {
   expect(screen.getByRole("button", { name: /Dock utility panel to the right/i })).toBeInTheDocument();
 });
 
-it("shows topbar on chat but keeps the utility dock hidden", () => {
+it("keeps the utility dock on chat too, for the tools that are not the chat", () => {
+  // The shell and the dock control are screen-level; a screen losing them
+  // because it happens to be the chat page is the bug this replaced.
   wrap(<div>chat body</div>, "/chat");
   expect(screen.getByText("loregarden")).toBeInTheDocument();
   expect(screen.getByTestId("topbar-actions")).toBeInTheDocument();
   expect(screen.getByText("Agent SDLC · Chat")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /History/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /New chat/i })).toBeInTheDocument();
-  expect(screen.queryByTestId("copilot-dock")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /Dock/i })).not.toBeInTheDocument();
+  expect(screen.getByTestId("copilot-dock")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Terminal" })).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: /Dock utility panel to the right/i }),
+  ).toBeInTheDocument();
+});
+
+it("leaves the composer to the chat page, which draws its own", () => {
+  wrap(<div>chat body</div>, "/chat");
+  expect(screen.queryByLabelText("Message this conversation")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Send" })).not.toBeInTheDocument();
 });
 
 it("names the chat workspace in the topbar without re-filtering the Console", async () => {

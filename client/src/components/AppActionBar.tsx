@@ -24,7 +24,8 @@ const NO_SESSION_PLACEHOLDER = "Open a ticket or a branch to chat about it";
  * a message sent here is the same turn the on-screen panel would have sent.
  */
 export function AppActionBar() {
-  const { session, label, ticketId, pendingApprovals, branch } = useActiveChatSession();
+  const { session, label, ticketId, pendingApprovals, branch, archive, composedOnScreen } =
+    useActiveChatSession();
   const terminal = useTerminalTarget();
 
   const chatOpen = useUiStore((s) => s.copilotOpen);
@@ -33,6 +34,8 @@ export function AppActionBar() {
   const setTerminalOpen = useUiStore((s) => s.setTerminalOpen);
   const utilityDockEdge = useUiStore((s) => s.utilityDockEdge);
   const setUtilityDockEdge = useUiStore((s) => s.setUtilityDockEdge);
+  const historyOpen = useUiStore((s) => s.copilotHistoryOpen);
+  const setHistoryOpen = useUiStore((s) => s.setCopilotHistoryOpen);
 
   const [draft, setDraft] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
@@ -58,7 +61,6 @@ export function AppActionBar() {
 
   const expanded = chatOpen && Boolean(session);
   const sendable = Boolean(session) && !session?.loadError;
-  const nextEdge: UtilityDockEdge = utilityDockEdge === "bottom" ? "right" : "bottom";
   const quickPrompts = session
     ? promptsFor(session.kind, branch).slice(0, DOCK_QUICK_PROMPT_LIMIT)
     : [];
@@ -76,6 +78,28 @@ export function AppActionBar() {
       : question;
     void session.send(message, { autoApprove }).catch(() => {});
   };
+
+  const screenControls = (
+    <ActionBarScreenControls
+      terminalSlug={terminal.workspaceSlug}
+      terminalOpen={terminalOpen}
+      setTerminalOpen={setTerminalOpen}
+      utilityDockEdge={utilityDockEdge}
+      setUtilityDockEdge={setUtilityDockEdge}
+    />
+  );
+
+  // Home and the chat page compose for this thread themselves, so the bar keeps
+  // only its screen-level controls there: a second composer for the
+  // conversation already on screen is noise, and a disabled one is worse.
+  if (composedOnScreen) {
+    return (
+      <footer className={`app-action-bar app-action-bar--edge-${utilityDockEdge}`}>
+        <span className="app-action-bar-spacer" aria-hidden />
+        {screenControls}
+      </footer>
+    );
+  }
 
   return (
     <footer className={`app-action-bar app-action-bar--edge-${utilityDockEdge}`}>
@@ -158,6 +182,50 @@ export function AppActionBar() {
         </button>
       ) : null}
 
+      {/* Only the Baxter thread keeps past conversations — a ticket's triage
+          chat is the ticket's, and there is no other one to open — so these
+          appear with the archive rather than as controls that do nothing. */}
+      {archive ? (
+        <>
+          <button
+            type="button"
+            className="app-action-bar-chat-new"
+            title="Start a new conversation with Baxter"
+            onClick={() => {
+              archive.startNewChat();
+              setHistoryOpen(false);
+              // Open the thread on the way out, so the new one is visible
+              // rather than started behind a collapsed dock.
+              setChatOpen(true);
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            New chat
+          </button>
+          <button
+            type="button"
+            className={`app-action-bar-chat-history${historyOpen ? " is-on" : ""}`}
+            aria-pressed={historyOpen}
+            title="Open a past conversation"
+            onClick={() => {
+              const next = !historyOpen;
+              setHistoryOpen(next);
+              // The archive lists in the dock's rail, so opening it while the
+              // dock is collapsed would show nothing.
+              if (next) setChatOpen(true);
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+              <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+              <path d="M3 3v5h5M12 7v5l3 2" />
+            </svg>
+            History
+          </button>
+        </>
+      ) : null}
+
       {session ? (
         <button
           type="button"
@@ -181,7 +249,36 @@ export function AppActionBar() {
           <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />
         </svg>
       </button>
+      {screenControls}
+    </footer>
+  );
+}
 
+/**
+ * The half of the bar that belongs to the screen rather than to a conversation:
+ * the shell switch and where the utility dock sits.
+ *
+ * Kept apart because it is the only half Home and the chat page draw — those
+ * screens compose for their own thread, and the bar must not offer a second
+ * composer for it.
+ */
+function ActionBarScreenControls({
+  terminalSlug,
+  terminalOpen,
+  setTerminalOpen,
+  utilityDockEdge,
+  setUtilityDockEdge,
+}: {
+  terminalSlug: string;
+  terminalOpen: boolean;
+  setTerminalOpen: (open: boolean) => void;
+  utilityDockEdge: UtilityDockEdge;
+  setUtilityDockEdge: (edge: UtilityDockEdge) => void;
+}) {
+  const nextEdge: UtilityDockEdge = utilityDockEdge === "bottom" ? "right" : "bottom";
+
+  return (
+    <>
       <span className="app-action-bar-divider" aria-hidden />
 
       <span className="app-action-bar-live" role="img" aria-label="agents online" title="agents online">
@@ -192,12 +289,8 @@ export function AppActionBar() {
         type="button"
         className={`app-action-bar-terminal${terminalOpen ? " is-on" : ""}`}
         aria-pressed={terminalOpen}
-        disabled={!terminal.workspaceSlug}
-        title={
-          terminal.workspaceSlug
-            ? `Shell in ${terminal.workspaceSlug}`
-            : "Pick a workspace to open a shell in"
-        }
+        disabled={!terminalSlug}
+        title={terminalSlug ? `Shell in ${terminalSlug}` : "Pick a workspace to open a shell in"}
         onClick={() => setTerminalOpen(!terminalOpen)}
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -234,7 +327,7 @@ export function AppActionBar() {
           {utilityDockEdge === "bottom" ? <path d="M3 15h18" /> : <path d="M15 3v18" />}
         </svg>
       </button>
-    </footer>
+    </>
   );
 }
 

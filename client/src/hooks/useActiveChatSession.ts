@@ -11,6 +11,23 @@ import { useChatWorkspaceSlug } from "./useChatWorkspace";
 import { useTicketChatSession } from "./useTicketChatSession";
 import { useTriageSession } from "./useTriageSession";
 
+/**
+ * The past conversations a bound chat can be swapped between, when it keeps
+ * any.
+ *
+ * Only the Baxter thread has an archive: a ticket's triage conversation is the
+ * ticket's, and a branch's is the branch's — there is no other one to open. So
+ * this is null rather than a set of no-ops, and a surface offering "New chat"
+ * or "History" shows the controls only when they would do something.
+ */
+export interface ChatArchive {
+  workspaceSlug: string;
+  /** The open thread's id, or "" for a fresh one not yet saved. */
+  sessionId: string;
+  openSession: (id: string) => void;
+  startNewChat: () => void;
+}
+
 export interface ActiveChatSession {
   session: ChatSession | null;
   /** What the dock calls the bound conversation, e.g. "Ticket triage". */
@@ -38,6 +55,17 @@ export interface ActiveChatSession {
    * one — without each of them working out where the branch comes from.
    */
   branch: string | null;
+  /** Past threads of this conversation, or null when it keeps none. */
+  archive: ChatArchive | null;
+  /**
+   * The screen is this conversation's own surface and composes for it.
+   *
+   * Distinct from simply having no session: there is a conversation, the page
+   * is showing it, and the bar's chat half would only duplicate the composer
+   * already on screen. Surfaces read this to hide those controls rather than
+   * disable them.
+   */
+  composedOnScreen: boolean;
 }
 
 /**
@@ -67,12 +95,14 @@ export function useActiveChatSession(): ActiveChatSession {
 
   const onBranchTriage = pathname.startsWith("/branch-triage");
   const ticketId = onBranchTriage ? null : ticketIdFromPath(pathname);
-  // `/chat` composes for this thread itself; a second composer for the same
-  // conversation would only open the dock on top of the page showing it.
-  const onBaxterChat = pathname === "/chat" || pathname.startsWith("/chat/");
+  // `/chat` composes for this thread itself, and Home's hero is the way into
+  // the same one; a second composer for the same conversation would only open
+  // the dock on top of the page already showing it.
+  const composedOnScreen =
+    pathname === "/" || pathname === "/chat" || pathname.startsWith("/chat/");
   const chatWorkspaceSlug = useChatWorkspaceSlug();
   const baxterSession = useBaxterChatSession(
-    !onBranchTriage && !ticketId && !onBaxterChat ? chatWorkspaceSlug : "",
+    !onBranchTriage && !ticketId && !composedOnScreen ? chatWorkspaceSlug : "",
   );
 
   const ticketSession = useTicketChatSession(ticketId ?? undefined);
@@ -90,7 +120,20 @@ export function useActiveChatSession(): ActiveChatSession {
     enabled: Boolean(ticketId),
   });
 
-  const none = { session: null, label: "", ticketId: null, pendingApprovals: [], branch: null };
+  const none = {
+    session: null,
+    label: "",
+    ticketId: null,
+    pendingApprovals: [],
+    branch: null,
+    archive: null,
+    composedOnScreen: false,
+  };
+  // Home and `/chat` are the same conversation's own surfaces. Binding nothing
+  // there is not enough on its own: the bar would still offer a dead composer
+  // reading "open a ticket or a branch", which is wrong twice over — there is a
+  // conversation, and it is right there on the page.
+  if (composedOnScreen) return { ...none, composedOnScreen: true };
   if (onBranchTriage) {
     return branch
       ? {
@@ -99,6 +142,8 @@ export function useActiveChatSession(): ActiveChatSession {
           ticketId: null,
           pendingApprovals: [],
           branch,
+          archive: null,
+          composedOnScreen: false,
         }
       : none;
   }
@@ -109,14 +154,23 @@ export function useActiveChatSession(): ActiveChatSession {
       ticketId,
       pendingApprovals: pending,
       branch: ticket?.branch || null,
+      archive: null,
+      composedOnScreen: false,
     };
   }
-  if (onBaxterChat || !chatWorkspaceSlug) return none;
+  if (!chatWorkspaceSlug) return none;
   return {
     session: baxterSession,
     label: `Baxter · ${chatWorkspaceSlug}`,
     ticketId: null,
     pendingApprovals: [],
     branch: null,
+    composedOnScreen: false,
+    archive: {
+      workspaceSlug: chatWorkspaceSlug,
+      sessionId: baxterSession.sessionId,
+      openSession: baxterSession.openSession,
+      startNewChat: baxterSession.startNewChat,
+    },
   };
 }
