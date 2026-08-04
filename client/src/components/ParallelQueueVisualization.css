@@ -421,6 +421,44 @@
   color: var(--bll);
 }
 
+/* A slot held by a run that has already ended is not a working lane, and the
+   badge must not borrow the live colour to imply it is. */
+.queue-slot-badge[data-run-status="succeeded"],
+.queue-slot-badge[data-run-status="failed"],
+.queue-slot-badge[data-run-status="cancelled"] {
+  color: var(--txl);
+}
+
+.queue-slot-badge[data-run-status="failed"] {
+  color: var(--rdl);
+}
+
+.queue-slot-badge[data-run-status="awaiting_permission"] {
+  color: var(--aml);
+}
+
+.queue-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.queue-chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 1px 6px;
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  background: var(--bg2);
+  white-space: nowrap;
+}
+
+.queue-chip[data-activity="running"] {
+  border-color: rgba(111, 174, 143, 0.32);
+  background: rgba(111, 174, 143, 0.08);
+}
+
 .queue-slot-body {
   flex: 1;
   display: flex;

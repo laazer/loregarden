@@ -19,6 +19,7 @@ from loregarden.models.domain import (
     StartOrchestrationRequest,
     StartRunRequest,
     Ticket,
+    TicketActivity,
     TicketCreate,
     TicketDependencyRef,
     TicketDependencyRequest,
@@ -28,6 +29,7 @@ from loregarden.models.domain import (
     TicketImportRequest,
     TicketImportResult,
     TicketState,
+    TicketStatusSummary,
     TicketSummary,
     TicketTreeNode,
     TriageMessageCreate,
@@ -53,6 +55,11 @@ from loregarden.services.run_cancellation import request_cancel, request_orchest
 from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.run_ledger import ledger_payload
 from loregarden.services.run_service import RunService, schedule_agent_run, schedule_orchestration
+from loregarden.services.ticket_activity import (
+    activity_for,
+    classify_ticket_activity,
+    summarize_ticket_status,
+)
 from loregarden.services.ticket_dependencies import (
     DependencyCycleError,
     TicketDependencyService,
@@ -78,7 +85,11 @@ def _latest_run_code(session: Session, ticket_id: str) -> str:
     return run.run_code if run else ""
 
 
-def _ticket_summary(session: Session, ticket: Ticket) -> TicketSummary:
+def _ticket_summary(
+    session: Session, ticket: Ticket, activity: TicketActivity | None = None
+) -> TicketSummary:
+    """``activity`` is passed in by list endpoints, which classify the whole page
+    in one batch; single-ticket callers let it resolve itself."""
     ws = session.get(Workspace, ticket.workspace_id)
     orch = OrchestrationService(session)
     template = orch.get_template_for_ticket(ticket)
@@ -104,6 +115,7 @@ def _ticket_summary(session: Session, ticket: Ticket) -> TicketSummary:
         branch=ticket.branch,
         child_count=child_count(session, ticket.id),
         next_agent=ticket.next_agent,
+        activity=activity if activity is not None else activity_for(session, ticket.id),
         stages=stages,
     )
 
@@ -362,7 +374,25 @@ def list_tickets(
     if roots_only:
         query = query.where(Ticket.parent_ticket_id.is_(None))  # type: ignore[union-attr]
     tickets = session.exec(query.order_by(Ticket.priority, Ticket.created_at)).all()
-    return [_ticket_summary(session, t) for t in tickets]
+    activity = classify_ticket_activity(session, [t.id for t in tickets])
+    return [_ticket_summary(session, t, activity.get(t.id, TicketActivity.IDLE)) for t in tickets]
+
+
+@router.get("/status-summary", response_model=TicketStatusSummary)
+def ticket_status_summary(
+    *,
+    workspace: str | None = None,
+    session: Session = Depends(get_session),
+) -> TicketStatusSummary:
+    """Counts by state alongside what is actually executing.
+
+    Separate from `list_tickets` because the board wants the whole workspace's
+    totals, not a page of rows it would have to count client-side.
+    """
+    ws = _workspace_filter(session, workspace)
+    if ws is False:
+        return TicketStatusSummary()
+    return summarize_ticket_status(session, workspace_id=ws.id if ws else None)
 
 
 @router.post("", response_model=TicketDetail, status_code=201)

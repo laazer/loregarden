@@ -2,11 +2,17 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { api, type Approval, type TicketSummary } from "../api/client";
+import {
+  api,
+  type Approval,
+  type TicketStatusSummary,
+  type TicketSummary,
+} from "../api/client";
 import { BaxterAvatar } from "../components/chat/BaxterAvatar";
 import { StudioChatComposer } from "../components/studio/StudioChat";
 import { ticketPath } from "../lib/appNavigation";
 import { chatPath, stashHomeBaxterPrompt } from "../lib/homeBaxter";
+import { ticketActivityColor, ticketActivityLabel, ticketStateLabel } from "../lib/ticketStates";
 import { useUiStore } from "../state/uiStore";
 import "./HomePage.css";
 
@@ -64,6 +70,13 @@ export function HomePage() {
     queryFn: () => api.runs(),
     refetchInterval: 15_000,
   });
+  const statusQ = useQuery({
+    queryKey: ["home-status-summary", workspaceParam],
+    queryFn: () => api.ticketStatusSummary(workspaceParam),
+    // Faster than the lists: this is the card people watch to see whether
+    // anything is actually moving.
+    refetchInterval: 10_000,
+  });
 
   const pending = pendingApprovals(approvalsQ.data);
   const tickets = ticketsQ.data ?? [];
@@ -76,16 +89,21 @@ export function HomePage() {
   const inProgress = tickets.filter((t) => t.state === "in_progress");
   const blocked = tickets.filter((t) => t.state === "blocked");
   const ticketsLoading = ticketsQ.isLoading || (ticketsQ.isFetching && !ticketsQ.data);
-  const activity = (runsQ.data ?? []).slice(0, 8);
+  // Named for what it is: recent runs. "Activity" now means ticket activity.
+  const recentRuns = (runsQ.data ?? []).slice(0, 8);
 
+  const status = statusQ.data;
   const summaryLine = useMemo(() => {
     const parts: string[] = [];
     if (pending.length) parts.push(`${pending.length} approval${pending.length === 1 ? "" : "s"} waiting`);
+    // Ahead of the in-progress count deliberately: "running" is the number that
+    // says whether the machine is busy, and it is usually much smaller.
+    if (status?.running) parts.push(`${status.running} running`);
     if (blocked.length) parts.push(`${blocked.length} blocked`);
     if (inProgress.length) parts.push(`${inProgress.length} in progress`);
     if (!parts.length) parts.push("Nothing urgent — ask Baxter what to do next");
     return parts.join(" · ");
-  }, [pending.length, blocked.length, inProgress.length]);
+  }, [pending.length, blocked.length, inProgress.length, status?.running]);
 
   const sendToBaxter = (text: string) => {
     const content = text.trim();
@@ -139,6 +157,12 @@ export function HomePage() {
       </section>
 
       <section className="home-cards" aria-label="Live status">
+        <StatusCard
+          summary={status}
+          loading={statusQ.isLoading}
+          onAction={() => navigate("/console")}
+        />
+
         <HomeCard
           title="Approvals waiting"
           count={pending.length}
@@ -180,7 +204,19 @@ export function HomePage() {
               onClick={() => navigate(ticketPath(t.id, "diff"))}
             >
               <span className="home-row-title">{t.title}</span>
-              <span className={`home-row-meta home-row-meta--${t.state}`}>{t.state}</span>
+              <span className="home-row-tags">
+                <span className={`home-row-meta home-row-meta--${t.state}`}>
+                  {ticketStateLabel(t.state)}
+                </span>
+                {/* The state above says the ticket is open; this says whether
+                    anything is happening on it. */}
+                <span
+                  className="home-row-activity"
+                  style={{ color: ticketActivityColor(t.activity) }}
+                >
+                  {ticketActivityLabel(t.activity)}
+                </span>
+              </span>
             </button>
           ))}
         </HomeCard>
@@ -190,11 +226,11 @@ export function HomePage() {
         <div className="home-activity-head">
           <h2>Recent activity</h2>
         </div>
-        {activity.length === 0 ? (
+        {recentRuns.length === 0 ? (
           <p className="home-empty">No recent runs.</p>
         ) : (
           <ul className="home-activity-list">
-            {activity.map((run) => (
+            {recentRuns.map((run) => (
               <li key={run.id} className="home-activity-item">
                 <span className={`home-run-status home-run-status--${run.status}`}>{run.status}</span>
                 <span className="home-activity-main">
@@ -210,6 +246,84 @@ export function HomePage() {
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * The two axes of the board, side by side.
+ *
+ * They are not the same question, and conflating them is what made the board
+ * read as busy when it was not: "in progress" counts open work, "running"
+ * counts work with an agent on it. The gap between them is `idle` — the pile
+ * that needs a human to press go.
+ */
+function StatusCard({
+  summary,
+  loading,
+  onAction,
+}: {
+  summary: TicketStatusSummary | undefined;
+  loading: boolean;
+  onAction: () => void;
+}) {
+  const activity: { key: string; label: string; value: number | null }[] = [
+    { key: "running", label: "Running", value: summary?.running ?? null },
+    { key: "awaiting", label: "Awaiting", value: summary?.awaiting ?? null },
+    { key: "queued", label: "Queued", value: summary?.queued ?? null },
+    { key: "idle", label: "Idle", value: summary?.idle ?? null },
+  ];
+  const states: { key: string; label: string; value: number | null }[] = [
+    { key: "backlog", label: "Backlog", value: summary?.backlog ?? null },
+    { key: "in_progress", label: "In progress", value: summary?.in_progress ?? null },
+    { key: "blocked", label: "Blocked", value: summary?.blocked ?? null },
+    { key: "done", label: "Done", value: summary?.done ?? null },
+  ];
+  const open = summary ? summary.backlog + summary.in_progress + summary.blocked : null;
+
+  return (
+    <article className="home-card home-card--status" aria-label="Board status">
+      <header className="home-card-head">
+        <h2>Board status</h2>
+        <span className="home-card-count">{open === null ? "…" : `${open} open`}</span>
+      </header>
+      <div className="home-card-body home-status-body">
+        {!summary && !loading ? (
+          <p className="home-empty">Status unavailable</p>
+        ) : (
+          <>
+            <div className="home-status-group">
+              <p className="home-status-label">Activity</p>
+              <dl className="home-status-grid">
+                {activity.map((stat) => (
+                  <div key={stat.key} className="home-stat" data-activity={stat.key}>
+                    <dt>{stat.label}</dt>
+                    <dd style={{ color: ticketActivityColor(stat.key) }}>
+                      {stat.value === null ? "…" : stat.value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <div className="home-status-group">
+              <p className="home-status-label">State</p>
+              <dl className="home-status-grid">
+                {states.map((stat) => (
+                  <div key={stat.key} className="home-stat" data-state={stat.key}>
+                    <dt>{stat.label}</dt>
+                    <dd>{stat.value === null ? "…" : stat.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </>
+        )}
+      </div>
+      <footer className="home-card-foot">
+        <button type="button" className="home-card-action" onClick={onAction}>
+          Open Console
+        </button>
+      </footer>
+    </article>
   );
 }
 

@@ -200,6 +200,66 @@ describe('the running half of a lane', () => {
     render(<ParallelQueueVisualization />);
     expect(screen.getAllByText('Available')).toHaveLength(2);
   });
+
+  test('shows the ticket state and activity, not just the slot', () => {
+    // The lane knows who holds the slot; these say what the ticket itself is.
+    withStatus({
+      lanes: [
+        {
+          ...runningLane,
+          running: { ...runningLane.running, ticket_state: 'in_progress', ticket_activity: 'running' },
+        },
+      ],
+    });
+
+    render(<ParallelQueueVisualization />);
+    const slot = screen.getByTestId('slot-1');
+
+    expect(within(slot).getByText('In Progress')).toBeInTheDocument();
+    expect(within(slot).getAllByText('Running').length).toBeGreaterThan(0);
+  });
+
+  test('spells the run status rather than leaking the enum', () => {
+    withStatus({
+      lanes: [{ ...runningLane, running: { ...runningLane.running, status: 'awaiting_permission' } }],
+    });
+
+    render(<ParallelQueueVisualization />);
+
+    expect(screen.getByText('Awaiting approval')).toBeInTheDocument();
+    expect(screen.queryByText('awaiting_permission')).not.toBeInTheDocument();
+  });
+
+  test('a parked run draws no progress percentage', () => {
+    // It is holding a slot, not making headway; a bar would claim otherwise.
+    withStatus({
+      lanes: [{ ...runningLane, running: { ...runningLane.running, status: 'awaiting_permission' } }],
+    });
+
+    const { container } = render(<ParallelQueueVisualization />);
+
+    expect(screen.getByTestId('slot-1-progress-unknown')).toBeInTheDocument();
+    const fill = container.querySelector('.queue-slot-bar-fill') as HTMLElement;
+    expect(fill.style.width).toBe('');
+  });
+
+  test('a slot held by a finished run stops pretending to be busy', () => {
+    // The slot-leak case: occupied, but nothing is working behind it.
+    withStatus({
+      lanes: [
+        {
+          ...runningLane,
+          running: { ...runningLane.running, status: 'succeeded', ticket_activity: 'idle' },
+        },
+      ],
+    });
+
+    const { container } = render(<ParallelQueueVisualization />);
+
+    expect(screen.getByText(/Succeeded · slot held/)).toBeInTheDocument();
+    expect(screen.queryByText(/elapsed/)).not.toBeInTheDocument();
+    expect(container.querySelector('.queue-slot-bar')).toBeNull();
+  });
 });
 
 describe('per-lane queues', () => {
@@ -209,6 +269,25 @@ describe('per-lane queues', () => {
     expect(screen.getByTestId('slot-1-queue')).toBeInTheDocument();
     expect(screen.getByText('Wire the approval gate')).toBeInTheDocument();
     expect(screen.getByText('Next in this lane (1)')).toBeInTheDocument();
+  });
+
+  test('a waiting entry shows why its ticket may not move', () => {
+    withStatus({
+      lanes: [
+        {
+          ...runningLane,
+          waiting: [
+            { ...runningLane.waiting[0], ticket_state: 'blocked', ticket_activity: 'queued' },
+          ],
+        },
+      ],
+    });
+
+    render(<ParallelQueueVisualization />);
+    const entry = screen.getByTestId('lane-entry-entry-1');
+
+    expect(within(entry).getByText('Blocked')).toBeInTheDocument();
+    expect(within(entry).getByText('Queued')).toBeInTheDocument();
   });
 
   test('an empty lane shows no queue at all', () => {

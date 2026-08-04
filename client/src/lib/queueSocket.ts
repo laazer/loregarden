@@ -21,6 +21,12 @@ export interface RunLabels {
   ticket_title?: string;
   ticket_code?: string;
   ticket_state?: string;
+  /**
+   * Whether an agent is actually on the ticket. The queue knows who holds a
+   * slot, not whether the work behind it is still moving — see
+   * services/ticket_activity.py.
+   */
+  ticket_activity?: string;
   agent_name?: string;
   stage_key?: string;
   /**

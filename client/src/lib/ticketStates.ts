@@ -1,4 +1,4 @@
-import type { StageStatus, TicketState } from "../api/types";
+import type { StageStatus, TicketActivity, TicketState } from "../api/types";
 
 export const TICKET_STATE_COLORS: Record<TicketState, string> = {
   backlog: "var(--txm)",
@@ -15,6 +15,51 @@ export const TICKET_STATE_LABELS: Record<TicketState, string> = {
   done: "Done",
   wont_do: "Won't do",
 };
+
+/**
+ * Activity is the axis `state` does not cover: "in progress" says the work is
+ * open, not that anything is executing. Idle is deliberately the quiet colour —
+ * it is the majority of the board, and shouting about it helps nobody.
+ */
+export const TICKET_ACTIVITY_COLORS: Record<TicketActivity, string> = {
+  running: "var(--grn)",
+  awaiting: "var(--amb)",
+  queued: "var(--blue)",
+  idle: "var(--txl)",
+};
+
+export const TICKET_ACTIVITY_LABELS: Record<TicketActivity, string> = {
+  running: "Running",
+  awaiting: "Awaiting",
+  queued: "Queued",
+  idle: "Idle",
+};
+
+export function ticketActivityColor(activity: string | undefined): string {
+  return fromMap(TICKET_ACTIVITY_COLORS, activity, "var(--txl)");
+}
+
+export function ticketActivityLabel(activity: string | undefined): string {
+  return fromMap(TICKET_ACTIVITY_LABELS, activity, "Idle");
+}
+
+/**
+ * Agent-run statuses, as they read on a card. The raw values are snake_case
+ * enum members — a slot badge showing `awaiting_permission` is the server's
+ * spelling leaking into the UI.
+ */
+const RUN_STATUS_LABELS: Record<string, string> = {
+  queued: "Queued",
+  running: "Running",
+  awaiting_permission: "Awaiting approval",
+  succeeded: "Succeeded",
+  failed: "Failed",
+  cancelled: "Cancelled",
+};
+
+export function runStatusLabel(status: string | undefined): string {
+  return fromMap(RUN_STATUS_LABELS, status, status || "Unknown");
+}
 
 /** Segment / stage dots in the v6 ticket card — done stages go quiet, the live one glows. */
 const STAGE_STATUS_COLORS: Record<StageStatus, string> = {
