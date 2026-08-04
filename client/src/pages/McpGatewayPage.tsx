@@ -256,6 +256,9 @@ export function McpGatewayPage() {
 
           <div className="mcp-section-head">
             <span className="mcp-section-title">Routing rules</span>
+            {/* The table scrolls, so the count is what says how much is below
+                the fold rather than leaving the operator to guess. */}
+            {rules.length > 0 && <span className="count-pill">{rules.length}</span>}
             <span className="mcp-section-note">what each agent may call, and what stops for you</span>
           </div>
           <McpRoutingRules rules={rules} />

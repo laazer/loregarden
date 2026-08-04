@@ -15,7 +15,16 @@ export function McpRoutingRules({ rules }: { rules: RoutingRule[] }) {
   }
 
   return (
-    <div className="mcp-rules" role="table" aria-label="Routing rules">
+    // Scrollable in its own right: one row per agent plus one per server runs
+    // past any viewport, and letting it grow pushed the switchboard above it
+    // off screen. tabIndex makes the region keyboard-scrollable, since it holds
+    // no focusable children of its own.
+    <div
+      className="mcp-rules"
+      role="table"
+      aria-label={`Routing rules, ${rules.length} rules`}
+      tabIndex={0}
+    >
       <div className="mcp-rules-head" role="row">
         <span role="columnheader">Agent</span>
         <span role="columnheader">Server</span>
