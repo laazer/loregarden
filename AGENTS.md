@@ -137,3 +137,12 @@ sqlite3 data/loregarden.db
   `mcp/tools.py` (1039), `ticket_studio_service.py` (980), `api/tickets.py` (928),
   `builtin_orchestrator.py` (921) — refactoring candidates.
 - **Known weaknesses** are catalogued in `docs/AUDIT.md`. Read it before proposing a rewrite.
+- **Claude usage meters need a `user:profile` credential, and `claude setup-token` is not one.**
+  That token is inference-scoped; `api.anthropic.com/api/oauth/usage` answers
+  `403 does not meet scope requirement user:profile`. The Keychain item can also be readable
+  yet hold *empty* `accessToken`/`refreshToken` strings — a logged-out session, fixed only by
+  `claude /login`, not by regenerating a token. When neither works, the fallback is the
+  claude.ai session cookie: copy the `sessionKey` cookie value from a logged-in browser into
+  `data/.claude-session-key` (bare value, no `sessionKey=` prefix — the file is gitignored), or
+  export `CLAUDE_SESSION_KEY`. Set `CLAUDE_ORG_UUID` to pin the organization when the account
+  has more than one. See `services/claude_session_usage.py`.

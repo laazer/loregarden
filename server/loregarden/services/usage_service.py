@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 from loregarden.config import settings
+from loregarden.services import claude_session_usage
 
 logger = logging.getLogger(__name__)
 
@@ -261,18 +262,30 @@ def _claude_oauth() -> dict[str, Any] | None:
 def _claude_login_diagnosis() -> str:
     """Error message for the no-usable-oauth case.
 
-    A missing credentials file plus a present-but-unreadable Keychain item
-    means the user is actually logged in but the backend process was denied
-    read access. macOS Keychain ACLs require GUI interaction to release a
-    password's value to a process by default; a backgrounded process like
-    this server gets a silent denial instead of a prompt
-    (https://github.com/anthropics/claude-code/issues/9403,
-    https://github.com/anthropics/claude-code/issues/44089). Re-running
-    `claude` won't fix that — the documented workaround is a long-lived
-    token (https://code.claude.com/docs/en/authentication#generate-a-long-lived-token).
+    Three distinct states, which need three different fixes:
+
+    - The Keychain item reads fine but its ``accessToken``/``refreshToken`` are
+      empty strings. That's a logged-out session, and only ``claude /login``
+      repopulates it.
+    - The item exists but can't be read. macOS Keychain ACLs require GUI
+      interaction to release a password's value, and a backgrounded process
+      gets a silent denial instead of a prompt
+      (https://github.com/anthropics/claude-code/issues/9403,
+      https://github.com/anthropics/claude-code/issues/44089).
+    - No item at all: never logged in.
+
+    Note that ``claude setup-token`` is *not* a fix for any of them where usage
+    is concerned. That token is inference-scoped, and this endpoint answers
+    ``403 OAuth token does not meet scope requirement user:profile``. The
+    session-key route in ``claude_session_usage`` is the working fallback.
     """
+    keychain = _read_claude_keychain_credentials()
+    if keychain is not None:
+        oauth = keychain.get("claudeAiOauth") or {}
+        if not str(oauth.get("accessToken") or "").strip():
+            return "Claude Code session is logged out — run `claude /login`."
     if _claude_keychain_item_exists():
-        return "Keychain unreadable by this process (not a login issue) — run `task claude:setup-token`."
+        return "Keychain unreadable by this process (not a login issue) — see AGENTS.md."
     return "Not logged in. Run `claude` to authenticate."
 
 
@@ -417,6 +430,45 @@ def _append_claude_extra_usage(body: dict[str, Any], meters: list[UsageMeter]) -
         )
 
 
+def _row_timestamp(row: dict[str, Any]) -> float | None:
+    """Epoch seconds for a transcript row, from either timestamp encoding.
+
+    Claude Code writes ISO-8601 strings (``2026-08-01T23:36:06.309Z``); numeric
+    epochs only show up in older/other writers. Reading it as a number alone
+    silently disabled the ``days_back`` window entirely.
+    """
+    raw = row.get("timestamp")
+    parsed = _parse_iso_timestamp(raw)
+    if parsed is not None:
+        return parsed.timestamp()
+    number = _as_number(raw)
+    if number is None:
+        return None
+    return number / 1000 if abs(number) >= 1e10 else number
+
+
+def _row_usage(row: dict[str, Any]) -> dict[str, Any] | None:
+    """Token counts for a transcript row.
+
+    Claude Code nests these under ``message.usage`` (the raw Anthropic API
+    response envelope); a top-level ``usage`` is accepted too so other writers
+    and older transcripts still count.
+    """
+    message = row.get("message")
+    if isinstance(message, dict) and isinstance(message.get("usage"), dict):
+        return message["usage"]
+    usage = row.get("usage")
+    return usage if isinstance(usage, dict) else None
+
+
+def _row_model(row: dict[str, Any]) -> str:
+    """Model name for a transcript row, top-level first then the message body."""
+    message = row.get("message")
+    nested = message.get("model") if isinstance(message, dict) else None
+    model = row.get("model") or nested
+    return str(model or "unknown").strip() or "unknown"
+
+
 def _scan_claude_logs(days_back: int = 7) -> list[UsageBreakdownItem]:
     roots = [_claude_home() / "projects"]
     since = datetime.now(tz=timezone.utc).timestamp() - days_back * 86400
@@ -425,6 +477,14 @@ def _scan_claude_logs(days_back: int = 7) -> list[UsageBreakdownItem]:
         if not root.is_dir():
             continue
         for path in root.rglob("*.jsonl"):
+            # A transcript last written before the window can only hold rows
+            # outside it, so skip the read entirely. Without this every poll
+            # reads the whole history (~1.4 GB here) to discard nearly all of it.
+            try:
+                if path.stat().st_mtime < since:
+                    continue
+            except OSError:
+                continue
             try:
                 for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
                     if '"usage"' not in line:
@@ -433,18 +493,15 @@ def _scan_claude_logs(days_back: int = 7) -> list[UsageBreakdownItem]:
                         row = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    ts = _as_number(row.get("timestamp"))
+                    if not isinstance(row, dict):
+                        continue
+                    ts = _row_timestamp(row)
                     if ts is not None and ts < since:
                         continue
-                    usage = row.get("usage")
-                    if not isinstance(usage, dict):
+                    usage = _row_usage(row)
+                    if usage is None:
                         continue
-                    model = (
-                        row.get("model") or row.get("message", {}).get("model")
-                        if isinstance(row.get("message"), dict)
-                        else None
-                    )
-                    model_name = str(model or "unknown").strip() or "unknown"
+                    model_name = _row_model(row)
                     input_tokens = _as_number(usage.get("input_tokens")) or 0
                     output_tokens = _as_number(usage.get("output_tokens")) or 0
                     cache_read = _as_number(usage.get("cache_read_input_tokens")) or 0
@@ -595,7 +652,7 @@ def _rate_limit_streak_from_cache(cache_entry: dict[str, Any] | None) -> int:
     return streak if isinstance(streak, int) and streak >= 0 else 0
 
 
-def _fetch_claude_usage(
+def _fetch_claude_usage_oauth(
     client: httpx.Client,
     cache_entry: dict[str, Any] | None = None,
 ) -> ProviderUsage:
@@ -605,6 +662,10 @@ def _fetch_claude_usage(
             provider="claude",
             logged_in=False,
             error=_claude_login_diagnosis(),
+            # The breakdown comes from local transcripts, not the API, so it is
+            # still available with no credential at all — every other failure
+            # branch includes it and this one should too.
+            breakdown=_scan_claude_logs(),
         )
 
     scopes = oauth.get("scopes")
@@ -667,21 +728,97 @@ def _fetch_claude_usage(
             rate_limit_streak=rate_limit_streak,
         )
 
-    body = response.json()
+    return ProviderUsage(
+        provider="claude",
+        plan=_claude_plan_label(oauth),
+        logged_in=True,
+        meters=_claude_meters_from_body(response.json()),
+        breakdown=_scan_claude_logs(),
+    )
+
+
+def _claude_meters_from_body(body: Any) -> list[UsageMeter]:
+    """Build meters from a Claude usage payload.
+
+    Shared by both routes: the OAuth endpoint and claude.ai return the same
+    shape, so neither gets its own parser to drift.
+    """
+    if not isinstance(body, dict):
+        return []
     meters: list[UsageMeter] = []
     _append_claude_window(body, "five_hour", "Session (5h)", meters)
     _append_claude_window(body, "seven_day", "Weekly", meters)
     _append_claude_window(body, "seven_day_sonnet", "Sonnet weekly", meters)
     _append_claude_scoped_limit(body.get("limits"), "Fable", "Fable weekly", meters)
     _append_claude_extra_usage(body, meters)
+    return meters
+
+
+def _claude_usage_from_session_key(
+    client: httpx.Client,
+    oauth_result: ProviderUsage,
+) -> ProviderUsage | None:
+    """Second attempt at live meters, over the claude.ai session cookie.
+
+    Returns None when the route isn't configured, leaving the OAuth result (and
+    its error) untouched. When it *is* configured but fails, the session-key
+    error is surfaced instead: a user who deliberately set this up needs to see
+    why it isn't working, and it's the more actionable of the two messages.
+
+    Rate-limit bookkeeping is carried over from the OAuth attempt either way, so
+    backing off the Anthropic endpoint isn't reset by succeeding here.
+    """
+    try:
+        body = claude_session_usage.fetch_usage_body(client)
+    except claude_session_usage.SessionUsageUnavailable as exc:
+        return ProviderUsage(
+            provider="claude",
+            plan=oauth_result.plan,
+            logged_in=oauth_result.logged_in,
+            error=exc.message,
+            breakdown=oauth_result.breakdown or _scan_claude_logs(),
+            rate_limited_until=oauth_result.rate_limited_until,
+            rate_limit_streak=oauth_result.rate_limit_streak,
+        )
+    except httpx.HTTPError as exc:
+        logger.debug("claude.ai session-key usage request failed: %s", exc)
+        return None
+
+    if body is None:
+        return None
+
+    meters = _claude_meters_from_body(body)
+    if not meters:
+        return None
 
     return ProviderUsage(
         provider="claude",
-        plan=_claude_plan_label(oauth),
+        plan=oauth_result.plan,
+        # The cookie is itself proof of a logged-in account, even when no OAuth
+        # credential was usable.
         logged_in=True,
         meters=meters,
-        breakdown=_scan_claude_logs(),
+        breakdown=oauth_result.breakdown or _scan_claude_logs(),
+        rate_limited_until=oauth_result.rate_limited_until,
+        rate_limit_streak=oauth_result.rate_limit_streak,
     )
+
+
+def _fetch_claude_usage(
+    client: httpx.Client,
+    cache_entry: dict[str, Any] | None = None,
+) -> ProviderUsage:
+    """Live Claude usage, preferring OAuth and falling back to the session key.
+
+    The OAuth route is tried first because it's the official one. It can fail
+    with no usable credential at all, or succeed at the HTTP level yet yield no
+    meters if the payload shape moves — both are treated as "no live data" and
+    hand off to the fallback.
+    """
+    oauth_result = _fetch_claude_usage_oauth(client, cache_entry)
+    if oauth_result.meters:
+        return oauth_result
+    return _claude_usage_from_session_key(client, oauth_result) or oauth_result
 
 
 def _cursor_state_db() -> Path:
@@ -1036,7 +1173,10 @@ def _resolve_provider_with_cache(
     provider: ProviderUsage,
     cache: dict[str, dict[str, Any]],
 ) -> tuple[ProviderUsage, dict[str, dict[str, Any]] | None]:
-    if provider.error is None:
+    # An error-free result carrying no meters means the payload shape moved, not
+    # that usage is genuinely zero. Caching it would overwrite the last good
+    # readings with nothing; fall through and keep serving those instead.
+    if provider.error is None and provider.meters:
         cached_at = datetime.now(tz=timezone.utc).isoformat()
         return (
             ProviderUsage(
