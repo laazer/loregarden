@@ -1051,6 +1051,7 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
       />,
     );
     expect(screen.getByRole("checkbox", { name: "Run tests" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
     agent.unmount();
 
     render(
@@ -1066,6 +1067,54 @@ describe("workspace, todo, git, Q&A, and Giphy primitives", () => {
     fireEvent.click(checkbox);
     expect(checkbox).toBeChecked();
     expect(screen.getByText("1/1 complete")).toBeInTheDocument();
+  });
+
+  it("runs an agent execution plan through the chat callback", () => {
+    const onSubmit = jest.fn();
+    render(
+      <TodoListPrimitive
+        part={{
+          primitive: "todo_list",
+          owner: "agent",
+          title: "Agent execution plan",
+          items: [
+            { id: "api", text: "Add history API", checked: false },
+            { id: "verify", text: "Run focused tests", checked: true },
+          ],
+        }}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      [
+        "Execute this agent execution plan now. Complete each unchecked step using tools.",
+        "As you finish steps, re-emit the same todo_list with checked:true on completed items.",
+        "",
+        "Plan: Agent execution plan",
+        "- [ ] Add history API (id: api)",
+        "- [x] Run focused tests (id: verify)",
+      ].join("\n"),
+    );
+    expect(screen.getByText("Execution requested")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
+  });
+
+  it("hides Run when every agent plan step is already checked", () => {
+    render(
+      <TodoListPrimitive
+        part={{
+          primitive: "todo_list",
+          owner: "agent",
+          title: "Agent execution plan",
+          items: [{ id: "done", text: "Ship it", checked: true }],
+        }}
+        onSubmit={jest.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
+    expect(screen.getByText("All steps complete")).toBeInTheDocument();
   });
 
   it("keeps user ticks through a re-render but adopts a changed payload", () => {

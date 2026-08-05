@@ -181,6 +181,8 @@ def test_baxter_chat_prompt_includes_snapshot_and_stored_history(client: TestCli
     assert "Never invent ticket/agent ids" in prompt
     assert "Agent execution plan" in prompt
     assert '"primitive":"todo_list"' in prompt
+    assert "Execute this agent execution plan now" in prompt
+    assert "Re-emit the same" in prompt
     assert "emit `qa`" in prompt
     # History comes from the stored thread, not from the client.
     assert "user: Hi" in prompt
