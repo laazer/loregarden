@@ -13,6 +13,8 @@ import {
 import { useUiStore, type UtilityDockEdge } from "../state/uiStore";
 import { formatLogExcerpt } from "../utils/logExcerpt";
 import { BaxterAvatar } from "./chat/BaxterAvatar";
+import { TriageModelModal } from "./TriageModelModal";
+import { runtimeSummaryLabel } from "./WorkspaceRuntimeFields";
 
 const NO_SESSION_PLACEHOLDER = "Open a ticket or a branch to chat about it";
 
@@ -41,6 +43,7 @@ export function AppActionBar() {
   const [draft, setDraft] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
   const [attachLogs, setAttachLogs] = useState(false);
+  const [modelModalOpen, setModelModalOpen] = useState(false);
 
   // Same key the dashboard and the terminal target use, so the log lines to
   // attach cost no extra request.
@@ -48,6 +51,11 @@ export function AppActionBar() {
     queryKey: ["ticket", ticketId],
     queryFn: () => api.ticket(ticketId as string),
     enabled: Boolean(ticketId),
+  });
+  const runtimeOptions = useQuery({
+    queryKey: ["runtime-options", archive?.workspaceSlug ?? ""],
+    queryFn: () => api.runtimeOptions({ workspace: archive!.workspaceSlug }),
+    enabled: Boolean(archive?.workspaceSlug),
   });
 
   const logLines = ticket?.artifacts?.logs ?? [];
@@ -232,6 +240,15 @@ export function AppActionBar() {
         <>
           <button
             type="button"
+            className="app-action-bar-chat-model"
+            title="Choose Baxter's provider and model for this conversation"
+            disabled={!runtimeOptions.data || archive.isSavingRuntime || session?.isBusy}
+            onClick={() => setModelModalOpen(true)}
+          >
+            Model · {runtimeSummaryLabel(archive.runtime, runtimeOptions.data)}
+          </button>
+          <button
+            type="button"
             className="app-action-bar-chat-new"
             title="Start a new conversation with Baxter"
             onClick={() => {
@@ -294,6 +311,18 @@ export function AppActionBar() {
         </svg>
       </button>
       {screenControls}
+      {archive ? (
+        <TriageModelModal
+          open={modelModalOpen}
+          runtime={archive.runtime}
+          runtimeOptions={runtimeOptions.data}
+          isSaving={archive.isSavingRuntime}
+          scopeLabel="Baxter"
+          subtitle="Choose a provider, then pick a model for this conversation"
+          onClose={() => setModelModalOpen(false)}
+          onSave={archive.setRuntime}
+        />
+      ) : null}
     </footer>
   );
 }

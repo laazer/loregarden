@@ -28,6 +28,7 @@ from loregarden.services.baxter_chat_service import (
 from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, parts_json_for_reply
 from loregarden.services.chat_thinking import finish_chat_turn_thinking, with_thinking_part
 from loregarden.services.cli_auth_errors import format_agent_unavailable
+from loregarden.services.cli_settings import apply_runtime_overrides
 from loregarden.services.triage_service import TRIAGE_AGENT_NAME
 from sqlmodel import Session, col, select
 
@@ -141,12 +142,13 @@ def execute_baxter_chat_turn_background(assistant_id: str) -> None:
                 return
 
             latest_user_message = _latest_user_content(session, chat_session.id)
+            effective_workspace = apply_runtime_overrides(workspace, chat_session.runtime_json)
             # Settled rows only, so the pending assistant row is not fed back as history.
             history = list_chat_messages(session, chat_session.id)
             try:
                 reply = invoke_baxter_chat_model(
                     session,
-                    workspace,
+                    effective_workspace,
                     content=latest_user_message,
                     history=history,
                     turn_id=assistant_id,

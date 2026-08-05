@@ -1250,6 +1250,19 @@ def _m_workspace_codex_model(conn: Connection) -> None:
     )
 
 
+def _m_baxter_chat_runtime(conn: Connection) -> None:
+    add_columns_if_missing(
+        conn,
+        "baxter_chat_sessions",
+        {
+            "runtime_json": (
+                "ALTER TABLE baxter_chat_sessions ADD COLUMN runtime_json "
+                "TEXT NOT NULL DEFAULT '{}'"
+            ),
+        },
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1316,6 +1329,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0063_btw_exchanges", _m_btw_exchanges),
     ("0064_lane_entry_run_options", m_lane_entry_run_options),
     ("0065_workspace_codex_model", _m_workspace_codex_model),
+    ("0066_baxter_chat_runtime", _m_baxter_chat_runtime),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

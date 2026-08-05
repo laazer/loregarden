@@ -2363,6 +2363,7 @@ button {
 
 .app-action-bar-auto,
 .app-action-bar-logs,
+.app-action-bar-chat-model,
 .app-action-bar-chat-new,
 .app-action-bar-chat-history {
   flex: none;
@@ -2386,10 +2387,16 @@ button {
 
 .app-action-bar-auto:hover,
 .app-action-bar-logs:hover:not(:disabled),
+.app-action-bar-chat-model:hover:not(:disabled),
 .app-action-bar-chat-new:hover,
 .app-action-bar-chat-history:hover {
   color: var(--txm);
   border-color: var(--bd2);
+}
+
+.app-action-bar-chat-model:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .app-action-bar-chat-history.is-on {

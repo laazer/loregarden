@@ -15,7 +15,21 @@ jest.mock("../../api/client", () => ({
     approvals: jest.fn().mockResolvedValue([]),
     sendTriageMessage: jest.fn().mockResolvedValue({}),
     workspaces: jest.fn().mockResolvedValue([{ slug: "loregarden", name: "Loregarden" }]),
-    baxterChatSession: jest.fn().mockResolvedValue({ messages: [], run_status: "idle" }),
+    baxterChatSession: jest.fn().mockResolvedValue({
+      messages: [],
+      runtime: {
+        cli_adapter: "default",
+        claude_model: "",
+        cursor_model: "",
+        codex_model: "",
+        lmstudio_base_url: "",
+        lmstudio_model: "",
+        claude_effort: "",
+        cursor_effort: "",
+        lmstudio_effort: "",
+      },
+      run_status: "idle",
+    }),
   },
 }));
 jest.mock("../../lib/branchTriageApi", () => ({

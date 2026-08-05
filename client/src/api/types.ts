@@ -702,6 +702,7 @@ export interface BaxterChatSnapshot {
   workspace_id: string;
   title: string;
   messages: TriageMessage[];
+  runtime: WorkspaceRuntimeSettings;
   run_status: TriageRunStatus;
   active_turn_id: string | null;
   created_at: string;
