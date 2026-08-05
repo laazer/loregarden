@@ -62,6 +62,33 @@ def test_baxter_chat_session_titled_from_first_message(client: TestClient, monke
     assert entry["preview"] == "ok"
 
 
+def test_baxter_chat_runtime_round_trips_on_session(client: TestClient):
+    session_id = _new_session(client)
+
+    saved = client.patch(
+        f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/runtime",
+        json={
+            "cli_adapter": "cursor",
+            "claude_model": "",
+            "cursor_model": "gpt-5",
+            "codex_model": "",
+            "lmstudio_base_url": "",
+            "lmstudio_model": "",
+            "claude_effort": "",
+            "cursor_effort": "",
+            "lmstudio_effort": "",
+        },
+    )
+
+    assert saved.status_code == 200
+    assert saved.json()["cli_adapter"] == "cursor"
+    assert saved.json()["cursor_model"] == "gpt-5"
+
+    snapshot = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").json()
+    assert snapshot["runtime"]["cli_adapter"] == "cursor"
+    assert snapshot["runtime"]["cursor_model"] == "gpt-5"
+
+
 def test_baxter_chat_rename_and_delete(client: TestClient, monkeypatch):
     monkeypatch.setenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", "ok")
     session_id = _new_session(client)
@@ -156,6 +183,43 @@ def test_baxter_chat_prompt_includes_snapshot_and_stored_history(client: TestCli
     assert "assistant: Hello" in prompt
     # The read-only turn is told its snapshot is advisory, not actionable.
     assert "advisory only" in prompt
+
+
+def test_baxter_chat_uses_session_runtime_for_turn(client: TestClient, monkeypatch):
+    from loregarden.services import baxter_chat_service
+
+    captured: dict[str, object] = {}
+
+    def fake_run(_profile, *, workspace, **_kwargs):
+        captured["adapter"] = workspace.cli_adapter
+        captured["cursor_model"] = workspace.cursor_model
+        return "ok from selected runtime"
+
+    monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
+    monkeypatch.setattr(baxter_chat_service, "run_cli_agent_turn", fake_run)
+
+    session_id = _new_session(client)
+    client.patch(
+        f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/runtime",
+        json={
+            "cli_adapter": "cursor",
+            "claude_model": "",
+            "cursor_model": "gpt-5",
+            "codex_model": "",
+            "lmstudio_base_url": "",
+            "lmstudio_model": "",
+            "claude_effort": "",
+            "cursor_effort": "",
+            "lmstudio_effort": "",
+        },
+    )
+    res = client.post(
+        f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/messages",
+        json={"content": "Which runtime?"},
+    )
+
+    assert res.status_code == 202
+    assert captured == {"adapter": "cursor", "cursor_model": "gpt-5"}
 
 
 def test_interrupted_turn_is_settled_not_stranded(client: TestClient, monkeypatch):

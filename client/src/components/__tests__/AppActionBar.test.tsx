@@ -6,6 +6,7 @@ import { AppActionBar } from "../AppActionBar";
 import * as apiClient from "../../api/client";
 import { useActiveChatSession } from "../../hooks/useActiveChatSession";
 import { useTerminalTarget } from "../../hooks/useTerminalTarget";
+import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { useUiStore } from "../../state/uiStore";
 
 jest.mock("../../hooks/useActiveChatSession");
@@ -20,7 +21,7 @@ const mockResolver = useActiveChatSession as jest.MockedFunction<
 const mockTerminal = useTerminalTarget as jest.MockedFunction<
   typeof useTerminalTarget
 >;
-const mockApi = apiClient.api as unknown as { ticket: jest.Mock };
+const mockApi = apiClient.api as unknown as { runtimeOptions: jest.Mock; ticket: jest.Mock };
 
 function renderBar(ui: ReactElement = <AppActionBar />) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -74,6 +75,20 @@ beforeEach(() => {
       logs: [{ time: "10:00:00", tag: "ERR", text: "pytest exited 1" }],
       live: null,
     },
+  });
+  mockApi.runtimeOptions.mockResolvedValue({
+    cli_adapters: [
+      { id: "default", label: "Workspace default" },
+      { id: "cursor", label: "Cursor" },
+    ],
+    claude_models: [{ id: "", label: "Default (Claude profile)" }],
+    cursor_models: [{ id: "gpt-5", label: "GPT-5" }],
+    codex_models: [],
+    lmstudio_models: [],
+    claude_efforts: [],
+    cursor_efforts: [],
+    lmstudio_efforts: [],
+    cursor_effort_models: [],
   });
 });
 
@@ -406,6 +421,9 @@ describe("the chat options", () => {
     sessionId: "s1",
     openSession: jest.fn(),
     startNewChat: jest.fn(),
+    runtime: DEFAULT_RUNTIME,
+    setRuntime: jest.fn().mockResolvedValue({}),
+    isSavingRuntime: false,
     ...overrides,
   });
 
@@ -418,6 +436,21 @@ describe("the chat options", () => {
 
     expect(screen.queryByRole("button", { name: "New chat" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "History" })).not.toBeInTheDocument();
+  });
+
+  it("offers model settings for the omnibar Baxter conversation", async () => {
+    mockResolver.mockReturnValue(
+      bind({
+        session: session({ kind: "baxter-home" }),
+        label: "Baxter · loregarden",
+        ticketId: null,
+        archive: archive(),
+      }),
+    );
+
+    renderBar();
+
+    expect(await screen.findByRole("button", { name: /Model · Workspace default/i })).toBeInTheDocument();
   });
 
   it("starts a fresh thread and shows it", () => {

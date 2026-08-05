@@ -2,7 +2,12 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from loregarden.db.session import get_session
-from loregarden.models.domain import BaxterChatSession, Workspace
+from loregarden.models.domain import (
+    BaxterChatSession,
+    Workspace,
+    WorkspaceRuntimeSettings,
+    WorkspaceRuntimeUpdate,
+)
 from loregarden.services.baxter_chat_run_service import (
     BaxterChatConflictError,
     schedule_baxter_chat_turn,
@@ -15,6 +20,7 @@ from loregarden.services.baxter_chat_service import (
     delete_chat_session,
     get_chat_session,
     list_chat_sessions,
+    set_chat_runtime,
 )
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
@@ -101,6 +107,24 @@ def remove_baxter_chat_session(
     chat_session = _chat_session(session, workspace.id, session_id)
     delete_chat_session(session, chat_session)
     return {"deleted": session_id}
+
+
+@router.patch(
+    "/{slug}/baxter-chat/sessions/{session_id}/runtime",
+    response_model=WorkspaceRuntimeSettings,
+)
+def patch_baxter_chat_runtime(
+    slug: str,
+    session_id: str,
+    body: WorkspaceRuntimeUpdate,
+    session: Session = Depends(get_session),
+) -> WorkspaceRuntimeSettings:
+    workspace = _workspace(session, slug)
+    chat_session = _chat_session(session, workspace.id, session_id)
+    try:
+        return set_chat_runtime(session, chat_session, body)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/{slug}/baxter-chat/sessions/{session_id}/messages", status_code=202)

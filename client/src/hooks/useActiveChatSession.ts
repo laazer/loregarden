@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
 
 import { api, type Approval } from "../api/client";
+import type { WorkspaceRuntimeSettings } from "../api/client";
 import { ticketIdFromPath } from "../lib/appNavigation";
 import type { ChatSession } from "../lib/chatSession";
 import { useUiStore } from "../state/uiStore";
@@ -26,6 +27,9 @@ export interface ChatArchive {
   sessionId: string;
   openSession: (id: string) => void;
   startNewChat: () => void;
+  runtime: WorkspaceRuntimeSettings;
+  setRuntime: (runtime: WorkspaceRuntimeSettings) => Promise<void>;
+  isSavingRuntime: boolean;
 }
 
 export interface ActiveChatSession {
@@ -171,6 +175,9 @@ export function useActiveChatSession(): ActiveChatSession {
       sessionId: baxterSession.sessionId,
       openSession: baxterSession.openSession,
       startNewChat: baxterSession.startNewChat,
+      runtime: baxterSession.runtime,
+      setRuntime: baxterSession.setRuntime,
+      isSavingRuntime: baxterSession.isSavingRuntime,
     },
   };
 }

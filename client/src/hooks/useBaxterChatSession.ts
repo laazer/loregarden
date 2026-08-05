@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 
-import { ApiError, api, type BaxterChatSnapshot } from "../api/client";
+import { ApiError, api, type BaxterChatSnapshot, type WorkspaceRuntimeSettings } from "../api/client";
 import type { ChatSession } from "../lib/chatSession";
 import { isRunStatusBusy } from "../lib/chatSession";
+import { DEFAULT_RUNTIME } from "../lib/runtimeSettings";
 import { useUiStore } from "../state/uiStore";
 
 export interface BaxterChatSessionBinding extends ChatSession {
@@ -15,6 +16,9 @@ export interface BaxterChatSessionBinding extends ChatSession {
   startNewChat: () => void;
   renameSession: (id: string, title: string) => Promise<unknown>;
   deleteSession: (id: string) => Promise<unknown>;
+  runtime: WorkspaceRuntimeSettings;
+  setRuntime: (runtime: WorkspaceRuntimeSettings) => Promise<void>;
+  isSavingRuntime: boolean;
 }
 
 export function baxterChatSessionsKey(slug: string) {
@@ -110,6 +114,31 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
     },
   });
 
+  const saveRuntime = useMutation({
+    meta: { errorTitle: "Save chat runtime" },
+    mutationFn: async (runtime: WorkspaceRuntimeSettings) => {
+      let id = sessionId;
+      if (!id) {
+        const created = await api.createBaxterChatSession(workspaceSlug);
+        id = created.id;
+        setSessionId(id);
+        qc.setQueryData(baxterChatSessionKey(workspaceSlug, id), created);
+        invalidateArchive();
+      }
+      return api.setBaxterChatRuntime(workspaceSlug, id, runtime);
+    },
+    onSuccess: (runtime, _variables) => {
+      const id = sessionId || useUiStore.getState().baxterChatSessionId;
+      if (id) {
+        qc.setQueryData<BaxterChatSnapshot>(
+          baxterChatSessionKey(workspaceSlug, id),
+          (current) => (current ? { ...current, runtime } : current),
+        );
+      }
+      invalidateArchive();
+    },
+  });
+
   return {
     kind: "baxter-home",
     id: sessionId,
@@ -125,6 +154,8 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
       snapshot.isError && !(snapshot.error instanceof ApiError && snapshot.error.status === 404),
     error: sendMessage.isError
       ? (sendMessage.error as Error)?.message || "Failed to send message"
+      : saveRuntime.isError
+        ? (saveRuntime.error as Error)?.message || "Failed to save model settings"
       : null,
     send: (content: string) => sendMessage.mutateAsync(content),
     snapshot: snapshot.data,
@@ -132,5 +163,10 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
     startNewChat: () => setSessionId(""),
     renameSession: (id: string, title: string) => renameSession.mutateAsync({ id, title }),
     deleteSession: (id: string) => deleteSession.mutateAsync(id),
+    runtime: snapshot.data?.runtime ?? DEFAULT_RUNTIME,
+    setRuntime: async (runtime) => {
+      await saveRuntime.mutateAsync(runtime);
+    },
+    isSavingRuntime: saveRuntime.isPending,
   };
 }
