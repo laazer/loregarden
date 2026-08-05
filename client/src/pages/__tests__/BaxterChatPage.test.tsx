@@ -27,6 +27,7 @@ jest.mock("../../api/client", () => {
       deleteBaxterChatSession: jest.fn(),
       setBaxterChatRuntime: jest.fn(),
       sendBaxterChatMessage: jest.fn(),
+      stopBaxterChatTurn: jest.fn(),
     },
   };
 });
@@ -99,6 +100,25 @@ function fakeChatServer(reply = "Model says ship Home polish.") {
         ...thread.messages,
         { id: `m${nextId++}`, role: "user", content, created_at: new Date().toISOString() },
         { id: `m${nextId++}`, role: "assistant", content: reply, created_at: new Date().toISOString() },
+      ],
+    };
+    threads.set(id, updated);
+    return updated;
+  });
+  mockedApi.stopBaxterChatTurn.mockImplementation(async (_slug, id) => {
+    const thread = snapshot(id);
+    const updated: BaxterChatSnapshot = {
+      ...thread,
+      run_status: "idle",
+      active_turn_id: null,
+      messages: [
+        ...thread.messages,
+        {
+          id: `stop-${nextId++}`,
+          role: "assistant",
+          content: "Baxter stopped this turn at your request.",
+          created_at: new Date().toISOString(),
+        },
       ],
     };
     threads.set(id, updated);
@@ -211,22 +231,12 @@ describe("BaxterChatPage", () => {
     await waitFor(() => expect(mockedApi.approvals).toHaveBeenCalled());
   });
 
-  it("saves a provider and model for the chat page conversation", async () => {
+  it("leaves the model picker to the omnibar rather than the composer", async () => {
+    // One picker per conversation, and it is the bar's on every screen — the
+    // composer carrying a second copy is the same choice offered twice.
     await renderChatReady();
-    fireEvent.click(await screen.findByRole("button", { name: /Model · Workspace default/i }));
 
-    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "cursor" } });
-    fireEvent.change(screen.getByLabelText("Cursor model"), { target: { value: "gpt-5" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(mockedApi.createBaxterChatSession).toHaveBeenCalledWith("loregarden");
-      expect(mockedApi.setBaxterChatRuntime).toHaveBeenCalledWith(
-        "loregarden",
-        "s1",
-        expect.objectContaining({ cli_adapter: "cursor", cursor_model: "gpt-5" }),
-      );
-    });
+    expect(screen.queryByRole("button", { name: /Model · /i })).not.toBeInTheDocument();
   });
 
   it("creates a thread on the first send and shows the persisted reply", async () => {
@@ -449,6 +459,38 @@ describe("BaxterChatPage", () => {
     await waitFor(() =>
       expect(screen.getByPlaceholderText("Reply to Baxter…")).toBeDisabled(),
     );
+    // Send becomes a working Stop control so a bad turn can be exited.
+    expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
+  });
+
+  it("stops an in-flight turn from the composer", async () => {
+    const threads = fakeChatServer();
+    threads.set("s8", {
+      id: "s8",
+      workspace_id: "w1",
+      title: "Stop me",
+      messages: [
+        { id: "m1", role: "user", content: "Go forever", created_at: "2026-07-30T09:00:00Z" },
+      ],
+      runtime: DEFAULT_RUNTIME,
+      run_status: "running",
+      active_turn_id: "m2",
+      created_at: "2026-07-30T09:00:00Z",
+      updated_at: "2026-07-30T09:00:00Z",
+    });
+    useUiStore.setState({ baxterChatSessionId: "s8" });
+
+    renderChat();
+    expect(await screen.findByRole("button", { name: "Stop" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+
+    await waitFor(() =>
+      expect(mockedApi.stopBaxterChatTurn).toHaveBeenCalledWith("loregarden", "s8"),
+    );
+    await waitFor(() =>
+      expect(screen.getByText(/stopped this turn/i)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Baxter is looking…")).not.toBeInTheDocument();
   });
 
   it("surfaces API failures in the thread", async () => {

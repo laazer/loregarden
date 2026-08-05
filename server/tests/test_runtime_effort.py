@@ -1,6 +1,7 @@
 """Reasoning-effort resolution and how each adapter carries it to its CLI."""
 
 import json
+import os
 from unittest import mock
 
 import httpx
@@ -8,6 +9,7 @@ import pytest
 from loregarden.agents.cli_adapters import resolve_cli_invocation
 from loregarden.agents.executors.lmstudio_runner import run_chat
 from loregarden.models.domain import Workspace, WorkspaceRuntimeSettings
+from loregarden.services import cli_settings
 from loregarden.services.cli_settings import (
     CURSOR_EFFORT_MODELS,
     apply_cursor_effort,
@@ -243,8 +245,31 @@ def test_runtime_options_advertise_only_live_claude_models(client):
 def test_runtime_options_include_codex_adapter_and_models(client):
     body = client.get("/api/workspaces/runtime-options").json()
 
-    assert {"id": "codex", "label": "Codex CLI"} in body["cli_adapters"]
+    codex = next(opt for opt in body["cli_adapters"] if opt["id"] == "codex")
+    assert codex["label"] == "Codex CLI"
     assert {"id": "gpt-5", "label": "GPT-5"} in body["codex_models"]
+
+
+def test_runtime_options_flag_an_adapter_whose_cli_is_not_installed(client):
+    with mock.patch.object(cli_settings.shutil, "which", return_value=None):
+        body = client.get("/api/workspaces/runtime-options").json()
+
+    by_id = {opt["id"]: opt for opt in body["cli_adapters"]}
+    assert by_id["codex"]["available"] is False
+    assert by_id["claude"]["available"] is False
+    # Nothing local to spawn, so these can never be "missing".
+    assert by_id["default"]["available"] is True
+    assert by_id["lmstudio"]["available"] is True
+
+
+def test_adapter_available_honours_a_binary_path_override(tmp_path):
+    fake = tmp_path / "codex"
+    fake.write_text("#!/bin/sh\n")
+    with (
+        mock.patch.object(cli_settings.shutil, "which", return_value=None),
+        mock.patch.dict(os.environ, {"LOREGARDEN_CODEX_BIN": str(fake)}),
+    ):
+        assert cli_settings.adapter_available("codex") is True
 
 
 def test_workspace_runtime_round_trips_codex_model(client):

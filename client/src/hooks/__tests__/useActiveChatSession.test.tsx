@@ -129,6 +129,8 @@ it("binds to nothing on the Baxter chat screen, which composes for itself", () =
 
   expect(result.current.session).toBeNull();
   expect(result.current.composedOnScreen).toBe(true);
+  // The archive still rides along: the bar draws the model picker there.
+  expect(result.current.archive?.workspaceSlug).toBe("loregarden");
 });
 
 it("binds to nothing on Home, whose hero is the way into the same thread", () => {

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -35,6 +36,33 @@ CLI_ADAPTER_OPTIONS: list[dict[str, str]] = [
     {"id": "codex", "label": "Codex CLI"},
     {"id": "lmstudio", "label": "LM Studio"},
 ]
+
+# The executable each adapter spawns, and the env key that overrides its path.
+# ``default``/``local``/``lmstudio`` spawn nothing local, so they are always
+# available. Everything else is only selectable if the CLI is actually on PATH —
+# picking one that is not turns every run into a raw ``FileNotFoundError``.
+ADAPTER_BINARIES: dict[str, tuple[str, str]] = {
+    "claude": ("claude", "LOREGARDEN_CLAUDE_BIN"),
+    "cursor": ("cursor-agent", "LOREGARDEN_CURSOR_BIN"),
+    "codex": ("codex", "LOREGARDEN_CODEX_BIN"),
+}
+
+
+def adapter_available(adapter: str) -> bool:
+    """Whether the adapter's CLI can be spawned on this machine."""
+    binary = ADAPTER_BINARIES.get(adapter)
+    if binary is None:
+        return True
+    name, env_key = binary
+    override = os.environ.get(env_key)
+    if override:
+        return bool(shutil.which(override) or os.path.exists(override))
+    return shutil.which(name) is not None
+
+
+def cli_adapter_options() -> list[dict[str, str | bool]]:
+    """Adapter catalogue annotated with local CLI availability."""
+    return [{**opt, "available": adapter_available(opt["id"])} for opt in CLI_ADAPTER_OPTIONS]
 
 # Pinned ids are what `claude --model` accepts: a floating alias, or a model's
 # full name. Aliases track the newest release in their tier; a pinned id keeps a
@@ -628,7 +656,7 @@ def runtime_options_payload(
     from loregarden.services.lmstudio_discovery import lmstudio_model_options
 
     return {
-        "cli_adapters": CLI_ADAPTER_OPTIONS,
+        "cli_adapters": cli_adapter_options(),
         "claude_models": CLAUDE_MODEL_OPTIONS,
         "cursor_models": CURSOR_MODEL_OPTIONS,
         "codex_models": CODEX_MODEL_OPTIONS,

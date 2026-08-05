@@ -245,6 +245,58 @@ def test_interrupted_turn_is_settled_not_stranded(client: TestClient, monkeypatc
     assert "interrupted" in snapshot["messages"][-1]["content"].lower()
 
 
+def test_stop_settles_pending_turn_and_unlocks_composer(client: TestClient):
+    from loregarden.db.session import engine
+    from loregarden.models.domain import BaxterChatMessage
+    from sqlmodel import Session
+
+    session_id = _new_session(client)
+    with Session(engine) as db:
+        db.add(BaxterChatMessage(session_id=session_id, role="assistant", status="pending"))
+        db.commit()
+
+    assert (
+        client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").json()[
+            "run_status"
+        ]
+        == "running"
+    )
+
+    res = client.post(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/stop")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["run_status"] == "idle"
+    assert body["active_turn_id"] is None
+    assert "stopped" in body["messages"][-1]["content"].lower()
+
+    # Idempotent refusal once nothing is in flight.
+    again = client.post(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/stop")
+    assert again.status_code == 409
+
+
+def test_stop_does_not_let_late_complete_overwrite_cancelled_turn(client: TestClient):
+    from loregarden.db.session import engine
+    from loregarden.models.domain import BaxterChatMessage
+    from loregarden.services.baxter_chat_run_service import _settle
+    from sqlmodel import Session
+
+    session_id = _new_session(client)
+    with Session(engine) as db:
+        pending = BaxterChatMessage(session_id=session_id, role="assistant", status="pending")
+        db.add(pending)
+        db.commit()
+        db.refresh(pending)
+        pending_id = pending.id
+
+    assert client.post(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/stop").status_code == 200
+
+    with Session(engine) as db:
+        late = _settle(db, pending_id, content="I finished anyway", status="complete")
+        assert late is not None
+        assert late.status == "failed"
+        assert "stopped" in late.content.lower()
+
+
 def test_second_turn_rejected_while_one_is_in_flight(client: TestClient):
     from loregarden.db.session import engine
     from loregarden.models.domain import BaxterChatMessage

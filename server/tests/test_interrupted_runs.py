@@ -98,6 +98,37 @@ def test_interrupted_triage_turn_replies_instead_of_blocking_the_ticket(isolated
         assert user_message.role == "user"
 
 
+def test_interrupted_home_chat_triage_run_fails_without_triage_message(isolated_db):
+    """Home-chat reuses agent_id=triage with a null ticket_id — do not write triage_messages."""
+    from datetime import datetime, timezone
+
+    from loregarden.agents.executors.approval_scope import HOME_CHAT_STAGE_KEY
+    from loregarden.models.domain import TriageMessage, Workspace
+    from loregarden.services.triage_service import TRIAGE_AGENT_ID
+
+    with Session(isolated_db) as session:
+        seed_database(session)
+        workspace = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+        stuck = AgentRun(
+            run_code="run_homechat",
+            ticket_id=None,
+            workspace_id=workspace.id,
+            agent_id=TRIAGE_AGENT_ID,
+            stage_key=HOME_CHAT_STAGE_KEY,
+            status=RunStatus.RUNNING,
+            started_at=datetime.now(timezone.utc),
+        )
+        session.add(stuck)
+        session.commit()
+
+        settled = fail_interrupted_triage_turns(session)
+        assert len(settled) == 1
+        session.refresh(stuck)
+        assert stuck.status == RunStatus.FAILED
+        assert INTERRUPTED_TURN_MESSAGE in stuck.stderr
+        assert session.exec(select(TriageMessage).where(TriageMessage.run_id == stuck.id)).all() == []
+
+
 def test_start_run_async_fails_prior_running_run(isolated_db):
     with Session(isolated_db) as session:
         seed_database(session)

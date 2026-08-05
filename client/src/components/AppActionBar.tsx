@@ -125,13 +125,42 @@ export function AppActionBar() {
     />
   );
 
+  // The picker is the bar's on every screen, chat pages included — the model a
+  // question runs on is a property of the conversation, not of the composer
+  // drawing it, and the page's composer would otherwise carry a second copy.
+  const modelControl = archive ? (
+    <>
+      <button
+        type="button"
+        className="app-action-bar-chat-model"
+        title="Choose Baxter's provider and model for this conversation"
+        disabled={!runtimeOptions.data || archive.isSavingRuntime || session?.isBusy}
+        onClick={() => setModelModalOpen(true)}
+      >
+        Model · {runtimeSummaryLabel(archive.runtime, runtimeOptions.data)}
+      </button>
+      <TriageModelModal
+        open={modelModalOpen}
+        runtime={archive.runtime}
+        runtimeOptions={runtimeOptions.data}
+        isSaving={archive.isSavingRuntime}
+        scopeLabel="Baxter"
+        subtitle="Choose a provider, then pick a model for this conversation"
+        onClose={() => setModelModalOpen(false)}
+        onSave={archive.setRuntime}
+      />
+    </>
+  ) : null;
+
   // Home and the chat page compose for this thread themselves, so the bar keeps
   // only its screen-level controls there: a second composer for the
-  // conversation already on screen is noise, and a disabled one is worse.
+  // conversation already on screen is noise, and a disabled one is worse. The
+  // model picker stays, because the page no longer draws one.
   if (composedOnScreen) {
     return (
       <footer className={`app-action-bar app-action-bar--edge-${utilityDockEdge}`}>
         <span className="app-action-bar-spacer" aria-hidden />
+        {modelControl}
         {screenControls}
       </footer>
     );
@@ -236,17 +265,9 @@ export function AppActionBar() {
       {/* Only the Baxter thread keeps past conversations — a ticket's triage
           chat is the ticket's, and there is no other one to open — so these
           appear with the archive rather than as controls that do nothing. */}
+      {modelControl}
       {archive ? (
         <>
-          <button
-            type="button"
-            className="app-action-bar-chat-model"
-            title="Choose Baxter's provider and model for this conversation"
-            disabled={!runtimeOptions.data || archive.isSavingRuntime || session?.isBusy}
-            onClick={() => setModelModalOpen(true)}
-          >
-            Model · {runtimeSummaryLabel(archive.runtime, runtimeOptions.data)}
-          </button>
           <button
             type="button"
             className="app-action-bar-chat-new"
@@ -311,18 +332,6 @@ export function AppActionBar() {
         </svg>
       </button>
       {screenControls}
-      {archive ? (
-        <TriageModelModal
-          open={modelModalOpen}
-          runtime={archive.runtime}
-          runtimeOptions={runtimeOptions.data}
-          isSaving={archive.isSavingRuntime}
-          scopeLabel="Baxter"
-          subtitle="Choose a provider, then pick a model for this conversation"
-          onClose={() => setModelModalOpen(false)}
-          onSave={archive.setRuntime}
-        />
-      ) : null}
     </footer>
   );
 }

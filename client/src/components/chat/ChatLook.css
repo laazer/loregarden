@@ -321,6 +321,15 @@
   background: var(--ac2);
 }
 
+.lg-chat-composer-send--stop {
+  background: var(--danger, #b42318);
+  color: #fff;
+}
+
+.lg-chat-composer-send--stop:hover:not(:disabled) {
+  background: var(--danger2, #912018);
+}
+
 .lg-chat-composer-send:disabled {
   opacity: 0.45;
   cursor: not-allowed;

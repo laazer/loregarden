@@ -16,6 +16,9 @@ export interface BaxterChatSessionBinding extends ChatSession {
   startNewChat: () => void;
   renameSession: (id: string, title: string) => Promise<unknown>;
   deleteSession: (id: string) => Promise<unknown>;
+  /** Stop the in-flight turn and unlock the composer. */
+  stop: () => Promise<unknown>;
+  isStopping: boolean;
   runtime: WorkspaceRuntimeSettings;
   setRuntime: (runtime: WorkspaceRuntimeSettings) => Promise<void>;
   isSavingRuntime: boolean;
@@ -114,6 +117,21 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
     },
   });
 
+  const stopTurn = useMutation({
+    meta: { errorTitle: "Stop turn" },
+    mutationFn: async () => {
+      if (!sessionId) throw new Error("No chat session");
+      return api.stopBaxterChatTurn(workspaceSlug, sessionId);
+    },
+    onSuccess: (result) => {
+      qc.setQueryData(baxterChatSessionKey(workspaceSlug, result.id), result);
+      invalidateArchive();
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["baxter-chat-session", workspaceSlug] });
+    },
+  });
+
   const saveRuntime = useMutation({
     meta: { errorTitle: "Save chat runtime" },
     mutationFn: async (runtime: WorkspaceRuntimeSettings) => {
@@ -158,6 +176,8 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
         ? (saveRuntime.error as Error)?.message || "Failed to save model settings"
       : null,
     send: (content: string) => sendMessage.mutateAsync(content),
+    stop: () => stopTurn.mutateAsync(),
+    isStopping: stopTurn.isPending,
     snapshot: snapshot.data,
     openSession: setSessionId,
     startNewChat: () => setSessionId(""),

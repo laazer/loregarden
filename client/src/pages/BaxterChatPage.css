@@ -199,28 +199,6 @@
   gap: 12px;
 }
 
-.baxter-chat-model-btn {
-  align-self: flex-start;
-  font-family: var(--ui);
-  font-size: 11.5px;
-  color: var(--txm);
-  background: var(--bg3);
-  border: 1px solid var(--bd);
-  border-radius: 8px;
-  padding: 6px 10px;
-  cursor: pointer;
-}
-
-.baxter-chat-model-btn:hover:not(:disabled) {
-  color: var(--tx);
-  border-color: var(--bd2);
-}
-
-.baxter-chat-model-btn:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
 .baxter-chat-hero .lg-chat-composer-wrap,
 .baxter-chat-hero .ticket-studio-composer-wrap {
   margin: 0;

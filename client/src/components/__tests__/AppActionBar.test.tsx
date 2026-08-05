@@ -404,6 +404,37 @@ describe("a screen that composes for its own thread", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the model picker, which the page no longer draws", async () => {
+    const setRuntime = jest.fn().mockResolvedValue({});
+    mockResolver.mockReturnValue(
+      bind({
+        composedOnScreen: true,
+        ticketId: null,
+        archive: {
+          workspaceSlug: "loregarden",
+          sessionId: "s1",
+          openSession: jest.fn(),
+          startNewChat: jest.fn(),
+          runtime: DEFAULT_RUNTIME,
+          setRuntime,
+          isSavingRuntime: false,
+        },
+      }),
+    );
+
+    renderBar();
+    fireEvent.click(await screen.findByRole("button", { name: /Model · Workspace default/i }));
+    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "cursor" } });
+    fireEvent.change(screen.getByLabelText("Cursor model"), { target: { value: "gpt-5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(setRuntime).toHaveBeenCalledWith(
+        expect.objectContaining({ cli_adapter: "cursor", cursor_model: "gpt-5" }),
+      ),
+    );
+  });
+
   it("still offers the composer where there is simply no conversation", () => {
     // Binding nothing is not the same thing: Studio with no workspace picked
     // wants the bar to say what to open.

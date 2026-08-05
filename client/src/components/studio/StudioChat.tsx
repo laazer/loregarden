@@ -256,13 +256,15 @@ export function StudioChatComposer({
   value,
   onChange,
   onSubmit,
+  onStop,
   placeholder,
   isSending,
+  isStopping,
   disabled,
   sendLabel = "Send",
   sendingLabel = "Sending…",
+  stopLabel = "Stop",
   toolbar,
-  optionsRow,
   error,
   variant = "panel",
   showShortcut,
@@ -271,13 +273,16 @@ export function StudioChatComposer({
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  /** When set, the send control becomes Stop while a turn is in flight. */
+  onStop?: () => void;
   placeholder?: string;
   isSending?: boolean;
+  isStopping?: boolean;
   disabled?: boolean;
   sendLabel?: string;
   sendingLabel?: string;
+  stopLabel?: string;
   toolbar?: ReactNode;
-  optionsRow?: ReactNode;
   error?: string | null;
   /** `panel` for side panes; `dock` for the floating bottom composer. */
   variant?: StudioChatComposerVariant;
@@ -285,12 +290,19 @@ export function StudioChatComposer({
   /** Round icon send button (Baxter main chat). Default when variant is dock. */
   iconOnlySend?: boolean;
 }) {
+  const canStop = Boolean(isSending && onStop) && !isStopping && !disabled;
   const canSend = value.trim().length > 0 && !isSending && !disabled;
+  const showStop = Boolean(isSending && onStop);
   const roundSend = iconOnlySend ?? variant === "dock";
 
   const submit = () => {
     if (!canSend) return;
     onSubmit();
+  };
+
+  const stop = () => {
+    if (!canStop || !onStop) return;
+    onStop();
   };
 
   return (
@@ -301,7 +313,6 @@ export function StudioChatComposer({
         "ticket-studio-composer-wrap",
       ].join(" ")}
     >
-      {optionsRow ? <div className="studio-chat-composer-options">{optionsRow}</div> : null}
       <div className="lg-chat-composer ticket-studio-composer">
         <textarea
           className="lg-chat-composer-input ticket-studio-composer-input"
@@ -313,14 +324,15 @@ export function StudioChatComposer({
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              submit();
+              if (showStop) stop();
+              else submit();
             }
           }}
         />
         <div className="lg-chat-composer-toolbar ticket-studio-composer-toolbar">
           {toolbar}
           <div className="lg-chat-composer-spacer ticket-studio-composer-spacer" />
-          {showShortcut ? (
+          {showShortcut && !showStop ? (
             <span className="lg-chat-composer-shortcut" aria-hidden>
               ⌘J
             </span>
@@ -331,17 +343,34 @@ export function StudioChatComposer({
               "lg-chat-composer-send",
               "ticket-studio-composer-send",
               roundSend ? "" : "lg-chat-composer-send--labeled",
+              showStop ? "lg-chat-composer-send--stop" : "",
             ]
               .filter(Boolean)
               .join(" ")}
-            disabled={!canSend}
-            onClick={submit}
-            aria-label={roundSend ? (isSending ? sendingLabel : sendLabel) : undefined}
+            disabled={showStop ? !canStop : !canSend}
+            onClick={showStop ? stop : submit}
+            aria-label={
+              roundSend
+                ? showStop
+                  ? isStopping
+                    ? "Stopping…"
+                    : stopLabel
+                  : isSending
+                    ? sendingLabel
+                    : sendLabel
+                : undefined
+            }
           >
-            {roundSend ? null : isSending ? sendingLabel : sendLabel}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden>
-              <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />
-            </svg>
+            {roundSend ? null : showStop ? (isStopping ? "Stopping…" : stopLabel) : isSending ? sendingLabel : sendLabel}
+            {showStop ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <rect x="6" y="6" width="12" height="12" rx="1.5" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden>
+                <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />
+              </svg>
+            )}
           </button>
         </div>
         {error ? <div className="lg-chat-composer-error studio-chat-composer-error">{error}</div> : null}

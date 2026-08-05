@@ -299,6 +299,11 @@ def fail_interrupted_triage_turns(
     Deliberately does not call ``OrchestrationService.complete_run()`` — a triage turn
     must not advance the workflow stage (see this module's docstring). Without the
     assistant message the operator's turn just goes silent and looks dropped.
+
+    Home-chat and branch-triage also mint ``agent_id=triage`` runs, but with a null
+    ``ticket_id``. Those surfaces have their own pending-message reapers; this
+    path only writes ``triage_messages`` for ticket-scoped turns. Ticket-less
+    orphans are still marked failed so they cannot hold the composer forever.
     """
     orphaned = session.exec(
         select(AgentRun).where(
@@ -314,14 +319,15 @@ def fail_interrupted_triage_turns(
         run.stderr = message[:4000]
         run.finished_at = datetime.now(timezone.utc)
         session.add(run)
-        session.add(
-            TriageMessage(
-                ticket_id=run.ticket_id,
-                role="assistant",
-                content=message,
-                run_id=run.id,
+        if run.ticket_id:
+            session.add(
+                TriageMessage(
+                    ticket_id=run.ticket_id,
+                    role="assistant",
+                    content=message,
+                    run_id=run.id,
+                )
             )
-        )
         settled.append(run)
     if settled:
         session.commit()

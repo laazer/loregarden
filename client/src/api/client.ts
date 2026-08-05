@@ -500,6 +500,12 @@ export const api = {
       `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/messages`,
       { method: "POST", body: JSON.stringify({ content }) },
     ),
+  /** Settles the pending turn immediately so the composer unlocks. */
+  stopBaxterChatTurn: (slug: string, sessionId: string) =>
+    request<BaxterChatSnapshot>(
+      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/stop`,
+      { method: "POST" },
+    ),
   skills: () => request<string[]>("/api/agents/skills"),
   studioMcpTools: () => request<string[]>("/api/studio/mcp-tools"),
   studioMcpToolGuides: () => request<StudioMcpToolGuide[]>("/api/studio/mcp-tool-guides"),

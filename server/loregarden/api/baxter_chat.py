@@ -10,6 +10,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.baxter_chat_run_service import (
     BaxterChatConflictError,
+    cancel_baxter_chat_turn,
     schedule_baxter_chat_turn,
     start_baxter_chat_turn,
 )
@@ -152,5 +153,21 @@ def send_baxter_chat_message(
         raise HTTPException(400, str(exc)) from exc
 
     schedule_baxter_chat_turn(assistant_message.id)
+    session.refresh(chat_session)
+    return chat_session_snapshot(session, chat_session)
+
+
+@router.post("/{slug}/baxter-chat/sessions/{session_id}/stop")
+def stop_baxter_chat_turn(
+    slug: str,
+    session_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Stop the in-flight turn so the composer unlocks immediately."""
+    workspace = _workspace(session, slug)
+    chat_session = _chat_session(session, workspace.id, session_id)
+    settled = cancel_baxter_chat_turn(session, chat_session)
+    if not settled:
+        raise HTTPException(409, "No Baxter turn is in flight on this conversation.")
     session.refresh(chat_session)
     return chat_session_snapshot(session, chat_session)

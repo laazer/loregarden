@@ -115,3 +115,29 @@ def test_format_cli_auth_hint_for_lmstudio_down():
     )
     assert "Start LM Studio" in msg
     assert "127.0.0.1:1234" in msg
+
+
+def test_format_agent_unavailable_for_missing_codex_cli():
+    from loregarden.services.cli_auth_errors import format_agent_unavailable
+
+    msg = format_agent_unavailable(
+        "Baxter",
+        FileNotFoundError(2, "No such file or directory", "codex"),
+    )
+    assert "Codex CLI" in msg
+    assert "`codex`" in msg
+    assert "LOREGARDEN_CODEX_BIN" in msg
+    assert "not installed" in msg.lower() or "not on PATH" in msg
+    assert "Errno 2" in msg or "No such file" in msg
+
+
+def test_format_agent_unavailable_for_missing_cursor_agent():
+    from loregarden.services.cli_auth_errors import format_agent_unavailable
+
+    msg = format_agent_unavailable(
+        "Baxter",
+        FileNotFoundError("[Errno 2] No such file or directory: 'cursor-agent'"),
+    )
+    assert "Cursor Agent" in msg
+    assert "cursor-agent" in msg
+    assert "LOREGARDEN_CURSOR_BIN" in msg

@@ -14,6 +14,7 @@ import logging
 import os
 import threading
 
+from loregarden.agents.executors.approval_scope import HOME_CHAT_STAGE_KEY
 from loregarden.db.session import engine
 from loregarden.models.domain import BaxterChatMessage, BaxterChatSession, Workspace
 from loregarden.services.baxter_chat_service import (
@@ -29,6 +30,8 @@ from loregarden.services.chat_primitives import EMPTY_PARTS_JSON, parts_json_for
 from loregarden.services.chat_thinking import finish_chat_turn_thinking, with_thinking_part
 from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.cli_settings import apply_runtime_overrides
+from loregarden.services.run_cancellation import request_cancel
+from loregarden.services.run_concurrency import find_active_workspace_chat_run
 from loregarden.services.triage_service import TRIAGE_AGENT_NAME
 from sqlmodel import Session, col, select
 
@@ -38,6 +41,8 @@ INTERRUPTED_TURN_MESSAGE = (
     f"{TRIAGE_AGENT_NAME} was interrupted by a server restart and did not finish this turn. "
     "Send the message again."
 )
+
+CANCELLED_TURN_MESSAGE = f"{TRIAGE_AGENT_NAME} stopped this turn at your request."
 
 
 def start_baxter_chat_turn(
@@ -98,6 +103,10 @@ def _settle(
     if not assistant:
         logger.error("Baxter chat assistant message not found: %s", assistant_id)
         return None
+    # Operator stop (or a restart reap) may settle the row while the CLI is still
+    # working — do not let a late success overwrite the cancelled turn.
+    if assistant.status != "pending":
+        return assistant
     assistant.content = content
     assistant.status = status
     assistant.parts_json = with_thinking_part(parts_json, thinking)
@@ -216,4 +225,34 @@ def fail_interrupted_baxter_chat_turns(
         settled.append(assistant)
     if settled:
         session.commit()
+    return settled
+
+
+def cancel_baxter_chat_turn(
+    session: Session,
+    chat_session: BaxterChatSession,
+    *,
+    message: str = CANCELLED_TURN_MESSAGE,
+) -> BaxterChatMessage | None:
+    """Stop the in-flight Home chat turn and unlock the composer immediately.
+
+    Settles the pending assistant row first (that is what ``run_status`` and the
+    composer busy flag key on). Then asks any matching workspace ``AgentRun`` to
+    stop cooperatively so an interactive Claude turn does not keep burning tokens.
+    """
+    pending = latest_pending_turn(session, chat_session.id)
+    if not pending:
+        return None
+
+    settled = _settle(session, pending.id, content=message, status="failed")
+    run = find_active_workspace_chat_run(
+        session, chat_session.workspace_id, stage_key=HOME_CHAT_STAGE_KEY
+    )
+    if run:
+        try:
+            request_cancel(session, run)
+        except ValueError:
+            # Already cancelling or no longer in flight — the pending row is what
+            # unlocks the composer; the run flag is best-effort.
+            pass
     return settled

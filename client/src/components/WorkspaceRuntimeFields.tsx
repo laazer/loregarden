@@ -334,11 +334,14 @@ export function WorkspaceRuntimeFields({
           disabled={disabled}
           onChange={(e) => handleProviderChange(e.target.value)}
         >
-          {options.cli_adapters.map((opt) => (
-            <option key={opt.id} value={opt.id}>
-              {opt.label}
-            </option>
-          ))}
+          {options.cli_adapters.map((opt) => {
+            const missing = opt.available === false;
+            return (
+              <option key={opt.id} value={opt.id} disabled={missing}>
+                {missing ? `${opt.label} — not installed` : opt.label}
+              </option>
+            );
+          })}
         </select>
       </div>
 

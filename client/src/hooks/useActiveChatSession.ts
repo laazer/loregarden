@@ -105,9 +105,22 @@ export function useActiveChatSession(): ActiveChatSession {
   const composedOnScreen =
     pathname === "/" || pathname === "/chat" || pathname.startsWith("/chat/");
   const chatWorkspaceSlug = useChatWorkspaceSlug();
+  // Bound on the chat page too, though the composer half stays hidden there: the
+  // model picker lives in the bar on every screen, and it is the same thread.
   const baxterSession = useBaxterChatSession(
-    !onBranchTriage && !ticketId && !composedOnScreen ? chatWorkspaceSlug : "",
+    !onBranchTriage && !ticketId ? chatWorkspaceSlug : "",
   );
+  const baxterArchive: ChatArchive | null = chatWorkspaceSlug
+    ? {
+        workspaceSlug: chatWorkspaceSlug,
+        sessionId: baxterSession.sessionId,
+        openSession: baxterSession.openSession,
+        startNewChat: baxterSession.startNewChat,
+        runtime: baxterSession.runtime,
+        setRuntime: baxterSession.setRuntime,
+        isSavingRuntime: baxterSession.isSavingRuntime,
+      }
+    : null;
 
   const ticketSession = useTicketChatSession(ticketId ?? undefined);
   const { pending } = useTriageSession(ticketId ?? undefined);
@@ -137,7 +150,9 @@ export function useActiveChatSession(): ActiveChatSession {
   // there is not enough on its own: the bar would still offer a dead composer
   // reading "open a ticket or a branch", which is wrong twice over — there is a
   // conversation, and it is right there on the page.
-  if (composedOnScreen) return { ...none, composedOnScreen: true };
+  // The archive still rides along: the bar owns the model picker everywhere, so
+  // the chat page reads it from here rather than drawing its own.
+  if (composedOnScreen) return { ...none, composedOnScreen: true, archive: baxterArchive };
   if (onBranchTriage) {
     return branch
       ? {
@@ -170,14 +185,6 @@ export function useActiveChatSession(): ActiveChatSession {
     pendingApprovals: [],
     branch: null,
     composedOnScreen: false,
-    archive: {
-      workspaceSlug: chatWorkspaceSlug,
-      sessionId: baxterSession.sessionId,
-      openSession: baxterSession.openSession,
-      startNewChat: baxterSession.startNewChat,
-      runtime: baxterSession.runtime,
-      setRuntime: baxterSession.setRuntime,
-      isSavingRuntime: baxterSession.isSavingRuntime,
-    },
+    archive: baxterArchive,
   };
 }

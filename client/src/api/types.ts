@@ -428,6 +428,8 @@ export interface WorkspaceSummary {
 export interface RuntimeOption {
   id: string;
   label: string;
+  /** Adapter options only: false when that CLI is not installed on this machine. */
+  available?: boolean;
 }
 
 /** Which adapter/model/effort a run started right now would actually use, and
