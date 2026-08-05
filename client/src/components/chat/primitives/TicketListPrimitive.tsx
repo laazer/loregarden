@@ -8,6 +8,7 @@ import type { TicketListPart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenTicketButton } from "./ResourceActionButton";
 import { PlayButton, StopButton } from "./RunControlButton";
+import { ticketQueryRetry, ticketRefetchInterval } from "./ticketLiveQuery";
 import { toTicketTreeNode } from "./ticketTreeNodes";
 import { ticketIsRunning, useRunControls } from "./useRunControls";
 
@@ -25,6 +26,13 @@ function filterTree(nodes: TicketTreeNode[], ids: Set<string>): TicketTreeNode[]
 export function TicketListPrimitive({ part }: { part: TicketListPart }) {
   const parentId = part.parent_ticket_id ?? undefined;
   const controls = useRunControls(parentId);
+  const parentQuery = useQuery({
+    queryKey: ["ticket", parentId],
+    queryFn: () => api.ticket(parentId!),
+    enabled: Boolean(parentId),
+    retry: ticketQueryRetry,
+    refetchInterval: ticketRefetchInterval,
+  });
   const treeQuery = useQuery({
     queryKey: ["ticket-tree", parentId ?? "all", part.ticket_ids ?? []],
     queryFn: async () => {
@@ -34,13 +42,11 @@ export function TicketListPrimitive({ part }: { part: TicketListPart }) {
       }
       return api.ticketTree({});
     },
-    refetchInterval: 5000,
+    enabled: !parentId || !parentQuery.isError,
+    refetchInterval: parentQuery.isError ? false : 5000,
   });
 
-  const idSet = useMemo(
-    () => new Set(part.ticket_ids ?? []),
-    [part.ticket_ids],
-  );
+  const idSet = useMemo(() => new Set(part.ticket_ids ?? []), [part.ticket_ids]);
   const nodes = useMemo(() => {
     const raw = treeQuery.data ?? [];
     if (!part.ticket_ids?.length || parentId) return raw;
@@ -49,32 +55,33 @@ export function TicketListPrimitive({ part }: { part: TicketListPart }) {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
-
-  const parentQuery = useQuery({
-    queryKey: ["ticket", parentId],
-    queryFn: () => api.ticket(parentId!),
-    enabled: Boolean(parentId),
-  });
   const running = ticketIsRunning(parentQuery.data?.workflow_stage_status);
+  const missingParent = Boolean(parentId && parentQuery.isError);
 
   return (
     <PrimitiveCard
       className="lg-primitive-ticket-list--v6"
       title={part.title ?? parentQuery.data?.title ?? "Ticket list"}
       subtitle={parentId ? parentQuery.data?.external_id : `${nodes.length} tickets`}
-      loading={treeQuery.isLoading}
+      loading={treeQuery.isLoading || (Boolean(parentId) && parentQuery.isLoading)}
       error={
-        treeQuery.error
-          ? treeQuery.error instanceof Error
-            ? treeQuery.error.message
-            : "Failed to load"
-          : null
+        missingParent
+          ? parentQuery.error instanceof Error
+            ? parentQuery.error.message
+            : "Ticket not found"
+          : treeQuery.error
+            ? treeQuery.error instanceof Error
+              ? treeQuery.error.message
+              : "Failed to load"
+            : null
       }
       resourceAction={
-        parentId ? <OpenTicketButton ticketId={parentId} label="Open parent ticket" /> : null
+        parentId && !missingParent ? (
+          <OpenTicketButton ticketId={parentId} label="Open parent ticket" />
+        ) : null
       }
       actions={
-        parentId ? (
+        parentId && !missingParent ? (
           running ? (
             <StopButton disabled={controls.isStopping} onClick={() => void controls.stop()} />
           ) : (
@@ -83,25 +90,27 @@ export function TicketListPrimitive({ part }: { part: TicketListPart }) {
         ) : null
       }
     >
-      <TicketTree
-        nodes={nodes}
-        selectedId={selectedId}
-        expandedIds={expandedIds}
-        onSelect={setSelectedId}
-        presentation="v6"
-        showExternalId
-        renderRowAction={(node) => (
-          <OpenTicketButton ticketId={node.id} compact label={`Open ${node.title}`} />
-        )}
-        onToggle={(id) =>
-          setExpandedIds((prev) => {
-            const next = new Set(prev);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
-            return next;
-          })
-        }
-      />
+      {!missingParent ? (
+        <TicketTree
+          nodes={nodes}
+          selectedId={selectedId}
+          expandedIds={expandedIds}
+          onSelect={setSelectedId}
+          presentation="v6"
+          showExternalId
+          renderRowAction={(node) => (
+            <OpenTicketButton ticketId={node.id} compact label={`Open ${node.title}`} />
+          )}
+          onToggle={(id) =>
+            setExpandedIds((prev) => {
+              const next = new Set(prev);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            })
+          }
+        />
+      ) : null}
     </PrimitiveCard>
   );
 }

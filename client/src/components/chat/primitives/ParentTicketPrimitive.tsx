@@ -14,6 +14,7 @@ import {
 } from "./TicketCardMeta";
 import { toTicketTreeNode } from "./ticketTreeNodes";
 import { ticketIsRunning, useRunControls } from "./useRunControls";
+import { ticketQueryRetry, ticketRefetchInterval } from "./ticketLiveQuery";
 
 /** Children arrive one level deep, so no row in this card is expandable. */
 const NO_EXPANDED_ROWS: Set<string> = new Set();
@@ -22,14 +23,15 @@ export function ParentTicketPrimitive({ part }: { part: ParentTicketPart }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ["ticket", part.ticket_id],
     queryFn: () => api.ticket(part.ticket_id),
-    refetchInterval: (q) =>
-      ticketIsRunning(q.state.data?.workflow_stage_status) ? 1000 : 5000,
+    retry: ticketQueryRetry,
+    refetchInterval: ticketRefetchInterval,
   });
   const childrenQuery = useQuery({
     queryKey: ["tickets", "children", part.ticket_id],
     queryFn: () => api.tickets({ parent_ticket_id: part.ticket_id }),
-    enabled: Boolean(part.ticket_id),
-    refetchInterval: 5000,
+    enabled: Boolean(part.ticket_id) && !error,
+    refetchInterval: error ? false : 5000,
+    retry: ticketQueryRetry,
   });
   const controls = useRunControls(part.ticket_id);
   const children = useMemo(() => childrenQuery.data ?? [], [childrenQuery.data]);

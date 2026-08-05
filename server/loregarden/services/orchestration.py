@@ -38,7 +38,10 @@ from loregarden.services.run_completion import (
 from loregarden.services.run_log_stream import bootstrap_run_log
 from loregarden.services.stage_retry_budget import clear_stage_dispatches
 from loregarden.services.studio_routing import find_terminal_stage, is_terminal_stage
-from loregarden.services.triage_question_log import record_triage_question_exchange
+from loregarden.services.triage_question_log import (
+    record_home_chat_question_exchange,
+    record_triage_question_exchange,
+)
 from loregarden.services.workflow_service import resolve_ticket_stages, resolve_workspace_stages
 from loregarden.services.workflow_state import (
     build_stage_views,
@@ -923,6 +926,13 @@ class ApprovalService:
             # The answer reaches the agent as a tool result; mirror it into the chat so the
             # operator's transcript shows the exchange rather than jumping over it.
             record_triage_question_exchange(
+                self.session,
+                approval,
+                tool_input,
+                answers=answers,
+                response=response_text,
+            )
+            record_home_chat_question_exchange(
                 self.session,
                 approval,
                 tool_input,

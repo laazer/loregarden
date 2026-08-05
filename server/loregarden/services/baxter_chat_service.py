@@ -41,6 +41,7 @@ from loregarden.models.domain import (
     WorkspaceRuntimeUpdate,
 )
 from loregarden.models.domain.enums import utcnow
+from loregarden.services.approval_views import approval_to_view
 from loregarden.services.chat_primitives import load_parts_json
 from loregarden.services.chat_thinking import ChatTurnThinkingSink
 from loregarden.services.cli_agent_runner import (
@@ -220,12 +221,48 @@ def latest_pending_turn(session: Session, session_id: str) -> BaxterChatMessage 
     ).first()
 
 
-def baxter_chat_run_status(session: Session, session_id: str) -> tuple[str, str | None]:
+def list_home_chat_pending_approvals(
+    session: Session, chat_session: BaxterChatSession
+) -> list[dict]:
+    """Pending permission/question cards for this Home thread's in-flight turn.
+
+    Approvals raised by Home chat are workspace-scoped (``stage_key=home-chat``).
+    They belong on the thread that currently holds the pending assistant row —
+    idle threads must not inherit another conversation's asks.
+    """
+    if not latest_pending_turn(session, chat_session.id):
+        return []
+    active = find_active_workspace_chat_run(
+        session, chat_session.workspace_id, stage_key=HOME_CHAT_STAGE_KEY
+    )
+    query = (
+        select(Approval)
+        .where(
+            Approval.workspace_id == chat_session.workspace_id,
+            Approval.status == ApprovalStatus.PENDING,
+            Approval.stage_key == HOME_CHAT_STAGE_KEY,
+        )
+        .order_by(col(Approval.created_at).asc())
+    )
+    if active is not None:
+        query = query.where(Approval.run_id == active.id)
+    rows = list(session.exec(query).all())
+    return [approval_to_view(session, item) for item in rows]
+
+
+def baxter_chat_run_status(
+    session: Session, chat_session: BaxterChatSession
+) -> tuple[str, str | None]:
     """Return (run_status, active_turn_id) for the thread's latest turn."""
-    pending = latest_pending_turn(session, session_id)
-    if pending:
-        return "running", pending.id
-    return "idle", None
+    pending = latest_pending_turn(session, chat_session.id)
+    if not pending:
+        return "idle", None
+    active = find_active_workspace_chat_run(
+        session, chat_session.workspace_id, stage_key=HOME_CHAT_STAGE_KEY
+    )
+    if active is not None and active.status == RunStatus.AWAITING_PERMISSION:
+        return "awaiting_input", pending.id
+    return "running", pending.id
 
 
 def _message_view(message: BaxterChatMessage) -> dict:
@@ -254,12 +291,13 @@ def chat_session_summary(session: Session, chat_session: BaxterChatSession) -> d
 
 def chat_session_snapshot(session: Session, chat_session: BaxterChatSession) -> dict:
     messages = list_chat_messages(session, chat_session.id)
-    run_status, active_turn_id = baxter_chat_run_status(session, chat_session.id)
+    run_status, active_turn_id = baxter_chat_run_status(session, chat_session)
     return {
         "id": chat_session.id,
         "workspace_id": chat_session.workspace_id,
         "title": chat_session.title or UNTITLED_SESSION_TITLE,
         "messages": [_message_view(message) for message in messages],
+        "pending_approvals": list_home_chat_pending_approvals(session, chat_session),
         "runtime": parse_runtime_settings(chat_session.runtime_json).model_dump(),
         "run_status": run_status,
         "active_turn_id": active_turn_id,
@@ -364,10 +402,22 @@ def build_baxter_chat_prompt(
             "## Chat UI primitives",
             "When a live card helps more than prose, emit a fenced `loregarden` JSON",
             "block with a `primitive` field. Prefer thin refs (ticket_id, agent_id).",
-            'Example: ```loregarden\\n{"primitive":"ticket","ticket_id":"<id>"}\\n```',
             "Kinds: thinking, ticket, ticket_workflow, parent_ticket, ticket_list,",
             "status_column, kanban, filterable_kanban, agent, workflow, gate,",
-            "terminal, edit, calendar, calendar_event.",
+            "terminal, edit, calendar, calendar_event, workspace, todo_list,",
+            "branch_history, commit, qa, giphy.",
+            "Rules:",
+            "- Never invent ticket/agent ids. Only reference ids from Active tickets",
+            "  above, or ids returned by MCP after you create/look them up.",
+            "- `ticket` / `ticket_list` / `kanban` cards are for existing tickets only.",
+            "- When outlining work you will do (a build/fix plan), emit an agent",
+            "  execution plan — `todo_list` with owner \"agent\" and title",
+            '  \"Agent execution plan\". Do not fake a ticket card for unfiled work.',
+            '  Example: ```loregarden\\n{"primitive":"todo_list","owner":"agent",'
+            '"title":"Agent execution plan","items":[{"id":"api","text":"Add history API",'
+            '"checked":false}]}\\n```',
+            "- To ask the operator before proceeding, emit `qa`.",
+            "- After creating a ticket via MCP, emit `ticket` with the real returned id.",
             "",
             "Reply as Baxter. Keep it concise.",
         ]

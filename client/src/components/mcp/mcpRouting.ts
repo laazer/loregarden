@@ -262,7 +262,8 @@ export function gatewayMetrics(
     },
     {
       label: "Calls/min",
-      value: telemetry ? telemetry.calls_per_min.toFixed(2) : "—",
+      value:
+        telemetry?.calls_per_min != null ? telemetry.calls_per_min.toFixed(2) : "—",
       tone: "neutral",
       title: `Permission decisions per minute over the last ${window} minutes. Runs with permissions bypassed are not counted.`,
     },

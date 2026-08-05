@@ -91,6 +91,9 @@ export function AppActionBar() {
 
   const expanded = chatOpen && Boolean(session);
   const sendable = Boolean(session) && !session?.loadError;
+  // Home Baxter (and any surface that exposes stop) — not ticket aside mode,
+  // which routes a busy composer to a read-only question instead.
+  const canStop = Boolean(session?.isBusy && session.stop && !asideMode);
   const quickPrompts = session
     ? promptsFor(session.kind, branch).slice(0, DOCK_QUICK_PROMPT_LIMIT)
     : [];
@@ -322,14 +325,38 @@ export function AppActionBar() {
 
       <button
         type="button"
-        className="app-action-bar-send"
-        aria-label={asideMode ? "Ask aside" : "Send"}
-        disabled={!sendable || !draft.trim() || asides.isAsking}
-        onClick={() => submit(draft)}
+        className={`app-action-bar-send${canStop ? " app-action-bar-send--stop" : ""}`}
+        aria-label={
+          canStop
+            ? session?.isStopping
+              ? "Stopping…"
+              : "Stop"
+            : asideMode
+              ? "Ask aside"
+              : "Send"
+        }
+        disabled={
+          canStop
+            ? Boolean(session?.isStopping)
+            : !sendable || !draft.trim() || asides.isAsking
+        }
+        onClick={() => {
+          if (canStop && session?.stop) {
+            void session.stop().catch(() => undefined);
+            return;
+          }
+          submit(draft);
+        }}
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-          <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />
-        </svg>
+        {canStop ? (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <rect x="6" y="6" width="12" height="12" rx="1.5" />
+          </svg>
+        ) : (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+            <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />
+          </svg>
+        )}
       </button>
       {screenControls}
     </footer>

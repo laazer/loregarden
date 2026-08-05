@@ -85,12 +85,26 @@ maybe("render officeplace calibration overlay", () => {
         `<text x="${d.x + 1}" y="${d.y + 0.9}" font-size="1.2" fill="#fff" stroke="#000" stroke-width="0.15" paint-order="stroke">${d.label}</text>`,
     )
     .join("");
+  const errandConnectors = OFFICEPLACE_ERRANDS.map(
+    (errand) =>
+      `<line x1="${errand.object.tile.x + 0.5}" y1="${errand.object.tile.y + 0.5}" x2="${errand.stand.x + 0.5}" y2="${errand.stand.y + 0.5}" stroke="#00f5ff" stroke-width="0.18"/>`,
+  ).join("");
+  const objectMarkers = OFFICEPLACE_ERRANDS.map((errand) => {
+    const x = errand.object.tile.x + 0.5;
+    const y = errand.object.tile.y + 0.5;
+    return (
+      `<rect x="${x - 0.45}" y="${y - 0.45}" width="0.9" height="0.9" transform="rotate(45 ${x} ${y})" fill="#00f5ff" stroke="#000" stroke-width="0.12"/>` +
+      `<text x="${x + 0.7}" y="${y + 0.4}" font-size="1.2" fill="#00f5ff" stroke="#000" stroke-width="0.15" paint-order="stroke">${errand.object.label}</text>`
+    );
+  }).join("");
 
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width * 16}" height="${height * 16}">` +
     `<image href="data:image/png;base64,${bg}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"/>` +
     cells.join("") +
+    errandConnectors +
     markers +
+    objectMarkers +
     `</svg>`;
 
   writeFileSync(OUT, svg);

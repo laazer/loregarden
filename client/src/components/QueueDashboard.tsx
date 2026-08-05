@@ -17,6 +17,7 @@ import { ParallelQueueVisualization } from "./ParallelQueueVisualization";
 import { QueueAdvancedControls } from "./QueueAdvancedControls";
 import { QueueGitAutomation } from "./QueueGitAutomation";
 import { QueueHistoricalAnalytics } from "./QueueHistoricalAnalytics";
+import { QueueHistoryRail } from "./QueueHistoryRail";
 import "./QueueDashboard.css";
 
 export interface QueueDashboardProps {
@@ -24,10 +25,11 @@ export interface QueueDashboardProps {
   showControls?: boolean;
 }
 
-type SidebarTab = "overview" | "review" | "controls" | "analytics";
+type SidebarTab = "overview" | "history" | "review" | "controls" | "analytics";
 
 const TABS: { key: SidebarTab; label: string }[] = [
   { key: "overview", label: "Overview" },
+  { key: "history", label: "History" },
   { key: "review", label: "Review" },
   { key: "controls", label: "Controls" },
   { key: "analytics", label: "Analytics" },
@@ -248,6 +250,10 @@ export function QueueDashboard({
                     </div>
                   </div>
                 </>
+              ) : null}
+
+              {activeSidebarTab === "history" ? (
+                <QueueHistoryRail workspaceId={railWorkspaceId} />
               ) : null}
 
               {activeSidebarTab === "review" ? (

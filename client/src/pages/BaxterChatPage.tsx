@@ -1,17 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 
 import { api, type Approval, type TicketSummary } from "../api/client";
 import { BaxterAvatar } from "../components/chat/BaxterAvatar";
 import { ChatHistorySidebar } from "../components/chat/ChatHistorySidebar";
 import { primitiveGallerySections } from "../components/chat/primitiveGallery";
+import { PendingApprovalsSection } from "../components/PendingApprovalsSection";
 import { StudioChatComposer, StudioChatMessages } from "../components/studio/StudioChat";
+import { useApprovalResolution } from "../hooks/useApprovalResolution";
 import { useBaxterChatSession } from "../hooks/useBaxterChatSession";
 import { useChatWorkspace } from "../hooks/useChatWorkspace";
-import { ticketPath } from "../lib/appNavigation";
 import { takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
+import { formatApprovalResolveError } from "../utils/approvalErrors";
 import "./BaxterChatPage.css";
 
 type ChatRole = "user" | "assistant";
@@ -21,7 +22,6 @@ type ChatTurn = {
   role: ChatRole;
   text: string;
   parts?: import("../components/chat/primitives/types").ChatPart[];
-  approvals?: Approval[];
   suggestions?: string[];
 };
 
@@ -184,13 +184,12 @@ function BaxterReplyDock({
 }
 
 export function BaxterChatPage() {
-  const navigate = useNavigate();
-  const setInboxOpen = useUiStore((s) => s.setInboxOpen);
   const historyOpen = useUiStore((s) => s.baxterHistoryOpen);
   const setHistoryOpen = useUiStore((s) => s.setBaxterHistoryOpen);
 
   const { slug: workspaceSlug } = useChatWorkspace();
   const chat = useBaxterChatSession(workspaceSlug);
+  const resolveApproval = useApprovalResolution(undefined);
 
   /**
    * The primitive gallery only — a canned thread with nothing behind it.
@@ -205,7 +204,8 @@ export function BaxterChatPage() {
   const resetSeenRef = useRef(resetNonce);
   const now = useMemo(() => new Date(), []);
 
-  // The inbox route has no workspace filter, so narrow the global list here.
+  // Workspace inbox for the welcome summary / chips — not the interactive
+  // Home-chat cards (those ride on the session snapshot).
   const approvalsQ = useQuery({
     queryKey: ["baxter-chat-approvals"],
     queryFn: () => api.approvals(),
@@ -236,9 +236,13 @@ export function BaxterChatPage() {
   const tickets = ticketsQ.data ?? [];
 
   const inGallery = galleryTurns !== null;
+  const turnApprovals = inGallery ? [] : chat.pendingApprovals;
   const busy = !inGallery && chat.isBusy;
+  const awaitingInput = !inGallery && chat.snapshot?.run_status === "awaiting_input";
   const hasThread = inGallery ? galleryTurns.length > 0 : chat.messages.length > 0;
-  const isEmpty = !hasThread && !busy;
+  // A turn waiting on the operator still owns the thread chrome — don't drop
+  // back to the welcome hero while the approval card is the thing to answer.
+  const isEmpty = !hasThread && !busy && turnApprovals.length === 0;
 
   const summaryLine = useMemo(() => {
     const parts: string[] = [];
@@ -338,19 +342,6 @@ export function BaxterChatPage() {
   }, [galleryTurns, threadMessages, approvals, tickets]);
 
   /**
-   * Approvals ride under the newest reply only.
-   *
-   * The pending inbox is live state, not something a past turn owns — pinning a
-   * stale copy to every historical reply would show the operator work that is
-   * already resolved, and pinning it to none loses the prompt entirely.
-   */
-  const approvalsMessageId = useMemo(() => {
-    if (galleryTurns || !approvals.length) return null;
-    const last = threadMessages[threadMessages.length - 1];
-    return last?.role === "assistant" ? last.id : null;
-  }, [galleryTurns, approvals.length, threadMessages]);
-
-  /**
    * A failed send, shown as chrome rather than as a reply.
    *
    * The old page pushed the error into the thread as an assistant turn; with
@@ -385,9 +376,28 @@ export function BaxterChatPage() {
       ) : (
         <>
           <div className="baxter-chat-thread baxter-chat-thread--faded" aria-live="polite">
+            {/* Same strip triage/dock use: AskUserQuestion arrives as an approval,
+                not a chat message, so the card has to sit in the thread itself. */}
+            <PendingApprovalsSection
+              approvals={turnApprovals}
+              submittingApprovalId={
+                resolveApproval.isPending ? resolveApproval.variables?.id ?? null : null
+              }
+              submitError={
+                resolveApproval.isError
+                  ? formatApprovalResolveError(resolveApproval.error)
+                  : null
+              }
+              onApprove={(approval, payload) =>
+                resolveApproval.mutate({ id: approval.id, action: "approve", ...payload })
+              }
+              onReject={(approval, payload) =>
+                resolveApproval.mutate({ id: approval.id, action: "reject", ...payload })
+              }
+            />
             <StudioChatMessages
               messages={threadMessages}
-              isThinking={busy}
+              isThinking={busy && !awaitingInput && turnApprovals.length === 0}
               activeTurnId={inGallery ? null : chat.activeTurnId}
               thinkingMessage="Baxter is looking…"
               thinkingSub="Fetching a reply from your workspace model"
@@ -395,58 +405,6 @@ export function BaxterChatPage() {
               assistantLabel="Baxter"
               showAssistantAvatar={false}
               onPrimitiveSubmit={(content) => void respond(content)}
-              renderAfterMessage={(message) => {
-                if (message.id !== approvalsMessageId) return null;
-                const turnApprovals = approvals.slice(0, 5);
-                return (
-                  <div className="baxter-chat-card">
-                    <div className="baxter-chat-card-head">
-                      <span className="baxter-chat-card-title">
-                        ● {turnApprovals.length} approval
-                        {turnApprovals.length === 1 ? "" : "s"} waiting on you
-                      </span>
-                      <button
-                        type="button"
-                        className="baxter-chat-card-link"
-                        onClick={() => {
-                          setInboxOpen(true);
-                          navigate("/console");
-                        }}
-                      >
-                        Open Triage →
-                      </button>
-                    </div>
-                    <ul className="baxter-chat-card-list">
-                      {turnApprovals.map((a) => (
-                        <li key={a.id} className="baxter-chat-card-row">
-                          <div className="baxter-chat-card-row-main">
-                            <span className="baxter-chat-card-row-title">
-                              {a.title || a.tool_name || "Approval"}
-                            </span>
-                            <span className="baxter-chat-card-row-meta">
-                              {[a.workspace_slug, a.ticket_external_id, a.kind]
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            className="baxter-chat-card-review"
-                            onClick={() => {
-                              setInboxOpen(true);
-                              if (a.ticket_id) {
-                                navigate(ticketPath(a.ticket_id));
-                              }
-                            }}
-                          >
-                            Review
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                );
-              }}
             />
           </div>
 

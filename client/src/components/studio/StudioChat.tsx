@@ -293,7 +293,9 @@ export function StudioChatComposer({
   const canStop = Boolean(isSending && onStop) && !isStopping && !disabled;
   const canSend = value.trim().length > 0 && !isSending && !disabled;
   const showStop = Boolean(isSending && onStop);
-  const roundSend = iconOnlySend ?? variant === "dock";
+  // Round icon-only is fine for Send; Stop must read as Stop — a square swap
+  // on the same accent chip is too easy to miss mid-stream.
+  const roundSend = (iconOnlySend ?? variant === "dock") && !showStop;
 
   const submit = () => {
     if (!canSend) return;
@@ -351,17 +353,25 @@ export function StudioChatComposer({
             onClick={showStop ? stop : submit}
             aria-label={
               roundSend
-                ? showStop
+                ? isSending
+                  ? sendingLabel
+                  : sendLabel
+                : showStop
                   ? isStopping
                     ? "Stopping…"
                     : stopLabel
-                  : isSending
-                    ? sendingLabel
-                    : sendLabel
-                : undefined
+                  : undefined
             }
           >
-            {roundSend ? null : showStop ? (isStopping ? "Stopping…" : stopLabel) : isSending ? sendingLabel : sendLabel}
+            {roundSend
+              ? null
+              : showStop
+                ? isStopping
+                  ? "Stopping…"
+                  : stopLabel
+                : isSending
+                  ? sendingLabel
+                  : sendLabel}
             {showStop ? (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                 <rect x="6" y="6" width="12" height="12" rx="1.5" />

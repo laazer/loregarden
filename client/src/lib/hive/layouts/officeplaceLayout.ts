@@ -7,8 +7,8 @@ export const OFFICEPLACE_MAP = OFFICEPLACE_FLOOR;
 
 /**
  * NPC positions are aligned to the floor-bg.png office image, in 60×50 tile space
- * (tile ≈ image px / 16.6 horizontally, / 10.4 vertically). Read off a tile-grid
- * overlay on the image and verified in the running app.
+ * (tile ≈ image px / 16.6 horizontally, / 13.1 vertically — 998×656 over 60×50).
+ * Read off a tile-grid overlay on the image and verified in the running app.
  */
 export const OFFICEPLACE_STATIONS: Record<HiveStationId, { x: number; y: number }> = {
   planner_hq: { x: 42, y: 44 }, // manager's office, right of the conference room
@@ -92,18 +92,77 @@ export interface HiveOfficeErrand {
   id: string;
   stand: { x: number; y: number };
   label: string;
+  /** Semantic image-space anchor on floor-bg.png (60×50). Not a path destination. */
+  object: { id: string; label: string; tile: { x: number; y: number } };
 }
 
-/** Idle errands — each stands on an open floor tile in the image. */
+/**
+ * Idle errands — stand is the sole path destination; object.tile is a Chebyshev-1
+ * image-space anchor read from floor-bg.png (not OFFICEPLACE_PROPS, not derived).
+ */
 export const OFFICEPLACE_ERRANDS: HiveOfficeErrand[] = [
-  { id: "lobby", stand: { x: 10, y: 6 }, label: "In the lobby" },
-  { id: "kitchen", stand: { x: 43, y: 8 }, label: "In the kitchen" },
-  { id: "break-room", stand: { x: 4, y: 42 }, label: "In the break room" },
-  { id: "bullpen-walk", stand: { x: 30, y: 27 }, label: "Crossing the bullpen" },
-  { id: "conference", stand: { x: 27, y: 43 }, label: "Leaving the conference room" },
-  { id: "annex", stand: { x: 52, y: 42 }, label: "Waiting on the elevator" },
-  { id: "reception-chat", stand: { x: 42, y: 28 }, label: "Loitering at reception" },
-  { id: "corridor", stand: { x: 13, y: 38 }, label: "Down the stairwell" },
+  {
+    id: "lobby-elevator",
+    label: "Waiting for the lobby elevator",
+    object: { id: "lobby-elevator-door", label: "Lobby elevator", tile: { x: 28, y: 5 } },
+    stand: { x: 28, y: 6 },
+  },
+  {
+    id: "kitchen-coffee",
+    label: "Getting coffee in the kitchen",
+    object: { id: "kitchen-counter", label: "Kitchen counter", tile: { x: 44, y: 5 } },
+    stand: { x: 44, y: 6 },
+  },
+  {
+    id: "break-room-table",
+    label: "Tidying the break-room table",
+    // break-room table, walkGrid WALK_BLOCKERS lower break-room box
+    object: {
+      id: "break-room-lower-table",
+      label: "Break-room table",
+      tile: { x: 4, y: 43 },
+    },
+    stand: { x: 4, y: 42 },
+  },
+  {
+    id: "plant-watering",
+    label: "Watering the lobby plant",
+    object: { id: "lobby-west-plant", label: "Lobby plant", tile: { x: 1, y: 6 } },
+    stand: { x: 2, y: 6 },
+  },
+  {
+    id: "conference-exit",
+    label: "Leaving the conference room",
+    object: {
+      id: "conference-east-exit",
+      label: "Conference-room exit",
+      tile: { x: 34, y: 39 },
+    },
+    stand: { x: 33, y: 40 },
+  },
+  {
+    id: "annex-elevator",
+    label: "Waiting for the annex elevator",
+    object: { id: "annex-elevator-door", label: "Annex elevator", tile: { x: 55, y: 40 } },
+    stand: { x: 54, y: 40 },
+  },
+  {
+    id: "reception-counter",
+    label: "Checking in at reception",
+    // reception counter, walkGrid WALK_BLOCKERS [38,24,42,27]
+    object: { id: "reception-counter", label: "Reception counter", tile: { x: 43, y: 27 } },
+    stand: { x: 42, y: 28 },
+  },
+  {
+    id: "stairwell-check",
+    label: "Checking the stairwell",
+    object: {
+      id: "stairwell-lower-landing",
+      label: "Stairwell landing",
+      tile: { x: 18, y: 43 },
+    },
+    stand: { x: 17, y: 43 },
+  },
 ];
 
 export {

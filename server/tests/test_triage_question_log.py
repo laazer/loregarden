@@ -163,3 +163,66 @@ class TestMessageFormatting:
     def test_an_unanswerable_payload_yields_nothing(self):
         assert format_question_message({"questions": []}) == ""
         assert format_answer_message({"questions": []}, {}) == ""
+
+
+class TestAnsweredHomeChatQuestionsReachTheChat:
+    def test_question_and_answer_are_appended_to_baxter_thread(self, client: TestClient):
+        import json
+
+        from loregarden.agents.executors.approval_scope import HOME_CHAT_STAGE_KEY
+        from loregarden.db.session import engine
+        from loregarden.models.domain import (
+            Approval,
+            ApprovalKind,
+            ApprovalStatus,
+            BaxterChatMessage,
+            BaxterChatSession,
+            Workspace,
+        )
+        from sqlmodel import Session, select
+
+        with Session(engine) as session:
+            workspace = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+            chat = BaxterChatSession(workspace_id=workspace.id, title="Home ask")
+            session.add(chat)
+            session.commit()
+            session.refresh(chat)
+            session.add(
+                BaxterChatMessage(
+                    session_id=chat.id, role="user", content="Need queue history", status="complete"
+                )
+            )
+            session.add(
+                BaxterChatMessage(session_id=chat.id, role="assistant", content="", status="pending")
+            )
+            approval = Approval(
+                ticket_id=None,
+                workspace_id=workspace.id,
+                kind=ApprovalKind.CLI_QUESTION,
+                title="Agent questions",
+                stage_key=HOME_CHAT_STAGE_KEY,
+                tool_name="AskUserQuestion",
+                tool_input_json=json.dumps(ONE_QUESTION),
+                status=ApprovalStatus.PENDING,
+            )
+            session.add(approval)
+            session.commit()
+            session.refresh(approval)
+            chat_id = chat.id
+            approval_id = approval.id
+
+        before = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{chat_id}").json()
+        # Pending assistant is hidden; only the user line is visible yet.
+        assert len(before["messages"]) == 1
+
+        resolved = client.post(
+            f"/api/inbox/approvals/{approval_id}",
+            json={"action": "approve", "answers": {"Pick a runner?": "pytest"}},
+        )
+        assert resolved.status_code == 200, resolved.text
+
+        after = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{chat_id}").json()
+        roles = [m["role"] for m in after["messages"]]
+        assert roles == ["user", "assistant", "user"]
+        assert after["messages"][1]["content"] == "Pick a runner?"
+        assert after["messages"][2]["content"] == "pytest"

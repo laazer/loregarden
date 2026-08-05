@@ -141,3 +141,39 @@ def test_format_agent_unavailable_for_missing_cursor_agent():
     assert "Cursor Agent" in msg
     assert "cursor-agent" in msg
     assert "LOREGARDEN_CURSOR_BIN" in msg
+
+
+def test_format_agent_unavailable_for_codex_chatgpt_model_mismatch():
+    from loregarden.services.cli_auth_errors import format_agent_unavailable
+
+    dump = (
+        "2026-08-05T20:22:57Z ERROR rmcp::transport::worker: worker quit with fatal: "
+        "Deserialize error: data did not match any variant of untagged enum JsonRpcMessage\n"
+        "OpenAI Codex v0.146.1\n"
+        "--------\n"
+        "model: gpt-5\n"
+        "user\n"
+        "# Baxter — Home chat\n"
+        + ("x" * 2000)
+        + '\nERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error",'
+        '"message":"The \'gpt-5\' model is not supported when using Codex with a ChatGPT account."}}\n'
+    )
+    msg = format_agent_unavailable("Baxter", RuntimeError(dump))
+    assert "ChatGPT-signed-in account" in msg
+    assert "Clear the Codex model pin" in msg
+    assert "Home chat" not in msg  # must not dump the prompt into the thread
+    assert len(msg) < 1200
+    assert "gpt-5" in msg
+
+
+def test_format_agent_unavailable_compacts_codex_mcp_noise():
+    from loregarden.services.cli_auth_errors import format_agent_unavailable
+
+    dump = (
+        "ERROR rmcp::transport::worker: Deserialize error: JsonRpcMessage\n"
+        + ("prompt line\n" * 200)
+    )
+    msg = format_agent_unavailable("Baxter", RuntimeError(dump))
+    assert "JSON-RPC handshake" in msg or "JsonRpcMessage" in msg
+    assert "prompt line" not in msg or msg.count("prompt line") <= 1
+    assert len(msg) < 1200

@@ -28,6 +28,7 @@ jest.mock("../../api/client", () => {
       setBaxterChatRuntime: jest.fn(),
       sendBaxterChatMessage: jest.fn(),
       stopBaxterChatTurn: jest.fn(),
+      resolveApproval: jest.fn(),
     },
   };
 });
@@ -76,6 +77,7 @@ function fakeChatServer(reply = "Model says ship Home polish.") {
       workspace_id: "w1",
       title: title || "New chat",
       messages: [],
+      pending_approvals: [],
       runtime: DEFAULT_RUNTIME,
       run_status: "idle",
       active_turn_id: null,
@@ -353,14 +355,58 @@ describe("BaxterChatPage", () => {
     await renderChatReady();
     // Only the in-workspace approval counts toward the greeting summary.
     await screen.findByText(/1 approval waiting/);
-
-    fireEvent.change(screen.getByPlaceholderText("What should we ship today?"), {
-      target: { value: "What waits on me?" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /Ask Baxter/i }));
-
-    await waitFor(() => expect(screen.getByText("Mine")).toBeInTheDocument());
     expect(screen.queryByText("Theirs")).not.toBeInTheDocument();
+  });
+
+  it("renders interactive Home-chat approval cards from the session snapshot", async () => {
+    const homeQuestion = {
+      ...APPROVAL_FIXTURE,
+      id: "hq1",
+      title: "Which queue history shape?",
+      kind: "cli_question" as const,
+      stage_key: "home-chat",
+      ticket_id: "",
+      ticket_external_id: "",
+      questions: [
+        {
+          question: "Which queue history shape?",
+          header: "Shape",
+          options: [{ label: "Cards" }, { label: "Table" }],
+        },
+      ],
+    };
+    const threads = fakeChatServer();
+    threads.set("s-ask", {
+      id: "s-ask",
+      workspace_id: "w1",
+      title: "Queue history",
+      messages: [
+        {
+          id: "m1",
+          role: "user",
+          content: "We need queue history",
+          created_at: "2026-07-30T09:00:00Z",
+        },
+      ],
+      pending_approvals: [homeQuestion],
+      runtime: DEFAULT_RUNTIME,
+      run_status: "awaiting_input",
+      active_turn_id: "pending-1",
+      created_at: "2026-07-30T09:00:00Z",
+      updated_at: "2026-07-30T09:00:01Z",
+    });
+    useUiStore.setState({ baxterChatSessionId: "s-ask" });
+    mockedApi.resolveApproval.mockResolvedValue({
+      ...homeQuestion,
+      status: "approved",
+    } as never);
+
+    renderChat();
+
+    expect(await screen.findByText("Needs attention")).toBeInTheDocument();
+    expect(screen.getByText("We need queue history")).toBeInTheDocument();
+    expect(screen.getAllByText("Which queue history shape?").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Baxter is looking…")).not.toBeInTheDocument();
   });
 
   it("bootstraps a handoff prompt from Home into the thread", async () => {
@@ -375,7 +421,6 @@ describe("BaxterChatPage", () => {
     });
     await waitFor(() => {
       expect(screen.getByText("Start with the Merge retro-tokens approval.")).toBeInTheDocument();
-      expect(screen.getByText("Merge retro-tokens")).toBeInTheDocument();
     });
     expect(sessionStorage.getItem(HOME_BAXTER_PROMPT_KEY)).toBeNull();
   });

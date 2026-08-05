@@ -96,6 +96,18 @@ it("shows no rate at all until telemetry has loaded", () => {
   expect(metrics.find((m) => m.label === "Calls/min")?.value).toBe("—");
 });
 
+it("tolerates a telemetry payload that omits calls_per_min", () => {
+  // A stale backend can return a truthy object without the rate field; that
+  // must not crash the gateway page.
+  const metrics = gatewayMetrics(
+    [],
+    [],
+    mcpTelemetry({ calls_per_min: undefined as unknown as number }),
+  );
+
+  expect(metrics.find((m) => m.label === "Calls/min")?.value).toBe("—");
+});
+
 it("counts only agents that have MCP switched on", () => {
   const metrics = gatewayMetrics(
     [],

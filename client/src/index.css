@@ -2422,6 +2422,16 @@ button {
   background: var(--ac2);
 }
 
+.app-action-bar-send--stop {
+  background: var(--danger, #b42318);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(180, 35, 24, 0.35);
+}
+
+.app-action-bar-send--stop:hover:not(:disabled) {
+  background: var(--danger2, #912018);
+}
+
 .app-action-bar-send:disabled {
   opacity: 0.45;
   box-shadow: none;

@@ -51,6 +51,15 @@ export interface ChatSession {
   loadError: boolean;
   /** Resolves once the turn is accepted; rejects if the send failed. */
   send: (content: string, options?: ChatSendOptions) => Promise<unknown>;
+  /**
+   * Stop the in-flight turn, when this surface supports it.
+   *
+   * Home Baxter settles the pending assistant row immediately so the composer
+   * unlocks. Surfaces without a cancel path omit this — the bar then keeps
+   * its ordinary Send control while busy.
+   */
+  stop?: () => Promise<unknown>;
+  isStopping?: boolean;
 }
 
 export interface ChatSendOptions {

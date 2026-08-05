@@ -8,6 +8,7 @@ import { useApprovalResolution } from "../../../hooks/useApprovalResolution";
 import type { GatePart } from "./types";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenGateStudioButton, OpenTicketButton } from "./ResourceActionButton";
+import { ticketQueryRetry, ticketRefetchInterval } from "./ticketLiveQuery";
 
 function draftChecks(draft: Record<string, unknown>): string[] {
   const checklist = draft.checklist;
@@ -208,18 +209,15 @@ export function GatePrimitive({ part }: { part: GatePart }) {
     queryKey: ["ticket", ticketId],
     queryFn: () => api.ticket(ticketId!),
     enabled: Boolean(ticketId),
-    refetchInterval: (q) =>
-      q.state.data?.workflow_stage_status === "awaiting" ||
-      q.state.data?.workflow_stage_status === "running"
-        ? 2000
-        : 8000,
+    retry: ticketQueryRetry,
+    refetchInterval: ticketRefetchInterval,
   });
 
   const approvalsQuery = useQuery({
     queryKey: ["approvals", ticketId],
     queryFn: () => api.approvals(ticketId),
-    enabled: Boolean(ticketId),
-    refetchInterval: 4000,
+    enabled: Boolean(ticketId) && !ticketQuery.isError,
+    refetchInterval: ticketQuery.isError ? false : 4000,
   });
 
   const ticket = ticketQuery.data;

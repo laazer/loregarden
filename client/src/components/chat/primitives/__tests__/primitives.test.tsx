@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 
-import { api } from "../../../../api/client";
+import { ApiError, api } from "../../../../api/client";
 import type { Approval, TicketDetail } from "../../../../api/types";
 import { RouterBridgeSync } from "../../../RouterBridgeSync";
 import { StudioChatMessages } from "../../../studio/StudioChat";
@@ -597,6 +597,41 @@ describe("Ticket primitive chrome", () => {
       container.querySelector(".lg-primitive-card-actions .lg-primitive-run-btn--play"),
     ).not.toBeNull();
     expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
+  });
+
+  it("hides run/open controls when the ticket id does not resolve", async () => {
+    mockedApi.ticket.mockRejectedValue(new ApiError(404, "Ticket not found"));
+
+    const { container } = wrap(
+      <TicketPrimitive
+        part={{ primitive: "ticket", ticket_id: "queue-history-ticket-cards" }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Ticket not found")).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: "Run" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
+    expect(container.querySelector(".lg-primitive-resource-btn--compact")).toBeNull();
+    expect(mockedApi.ticket).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not keep refetching a missing ticket id", async () => {
+    mockedApi.ticket.mockRejectedValue(new ApiError(404, "Ticket not found"));
+
+    wrap(
+      <TicketPrimitive
+        part={{ primitive: "ticket", ticket_id: "queue-history-ticket-cards" }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Ticket not found")).toBeInTheDocument();
+    });
+    const calls = mockedApi.ticket.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(mockedApi.ticket).toHaveBeenCalledTimes(calls);
   });
 
   it("swaps the play button for stop while the stage runs", async () => {

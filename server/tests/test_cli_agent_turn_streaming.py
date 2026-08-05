@@ -8,6 +8,7 @@ property most of these tests are about.
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
@@ -65,11 +66,11 @@ class FakeProc:
 
     def __init__(self, lines: list[str], *, returncode: int = 0, stderr: bytes = b"") -> None:
         self._remaining = list(lines)
-        self._stderr = stderr
         self.returncode = returncode
         self.stdin = None
         self.killed = False
         self.stdout = self
+        self.stderr = io.BytesIO(stderr)
 
     # -- stdout, as SubprocessLineReader sees it (no fileno → readline path) --
     def readline(self) -> str:
@@ -79,10 +80,14 @@ class FakeProc:
         return None if self._remaining else self.returncode
 
     def communicate(self, timeout=None):
-        # On the buffered path this is the whole of stdout; on the streaming
-        # path the reader has already drained it and only stderr is left.
+        # Buffered path only: streaming turns read stderr directly after drain.
+        if self.stdin is not None:
+            # Mirror CPython: flushing a closed stdin raises ValueError.
+            if getattr(self.stdin, "closed", False):
+                raise ValueError("I/O operation on closed file.")
+            self.stdin.flush()
         rest, self._remaining = "".join(self._remaining), []
-        return (rest.encode("utf-8"), self._stderr)
+        return (rest.encode("utf-8"), self.stderr.getvalue())
 
     def kill(self):
         self.killed = True
@@ -176,3 +181,61 @@ def test_an_unwatched_turn_is_left_on_the_buffered_path(stub_turn):
 
     assert reply == "quiet reply"
     assert not proc.killed
+
+
+def test_streamed_turn_survives_closed_stdin_prompt(tmp_path, monkeypatch, db_session: Session):
+    """Codex writes the prompt on stdin then closes it — must not crash on drain."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setattr(
+        cli_agent_runner,
+        "resolve_workspace_root",
+        lambda _workspace: Path(repo),
+    )
+    monkeypatch.setattr(cli_agent_runner, "get_agent", lambda _id: {"adapter": "codex"})
+    monkeypatch.setattr(
+        cli_agent_runner,
+        "build_triage_invocation",
+        lambda **_kwargs: CliInvocation(
+            argv=["fake"],
+            cwd=str(repo),
+            stdin_prompt="prompt on stdin",
+            adapter="codex",
+        ),
+    )
+
+    class FakeStdin:
+        def __init__(self) -> None:
+            self.closed = False
+            self.written = b""
+
+        def write(self, data: bytes) -> int:
+            self.written += data
+            return len(data)
+
+        def close(self) -> None:
+            self.closed = True
+
+        def flush(self) -> None:
+            if self.closed:
+                raise ValueError("I/O operation on closed file.")
+
+    class CodexProc(FakeProc):
+        def __init__(self, lines: list[str]) -> None:
+            super().__init__(lines)
+            self.stdin = FakeStdin()
+
+    proc = CodexProc([_result_line("Ship it.")])
+    monkeypatch.setattr(cli_agent_runner.subprocess, "Popen", lambda *a, **k: proc)
+
+    sink = ChatTurnThinkingSink("stream-stdin")
+    reply = cli_agent_runner.run_cli_agent_turn(
+        TRIAGE_CLI_PROFILE,
+        workspace=Workspace(slug="test", name="Test"),
+        prompt="do the thing",
+        thinking_sink=sink,
+    )
+    sink.close()
+
+    assert reply == "Ship it."
+    assert proc.stdin is None

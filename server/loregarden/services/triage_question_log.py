@@ -1,4 +1,4 @@
-"""Record answered agent questions in the triage conversation.
+"""Record answered agent questions in the chat transcript they belong to.
 
 Baxter's questions do not travel the chat rail. An AskUserQuestion tool call is intercepted
 by the permission bridge and becomes an approval the operator answers on a card; the answer
@@ -6,16 +6,24 @@ goes back to the CLI process as a tool result. The model therefore keeps its con
 the human-visible transcript never sees the exchange — the chat jumps from the operator's
 message to a reply that answers a question nobody can find.
 
-Mirror the resolved exchange into triage_messages so the transcript reads whole. This is a
-record, not a second place to answer: the approval card remains the only way to respond.
+Mirror the resolved exchange into the matching conversation so the transcript reads whole.
+This is a record, not a second place to answer: the approval card remains the only way to
+respond. Ticket triage writes ``triage_messages``; Home Baxter writes ``baxter_chat_messages``.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from loregarden.models.domain import Approval, ApprovalKind, TriageMessage
-from sqlmodel import Session
+from loregarden.agents.executors.approval_scope import HOME_CHAT_STAGE_KEY
+from loregarden.models.domain import (
+    Approval,
+    ApprovalKind,
+    BaxterChatMessage,
+    BaxterChatSession,
+    TriageMessage,
+)
+from sqlmodel import Session, col, select
 
 TRIAGE_STAGE_KEY = "triage"
 
@@ -108,6 +116,70 @@ def record_triage_question_exchange(
             role="user",
             content=answer_text,
             run_id=approval.run_id,
+        ),
+    ]
+    for message in messages:
+        session.add(message)
+    return messages
+
+
+def _pending_home_assistant(
+    session: Session, workspace_id: str
+) -> BaxterChatMessage | None:
+    """The in-flight Home Baxter turn for this workspace, if any.
+
+    Home chat approvals are workspace-scoped (no ticket, no chat_session_id on the
+    approval row). The pending assistant message is the durable turn handle, and
+    only one Home turn may be in flight per workspace.
+    """
+    return session.exec(
+        select(BaxterChatMessage)
+        .join(BaxterChatSession, BaxterChatMessage.session_id == BaxterChatSession.id)
+        .where(
+            BaxterChatSession.workspace_id == workspace_id,
+            BaxterChatMessage.status == "pending",
+            BaxterChatMessage.role == "assistant",
+        )
+        .order_by(col(BaxterChatMessage.created_at).desc())
+        .limit(1)
+    ).first()
+
+
+def record_home_chat_question_exchange(
+    session: Session,
+    approval: Approval,
+    tool_input: dict[str, Any],
+    *,
+    answers: dict[str, str | list[str]] | None,
+    response: str = "",
+) -> list[BaxterChatMessage]:
+    """Append the question and its answer to the Home Baxter thread in flight."""
+    if approval.kind != ApprovalKind.CLI_QUESTION:
+        return []
+    if approval.stage_key != HOME_CHAT_STAGE_KEY:
+        return []
+
+    pending = _pending_home_assistant(session, approval.workspace_id)
+    if not pending:
+        return []
+
+    question_text = format_question_message(tool_input)
+    answer_text = format_answer_message(tool_input, answers, response=response)
+    if not question_text or not answer_text:
+        return []
+
+    messages = [
+        BaxterChatMessage(
+            session_id=pending.session_id,
+            role="assistant",
+            content=question_text,
+            status="complete",
+        ),
+        BaxterChatMessage(
+            session_id=pending.session_id,
+            role="user",
+            content=answer_text,
+            status="complete",
         ),
     ]
     for message in messages:

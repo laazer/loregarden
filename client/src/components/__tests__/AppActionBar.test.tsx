@@ -256,6 +256,38 @@ it("prefers the waiting decision over the busy indicator", () => {
   expect(screen.queryByText(/working…/)).not.toBeInTheDocument();
 });
 
+it("turns Send into Stop while a Baxter turn is in flight", () => {
+  const stop = jest.fn().mockResolvedValue({});
+  mockResolver.mockReturnValue(
+    bind({
+      session: session({
+        kind: "baxter-home",
+        isBusy: true,
+        stop,
+        isStopping: false,
+      }),
+      label: "Baxter · loregarden",
+      ticketId: null,
+      archive: {
+        workspaceSlug: "loregarden",
+        sessionId: "s1",
+        openSession: jest.fn(),
+        startNewChat: jest.fn(),
+        runtime: DEFAULT_RUNTIME,
+        setRuntime: jest.fn(),
+        isSavingRuntime: false,
+      },
+    }),
+  );
+
+  renderBar();
+
+  const stopBtn = screen.getByRole("button", { name: "Stop" });
+  expect(stopBtn).toBeEnabled();
+  fireEvent.click(stopBtn);
+  expect(stop).toHaveBeenCalled();
+});
+
 it("shows a send failure without claiming the chat is gone", () => {
   mockResolver.mockReturnValue(
     bind({

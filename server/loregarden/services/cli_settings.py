@@ -102,8 +102,11 @@ CURSOR_EFFORT_MODELS = frozenset(
 
 CODEX_MODEL_OPTIONS: list[dict[str, str]] = [
     {"id": "", "label": "Default (Codex profile)"},
-    {"id": "gpt-5", "label": "GPT-5"},
 ]
+# Live pins come from ``codex_discovery.codex_model_options`` (``codex debug models``).
+# The static list above is only the empty "use profile default" row used when
+# discovery finds nothing — never a hard-coded model id that ChatGPT/API accounts
+# may reject.
 
 # Effort ladders differ by provider, so they are catalogued per adapter rather
 # than shared. Claude Code takes `--effort` natively; cursor expresses it as a
@@ -654,13 +657,14 @@ def resolve_runtime_effective(
 def runtime_options_payload(
     *, lmstudio_base_url: str = "", workspace: Workspace | None = None
 ) -> dict:
+    from loregarden.services.codex_discovery import codex_model_options
     from loregarden.services.lmstudio_discovery import lmstudio_model_options
 
     return {
         "cli_adapters": cli_adapter_options(),
         "claude_models": CLAUDE_MODEL_OPTIONS,
         "cursor_models": CURSOR_MODEL_OPTIONS,
-        "codex_models": CODEX_MODEL_OPTIONS,
+        "codex_models": codex_model_options(),
         "lmstudio_models": lmstudio_model_options(lmstudio_base_url),
         "claude_efforts": CLAUDE_EFFORT_OPTIONS,
         "cursor_efforts": CURSOR_EFFORT_OPTIONS,

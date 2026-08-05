@@ -178,6 +178,10 @@ def test_baxter_chat_prompt_includes_snapshot_and_stored_history(client: TestCli
     assert "What should I look at first?" in prompt
     assert "Live snapshot" in prompt
     assert "Chat UI primitives" in prompt
+    assert "Never invent ticket/agent ids" in prompt
+    assert "Agent execution plan" in prompt
+    assert '"primitive":"todo_list"' in prompt
+    assert "emit `qa`" in prompt
     # History comes from the stored thread, not from the client.
     assert "user: Hi" in prompt
     assert "assistant: Hello" in prompt
@@ -438,3 +442,66 @@ def test_baxter_chat_conflict_when_turn_already_running(
     # surfaces as a failed assistant message rather than a rejected request.
     snapshot = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").json()
     assert "previous message" in snapshot["messages"][-1]["content"].lower()
+
+
+def test_home_chat_snapshot_surfaces_pending_approvals_and_awaiting_input(
+    client: TestClient, db_session: Session
+):
+    """AskUserQuestion during a Home turn must ride on the session, not only the board."""
+    import json
+
+    from loregarden.models.domain import Approval, ApprovalKind, ApprovalStatus, BaxterChatMessage
+
+    session_id = _new_session(client)
+    workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+    run = AgentRun(
+        run_code="run_home_ask",
+        ticket_id=None,
+        workspace_id=workspace.id,
+        agent_id="triage",
+        stage_key=HOME_CHAT_STAGE_KEY,
+        status=RunStatus.AWAITING_PERMISSION,
+    )
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+
+    db_session.add(
+        BaxterChatMessage(session_id=session_id, role="user", content="Ship queue history?", status="complete")
+    )
+    db_session.add(BaxterChatMessage(session_id=session_id, role="assistant", status="pending"))
+    db_session.add(
+        Approval(
+            ticket_id=None,
+            workspace_id=workspace.id,
+            run_id=run.id,
+            kind=ApprovalKind.CLI_QUESTION,
+            title="Which shape?",
+            stage_key=HOME_CHAT_STAGE_KEY,
+            tool_name="AskUserQuestion",
+            tool_input_json=json.dumps(
+                {
+                    "questions": [
+                        {
+                            "question": "Cards or table?",
+                            "header": "Shape",
+                            "options": [{"label": "Cards"}, {"label": "Table"}],
+                        }
+                    ]
+                }
+            ),
+            status=ApprovalStatus.PENDING,
+        )
+    )
+    db_session.commit()
+
+    snapshot = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").json()
+    assert snapshot["run_status"] == "awaiting_input"
+    assert len(snapshot["pending_approvals"]) == 1
+    assert snapshot["pending_approvals"][0]["title"] == "Which shape?"
+    assert snapshot["pending_approvals"][0]["kind"] == "cli_question"
+
+    idle = _new_session(client)
+    other = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{idle}").json()
+    assert other["pending_approvals"] == []
+    assert other["run_status"] == "idle"

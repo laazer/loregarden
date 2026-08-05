@@ -182,7 +182,7 @@ export function useActiveChatSession(): ActiveChatSession {
     session: baxterSession,
     label: `Baxter · ${chatWorkspaceSlug}`,
     ticketId: null,
-    pendingApprovals: [],
+    pendingApprovals: baxterSession.pendingApprovals,
     branch: null,
     composedOnScreen: false,
     archive: baxterArchive,

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 
-import { ApiError, api, type BaxterChatSnapshot, type WorkspaceRuntimeSettings } from "../api/client";
+import { ApiError, api, type Approval, type BaxterChatSnapshot, type WorkspaceRuntimeSettings } from "../api/client";
 import type { ChatSession } from "../lib/chatSession";
 import { isRunStatusBusy } from "../lib/chatSession";
 import { DEFAULT_RUNTIME } from "../lib/runtimeSettings";
@@ -12,6 +12,8 @@ export interface BaxterChatSessionBinding extends ChatSession {
   sessionId: string;
   title: string;
   snapshot: BaxterChatSnapshot | undefined;
+  /** In-flight Home-chat approvals for this thread (also listed on the board). */
+  pendingApprovals: Approval[];
   openSession: (id: string) => void;
   startNewChat: () => void;
   renameSession: (id: string, title: string) => Promise<unknown>;
@@ -58,9 +60,14 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
     queryKey,
     queryFn: () => api.baxterChatSession(workspaceSlug, sessionId),
     enabled,
-    // Poll fast only while a turn is in flight; the reply arrives this way.
-    refetchInterval: (query) =>
-      query.state.data && query.state.data.run_status !== "idle" ? 1500 : 10_000,
+    // Poll fast while a turn is in flight or waiting on the operator.
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return 10_000;
+      if (data.run_status !== "idle") return 1500;
+      if ((data.pending_approvals?.length ?? 0) > 0) return 2000;
+      return 10_000;
+    },
     retry: false,
   });
 
@@ -163,6 +170,7 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
     sessionId,
     title: snapshot.data?.title ?? "",
     messages: snapshot.data?.messages ?? [],
+    pendingApprovals: snapshot.data?.pending_approvals ?? [],
     // The in-flight POST covers the gap before the first poll reports "running".
     isBusy: isRunStatusBusy(snapshot.data?.run_status) || sendMessage.isPending,
     activeTurnId: snapshot.data?.active_turn_id ?? null,

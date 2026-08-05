@@ -704,6 +704,8 @@ export interface BaxterChatSnapshot {
   workspace_id: string;
   title: string;
   messages: TriageMessage[];
+  /** Home-chat permission/question cards for the in-flight turn (also on the board). */
+  pending_approvals?: Approval[];
   runtime: WorkspaceRuntimeSettings;
   run_status: TriageRunStatus;
   active_turn_id: string | null;

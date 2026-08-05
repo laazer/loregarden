@@ -247,8 +247,29 @@ def test_runtime_options_include_codex_adapter_and_models(client):
 
     codex = next(opt for opt in body["cli_adapters"] if opt["id"] == "codex")
     assert codex["label"] == "Codex CLI"
-    assert {"id": "gpt-5", "label": "GPT-5"} in body["codex_models"]
+    assert body["codex_models"][0] == {"id": "", "label": "Default (Codex profile)"}
+    # Live catalog from ``codex debug models`` — never the stale hard-coded gpt-5 pin.
+    assert "gpt-5" not in {opt["id"] for opt in body["codex_models"]}
 
+
+def test_runtime_options_surface_discovered_codex_models(client):
+    from loregarden.services.codex_discovery import CodexModel
+
+    fake = [
+        CodexModel(slug="gpt-5.5", display_name="GPT-5.5", priority=7),
+        CodexModel(slug="gpt-5.6-sol", display_name="GPT-5.6-Sol", priority=1),
+    ]
+    with mock.patch(
+        "loregarden.services.codex_discovery.list_codex_models",
+        return_value=fake,
+    ):
+        body = client.get("/api/workspaces/runtime-options").json()
+
+    assert body["codex_models"] == [
+        {"id": "", "label": "Default (Codex profile)"},
+        {"id": "gpt-5.5", "label": "GPT-5.5"},
+        {"id": "gpt-5.6-sol", "label": "GPT-5.6-Sol"},
+    ]
 
 def test_runtime_options_flag_an_adapter_whose_cli_is_not_installed(client):
     with mock.patch.object(cli_settings.shutil, "which", return_value=None):

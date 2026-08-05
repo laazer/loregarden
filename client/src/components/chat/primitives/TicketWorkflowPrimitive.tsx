@@ -7,19 +7,26 @@ import { PrimitiveCard } from "./PrimitiveCard";
 import { OpenTicketButton } from "./ResourceActionButton";
 import { PlayButton, StopButton } from "./RunControlButton";
 import { TicketCardBody, stageProgressSegments } from "./TicketCardMeta";
+import { ticketQueryRetry, ticketRefetchInterval } from "./ticketLiveQuery";
 import { ticketIsRunning, useRunControls } from "./useRunControls";
 
 export function TicketWorkflowPrimitive({ part }: { part: TicketWorkflowPart }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ["ticket", part.ticket_id],
     queryFn: () => api.ticket(part.ticket_id),
-    refetchInterval: (q) =>
-      ticketIsRunning(q.state.data?.workflow_stage_status) ? 1000 : 5000,
+    retry: ticketQueryRetry,
+    refetchInterval: ticketRefetchInterval,
   });
   const controls = useRunControls(part.ticket_id);
   const running = ticketIsRunning(data?.workflow_stage_status);
   const progress = stageProgressSegments(data?.stages);
   const title = data?.title ?? part.title ?? "Ticket workflow";
+  const loadError = error
+    ? error instanceof Error
+      ? error.message
+      : "Failed to load"
+    : null;
+  const live = Boolean(data) && !loadError;
 
   return (
     <PrimitiveCard
@@ -27,18 +34,20 @@ export function TicketWorkflowPrimitive({ part }: { part: TicketWorkflowPart }) 
       title={title}
       header={<span className="lg-primitive-ticket-card-spacer" aria-hidden />}
       loading={isLoading}
-      error={error ? (error instanceof Error ? error.message : "Failed to load") : null}
+      error={loadError}
       tone={running ? "accent" : "default"}
-      resourceAction={<OpenTicketButton ticketId={part.ticket_id} compact />}
+      resourceAction={live ? <OpenTicketButton ticketId={part.ticket_id} compact /> : null}
       actions={
-        running ? (
-          <StopButton disabled={controls.isStopping} onClick={() => void controls.stop()} />
-        ) : (
-          <PlayButton
-            disabled={controls.isStarting || !data}
-            onClick={() => void controls.start()}
-          />
-        )
+        live ? (
+          running ? (
+            <StopButton disabled={controls.isStopping} onClick={() => void controls.stop()} />
+          ) : (
+            <PlayButton
+              disabled={controls.isStarting}
+              onClick={() => void controls.start()}
+            />
+          )
+        ) : null
       }
     >
       {data ? (

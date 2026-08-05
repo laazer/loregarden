@@ -33,6 +33,8 @@ export function useApprovalResolution(
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["triage", ticketId] });
       qc.invalidateQueries({ queryKey: ["approvals"] });
+      qc.invalidateQueries({ queryKey: ["baxter-chat-approvals"] });
+      qc.invalidateQueries({ queryKey: ["baxter-chat-session"] });
       qc.invalidateQueries({ queryKey: ["ticket", ticketId] });
       qc.invalidateQueries({ queryKey: ["runs", ticketId] });
       onResolved?.();

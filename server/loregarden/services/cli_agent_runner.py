@@ -198,6 +198,11 @@ def run_cli_agent_turn(
         if invocation.stdin_prompt and proc.stdin:
             proc.stdin.write(invocation.stdin_prompt.encode("utf-8"))
             proc.stdin.close()
+            # CPython's ``communicate()`` flushes stdin even after we closed it,
+            # which raises ``ValueError: I/O operation on closed file`` (Codex
+            # feeds the prompt on stdin). Drop the handle so a later communicate
+            # — or any flush — does not touch the closed pipe.
+            proc.stdin = None
         if thinking_sink is not None:
             stdout_text = _drain_to_sink(
                 proc,
@@ -205,9 +210,12 @@ def run_cli_agent_turn(
                 timeout=timeout,
                 assistant_label=profile.assistant_label,
             )
-            # The process has already exited, so this only collects stderr.
-            _, stderr_bytes = proc.communicate()
-            stderr_text = stderr_bytes.decode("utf-8", errors="replace")
+            # Process already exited and stdout is drained; only stderr remains.
+            # Do not call ``communicate()`` — same closed-stdin trap, and it would
+            # also try to re-read stdout. Match the stage print-mode runner.
+            stderr_text = (
+                proc.stderr.read().decode("utf-8", errors="replace") if proc.stderr else ""
+            )
         else:
             try:
                 stdout, stderr = proc.communicate(timeout=timeout)
