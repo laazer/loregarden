@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shlex
+from pathlib import PurePath
 from typing import Any
 
 from loregarden.models.domain import Ticket
@@ -74,6 +76,70 @@ ORCHESTRATED_DENIED_MCP_TOOLS = frozenset({"loregarden_create_ticket"})
 #: rule and an unattended research run stalls on the first fetch. These only
 #: read; they cannot touch the repo or the control plane.
 AUTO_APPROVED_CLI_TOOLS = frozenset({"WebFetch", "WebSearch"})
+
+
+def _git_subcommand_index(tokens: list[str], git_index: int) -> int | None:
+    index = git_index + 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token in {"-C", "-c", "--git-dir", "--work-tree"}:
+            index += 2
+            continue
+        if token.startswith(("--git-dir=", "--work-tree=")):
+            index += 1
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        return index
+    return None
+
+
+def _looks_like_git_executable(token: str) -> bool:
+    return PurePath(token).name == "git"
+
+
+def _has_hook_bypass_flag(args: list[str]) -> bool:
+    return any(
+        arg == "--no-verify" or (arg.startswith("-") and not arg.startswith("--") and "n" in arg)
+        for arg in args
+    )
+
+
+def _has_obvious_hook_bypass_intent(command: str) -> bool:
+    normalized = command.replace("\\\n", " ")
+    return (
+        "git" in normalized
+        and "commit" in normalized
+        and ("--no-verify" in normalized or " -n" in normalized)
+    )
+
+
+def _git_commit_bypasses_hooks(command: str) -> bool:
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return _has_obvious_hook_bypass_intent(command)
+
+    for index, token in enumerate(tokens):
+        if not _looks_like_git_executable(token):
+            continue
+        subcommand_index = _git_subcommand_index(tokens, index)
+        if subcommand_index is None or tokens[subcommand_index] != "commit":
+            continue
+        if _has_hook_bypass_flag(tokens[subcommand_index + 1 :]):
+            return True
+    return _has_obvious_hook_bypass_intent(command)
+
+
+def denied_cli_tool_message(tool_name: str, tool_input: dict[str, Any]) -> str:
+    """Return a hard-deny reason for CLI tool calls that must never be approved."""
+    if tool_name != "Bash":
+        return ""
+    command = tool_input.get("command")
+    if isinstance(command, str) and _git_commit_bypasses_hooks(command):
+        return "git commit hook bypass is forbidden; run git commit without --no-verify/-n."
+    return ""
 
 
 def is_auto_approved_cli_tool(tool_name: str) -> bool:

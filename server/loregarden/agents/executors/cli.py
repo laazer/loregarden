@@ -45,7 +45,7 @@ from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_commit_push_service import working_tree_paths
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_cancellation import cancel_requested
-from loregarden.services.run_errors import agent_timeout_message
+from loregarden.services.run_errors import TIMEOUT_HARD_CAP_MULTIPLIER, agent_timeout_message
 from loregarden.services.run_log_stream import RunLogStreamer
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
 from loregarden.services.studio_service import build_studio_prompt_sections
@@ -66,8 +66,6 @@ logger = logging.getLogger(__name__)
 # keeps streaming, it may run until an absolute ceiling of this multiple of that
 # budget, so a long-but-progressing test run is no longer killed mid-progress
 # while a chatty runaway is still bounded.
-_TIMEOUT_HARD_CAP_MULTIPLIER = 4
-
 # The skill whose stage runs the full regression suite; it is told to record its
 # green result as commit-scoped evidence. Consumers reuse that via the general
 # evidence ledger (build_evidence_ledger), so only the producer is keyed on skill.
@@ -179,6 +177,7 @@ class CliAgentExecutor:
                     ticket_adapter=ticket_runtime.cli_adapter,
                     ticket_claude_model=ticket_runtime.claude_model,
                     ticket_cursor_model=ticket_runtime.cursor_model,
+                    ticket_codex_model=ticket_runtime.codex_model,
                     ticket_lmstudio_model=ticket_runtime.lmstudio_model,
                     ticket_claude_effort=ticket_runtime.claude_effort,
                     ticket_cursor_effort=ticket_runtime.cursor_effort,
@@ -435,7 +434,7 @@ class CliAgentExecutor:
         # bounded.
         start = time.time()
         idle_deadline = start + timeout
-        hard_deadline = start + timeout * _TIMEOUT_HARD_CAP_MULTIPLIER
+        hard_deadline = start + timeout * TIMEOUT_HARD_CAP_MULTIPLIER
         cancelled = False
         try:
             while True:

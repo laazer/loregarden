@@ -32,13 +32,14 @@ class Settings(BaseSettings):
     cli_adapter: str = "local"
     claude_model: str = ""
     cursor_model: str = ""
+    codex_model: str = ""
     lmstudio_base_url: str = "http://127.0.0.1:1234/v1"
     lmstudio_model: str = ""
     claude_effort: str = ""
     cursor_effort: str = ""
     lmstudio_effort: str = ""
     claude_permission_mode: str = "default"
-    claude_output_format: str = "text"
+    claude_output_format: str = "stream-json"
     cursor_output_format: str = "stream-json"
     allow_permission_bypass: bool = False
     permission_approval_timeout_seconds: float = 3600.0

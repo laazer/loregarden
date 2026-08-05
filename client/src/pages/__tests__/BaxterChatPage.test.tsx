@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { ApiError, api, type BaxterChatSnapshot } from "../../api/client";
 import { HOME_BAXTER_PROMPT_KEY } from "../../lib/homeBaxter";
+import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
 import { useUiStore } from "../../state/uiStore";
 import { BaxterChatPage } from "../BaxterChatPage";
 
@@ -18,11 +19,13 @@ jest.mock("../../api/client", () => {
       ticketTree: jest.fn(),
       tickets: jest.fn(),
       workspaces: jest.fn(),
+      runtimeOptions: jest.fn(),
       baxterChatSessions: jest.fn(),
       baxterChatSession: jest.fn(),
       createBaxterChatSession: jest.fn(),
       renameBaxterChatSession: jest.fn(),
       deleteBaxterChatSession: jest.fn(),
+      setBaxterChatRuntime: jest.fn(),
       sendBaxterChatMessage: jest.fn(),
     },
   };
@@ -72,6 +75,7 @@ function fakeChatServer(reply = "Model says ship Home polish.") {
       workspace_id: "w1",
       title: title || "New chat",
       messages: [],
+      runtime: DEFAULT_RUNTIME,
       run_status: "idle",
       active_turn_id: null,
       created_at: new Date().toISOString(),
@@ -81,6 +85,11 @@ function fakeChatServer(reply = "Model says ship Home polish.") {
     return created;
   });
   mockedApi.baxterChatSession.mockImplementation(async (_slug, id) => snapshot(id));
+  mockedApi.setBaxterChatRuntime.mockImplementation(async (_slug, id, runtime) => {
+    const thread = snapshot(id);
+    threads.set(id, { ...thread, runtime });
+    return runtime;
+  });
   mockedApi.sendBaxterChatMessage.mockImplementation(async (_slug, id, content) => {
     const thread = snapshot(id);
     const updated: BaxterChatSnapshot = {
@@ -150,6 +159,34 @@ describe("BaxterChatPage", () => {
     mockedApi.ticket.mockRejectedValue(new ApiError(404, "Example ticket not found"));
     mockedApi.ticketTree.mockResolvedValue([]);
     mockedApi.tickets.mockResolvedValue([]);
+    mockedApi.runtimeOptions.mockResolvedValue({
+      cli_adapters: [
+        { id: "default", label: "Workspace default" },
+        { id: "claude", label: "Claude Code" },
+        { id: "cursor", label: "Cursor" },
+      ],
+      claude_models: [{ id: "", label: "Default (Claude profile)" }],
+      cursor_models: [
+        { id: "", label: "Default (Cursor profile)" },
+        { id: "gpt-5", label: "GPT-5" },
+      ],
+      codex_models: [{ id: "", label: "Default (Codex profile)" }],
+      lmstudio_models: [{ id: "", label: "Auto" }],
+      claude_efforts: [],
+      cursor_efforts: [],
+      lmstudio_efforts: [],
+      cursor_effort_models: [],
+      effective: {
+        cli_adapter: "claude",
+        cli_adapter_source: "workspace",
+        model: "",
+        model_source: "cli-default",
+        effort: "",
+        effort_source: "cli-default",
+        supports_model: true,
+        supports_effort: false,
+      },
+    });
     mockedApi.workspaces.mockResolvedValue([
       { id: "w1", slug: "loregarden", name: "Loregarden", repo_path: "/tmp" } as never,
       { id: "w2", slug: "blobert", name: "Blobert", repo_path: "/tmp/b" } as never,
@@ -172,6 +209,24 @@ describe("BaxterChatPage", () => {
     expect(screen.getByPlaceholderText("What should we ship today?")).toBeInTheDocument();
     expect(screen.getByText("What should I look at first?")).toBeInTheDocument();
     await waitFor(() => expect(mockedApi.approvals).toHaveBeenCalled());
+  });
+
+  it("saves a provider and model for the chat page conversation", async () => {
+    await renderChatReady();
+    fireEvent.click(await screen.findByRole("button", { name: /Model · Workspace default/i }));
+
+    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "cursor" } });
+    fireEvent.change(screen.getByLabelText("Cursor model"), { target: { value: "gpt-5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockedApi.createBaxterChatSession).toHaveBeenCalledWith("loregarden");
+      expect(mockedApi.setBaxterChatRuntime).toHaveBeenCalledWith(
+        "loregarden",
+        "s1",
+        expect.objectContaining({ cli_adapter: "cursor", cursor_model: "gpt-5" }),
+      );
+    });
   });
 
   it("creates a thread on the first send and shows the persisted reply", async () => {
@@ -205,6 +260,7 @@ describe("BaxterChatPage", () => {
         { id: "m1", role: "user", content: "Where did we stop?", created_at: "2026-07-29T09:00:00Z" },
         { id: "m2", role: "assistant", content: "On the retro-tokens gate.", created_at: "2026-07-29T09:00:01Z" },
       ],
+      runtime: DEFAULT_RUNTIME,
       run_status: "idle",
       active_turn_id: null,
       created_at: "2026-07-29T09:00:00Z",
@@ -355,6 +411,7 @@ describe("BaxterChatPage", () => {
         { id: "m1", role: "user", content: "Hello", created_at: "2026-07-30T09:00:00Z" },
         { id: "m2", role: "assistant", content: "On it.", created_at: "2026-07-30T09:00:01Z" },
       ],
+      runtime: DEFAULT_RUNTIME,
       run_status: "idle",
       active_turn_id: null,
       created_at: "2026-07-30T09:00:00Z",
@@ -377,6 +434,7 @@ describe("BaxterChatPage", () => {
       messages: [
         { id: "m1", role: "user", content: "Still working?", created_at: "2026-07-30T09:00:00Z" },
       ],
+      runtime: DEFAULT_RUNTIME,
       run_status: "running",
       active_turn_id: "m2",
       created_at: "2026-07-30T09:00:00Z",

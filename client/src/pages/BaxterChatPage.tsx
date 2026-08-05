@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { api, type Approval, type TicketSummary } from "../api/client";
@@ -7,11 +7,13 @@ import { BaxterAvatar } from "../components/chat/BaxterAvatar";
 import { ChatHistorySidebar } from "../components/chat/ChatHistorySidebar";
 import { primitiveGallerySections } from "../components/chat/primitiveGallery";
 import { StudioChatComposer, StudioChatMessages } from "../components/studio/StudioChat";
+import { TriageModelModal } from "../components/TriageModelModal";
 import { useBaxterChatSession } from "../hooks/useBaxterChatSession";
 import { useChatWorkspace } from "../hooks/useChatWorkspace";
 import { ticketPath } from "../lib/appNavigation";
 import { takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
+import { runtimeSummaryLabel } from "../components/WorkspaceRuntimeFields";
 import "./BaxterChatPage.css";
 
 type ChatRole = "user" | "assistant";
@@ -67,11 +69,13 @@ function BaxterHeroAsk({
   onSend,
   busy,
   blocked = false,
+  modelControl,
 }: {
   onSend: (text: string) => void;
   busy: boolean;
   /** No workspace resolved yet — nothing can answer the question. */
   blocked?: boolean;
+  modelControl?: ReactNode;
 }) {
   const [draft, setDraft] = useState("");
 
@@ -98,6 +102,7 @@ function BaxterHeroAsk({
           disabled={busy || blocked}
           variant="dock"
           iconOnlySend={false}
+          optionsRow={modelControl}
         />
         <div className="lg-chat-chip-row baxter-chat-chip-row" role="list">
           {EMPTY_CHIPS.map((chip) => (
@@ -123,12 +128,14 @@ function BaxterReplyDock({
   busy,
   suggestions,
   blocked = false,
+  modelControl,
 }: {
   onSend: (text: string) => void;
   busy: boolean;
   suggestions?: string[];
   /** No workspace resolved yet — nothing can answer the question. */
   blocked?: boolean;
+  modelControl?: ReactNode;
 }) {
   const [draft, setDraft] = useState("");
 
@@ -166,6 +173,7 @@ function BaxterReplyDock({
         disabled={busy || blocked}
         variant="dock"
         showShortcut
+        optionsRow={modelControl}
       />
     </div>
   );
@@ -188,6 +196,7 @@ export function BaxterChatPage() {
    * mistaken for a saved conversation or write one.
    */
   const [galleryTurns, setGalleryTurns] = useState<ChatTurn[] | null>(null);
+  const [modelModalOpen, setModelModalOpen] = useState(false);
   const initialPromptRef = useRef(takeHomeBaxterPrompt());
   const resetNonce = useUiStore((s) => s.baxterChatResetNonce);
   const resetSeenRef = useRef(resetNonce);
@@ -214,6 +223,11 @@ export function BaxterChatPage() {
     queryFn: () => api.tickets({ workspace: workspaceSlug }),
     enabled: historyOpen && Boolean(workspaceSlug),
     staleTime: 15_000,
+  });
+  const runtimeOptionsQ = useQuery({
+    queryKey: ["runtime-options", workspaceSlug],
+    queryFn: () => api.runtimeOptions({ workspace: workspaceSlug }),
+    enabled: Boolean(workspaceSlug),
   });
 
   const approvals = useMemo(
@@ -251,6 +265,17 @@ export function BaxterChatPage() {
     // send from surfacing as an unhandled rejection as well.
     void chat.send(content).catch(() => undefined);
   };
+
+  const modelControl = (
+    <button
+      type="button"
+      className="baxter-chat-model-btn"
+      disabled={!workspaceSlug || !runtimeOptionsQ.data || chat.isSavingRuntime || busy}
+      onClick={() => setModelModalOpen(true)}
+    >
+      Model · {runtimeSummaryLabel(chat.runtime, runtimeOptionsQ.data)}
+    </button>
+  );
 
   const openPrimitiveGallery = () => {
     const liveTickets = historyTicketsQ.data ?? tickets;
@@ -365,6 +390,7 @@ export function BaxterChatPage() {
             onSend={(text) => void respond(text)}
             busy={busy}
             blocked={!workspaceSlug}
+            modelControl={modelControl}
           />
           {sendError}
         </div>
@@ -442,6 +468,7 @@ export function BaxterChatPage() {
             busy={busy}
             suggestions={latestSuggestions}
             blocked={!workspaceSlug}
+            modelControl={modelControl}
           />
         </>
       )}
@@ -457,6 +484,16 @@ export function BaxterChatPage() {
           setHistoryOpen(false);
         }}
         onDeleteSession={(id) => void chat.deleteSession(id)}
+      />
+      <TriageModelModal
+        open={modelModalOpen}
+        runtime={chat.runtime}
+        runtimeOptions={runtimeOptionsQ.data}
+        isSaving={chat.isSavingRuntime}
+        scopeLabel="Baxter"
+        subtitle="Choose a provider, then pick a model for this conversation"
+        onClose={() => setModelModalOpen(false)}
+        onSave={chat.setRuntime}
       />
     </div>
   );

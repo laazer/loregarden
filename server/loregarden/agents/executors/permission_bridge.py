@@ -27,6 +27,7 @@ from loregarden.agents.executors.tool_auto_approve import (  # noqa: F401
     ORCHESTRATED_DENIED_MCP_TOOLS,
     bare_mcp_tool_name,
     build_ask_user_question_input,
+    denied_cli_tool_message,
     enrich_mcp_tool_input,
     is_ask_user_question,
     is_auto_approved_cli_tool,
@@ -58,7 +59,7 @@ from loregarden.services.permission_allowlist import is_permission_allowed
 from loregarden.services.rate_limit import rate_limit_denial
 from loregarden.services.rework_feedback import record_reroute_exhausts_budget
 from loregarden.services.run_cancellation import cancel_requested
-from loregarden.services.run_errors import agent_timeout_message
+from loregarden.services.run_errors import TIMEOUT_HARD_CAP_MULTIPLIER, agent_timeout_message
 from loregarden.services.run_steering import (
     POLL_INTERVAL_SECONDS,
     mark_delivered,
@@ -311,6 +312,8 @@ class _LoopState:
     result_is_error: bool = False
     last_steer_poll: float = 0.0
     last_cancel_poll: float = 0.0
+    idle_deadline: float = 0.0
+    hard_deadline: float = 0.0
 
 
 @dataclass
@@ -328,11 +331,13 @@ def _continue_while_awaiting(
     streamer: RunStreamSink | None,
     stdout_reader: SubprocessLineReader,
     state: _LoopState,
+    timeout_seconds: int,
 ) -> _LoopStep:
     line = stdout_reader.readline(timeout=0.5)
     if line is not None:
         line = line.rstrip("\n")
         state.last_persist = time.time()
+        state.idle_deadline = state.last_persist + timeout_seconds
         state.stdout_lines.append(line)
         if streamer:
             streamer.append_stream_line(line)
@@ -489,9 +494,13 @@ class PermissionBridgeRunner:
             proc.stdin.flush()
 
             stderr_lines: list[str] = []
-            deadline = time.time() + timeout_seconds
+            start = time.time()
+            state.idle_deadline = start + timeout_seconds
+            state.hard_deadline = start + timeout_seconds * TIMEOUT_HARD_CAP_MULTIPLIER
 
-            while time.time() < deadline:
+            while True:
+                if time.time() >= state.idle_deadline or time.time() >= state.hard_deadline:
+                    break
                 if proc.poll() is not None:
                     break
 
@@ -513,6 +522,7 @@ class PermissionBridgeRunner:
                         proc=proc,
                         streamer=streamer,
                         stdout_reader=stdout_reader,
+                        timeout_seconds=timeout_seconds,
                         state=state,
                         resolve_poll=resolve_poll,
                     )
@@ -527,7 +537,6 @@ class PermissionBridgeRunner:
                         invocation=invocation,
                         streamer=streamer,
                         stdout_reader=stdout_reader,
-                        deadline=deadline,
                         timeout_seconds=timeout_seconds,
                         state=state,
                     )
@@ -540,7 +549,6 @@ class PermissionBridgeRunner:
             return self._finalize(
                 proc=proc,
                 stdout_reader=stdout_reader,
-                deadline=deadline,
                 timeout_seconds=timeout_seconds,
                 state=state,
                 stderr_lines=stderr_lines,
@@ -624,6 +632,7 @@ class PermissionBridgeRunner:
         proc: Any,
         streamer: RunStreamSink | None,
         stdout_reader: SubprocessLineReader,
+        timeout_seconds: int,
         state: _LoopState,
         resolve_poll: Callable[[str], ApprovalResolution | None],
     ) -> _LoopStep:
@@ -643,7 +652,10 @@ class PermissionBridgeRunner:
         resolution = resolve_poll(state.pending_approval.id)
         if resolution is None:
             return _continue_while_awaiting(
-                streamer=streamer, stdout_reader=stdout_reader, state=state
+                streamer=streamer,
+                stdout_reader=stdout_reader,
+                state=state,
+                timeout_seconds=timeout_seconds,
             )
 
         state.pending_approval = None
@@ -935,6 +947,16 @@ class PermissionBridgeRunner:
         tool_input = permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
         ticket = scope.ticket
         tool_name = permission["tool_name"]
+        denied = denied_cli_tool_message(tool_name, tool_input)
+        if denied:
+            self._send_response(
+                proc,
+                build_control_response(request_id=request_id, approved=False, message=denied),
+            )
+            self._record(ctx.agent_id, scope, run_id, tool_name, DECISION_REJECTED)
+            if streamer:
+                streamer.append("TOOL", f"Denied: {denied}", force=True)
+            return True
 
         if (
             bare_mcp
@@ -1063,7 +1085,6 @@ class PermissionBridgeRunner:
         invocation: CliInvocation,
         streamer: RunStreamSink | None,
         stdout_reader: SubprocessLineReader,
-        deadline: float,
         timeout_seconds: int,
         state: _LoopState,
     ) -> _LoopStep:
@@ -1076,6 +1097,7 @@ class PermissionBridgeRunner:
 
         line = line.rstrip("\n")
         state.last_persist = time.time()
+        state.idle_deadline = state.last_persist + timeout_seconds
         state.stdout_lines.append(line)
         if streamer:
             streamer.append_stream_line(line)
@@ -1157,7 +1179,7 @@ class PermissionBridgeRunner:
                 cli_session_id=state.session_id,
             )
 
-        remaining_for_approval = deadline - time.time()
+        remaining_for_approval = min(state.idle_deadline, state.hard_deadline) - time.time()
         if remaining_for_approval <= 0:
             proc.kill()
             return _LoopStep(
@@ -1189,7 +1211,6 @@ class PermissionBridgeRunner:
         *,
         proc: Any,
         stdout_reader: SubprocessLineReader,
-        deadline: float,
         timeout_seconds: int,
         state: _LoopState,
         stderr_lines: list[str],
@@ -1201,7 +1222,7 @@ class PermissionBridgeRunner:
             _close_stdin(proc)
             _drain_stdout_after_result(proc, stdout_reader, state.stdout_lines, streamer=streamer)
 
-        remaining = deadline - time.time()
+        remaining = min(state.idle_deadline, state.hard_deadline) - time.time()
         if proc.poll() is None:
             if remaining <= 0:
                 proc.kill()

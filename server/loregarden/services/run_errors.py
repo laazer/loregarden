@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+TIMEOUT_HARD_CAP_MULTIPLIER = 4
+
 _LEGACY_TIMEOUT_SUFFIX = re.compile(
     r"^(Agent timed out after \d+s): Command .* timed out after \d+ seconds?$",
     re.DOTALL,

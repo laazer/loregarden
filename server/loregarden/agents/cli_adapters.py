@@ -112,9 +112,19 @@ def _env_command_override(
     return CliInvocation(argv=argv, stdin_prompt=None, cwd=str(workspace_root))
 
 
-def _codex_invocation(*, prompt: str, workspace_root: Path) -> CliInvocation:
+def _codex_invocation(
+    *,
+    prompt: str,
+    workspace_root: Path,
+    codex_model: str = "",
+    orchestrated: bool = False,
+) -> CliInvocation:
+    argv = [_bin("codex", "LOREGARDEN_CODEX_BIN"), "exec", "--cd", str(workspace_root)]
+    _append_model_flag(argv, codex_model)
+    append_mcp_cli_args(argv, adapter="codex", orchestrated=orchestrated)
+    argv.append("-")
     return CliInvocation(
-        argv=[_bin("codex", "LOREGARDEN_CODEX_BIN"), "exec", "-"],
+        argv=argv,
         stdin_prompt=prompt,
         adapter="codex",
         cwd=str(workspace_root),
@@ -274,8 +284,16 @@ def resolve_terminal_handoff_invocation(
             cursor_model=apply_cursor_effort(model, effort),
         )
 
+    if selected == "codex":
+        return _codex_invocation(
+            prompt=prompt,
+            workspace_root=workspace_root,
+            codex_model=model,
+        )
+
     raise ValueError(
-        f"Terminal handoff only supports claude/cursor CLIs (workspace resolves to '{selected}')"
+        "Terminal handoff only supports claude/cursor/codex CLIs "
+        f"(workspace resolves to '{selected}')"
     )
 
 
@@ -356,6 +374,10 @@ def _claude_print_invocation(
         str(prompt_file),
         os.environ.get("LOREGARDEN_CLAUDE_USER_PROMPT", DEFAULT_CLAUDE_USER_PROMPT),
     ]
+    if output_format == "stream-json":
+        # `-p --output-format stream-json` requires verbose mode, and partial
+        # messages provide the stdout heartbeat print mode relies on.
+        argv[2:2] = ["--verbose", "--include-partial-messages"]
     _append_model_flag(argv, claude_model)
     _append_claude_effort_flag(argv, claude_effort)
     append_mcp_cli_args(argv, adapter="claude", orchestrated=True)
@@ -478,6 +500,7 @@ def resolve_cli_invocation(
     ticket_adapter: str = "default",
     ticket_claude_model: str = "",
     ticket_cursor_model: str = "",
+    ticket_codex_model: str = "",
     ticket_lmstudio_model: str = "",
     ticket_claude_effort: str = "",
     ticket_cursor_effort: str = "",
@@ -511,6 +534,7 @@ def resolve_cli_invocation(
             selected,
             claude_model=ticket_claude_model,
             cursor_model=ticket_cursor_model,
+            codex_model=ticket_codex_model,
             lmstudio_model=ticket_lmstudio_model,
         ),
         stage_model=stage_model if pins_apply else "",
@@ -562,7 +586,12 @@ def resolve_cli_invocation(
         )
 
     if selected == "codex":
-        return _codex_invocation(prompt=prompt, workspace_root=workspace_root)
+        return _codex_invocation(
+            prompt=prompt,
+            workspace_root=workspace_root,
+            codex_model=model,
+            orchestrated=True,
+        )
 
     if selected == "lmstudio":
         return _lmstudio_invocation(
@@ -715,7 +744,11 @@ def build_triage_invocation(
         return CliInvocation(argv=argv, adapter="cursor", cwd=str(workspace_root))
 
     if selected == "codex":
-        invocation = _codex_invocation(prompt=prompt, workspace_root=workspace_root)
+        invocation = _codex_invocation(
+            prompt=prompt,
+            workspace_root=workspace_root,
+            codex_model=model,
+        )
         if read_only:
             invocation.argv[2:2] = ["--sandbox", "read-only"]
         return invocation

@@ -29,7 +29,21 @@ jest.mock("../../api/client", () => ({
   ApiError: class ApiError extends Error {},
   api: {
     workspaces: jest.fn(async () => []),
-    baxterChatSession: jest.fn(async () => ({ messages: [], run_status: "idle" })),
+    baxterChatSession: jest.fn(async () => ({
+      messages: [],
+      runtime: {
+        cli_adapter: "default",
+        claude_model: "",
+        cursor_model: "",
+        codex_model: "",
+        lmstudio_base_url: "",
+        lmstudio_model: "",
+        claude_effort: "",
+        cursor_effort: "",
+        lmstudio_effort: "",
+      },
+      run_status: "idle",
+    })),
     runtimeOptions: jest.fn(async () => ({})),
     approvals: jest.fn(async () => []),
     usage: jest.fn(async () => null),

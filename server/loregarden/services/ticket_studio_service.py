@@ -1044,6 +1044,7 @@ class TicketStudioService:
             "cli_adapter": body.cli_adapter,
             "claude_model": body.claude_model.strip(),
             "cursor_model": body.cursor_model.strip(),
+            "codex_model": body.codex_model.strip(),
             "lmstudio_base_url": body.lmstudio_base_url.strip(),
             "lmstudio_model": body.lmstudio_model.strip(),
         }

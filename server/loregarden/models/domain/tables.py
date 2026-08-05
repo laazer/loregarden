@@ -44,6 +44,7 @@ class Workspace(SQLModel, table=True):
     cli_adapter: str = ""
     claude_model: str = ""
     cursor_model: str = ""
+    codex_model: str = ""
     lmstudio_base_url: str = ""
     lmstudio_model: str = ""
     claude_effort: str = ""
@@ -690,6 +691,7 @@ class BaxterChatSession(SQLModel, table=True):
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
     # Derived from the first operator message unless the operator renames it.
     title: str = ""
+    runtime_json: str = "{}"
     created_at: datetime = Field(default_factory=utcnow)
     # Ordering key for the archive: bumped by every turn, not by a rename.
     updated_at: datetime = Field(default_factory=utcnow, index=True)

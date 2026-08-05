@@ -14,6 +14,7 @@ and its approvals are workspace-scoped (see ``ApprovalScope.for_workspace``).
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -36,6 +37,8 @@ from loregarden.models.domain import (
     Ticket,
     TicketState,
     Workspace,
+    WorkspaceRuntimeSettings,
+    WorkspaceRuntimeUpdate,
 )
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.chat_primitives import load_parts_json
@@ -47,8 +50,11 @@ from loregarden.services.cli_agent_runner import (
 )
 from loregarden.services.cli_output import extract_triage_reply
 from loregarden.services.cli_settings import (
+    VALID_CLI_ADAPTERS,
+    parse_runtime_settings,
     resolve_effective_adapter,
     resolve_model_for_adapter,
+    validated_effort_pins,
 )
 from loregarden.services.run_concurrency import (
     find_active_workspace_chat_run,
@@ -254,11 +260,37 @@ def chat_session_snapshot(session: Session, chat_session: BaxterChatSession) -> 
         "workspace_id": chat_session.workspace_id,
         "title": chat_session.title or UNTITLED_SESSION_TITLE,
         "messages": [_message_view(message) for message in messages],
+        "runtime": parse_runtime_settings(chat_session.runtime_json).model_dump(),
         "run_status": run_status,
         "active_turn_id": active_turn_id,
         "created_at": chat_session.created_at.isoformat(),
         "updated_at": chat_session.updated_at.isoformat(),
     }
+
+
+def get_chat_runtime(chat_session: BaxterChatSession) -> WorkspaceRuntimeSettings:
+    return parse_runtime_settings(chat_session.runtime_json)
+
+
+def set_chat_runtime(
+    session: Session, chat_session: BaxterChatSession, runtime: WorkspaceRuntimeUpdate
+) -> WorkspaceRuntimeSettings:
+    if runtime.cli_adapter not in VALID_CLI_ADAPTERS:
+        raise ValueError(f"Invalid cli_adapter: {runtime.cli_adapter}")
+    payload = {
+        "cli_adapter": runtime.cli_adapter,
+        "claude_model": runtime.claude_model.strip(),
+        "cursor_model": runtime.cursor_model.strip(),
+        "codex_model": runtime.codex_model.strip(),
+        "lmstudio_base_url": runtime.lmstudio_base_url.strip(),
+        "lmstudio_model": runtime.lmstudio_model.strip(),
+        **validated_effort_pins(runtime),
+    }
+    chat_session.runtime_json = json.dumps(payload)
+    session.add(chat_session)
+    session.commit()
+    session.refresh(chat_session)
+    return get_chat_runtime(chat_session)
 
 
 def build_baxter_chat_prompt(

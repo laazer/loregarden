@@ -48,10 +48,37 @@ def test_resolve_claude_adapter(tmp_path, monkeypatch):
 
     assert inv.argv[0] == "claude"
     assert "-p" in inv.argv
+    assert inv.argv[inv.argv.index("--output-format") + 1] == "stream-json"
+    assert "--verbose" in inv.argv
+    assert "--include-partial-messages" in inv.argv
     assert "--permission-mode" in inv.argv
     assert "--mcp-config" in inv.argv
     mcp_index = inv.argv.index("--mcp-config")
     assert '"type": "http"' in inv.argv[mcp_index + 1]
+
+
+def test_resolve_claude_adapter_text_skips_streaming_flags(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "claude")
+    monkeypatch.setenv("LOREGARDEN_ALLOW_PERMISSION_BYPASS", "1")
+    monkeypatch.setenv("LOREGARDEN_CLAUDE_BIN", "claude")
+    monkeypatch.setenv("LOREGARDEN_CLAUDE_OUTPUT_FORMAT", "text")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("stage task", encoding="utf-8")
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+
+    inv = resolve_cli_invocation(
+        agent_id="planner",
+        adapter="claude",
+        prompt="stage task",
+        prompt_file=prompt_file,
+        skill_name="plan",
+        workspace_root=workspace,
+    )
+
+    assert inv.argv[inv.argv.index("--output-format") + 1] == "text"
+    assert "--verbose" not in inv.argv
+    assert "--include-partial-messages" not in inv.argv
 
 
 def test_resolve_claude_model_from_workspace(tmp_path, monkeypatch):
@@ -138,6 +165,36 @@ def test_resolve_cursor_adapter(tmp_path, monkeypatch):
     assert "--workspace" in inv.argv
     assert str(workspace) in inv.argv
     assert any(prompt in arg for arg in inv.argv)
+
+
+def test_resolve_codex_adapter(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "codex")
+    monkeypatch.setenv("LOREGARDEN_CODEX_BIN", "codex")
+    prompt_file = tmp_path / "prompt.md"
+    prompt = "implement feature X"
+    prompt_file.write_text(prompt, encoding="utf-8")
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+
+    inv = resolve_cli_invocation(
+        agent_id="backend_implementer",
+        adapter="cursor",
+        prompt=prompt,
+        prompt_file=prompt_file,
+        skill_name="implement",
+        workspace_root=workspace,
+        workspace=Workspace(slug="test", name="Test", codex_model="gpt-5"),
+    )
+
+    assert inv.adapter == "codex"
+    assert inv.argv[0] == "codex"
+    assert inv.argv[:4] == ["codex", "exec", "--cd", str(workspace)]
+    assert inv.argv[inv.argv.index("--model") + 1] == "gpt-5"
+    assert "-c" in inv.argv
+    assert any(arg.startswith("mcp_servers.loregarden.command=") for arg in inv.argv)
+    assert 'mcp_servers.loregarden.env.LOREGARDEN_MCP_ORCHESTRATED="1"' in inv.argv
+    assert inv.argv[-1] == "-"
+    assert inv.stdin_prompt == prompt
 
 
 def test_resolve_cursor_adapter_text_skips_partial_stream(tmp_path, monkeypatch):
@@ -375,6 +432,41 @@ def test_resolve_lmstudio_model_precedence(tmp_path, monkeypatch):
     )
 
 
+def test_resolve_codex_model_precedence(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "codex")
+    monkeypatch.setenv("LOREGARDEN_CODEX_BIN", "codex")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("plan", encoding="utf-8")
+    workspace_root = tmp_path / "repo"
+    workspace_root.mkdir()
+    ws = Workspace(slug="test", name="Test", codex_model="workspace-codex")
+
+    def model_for(**overrides):
+        inv = resolve_cli_invocation(
+            agent_id="planner",
+            adapter="codex",
+            prompt="plan",
+            prompt_file=prompt_file,
+            skill_name="plan",
+            workspace_root=workspace_root,
+            workspace=ws,
+            **overrides,
+        )
+        return inv.argv[inv.argv.index("--model") + 1]
+
+    assert model_for() == "workspace-codex"
+    assert model_for(agent_model="agent-codex") == "agent-codex"
+    assert model_for(agent_model="agent-codex", stage_model="stage-codex") == "stage-codex"
+    assert (
+        model_for(
+            agent_model="agent-codex",
+            stage_model="stage-codex",
+            ticket_codex_model="ticket-codex",
+        )
+        == "ticket-codex"
+    )
+
+
 def test_build_triage_invocation_uses_shared_cursor_model(tmp_path, monkeypatch):
     from loregarden.agents.cli_adapters import build_triage_invocation
 
@@ -446,6 +538,32 @@ def test_read_only_triage_invocation_uses_claude_plan_mode(tmp_path, monkeypatch
     )
 
     assert inv.argv[inv.argv.index("--permission-mode") + 1] == "plan"
+
+
+def test_read_only_triage_invocation_uses_codex_read_only_sandbox(tmp_path, monkeypatch):
+    from loregarden.agents.cli_adapters import build_triage_invocation
+
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "codex")
+    monkeypatch.setenv("LOREGARDEN_CODEX_BIN", "codex")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("triage", encoding="utf-8")
+    workspace_root = tmp_path / "repo"
+    workspace_root.mkdir()
+
+    inv = build_triage_invocation(
+        agent_id="triage",
+        adapter="claude",
+        prompt="advice only",
+        prompt_file=prompt_file,
+        skill_name="",
+        workspace_root=workspace_root,
+        workspace=Workspace(slug="test", name="Test", codex_model="gpt-5"),
+        read_only=True,
+    )
+
+    assert inv.adapter == "codex"
+    assert inv.argv[2:4] == ["--sandbox", "read-only"]
+    assert inv.argv[inv.argv.index("--model") + 1] == "gpt-5"
 
 
 def test_resolve_adapter_ticket_override(tmp_path, monkeypatch):

@@ -43,6 +43,7 @@ const RUNTIME_FALLBACK: WorkspaceRuntimeSettings = {
   cli_adapter: '',
   claude_model: '',
   cursor_model: '',
+  codex_model: '',
   lmstudio_base_url: '',
   lmstudio_model: '',
 };

@@ -489,6 +489,11 @@ export const api = {
       `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}`,
       { method: "DELETE" },
     ),
+  setBaxterChatRuntime: (slug: string, sessionId: string, body: WorkspaceRuntimeSettings) =>
+    request<WorkspaceRuntimeSettings>(
+      `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/runtime`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
   /** Accepted, not answered: the reply lands on the thread and arrives by polling. */
   sendBaxterChatMessage: (slug: string, sessionId: string, content: string) =>
     request<BaxterChatSnapshot>(

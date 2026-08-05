@@ -100,7 +100,7 @@ def commit_paths(session: Session, ticket: Ticket, message: str, paths: Iterable
         raise ValueError((add.stderr or add.stdout or "git add failed").strip())
 
     commit = run_git(
-        ["commit", "--no-verify", "-m", message],
+        ["commit", "-m", message],
         cwd=repo_root,
         capture_output=True,
         text=True,
