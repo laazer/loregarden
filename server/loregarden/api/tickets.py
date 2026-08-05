@@ -794,12 +794,30 @@ def orchestrate_ticket(
         ticket,
         auto_approve=body.auto_approve,
         stop_at_stage_key=body.stop_at_stage_key,
+        preferred_slot=body.slot_number,
+        # Only used if the pool is full and this request parks: the entry is
+        # the whole record of the ask by the time a lane reaches it.
+        driver=body.driver.value if body.driver else "",
+        max_stages=body.max_stages,
     )
     if not reservation.admitted:
         session.refresh(ticket)
         detail = get_ticket(ticket_id, session)
         detail.admission = reservation.as_dict()
         return detail
+
+    # Claimed before dispatch, not read back after. `schedule_orchestration`
+    # creates the row on a worker thread, so binding by re-reading the ticket's
+    # active run raced that thread and lost: the reservation never bound, and a
+    # slot naming nothing is a slot no release can ever find.
+    callbacks = OrchestrationCallbackService(session)
+    claim = callbacks.claim_orchestration_run(
+        ticket,
+        driver=body.driver,
+        auto_approve=body.auto_approve,
+        stop_at_stage_key=body.stop_at_stage_key or "",
+    )
+    reservation.bind(orchestration_run_id=claim.id)
 
     try:
         schedule_orchestration(
@@ -810,15 +828,9 @@ def orchestrate_ticket(
             auto_approve=body.auto_approve,
         )
     except ValueError as exc:
+        callbacks.abandon_claim(claim, message=str(exc))
         reservation.release()
         raise HTTPException(400, str(exc)) from exc
-
-    # The orchestration row is created on the worker, so bind by ticket once it
-    # exists; until then the slot is held but unnamed, which is what stops a
-    # second request taking it.
-    active = OrchestrationCallbackService(session).get_active_orchestration_run(ticket.id)
-    if active:
-        reservation.bind(orchestration_run_id=active.id)
 
     session.refresh(ticket)
     return get_ticket(ticket_id, session)
@@ -877,6 +889,7 @@ def start_run(
         ticket,
         stage_key=body.stage_key,
         auto_approve=body.auto_approve,
+        preferred_slot=body.slot_number,
     )
     if not reservation.admitted:
         session.refresh(ticket)

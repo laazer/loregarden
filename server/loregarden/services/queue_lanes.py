@@ -31,6 +31,7 @@ from uuid import uuid4
 from loregarden.models.domain import (
     AgentRun,
     AgentSlot,
+    OrchestrationDriver,
     OrchestrationRun,
     QueuedRun,
     QueuePosition,
@@ -82,6 +83,8 @@ class QueueLaneService:
         stop_at_stage_key: str | None = None,
         entry_kind: str = "orchestration",
         stage_key: str = "",
+        driver: str = "",
+        max_stages: int | None = None,
     ) -> dict:
         """Put a ticket in a lane, starting it if the lane is idle.
 
@@ -89,6 +92,11 @@ class QueueLaneService:
         does) or "stage" (run one stage, what the Dashboard and MCP ask for).
         Parking a stage request as an orchestration would silently turn "run
         this one stage" into "run everything left", so the entry says which.
+
+        `driver` and `max_stages` ride along for the same reason: by the time a
+        lane reaches this entry the request that made it is long gone, and an
+        override dropped here is a different run from the one that was asked
+        for — one that depends on how busy the box happened to be.
 
         Returns ``{"status": "started"|"queued", "position": int, ...}``.
         """
@@ -115,6 +123,8 @@ class QueueLaneService:
             stop_at_stage_key=stop_at_stage_key or "",
             entry_kind=entry_kind,
             stage_key=stage_key,
+            driver=driver or "",
+            max_stages=max_stages,
         )
         self.session.add(entry)
         self.session.commit()
@@ -173,6 +183,8 @@ class QueueLaneService:
                 ticket,
                 auto_approve=head.auto_approve,
                 stop_at_stage_key=head.stop_at_stage_key or None,
+                driver=head.driver or "",
+                max_stages=head.max_stages,
             )
             if orch_run is None:
                 # Dispatch refused (already orchestrating, no workflow). Leave
@@ -378,8 +390,16 @@ class QueueLaneService:
         *,
         auto_approve: bool,
         stop_at_stage_key: str | None,
+        driver: str = "",
+        max_stages: int | None = None,
     ) -> OrchestrationRun | None:
         """Start the ticket's pipeline and return the run that now owns the lane.
+
+        The run is *claimed* before the work is handed off, not read back after.
+        `schedule_orchestration` executes on a background thread, so a lane that
+        dispatched and then looked up the ticket's active run raced that thread
+        and usually read nothing — it concluded the dispatch had been refused,
+        left its entry queued, and the orchestration ran in no lane at all.
 
         Imported at call time: run_service reaches orchestration, which reaches
         this module, so a module-level import would close the cycle.
@@ -387,7 +407,8 @@ class QueueLaneService:
         from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
         from loregarden.services.run_service import schedule_orchestration
 
-        active = OrchestrationCallbackService(self.session).get_active_orchestration_run(ticket.id)
+        callbacks = OrchestrationCallbackService(self.session)
+        active = callbacks.get_active_orchestration_run(ticket.id)
         if active:
             logger.info(
                 "Lane dispatch skipped for ticket %s: %s is already orchestrating",
@@ -396,16 +417,33 @@ class QueueLaneService:
             )
             return active
 
+        # An unrecognised driver is the caller's error, not grounds to start
+        # this ticket on one nobody asked for.
+        try:
+            chosen_driver = OrchestrationDriver(driver) if driver else None
+        except ValueError:
+            logger.warning(
+                "Lane dispatch failed for ticket %s: unknown driver %r", ticket.id, driver
+            )
+            return None
+
+        claim = callbacks.claim_orchestration_run(
+            ticket,
+            driver=chosen_driver,
+            auto_approve=auto_approve,
+            stop_at_stage_key=stop_at_stage_key or "",
+        )
         try:
             schedule_orchestration(
                 ticket.id,
                 auto_approve=auto_approve,
                 stop_at_stage_key=stop_at_stage_key or None,
+                driver=chosen_driver,
+                max_stages=max_stages,
             )
         except ValueError as exc:
             logger.warning("Lane dispatch failed for ticket %s: %s", ticket.id, exc)
+            callbacks.abandon_claim(claim, message=str(exc))
             return None
 
-        # `schedule_orchestration` creates the row on the worker; re-read rather
-        # than assuming, so the lane binds to a run that actually exists.
-        return OrchestrationCallbackService(self.session).get_active_orchestration_run(ticket.id)
+        return claim

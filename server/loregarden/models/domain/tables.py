@@ -975,6 +975,11 @@ class QueuedRun(SQLModel, table=True):
     entry_kind: str = "orchestration"
     #: The stage to run, for a "stage" entry.
     stage_key: str = ""
+    #: Overrides the caller asked for, held because the entry is the only record
+    #: of the ask by the time a lane reaches it. Empty/None means the workspace's
+    #: orchestration profile decides.
+    driver: str = ""
+    max_stages: int | None = None
     status: QueuePosition = Field(
         default=QueuePosition.QUEUED,
         sa_column=_str_enum_column(QueuePosition, QueuePosition.QUEUED, index=True),

@@ -10,6 +10,7 @@ import {
   isParallelStage,
   stageAgentSubtitle,
 } from "../lib/stageDisplay";
+import { LanePicker, type LaneChoice } from "./LanePicker";
 import {
   WorkspaceRuntimeFields,
   runtimeSettingsEqual,
@@ -30,6 +31,8 @@ interface ConfirmRunStageModalProps {
     runtime: WorkspaceRuntimeSettings,
     autoApprove: boolean,
     timeoutSeconds: number | undefined,
+    /** Lane to run in; null asks for whichever the pool picks. */
+    slotNumber: LaneChoice,
   ) => void | Promise<void>;
   onOpenPr?: () => void;
 }
@@ -51,12 +54,14 @@ export function ConfirmRunStageModal({
   const [draftRuntime, setDraftRuntime] = useState(workspaceRuntime);
   const [autoApprove, setAutoApprove] = useState(false);
   const [timeoutSeconds, setTimeoutSeconds] = useState("");
+  const [slotNumber, setSlotNumber] = useState<LaneChoice>(null);
 
   useEffect(() => {
     if (!open) return;
     setDraftRuntime(workspaceRuntime);
     setAutoApprove(false);
     setTimeoutSeconds("");
+    setSlotNumber(null);
   }, [open, workspaceRuntime, stage?.key]);
 
   if (!open || !ticket || !stage) return null;
@@ -72,7 +77,7 @@ export function ConfirmRunStageModal({
 
   const handleConfirm = () => {
     const parsedTimeout = timeoutSeconds.trim() ? Number(timeoutSeconds) : undefined;
-    void onConfirm(draftRuntime, autoApprove, parsedTimeout);
+    void onConfirm(draftRuntime, autoApprove, parsedTimeout, slotNumber);
   };
 
   return (
@@ -189,6 +194,19 @@ export function ConfirmRunStageModal({
                 disabled={busy}
                 onChange={(e) => setTimeoutSeconds(e.target.value)}
                 placeholder="Agent default"
+              />
+            </div>
+          )}
+
+          {/* A gate or a done stage runs no agent, so there is no capacity to
+              spend and nothing to pick a lane for. */}
+          {!humanGate && !doneStage && (
+            <div style={{ marginTop: 16 }}>
+              <LanePicker
+                value={slotNumber}
+                onChange={setSlotNumber}
+                enabled={open}
+                disabled={busy}
               />
             </div>
           )}

@@ -195,3 +195,134 @@ def test_a_queued_entry_starts_when_the_lane_drains(session, workspace, endpoint
         dispatch_orch.assert_called_once()
     else:
         dispatch_stage.assert_called_once()
+
+
+def _ticket_id_by_external_id(client, external_id: str) -> str:
+    tickets = client.get("/api/tickets").json()
+    match = next(t for t in tickets if t["external_id"] == external_id)
+    return match["id"]
+
+
+def test_orchestrating_binds_the_slot_it_reserved(client, db_session):
+    """A reservation the caller never binds is a slot nothing can ever release.
+
+    `schedule_orchestration` runs on a worker thread and the orchestration row
+    is created *there*, so binding by reading the ticket's active run back
+    raced that thread and lost. The slot then sat claimed with both ids null:
+    `on_orchestration_complete` looks a slot up *by* the orchestration it holds,
+    finds nothing, and the lane is gone for the life of the process. Three
+    starts exhausted the pool.
+
+    Patched to do nothing at all, which is the worst case for a read-back and
+    the normal case for a thread that has not been scheduled yet.
+    """
+    with patch("loregarden.api.tickets.schedule_orchestration"):
+        res = client.post(
+            f"/api/tickets/{_ticket_id_by_external_id(client, '04-workflow-template-overrides')}"
+            "/orchestrate",
+            json={},
+        )
+    assert res.status_code == 200
+
+    slots = db_session.exec(select(AgentSlot).where(AgentSlot.is_available == False)).all()  # noqa: E712
+    assert len(slots) == 1
+    assert slots[0].current_orchestration_run_id, (
+        "the reserved slot names nothing, so no release will ever find it"
+    )
+
+
+def test_a_refused_start_gives_the_slot_back(client, db_session):
+    """The claim and the reservation are given up together."""
+    with patch(
+        "loregarden.api.tickets.schedule_orchestration",
+        side_effect=ValueError("no workflow for this ticket"),
+    ):
+        res = client.post(
+            f"/api/tickets/{_ticket_id_by_external_id(client, '04-workflow-template-overrides')}"
+            "/orchestrate",
+            json={},
+        )
+    assert res.status_code == 400
+
+    held = db_session.exec(select(AgentSlot).where(AgentSlot.is_available == False)).all()  # noqa: E712
+    assert not held
+
+
+def test_a_named_lane_is_honoured(session, workspace):
+    """The operator picked a lane on a board that showed what each was doing."""
+    admission = QueueAdmissionService(session, max_concurrent=3)
+    ticket = _ticket(session, workspace.id, "T-pick")
+
+    reservation = admission.reserve_orchestration(ticket, preferred_slot=3)
+
+    assert reservation.admitted
+    assert reservation.slot_number == 3
+
+
+def test_a_named_lane_that_filled_still_runs_the_ticket(session, workspace):
+    """A preference, not a demand: the lane can fill between opening the dialog
+    and confirming, and the ask was to run the ticket."""
+    admission = QueueAdmissionService(session, max_concurrent=3)
+    taken = _ticket(session, workspace.id, "T-taken")
+    admission.reserve_orchestration(taken, preferred_slot=2).bind(run_id="run-taken")
+
+    reservation = admission.reserve_orchestration(
+        _ticket(session, workspace.id, "T-second"), preferred_slot=2
+    )
+
+    assert reservation.admitted
+    assert reservation.slot_number != 2
+
+
+def test_a_full_pool_parks_in_the_lane_that_was_asked_for(session, workspace):
+    admission = QueueAdmissionService(session, max_concurrent=3)
+    _fill_pool(session, admission, workspace, 3)
+
+    reservation = admission.reserve_orchestration(
+        _ticket(session, workspace.id, "T-waiting"), preferred_slot=3
+    )
+
+    assert not reservation.admitted
+    assert reservation.slot_number == 3
+
+
+def test_a_parked_request_still_runs_what_was_asked_for(session, workspace):
+    """The entry is the whole record of the ask by the time a lane reaches it.
+
+    A driver override and a stage cap used to be dropped the moment the pool was
+    full, so "at most one stage on cursor" became "the whole pipeline on the
+    profile's driver" — and which you got depended on how busy the box was.
+    """
+    admission = QueueAdmissionService(session, max_concurrent=3)
+    _fill_pool(session, admission, workspace, 3)
+    ticket = _ticket(session, workspace.id, "T-parked")
+
+    reservation = admission.reserve_orchestration(ticket, driver="builtin_autopilot", max_stages=1)
+    assert not reservation.admitted
+
+    entry = session.exec(select(QueuedRun).where(QueuedRun.ticket_id == ticket.id)).one()
+    assert entry.driver == "builtin_autopilot"
+    assert entry.max_stages == 1
+
+
+def test_the_lane_starts_a_parked_request_with_its_own_options(session, workspace):
+    admission = QueueAdmissionService(session, max_concurrent=1)
+    lanes = admission.lanes
+    lanes.slots.initialize_slots()
+    _fill_pool(session, admission, workspace, 1)
+    ticket = _ticket(session, workspace.id, "T-parked")
+    admission.reserve_orchestration(ticket, driver="builtin_autopilot", max_stages=2)
+
+    # Free the lane, which starts what was waiting in it.
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    slot.is_available = True
+    slot.current_run_id = None
+    session.add(slot)
+    session.commit()
+
+    with patch("loregarden.services.run_service.schedule_orchestration") as dispatch:
+        lanes.start_lane_head(1)
+
+    kwargs = dispatch.call_args.kwargs
+    assert kwargs["max_stages"] == 2
+    assert kwargs["driver"] is not None
