@@ -41,7 +41,7 @@ Rules:
 | `calendar` | `view`, optional `events` | Month/week/day calendar |
 | `calendar_event` | `event` | Single calendar event |
 | `workspace` | `workspace_slug` | Live workspace summary |
-| `todo_list` | `owner`, `items` | Checklist; `owner:"agent"` + title `"Agent execution plan"` for proposed work steps; only `owner:"user"` is user-editable |
+| `todo_list` | `owner`, `items` | Checklist; `owner:"agent"` + title `"Agent execution plan"` for proposed work steps (UI Run sends execute follow-up); only `owner:"user"` is user-editable |
 | `branch_history` | `workspace_slug`, `branch` | Branch with recent commit history |
 | `commit` | `workspace_slug`, `sha` | Live commit detail (`sha` may be `HEAD`) |
 | `qa` | `items` | Ticket-Studio-style questions and answers |
@@ -84,7 +84,9 @@ Proposed edit (active diff with inline comments sent to chat):
 ````
 
 Agent execution plan (`todo_list` with `owner:"agent"` — the user cannot check these boxes).
-Use this when outlining work you will do; never invent a `ticket` card for unfiled work:
+Use this when outlining work you will do; never invent a `ticket` card for unfiled work.
+The chat UI offers **Run** on this card; that posts an execute follow-up. When you receive
+it, complete unchecked steps with tools and re-emit the list with `checked:true` as you go:
 
 ````markdown
 ```loregarden

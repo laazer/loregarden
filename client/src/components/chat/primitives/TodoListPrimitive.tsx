@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { PrimitiveCard } from "./PrimitiveCard";
+import { PlayButton } from "./RunControlButton";
 import type { TodoItem, TodoListPart } from "./types";
 
 function normalizedItems(items: TodoItem[]): Required<TodoItem>[] {
@@ -11,7 +12,32 @@ function itemSignature(items: TodoItem[]): string {
   return JSON.stringify(items);
 }
 
-export function TodoListPrimitive({ part }: { part: TodoListPart }) {
+/** User message the Run button posts so Baxter executes the plan in-chat. */
+export function agentPlanExecuteMessage(
+  title: string | null | undefined,
+  items: Required<TodoItem>[],
+): string {
+  const heading = title?.trim() || "Agent execution plan";
+  const lines = items.map((item) => {
+    const mark = item.checked ? "x" : " ";
+    return `- [${mark}] ${item.text} (id: ${item.id})`;
+  });
+  return [
+    `Execute this agent execution plan now. Complete each unchecked step using tools.`,
+    `As you finish steps, re-emit the same todo_list with checked:true on completed items.`,
+    "",
+    `Plan: ${heading}`,
+    ...lines,
+  ].join("\n");
+}
+
+export function TodoListPrimitive({
+  part,
+  onSubmit,
+}: {
+  part: TodoListPart;
+  onSubmit?: (content: string) => void;
+}) {
   const owner = part.owner ?? "agent";
   const source = part.items ?? [];
   const signature = itemSignature(source);
@@ -20,9 +46,10 @@ export function TodoListPrimitive({ part }: { part: TodoListPart }) {
   const [state, setState] = useState(() => ({
     signature,
     items: normalizedItems(source),
+    started: false,
   }));
   if (state.signature !== signature) {
-    setState({ signature, items: normalizedItems(source) });
+    setState({ signature, items: normalizedItems(source), started: false });
   }
   const items = state.items;
   const setItems = (next: (current: Required<TodoItem>[]) => Required<TodoItem>[]) =>
@@ -31,22 +58,41 @@ export function TodoListPrimitive({ part }: { part: TodoListPart }) {
   const completed = items.filter((item) => item.checked).length;
   const percent = items.length ? Math.round((completed / items.length) * 100) : 0;
   const userOwned = owner === "user";
+  const remaining = items.some((item) => !item.checked);
+  const canRun =
+    !userOwned && Boolean(onSubmit) && remaining && items.length > 0 && !state.started;
+  const allDone = items.length > 0 && !remaining;
+
+  const run = () => {
+    if (!onSubmit || !canRun) return;
+    onSubmit(agentPlanExecuteMessage(part.title, items));
+    setState((current) => ({ ...current, started: true }));
+  };
 
   return (
     <PrimitiveCard
       title={part.title ?? (userOwned ? "Your checklist" : "Agent todo list")}
       subtitle={
-        userOwned
-          ? "You control this checklist"
-          : "Updated by the agent as work completes"
+        state.started
+          ? "Execution requested"
+          : userOwned
+            ? "You control this checklist"
+            : canRun
+              ? "Press Run to execute this plan in chat"
+              : allDone
+                ? "All steps complete"
+                : "Updated by the agent as work completes"
       }
-      tone={completed === items.length && items.length ? "ok" : "default"}
+      tone={allDone ? "ok" : canRun || state.started ? "accent" : "default"}
       meta={
         <>
-          <span>{completed}/{items.length} complete</span>
+          <span>
+            {completed}/{items.length} complete
+          </span>
           <span>{owner} owned</span>
         </>
       }
+      actions={canRun ? <PlayButton onClick={run} /> : null}
     >
       <div className="lg-primitive-progress" aria-label={`Progress ${percent}%`}>
         <span style={{ width: `${percent}%` }} />

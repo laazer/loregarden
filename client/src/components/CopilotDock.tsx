@@ -112,6 +112,7 @@ export function CopilotDock() {
                 activeTurnId={session.activeTurnId}
                 assistantLabel="Baxter"
                 className="copilot-dock-messages"
+                onPrimitiveSubmit={(content) => sendQuick(content)}
               />
             </div>
             {(showHistory || showOpeners) && (
