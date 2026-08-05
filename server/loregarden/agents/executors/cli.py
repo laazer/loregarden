@@ -177,6 +177,7 @@ class CliAgentExecutor:
                     ticket_adapter=ticket_runtime.cli_adapter,
                     ticket_claude_model=ticket_runtime.claude_model,
                     ticket_cursor_model=ticket_runtime.cursor_model,
+                    ticket_codex_model=ticket_runtime.codex_model,
                     ticket_lmstudio_model=ticket_runtime.lmstudio_model,
                     ticket_claude_effort=ticket_runtime.claude_effort,
                     ticket_cursor_effort=ticket_runtime.cursor_effort,

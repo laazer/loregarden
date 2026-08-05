@@ -27,6 +27,7 @@ from loregarden.agents.executors.tool_auto_approve import (  # noqa: F401
     ORCHESTRATED_DENIED_MCP_TOOLS,
     bare_mcp_tool_name,
     build_ask_user_question_input,
+    denied_cli_tool_message,
     enrich_mcp_tool_input,
     is_ask_user_question,
     is_auto_approved_cli_tool,
@@ -946,6 +947,16 @@ class PermissionBridgeRunner:
         tool_input = permission["tool_input"] if isinstance(permission["tool_input"], dict) else {}
         ticket = scope.ticket
         tool_name = permission["tool_name"]
+        denied = denied_cli_tool_message(tool_name, tool_input)
+        if denied:
+            self._send_response(
+                proc,
+                build_control_response(request_id=request_id, approved=False, message=denied),
+            )
+            self._record(ctx.agent_id, scope, run_id, tool_name, DECISION_REJECTED)
+            if streamer:
+                streamer.append("TOOL", f"Denied: {denied}", force=True)
+            return True
 
         if (
             bare_mcp

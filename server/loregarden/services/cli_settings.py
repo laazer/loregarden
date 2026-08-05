@@ -32,6 +32,7 @@ CLI_ADAPTER_OPTIONS: list[dict[str, str]] = [
     {"id": "local", "label": "Local stub (dev/tests)"},
     {"id": "claude", "label": "Claude Code"},
     {"id": "cursor", "label": "Cursor Agent"},
+    {"id": "codex", "label": "Codex CLI"},
     {"id": "lmstudio", "label": "LM Studio"},
 ]
 
@@ -70,6 +71,11 @@ CURSOR_EFFORT_MODELS = frozenset(
     str(opt["id"]) for opt in CURSOR_MODEL_OPTIONS if opt.get("supports_effort")
 )
 
+CODEX_MODEL_OPTIONS: list[dict[str, str]] = [
+    {"id": "", "label": "Default (Codex profile)"},
+    {"id": "gpt-5", "label": "GPT-5"},
+]
+
 # Effort ladders differ by provider, so they are catalogued per adapter rather
 # than shared. Claude Code takes `--effort` natively; cursor expresses it as a
 # bracket parameter on a parameterized model id; LM Studio is OpenAI-compatible,
@@ -106,8 +112,8 @@ EFFORT_OPTIONS_BY_ADAPTER: dict[str, list[dict[str, str]]] = {
 
 VALID_CLI_ADAPTERS = {opt["id"] for opt in CLI_ADAPTER_OPTIONS}
 
-# Adapters that take a ``--model`` / model-id pin. local/codex do not.
-MODEL_PIN_ADAPTERS = frozenset({"claude", "cursor", "lmstudio"})
+# Adapters that take a ``--model`` / model-id pin. local does not.
+MODEL_PIN_ADAPTERS = frozenset({"claude", "cursor", "codex", "lmstudio"})
 
 # Adapters with a reasoning-effort control. Same set today, but the two are
 # distinct concepts — keep them separate so adding a model-only adapter does not
@@ -120,6 +126,7 @@ class WorkspaceCliSettings:
     cli_adapter: str = "default"
     claude_model: str = ""
     cursor_model: str = ""
+    codex_model: str = ""
     lmstudio_base_url: str = ""
     lmstudio_model: str = ""
     claude_effort: str = ""
@@ -134,6 +141,7 @@ def workspace_cli_settings(workspace: Workspace | None) -> WorkspaceCliSettings:
         cli_adapter=workspace.cli_adapter or "default",
         claude_model=workspace.claude_model or "",
         cursor_model=workspace.cursor_model or "",
+        codex_model=workspace.codex_model or "",
         lmstudio_base_url=workspace.lmstudio_base_url or "",
         lmstudio_model=workspace.lmstudio_model or "",
         claude_effort=workspace.claude_effort or "",
@@ -187,6 +195,7 @@ def ticket_model_for_adapter(
     *,
     claude_model: str = "",
     cursor_model: str = "",
+    codex_model: str = "",
     lmstudio_model: str = "",
 ) -> str:
     """Pick the ticket-runtime model field that matches the selected adapter."""
@@ -194,6 +203,8 @@ def ticket_model_for_adapter(
         return claude_model
     if adapter == "cursor":
         return cursor_model
+    if adapter == "codex":
+        return codex_model
     if adapter == "lmstudio":
         return lmstudio_model
     return ""
@@ -251,6 +262,15 @@ def resolve_model_for_adapter(
             agent_model,
             ws.cursor_model,
             settings.cursor_model,
+        )
+    if adapter == "codex":
+        return _first_set(
+            os.environ.get("LOREGARDEN_CODEX_MODEL", ""),
+            ticket_model,
+            stage_model,
+            agent_model,
+            ws.codex_model,
+            settings.codex_model,
         )
     # lmstudio
     return _first_set(
@@ -395,6 +415,7 @@ def resolve_lmstudio_model(
 RUNTIME_OVERRIDE_FIELDS = (
     "claude_model",
     "cursor_model",
+    "codex_model",
     "lmstudio_base_url",
     "lmstudio_model",
     "claude_effort",
@@ -410,6 +431,7 @@ def parse_runtime_settings(runtime_json: str) -> WorkspaceRuntimeSettings:
         cli_adapter=str(data.get("cli_adapter") or "default"),
         claude_model=str(data.get("claude_model") or ""),
         cursor_model=str(data.get("cursor_model") or ""),
+        codex_model=str(data.get("codex_model") or ""),
         lmstudio_base_url=str(data.get("lmstudio_base_url") or ""),
         lmstudio_model=str(data.get("lmstudio_model") or ""),
         claude_effort=str(data.get("claude_effort") or ""),
@@ -473,6 +495,7 @@ def set_ticket_orchestration_runtime(
         "cli_adapter": body.cli_adapter,
         "claude_model": body.claude_model.strip(),
         "cursor_model": body.cursor_model.strip(),
+        "codex_model": body.codex_model.strip(),
         "lmstudio_base_url": body.lmstudio_base_url.strip(),
         "lmstudio_model": body.lmstudio_model.strip(),
         **efforts,
@@ -522,6 +545,7 @@ def resolve_runtime_effective(
             adapter,
             claude_model=ticket.claude_model,
             cursor_model=ticket.cursor_model,
+            codex_model=ticket.codex_model,
             lmstudio_model=ticket.lmstudio_model,
         ),
     )
@@ -546,6 +570,7 @@ def resolve_runtime_effective(
                 adapter,
                 claude_model=ticket.claude_model,
                 cursor_model=ticket.cursor_model,
+                codex_model=ticket.codex_model,
                 lmstudio_model=ticket.lmstudio_model,
             ),
             "ticket",
@@ -555,6 +580,7 @@ def resolve_runtime_effective(
                 adapter,
                 claude_model=ws.claude_model,
                 cursor_model=ws.cursor_model,
+                codex_model=ws.codex_model,
                 lmstudio_model=ws.lmstudio_model,
             ),
             "workspace",
@@ -605,6 +631,7 @@ def runtime_options_payload(
         "cli_adapters": CLI_ADAPTER_OPTIONS,
         "claude_models": CLAUDE_MODEL_OPTIONS,
         "cursor_models": CURSOR_MODEL_OPTIONS,
+        "codex_models": CODEX_MODEL_OPTIONS,
         "lmstudio_models": lmstudio_model_options(lmstudio_base_url),
         "claude_efforts": CLAUDE_EFFORT_OPTIONS,
         "cursor_efforts": CURSOR_EFFORT_OPTIONS,

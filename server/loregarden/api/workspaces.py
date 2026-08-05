@@ -107,6 +107,7 @@ def update_workspace_runtime(
     ws.cli_adapter = body.cli_adapter
     ws.claude_model = body.claude_model.strip()
     ws.cursor_model = body.cursor_model.strip()
+    ws.codex_model = body.codex_model.strip()
     ws.lmstudio_base_url = body.lmstudio_base_url.strip()
     ws.lmstudio_model = body.lmstudio_model.strip()
     ws.claude_effort = efforts["claude_effort"]

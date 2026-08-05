@@ -5,6 +5,7 @@ export const DEFAULT_RUNTIME: WorkspaceRuntimeSettings = {
   cli_adapter: "default",
   claude_model: "",
   cursor_model: "",
+  codex_model: "",
   lmstudio_base_url: "",
   lmstudio_model: "",
   claude_effort: "",

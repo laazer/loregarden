@@ -1238,6 +1238,18 @@ def _m_branch_triage_message_run(conn: Connection) -> None:
         )
 
 
+def _m_workspace_codex_model(conn: Connection) -> None:
+    add_columns_if_missing(
+        conn,
+        "workspaces",
+        {
+            "codex_model": (
+                "ALTER TABLE workspaces ADD COLUMN codex_model TEXT NOT NULL DEFAULT ''"
+            ),
+        },
+    )
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1303,6 +1315,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0062_lane_entry_kind", m_lane_entry_kind),
     ("0063_btw_exchanges", _m_btw_exchanges),
     ("0064_lane_entry_run_options", m_lane_entry_run_options),
+    ("0065_workspace_codex_model", _m_workspace_codex_model),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

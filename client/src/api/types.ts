@@ -417,6 +417,7 @@ export interface WorkspaceSummary {
   cli_adapter: string;
   claude_model: string;
   cursor_model: string;
+  codex_model?: string;
   lmstudio_base_url: string;
   lmstudio_model: string;
   claude_effort?: string;
@@ -447,6 +448,7 @@ export interface RuntimeOptions {
   cli_adapters: RuntimeOption[];
   claude_models: RuntimeOption[];
   cursor_models: RuntimeOption[];
+  codex_models?: RuntimeOption[];
   lmstudio_models?: RuntimeOption[];
   claude_efforts?: RuntimeOption[];
   cursor_efforts?: RuntimeOption[];
@@ -460,6 +462,7 @@ export interface WorkspaceRuntimeSettings {
   cli_adapter: string;
   claude_model: string;
   cursor_model: string;
+  codex_model?: string;
   lmstudio_base_url: string;
   lmstudio_model: string;
   claude_effort?: string;

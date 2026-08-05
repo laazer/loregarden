@@ -52,6 +52,10 @@ export function runtimeSummaryLabel(
     const name = modelLabel(options.cursor_models, runtime.cursor_model ?? "");
     return name.includes("Default") ? "Cursor" : name;
   }
+  if (adapterId === "codex") {
+    const name = modelLabel(options.codex_models ?? [], runtime.codex_model ?? "");
+    return name.includes("Default") ? "Codex" : name;
+  }
   if (adapterId === "lmstudio") {
     return runtime.lmstudio_model?.trim() || "LM Studio";
   }
@@ -60,7 +64,7 @@ export function runtimeSummaryLabel(
 }
 
 function providerNeedsModel(adapter: string): boolean {
-  return ["claude", "cursor", "lmstudio"].includes(adapter);
+  return ["claude", "cursor", "codex", "lmstudio"].includes(adapter);
 }
 
 type EffortKey = "claude_effort" | "cursor_effort" | "lmstudio_effort";
@@ -177,6 +181,28 @@ export function WorkspaceRuntimeFields({
         }
       >
         {options.cursor_models.map((opt) => (
+          <option key={opt.id || "default"} value={opt.id}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    );
+  } else if (adapter === "codex") {
+    modelStep = (
+      <select
+        className="btn-secondary filter-select"
+        style={selectStyle}
+        aria-label="Codex model"
+        value={runtime.codex_model ?? ""}
+        disabled={disabled}
+        onChange={(e) =>
+          onChange({
+            ...runtime,
+            codex_model: e.target.value,
+          })
+        }
+      >
+        {(options.codex_models ?? [{ id: "", label: "Default (Codex profile)" }]).map((opt) => (
           <option key={opt.id || "default"} value={opt.id}>
             {opt.label}
           </option>
@@ -344,6 +370,7 @@ export function runtimeFromWorkspace(workspace: WorkspaceSummary | undefined): W
     cli_adapter: workspace?.cli_adapter || "default",
     claude_model: workspace?.claude_model ?? "",
     cursor_model: workspace?.cursor_model ?? "",
+    codex_model: workspace?.codex_model ?? "",
     lmstudio_base_url: workspace?.lmstudio_base_url ?? "",
     lmstudio_model: workspace?.lmstudio_model ?? "",
     claude_effort: workspace?.claude_effort ?? "",
@@ -357,6 +384,7 @@ export function runtimeSettingsEqual(a: WorkspaceRuntimeSettings, b: WorkspaceRu
     (a.cli_adapter || "default") === (b.cli_adapter || "default") &&
     (a.claude_model ?? "") === (b.claude_model ?? "") &&
     (a.cursor_model ?? "") === (b.cursor_model ?? "") &&
+    (a.codex_model ?? "") === (b.codex_model ?? "") &&
     (a.lmstudio_base_url ?? "") === (b.lmstudio_base_url ?? "") &&
     (a.lmstudio_model ?? "") === (b.lmstudio_model ?? "") &&
     (a.claude_effort ?? "") === (b.claude_effort ?? "") &&

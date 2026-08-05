@@ -84,6 +84,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0062_lane_entry_kind",
     "0063_btw_exchanges",
     "0064_lane_entry_run_options",
+    "0065_workspace_codex_model",
 )
 
 

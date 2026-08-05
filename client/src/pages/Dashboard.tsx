@@ -49,6 +49,7 @@ const DEFAULT_ORCHESTRATION_RUNTIME: import("../api/client").WorkspaceRuntimeSet
   cli_adapter: "default",
   claude_model: "",
   cursor_model: "",
+  codex_model: "",
   lmstudio_base_url: "",
   lmstudio_model: "",
 };
@@ -576,7 +577,7 @@ export function Dashboard() {
       runtime,
     }: {
       slug: string;
-      runtime: { cli_adapter: string; claude_model: string; cursor_model: string; lmstudio_base_url: string; lmstudio_model: string };
+      runtime: { cli_adapter: string; claude_model: string; cursor_model: string; codex_model?: string; lmstudio_base_url: string; lmstudio_model: string };
     }) => api.setWorkspaceRuntime(slug, runtime),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["workspaces"] });
@@ -1908,4 +1909,3 @@ export function Dashboard() {
     </div>
   );
 }
-
