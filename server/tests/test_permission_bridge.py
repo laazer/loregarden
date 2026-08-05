@@ -1,4 +1,7 @@
 import json
+import sys
+import time
+from types import SimpleNamespace
 
 from loregarden.agents.cli_adapters import (
     permission_bypass_enabled,
@@ -981,6 +984,65 @@ def test_permission_bridge_agent_timeout(tmp_path):
 
         assert result.status == RunStatus.FAILED
         assert result.stderr == "Agent timed out after 2s"
+
+
+def test_permission_bridge_streaming_output_extends_idle_timeout(tmp_path):
+    from loregarden.models.domain import AgentRun, RunStatus, Ticket
+    from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        ).first()
+        run = AgentRun(
+            run_code="run_streaming_idle_test",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            agent_id="planner",
+            stage_key="planning",
+            status=RunStatus.RUNNING,
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+
+        script = (
+            "import json, time\n"
+            "for i in range(8):\n"
+            "    print(json.dumps({'type': 'message', 'content': i}), flush=True)\n"
+            "    time.sleep(0.2)\n"
+            "print(json.dumps({'type': 'result', 'is_error': False, 'session_id': 's'}), flush=True)\n"
+        )
+        invocation = SimpleNamespace(
+            argv=[sys.executable, "-u", "-c", script],
+            cwd=str(tmp_path),
+            adapter="claude",
+            resume_session_id="",
+        )
+
+        bridge = PermissionBridgeRunner(session)
+        start = time.time()
+        result = bridge.run(
+            run_id=run.id,
+            ticket=ticket,
+            invocation=invocation,
+            prompt="do work",
+            timeout_seconds=1,
+        )
+        elapsed = time.time() - start
+
+        assert result.status == RunStatus.SUCCEEDED
+        assert result.session_id == "s"
+        assert elapsed > 1.0
 
 
 def test_permission_bridge_triage_question_does_not_mutate_stage(tmp_path):
