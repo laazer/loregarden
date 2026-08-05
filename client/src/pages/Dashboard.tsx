@@ -323,6 +323,7 @@ export function Dashboard() {
       options?: {
         stop_at_stage_key?: string;
         auto_approve?: boolean;
+        slot_number?: number | null;
       };
     }) => api.orchestrate(ticketId, options),
     onSuccess: (data, { ticketId }) => {
@@ -360,11 +361,17 @@ export function Dashboard() {
 
   const startRun = useMutation({
     meta: { errorTitle: "Start run" },
-    mutationFn: (vars?: { stageKey?: string; autoApprove?: boolean; timeoutSeconds?: number }) =>
+    mutationFn: (vars?: {
+      stageKey?: string;
+      autoApprove?: boolean;
+      timeoutSeconds?: number;
+      slotNumber?: number | null;
+    }) =>
       api.startRun(selectedId!, {
         stage_key: vars?.stageKey,
         auto_approve: vars?.autoApprove,
         timeout_seconds: vars?.timeoutSeconds,
+        slot_number: vars?.slotNumber ?? null,
       }),
     onSuccess: (data) => {
       notifyIfQueued(data);
@@ -900,13 +907,19 @@ export function Dashboard() {
     runtime: typeof activeWorkspaceRuntime,
     autoApprove: boolean,
     timeoutSeconds: number | undefined,
+    slotNumber: number | null,
   ) => {
     if (!runConfirmStageKey) return;
     try {
       if (!runtimeSettingsEqual(runtime, activeWorkspaceRuntime)) {
         await setRuntime.mutateAsync({ slug: activeWorkspaceSlug, runtime });
       }
-      await startRun.mutateAsync({ stageKey: runConfirmStageKey, autoApprove, timeoutSeconds });
+      await startRun.mutateAsync({
+        stageKey: runConfirmStageKey,
+        autoApprove,
+        timeoutSeconds,
+        slotNumber,
+      });
     } catch {
       // Modal stays open; mutation error state clears on retry.
     }
@@ -926,6 +939,7 @@ export function Dashboard() {
         options: {
           stop_at_stage_key: options.stopAtStageKey || undefined,
           auto_approve: options.autoApprove,
+          slot_number: options.slotNumber,
         },
       });
     } catch {

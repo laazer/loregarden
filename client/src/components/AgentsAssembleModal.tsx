@@ -8,6 +8,7 @@ import type {
   WorkflowStageView,
   WorkspaceRuntimeSettings,
 } from "../api/client";
+import { LanePicker, type LaneChoice } from "./LanePicker";
 import {
   WorkspaceRuntimeFields,
   runtimeSettingsEqual,
@@ -18,6 +19,11 @@ export interface AgentsAssembleOptions {
   stopAtStageKey: string;
   autoApprove: boolean;
   branch: string;
+  /**
+   * Which execution lane to run in; null asks for whichever is quietest. Every
+   * start takes a slot now, so this dialog has to say which one.
+   */
+  slotNumber: LaneChoice;
 }
 
 interface AgentsAssembleModalProps {
@@ -28,6 +34,11 @@ interface AgentsAssembleModalProps {
   stages: WorkflowStageView[];
   isRunning: boolean;
   isSavingRuntime: boolean;
+  /**
+   * Lane to preselect. The board opens this dialog from a specific lane, so it
+   * starts there rather than making you pick the lane you just clicked.
+   */
+  defaultSlotNumber?: LaneChoice;
   onClose: () => void;
   onConfirm: (options: AgentsAssembleOptions) => void | Promise<void>;
 }
@@ -40,6 +51,7 @@ export function AgentsAssembleModal({
   stages,
   isRunning,
   isSavingRuntime,
+  defaultSlotNumber = null,
   onClose,
   onConfirm,
 }: AgentsAssembleModalProps) {
@@ -47,6 +59,7 @@ export function AgentsAssembleModal({
   const [stopAtStageKey, setStopAtStageKey] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
   const [branch, setBranch] = useState("");
+  const [slotNumber, setSlotNumber] = useState<LaneChoice>(defaultSlotNumber);
 
   useEffect(() => {
     if (!open || !ticket) return;
@@ -54,7 +67,8 @@ export function AgentsAssembleModal({
     setStopAtStageKey("");
     setAutoApprove(false);
     setBranch(ticket.branch || `loregarden/${ticket.external_id}`);
-  }, [open, ticket, workspaceRuntime]);
+    setSlotNumber(defaultSlotNumber);
+  }, [open, ticket, workspaceRuntime, defaultSlotNumber]);
 
   if (!open || !ticket) return null;
 
@@ -134,6 +148,15 @@ export function AgentsAssembleModal({
             </select>
           </div>
 
+          <div style={{ marginBottom: 16 }}>
+            <LanePicker
+              value={slotNumber}
+              onChange={setSlotNumber}
+              enabled={open}
+              disabled={busy}
+            />
+          </div>
+
           <label
             style={{
               display: "flex",
@@ -170,6 +193,7 @@ export function AgentsAssembleModal({
                 // A parent's branch is unused; pass its stored value so confirmAssemble
                 // treats it as unchanged and never rewrites it.
                 branch: isParent ? (ticket.branch ?? "") : branch.trim(),
+                slotNumber,
               })
             }
           >

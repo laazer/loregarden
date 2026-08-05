@@ -46,6 +46,7 @@ from loregarden.services.branch_triage_run_service import fail_interrupted_branc
 from loregarden.services.btw_run_service import fail_interrupted_asides
 from loregarden.services.chat_thinking import clear_orphaned_chat_turn_thinking
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
+from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.run_service import (
     fail_interrupted_orchestration_runs,
     fail_interrupted_runs,
@@ -83,6 +84,10 @@ async def lifespan(app: FastAPI):
         # Last: the reaps above settle stages as they complete their runs, so this
         # only sees stages no run will ever account for.
         settle_stranded_stages(session)
+        # After the reaps, so the runs they just failed count as finished and
+        # the slots they were holding come back rather than staying claimed by
+        # a run this process will never hear from again.
+        QueueLaneService(session).reconcile_lanes()
         # Resume only after every orphan row and stranded stage has been made
         # durable. Recovery adds a fresh run; the failed rows remain the audit trail.
         resume_interrupted_orchestrations(session)

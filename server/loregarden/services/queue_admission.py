@@ -112,14 +112,26 @@ class QueueAdmissionService:
         *,
         auto_approve: bool = False,
         stop_at_stage_key: str | None = None,
+        preferred_slot: int | None = None,
+        driver: str = "",
+        max_stages: int | None = None,
     ) -> Reservation:
-        """A slot to run the whole ticket in, or a place in line."""
+        """A slot to run the whole ticket in, or a place in line.
+
+        `driver` and `max_stages` are carried only so a *parked* request still
+        runs what was asked for. An admitted one never needs them: the caller
+        starts the work itself, which is the point of reserving rather than
+        dispatching.
+        """
         return self._reserve(
             ticket,
             entry_kind="orchestration",
             stage_key="",
             auto_approve=auto_approve,
             stop_at_stage_key=stop_at_stage_key,
+            preferred_slot=preferred_slot,
+            driver=driver,
+            max_stages=max_stages,
         )
 
     def reserve_stage(
@@ -128,6 +140,7 @@ class QueueAdmissionService:
         *,
         stage_key: str | None = None,
         auto_approve: bool = False,
+        preferred_slot: int | None = None,
     ) -> Reservation:
         """A slot to run one stage in, or a place in line.
 
@@ -141,6 +154,7 @@ class QueueAdmissionService:
             stage_key=stage_key or "",
             auto_approve=auto_approve,
             stop_at_stage_key=None,
+            preferred_slot=preferred_slot,
         )
 
     # ---- internals -----------------------------------------------------
@@ -153,12 +167,24 @@ class QueueAdmissionService:
         stage_key: str,
         auto_approve: bool,
         stop_at_stage_key: str | None,
+        preferred_slot: int | None = None,
+        driver: str = "",
+        max_stages: int | None = None,
     ) -> Reservation:
         self.lanes.slots.initialize_slots()
 
-        free = self.session.exec(
+        free_slots = self.session.exec(
             select(AgentSlot).where(AgentSlot.is_available == True).order_by(AgentSlot.slot_number)
-        ).first()
+        ).all()
+
+        # A named lane is a preference, not a demand: an operator who picked a
+        # lane that filled between opening the dialog and confirming wants the
+        # ticket to run, and the slot number is presentation.
+        free = None
+        if preferred_slot is not None:
+            free = next((s for s in free_slots if s.slot_number == preferred_slot), None)
+        if free is None:
+            free = free_slots[0] if free_slots else None
 
         if free:
             # Claimed before the caller starts anything, so two requests
@@ -176,7 +202,10 @@ class QueueAdmissionService:
                 _session=self.session,
             )
 
-        lane = self._shortest_lane()
+        # Full: wait in the lane the operator chose, or the shortest.
+        lane = preferred_slot if preferred_slot in self.lanes.lane_numbers() else None
+        if lane is None:
+            lane = self._shortest_lane()
         result = self.lanes.add_to_lane(
             ticket_id=ticket.id,
             slot_number=lane,
@@ -184,6 +213,8 @@ class QueueAdmissionService:
             stop_at_stage_key=stop_at_stage_key,
             entry_kind=entry_kind,
             stage_key=stage_key,
+            driver=driver,
+            max_stages=max_stages,
         )
         position = result.get("position")
         logger.info(

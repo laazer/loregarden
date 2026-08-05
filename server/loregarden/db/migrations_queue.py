@@ -142,3 +142,29 @@ def m_lane_entry_kind(conn: Connection) -> None:
             "stage_key": ("ALTER TABLE queued_runs ADD COLUMN stage_key TEXT NOT NULL DEFAULT ''"),
         },
     )
+
+
+def m_lane_entry_run_options(conn: Connection) -> None:
+    """Let a parked entry carry the whole ask, not just part of it.
+
+    Admission parks a request when the pool is full, and the entry is the only
+    record of what was asked for by the time a lane reaches it. It carried
+    `auto_approve` and `stop_at_stage_key` but not the driver override or the
+    per-run stage cap — so "run at most one stage on cursor" became "run the
+    whole pipeline on whatever the profile says" the moment the request waited
+    instead of starting. Which of those you got depended on how busy the box
+    was, which is the worst kind of difference.
+
+    Empty and NULL mean "the workspace profile decides", which is what every
+    entry written before these columns existed meant.
+    """
+    if not table_exists(conn, "queued_runs"):
+        return
+    add_columns_if_missing(
+        conn,
+        "queued_runs",
+        {
+            "driver": "ALTER TABLE queued_runs ADD COLUMN driver TEXT NOT NULL DEFAULT ''",
+            "max_stages": "ALTER TABLE queued_runs ADD COLUMN max_stages INTEGER",
+        },
+    )

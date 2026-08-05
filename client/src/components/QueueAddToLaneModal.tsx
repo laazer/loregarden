@@ -81,7 +81,10 @@ export function QueueAddToLaneModal({ request, onClose, onError }: QueueAddToLan
   const addToLane = useMutation({
     meta: { errorTitle: 'Add to lane' },
     mutationFn: (options: AgentsAssembleOptions) =>
-      queueLanesApi.add(request!.slotNumber, {
+      // The lane clicked is the default, not the decision: the dialog shows
+      // what every lane is doing, so changing your mind there has to land here
+      // rather than silently going back to the one you opened it from.
+      queueLanesApi.add(options.slotNumber ?? request!.slotNumber, {
         ticket_id: request!.ticketId,
         auto_approve: options.autoApprove,
         stop_at_stage_key: options.stopAtStageKey,
@@ -119,6 +122,7 @@ export function QueueAddToLaneModal({ request, onClose, onError }: QueueAddToLan
       workspaceRuntime={workspaceRuntime.data ?? RUNTIME_FALLBACK}
       runtimeOptions={runtimeOptions.data}
       stages={ticket.data.stages ?? []}
+      defaultSlotNumber={request!.slotNumber}
       isRunning={addToLane.isPending}
       isSavingRuntime={setRuntime.isPending}
       onClose={onClose}

@@ -41,6 +41,12 @@ export interface RunLabels {
 export interface ActiveRun extends RunLabels {
   run_id: string;
   ticket_id: string;
+  /**
+   * Set when a whole ticket's pipeline holds the slot, rather than one stage.
+   * The card's status is then the pipeline's — a lane keeps the slot between
+   * stages, so the last stage's "succeeded" is not what the lane is doing.
+   */
+  orchestration_run_id?: string;
   slot_number: number;
   elapsed_seconds: number;
   status: string;

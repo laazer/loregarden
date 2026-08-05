@@ -341,7 +341,13 @@ export const api = {
     }),
   startRun: (
     id: string,
-    options?: { stage_key?: string; auto_approve?: boolean; timeout_seconds?: number },
+    options?: {
+      stage_key?: string;
+      auto_approve?: boolean;
+      timeout_seconds?: number;
+      /** Lane to run in; omit for whichever the pool picks. */
+      slot_number?: number | null;
+    },
   ) =>
     request<TicketDetail>(`/api/tickets/${id}/start`, {
       method: "POST",
@@ -350,6 +356,7 @@ export const api = {
         stage_key: options?.stage_key,
         auto_approve: options?.auto_approve,
         timeout_seconds: options?.timeout_seconds,
+        slot_number: options?.slot_number ?? null,
       }),
     }),
   buildTerminalHandoffCommand: (id: string, stageKey: string) =>
@@ -362,7 +369,13 @@ export const api = {
     ),
   orchestrate: (
     id: string,
-    body?: { max_stages?: number; stop_at_stage_key?: string; auto_approve?: boolean },
+    body?: {
+      max_stages?: number;
+      stop_at_stage_key?: string;
+      auto_approve?: boolean;
+      /** Lane to run in; omit for whichever the pool picks. */
+      slot_number?: number | null;
+    },
   ) =>
     request<TicketDetail>(`/api/tickets/${id}/orchestrate`, {
       method: "POST",

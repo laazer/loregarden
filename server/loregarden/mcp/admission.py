@@ -42,6 +42,8 @@ def run_admitted(
     *,
     stage_key: str | None,
     start: Callable[[], Any],
+    driver: str = "",
+    max_stages: int | None = None,
 ) -> tuple[Reservation, Any]:
     """Reserve, run `start`, and release the slot if it raised.
 
@@ -54,7 +56,10 @@ def run_admitted(
     reservation = (
         admission.reserve_stage(ticket, stage_key=stage_key)
         if stage_key is not None
-        else admission.reserve_orchestration(ticket)
+        # Carried for the parked case only: an entry is the whole record of the
+        # ask by the time a lane reaches it, and a dropped override is a
+        # different run from the one requested.
+        else admission.reserve_orchestration(ticket, driver=driver, max_stages=max_stages)
     )
     if not reservation.admitted:
         return reservation, None
@@ -92,7 +97,14 @@ def start_orchestration_admitted(
             return svc.start_orchestration_run(ticket, driver=driver, profile_slug=profile.slug)
         raise ValueError(f"Unsupported driver for MCP start: {driver_name}")
 
-    reservation, run = run_admitted(session, ticket, stage_key=None, start=_start)
+    reservation, run = run_admitted(
+        session,
+        ticket,
+        stage_key=None,
+        start=_start,
+        driver=arguments.get("driver") or "",
+        max_stages=arguments.get("max_stages"),
+    )
     if reservation.admitted:
         reservation.bind(orchestration_run_id=run.id)
     return reservation, run

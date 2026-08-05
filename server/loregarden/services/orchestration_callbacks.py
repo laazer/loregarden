@@ -27,7 +27,7 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 
 def _orch_code() -> str:
@@ -77,12 +77,91 @@ class OrchestrationCallbackService:
         raise ValueError("Ticket not found")
 
     def get_active_orchestration_run(self, ticket_id: str) -> OrchestrationRun | None:
+        """The run in flight for this ticket, claimed or executing.
+
+        QUEUED counts. A caller claims its run before handing the work to a
+        background thread (see `claim_orchestration_run`), and between those two
+        moments the ticket is already spoken for — treating only RUNNING as
+        active would let a second start slip into that window.
+        """
         return self.session.exec(
             select(OrchestrationRun)
             .where(OrchestrationRun.ticket_id == ticket_id)
-            .where(OrchestrationRun.status == OrchestrationRunStatus.RUNNING)
+            .where(
+                col(OrchestrationRun.status).in_(
+                    (OrchestrationRunStatus.QUEUED, OrchestrationRunStatus.RUNNING)
+                )
+            )
             .order_by(OrchestrationRun.created_at.desc())
         ).first()
+
+    def claim_orchestration_run(
+        self,
+        ticket: Ticket,
+        *,
+        driver=None,
+        profile_slug: str = "",
+        auto_approve: bool = False,
+        stop_at_stage_key: str = "",
+    ) -> OrchestrationRun:
+        """Reserve this ticket's orchestration before anything executes it.
+
+        `schedule_orchestration` hands the work to a background thread, and the
+        run row is created *there* — so a caller that dispatches and then reads
+        the row back to bind to it is racing that thread, and loses. Two things
+        went wrong that way: an admission reservation never bound, leaving a
+        slot claimed but naming nothing that any release could find; and a lane
+        read no run, concluded its dispatch had been refused, and left its entry
+        queued while the orchestration ran outside any lane.
+
+        Claiming here closes the window — the caller has an id before a thread
+        exists — and `start_orchestration_run` adopts this row rather than
+        opening a second one.
+        """
+        active = self.get_active_orchestration_run(ticket.id)
+        if active:
+            return active
+
+        if driver is None or not profile_slug:
+            # Resolved here so both callers stay one line; an explicit driver
+            # (an API or MCP override) still wins over the workspace default.
+            from loregarden.services.orchestration_profile import resolve_orchestration_profile
+
+            workspace = self.session.get(Workspace, ticket.workspace_id)
+            if not workspace:
+                raise ValueError("Workspace not found")
+            profile = resolve_orchestration_profile(workspace)
+            driver = driver or profile.driver
+            profile_slug = profile_slug or profile.slug
+
+        run = OrchestrationRun(
+            run_code=_orch_code(),
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+            driver=driver,
+            profile_slug=profile_slug,
+            status=OrchestrationRunStatus.QUEUED,
+            current_stage_key=ticket.workflow_stage_key,
+            auto_approve=auto_approve,
+            stop_at_stage_key=stop_at_stage_key or "",
+        )
+        self.session.add(run)
+        self.session.commit()
+        self.session.refresh(run)
+        return run
+
+    def abandon_claim(self, run: OrchestrationRun, *, message: str) -> None:
+        """Fail a claim nothing will adopt, so it stops looking live.
+
+        A claim is only a promise that work is about to start. When the dispatch
+        it was made for refuses, leaving it QUEUED would block every later start
+        of this ticket on an orchestration that never began.
+        """
+        run.status = OrchestrationRunStatus.FAILED
+        run.error_message = message
+        run.finished_at = datetime.now(timezone.utc)
+        self.session.add(run)
+        self.session.commit()
 
     def start_orchestration_run(
         self,
@@ -94,6 +173,10 @@ class OrchestrationCallbackService:
         stop_at_stage_key: str = "",
     ) -> OrchestrationRun:
         active = self.get_active_orchestration_run(ticket.id)
+        if active and active.status == OrchestrationRunStatus.QUEUED:
+            # The claim this execution was dispatched for. Adopt it, so whoever
+            # bound a slot to that id follows the work it stands for.
+            return self._adopt_claim(active, ticket, driver=driver, profile_slug=profile_slug)
         if active:
             raise ValueError(f"Orchestration already running: {active.run_code}")
 
@@ -132,6 +215,42 @@ class OrchestrationCallbackService:
             stop_at_stage_key=stop_at_stage_key or "",
             started_at=datetime.now(timezone.utc),
         )
+        self.session.add(run)
+        self.session.commit()
+        self.session.refresh(run)
+
+        event_bus.publish(
+            self.session,
+            EventType.ORCHESTRATION_RUN_STARTED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            payload={"run_code": run.run_code, "driver": driver.value, "profile": profile_slug},
+        )
+        return run
+
+    def _adopt_claim(
+        self,
+        run: OrchestrationRun,
+        ticket: Ticket,
+        *,
+        driver,
+        profile_slug: str,
+    ) -> OrchestrationRun:
+        """Turn a claim into the running orchestration it stood for.
+
+        `auto_approve` and `stop_at_stage_key` stay the claim's: they were
+        answered by whoever queued the ticket, which may have been a dialog
+        closed long before a lane reached this entry.
+        """
+        if ticket.state == TicketState.BACKLOG:
+            self.orch.start_ticket(ticket)
+            self.session.refresh(ticket)
+
+        run.status = OrchestrationRunStatus.RUNNING
+        run.driver = driver
+        run.profile_slug = profile_slug
+        run.current_stage_key = ticket.workflow_stage_key
+        run.started_at = datetime.now(timezone.utc)
         self.session.add(run)
         self.session.commit()
         self.session.refresh(run)

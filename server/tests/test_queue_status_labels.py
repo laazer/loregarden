@@ -64,17 +64,29 @@ async def test_a_lane_card_carries_the_ticket_state_and_activity(db_session):
     assert card["ticket_activity"] == "running"
 
 
-async def test_a_slot_held_by_a_finished_run_does_not_claim_to_be_running(db_session):
-    """The slot leak, as the card sees it: occupied, but nothing is working."""
+async def test_a_slot_held_by_a_finished_run_is_reclaimed(db_session):
+    """The slot leak, closed rather than described.
+
+    This used to assert the card an operator saw while a slot sat pinned to a
+    run that had already finished: occupied, status "succeeded", nothing
+    working. That state is now unreachable — building the snapshot reconciles
+    the pool first, and a slot whose only occupant is a terminal run is free by
+    definition — so the honest assertion is that there is no card at all and the
+    lane is back.
+
+    A lane between stages is not this: it holds an orchestration, which stays
+    live across the agent runs it spans.
+    """
     ws = _workspace(db_session)
     ticket = _ticket(db_session, ws, "LANE-2", TicketState.IN_PROGRESS)
     _occupy_slot(db_session, ticket, RunStatus.SUCCEEDED)
 
     snapshot = await build_queue_status(db_session)
-    card = next(run for run in snapshot["active_runs"] if run["ticket_id"] == ticket.id)
 
-    assert card["status"] == "succeeded"
-    assert card["ticket_activity"] == "idle"
+    assert not [run for run in snapshot["active_runs"] if run["ticket_id"] == ticket.id]
+    slot = db_session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    assert slot.is_available
+    assert slot.current_run_id is None
 
 
 async def test_a_waiting_entry_carries_its_own_state(db_session):

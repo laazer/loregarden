@@ -265,6 +265,9 @@ class StartRunRequest(SQLModel):
     manual: bool = False
     auto_approve: bool = False
     timeout_seconds: int | None = None
+    #: The lane to run in. None means any — the pool picks. A debug run spends
+    #: the same machine capacity as any other, so it waits its turn like one.
+    slot_number: int | None = None
 
 
 class HandoffCheckinRequest(SQLModel):
@@ -279,6 +282,9 @@ class StartOrchestrationRequest(SQLModel):
     max_stages: int | None = None
     stop_at_stage_key: str | None = None
     auto_approve: bool = False
+    #: The lane to run in. None means any — the pool picks the quietest free
+    #: one, and a full pool parks the request in the shortest queue.
+    slot_number: int | None = None
 
 
 class CompleteStageRequest(SQLModel):

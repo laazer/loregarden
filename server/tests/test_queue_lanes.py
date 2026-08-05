@@ -63,7 +63,7 @@ class _Dispatcher:
         self.session = session
         self.launched: list[str] = []
 
-    def __call__(self, ticket, *, auto_approve, stop_at_stage_key):
+    def __call__(self, ticket, *, auto_approve, stop_at_stage_key, driver="", max_stages=None):
         self.launched.append(ticket.id)
         return _orch(self.session, ticket, f"orch_{len(self.launched)}")
 
