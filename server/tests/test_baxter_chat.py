@@ -467,7 +467,9 @@ def test_home_chat_snapshot_surfaces_pending_approvals_and_awaiting_input(
     db_session.refresh(run)
 
     db_session.add(
-        BaxterChatMessage(session_id=session_id, role="user", content="Ship queue history?", status="complete")
+        BaxterChatMessage(
+            session_id=session_id, role="user", content="Ship queue history?", status="complete"
+        )
     )
     db_session.add(BaxterChatMessage(session_id=session_id, role="assistant", status="pending"))
     db_session.add(

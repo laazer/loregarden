@@ -123,9 +123,7 @@ def record_triage_question_exchange(
     return messages
 
 
-def _pending_home_assistant(
-    session: Session, workspace_id: str
-) -> BaxterChatMessage | None:
+def _pending_home_assistant(session: Session, workspace_id: str) -> BaxterChatMessage | None:
     """The in-flight Home Baxter turn for this workspace, if any.
 
     Home chat approvals are workspace-scoped (no ticket, no chat_session_id on the

@@ -182,7 +182,9 @@ class TestAnsweredHomeChatQuestionsReachTheChat:
         from sqlmodel import Session, select
 
         with Session(engine) as session:
-            workspace = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+            workspace = session.exec(
+                select(Workspace).where(Workspace.slug == "loregarden")
+            ).first()
             chat = BaxterChatSession(workspace_id=workspace.id, title="Home ask")
             session.add(chat)
             session.commit()
@@ -193,7 +195,9 @@ class TestAnsweredHomeChatQuestionsReachTheChat:
                 )
             )
             session.add(
-                BaxterChatMessage(session_id=chat.id, role="assistant", content="", status="pending")
+                BaxterChatMessage(
+                    session_id=chat.id, role="assistant", content="", status="pending"
+                )
             )
             approval = Approval(
                 ticket_id=None,

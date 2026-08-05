@@ -411,11 +411,15 @@ def build_baxter_chat_prompt(
             "  above, or ids returned by MCP after you create/look them up.",
             "- `ticket` / `ticket_list` / `kanban` cards are for existing tickets only.",
             "- When outlining work you will do (a build/fix plan), emit an agent",
-            "  execution plan — `todo_list` with owner \"agent\" and title",
-            '  \"Agent execution plan\". Do not fake a ticket card for unfiled work.',
+            '  execution plan — `todo_list` with owner "agent" and title',
+            '  "Agent execution plan". Do not fake a ticket card for unfiled work.',
             '  Example: ```loregarden\\n{"primitive":"todo_list","owner":"agent",'
             '"title":"Agent execution plan","items":[{"id":"api","text":"Add history API",'
             '"checked":false}]}\\n```',
+            "- The UI shows Run on that card. When the operator sends",
+            '  "Execute this agent execution plan now…", do the unchecked steps',
+            "  with tools — do not only restate the plan. Re-emit the same",
+            "  todo_list with checked:true as steps finish.",
             "- To ask the operator before proceeding, emit `qa`.",
             "- After creating a ticket via MCP, emit `ticket` with the real returned id.",
             "",

@@ -271,6 +271,7 @@ def test_runtime_options_surface_discovered_codex_models(client):
         {"id": "gpt-5.6-sol", "label": "GPT-5.6-Sol"},
     ]
 
+
 def test_runtime_options_flag_an_adapter_whose_cli_is_not_installed(client):
     with mock.patch.object(cli_settings.shutil, "which", return_value=None):
         body = client.get("/api/workspaces/runtime-options").json()

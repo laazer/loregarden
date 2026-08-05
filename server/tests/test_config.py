@@ -169,9 +169,8 @@ def test_format_agent_unavailable_for_codex_chatgpt_model_mismatch():
 def test_format_agent_unavailable_compacts_codex_mcp_noise():
     from loregarden.services.cli_auth_errors import format_agent_unavailable
 
-    dump = (
-        "ERROR rmcp::transport::worker: Deserialize error: JsonRpcMessage\n"
-        + ("prompt line\n" * 200)
+    dump = "ERROR rmcp::transport::worker: Deserialize error: JsonRpcMessage\n" + (
+        "prompt line\n" * 200
     )
     msg = format_agent_unavailable("Baxter", RuntimeError(dump))
     assert "JSON-RPC handshake" in msg or "JsonRpcMessage" in msg
