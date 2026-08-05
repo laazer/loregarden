@@ -54,6 +54,8 @@ def test_git_commit_hook_bypass_is_denied_by_policy():
     assert denied_cli_tool_message("Bash", {"command": "git -C repo commit -n -m test"})
     assert denied_cli_tool_message("Bash", {"command": "git commit -anm test"})
     assert denied_cli_tool_message("Bash", {"command": "npm test && git commit -n -m test"})
+    assert denied_cli_tool_message("Bash", {"command": "/usr/bin/git commit -n -m test"})
+    assert denied_cli_tool_message("Bash", {"command": "echo 'git commit --no-verify"})
     assert denied_cli_tool_message("Bash", {"command": "git commit -m test"}) == ""
     assert denied_cli_tool_message("WebFetch", {"command": "git commit -n"}) == ""
 

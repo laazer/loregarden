@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shlex
+from pathlib import PurePath
 from typing import Any
 
 from loregarden.models.domain import Ticket
@@ -94,25 +95,41 @@ def _git_subcommand_index(tokens: list[str], git_index: int) -> int | None:
     return None
 
 
+def _looks_like_git_executable(token: str) -> bool:
+    return PurePath(token).name == "git"
+
+
+def _has_hook_bypass_flag(args: list[str]) -> bool:
+    return any(
+        arg == "--no-verify" or (arg.startswith("-") and not arg.startswith("--") and "n" in arg)
+        for arg in args
+    )
+
+
+def _has_obvious_hook_bypass_intent(command: str) -> bool:
+    normalized = command.replace("\\\n", " ")
+    return (
+        "git" in normalized
+        and "commit" in normalized
+        and ("--no-verify" in normalized or " -n" in normalized)
+    )
+
+
 def _git_commit_bypasses_hooks(command: str) -> bool:
     try:
         tokens = shlex.split(command)
     except ValueError:
-        return False
+        return _has_obvious_hook_bypass_intent(command)
 
     for index, token in enumerate(tokens):
-        if token != "git":
+        if not _looks_like_git_executable(token):
             continue
         subcommand_index = _git_subcommand_index(tokens, index)
         if subcommand_index is None or tokens[subcommand_index] != "commit":
             continue
-        if any(
-            arg == "--no-verify"
-            or (arg.startswith("-") and not arg.startswith("--") and "n" in arg)
-            for arg in tokens[subcommand_index + 1 :]
-        ):
+        if _has_hook_bypass_flag(tokens[subcommand_index + 1 :]):
             return True
-    return False
+    return _has_obvious_hook_bypass_intent(command)
 
 
 def denied_cli_tool_message(tool_name: str, tool_input: dict[str, Any]) -> str:
