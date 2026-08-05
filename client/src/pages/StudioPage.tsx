@@ -43,11 +43,13 @@ function modelOptionsForAdapter(
   options: {
     claude_models?: { id: string; label: string }[];
     cursor_models?: { id: string; label: string }[];
+    codex_models?: { id: string; label: string }[];
     lmstudio_models?: { id: string; label: string }[];
   } | undefined,
 ) {
   if (adapter === "cursor") return options?.cursor_models;
   if (adapter === "claude") return options?.claude_models;
+  if (adapter === "codex") return options?.codex_models;
   if (adapter === "lmstudio") {
     const models = options?.lmstudio_models;
     // Only the Auto placeholder → keep free-text (LM Studio offline).

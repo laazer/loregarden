@@ -9,6 +9,7 @@ const OPTIONS: RuntimeOptions = {
     { id: "default", label: "Workspace default" },
     { id: "claude", label: "Claude Code" },
     { id: "cursor", label: "Cursor Agent" },
+    { id: "codex", label: "Codex CLI" },
   ],
   claude_models: [
     { id: "", label: "Default (Claude Code profile)" },
@@ -17,6 +18,10 @@ const OPTIONS: RuntimeOptions = {
   cursor_models: [
     { id: "", label: "Default (Cursor profile)" },
     { id: "claude-opus-4-8", label: "Claude Opus 4.8" },
+    { id: "gpt-5", label: "GPT-5" },
+  ],
+  codex_models: [
+    { id: "", label: "Default (Codex profile)" },
     { id: "gpt-5", label: "GPT-5" },
   ],
   claude_efforts: [
@@ -71,6 +76,15 @@ test("cursor effort is enabled for a parameterized model", () => {
 
   const effort = screen.getByLabelText("Reasoning effort");
   expect(effort).not.toBeDisabled();
+});
+
+test("codex shows its model select without an effort control", () => {
+  const onChange = renderFields({ cli_adapter: "codex" });
+
+  fireEvent.change(screen.getByLabelText("Codex model"), { target: { value: "gpt-5" } });
+
+  expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ codex_model: "gpt-5" }));
+  expect(screen.queryByText(/Reasoning effort/)).not.toBeInTheDocument();
 });
 
 test("the effective line names the resolved run, not the empty pin", () => {

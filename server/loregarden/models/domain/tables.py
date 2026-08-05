@@ -44,6 +44,7 @@ class Workspace(SQLModel, table=True):
     cli_adapter: str = ""
     claude_model: str = ""
     cursor_model: str = ""
+    codex_model: str = ""
     lmstudio_base_url: str = ""
     lmstudio_model: str = ""
     claude_effort: str = ""

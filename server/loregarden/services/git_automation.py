@@ -79,7 +79,7 @@ def _commit(repo_root: Path, ticket: Ticket) -> StepResult:
         return StepResult("commit", False, _fail_text(add, "git add failed"))
 
     message = f"{ticket.external_id}: {ticket.title}"
-    commit = _git(["commit", "--no-verify", "-m", message], repo_root)
+    commit = _git(["commit", "-m", message], repo_root)
     if commit.returncode != 0:
         combined = f"{commit.stdout}\n{commit.stderr}".lower()
         if "nothing to commit" in combined:

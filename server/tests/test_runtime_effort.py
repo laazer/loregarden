@@ -240,6 +240,39 @@ def test_runtime_options_advertise_only_live_claude_models(client):
     assert "claude-opus-4-20250514" not in ids
 
 
+def test_runtime_options_include_codex_adapter_and_models(client):
+    body = client.get("/api/workspaces/runtime-options").json()
+
+    assert {"id": "codex", "label": "Codex CLI"} in body["cli_adapters"]
+    assert {"id": "gpt-5", "label": "GPT-5"} in body["codex_models"]
+
+
+def test_workspace_runtime_round_trips_codex_model(client):
+    body = {
+        "cli_adapter": "codex",
+        "claude_model": "",
+        "cursor_model": "",
+        "codex_model": "gpt-5",
+        "lmstudio_base_url": "",
+        "lmstudio_model": "",
+        "claude_effort": "",
+        "cursor_effort": "",
+        "lmstudio_effort": "",
+    }
+    assert client.patch("/api/workspaces/loregarden/runtime", json=body).status_code == 200
+
+    saved = client.get("/api/workspaces/loregarden/runtime").json()
+    assert saved["codex_model"] == "gpt-5"
+
+    effective = client.get("/api/workspaces/runtime-options?workspace=loregarden").json()[
+        "effective"
+    ]
+    assert effective["cli_adapter"] == "codex"
+    assert effective["model"] == "gpt-5"
+    assert effective["model_source"] == "workspace"
+    assert not effective["supports_effort"]
+
+
 def test_workspace_runtime_round_trips_effort(client):
     body = {
         "cli_adapter": "claude",

@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     cli_adapter: str = "local"
     claude_model: str = ""
     cursor_model: str = ""
+    codex_model: str = ""
     lmstudio_base_url: str = "http://127.0.0.1:1234/v1"
     lmstudio_model: str = ""
     claude_effort: str = ""

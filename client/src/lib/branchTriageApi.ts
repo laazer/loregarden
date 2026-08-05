@@ -118,6 +118,7 @@ export interface BranchTriageChatSnapshot {
     cli_adapter: string;
     claude_model: string;
     cursor_model: string;
+    codex_model?: string;
     lmstudio_base_url: string;
     lmstudio_model: string;
   };

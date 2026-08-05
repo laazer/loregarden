@@ -132,6 +132,31 @@ def append_mcp_cli_args(
         )
     elif adapter == "cursor" and "--approve-mcps" not in argv:
         argv.append("--approve-mcps")
+    elif adapter == "codex":
+        if orchestrated:
+            script = settings.repo_root / "scripts" / "mcp-server.sh"
+            env = {
+                "LOREGARDEN_MCP_INPROCESS": "1",
+                "LOREGARDEN_REPO_ROOT": str(settings.repo_root),
+                "LOREGARDEN_MCP_ORCHESTRATED": "1",
+            }
+            argv.extend(
+                [
+                    "-c",
+                    f"mcp_servers.{MCP_SERVER_NAME}.command={json.dumps(str(script))}",
+                    "-c",
+                    f"mcp_servers.{MCP_SERVER_NAME}.args=[]",
+                ]
+            )
+            for key, value in env.items():
+                argv.extend(
+                    [
+                        "-c",
+                        f"mcp_servers.{MCP_SERVER_NAME}.env.{key}={json.dumps(value)}",
+                    ]
+                )
+        else:
+            argv.extend(["-c", f'mcp_servers.{MCP_SERVER_NAME}.url="{resolve_mcp_url()}"'])
 
 
 def load_loregarden_mcp_doc(agent_context_dir: Path) -> str:

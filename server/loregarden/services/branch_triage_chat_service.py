@@ -125,6 +125,7 @@ def _runtime_for_branch(
         "cli_adapter": workspace.cli_adapter or "default",
         "claude_model": workspace.claude_model or "",
         "cursor_model": workspace.cursor_model or "",
+        "codex_model": workspace.codex_model or "",
         "lmstudio_base_url": workspace.lmstudio_base_url or "",
         "lmstudio_model": workspace.lmstudio_model or "",
     }
