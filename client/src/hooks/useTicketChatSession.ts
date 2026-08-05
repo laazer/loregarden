@@ -1,7 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api/client";
+import type { ChatMessageView } from "../components/chat/chatUtils";
 import type { ChatSendOptions, ChatSession } from "../lib/chatSession";
+import { useTicketAsides } from "./useTicketAsides";
 import { useTriageSession } from "./useTriageSession";
 
 /**
@@ -18,6 +20,7 @@ import { useTriageSession } from "./useTriageSession";
 export function useTicketChatSession(ticketId: string | undefined): ChatSession {
   const qc = useQueryClient();
   const { triage, isBusy } = useTriageSession(ticketId);
+  const { asideMessages } = useTicketAsides(ticketId);
 
   const sendMessage = useMutation({
     meta: { errorTitle: "Send message" },
@@ -31,7 +34,7 @@ export function useTicketChatSession(ticketId: string | undefined): ChatSession 
   return {
     kind: "ticket-triage",
     id: ticketId ?? "",
-    messages: triage.data?.messages ?? [],
+    messages: mergeByCreatedAt(triage.data?.messages ?? [], asideMessages),
     // Include the in-flight POST so the walker shows before run_status flips.
     isBusy: isBusy || sendMessage.isPending,
     // Ticket triage has no pending message row: the run is the turn.
@@ -43,4 +46,21 @@ export function useTicketChatSession(ticketId: string | undefined): ChatSession 
       : null,
     send: (content, options) => sendMessage.mutateAsync({ content, options }),
   };
+}
+
+/**
+ * Interleave two already-ordered message lists by timestamp.
+ *
+ * Unanswered asides are not appended: one raised before the last few chat turns
+ * belongs where it was asked, or the thread stops reading as a sequence of
+ * events. Entries without a timestamp keep their relative order at the end.
+ */
+function mergeByCreatedAt(
+  messages: ChatMessageView[],
+  asides: ChatMessageView[],
+): ChatMessageView[] {
+  if (!asides.length) return messages;
+  const at = (message: ChatMessageView) =>
+    message.created_at ? Date.parse(message.created_at) : Number.MAX_SAFE_INTEGER;
+  return [...messages, ...asides].sort((a, b) => at(a) - at(b));
 }

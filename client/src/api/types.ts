@@ -226,6 +226,31 @@ export interface RunMessage {
   delivered_at: string | null;
 }
 
+/**
+ * A question asked while a run was working — an aside.
+ *
+ * Answered by a read-only observer reading the run's log, not by the run
+ * itself; `observed_*` describes what the question was about, never what
+ * produced the answer.
+ */
+export interface BtwExchange {
+  id: string;
+  ticket_id: string;
+  question: string;
+  answer: string;
+  status: "pending" | "answered" | "failed";
+  error: string;
+  escalated: boolean;
+  /** Why the aside cannot be put to the running agent, or "" when it can. */
+  escalation_refusal: string;
+  observed_run_id: string | null;
+  observed_agent_id: string | null;
+  observed_stage_key: string | null;
+  observed_run_active: boolean;
+  created_at: string;
+  answered_at: string | null;
+}
+
 /** One agent run inside a ledger visit. */
 export interface LedgerAttempt {
   run_id: string;

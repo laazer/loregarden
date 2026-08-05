@@ -43,6 +43,7 @@ from loregarden.core.auth import TokenAuthMiddleware
 from loregarden.db.session import engine, init_db
 from loregarden.services.baxter_chat_run_service import fail_interrupted_baxter_chat_turns
 from loregarden.services.branch_triage_run_service import fail_interrupted_branch_triage_turns
+from loregarden.services.btw_run_service import fail_interrupted_asides
 from loregarden.services.chat_thinking import clear_orphaned_chat_turn_thinking
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
 from loregarden.services.run_service import (
@@ -74,6 +75,8 @@ async def lifespan(app: FastAPI):
         fail_interrupted_branch_triage_turns(session)
         fail_interrupted_baxter_chat_turns(session)
         fail_interrupted_studio_turns(session)
+        # An aside has no run row of its own, so nothing above would ever reach it.
+        fail_interrupted_asides(session)
         # The turns those four just settled are exactly the ones whose live
         # thinking rows outlived them; nothing is left watching for that text.
         clear_orphaned_chat_turn_thinking(session)

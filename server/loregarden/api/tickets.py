@@ -9,6 +9,8 @@ from loregarden.models.domain import (
     AdvanceStageRequest,
     AgentRun,
     Artifact,
+    BtwExchange,
+    BtwQuestionCreate,
     FinalizeHierarchyRequest,
     FinalizeHierarchyResponse,
     OrchestrationRun,
@@ -40,8 +42,10 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
 )
+from loregarden.services import btw_service
 from loregarden.services.acceptance_criteria import load_criteria, serialize_criteria
 from loregarden.services.artifact_service import list_ticket_artifacts
+from loregarden.services.btw_run_service import schedule_btw_exchange
 from loregarden.services.cli_settings import (
     get_ticket_orchestration_runtime,
     set_ticket_orchestration_runtime,
@@ -498,6 +502,64 @@ def post_triage_message(
         "run_id": run.id,
         "status": "queued",
     }
+
+
+@router.get("/{ticket_id}/btw")
+def get_ticket_asides(ticket_id: str, session: Session = Depends(get_session)) -> dict:
+    """Asides on this ticket, newest first.
+
+    Answered ones are also mirrored into the triage transcript; this endpoint is
+    what a surface polls to watch a pending one settle, and the only place a
+    failed one is visible at all.
+    """
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    return {
+        "exchanges": [
+            btw_service.exchange_view(session, exchange)
+            for exchange in btw_service.list_exchanges(session, ticket_id)
+        ]
+    }
+
+
+@router.post("/{ticket_id}/btw", status_code=202)
+def post_ticket_aside(
+    ticket_id: str,
+    body: BtwQuestionCreate,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Ask something without disturbing whatever is running.
+
+    Deliberately has no 409 for an active run — that conflict is the entire
+    reason this endpoint exists.
+    """
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    try:
+        exchange = btw_service.ask(session, ticket, body.content)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    schedule_btw_exchange(exchange.id)
+    return btw_service.exchange_view(session, exchange)
+
+
+@router.post("/{ticket_id}/btw/{exchange_id}/escalate")
+def post_aside_escalation(
+    ticket_id: str,
+    exchange_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Put the aside to the working agent itself, which does affect its run."""
+    exchange = session.get(BtwExchange, exchange_id)
+    if not exchange or exchange.ticket_id != ticket_id:
+        raise HTTPException(404, "Aside not found")
+    try:
+        btw_service.escalate(session, exchange)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return btw_service.exchange_view(session, exchange)
 
 
 @router.patch("/{ticket_id}/triage/runtime", response_model=WorkspaceRuntimeSettings)

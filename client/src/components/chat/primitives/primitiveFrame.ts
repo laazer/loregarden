@@ -28,6 +28,7 @@ export const PRIMITIVE_SIZES: Record<PrimitiveKind, PrimitiveSize> = {
   branch_history: "wide",
   commit: "regular",
   qa: "regular",
+  btw: "regular",
   giphy: "regular",
 };
 

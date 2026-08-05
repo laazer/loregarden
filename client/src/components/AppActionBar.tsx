@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useActiveChatSession } from "../hooks/useActiveChatSession";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
+import { useTicketAsides } from "../hooks/useTicketAsides";
 import {
   COMPOSER_PLACEHOLDER,
   DOCK_QUICK_PROMPT_LIMIT,
@@ -59,6 +60,27 @@ export function AppActionBar() {
     setAttachLogs(false);
   }, [ticketId]);
 
+  const asides = useTicketAsides(ticketId ?? undefined);
+  // Asking a busy ticket chat is refused outright by `start_triage_run`, which
+  // is the moment an operator most wants to ask something. The composer stays
+  // open and the message routes to the aside channel instead: answered by an
+  // observer reading the run's log, costing the run nothing.
+  //
+  // Keyed on the ticket's activity rather than `session.isBusy` alone: the
+  // latter is derived from `triage_run_status`, which counts only triage turns,
+  // so it is false during exactly the stage run this channel exists for.
+  // `queued` is excluded deliberately — `find_active_run` looks at RUNNING and
+  // AWAITING_PERMISSION only, so a queued ticket still takes an ordinary
+  // message and should get one.
+  //
+  // `isBusy` is still read, because it turns true the moment a chat turn is
+  // POSTed while `activity` waits on the next poll. Without it, a second message
+  // sent into that gap goes to the chat and comes back a 409.
+  const asideMode =
+    Boolean(ticketId) &&
+    session?.kind === "ticket-triage" &&
+    (ticket?.activity === "running" || ticket?.activity === "awaiting" || session.isBusy);
+
   const expanded = chatOpen && Boolean(session);
   const sendable = Boolean(session) && !session?.loadError;
   const quickPrompts = session
@@ -68,11 +90,17 @@ export function AppActionBar() {
   const submit = (content: string) => {
     if (!session || !content.trim()) return;
     const question = content.trim();
-    const excerpt = attachLogs && hasLogs ? formatLogExcerpt(logLines, liveLog).trim() : "";
     setDraft("");
     // Open the thread on the way out: a reply arriving behind a collapsed dock
     // is a message the operator never sees.
     setChatOpen(true);
+    if (asideMode) {
+      // No excerpt is attached here — the observer is handed the run's log tail
+      // server-side, so pasting one would send the same lines twice.
+      asides.ask.mutate(question);
+      return;
+    }
+    const excerpt = attachLogs && hasLogs ? formatLogExcerpt(logLines, liveLog).trim() : "";
     const message = excerpt
       ? `Question about the run logs below:\n\n\`\`\`\n${excerpt}\n\`\`\`\n\n${question}`
       : question;
@@ -125,12 +153,14 @@ export function AppActionBar() {
         value={draft}
         disabled={!sendable}
         placeholder={
-          session
-            ? (COMPOSER_PLACEHOLDER[session.kind] ??
-              "Ask anything, or tell an agent what to do — without leaving this screen")
-            : NO_SESSION_PLACEHOLDER
+          asideMode
+            ? "btw — ask about the run without interrupting it"
+            : session
+              ? (COMPOSER_PLACEHOLDER[session.kind] ??
+                "Ask anything, or tell an agent what to do — without leaving this screen")
+              : NO_SESSION_PLACEHOLDER
         }
-        aria-label="Message this conversation"
+        aria-label={asideMode ? "Ask an aside about this run" : "Message this conversation"}
         onChange={(e) => setDraft(e.target.value)}
         onFocus={() => session && setChatOpen(true)}
         onKeyDown={(e) => {
@@ -161,11 +191,24 @@ export function AppActionBar() {
         label={label}
         waiting={pendingApprovals.length}
         loadError={Boolean(session?.loadError)}
-        sendError={session?.error ?? null}
+        sendError={asides.askError ?? session?.error ?? null}
         busy={Boolean(session?.isBusy)}
       />
 
-      {ticketId ? (
+      {asideMode ? (
+        <span
+          className="app-action-bar-pill"
+          title={
+            "This ticket is running, so your message is asked as an aside: answered " +
+            "by Baxter reading the run's log, without touching the run itself."
+          }
+        >
+          btw
+        </span>
+      ) : null}
+
+      {/* Redundant in aside mode: the observer is given the log tail server-side. */}
+      {ticketId && !asideMode ? (
         <button
           type="button"
           className={`app-action-bar-logs${attachLogs ? " is-on" : ""}`}
@@ -226,7 +269,8 @@ export function AppActionBar() {
         </>
       ) : null}
 
-      {session ? (
+      {/* An aside runs read-only, so there is nothing for this to approve. */}
+      {session && !asideMode ? (
         <button
           type="button"
           className={`app-action-bar-auto${autoApprove ? " is-on" : ""}`}
@@ -241,8 +285,8 @@ export function AppActionBar() {
       <button
         type="button"
         className="app-action-bar-send"
-        aria-label="Send"
-        disabled={!sendable || !draft.trim()}
+        aria-label={asideMode ? "Ask aside" : "Send"}
+        disabled={!sendable || !draft.trim() || asides.isAsking}
         onClick={() => submit(draft)}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>

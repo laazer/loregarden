@@ -196,6 +196,36 @@ class QAPart(BaseModel):
     interactive: bool = True
 
 
+class BtwPart(BaseModel):
+    """An aside and its answer, rendered as one card in the ticket transcript.
+
+    Every answer carried here is an observer's, read off the run's log — the
+    working agent's own reply to an escalated aside goes to that run's log, not
+    to a card. `observed_*` therefore describes what the answer is *about* and
+    never who gave it, which is the one thing a reader must not get wrong.
+
+    Unlike every other primitive here, this one is built by the server rather
+    than emitted by a model — there is no fence for it.
+    """
+
+    primitive: Literal["btw"] = "btw"
+    exchange_id: str
+    #: Carried so the card can reach the aside's live state — whether the run it
+    #: asked about is still steerable is a fact about *now*, not about write time.
+    ticket_id: str
+    question: str
+    answer: str = ""
+    #: The run the question was about, when one was going.
+    observed_run_id: str | None = None
+    observed_agent_id: str | None = None
+    observed_stage_key: str | None = None
+    escalated: bool = False
+    #: False renders the card from this part alone — no live lookup, no
+    #: escalation. For previews, whose ``exchange_id`` refers to no real aside.
+    interactive: bool = True
+    title: str | None = None
+
+
 class GiphyPart(BaseModel):
     primitive: Literal["giphy"] = "giphy"
     giphy_id: str | None = None
@@ -227,6 +257,7 @@ ChatPart = Annotated[
     | BranchHistoryPart
     | CommitPart
     | QAPart
+    | BtwPart
     | GiphyPart,
     Field(discriminator="primitive"),
 ]
@@ -254,6 +285,7 @@ KNOWN_PRIMITIVES = frozenset(
         "branch_history",
         "commit",
         "qa",
+        "btw",
         "giphy",
     }
 )

@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 
 import { AgentPrimitive } from "./AgentPrimitive";
+import { BtwPrimitive } from "./BtwPrimitive";
 import { CalendarEventPrimitive, CalendarPrimitive } from "./CalendarPrimitive";
 import { EditPrimitive } from "./EditPrimitive";
 import { GatePrimitive } from "./GatePrimitive";
@@ -64,6 +65,7 @@ export const PRIMITIVE_RENDERERS: Record<PrimitiveKind, Renderer> = {
   branch_history: BranchHistoryPrimitive as Renderer,
   commit: CommitPrimitive as Renderer,
   qa: QAPrimitive as Renderer,
+  btw: BtwPrimitive as Renderer,
   giphy: GiphyPrimitive as Renderer,
 };
 
