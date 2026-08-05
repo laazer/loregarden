@@ -48,10 +48,37 @@ def test_resolve_claude_adapter(tmp_path, monkeypatch):
 
     assert inv.argv[0] == "claude"
     assert "-p" in inv.argv
+    assert inv.argv[inv.argv.index("--output-format") + 1] == "stream-json"
+    assert "--verbose" in inv.argv
+    assert "--include-partial-messages" in inv.argv
     assert "--permission-mode" in inv.argv
     assert "--mcp-config" in inv.argv
     mcp_index = inv.argv.index("--mcp-config")
     assert '"type": "http"' in inv.argv[mcp_index + 1]
+
+
+def test_resolve_claude_adapter_text_skips_streaming_flags(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "claude")
+    monkeypatch.setenv("LOREGARDEN_ALLOW_PERMISSION_BYPASS", "1")
+    monkeypatch.setenv("LOREGARDEN_CLAUDE_BIN", "claude")
+    monkeypatch.setenv("LOREGARDEN_CLAUDE_OUTPUT_FORMAT", "text")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("stage task", encoding="utf-8")
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+
+    inv = resolve_cli_invocation(
+        agent_id="planner",
+        adapter="claude",
+        prompt="stage task",
+        prompt_file=prompt_file,
+        skill_name="plan",
+        workspace_root=workspace,
+    )
+
+    assert inv.argv[inv.argv.index("--output-format") + 1] == "text"
+    assert "--verbose" not in inv.argv
+    assert "--include-partial-messages" not in inv.argv
 
 
 def test_resolve_claude_model_from_workspace(tmp_path, monkeypatch):
