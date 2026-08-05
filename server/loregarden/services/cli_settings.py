@@ -64,6 +64,7 @@ def cli_adapter_options() -> list[dict[str, str | bool]]:
     """Adapter catalogue annotated with local CLI availability."""
     return [{**opt, "available": adapter_available(opt["id"])} for opt in CLI_ADAPTER_OPTIONS]
 
+
 # Pinned ids are what `claude --model` accepts: a floating alias, or a model's
 # full name. Aliases track the newest release in their tier; a pinned id keeps a
 # run reproducible across a model launch. Retired ids are deliberately absent —

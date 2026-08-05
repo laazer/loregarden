@@ -126,7 +126,9 @@ def test_interrupted_home_chat_triage_run_fails_without_triage_message(isolated_
         session.refresh(stuck)
         assert stuck.status == RunStatus.FAILED
         assert INTERRUPTED_TURN_MESSAGE in stuck.stderr
-        assert session.exec(select(TriageMessage).where(TriageMessage.run_id == stuck.id)).all() == []
+        assert (
+            session.exec(select(TriageMessage).where(TriageMessage.run_id == stuck.id)).all() == []
+        )
 
 
 def test_start_run_async_fails_prior_running_run(isolated_db):

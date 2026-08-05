@@ -288,7 +288,12 @@ def test_stop_does_not_let_late_complete_overwrite_cancelled_turn(client: TestCl
         db.refresh(pending)
         pending_id = pending.id
 
-    assert client.post(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/stop").status_code == 200
+    assert (
+        client.post(
+            f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/stop"
+        ).status_code
+        == 200
+    )
 
     with Session(engine) as db:
         late = _settle(db, pending_id, content="I finished anyway", status="complete")
