@@ -63,3 +63,12 @@ refuted claim with `loregarden_append_learning` when the failure is one a later
 stage could repeat — a verifier that catches the same class of bug twice should
 have written it down the first time. Use MCP for all memory writes; never edit
 the vault or SQLite directly.
+
+## Stage outcome (required)
+
+End every stage run with the `<<<LOREGARDEN_STAGE_REPORT>>>` … `<<<END_STAGE_REPORT>>>`
+block (`pass` | `fail` | `needs_rework` | `blocked`). That sentinel is the routing signal —
+a clean CLI exit without it **blocks** the stage. Do **not** call `loregarden_complete_stage`
+from a stage run (orchestrator/autopilot only). Attach long reports via
+`loregarden_attach_artifact`.
+

@@ -21,7 +21,8 @@ names no destination, the destination is **MCP** — never a new file:
 | You want to record… | Use | Not |
 |---|---|---|
 | Findings, analysis, test output, review report | `loregarden_attach_artifact` | a `*.md` file |
-| Stage outcome / approve / reject decision | `loregarden_complete_stage` | a `*_COMPLETION.md` file |
+| Stage outcome on a **stage run** (pass / reject / blocked) | `<<<LOREGARDEN_STAGE_REPORT>>>` sentinel in your response | `loregarden_complete_stage` or a `*_COMPLETION.md` file |
+| Stage outcome / advance cursor (**orchestrator / autopilot only**) | `loregarden_complete_stage` | a `*_COMPLETION.md` file |
 | Assumption or ambiguity you resolved alone | `loregarden_append_checkpoint` | a checkpoint `.md` |
 | Ticket learnings, anti-patterns | `loregarden_append_learning` | `LEARNINGS.md` / `learning-output.md` |
 | Spec, description, acceptance criteria | `loregarden_update_ticket` | a spec `.md` |
@@ -79,9 +80,11 @@ Agent artifacts are **per workspace**. Loregarden resolves Obsidian and SQLite p
 | Graph links | `loregarden_create_memory_relation` | `memory_sqlite_path` (`memory_relations`) |
 | Prior context | `loregarden_search_memory` | searches Obsidian notes + SQLite `memory_nodes` |
 
-## Stage-run agents (planner, static_qa, implementers, …)
+## Stage-run agents (planner, static_qa, implementers, gatekeepers, …)
 
-Loregarden **stage runs** (started from the IDE or `POST /api/tickets/{id}/start`) already update workflow state when the CLI run completes. During a stage run:
+Loregarden **stage runs** (started from the IDE or `POST /api/tickets/{id}/start`) already
+update workflow state when the CLI run completes — from the **stage report sentinel**, not
+from `loregarden_complete_stage`. During a stage run:
 
 1. **Read** ticket state with `loregarden_get_ticket`. MCP is the **only** source of ticket
    data — title, description, acceptance criteria, and stage cursor all live in Loregarden's
@@ -96,7 +99,13 @@ Loregarden **stage runs** (started from the IDE or `POST /api/tickets/{id}/start
 3. **Do not** write ticket content to disk. Update the ticket via `loregarden_update_ticket`;
    never mirror description or acceptance criteria into a markdown file. Files written under
    `project_board/` get swept into unrelated commits by the orchestrator.
-4. **Do** use MCP to attach extra artifacts (`loregarden_attach_artifact`) or request human approval (`loregarden_request_approval`) when your role requires it.
+4. **Do** end with the `<<<LOREGARDEN_STAGE_REPORT>>>` block (`pass` / `fail` /
+   `needs_rework` / `blocked`). That is the routing signal. A clean CLI exit with no report
+   **blocks** the stage — it does not advance. Rejects use `fail` or `needs_rework` plus
+   `reroute_to_stage` / `reroute_context`; do **not** call `loregarden_complete_stage` from a
+   stage run (orchestrator-only).
+5. **Do** use MCP to attach extra artifacts (`loregarden_attach_artifact`) or request human
+   approval (`loregarden_request_approval`) when your role requires it.
 
 ## Orchestrator / autopilot
 

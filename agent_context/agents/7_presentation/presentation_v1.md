@@ -25,3 +25,12 @@ You are the Presentation Agent. Implement UI, HUD, audio hooks, VFX, and other p
 
 - Do not change core gameplay logic unless the ticket assigns it
 - MCP-only for any memory persistence
+
+## Stage outcome (required)
+
+End every stage run with the `<<<LOREGARDEN_STAGE_REPORT>>>` … `<<<END_STAGE_REPORT>>>`
+block (`pass` | `fail` | `needs_rework` | `blocked`). That sentinel is the routing signal —
+a clean CLI exit without it **blocks** the stage. Do **not** call `loregarden_complete_stage`
+from a stage run (orchestrator/autopilot only). Attach long reports via
+`loregarden_attach_artifact`.
+

@@ -146,6 +146,12 @@ def append_mcp_cli_args(
                     f"mcp_servers.{MCP_SERVER_NAME}.command={json.dumps(str(script))}",
                     "-c",
                     f"mcp_servers.{MCP_SERVER_NAME}.args=[]",
+                    # Headless `codex exec` has no interactive MCP approval surface;
+                    # without this, every tool call becomes "user cancelled MCP tool
+                    # call" even for read-only control-plane tools. Scoped to the
+                    # loregarden server we inject — not a global sandbox bypass.
+                    "-c",
+                    f'mcp_servers.{MCP_SERVER_NAME}.default_tools_approval_mode="approve"',
                 ]
             )
             for key, value in env.items():
@@ -241,6 +247,16 @@ def build_mcp_run_context(
             "Use MCP tools for all ticket data — see Loregarden MCP module below.",
             "Tickets live in Loregarden's database, not in the repo. Do not search for a ticket",
             "markdown file, and do not write ticket content to one.",
+            "",
+            "## Stage outcome (stage runs)",
+            "This is a **stage run**. Loregarden advances or reroutes from your "
+            "`<<<LOREGARDEN_STAGE_REPORT>>>` block when the CLI exits — emit that "
+            "sentinel with `pass|fail|needs_rework|blocked` as the last thing in "
+            "your response. A clean exit with no report **blocks** the stage.",
+            f"Do **not** call `{CLAUDE_MCP_TOOL_PREFIX}loregarden_complete_stage` "
+            "(or skip/block orchestration tools) from a stage run — those are for "
+            "the orchestrator / autopilot. Attach detail with "
+            f"`{CLAUDE_MCP_TOOL_PREFIX}loregarden_attach_artifact` when needed.",
             "",
             "## Loregarden artifacts (memory, learnings, blog posts, checkpoints)",
             "Workspace-scoped **Obsidian markdown** + optional **SQLite memory graph**. **Never write files or SQL directly.**",

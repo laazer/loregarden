@@ -241,6 +241,13 @@ def settle_stage_after_failed_completion(
         )
 
 
+_MISSING_STAGE_REPORT = (
+    "Agent run exited successfully but emitted no parseable "
+    "<<<LOREGARDEN_STAGE_REPORT>>> block. Stage outcome is unknown — "
+    "re-run and emit pass|fail|needs_rework|blocked before this stage can advance."
+)
+
+
 def advance_stage_after_run(
     orch: OrchestrationService,
     ticket: Ticket,
@@ -265,6 +272,17 @@ def advance_stage_after_run(
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
     elif report and report.status in ("fail", "needs_rework"):
         _reroute_or_block_for_rework(orch, ticket, run, report, instance, stages, stderr)
+    elif status == RunStatus.SUCCEEDED and report is None:
+        # Fail closed: a clean CLI exit without a stage report used to advance
+        # as pass (exit-code-only fallback). Gatekeepers that rejected in prose
+        # but never emitted the sentinel — or whose MCP complete_stage call was
+        # cancelled — then silently promoted bad work. Require an explicit
+        # report before any agent stage can leave RUNNING.
+        ticket.blocking_issues = _blocking_issue(
+            orch.session, ticket, run, _MISSING_STAGE_REPORT
+        )
+        set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+        ticket.state = TicketState.BLOCKED
     elif status == RunStatus.SUCCEEDED:
         stage_status = StageStatus.DONE
         stage_def = next((s for s in stages if s.key == run.stage_key), None)

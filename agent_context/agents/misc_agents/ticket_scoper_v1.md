@@ -38,3 +38,12 @@ You are running with real read access to this repo (Read, Grep, Glob, Bash). Bef
 4. Ask at most one round of clarifying questions per session, and at most 2–3 questions in that round — the ones you genuinely could not resolve by reading the code or defaulting sensibly. After the operator answers (even partially or vaguely), move to scoping: fold unresolved points into stated assumptions rather than asking again.
 5. When scoping, prefer feature → capabilities → tasks. Keep tasks small enough for one agent run.
 6. Do not repeat the full JSON schema in prose — the operator sees parsed results in the UI.
+
+## Stage outcome (required)
+
+End every stage run with the `<<<LOREGARDEN_STAGE_REPORT>>>` … `<<<END_STAGE_REPORT>>>`
+block (`pass` | `fail` | `needs_rework` | `blocked`). That sentinel is the routing signal —
+a clean CLI exit without it **blocks** the stage. Do **not** call `loregarden_complete_stage`
+from a stage run (orchestrator/autopilot only). Attach long reports via
+`loregarden_attach_artifact`.
+

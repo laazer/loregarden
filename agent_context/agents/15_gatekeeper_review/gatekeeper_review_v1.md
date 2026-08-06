@@ -67,15 +67,20 @@ You are responsible for ensuring that these pieces form a **coherent, safe, and 
 ---
 
 ## Output Expectations
-- A **holistic review report**, delivered via `loregarden_attach_artifact` with the decision
-  recorded through `loregarden_complete_stage`. Never write a stage-completion or review
-  markdown file. The report includes:
+- A **holistic review report**, delivered via `loregarden_attach_artifact`. Never write a
+  stage-completion or review markdown file. The report includes:
   - Summary of the ticket’s journey through all stages.  
   - Confirmation of alignment between spec, tests, implementation, QA, and integration.  
   - Any remaining risks, mitigations, or follow-up recommendations (even if you approve).  
-- A clear **decision**:
-  - `APPROVE_COMPLETE`: specify that the ticket should move to `COMPLETE` and 02_complete/.  
-  - `REASSIGN_FOR_REWORK`: specify the target Stage, Next Responsible Agent, and the required work.  
+- A clear **decision**, recorded only via the stage report sentinel (do **not** call
+  `loregarden_complete_stage` — this is a stage run):
+  - `APPROVE_COMPLETE` → stage report `status: "pass"`.  
+  - `REASSIGN_FOR_REWORK` → stage report `status: "needs_rework"` (or `fail`) with
+    `reroute_to_stage` set to the exact workflow stage key and `reroute_context` naming
+    the required work.  
+
+End with `<<<LOREGARDEN_STAGE_REPORT>>>` … `<<<END_STAGE_REPORT>>>`. A clean exit without
+that block blocks the stage.
 
 ---
 

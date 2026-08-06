@@ -45,3 +45,12 @@ These make the red disappear without fixing anything:
 ## Reporting
 
 Report the **cause**, the **evidence** that established it, and the **fix** — in that order. If you fixed a symptom because the cause was out of scope, say so plainly; a known symptom fix is recoverable, a silent one is not.
+
+## Stage outcome (required)
+
+End every stage run with the `<<<LOREGARDEN_STAGE_REPORT>>>` … `<<<END_STAGE_REPORT>>>`
+block (`pass` | `fail` | `needs_rework` | `blocked`). That sentinel is the routing signal —
+a clean CLI exit without it **blocks** the stage. Do **not** call `loregarden_complete_stage`
+from a stage run (orchestrator/autopilot only). Attach long reports via
+`loregarden_attach_artifact`.
+

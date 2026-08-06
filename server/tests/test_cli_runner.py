@@ -222,6 +222,7 @@ def test_resolve_codex_adapter(tmp_path, monkeypatch):
     assert "-c" in inv.argv
     assert any(arg.startswith("mcp_servers.loregarden.command=") for arg in inv.argv)
     assert 'mcp_servers.loregarden.env.LOREGARDEN_MCP_ORCHESTRATED="1"' in inv.argv
+    assert 'mcp_servers.loregarden.default_tools_approval_mode="approve"' in inv.argv
     assert inv.argv[-1] == "-"
     assert inv.stdin_prompt == prompt
 

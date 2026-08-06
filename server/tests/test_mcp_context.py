@@ -50,6 +50,9 @@ def test_build_mcp_run_context_includes_ids():
     assert "memory_sqlite_path" in text
     assert "create_memory_relation" in text
     assert 'workspace_slug="loregarden"' in text
+    assert "## Stage outcome (stage runs)" in text
+    assert "loregarden_complete_stage" in text
+    assert "<<<LOREGARDEN_STAGE_REPORT>>>" in text
 
 
 def _handoff_run(stage_type: str) -> str:
@@ -109,7 +112,7 @@ def test_cli_prompt_includes_mcp_module():
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             agent_id="static_qa",
-            skill_name="run_tests",
+            skill_name="",
             stage_key="testing",
         )
         executor = CliAgentExecutor(session)
@@ -156,7 +159,7 @@ def test_cli_prompt_includes_stage_report_contract():
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             agent_id="static_qa",
-            skill_name="run_tests",
+            skill_name="",
             stage_key="testing",
         )
         executor = CliAgentExecutor(session)

@@ -87,3 +87,12 @@ attaching something weaker and calling it proof.
 Note the sha is stamped for you from HEAD, so capture after your last edit —
 evidence from before your final change proves nothing about the code being
 gated.
+
+## Stage outcome (required)
+
+End every stage run with the `<<<LOREGARDEN_STAGE_REPORT>>>` … `<<<END_STAGE_REPORT>>>`
+block (`pass` | `fail` | `needs_rework` | `blocked`). That sentinel is the routing signal —
+a clean CLI exit without it **blocks** the stage. Do **not** call `loregarden_complete_stage`
+from a stage run (orchestrator/autopilot only). Attach long reports via
+`loregarden_attach_artifact`.
+

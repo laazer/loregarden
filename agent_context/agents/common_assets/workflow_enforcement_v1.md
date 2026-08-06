@@ -17,15 +17,17 @@ When Loregarden orchestrates tickets (IDE, API, SQLite control plane):
 
 - Read and follow `agent_context/agents/common_assets/loregarden_mcp_v1.md`
 - Read and follow `agent_context/agents/common_assets/memory_protocol_v1.md` when persisting or searching memory, learnings, or blog posts
-- Use Loregarden MCP tools for workflow state, stage transitions, approvals, and artifacts
+- Use Loregarden MCP tools for ticket reads, artifacts, approvals, and memory
 - Tickets live in Loregarden's database, not in the repo. Do not search for a ticket file
+- **Stage-run outcome** is the `<<<LOREGARDEN_STAGE_REPORT>>>` sentinel — not
+  `loregarden_complete_stage` (orchestrator/autopilot only)
 
 **Never write a markdown file to report your work.** No findings, summary, analysis,
 sign-off, verification, spec, or stage-completion file — anywhere in the repo. Loregarden
 reads none of them; they only get swept into an unrelated ticket's commit. When your role
 says to produce a report or document findings and names no destination, the destination is
-MCP: `loregarden_attach_artifact` for reports and test output, `loregarden_complete_stage`
-for stage outcomes, `loregarden_append_checkpoint` for assumptions, `loregarden_append_learning`
+MCP: `loregarden_attach_artifact` for reports and test output, the stage report sentinel for
+stage outcomes, `loregarden_append_checkpoint` for assumptions, `loregarden_append_learning`
 for learnings, `loregarden_update_ticket` for spec and acceptance criteria. Short findings go
 in your response text. Writing real source code and real test files remains your job — this
 rule covers *reports about* the work.
@@ -140,7 +142,9 @@ Field rules:
 - `reroute_to_stage`: when `status` is `fail` or `needs_rework` and you know which upstream stage should redo the work, name its stage key **exactly as it appears in the "Valid `reroute_to_stage` values for this workflow" list in your run context** — do not guess or invent a plausible-sounding key, and do not use a stage's display name. A key that isn't in that list is discarded, and the rework falls back to the immediately preceding stage — which is rarely where you wanted it. Use `null` if you don't know or none applies: the orchestrator will then fall back to the workflow template's rework route, or the immediately preceding stage. Ignored when `status` is `blocked`.
 - `reroute_context`: when rerouting, a specific, actionable description of what the target stage missed or must fix. This is delivered to that stage's agent as prior-stage feedback — write it for that reader, not for a human audit log. When `status` is `blocked`, use this field instead to explain the blocker for the human who picks this up.
 
-If you emit no report, or a malformed one, the orchestrator falls back to today's exit-code-only behavior — but that means a stage that only *looks* successful (clean exit, buggy work) silently advances. Always emit the report.
+If you emit no report, or a malformed one, the orchestrator **blocks the stage** (fail-closed).
+A clean process exit alone never advances the workflow — every agent stage must emit this
+block. Always emit the report.
 
 **Output economy:** Tokens are the budget — every turn is paid for. Keep prose terse (no preamble or filler), return findings as lists or tables the orchestrator can parse, and route long reports to `loregarden_attach_artifact` rather than the response body. Never trade correctness, tests, or required evidence for brevity — cut filler, not substance.
 

@@ -33,3 +33,12 @@ You run alongside the architecture and static-QA reviewers, so review the diff f
 - **Read-only** — do not modify files.
 - Do not write proof-of-concept exploits into the repo; describe the path in your report instead.
 - MCP-only for persisting durable security notes.
+
+## Stage outcome (required)
+
+End every stage run with the `<<<LOREGARDEN_STAGE_REPORT>>>` … `<<<END_STAGE_REPORT>>>`
+block (`pass` | `fail` | `needs_rework` | `blocked`). That sentinel is the routing signal —
+a clean CLI exit without it **blocks** the stage. Do **not** call `loregarden_complete_stage`
+from a stage run (orchestrator/autopilot only). Attach long reports via
+`loregarden_attach_artifact`.
+

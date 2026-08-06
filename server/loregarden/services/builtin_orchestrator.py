@@ -854,7 +854,7 @@ class BuiltinOrchestrator:
             auto_approve=auto_approve,
             timeout_seconds=timeout_seconds,
         )
-        failures, reports, transient = self._run_and_collect_parallel_results(runs)
+        failures, reports, transient = _run_and_collect_parallel_results(runs)
 
         for agent_id, report in reports:
             self.callbacks.attach_artifact(
@@ -904,7 +904,8 @@ class BuiltinOrchestrator:
                 incomplete.append(spec)
                 continue
             report = parse_stage_report(latest.stdout)
-            if report and report.status != "pass":
+            # Missing report or non-pass: member is not done (fail-closed).
+            if report is None or report.status != "pass":
                 incomplete.append(spec)
         return incomplete
 
@@ -963,70 +964,6 @@ class BuiltinOrchestrator:
             )
             runs.append(run)
         return runs
-
-    def _run_and_collect_parallel_results(
-        self, runs: list[AgentRun]
-    ) -> tuple[list[str], list[tuple[str, StageReport]], bool]:
-        failures: list[str] = []
-        reports: list[tuple[str, StageReport]] = []
-        # Track whether any failure was infrastructure (API/usage limit), so the
-        # caller can pause the stage for retry rather than treat it as a rework
-        # rejection and reroute upstream.
-        transient_hits: list[str] = []
-
-        def _run_agent(run_id: str) -> tuple[str, str, str, str]:
-            with Session(engine) as session:
-                worker = CliAgentExecutor(session)
-                run = session.get(AgentRun, run_id)
-                if not run:
-                    raise ValueError(f"Agent run not found: {run_id}")
-                worker_ticket = session.get(Ticket, run.ticket_id)
-                if not worker_ticket:
-                    raise ValueError(f"Ticket not found for run: {run_id}")
-                completed = worker.execute(
-                    run,
-                    worker_ticket,
-                    advance_workflow=False,
-                    skip_git_branch=True,
-                )
-                return (
-                    completed.agent_id,
-                    completed.status.value,
-                    completed.stderr or "",
-                    completed.stdout or "",
-                )
-
-        def _collect_result(agent_label: str, result: tuple[str, str, str, str]) -> None:
-            agent_id, status_value, stderr, stdout = result
-            report = parse_stage_report(stdout)
-            if report:
-                reports.append((agent_id, report))
-            if status_value != RunStatus.SUCCEEDED.value:
-                failures.append(f"{agent_id}: {stderr or 'agent run failed'}")
-                if is_transient_failure(stdout, stderr):
-                    transient_hits.append(agent_id)
-            elif report and report.status in ("fail", "needs_rework", "blocked"):
-                failures.append(f"{agent_id}: {report.reroute_context or 'agent reported failure'}")
-
-        from sqlmodel.pool import StaticPool
-
-        if isinstance(engine.pool, StaticPool):
-            for run in runs:
-                try:
-                    _collect_result(run.agent_id, _run_agent(run.id))
-                except Exception as exc:
-                    failures.append(f"{run.agent_id}: {exc}")
-        else:
-            with ThreadPoolExecutor(max_workers=max(1, len(runs))) as pool:
-                future_map = {pool.submit(_run_agent, run.id): run.agent_id for run in runs}
-                for future in as_completed(future_map):
-                    agent_label = future_map[future]
-                    try:
-                        _collect_result(agent_label, future.result())
-                    except Exception as exc:
-                        failures.append(f"{agent_label}: {exc}")
-
-        return failures, reports, bool(transient_hits)
 
     def _recover_interrupted_stage(self, ticket: Ticket, instance, stages) -> str | None:
         """Clear a stage blocked only by a server restart, not a genuine failure.
@@ -1132,6 +1069,78 @@ def _orchestrate_incomplete_children(
             suffix = f" — {reason}" if reason else ""
             return f"Child workflow paused: {child.title}{suffix}"
     return None
+
+
+def _run_and_collect_parallel_results(
+    runs: list[AgentRun],
+) -> tuple[list[str], list[tuple[str, StageReport]], bool]:
+    """Run parallel stage members and collect stage reports / failures.
+
+    Module-level so ``BuiltinOrchestrator`` stays under its size cap. Fail-closed:
+    a clean CLI exit without a parseable stage report counts as a member failure.
+    """
+    failures: list[str] = []
+    reports: list[tuple[str, StageReport]] = []
+    # Track whether any failure was infrastructure (API/usage limit), so the
+    # caller can pause the stage for retry rather than treat it as a rework
+    # rejection and reroute upstream.
+    transient_hits: list[str] = []
+
+    def _run_agent(run_id: str) -> tuple[str, str, str, str]:
+        with Session(engine) as session:
+            worker = CliAgentExecutor(session)
+            run = session.get(AgentRun, run_id)
+            if not run:
+                raise ValueError(f"Agent run not found: {run_id}")
+            worker_ticket = session.get(Ticket, run.ticket_id)
+            if not worker_ticket:
+                raise ValueError(f"Ticket not found for run: {run_id}")
+            completed = worker.execute(
+                run,
+                worker_ticket,
+                advance_workflow=False,
+                skip_git_branch=True,
+            )
+            return (
+                completed.agent_id,
+                completed.status.value,
+                completed.stderr or "",
+                completed.stdout or "",
+            )
+
+    def _collect_result(_agent_label: str, result: tuple[str, str, str, str]) -> None:
+        agent_id, status_value, stderr, stdout = result
+        report = parse_stage_report(stdout)
+        if report:
+            reports.append((agent_id, report))
+        if status_value != RunStatus.SUCCEEDED.value:
+            failures.append(f"{agent_id}: {stderr or 'agent run failed'}")
+            if is_transient_failure(stdout, stderr):
+                transient_hits.append(agent_id)
+        elif report is None:
+            failures.append(f"{agent_id}: missing <<<LOREGARDEN_STAGE_REPORT>>> block")
+        elif report.status in ("fail", "needs_rework", "blocked"):
+            failures.append(f"{agent_id}: {report.reroute_context or 'agent reported failure'}")
+
+    from sqlmodel.pool import StaticPool
+
+    if isinstance(engine.pool, StaticPool):
+        for run in runs:
+            try:
+                _collect_result(run.agent_id, _run_agent(run.id))
+            except Exception as exc:
+                failures.append(f"{run.agent_id}: {exc}")
+    else:
+        with ThreadPoolExecutor(max_workers=max(1, len(runs))) as pool:
+            future_map = {pool.submit(_run_agent, run.id): run.agent_id for run in runs}
+            for future in as_completed(future_map):
+                agent_label = future_map[future]
+                try:
+                    _collect_result(agent_label, future.result())
+                except Exception as exc:
+                    failures.append(f"{agent_label}: {exc}")
+
+    return failures, reports, bool(transient_hits)
 
 
 def _handle_parallel_stage_failures(
