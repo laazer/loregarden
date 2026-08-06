@@ -144,3 +144,27 @@ tasks:
     dir: "{{.ROOT_DIR}}"
     cmds:
       - bash .lefthook/scripts/client-lint.sh {{.CLI_ARGS}}
+
+  hooks:client-dup:
+    desc: "jscpd duplication check for client/src (config: jscpd.json)"
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - bash .lefthook/scripts/client-dup-check.sh {{.CLI_ARGS}}
+
+  hooks:ts-organization:
+    desc: TypeScript organization guardrails for staged client files
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - bash .lefthook/scripts/ts-organization.sh {{.CLI_ARGS}}
+
+  hooks:py-mypy:
+    desc: mypy on staged server Python files
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - bash .lefthook/scripts/mypy-changed.sh {{.CLI_ARGS}}
+
+  hooks:format:
+    desc: "Format staged server/client files (ruff / oxlint --fix)"
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - bash .lefthook/scripts/format-staged.sh {{.CLI_ARGS}}

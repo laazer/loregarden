@@ -7,16 +7,14 @@
 # single Python root (server/) and React/oxlint client (client/), and scoped to
 # match .github/workflows/ci.yml exactly so pre-push failures predict CI failures.
 #
-# pre-commit — fast checks on staged files only:
-#   - py-review: Ruff check (E/W/F/I/UP/B/C4, server/pyproject.toml) on staged server/**/*.py
-#   - py-pylint: Pylint too-many-statements (max 50) on same staged Python
-#   - py-complexity: Ruff C901 McCabe (max 10), growth-only on touched functions
-#   - py-organization: file/class size caps, __init__.py minimalism, private-import ban,
-#     getattr/setattr ban (outside tests), DRY duplicate-function-body detection
-#   - py-defensive-normalization: flags str(...).strip().lower() comparisons (code smell)
-#   - py-git-subprocess: git/gh subprocess calls must route through run_git (GIT_DIR
-#     overrides cwd, so an unscrubbed call can hit the wrong repository)
-#   - client-lint: oxlint on staged client/**/*.{ts,tsx,js,jsx}
+# pre-commit — format first (priority 100), then parallel checks (priority 1):
+#   - format-staged: ruff format/fix (Python); oxlint --fix (client)
+#   - py-review / py-pylint / py-complexity / py-organization / …
+#   - py-mypy: mypy on staged server Python (skips tests + migrations)
+#   - client-lint / client-dup (jscpd) / ts-organization
+#
+# Lefthook runs equal-priority commands in parallel; higher priority finishes
+# first so format can restage before lint/org see the tree.
 #
 # pre-push — full suites, mirrors CI jobs (parallel: true):
 #   - server-tests: ruff check, ruff format --check, pytest -q -n auto (server/)
@@ -24,40 +22,68 @@
 #   - Opt-out: LEFTHOOK=0 skips all hooks; LEFTHOOK_EXCLUDE=<command> skips one command
 #
 # Requires:
-#   - server/.venv (or uv on PATH) — see server/pyproject.toml; uv sync --extra dev
+#   - server/.venv (or uv on PATH) — see server/pyproject.toml; uv sync
 #   - client/node_modules (or npm on PATH) — cd client && npm ci
 
 pre-commit:
   parallel: true
   commands:
+    format-staged:
+      name: Format staged (ruff / oxlint --fix)
+      priority: 100
+      glob: "{server/**/*.py,client/**/*.{ts,tsx,js,jsx}}"
+      run: bash .lefthook/scripts/format-staged.sh {staged_files}
+      stage_fixed: true
     py-review:
       name: Python (Ruff, server/pyproject.toml)
+      priority: 1
       glob: "server/**/*.py"
       run: bash .lefthook/scripts/py-review.sh {staged_files}
     py-pylint:
       name: Python (Pylint too-many-statements)
+      priority: 1
       glob: "server/**/*.py"
       run: bash .lefthook/scripts/py-pylint.sh {staged_files}
     py-complexity:
       name: Python (Ruff C901 McCabe complexity)
+      priority: 1
       glob: "server/**/*.py"
       run: bash .lefthook/scripts/py-complexity.sh {staged_files}
     py-organization:
       name: Python organization guardrails
+      priority: 1
       glob: "server/**/*.py"
       run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_organization_check.py {staged_files}
     py-defensive-normalization:
       name: Python defensive normalization check (code smell)
+      priority: 1
       glob: "server/**/*.py"
       run: bash .lefthook/scripts/detect-defensive-normalization.sh {staged_files}
     py-git-subprocess:
       name: Python git subprocess routing (GIT_DIR safety)
+      priority: 1
       glob: "server/**/*.py"
       run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_git_subprocess_check.py {staged_files}
+    py-mypy:
+      name: Python (mypy, staged files)
+      priority: 1
+      glob: "server/**/*.py"
+      run: bash .lefthook/scripts/mypy-changed.sh {staged_files}
     client-lint:
       name: Client (oxlint)
+      priority: 1
       glob: "client/**/*.{ts,tsx,js,jsx}"
       run: bash .lefthook/scripts/client-lint.sh {staged_files}
+    client-dup:
+      name: Client duplication (jscpd)
+      priority: 1
+      glob: "client/src/**/*.{ts,tsx}"
+      run: bash .lefthook/scripts/client-dup-check.sh {staged_files}
+    ts-organization:
+      name: TypeScript organization guardrails
+      priority: 1
+      glob: "client/**/*.{ts,tsx}"
+      run: bash .lefthook/scripts/ts-organization.sh {staged_files}
 
 pre-push:
   parallel: true

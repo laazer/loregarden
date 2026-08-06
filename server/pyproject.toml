@@ -26,6 +26,8 @@ dev = [
     "ruff>=0.9.0",
     # Pre-commit: function size (too-many-statements / R0915); see [tool.pylint].
     "pylint>=3.3",
+    # Pre-commit: mypy on staged server files (see [tool.mypy]).
+    "mypy>=1.14",
 ]
 
 [dependency-groups]
@@ -35,6 +37,7 @@ dev = [
     "pytest-xdist>=3.6.0",
     "ruff>=0.9.0",
     "pylint>=3.3",
+    "mypy>=1.14",
 ]
 # Only pulled in by scripts/build-backend.sh when packaging the desktop
 # sidecar — not part of the default dev sync, so `uv run`/tests stay fast.
@@ -89,3 +92,42 @@ enable = ["too-many-statements"]
 
 [tool.pylint.design]
 max-statements = 50
+
+# Gradual typing: staged-file hook only. Existing call-site / annotation debt is
+# large; this starter gate fails on definite name/import breaks, not arg-type
+# noise. Tighten disable_error_code as modules get annotated.
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_ignores = true
+check_untyped_defs = false
+allow_untyped_defs = true
+allow_incomplete_defs = true
+no_implicit_optional = false
+disable_error_code = [
+    "arg-type",
+    "assignment",
+    "attr-defined",
+    "call-arg",
+    "return-value",
+    "union-attr",
+    "var-annotated",
+    "index",
+    "operator",
+    "list-item",
+    "dict-item",
+    "typeddict-item",
+    "override",
+    "misc",
+    "type-arg",
+    "valid-type",
+    "import-untyped",
+    "no-any-return",
+    "no-untyped-def",
+    "no-untyped-call",
+]
+exclude = [
+    "tests/",
+    "^.*/migrations(_.*)?\\.py$",
+]
