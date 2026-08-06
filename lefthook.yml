@@ -10,6 +10,7 @@
 # pre-commit — fast checks on staged files only:
 #   - py-review: Ruff check (E/W/F/I/UP/B/C4, server/pyproject.toml) on staged server/**/*.py
 #   - py-pylint: Pylint too-many-statements (max 50) on same staged Python
+#   - py-complexity: Ruff C901 McCabe (max 10), growth-only on touched functions
 #   - py-organization: file/class size caps, __init__.py minimalism, private-import ban,
 #     getattr/setattr ban (outside tests), DRY duplicate-function-body detection
 #   - py-defensive-normalization: flags str(...).strip().lower() comparisons (code smell)
@@ -37,6 +38,10 @@ pre-commit:
       name: Python (Pylint too-many-statements)
       glob: "server/**/*.py"
       run: bash .lefthook/scripts/py-pylint.sh {staged_files}
+    py-complexity:
+      name: Python (Ruff C901 McCabe complexity)
+      glob: "server/**/*.py"
+      run: bash .lefthook/scripts/py-complexity.sh {staged_files}
     py-organization:
       name: Python organization guardrails
       glob: "server/**/*.py"

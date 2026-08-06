@@ -66,6 +66,8 @@ src = ["loregarden"]
 
 [tool.ruff.lint]
 # E/W: pycodestyle, F: pyflakes, I: isort, UP: pyupgrade, B: bugbear, C4: comprehensions
+# C901 (McCabe) is *not* in select — 50+ pre-existing hits. Growth is gated by the
+# diff-scoped py-complexity pre-commit hook (ruff_complexity_diff_filter.py).
 select = ["E", "W", "F", "I", "UP", "B", "C4"]
 ignore = [
     "E501",  # line length handled by the formatter, not enforced as a lint error
@@ -73,6 +75,10 @@ ignore = [
     "E712",  # `Column == True/False` is SQLAlchemy/SQLModel filter syntax, not a bug;
              # `is True` would break query building since `is` can't be overloaded
 ]
+
+[tool.ruff.lint.mccabe]
+# Used by py-complexity (Ruff C901). Default is 10; keep it explicit.
+max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B", "E402"]

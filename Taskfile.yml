@@ -127,6 +127,12 @@ tasks:
     cmds:
       - bash .lefthook/scripts/py-pylint.sh {{.CLI_ARGS}}
 
+  hooks:py-complexity:
+    desc: Ruff C901 McCabe complexity (growth-only) for staged Python
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - bash .lefthook/scripts/py-complexity.sh {{.CLI_ARGS}}
+
   hooks:py-organization:
     desc: Python organization guardrails for staged files
     dir: "{{.ROOT_DIR}}"
