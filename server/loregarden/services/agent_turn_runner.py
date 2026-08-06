@@ -174,9 +174,7 @@ def run_agent_turn(request: AgentTurnRequest) -> AgentTurnResult:
         reply, run_id = _run_oneshot(request, read_only=False)
     else:
         reply, run_id = _run_oneshot(request, read_only=True)
-    return AgentTurnResult(
-        reply=reply, strategy=strategy, adapter=selected, run_id=run_id
-    )
+    return AgentTurnResult(reply=reply, strategy=strategy, adapter=selected, run_id=run_id)
 
 
 def _start_run(request: AgentTurnRequest) -> AgentRun:
@@ -190,9 +188,7 @@ def _start_run(request: AgentTurnRequest) -> AgentRun:
     if not stage_key:
         raise ValueError("stage_key is required when creating a run")
 
-    if find_active_workspace_chat_run(
-        request.session, request.workspace.id, stage_key=stage_key
-    ):
+    if find_active_workspace_chat_run(request.session, request.workspace.id, stage_key=stage_key):
         message = "An agent turn is already running — wait for it to finish."
         if request.conflict_error:
             raise request.conflict_error(message)
@@ -278,9 +274,7 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
     reply = extract_triage_reply(result.stdout)[: request.profile.reply_cap]
     if result.status != RunStatus.SUCCEEDED:
         if request.manage_run:
-            _finish_run(
-                request.session, run.id, status=result.status, stderr=result.stderr
-            )
+            _finish_run(request.session, run.id, status=result.status, stderr=result.stderr)
         raise RuntimeError(result.stderr or f"Agent run {result.status.value}")
     if not reply:
         if request.manage_run:
@@ -312,9 +306,7 @@ def _run_oneshot(request: AgentTurnRequest, *, read_only: bool) -> tuple[str, st
             user_prompt=request.user_prompt,
             run_id="" if read_only else run_id,
             workspace_slug=request.workspace.slug or "",
-            granted_tools=(
-                None if read_only else list(request.agent.get("mcp_tools") or [])
-            ),
+            granted_tools=(None if read_only else list(request.agent.get("mcp_tools") or [])),
             read_only=read_only,
             thinking_sink=thinking,
         )

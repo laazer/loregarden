@@ -22,10 +22,7 @@ def _build_metrics(session: Session, *, workspace_id: str | None, range: str) ->
     stmt = (
         select(AgentRun, Ticket)
         .join(Ticket, Ticket.id == AgentRun.ticket_id)
-        .where(
-            (AgentRun.finished_at.isnot(None))
-            & (AgentRun.finished_at >= cutoff_date)
-        )
+        .where((AgentRun.finished_at.isnot(None)) & (AgentRun.finished_at >= cutoff_date))
     )
     if workspace_id:
         stmt = stmt.where(AgentRun.workspace_id == workspace_id)

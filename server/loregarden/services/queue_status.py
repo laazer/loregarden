@@ -77,9 +77,7 @@ def _ancestry_chain(ticket: Ticket, by_id: dict[str, Ticket]) -> list[dict[str, 
     return [_ticket_ref(node) for node in chain]
 
 
-def _descendant_depth(
-    ticket_id: str, root_id: str, by_id: dict[str, Ticket]
-) -> int | None:
+def _descendant_depth(ticket_id: str, root_id: str, by_id: dict[str, Ticket]) -> int | None:
     """Steps from ``root_id`` down to ``ticket_id``, or None when not under root."""
     if ticket_id == root_id:
         return 0

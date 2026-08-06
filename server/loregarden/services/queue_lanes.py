@@ -305,9 +305,7 @@ class QueueLaneService:
         self.slots.initialize_slots()
         slots = list(self.session.exec(select(AgentSlot)).all())
         held = {
-            slot.current_orchestration_run_id
-            for slot in slots
-            if slot.current_orchestration_run_id
+            slot.current_orchestration_run_id for slot in slots if slot.current_orchestration_run_id
         }
         freed: list[int] = []
         for slot in slots:
@@ -360,8 +358,7 @@ class QueueLaneService:
                 .where(col(OrchestrationRun.status).in_(LIVE_ORCHESTRATION_STATUSES))
                 .order_by(col(OrchestrationRun.started_at).asc())
             ).all()
-            if run.id not in held
-            and not self._ticket_covered_by_ancestor_slot(run.ticket_id, held)
+            if run.id not in held and not self._ticket_covered_by_ancestor_slot(run.ticket_id, held)
         ]
         if not orphans:
             return []

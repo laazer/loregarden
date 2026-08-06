@@ -325,6 +325,7 @@ export function Dashboard() {
         stop_at_stage_key?: string;
         auto_approve?: boolean;
         slot_number?: number | null;
+        timeout_seconds?: number;
       };
     }) => api.orchestrate(ticketId, options),
     onSuccess: (data, { ticketId }) => {

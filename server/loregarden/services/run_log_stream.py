@@ -12,9 +12,7 @@ from loregarden.models.domain import AgentRun, Artifact, RunStatus, Ticket
 from sqlmodel import Session, select
 
 
-def _format_codex_stream_payload(
-    msg_type: str, payload: dict[str, Any]
-) -> tuple[str, str] | None:
+def _format_codex_stream_payload(msg_type: str, payload: dict[str, Any]) -> tuple[str, str] | None:
     """Format Codex ``exec --json`` events (thread/turn/item.*)."""
     if msg_type == "thread.started":
         thread_id = payload.get("thread_id") or ""

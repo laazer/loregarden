@@ -123,9 +123,7 @@ def test_a_started_lane_entry_is_history_not_running(db_session):
     """``STARTED`` means the lane released — the trap that made blocked tickets lie."""
     ws = _workspace(db_session)
     ticket = _ticket(db_session, ws, "Q-DONE", TicketState.BLOCKED)
-    db_session.add(
-        QueuedRun(workspace_id=ws.id, ticket_id=ticket.id, status=QueuePosition.STARTED)
-    )
+    db_session.add(QueuedRun(workspace_id=ws.id, ticket_id=ticket.id, status=QueuePosition.STARTED))
     db_session.commit()
 
     activity = classify_ticket_activity(db_session, [ticket.id])
