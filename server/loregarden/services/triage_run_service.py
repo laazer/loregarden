@@ -23,6 +23,7 @@ from loregarden.services.chat_thinking import (
     finish_chat_turn_thinking,
     with_thinking_part,
 )
+from loregarden.services.cli_agent_runner import stub_response
 from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.cli_settings import resolve_effective_adapter
 from loregarden.services.run_concurrency import find_active_run
@@ -117,6 +118,11 @@ class TriageTurnExecutor:
             return
 
         effective_workspace = apply_triage_runtime_overrides(workspace, ticket)
+        stub = stub_response(TRIAGE_CLI_PROFILE)
+        if stub is not None:
+            self._finish(run, ticket, status=RunStatus.SUCCEEDED, reply=stub[:8000], stderr="")
+            return
+
         agent = get_agent(TRIAGE_AGENT_ID) or {}
         selected = resolve_effective_adapter(
             agent_adapter=agent.get("adapter", "claude"), workspace=effective_workspace

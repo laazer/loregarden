@@ -740,7 +740,7 @@ def test_branch_chat_uses_permission_bridge_for_checked_out_branch(
     triage_session: Session,
     monkeypatch,
 ):
-    from loregarden.services import branch_triage_chat_service
+    from loregarden.services import agent_turn_runner, branch_triage_chat_service
 
     captured: dict[str, object] = {}
     monkeypatch.delenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", raising=False)
@@ -766,8 +766,20 @@ def test_branch_chat_uses_permission_bridge_for_checked_out_branch(
             stderr="",
         )
 
-    monkeypatch.setattr(branch_triage_chat_service, "build_interactive_invocation", fake_invocation)
-    monkeypatch.setattr(branch_triage_chat_service.PermissionBridgeRunner, "run", fake_bridge)
+    monkeypatch.setattr(agent_turn_runner, "build_interactive_invocation", fake_invocation)
+    monkeypatch.setattr(agent_turn_runner.PermissionBridgeRunner, "run", fake_bridge)
+
+    triage_session.add(
+        AgentRun(
+            id="run_branch",
+            run_code="run_branch",
+            workspace_id=triage_workspace.id,
+            agent_id="triage",
+            stage_key=BRANCH_TRIAGE_STAGE_KEY,
+            status=RunStatus.RUNNING,
+        )
+    )
+    triage_session.commit()
 
     reply = invoke_branch_triage_model(
         triage_session,
@@ -790,7 +802,7 @@ def test_branch_chat_stays_advisory_without_a_checkout(
     triage_session: Session,
     monkeypatch,
 ):
-    from loregarden.services import branch_triage_chat_service
+    from loregarden.services import agent_turn_runner, branch_triage_chat_service
 
     captured: dict[str, str] = {}
     monkeypatch.delenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", raising=False)
@@ -804,7 +816,7 @@ def test_branch_chat_stays_advisory_without_a_checkout(
         captured["read_only"] = str(_kwargs.get("read_only"))
         return "check it out first"
 
-    monkeypatch.setattr(branch_triage_chat_service, "run_cli_agent_turn", fake_one_shot)
+    monkeypatch.setattr(agent_turn_runner, "run_cli_agent_turn", fake_one_shot)
 
     reply = invoke_branch_triage_model(
         triage_session,

@@ -111,6 +111,7 @@ def test_triage_invoke_uses_runtime_override(client: TestClient, monkeypatch):
 
         def __init__(self) -> None:
             self.stdout = FakeStdout("runtime override ok")
+            self.stderr = None
 
         def poll(self):
             return 0 if not self.stdout._lines else None

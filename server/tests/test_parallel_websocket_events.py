@@ -96,14 +96,47 @@ class TestParallelQueueEventEmissions:
 
     async def test_promote_from_queue_emits_queue_promoted(self, db_session):
         """Verify queue_promoted event emitted when run promoted."""
+        from loregarden.models.domain import AgentSlot
+        from sqlmodel import select
+
+        ws = Workspace(id="ws-1", slug="ws-1", name="Test")
+        db_session.add(ws)
+        db_session.add_all(
+            [
+                AgentRun(
+                    id="run-1",
+                    run_code="run-1",
+                    ticket_id="ticket-1",
+                    workspace_id="ws-1",
+                    agent_id="dev",
+                ),
+                AgentRun(
+                    id="run-2",
+                    run_code="run-2",
+                    ticket_id="ticket-2",
+                    workspace_id="ws-1",
+                    agent_id="dev",
+                ),
+            ]
+        )
+        db_session.commit()
+
         with (
             patch("loregarden.services.parallel_queue.emit_queue_promoted") as mock_promoted,
             patch("loregarden.services.parallel_queue.emit_execution_update"),
+            patch("loregarden.services.run_service.schedule_agent_run"),
         ):
-            service = ParallelQueueService(db_session, max_concurrent=1)
+            # Collapse the lifespan-seeded pool to a single slot so the second
+            # queue_run waits and completion can promote it. Keeping max_concurrent
+            # below the real pool size makes on_run_complete delete the slot as
+            # "surplus" instead of freeing it for the waiter.
+            for slot in list(db_session.exec(select(AgentSlot)).all()):
+                db_session.delete(slot)
+            db_session.commit()
 
-            # Setup: fill slot, then queue a run
+            service = ParallelQueueService(db_session, max_concurrent=1)
             service.initialize_slots()
+
             await service.queue_run("ws-1", "ticket-1", "run-1")
             await service.queue_run("ws-1", "ticket-2", "run-2")
 

@@ -522,7 +522,14 @@ class TestQueuePromotion:
         db_session.add(ws)
         db_session.commit()
 
-        slot = AgentSlot(workspace_id="ws-promote-target", slot_number=1, is_available=True)
+        # Lifespan reconcile seeds the shared global pool. Occupy every free
+        # slot so this test's promote claim is the only capacity left.
+        for existing in db_session.exec(select(AgentSlot)).all():
+            existing.is_available = False
+            existing.current_run_id = f"busy-{existing.slot_number}"
+            db_session.add(existing)
+
+        slot = AgentSlot(workspace_id="ws-promote-target", slot_number=99, is_available=True)
         head = QueuedRun(
             run_id="run-head",
             ticket_id="ticket-head",
@@ -545,11 +552,11 @@ class TestQueuePromotion:
         assert result["status"] == "promoted"
         assert result["promoted_run"]["run_id"] == "run-target"
 
-        # The requested run took the slot; the head stayed queued.
+        # The requested run took a slot; the head stayed queued.
         updated_slot = db_session.exec(
-            select(AgentSlot).where(AgentSlot.workspace_id == "ws-promote-target")
+            select(AgentSlot).where(AgentSlot.current_run_id == "run-target")
         ).first()
-        assert updated_slot.current_run_id == "run-target"
+        assert updated_slot is not None
         assert updated_slot.is_available is False
 
         updated_head = db_session.exec(
@@ -570,9 +577,14 @@ class TestQueuePromotion:
         db_session.add(ws)
         db_session.commit()
 
+        # Occupy the lifespan-seeded pool plus an explicit busy row.
+        for existing in db_session.exec(select(AgentSlot)).all():
+            existing.is_available = False
+            existing.current_run_id = f"busy-{existing.slot_number}"
+            db_session.add(existing)
         slot = AgentSlot(
             workspace_id="ws-promote-full",
-            slot_number=1,
+            slot_number=99,
             is_available=False,
             current_run_id=None,
         )

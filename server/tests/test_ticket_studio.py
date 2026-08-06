@@ -304,6 +304,7 @@ def test_ticket_studio_scope_survives_large_json_payload(client: TestClient, mon
 
         def __init__(self) -> None:
             self.stdout = FakeStdout(large_reply)
+            self.stderr = None
 
         def poll(self):
             return 0 if not self.stdout._lines else None

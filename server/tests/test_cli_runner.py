@@ -217,7 +217,7 @@ def test_resolve_codex_adapter(tmp_path, monkeypatch):
 
     assert inv.adapter == "codex"
     assert inv.argv[0] == "codex"
-    assert inv.argv[:4] == ["codex", "exec", "--cd", str(workspace)]
+    assert inv.argv[:5] == ["codex", "exec", "--json", "--cd", str(workspace)]
     assert inv.argv[inv.argv.index("--model") + 1] == "gpt-5"
     assert "-c" in inv.argv
     assert any(arg.startswith("mcp_servers.loregarden.command=") for arg in inv.argv)
