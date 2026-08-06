@@ -8,53 +8,65 @@ from datetime import datetime, timezone
 from typing import Any
 
 from loregarden.db.session import engine
+from loregarden.dot_line import (
+    CMD,
+    ERR,
+    FAIL,
+    OK,
+    OUT,
+    RUN,
+    SYS,
+    TOOL,
+    LogLine,
+    clip,
+    kv,
+    kv_space,
+    shell,
+)
 from loregarden.models.domain import AgentRun, Artifact, RunStatus, Ticket
 from sqlmodel import Session, select
 
 
-def _format_codex_stream_payload(msg_type: str, payload: dict[str, Any]) -> tuple[str, str] | None:
+def _format_codex_stream_payload(msg_type: str, payload: dict[str, Any]) -> LogLine | None:
     """Format Codex ``exec --json`` events (thread/turn/item.*)."""
     if msg_type == "thread.started":
         thread_id = payload.get("thread_id") or ""
-        return "SYS", f"codex thread · {thread_id}" if thread_id else "codex thread started"
+        if thread_id:
+            return SYS / "codex thread" / thread_id
+        return SYS / "codex thread started"
     if msg_type == "turn.started":
-        return "SYS", "codex turn started"
+        return SYS / "codex turn started"
     if msg_type == "turn.completed":
         usage = payload.get("usage") or {}
         if isinstance(usage, dict) and usage:
-            return "SYS", (
-                "codex turn done · "
-                f"in={usage.get('input_tokens', '?')} out={usage.get('output_tokens', '?')}"
+            return (
+                SYS
+                / "codex turn done"
+                / kv_space(
+                    in_=usage.get("input_tokens", "?"),
+                    out=usage.get("output_tokens", "?"),
+                )
             )
-        return "SYS", "codex turn done"
+        return SYS / "codex turn done"
     if msg_type not in {"item.started", "item.completed"}:
         return None
 
     item = payload.get("item") or {}
     if not isinstance(item, dict):
-        return "SYS", msg_type
+        return SYS / msg_type
     item_type = str(item.get("type") or "item")
     if item_type == "agent_message":
-        text = item.get("text")
-        if isinstance(text, str) and text.strip():
-            return "OUT", text.strip()
-        return None
+        return OUT.maybe(item.get("text"))
     if item_type == "command_execution":
         command = str(item.get("command") or "").strip()
         status = str(item.get("status") or item.get("exit_code") or "").strip()
-        label = command[:180] or "command"
         if msg_type == "item.started":
-            return "TOOL", f"$ {label}"
-        suffix = f" · {status}" if status else ""
-        output = item.get("aggregated_output")
-        if isinstance(output, str) and output.strip():
-            # Keep the tool line short; dump a trimmed stdout snippet after.
-            return "TOOL", f"$ {label}{suffix}\n{output.strip()[:2000]}"
-        return "TOOL", f"$ {label}{suffix}"
-    return "TOOL", f"{item_type}"
+            return TOOL / shell(command)
+        return (TOOL / shell(command) / status).with_body(item.get("aggregated_output"))
+    return TOOL / item_type
 
 
-def format_stream_payload(payload: dict[str, Any]) -> tuple[str, str] | None:
+def format_stream_payload(payload: dict[str, Any]) -> LogLine | None:
     """Extract a human-readable log line from Claude/Cursor/Codex stream events."""
     msg_type = payload.get("type", "")
 
@@ -67,13 +79,11 @@ def format_stream_payload(payload: dict[str, Any]) -> tuple[str, str] | None:
                 if text:
                     parts.append(str(text))
         if parts:
-            return "OUT", " ".join(parts)
+            return OUT / " ".join(parts)
 
     if msg_type == "content_block_delta":
         delta = payload.get("delta") or {}
-        text = delta.get("text") or delta.get("thinking")
-        if text:
-            return "OUT", str(text)
+        return OUT.maybe(delta.get("text") or delta.get("thinking"))
 
     # Cursor stream-partial-output emits token deltas as thinking events.
     # Handled by RunLogStreamer.append_stream_line (coalesced); do not treat as
@@ -83,19 +93,17 @@ def format_stream_payload(payload: dict[str, Any]) -> tuple[str, str] | None:
 
     if msg_type == "result":
         result = payload.get("result")
-        if isinstance(result, str) and result.strip():
-            return "OUT", result.strip()
+        if isinstance(result, str):
+            return OUT.maybe(result)
         if isinstance(result, dict):
-            text = result.get("text") or result.get("output")
-            if text:
-                return "OUT", str(text)
+            return OUT.maybe(result.get("text") or result.get("output"))
 
     if msg_type == "system":
         subtype = payload.get("subtype") or ""
         if subtype == "init":
             model = payload.get("model") or payload.get("permissionMode")
             if model:
-                return "SYS", f"session init · {model}"
+                return SYS / "session init" / model
         return None
 
     codex = _format_codex_stream_payload(msg_type, payload)
@@ -104,13 +112,9 @@ def format_stream_payload(payload: dict[str, Any]) -> tuple[str, str] | None:
 
     if msg_type in {"tool_use", "tool_result"}:
         name = payload.get("tool_name") or payload.get("name") or msg_type
-        return "TOOL", str(name)[:200]
+        return TOOL / clip(name, 200)
 
-    text = payload.get("text") or payload.get("message")
-    if isinstance(text, str) and text.strip():
-        return "OUT", text.strip()
-
-    return None
+    return OUT.maybe(payload.get("text") or payload.get("message"))
 
 
 class RunLogStreamer:
@@ -237,21 +241,23 @@ class RunLogStreamer:
         self._hydrate()
         has_run = any(line.get("tag") == "RUN" for line in self._lines)
         if not has_run:
-            self.append(
-                "RUN", f"{self.agent_id} invoked · skill={self.skill_name or '—'}", force=True
+            self.append_line(
+                RUN / f"{self.agent_id} invoked" / kv("skill", self.skill_name or "—"),
+                force=True,
             )
         cmd_updated = False
         if command:
+            cmd_text = clip(command, 300)
             updated = False
             for line in self._lines:
                 if line.get("tag") == "CMD":
-                    if line["text"] != command[:300]:
-                        line["text"] = command[:300]
+                    if line["text"] != cmd_text:
+                        line["text"] = cmd_text
                         cmd_updated = True
                     updated = True
                     break
             if not updated:
-                self.append("CMD", command[:300], force=True)
+                self.append_line(CMD / cmd_text, force=True)
                 cmd_updated = True
         if cmd_updated:
             self._persist()
@@ -259,6 +265,9 @@ class RunLogStreamer:
 
     def append(self, tag: str, text: str, *, force: bool = False) -> None:
         self._append_chunks(tag, text, force=force)
+
+    def append_line(self, line: LogLine, *, force: bool = False) -> None:
+        self._append_chunks(line.tag, line.text, force=force)
 
     def _ingest_delta_text(self, text: str) -> None:
         if self.partial_output:
@@ -334,11 +343,11 @@ class RunLogStreamer:
             payload = json.loads(raw_line)
         except json.JSONDecodeError:
             self._flush_stream_buffer(force=True)
-            self.append("OUT", raw_line, force=True)
+            self.append_line(OUT / raw_line, force=True)
             return
         if not isinstance(payload, dict):
             self._flush_stream_buffer(force=True)
-            self.append("OUT", raw_line, force=True)
+            self.append_line(OUT / raw_line, force=True)
             return
 
         msg_type = payload.get("type", "")
@@ -370,13 +379,12 @@ class RunLogStreamer:
 
         formatted = format_stream_payload(payload)
         if formatted:
-            tag, text = formatted
-            if tag == "OUT":
-                self._prefer_stream_text(text)
+            if formatted.tag == "OUT":
+                self._prefer_stream_text(formatted.text)
                 self._flush_stream_buffer(force=True)
                 self._update_live_from_buffer()
             else:
-                self.append(tag, text)
+                self.append_line(formatted)
         elif payload.get("type") not in {"control_request", "sdk_control_request", "ping"}:
             self.set_live(f"{payload.get('type', 'event')}…")
 
@@ -403,11 +411,11 @@ class RunLogStreamer:
             self._persist()
             return
         for line in stderr.strip().splitlines()[:30]:
-            self.append("ERR", line, force=False)
-        tag = "OK" if status == RunStatus.SUCCEEDED else "FAIL"
-        self.append(
-            tag, "run completed" if status == RunStatus.SUCCEEDED else "run failed", force=True
-        )
+            self.append_line(ERR / line, force=False)
+        if status == RunStatus.SUCCEEDED:
+            self.append_line(OK / "run completed", force=True)
+        else:
+            self.append_line(FAIL / "run failed", force=True)
         self._stream_buffer = ""
         self._live = ""
         self._persist()

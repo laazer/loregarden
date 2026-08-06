@@ -32,6 +32,23 @@ def test_format_stream_payload_codex_json_events():
             "item": {"type": "agent_message", "text": "Done."},
         }
     ) == ("OUT", "Done.")
+    assert format_stream_payload(
+        {
+            "type": "turn.completed",
+            "usage": {"input_tokens": 10, "output_tokens": 4},
+        }
+    ) == ("SYS", "codex turn done · in=10 out=4")
+    assert format_stream_payload(
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "command": "ls",
+                "status": "completed",
+                "aggregated_output": "a\nb\n",
+            },
+        }
+    ) == ("TOOL", "$ ls · completed\na\nb")
 
 
 def test_run_log_streamer_updates_cmd_after_bootstrap():

@@ -31,6 +31,10 @@ MAX_FILE_LINES = 1500
 MAX_CLASS_LINES = 1000
 MIN_DUPLICATE_BODY_LINES = 8
 MAX_INIT_LINES = 120
+# Clustered mid-dot f-strings in one function ("a · {b}", " · {x} if x") are the
+# same DRY smell as duplicate bodies — extract Dot / mid_dot instead of hand-rolling.
+MIN_MID_DOT_FSTRINGS = 3
+_MID_DOT = "·"
 
 # Directories that never contribute catalog entries; pruned from the walk so we do not
 # descend into them. server/.venv alone holds >1400 vendored .py files.
@@ -136,6 +140,7 @@ def check_file(
                 )
     errors.extend(private_import_errors(py_file, tree, touched_lines))
     errors.extend(dynamic_access_errors(py_file, tree, touched_lines))
+    errors.extend(mid_dot_fstring_errors(py_file, tree, touched_lines))
 
     duplicate_groups = find_duplicate_function_bodies(tree, content)
     for funcs in duplicate_groups:
@@ -146,6 +151,62 @@ def check_file(
             f"{py_file}: duplicated function bodies detected ({refs}); extract shared helper to keep DRY"
         )
 
+    return errors
+
+
+def _joined_str_has_mid_dot(node: ast.JoinedStr) -> bool:
+    """True when an f-string hard-codes the mid-dot separator in a constant piece."""
+    for value in node.values:
+        if isinstance(value, ast.Constant) and isinstance(value.value, str) and _MID_DOT in value.value:
+            return True
+    return False
+
+
+def _mid_dot_sites_in_function(fn: ast.AST) -> List[int]:
+    """Line numbers of f-strings that hard-code the mid-dot separator."""
+    return [
+        node.lineno or 0
+        for node in ast.walk(fn)
+        if isinstance(node, ast.JoinedStr) and _joined_str_has_mid_dot(node) and node.lineno
+    ]
+
+
+def mid_dot_fstring_errors(
+    py_file: Path, tree: ast.AST, touched_lines: Optional[Set[int]]
+) -> List[str]:
+    """Flag functions that hand-roll several mid-dot labels instead of using Dot.
+
+    Diff-scoped: only fails when at least one mid-dot f-string overlaps the
+    staged lines. ``Dot`` / ``mid_dot`` join via ``" · ".join(...)`` (a Call on
+    a Constant), so they do not self-trigger.
+    """
+    if _is_test_path(py_file):
+        return []
+    if py_file.name == "dot_line.py":
+        return []
+
+    errors: List[str] = []
+    for node in tree.body:
+        funcs: List[ast.AST] = []
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            funcs.append(node)
+        elif isinstance(node, ast.ClassDef):
+            for item in node.body:
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    funcs.append(item)
+        for fn in funcs:
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            sites = _mid_dot_sites_in_function(fn)
+            if len(sites) < MIN_MID_DOT_FSTRINGS:
+                continue
+            if not any(ln in (touched_lines or set()) for ln in sites):
+                continue
+            errors.append(
+                f"{py_file}:{fn.lineno}: function `{fn.name}` hand-rolls {len(sites)} "
+                f"mid-dot labels (min {MIN_MID_DOT_FSTRINGS}); use "
+                f"`loregarden.dot_line.Dot` / `mid_dot` instead of f-strings with ` · `"
+            )
     return errors
 
 
