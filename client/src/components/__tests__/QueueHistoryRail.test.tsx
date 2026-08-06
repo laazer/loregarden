@@ -18,6 +18,8 @@ jest.mock('../../lib/useAppNavigation', () => ({
 const blockedEntry = {
   entry_id: 'entry-1',
   workspace_id: 'ws-1',
+  workspace_slug: 'blobert',
+  workspace_name: 'blobert',
   slot_number: 2,
   entry_kind: 'orchestration',
   stage_key: '',
@@ -53,18 +55,18 @@ describe('QueueHistoryRail', () => {
   });
 
   it('badges a released entry with its outcome, not its queue status', async () => {
-    render(<QueueHistoryRail workspaceId="ws-1" />);
+    render(<QueueHistoryRail />);
 
     expect(await screen.findByText('Blocked')).toBeInTheDocument();
     expect(screen.queryByText(/started/i)).not.toBeInTheDocument();
   });
 
-  it('shows the stage, duration, retries and failure reason', async () => {
-    render(<QueueHistoryRail workspaceId="ws-1" />);
+  it('shows the workspace, stage, duration, retries and failure reason', async () => {
+    render(<QueueHistoryRail />);
 
     expect(await screen.findByText('Generate CHECKPOINTS.md')).toBeInTheDocument();
     expect(
-      screen.getByText(/57-generate-checkpoints · slot 2 · test_design · 5m · 1 retries/),
+      screen.getByText(/blobert · 57-generate-checkpoints · slot 2 · test_design · 5m · 1 retries/),
     ).toBeInTheDocument();
     expect(
       screen.getByText('Child ticket blocked: jailed creature persistence'),
@@ -72,7 +74,7 @@ describe('QueueHistoryRail', () => {
   });
 
   it('navigates to the ticket a card names', async () => {
-    render(<QueueHistoryRail workspaceId="ws-1" />);
+    render(<QueueHistoryRail />);
 
     fireEvent.click(await screen.findByText('Generate CHECKPOINTS.md'));
 
@@ -80,20 +82,21 @@ describe('QueueHistoryRail', () => {
   });
 
   it('refetches with the outcome filter the operator picked', async () => {
-    render(<QueueHistoryRail workspaceId="ws-1" />);
+    render(<QueueHistoryRail />);
     await screen.findByText('Blocked');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Failed' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Failed' }));
 
     await waitFor(() => {
       const urls = (global.fetch as jest.Mock).mock.calls.map((call) => String(call[0]));
       expect(urls.some((url) => url.includes('outcome=failed'))).toBe(true);
+      expect(urls.every((url) => !url.includes('workspace_id='))).toBe(true);
     });
   });
 
   it('says so when no lane has run anything', async () => {
     mockPage([]);
-    render(<QueueHistoryRail workspaceId="ws-1" />);
+    render(<QueueHistoryRail />);
 
     expect(await screen.findByText('Nothing has run through a lane yet.')).toBeInTheDocument();
   });

@@ -92,6 +92,14 @@ def test_startup_resume_preserves_failed_rows_and_run_options(isolated_db):
                 )
             ]
         )
+        from loregarden.models.domain import AgentSlot
+
+        claim = OrchestrationCallbackService(session).get_active_orchestration_run(ticket.id)
+        assert claim is not None
+        held = session.exec(
+            select(AgentSlot).where(AgentSlot.current_orchestration_run_id == claim.id)
+        ).one()
+        assert held.is_available is False
 
 
 def test_startup_resume_includes_a_stranded_stage(isolated_db):
@@ -191,12 +199,14 @@ def test_interrupted_resumes_execute_serially():
             driver=OrchestrationDriver.BUILTIN_AUTOPILOT,
             auto_approve=True,
             stop_at_stage_key="test",
+            timeout_seconds=None,
         ),
         call(
             "ticket-b",
             driver=OrchestrationDriver.BUILTIN_AUTOPILOT,
             auto_approve=False,
             stop_at_stage_key=None,
+            timeout_seconds=None,
         ),
     ]
 

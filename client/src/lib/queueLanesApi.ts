@@ -31,7 +31,12 @@ export interface AddToLaneResult {
 export const queueLanesApi = {
   add: (
     slotNumber: number,
-    body: { ticket_id: string; auto_approve?: boolean; stop_at_stage_key?: string },
+    body: {
+      ticket_id: string;
+      auto_approve?: boolean;
+      stop_at_stage_key?: string;
+      timeout_seconds?: number;
+    },
   ) =>
     laneRequest<AddToLaneResult>(`/${slotNumber}/entries`, {
       method: "POST",

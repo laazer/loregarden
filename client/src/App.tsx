@@ -16,6 +16,7 @@ import { QueuePage } from "./pages/QueuePage";
 import { StudioPage } from "./pages/StudioPage";
 import { navigateToPage, pageFromPath } from "./lib/useAppNavigation";
 import { createQueryClient } from "./api/queryClient";
+import { QueueStatusProvider } from "./state/QueueStatusContext";
 import "./index.css";
 
 const queryClient = createQueryClient();
@@ -68,26 +69,28 @@ function AppShell() {
   const errorBoundaryKey = pageFromPath(location.pathname);
 
   return (
-    <AppLayout>
-      <PageErrorBoundary resetKey={errorBoundaryKey}>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/chat" element={<BaxterChatPage />} />
-          <Route path="/console" element={<Dashboard />} />
-          <Route path="/tickets/:ticketId" element={<TicketTabRedirect />} />
-          <Route path="/tickets/:ticketId/:artifactTab" element={<Dashboard />} />
-          <Route path="/studio" element={<StudioSectionRedirect />} />
-          <Route path="/studio/:studioSection/:resourceId/*" element={<StudioPage />} />
-          <Route path="/studio/:studioSection/*" element={<StudioPage />} />
-          <Route path="/editor/*" element={<EditorPage />} />
-          <Route path="/queue/*" element={<QueuePage />} />
-          <Route path="/mcp" element={<McpGatewayPage />} />
-          <Route path="/branch-triage" element={<BranchTriagePage />} />
-          <Route path="/branch-triage/*" element={<BranchTriagePage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </PageErrorBoundary>
-    </AppLayout>
+    <QueueStatusProvider>
+      <AppLayout>
+        <PageErrorBoundary resetKey={errorBoundaryKey}>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/chat" element={<BaxterChatPage />} />
+            <Route path="/console" element={<Dashboard />} />
+            <Route path="/tickets/:ticketId" element={<TicketTabRedirect />} />
+            <Route path="/tickets/:ticketId/:artifactTab" element={<Dashboard />} />
+            <Route path="/studio" element={<StudioSectionRedirect />} />
+            <Route path="/studio/:studioSection/:resourceId/*" element={<StudioPage />} />
+            <Route path="/studio/:studioSection/*" element={<StudioPage />} />
+            <Route path="/editor/*" element={<EditorPage />} />
+            <Route path="/queue/*" element={<QueuePage />} />
+            <Route path="/mcp" element={<McpGatewayPage />} />
+            <Route path="/branch-triage" element={<BranchTriagePage />} />
+            <Route path="/branch-triage/*" element={<BranchTriagePage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </PageErrorBoundary>
+      </AppLayout>
+    </QueueStatusProvider>
   );
 }
 

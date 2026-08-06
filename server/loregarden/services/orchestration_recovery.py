@@ -12,6 +12,7 @@ from loregarden.models.domain import (
     Ticket,
 )
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.queue_admission import QueueAdmissionService
 from loregarden.services.run_interruption import blocked_by_interruption
 from loregarden.services.run_service import execute_orchestration_background
 from sqlmodel import Session, select
@@ -24,6 +25,7 @@ class InterruptionResume:
     ticket_id: str
     auto_approve: bool
     stop_at_stage_key: str | None
+    timeout_seconds: int | None = None
 
 
 def _execute_resumes(requests: list[InterruptionResume]) -> None:
@@ -33,6 +35,7 @@ def _execute_resumes(requests: list[InterruptionResume]) -> None:
             driver=OrchestrationDriver.BUILTIN_AUTOPILOT,
             auto_approve=request.auto_approve,
             stop_at_stage_key=request.stop_at_stage_key,
+            timeout_seconds=request.timeout_seconds,
         )
 
 
@@ -53,9 +56,16 @@ def schedule_interrupted_resumes(requests: list[InterruptionResume]) -> None:
 
 
 def resume_interrupted_orchestrations(session: Session) -> list[str]:
-    """Resume builtin autopilot tickets that startup reconciliation interrupted."""
+    """Resume builtin autopilot tickets that startup reconciliation interrupted.
+
+    Goes through the slot pool: a restart already released whatever lane the
+    failed run held, so resuming outside admission left agents running while
+    the board showed three idle slots.
+    """
     callbacks = OrchestrationCallbackService(session)
+    admission = QueueAdmissionService(session)
     requests: list[InterruptionResume] = []
+    handled: list[str] = []
     candidates = session.exec(
         select(Ticket).where(Ticket.workflow_stage_status == StageStatus.BLOCKED)
     ).all()
@@ -76,19 +86,48 @@ def resume_interrupted_orchestrations(session: Session) -> list[str]:
             or previous.cancel_requested_at is not None
         ):
             continue
+
+        reservation = admission.reserve_orchestration(
+            ticket,
+            auto_approve=previous.auto_approve,
+            stop_at_stage_key=previous.stop_at_stage_key or None,
+            driver=OrchestrationDriver.BUILTIN_AUTOPILOT.value,
+            timeout_seconds=previous.timeout_override_seconds,
+        )
+        if not reservation.admitted:
+            # Parked; the lane will start it when capacity frees.
+            logger.info(
+                "Interrupted ticket %s parked in lane %s (pool full)",
+                ticket.id,
+                reservation.slot_number,
+            )
+            handled.append(ticket.id)
+            continue
+
+        claim = callbacks.claim_orchestration_run(
+            ticket,
+            driver=OrchestrationDriver.BUILTIN_AUTOPILOT,
+            auto_approve=previous.auto_approve,
+            stop_at_stage_key=previous.stop_at_stage_key or "",
+            timeout_override_seconds=previous.timeout_override_seconds,
+        )
+        reservation.bind(orchestration_run_id=claim.id)
         requests.append(
             InterruptionResume(
                 ticket_id=ticket.id,
                 auto_approve=previous.auto_approve,
                 stop_at_stage_key=previous.stop_at_stage_key or None,
+                timeout_seconds=previous.timeout_override_seconds,
             )
         )
+        handled.append(ticket.id)
 
     schedule_interrupted_resumes(requests)
-    if requests:
+    if handled:
         logger.warning(
-            "Resuming %d orchestration(s) interrupted by restart: %s",
+            "Resuming %d orchestration(s) interrupted by restart (%d scheduled now): %s",
+            len(handled),
             len(requests),
-            ", ".join(request.ticket_id for request in requests),
+            ", ".join(handled),
         )
-    return [request.ticket_id for request in requests]
+    return handled

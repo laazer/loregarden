@@ -333,6 +333,7 @@ def execute_orchestration_background(
     driver=None,
     stop_at_stage_key: str | None = None,
     auto_approve: bool = False,
+    timeout_seconds: int | None = None,
 ) -> None:
     try:
         with Session(engine) as session:
@@ -346,6 +347,7 @@ def execute_orchestration_background(
                 driver=driver,
                 stop_at_stage_key=stop_at_stage_key,
                 auto_approve=auto_approve,
+                timeout_seconds=timeout_seconds,
             )
     except Exception as exc:
         logger.exception("Background orchestration failed for ticket %s: %s", ticket_id, exc)
@@ -358,6 +360,7 @@ def schedule_orchestration(
     driver=None,
     stop_at_stage_key: str | None = None,
     auto_approve: bool = False,
+    timeout_seconds: int | None = None,
 ) -> None:
     """Queue orchestration without blocking the API event loop."""
     if os.environ.get("LOREGARDEN_SYNC_ORCHESTRATION") == "1":
@@ -367,6 +370,7 @@ def schedule_orchestration(
             driver=driver,
             stop_at_stage_key=stop_at_stage_key,
             auto_approve=auto_approve,
+            timeout_seconds=timeout_seconds,
         )
         return
     thread = threading.Thread(
@@ -377,6 +381,7 @@ def schedule_orchestration(
             "driver": driver,
             "stop_at_stage_key": stop_at_stage_key,
             "auto_approve": auto_approve,
+            "timeout_seconds": timeout_seconds,
         },
         name=f"loregarden-orch-{ticket_id[:8]}",
         daemon=True,
@@ -398,6 +403,7 @@ class RunService:
         max_stages: int | None = None,
         stop_at_stage_key: str | None = None,
         auto_approve: bool = False,
+        timeout_seconds: int | None = None,
     ) -> OrchestrationRun:
         ws = self.session.get(Workspace, ticket.workspace_id)
         if not ws:
@@ -412,12 +418,16 @@ class RunService:
                 max_stages=max_stages,
                 stop_at_stage_key=stop_at_stage_key,
                 auto_approve=auto_approve,
+                timeout_seconds=timeout_seconds,
             )
         if chosen == OrchestrationDriver.EXTERNAL_MCP:
             return OrchestrationCallbackService(self.session).start_orchestration_run(
                 ticket,
                 driver=chosen,
                 profile_slug=profile.slug,
+                auto_approve=auto_approve,
+                stop_at_stage_key=stop_at_stage_key or "",
+                timeout_override_seconds=timeout_seconds,
             )
         raise ValueError("manual_stage driver uses POST /start with manual=true")
 

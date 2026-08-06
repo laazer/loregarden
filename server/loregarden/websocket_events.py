@@ -83,26 +83,56 @@ def emit_conflict_resolved(worktree_id: str, run_id: str) -> None:
     )
 
 
-def emit_queue_promoted(run_id: str, slot_number: int) -> None:
+def emit_queue_promoted(
+    run_id: str,
+    slot_number: int,
+    *,
+    ticket_id: str | None = None,
+    ticket_title: str | None = None,
+    stage_key: str | None = None,
+    agent_id: str | None = None,
+) -> None:
     """A queued run took a freed slot."""
     event_hub.publish(
         QUEUE_TOPIC,
         {
             "type": "queue_promoted",
             "timestamp": _now_iso(),
-            "data": {"runId": run_id, "slotNumber": slot_number},
+            "data": {
+                "runId": run_id,
+                "slotNumber": slot_number,
+                "ticketId": ticket_id,
+                "ticketTitle": ticket_title,
+                "stageKey": stage_key,
+                "agentId": agent_id,
+            },
         },
     )
 
 
-def emit_run_completed(run_id: str, status: str) -> None:
+def emit_run_completed(
+    run_id: str,
+    status: str,
+    *,
+    ticket_id: str | None = None,
+    ticket_title: str | None = None,
+    stage_key: str | None = None,
+    agent_id: str | None = None,
+) -> None:
     """A run reached a final state, whatever that state is."""
     event_hub.publish(
         QUEUE_TOPIC,
         {
             "type": "run_completed",
             "timestamp": _now_iso(),
-            "data": {"runId": run_id, "status": status},
+            "data": {
+                "runId": run_id,
+                "status": status,
+                "ticketId": ticket_id,
+                "ticketTitle": ticket_title,
+                "stageKey": stage_key,
+                "agentId": agent_id,
+            },
         },
     )
 

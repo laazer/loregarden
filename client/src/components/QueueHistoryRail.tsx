@@ -3,9 +3,9 @@
  *
  * The board only shows live entries, so a ticket that blocked mid-pipeline used
  * to vanish the moment its lane released and was only recoverable with SQL.
- * These cards are that history — one per finished entry, badged with the
- * outcome the orchestration reported rather than the queue status it exited
- * through.
+ * These cards are that history — one per finished entry across every workspace
+ * that shares the slot pool, badged with the outcome the orchestration reported
+ * rather than the queue status it exited through.
  */
 import { useCallback, useEffect, useState } from "react";
 
@@ -53,7 +53,7 @@ function formatWhen(entry: QueueHistoryEntry): string {
   });
 }
 
-export function QueueHistoryRail({ workspaceId }: { workspaceId: string }) {
+export function QueueHistoryRail() {
   const [entries, setEntries] = useState<QueueHistoryEntry[]>([]);
   const [outcome, setOutcome] = useState("");
   const [error, setError] = useState("");
@@ -62,7 +62,7 @@ export function QueueHistoryRail({ workspaceId }: { workspaceId: string }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const page = await listQueueHistory(workspaceId, { outcome, limit: 25 });
+      const page = await listQueueHistory({ outcome, limit: 25 });
       setEntries(page.entries);
       setError("");
     } catch (err) {
@@ -70,7 +70,7 @@ export function QueueHistoryRail({ workspaceId }: { workspaceId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, outcome]);
+  }, [outcome]);
 
   useEffect(() => {
     void load();
@@ -80,12 +80,14 @@ export function QueueHistoryRail({ workspaceId }: { workspaceId: string }) {
     <>
       <div className="queue-rail-heading">Queue history</div>
 
-      <div className="queue-history-filters">
+      <div className="queue-history-filters tab-bar-scroll" role="tablist" aria-label="History outcomes">
         {OUTCOME_FILTERS.map((filter) => (
           <button
             key={filter.key || "all"}
             type="button"
-            className={`queue-history-filter${outcome === filter.key ? " is-active" : ""}`}
+            role="tab"
+            aria-selected={outcome === filter.key}
+            className={`tab-btn${outcome === filter.key ? " active" : ""}`}
             onClick={() => setOutcome(filter.key)}
           >
             {filter.label}
@@ -114,7 +116,8 @@ export function QueueHistoryRail({ workspaceId }: { workspaceId: string }) {
               {OUTCOME_LABEL[entry.outcome] ?? entry.outcome}
             </span>
             <span className="queue-history-meta">
-              {entry.ticket_external_id} · slot {entry.slot_number}
+              {entry.workspace_slug || entry.workspace_name} · {entry.ticket_external_id} · slot{" "}
+              {entry.slot_number}
               {entry.last_stage_key ? ` · ${entry.last_stage_key}` : ""} ·{" "}
               {formatDuration(entry.duration_seconds)}
               {entry.retry_count ? ` · ${entry.retry_count} retries` : ""}

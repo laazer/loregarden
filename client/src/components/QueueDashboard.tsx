@@ -8,10 +8,7 @@ import {
   type QueueOperationDetails,
   type QueueOperationSummary,
 } from "../lib/queueReviewApi";
-import type { QueueEvent } from "../lib/queueSocket";
 import { useQueueStatus } from "../state/QueueStatusContext";
-import { useUiStore } from "../state/uiStore";
-import { pushToast, type ToastInput } from "../state/toastStore";
 import { OperationDiffReviewView } from "./OperationDiffReviewView";
 import { ParallelQueueVisualization } from "./ParallelQueueVisualization";
 import { QueueAdvancedControls } from "./QueueAdvancedControls";
@@ -35,56 +32,11 @@ const TABS: { key: SidebarTab; label: string }[] = [
   { key: "analytics", label: "Analytics" },
 ];
 
-/** A forwarded queue event, as a toast for the app-wide stack. */
-function toToast(event: QueueEvent): ToastInput {
-  const runId = event.data?.runId ?? "";
-  const shortRun = runId ? runId.slice(0, 8) : "a run";
-
-  if (event.type === "queue_promoted") {
-    return {
-      tone: "info",
-      title: "Run promoted",
-      message: `${shortRun} took slot ${event.data?.slotNumber ?? "?"}.`,
-    };
-  }
-
-  if (event.type === "run_completed") {
-    const failed = event.data?.status !== "succeeded";
-    return {
-      tone: failed ? "error" : "success",
-      title: failed ? "Run failed" : "Run complete",
-      message: `${shortRun} finished as ${event.data?.status ?? "unknown"}.`,
-    };
-  }
-
-  return {
-    tone: "error",
-    title: "Queue error",
-    message: event.data?.message ?? "The queue reported a failure.",
-    // Stays until dismissed: a queue failure is the one thing worth reading late.
-    duration: 0,
-  };
-}
-
 export function QueueDashboard({
   showAnalytics = true,
   showControls = true,
 }: QueueDashboardProps) {
-  const { activeRuns, queuedRuns, stats, workspaces, onQueueEvent } = useQueueStatus();
-
-  /**
-   * The board is global, but two rail panels are not: git automation is a
-   * workspace's own policy and the analytics are its own history. They follow
-   * the app-wide workspace selection rather than a picker of their own — the
-   * queue page no longer has one, because the queue no longer has a workspace.
-   */
-  const appWorkspaceSlug = useUiStore((s) => s.workspace);
-  const railWorkspace = useMemo(() => {
-    const chosen = workspaces.find((ws) => ws.slug === appWorkspaceSlug);
-    return chosen ?? workspaces[0] ?? null;
-  }, [workspaces, appWorkspaceSlug]);
-
-  const railWorkspaceId = railWorkspace?.id ?? "";
+  const { activeRuns, queuedRuns, stats, workspaces } = useQueueStatus();
 
   const [activeSidebarTab, setActiveSidebarTab] = useState<SidebarTab>("overview");
 
@@ -95,25 +47,23 @@ export function QueueDashboard({
     Record<string, { stdout?: string; stderr?: string; run_code?: string }>
   >({});
 
-  // The producer the toast stack never had. Events come from the shared socket
-  // via the context; the snapshot alone cannot say that a run just finished.
-  useEffect(
-    () => onQueueEvent((event) => pushToast(toToast(event))),
-    [onQueueEvent],
-  );
-
   const fetchOperations = useCallback(async () => {
     try {
-      const data = await listQueueOperations(railWorkspaceId, { limit: 20 });
+      const data = await listQueueOperations({ limit: 20 });
       setOperations(data.operations || []);
     } catch (error) {
       console.error("Failed to fetch operations:", error);
     }
-  }, [railWorkspaceId]);
+  }, []);
+
+  const selectedWorkspaceId = useMemo(() => {
+    const fromList = operations.find((op) => op.id === selectedOperationId)?.workspace_id;
+    return fromList ?? operationDetails?.workspace_id ?? "";
+  }, [operations, selectedOperationId, operationDetails]);
 
   const refreshOperationDetails = useCallback(async () => {
-    if (!selectedOperationId) return;
-    const data = await getQueueOperationDiff(railWorkspaceId, selectedOperationId);
+    if (!selectedOperationId || !selectedWorkspaceId) return;
+    const data = await getQueueOperationDiff(selectedWorkspaceId, selectedOperationId);
     setOperationDetails(data);
 
     const runIds = [
@@ -141,7 +91,7 @@ export function QueueDashboard({
       }),
     );
     setRunOutputById(outputs);
-  }, [selectedOperationId, railWorkspaceId]);
+  }, [selectedOperationId, selectedWorkspaceId]);
 
   useEffect(() => {
     if (activeSidebarTab === "review") {
@@ -199,7 +149,7 @@ export function QueueDashboard({
                 ← All operations
               </button>
               <OperationDiffReviewView
-                workspaceId={railWorkspaceId}
+                workspaceId={selectedWorkspaceId}
                 operation={operationDetails}
                 runOutputById={runOutputById}
                 onRefresh={refreshOperationDetails}
@@ -212,17 +162,21 @@ export function QueueDashboard({
 
         <aside className="queue-rail">
           <div className="queue-rail-card">
-            <div className="queue-rail-tabs">
-              {visibleTabs.map((tab) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  className={`queue-rail-tab${activeSidebarTab === tab.key ? " is-active" : ""}`}
-                  onClick={() => setActiveSidebarTab(tab.key)}
-                >
-                  {tab.label}
-                </button>
-              ))}
+            <div className="queue-rail-tabs tab-bar">
+              <div className="tab-bar-scroll" role="tablist" aria-label="Queue panels">
+                {visibleTabs.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeSidebarTab === tab.key}
+                    className={`tab-btn${activeSidebarTab === tab.key ? " active" : ""}`}
+                    onClick={() => setActiveSidebarTab(tab.key)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="queue-rail-body">
@@ -252,9 +206,7 @@ export function QueueDashboard({
                 </>
               ) : null}
 
-              {activeSidebarTab === "history" ? (
-                <QueueHistoryRail workspaceId={railWorkspaceId} />
-              ) : null}
+              {activeSidebarTab === "history" ? <QueueHistoryRail /> : null}
 
               {activeSidebarTab === "review" ? (
                 <>
@@ -287,12 +239,12 @@ export function QueueDashboard({
 
               {activeSidebarTab === "controls" && showControls ? (
                 <>
-                  {railWorkspace ? (
-                    <>
-                      <QueueGitAutomation workspaceSlug={railWorkspace.slug} />
+                  {workspaces.map((ws) => (
+                    <div key={ws.id}>
+                      <QueueGitAutomation workspaceSlug={ws.slug} workspaceName={ws.name} />
                       <div className="queue-rail-divider" />
-                    </>
-                  ) : null}
+                    </div>
+                  ))}
                   <QueueAdvancedControls
                     activeRuns={activeRuns || []}
                     queuedRuns={queuedRuns || []}
@@ -300,15 +252,15 @@ export function QueueDashboard({
                 </>
               ) : null}
 
-              {activeSidebarTab === "analytics" && showAnalytics && railWorkspace ? (
-                <QueueHistoricalAnalytics workspaceId={railWorkspace.id} />
+              {activeSidebarTab === "analytics" && showAnalytics ? (
+                <QueueHistoricalAnalytics />
               ) : null}
             </div>
-          </div>
 
-          <div className="queue-rail-baxter">
-            <img src={baxterHead} alt="" width={46} height={46} />
-            <div className="queue-rail-baxter-copy">{idleCopy}</div>
+            <div className="queue-rail-baxter">
+              <img src={baxterHead} alt="" width={32} height={32} />
+              <div className="queue-rail-baxter-copy">{idleCopy}</div>
+            </div>
           </div>
         </aside>
       </div>

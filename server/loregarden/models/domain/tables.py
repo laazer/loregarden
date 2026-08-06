@@ -202,6 +202,9 @@ class OrchestrationRun(SQLModel, table=True):
     error_message: str = ""
     auto_approve: bool = Field(default=False)
     stop_at_stage_key: str = ""
+    # Per-orchestration agent timeout for every stage run this orchestration
+    # (and its child ticket orchestrations) starts. Null = each agent's default.
+    timeout_override_seconds: int | None = Field(default=None)
     # Cooperative stop: set by the API, observed by BuiltinOrchestrator between
     # stages. Null means no cancel has been requested.
     cancel_requested_at: datetime | None = None
@@ -982,6 +985,8 @@ class QueuedRun(SQLModel, table=True):
     #: orchestration profile decides.
     driver: str = ""
     max_stages: int | None = None
+    #: Max seconds each agent run in this orchestration may take. Null = agent default.
+    timeout_seconds: int | None = None
     status: QueuePosition = Field(
         default=QueuePosition.QUEUED,
         sa_column=_str_enum_column(QueuePosition, QueuePosition.QUEUED, index=True),

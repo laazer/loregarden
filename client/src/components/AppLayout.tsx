@@ -8,6 +8,7 @@ import { AppIconRail } from "./AppIconRail";
 import { AppTopbar } from "./AppTopbar";
 import { AppUtilityDock } from "./AppUtilityDock";
 import { SettingsModal } from "./SettingsModal";
+import { QueueNotificationsHost } from "./QueueNotificationsHost";
 import { ToastHost } from "./ToastHost";
 import { TopbarPageSlotProvider } from "./TopbarPageSlot";
 
@@ -96,6 +97,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       />
 
       <ToastHost />
+      <QueueNotificationsHost />
     </div>
   );
 }

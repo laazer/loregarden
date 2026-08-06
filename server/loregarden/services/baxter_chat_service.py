@@ -6,29 +6,20 @@ archive has real threads to list. History is read from the database rather than
 replayed by the client: a client-supplied history is unverifiable and drifts
 from what the thread actually contains.
 
-A turn runs in the same two shapes as ticket triage: a tool-using turn through
-the permission bridge when the resolved adapter can be driven that way, and a
-read-only one-shot otherwise. Unlike triage there is no work item, so the run
-and its approvals are workspace-scoped (see ``ApprovalScope.for_workspace``).
+A turn runs through ``agent_turn_runner``: Claude uses the permission bridge,
+other adapters use advisory or writable oneshot depending on intent. Unlike
+triage there is no work item, so runs and approvals are workspace-scoped
+(see ``ApprovalScope.for_workspace``).
 """
 
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import replace
-from datetime import datetime, timezone
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
-from loregarden.agents.cli_adapters import build_interactive_invocation
-from loregarden.agents.executors.permission_bridge import (
-    HOME_CHAT_STAGE_KEY,
-    PermissionBridgeRunner,
-)
+from loregarden.agents.executors.permission_bridge import HOME_CHAT_STAGE_KEY
 from loregarden.agents.registry import get_agent
 from loregarden.models.domain import (
-    AgentRun,
     Approval,
     ApprovalStatus,
     BaxterChatMessage,
@@ -41,32 +32,27 @@ from loregarden.models.domain import (
     WorkspaceRuntimeUpdate,
 )
 from loregarden.models.domain.enums import utcnow
+from loregarden.services.agent_turn_runner import (
+    AgentTurnRequest,
+    capabilities_for_workspace,
+    run_agent_turn,
+)
 from loregarden.services.approval_views import approval_to_view
 from loregarden.services.chat_primitives import load_parts_json
-from loregarden.services.chat_thinking import ChatTurnThinkingSink
-from loregarden.services.cli_agent_runner import (
-    resolve_agent_timeout,
-    run_cli_agent_turn,
-    stub_response,
-)
-from loregarden.services.cli_output import extract_triage_reply
+from loregarden.services.cli_agent_runner import stub_response
 from loregarden.services.cli_settings import (
     VALID_CLI_ADAPTERS,
+    apply_runtime_overrides,
     parse_runtime_settings,
     resolve_effective_adapter,
-    resolve_model_for_adapter,
     validated_effort_pins,
 )
-from loregarden.services.run_concurrency import (
-    find_active_workspace_chat_run,
-    new_run_code,
-)
+from loregarden.services.run_concurrency import find_active_workspace_chat_run
 from loregarden.services.triage_service import (
     TRIAGE_AGENT_ID,
     TRIAGE_AGENT_NAME,
     TRIAGE_CLI_PROFILE,
 )
-from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
 
 BAXTER_CHAT_CLI_PROFILE = replace(
@@ -87,6 +73,15 @@ DEFAULT_BAXTER_CHAT_USER_PROMPT = (
     "workspace snapshot and conversation. Be concise and actionable. Prefer "
     "concrete next steps over generic advice."
 )
+
+# Posted by the chat UI Run button on an agent execution plan. Must stay in sync
+# with ``agentPlanExecuteMessage`` in the client TodoListPrimitive.
+AGENT_PLAN_EXECUTE_PREFIX = "Execute this agent execution plan now."
+
+
+def is_agent_plan_execute_message(content: str) -> bool:
+    """True when the operator pressed Run on an agent ``todo_list`` plan."""
+    return content.lstrip().startswith(AGENT_PLAN_EXECUTE_PREFIX)
 
 
 def _clip(text: str, limit: int = MAX_MESSAGE_CHARS) -> str:
@@ -292,6 +287,18 @@ def chat_session_summary(session: Session, chat_session: BaxterChatSession) -> d
 def chat_session_snapshot(session: Session, chat_session: BaxterChatSession) -> dict:
     messages = list_chat_messages(session, chat_session.id)
     run_status, active_turn_id = baxter_chat_run_status(session, chat_session)
+    workspace = session.get(Workspace, chat_session.workspace_id)
+    caps = {
+        "adapter": "claude",
+        "permission_bridge": True,
+        "inbox_approvals": True,
+        "plan_execute": True,
+        "stream_thinking": True,
+        "steer": True,
+    }
+    if workspace:
+        effective = apply_runtime_overrides(workspace, chat_session.runtime_json)
+        caps = capabilities_for_workspace(effective, agent_adapter="claude").as_dict()
     return {
         "id": chat_session.id,
         "workspace_id": chat_session.workspace_id,
@@ -299,6 +306,7 @@ def chat_session_snapshot(session: Session, chat_session: BaxterChatSession) -> 
         "messages": [_message_view(message) for message in messages],
         "pending_approvals": list_home_chat_pending_approvals(session, chat_session),
         "runtime": parse_runtime_settings(chat_session.runtime_json).model_dump(),
+        "adapter_capabilities": caps,
         "run_status": run_status,
         "active_turn_id": active_turn_id,
         "created_at": chat_session.created_at.isoformat(),
@@ -339,6 +347,7 @@ def build_baxter_chat_prompt(
     approvals: list[Approval],
     tickets: list[Ticket],
     interactive: bool = False,
+    approval_bridge: bool = False,
 ) -> str:
     sections = [
         "# Baxter — Home chat",
@@ -349,17 +358,25 @@ def build_baxter_chat_prompt(
     if interactive:
         sections.extend(
             [
-                "You have real tool access in this workspace — file read/write, Bash, and the "
-                "Loregarden MCP tools.",
+                "You have real tool access in this workspace — file read/write, shell, and the "
+                "Loregarden MCP tools where the runtime supports them.",
                 "Investigate before answering: read code, run tests, reproduce failures.",
                 "When you find an actionable fix, make it directly rather than only describing it.",
                 "This channel is not scoped to a work item, so no ticket is implied — name the "
                 "ticket explicitly on any MCP call that needs one.",
-                "Destructive or high-risk actions route through Loregarden's approval prompt "
-                "automatically — request them when needed rather than avoiding the work.",
-                "",
             ]
         )
+        if approval_bridge:
+            sections.append(
+                "Destructive or high-risk actions route through Loregarden's approval prompt "
+                "automatically — request them when needed rather than avoiding the work."
+            )
+        else:
+            sections.append(
+                "This turn runs on the operator's selected CLI (not a Claude-only bridge). "
+                "Workspace writes are enabled; stay inside the repo and prefer reversible changes."
+            )
+        sections.append("")
     else:
         sections.extend(
             [
@@ -417,8 +434,9 @@ def build_baxter_chat_prompt(
             '"title":"Agent execution plan","items":[{"id":"api","text":"Add history API",'
             '"checked":false}]}\\n```',
             "- The UI shows Run on that card. When the operator sends",
-            '  "Execute this agent execution plan now…", do the unchecked steps',
-            "  with tools — do not only restate the plan. Re-emit the same",
+            f'  "{AGENT_PLAN_EXECUTE_PREFIX}…", do the unchecked steps',
+            "  with tools on whatever CLI they selected — do not only restate",
+            "  the plan, and do not claim you need Claude. Re-emit the same",
             "  todo_list with checked:true as steps finish.",
             "- To ask the operator before proceeding, emit `qa`.",
             "- After creating a ticket via MCP, emit `ticket` with the real returned id.",
@@ -459,7 +477,11 @@ def invoke_baxter_chat_model(
     selected = resolve_effective_adapter(
         agent_adapter=agent.get("adapter", "claude"), workspace=workspace
     )
-    interactive = selected == "claude"
+    # Same intent map as every other chat surface: Claude turns execute via the
+    # bridge; other adapters stay advisory unless the operator pressed Run.
+    wants_execute = is_agent_plan_execute_message(message)
+    intent = "execute" if selected == "claude" or wants_execute else "advisory"
+    use_bridge = selected == "claude"
 
     prompt = build_baxter_chat_prompt(
         workspace=workspace,
@@ -467,111 +489,29 @@ def invoke_baxter_chat_model(
         latest_user_message=message,
         approvals=_pending_approvals(session, workspace.id),
         tickets=_active_tickets(session, workspace.id),
-        interactive=interactive,
+        interactive=intent == "execute",
+        approval_bridge=use_bridge,
     )
-    if interactive:
-        return _run_interactive_turn(session, workspace, prompt, agent=agent, turn_id=turn_id)
-    thinking = ChatTurnThinkingSink(turn_id) if turn_id else None
-    try:
-        return run_cli_agent_turn(
-            BAXTER_CHAT_CLI_PROFILE,
+    result = run_agent_turn(
+        AgentTurnRequest(
+            session=session,
             workspace=workspace,
             prompt=prompt,
+            profile=BAXTER_CHAT_CLI_PROFILE,
+            agent=agent,
+            intent=intent,
+            adapter=selected,
             user_prompt=DEFAULT_BAXTER_CHAT_USER_PROMPT,
-            read_only=True,
-            thinking_sink=thinking,
+            turn_id=turn_id,
+            stage_key=HOME_CHAT_STAGE_KEY,
+            agent_id=TRIAGE_AGENT_ID,
+            manage_run=intent == "execute",
+            workspace_stage_key=HOME_CHAT_STAGE_KEY,
+            claude_model_env="LOREGARDEN_BAXTER_CHAT_CLAUDE_MODEL",
+            conflict_error=lambda msg: BaxterChatConflictError(
+                f"{TRIAGE_AGENT_NAME} is still working on the previous message — wait for it to finish."
+            ),
+            track_workflow_stage=False,
         )
-    finally:
-        if thinking:
-            thinking.close()
-
-
-def _start_run(session: Session, workspace: Workspace) -> AgentRun:
-    if find_active_workspace_chat_run(session, workspace.id, stage_key=HOME_CHAT_STAGE_KEY):
-        raise BaxterChatConflictError(
-            f"{TRIAGE_AGENT_NAME} is still working on the previous message — wait for it to finish."
-        )
-    run = AgentRun(
-        run_code=new_run_code(),
-        ticket_id=None,
-        workspace_id=workspace.id,
-        agent_id=TRIAGE_AGENT_ID,
-        stage_key=HOME_CHAT_STAGE_KEY,
-        status=RunStatus.RUNNING,
-        started_at=datetime.now(timezone.utc),
     )
-    session.add(run)
-    session.commit()
-    session.refresh(run)
-    return run
-
-
-def _finish_run(session: Session, run_id: str, *, status: RunStatus, stderr: str) -> None:
-    run = session.get(AgentRun, run_id)
-    if not run:
-        return
-    run.status = status
-    run.stderr = stderr[:4000]
-    run.finished_at = datetime.now(timezone.utc)
-    session.add(run)
-    session.commit()
-
-
-def _run_interactive_turn(
-    session: Session, workspace: Workspace, prompt: str, *, agent: dict, turn_id: str = ""
-) -> str:
-    """Tool-using turn: permission prompts land in the workspace approval inbox."""
-    repo_root = resolve_workspace_root(workspace)
-    if not repo_root.is_dir():
-        raise ValueError(f"Workspace repo path does not exist: {repo_root}")
-
-    claude_model = (
-        os.environ.get("LOREGARDEN_BAXTER_CHAT_CLAUDE_MODEL", "").strip()
-        or resolve_model_for_adapter("claude", workspace)
-        or "haiku"
-    )
-    timeout = resolve_agent_timeout(agent, BAXTER_CHAT_CLI_PROFILE.timeout_env)
-
-    run = _start_run(session, workspace)
-    thinking = ChatTurnThinkingSink(turn_id) if turn_id else None
-    try:
-        with TemporaryDirectory(prefix=BAXTER_CHAT_CLI_PROFILE.tmp_prefix) as tmp:
-            prompt_file = Path(tmp) / "prompt.md"
-            prompt_file.write_text(prompt, encoding="utf-8")
-            invocation = build_interactive_invocation(
-                adapter="claude",
-                prompt_file=prompt_file,
-                workspace_root=repo_root,
-                claude_model=claude_model,
-                partial_messages=thinking is not None,
-                db_session=session,
-            )
-            bridge = PermissionBridgeRunner(session, track_workflow_stage=False)
-            result = bridge.run(
-                run_id=run.id,
-                workspace=workspace,
-                invocation=invocation,
-                prompt=prompt,
-                timeout_seconds=timeout,
-                streamer=thinking,
-            )
-    except Exception as exc:
-        _finish_run(session, run.id, status=RunStatus.FAILED, stderr=str(exc))
-        raise
-    finally:
-        if thinking:
-            thinking.close()
-
-    reply = extract_triage_reply(result.stdout)[: BAXTER_CHAT_CLI_PROFILE.reply_cap]
-    if result.status == RunStatus.SUCCEEDED and not reply:
-        _finish_run(
-            session,
-            run.id,
-            status=RunStatus.FAILED,
-            stderr=result.stderr or "empty response",
-        )
-        raise RuntimeError(f"{TRIAGE_AGENT_NAME} returned an empty response")
-    _finish_run(session, run.id, status=result.status, stderr=result.stderr)
-    if result.status != RunStatus.SUCCEEDED:
-        raise RuntimeError(result.stderr or f"{TRIAGE_AGENT_NAME} run {result.status.value}")
-    return reply
+    return result.reply

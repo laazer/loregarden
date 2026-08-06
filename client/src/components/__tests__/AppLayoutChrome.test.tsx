@@ -23,6 +23,10 @@ jest.mock("../SettingsModal", () => ({
   SettingsModal: () => null,
 }));
 
+jest.mock("../QueueNotificationsHost", () => ({
+  QueueNotificationsHost: () => null,
+}));
+
 jest.mock("../../api/client", () => ({
   // The action bar's Baxter fallback narrows load failures with `instanceof
   // ApiError`, which throws when the mock omits the class.

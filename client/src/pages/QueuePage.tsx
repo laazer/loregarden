@@ -1,22 +1,17 @@
 import { QueueDashboard } from "../components/QueueDashboard";
 import { QueueTopbarControls } from "../components/QueueTopbarControls";
 import { PageTopbar } from "../components/TopbarPageSlot";
-import { QueueStatusProvider, useQueueStatus } from "../state/QueueStatusContext";
+import { useQueueStatus } from "../state/QueueStatusContext";
 
 /**
  * The queue screen.
  *
- * The provider sits here rather than above the layout: `PageTopbar` portals
- * its children into the topbar's DOM node, but they stay this component's
- * children in the React tree, so the controls up there read the same context
- * as the body down here — and the page keeps its one socket.
+ * Queue status (and the socket behind it) lives in the app shell so run
+ * notifications reach the inbox from every page. PageTopbar still portals its
+ * children into the topbar DOM while keeping them under this tree for context.
  */
 export function QueuePage() {
-  return (
-    <QueueStatusProvider>
-      <QueueScreen />
-    </QueueStatusProvider>
-  );
+  return <QueueScreen />;
 }
 
 function QueueScreen() {

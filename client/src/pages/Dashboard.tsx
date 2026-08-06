@@ -941,6 +941,7 @@ export function Dashboard() {
           stop_at_stage_key: options.stopAtStageKey || undefined,
           auto_approve: options.autoApprove,
           slot_number: options.slotNumber,
+          timeout_seconds: options.timeoutSeconds,
         },
       });
     } catch {

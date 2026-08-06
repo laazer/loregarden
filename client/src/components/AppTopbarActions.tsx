@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useAppPage } from "../lib/useAppNavigation";
 import { PANE_LABELS, PANE_ORDER } from "../lib/appTopbarConfig";
+import { useNotificationStore } from "../state/notificationStore";
 import { useUiStore } from "../state/uiStore";
 import { ApprovalInboxPanel } from "./ApprovalInboxPanel";
 import { AppTopbarToolMenu } from "./AppTopbarToolMenu";
@@ -46,6 +47,8 @@ export function AppTopbarActions() {
     refetchInterval: 5000,
   });
 
+  const notificationCount = useNotificationStore((s) => s.notifications.length);
+
   const setMemoryConfig = useMutation({
     meta: { errorTitle: "Save memory settings" },
     mutationFn: api.setMemoryConfig,
@@ -60,6 +63,8 @@ export function AppTopbarActions() {
     [paneVisibility],
   );
   const approvalCount = approvals.data?.length ?? 0;
+  const inboxCount = approvalCount + notificationCount;
+  const inboxNeedsAttention = approvalCount > 0 || notificationCount > 0;
 
   const isIde = appPage === "dashboard";
   const panesLabel =
@@ -117,14 +122,15 @@ export function AppTopbarActions() {
           </button>
           <button
             type="button"
-            className={`btn-secondary topbar-action-btn topbar-action-btn--strong${approvalCount > 0 && !inboxOpen ? " approvals-btn-pending" : ""}`}
+            className={`btn-secondary topbar-action-btn topbar-action-btn--strong${inboxNeedsAttention && !inboxOpen ? " approvals-btn-pending" : ""}`}
             onClick={() => setInboxOpen(true)}
+            aria-label="Open approvals and notifications inbox"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--rdl)" strokeWidth="1.9" aria-hidden>
               <path d="M22 12h-6l-2 3h-4l-2-3H2" />
               <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
             </svg>
-            Approvals
+            Inbox
             <span
               className="approvals-badge"
               style={{
@@ -134,7 +140,7 @@ export function AppTopbarActions() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                background: approvalCount === 0 ? "var(--grn)" : "var(--red)",
+                background: inboxCount === 0 ? "var(--grn)" : approvalCount > 0 ? "var(--red)" : "var(--aml)",
                 color: "#fff",
                 fontSize: 11,
                 fontWeight: 600,
@@ -142,7 +148,7 @@ export function AppTopbarActions() {
                 fontFamily: "var(--mono)",
               }}
             >
-              {approvalCount}
+              {inboxCount}
             </span>
           </button>
         </div>

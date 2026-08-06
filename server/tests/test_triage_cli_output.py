@@ -58,6 +58,20 @@ def test_extract_triage_reply_stream_json():
     assert extract_triage_reply(stdout) == "Final answer"
 
 
+def test_extract_triage_reply_codex_jsonl():
+    stdout = "\n".join(
+        [
+            '{"type":"thread.started","thread_id":"t1"}',
+            '{"type":"turn.started"}',
+            '{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"ls","status":"in_progress"}}',
+            '{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"ls","status":"completed"}}',
+            '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Listed the files."}}',
+            '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":2}}',
+        ]
+    )
+    assert extract_triage_reply(stdout) == "Listed the files."
+
+
 def test_extract_triage_reply_stream_json_without_result():
     stdout = '{"type":"assistant","message":{"content":[{"type":"text","text":"Only assistant"}]}}'
     assert extract_triage_reply(stdout) == "Only assistant"

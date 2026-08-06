@@ -167,6 +167,50 @@ describe('the running half of a lane', () => {
     expect(screen.queryByText('ticket-uuid-1')).not.toBeInTheDocument();
   });
 
+  test('draws the work-items hierarchy when a nested child is live', () => {
+    withStatus({
+      lanes: [
+        {
+          ...runningLane,
+          running: {
+            ...runningLane.running,
+            ticket_ancestry: [
+              {
+                id: 'ticket-uuid-root',
+                code: 'M-1',
+                title: 'Milestone',
+                work_item_type: 'milestone',
+              },
+              {
+                id: 'ticket-uuid-1',
+                code: 'LG-101',
+                title: 'Bootstrap vertical slice',
+                work_item_type: 'feature',
+              },
+            ],
+            running_descendant: {
+              id: 'ticket-uuid-leaf',
+              code: 'LG-199',
+              title: 'Apply the patch',
+              work_item_type: 'task',
+            },
+          },
+        },
+        { slot_number: 2, running: null, waiting: [] },
+        { slot_number: 3, running: null, waiting: [] },
+      ],
+    });
+
+    render(<ParallelQueueVisualization />);
+
+    const hierarchy = screen.getByLabelText('Ticket hierarchy');
+    expect(hierarchy).toHaveTextContent('M-1');
+    expect(hierarchy).toHaveTextContent('Milestone');
+    expect(hierarchy).toHaveTextContent('LG-101');
+    expect(hierarchy).toHaveTextContent('LG-199');
+    expect(hierarchy).toHaveTextContent('Apply the patch');
+  });
+
   test('leads the subtitle with the workspace', () => {
     // Lanes are shared across workspaces, so whose work this is comes first.
     render(<ParallelQueueVisualization />);

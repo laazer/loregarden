@@ -7,6 +7,8 @@ import json
 import os
 import re
 import sys
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
@@ -19,8 +21,36 @@ DEFAULT_TIMEOUT_SECONDS = 600.0
 # reply, which then returns empty content and looks like "local models don't work".
 DEFAULT_MAX_TOKENS = int(os.environ.get("LOREGARDEN_LMSTUDIO_MAX_TOKENS") or "8192")
 
+# Print-mode idle budget resets on stdout. Tool rounds and non-stream completions
+# can sit quiet for minutes; emit a line on this interval so the run is not killed.
+_HEARTBEAT_SECONDS = float(os.environ.get("LOREGARDEN_LMSTUDIO_HEARTBEAT_SECONDS") or "20")
+
 
 MAX_TOOL_ROUNDS = 25
+
+
+@contextmanager
+def _stdout_heartbeat(label: str):
+    """Keep print-mode's idle timeout alive during a blocking HTTP completion."""
+    if _HEARTBEAT_SECONDS <= 0:
+        yield
+        return
+    stop = threading.Event()
+
+    def beat() -> None:
+        n = 0
+        while not stop.wait(_HEARTBEAT_SECONDS):
+            n += 1
+            elapsed = int(n * _HEARTBEAT_SECONDS)
+            print(f"[WAIT] {label} ({elapsed}s)…", flush=True)
+
+    thread = threading.Thread(target=beat, name="lmstudio-heartbeat", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=0.2)
 
 
 def _assistant_text(message: dict) -> str:
@@ -225,7 +255,8 @@ def _chat_completion(
             return "".join(text_parts)
         return ""
 
-    response = _post_chat(client, base_url, body, effort)
+    with _stdout_heartbeat("lmstudio completion"):
+        response = _post_chat(client, base_url, body, effort)
     payload = response.json()
     message = payload.get("choices", [{}])[0].get("message", {}) or {}
     content = _assistant_text(message)
@@ -245,25 +276,28 @@ def _chat_with_tools(
 ) -> str:
     """Run the model until it stops asking for tools, then return its answer.
 
-    Non-streaming: tool_calls arrive as deltas that have to be reassembled when
-    streaming, and the terminal output is what matters here, not liveness.
+    Completions stay non-streaming so tool_calls arrive whole (streaming would
+    need delta reassembly). Heartbeat lines on stdout keep the stage idle
+    budget alive while each round waits on the model.
     """
     messages: list[dict] = [{"role": "user", "content": prompt}]
 
-    for _ in range(MAX_TOOL_ROUNDS):
-        response = _post_chat(
-            client,
-            base_url,
-            {
-                "model": model,
-                "messages": messages,
-                "tools": tools,
-                "tool_choice": "auto",
-                "stream": False,
-                "max_tokens": DEFAULT_MAX_TOKENS,
-            },
-            effort,
-        )
+    for round_index in range(MAX_TOOL_ROUNDS):
+        print(f"[ROUND] {round_index + 1}/{MAX_TOOL_ROUNDS}", flush=True)
+        with _stdout_heartbeat(f"lmstudio round {round_index + 1}"):
+            response = _post_chat(
+                client,
+                base_url,
+                {
+                    "model": model,
+                    "messages": messages,
+                    "tools": tools,
+                    "tool_choice": "auto",
+                    "stream": False,
+                    "max_tokens": DEFAULT_MAX_TOKENS,
+                },
+                effort,
+            )
         message = response.json().get("choices", [{}])[0].get("message", {}) or {}
         calls = message.get("tool_calls") or []
 

@@ -23,6 +23,8 @@ every caller's semantics and still makes the claim real.
 **Only outside requests come here.** Promotion, approval-resume and conflict
 resolution all continue work that already holds a lane; gating them would
 deadlock, since the thing occupying the lane is the thing waiting to proceed.
+Interruption recovery after a restart is different: the failed run already
+released its lane, so that path admits again rather than resuming in place.
 The gate lives at the external entry points rather than inside
 `schedule_orchestration` / `schedule_agent_run` for exactly that reason —
 bypass flags threaded through the internals would be one missed call site away
@@ -115,13 +117,14 @@ class QueueAdmissionService:
         preferred_slot: int | None = None,
         driver: str = "",
         max_stages: int | None = None,
+        timeout_seconds: int | None = None,
     ) -> Reservation:
         """A slot to run the whole ticket in, or a place in line.
 
-        `driver` and `max_stages` are carried only so a *parked* request still
-        runs what was asked for. An admitted one never needs them: the caller
-        starts the work itself, which is the point of reserving rather than
-        dispatching.
+        `driver`, `max_stages` and `timeout_seconds` are carried only so a
+        *parked* request still runs what was asked for. An admitted one never
+        needs them: the caller starts the work itself, which is the point of
+        reserving rather than dispatching.
         """
         return self._reserve(
             ticket,
@@ -132,6 +135,7 @@ class QueueAdmissionService:
             preferred_slot=preferred_slot,
             driver=driver,
             max_stages=max_stages,
+            timeout_seconds=timeout_seconds,
         )
 
     def reserve_stage(
@@ -141,6 +145,7 @@ class QueueAdmissionService:
         stage_key: str | None = None,
         auto_approve: bool = False,
         preferred_slot: int | None = None,
+        timeout_seconds: int | None = None,
     ) -> Reservation:
         """A slot to run one stage in, or a place in line.
 
@@ -155,6 +160,7 @@ class QueueAdmissionService:
             auto_approve=auto_approve,
             stop_at_stage_key=None,
             preferred_slot=preferred_slot,
+            timeout_seconds=timeout_seconds,
         )
 
     # ---- internals -----------------------------------------------------
@@ -170,6 +176,7 @@ class QueueAdmissionService:
         preferred_slot: int | None = None,
         driver: str = "",
         max_stages: int | None = None,
+        timeout_seconds: int | None = None,
     ) -> Reservation:
         self.lanes.slots.initialize_slots()
 
@@ -215,6 +222,7 @@ class QueueAdmissionService:
             stage_key=stage_key,
             driver=driver,
             max_stages=max_stages,
+            timeout_seconds=timeout_seconds,
         )
         position = result.get("position")
         logger.info(

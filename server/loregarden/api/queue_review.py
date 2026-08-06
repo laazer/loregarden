@@ -176,6 +176,7 @@ async def get_operation_diff(
 
     return {
         "operation_id": operation.id,
+        "workspace_id": operation.workspace_id,
         "operation_type": operation.operation_type,
         "description": operation.description,
         "created_by": operation.created_by,
@@ -335,6 +336,50 @@ async def submit_operation_to_agent(
     }
 
 
+@router.get("/queue/operations")
+async def list_operations_global(
+    approved_only: bool = False,
+    executed_only: bool = False,
+    limit: int = 20,
+    offset: int = 0,
+    session: Session = Depends(get_session),
+) -> dict:
+    """List queue operations across every workspace — the pool is shared."""
+    query = select(QueueOperation)
+
+    if approved_only:
+        query = query.where(QueueOperation.approved == True)
+
+    if executed_only:
+        query = query.where(QueueOperation.executed == True)
+
+    operations = session.exec(
+        query.order_by(QueueOperation.created_at.desc()).offset(offset).limit(limit)
+    ).all()
+
+    total = len(session.exec(select(QueueOperation)).all())
+
+    return {
+        "total": total,
+        "operations": [
+            {
+                "id": op.id,
+                "workspace_id": op.workspace_id,
+                "operation_type": op.operation_type,
+                "description": op.description,
+                "created_by": op.created_by,
+                "created_at": op.created_at.isoformat(),
+                "approved": op.approved,
+                "executed": op.executed,
+                "affected_count": len(
+                    op.affected_run_ids.split(",") if op.affected_run_ids else []
+                ),
+            }
+            for op in operations
+        ],
+    }
+
+
 @router.get("/workspace/{workspace_id}/queue/operations")
 async def list_operations(
     workspace_id: str,
@@ -366,6 +411,7 @@ async def list_operations(
         "operations": [
             {
                 "id": op.id,
+                "workspace_id": op.workspace_id,
                 "operation_type": op.operation_type,
                 "description": op.description,
                 "created_by": op.created_by,

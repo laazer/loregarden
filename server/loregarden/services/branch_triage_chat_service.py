@@ -4,41 +4,24 @@ from __future__ import annotations
 
 import os
 from dataclasses import replace
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
-from loregarden.agents.cli_adapters import (
-    DEFAULT_BRANCH_TRIAGE_USER_PROMPT,
-    build_interactive_invocation,
-)
-from loregarden.agents.executors.permission_bridge import (
-    BRANCH_TRIAGE_STAGE_KEY,
-    PermissionBridgeRunner,
-)
+from loregarden.agents.cli_adapters import DEFAULT_BRANCH_TRIAGE_USER_PROMPT
+from loregarden.agents.executors.permission_bridge import BRANCH_TRIAGE_STAGE_KEY
 from loregarden.agents.registry import get_agent
 from loregarden.models.domain import (
     BranchTriageMessage,
-    RunStatus,
     Ticket,
     Workspace,
     WorkspaceRuntimeSettings,
 )
+from loregarden.services.agent_turn_runner import AgentTurnRequest, run_agent_turn
 from loregarden.services.branch_triage_service import (
     branch_triage_snapshot,
     resolve_branch_checkout,
 )
 from loregarden.services.chat_primitives import load_parts_json
-from loregarden.services.chat_thinking import ChatTurnThinkingSink
-from loregarden.services.cli_agent_runner import (
-    resolve_agent_timeout,
-    run_cli_agent_turn,
-    stub_response,
-)
-from loregarden.services.cli_output import extract_triage_reply
-from loregarden.services.cli_settings import (
-    resolve_effective_adapter,
-    resolve_model_for_adapter,
-)
+from loregarden.services.cli_agent_runner import stub_response
+from loregarden.services.cli_settings import resolve_effective_adapter
 from loregarden.services.triage_service import (
     TRIAGE_AGENT_ID,
     TRIAGE_AGENT_NAME,
@@ -270,10 +253,14 @@ def invoke_branch_triage_model(
         workspace=effective_workspace,
     )
     checkout_root = resolve_branch_checkout(workspace, branch)
-    interactive = selected == "claude" and bool(run_id) and checkout_root is not None
+    can_bridge = selected == "claude" and bool(run_id) and checkout_root is not None
+    intent = "execute" if can_bridge else "advisory"
     advisory_reason = ""
     if selected != "claude":
-        advisory_reason = f"The selected {selected} adapter has no complete approval bridge."
+        advisory_reason = (
+            f"The selected {selected} adapter uses the shared oneshot path "
+            "(no mid-turn inbox bridge for this checkout)."
+        )
     elif checkout_root is None:
         advisory_reason = (
             f"Branch {branch!r} is not checked out in a worktree. Check it out before asking "
@@ -287,62 +274,28 @@ def invoke_branch_triage_model(
         history,
         latest_user_message,
         ticket=ticket,
-        interactive=interactive,
+        interactive=intent == "execute",
         advisory_reason=advisory_reason,
     )
-    if interactive:
-        assert checkout_root is not None
-        model = (
-            os.environ.get("LOREGARDEN_BRANCH_TRIAGE_CLAUDE_MODEL", "").strip()
-            or os.environ.get("LOREGARDEN_TRIAGE_CLAUDE_MODEL", "").strip()
-            or resolve_model_for_adapter("claude", effective_workspace)
-            or "haiku"
-        )
-        timeout = resolve_agent_timeout(agent, BRANCH_TRIAGE_CLI_PROFILE.timeout_env)
-        thinking = ChatTurnThinkingSink(turn_id) if turn_id else None
-        try:
-            with TemporaryDirectory(prefix=BRANCH_TRIAGE_CLI_PROFILE.tmp_prefix) as tmp:
-                prompt_file = Path(tmp) / "prompt.md"
-                prompt_file.write_text(prompt, encoding="utf-8")
-                invocation = build_interactive_invocation(
-                    adapter="claude",
-                    prompt_file=prompt_file,
-                    workspace_root=checkout_root,
-                    claude_model=model,
-                    partial_messages=thinking is not None,
-                    db_session=session,
-                )
-                result = PermissionBridgeRunner(session, track_workflow_stage=False).run(
-                    run_id=run_id,
-                    workspace=workspace,
-                    workspace_stage_key=BRANCH_TRIAGE_STAGE_KEY,
-                    invocation=invocation,
-                    prompt=prompt,
-                    timeout_seconds=timeout,
-                    streamer=thinking,
-                )
-        finally:
-            if thinking:
-                thinking.close()
-        reply = extract_triage_reply(result.stdout)
-        if result.status != RunStatus.SUCCEEDED:
-            raise RuntimeError(result.stderr or f"{TRIAGE_AGENT_NAME} run {result.status.value}")
-        if not reply:
-            raise RuntimeError(f"{TRIAGE_AGENT_NAME} returned an empty response")
-        return reply[: BRANCH_TRIAGE_CLI_PROFILE.reply_cap]
-
-    advisory_thinking = ChatTurnThinkingSink(turn_id) if turn_id else None
-    try:
-        return run_cli_agent_turn(
-            BRANCH_TRIAGE_CLI_PROFILE,
+    turn = run_agent_turn(
+        AgentTurnRequest(
+            session=session,
             workspace=effective_workspace,
             prompt=prompt,
+            profile=BRANCH_TRIAGE_CLI_PROFILE,
+            agent=agent,
+            intent=intent,
+            adapter=selected,
             user_prompt=os.environ.get(
                 "LOREGARDEN_BRANCH_TRIAGE_USER_PROMPT", DEFAULT_BRANCH_TRIAGE_USER_PROMPT
             ),
-            read_only=True,
-            thinking_sink=advisory_thinking,
+            turn_id=turn_id,
+            run_id=run_id,
+            manage_run=False,
+            workspace_root=checkout_root if can_bridge else None,
+            workspace_stage_key=BRANCH_TRIAGE_STAGE_KEY,
+            claude_model_env="LOREGARDEN_BRANCH_TRIAGE_CLAUDE_MODEL",
+            track_workflow_stage=False,
         )
-    finally:
-        if advisory_thinking:
-            advisory_thinking.close()
+    )
+    return turn.reply

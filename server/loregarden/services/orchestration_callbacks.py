@@ -103,6 +103,7 @@ class OrchestrationCallbackService:
         profile_slug: str = "",
         auto_approve: bool = False,
         stop_at_stage_key: str = "",
+        timeout_override_seconds: int | None = None,
     ) -> OrchestrationRun:
         """Reserve this ticket's orchestration before anything executes it.
 
@@ -144,6 +145,7 @@ class OrchestrationCallbackService:
             current_stage_key=ticket.workflow_stage_key,
             auto_approve=auto_approve,
             stop_at_stage_key=stop_at_stage_key or "",
+            timeout_override_seconds=timeout_override_seconds,
         )
         self.session.add(run)
         self.session.commit()
@@ -171,12 +173,19 @@ class OrchestrationCallbackService:
         profile_slug: str,
         auto_approve: bool = False,
         stop_at_stage_key: str = "",
+        timeout_override_seconds: int | None = None,
     ) -> OrchestrationRun:
         active = self.get_active_orchestration_run(ticket.id)
         if active and active.status == OrchestrationRunStatus.QUEUED:
             # The claim this execution was dispatched for. Adopt it, so whoever
             # bound a slot to that id follows the work it stands for.
-            return self._adopt_claim(active, ticket, driver=driver, profile_slug=profile_slug)
+            return self._adopt_claim(
+                active,
+                ticket,
+                driver=driver,
+                profile_slug=profile_slug,
+                timeout_override_seconds=timeout_override_seconds,
+            )
         if active:
             raise ValueError(f"Orchestration already running: {active.run_code}")
 
@@ -213,6 +222,7 @@ class OrchestrationCallbackService:
             current_stage_key=ticket.workflow_stage_key,
             auto_approve=auto_approve,
             stop_at_stage_key=stop_at_stage_key or "",
+            timeout_override_seconds=timeout_override_seconds,
             started_at=datetime.now(timezone.utc),
         )
         self.session.add(run)
@@ -235,17 +245,19 @@ class OrchestrationCallbackService:
         *,
         driver,
         profile_slug: str,
+        timeout_override_seconds: int | None = None,
     ) -> OrchestrationRun:
         """Turn a claim into the running orchestration it stood for.
 
-        `auto_approve` and `stop_at_stage_key` stay the claim's: they were
-        answered by whoever queued the ticket, which may have been a dialog
-        closed long before a lane reached this entry.
+        `auto_approve`, `stop_at_stage_key` and the timeout stay the claim's
+        when already set: they were answered by whoever queued the ticket.
         """
         if ticket.state == TicketState.BACKLOG:
             self.orch.start_ticket(ticket)
             self.session.refresh(ticket)
 
+        if timeout_override_seconds is not None and run.timeout_override_seconds is None:
+            run.timeout_override_seconds = timeout_override_seconds
         run.status = OrchestrationRunStatus.RUNNING
         run.driver = driver
         run.profile_slug = profile_slug

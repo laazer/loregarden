@@ -31,6 +31,7 @@ from loregarden.services.orchestration_profile import (
     update_gates_config,
     update_git_config,
 )
+from loregarden.services.queue_admission import QueueAdmissionService
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/orchestration", tags=["orchestration"])
@@ -147,23 +148,50 @@ def start_orchestration(
     profile = resolve_orchestration_profile(ws)
     driver = body.driver or profile.driver
 
+    # Same pool as /orchestrate and MCP: this path used to start work with no
+    # slot, so the board showed idle lanes while agents ran.
+    reservation = QueueAdmissionService(session).reserve_orchestration(
+        ticket,
+        auto_approve=body.auto_approve,
+        stop_at_stage_key=body.stop_at_stage_key,
+        preferred_slot=body.slot_number,
+        driver=driver.value if driver else "",
+        max_stages=body.max_stages,
+        timeout_seconds=body.timeout_seconds,
+    )
+    if not reservation.admitted:
+        raise HTTPException(
+            409,
+            detail={"status": "queued", **reservation.as_dict()},
+        )
+
     try:
         if driver == OrchestrationDriver.BUILTIN_AUTOPILOT:
             run = BuiltinOrchestrator(session).execute(
                 ticket,
                 profile,
                 max_stages=body.max_stages,
+                stop_at_stage_key=body.stop_at_stage_key,
+                auto_approve=body.auto_approve,
+                timeout_seconds=body.timeout_seconds,
             )
         elif driver == OrchestrationDriver.EXTERNAL_MCP:
             run = svc.start_orchestration_run(
                 ticket,
                 driver=driver,
                 profile_slug=profile.slug,
+                auto_approve=body.auto_approve,
+                stop_at_stage_key=body.stop_at_stage_key or "",
+                timeout_override_seconds=body.timeout_seconds,
             )
         else:
+            reservation.release()
             raise ValueError("Use POST /api/tickets/{id}/start for manual_stage driver")
     except ValueError as exc:
+        reservation.release()
         raise HTTPException(400, str(exc)) from exc
+
+    reservation.bind(orchestration_run_id=run.id)
     return _run_view(run)
 
 

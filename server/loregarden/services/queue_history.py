@@ -23,6 +23,7 @@ from loregarden.models.domain import (
     QueuedRun,
     QueuePosition,
     Ticket,
+    Workspace,
 )
 from sqlmodel import Session, col, select
 
@@ -56,6 +57,8 @@ class QueueHistoryEntry:
 
     entry_id: str
     workspace_id: str
+    workspace_slug: str
+    workspace_name: str
     slot_number: int
     entry_kind: str
     stage_key: str
@@ -120,10 +123,11 @@ class QueueHistoryService:
         `outcome` filters on the derived value, which no column holds, so it is
         applied after the join rather than in SQL.
         """
-        stmt = select(QueuedRun, Ticket, OrchestrationRun).where(
+        stmt = select(QueuedRun, Ticket, OrchestrationRun, Workspace).where(
             col(QueuedRun.status).not_in(LIVE_STATUSES)
         )
         stmt = stmt.join(Ticket, col(QueuedRun.ticket_id) == col(Ticket.id))
+        stmt = stmt.join(Workspace, col(QueuedRun.workspace_id) == col(Workspace.id))
         stmt = stmt.join(
             OrchestrationRun,
             col(QueuedRun.orchestration_run_id) == col(OrchestrationRun.id),
@@ -141,7 +145,10 @@ class QueueHistoryService:
         )
 
         rows = self.session.exec(stmt).all()
-        entries = [_to_entry(entry, ticket, orchestration) for entry, ticket, orchestration in rows]
+        entries = [
+            _to_entry(entry, ticket, orchestration, workspace)
+            for entry, ticket, orchestration, workspace in rows
+        ]
         if outcome:
             entries = [item for item in entries if item.outcome == outcome]
 
@@ -150,12 +157,17 @@ class QueueHistoryService:
 
 
 def _to_entry(
-    entry: QueuedRun, ticket: Ticket, orchestration: OrchestrationRun | None
+    entry: QueuedRun,
+    ticket: Ticket,
+    orchestration: OrchestrationRun | None,
+    workspace: Workspace,
 ) -> QueueHistoryEntry:
     finished_at = orchestration.finished_at if orchestration else entry.last_failed_at
     return QueueHistoryEntry(
         entry_id=entry.id,
         workspace_id=entry.workspace_id,
+        workspace_slug=workspace.slug,
+        workspace_name=workspace.name,
         slot_number=entry.slot_number,
         entry_kind=entry.entry_kind,
         stage_key=entry.stage_key,

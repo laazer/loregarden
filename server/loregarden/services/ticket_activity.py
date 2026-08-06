@@ -34,8 +34,10 @@ from sqlmodel import Session, col, select
 _RUNNING_RUN_STATUSES = (RunStatus.RUNNING,)
 #: The process exists but is parked on an approval — running, but not advancing.
 _AWAITING_RUN_STATUSES = (RunStatus.AWAITING_PERMISSION,)
-#: A lane entry that has been handed a slot; the dispatch is under way.
-_RUNNING_QUEUE_STATUSES = (QueuePosition.PROMOTED, QueuePosition.STARTED, QueuePosition.ACTIVE)
+#: A lane entry that currently holds a slot. ``STARTED`` is *not* here — that
+#: is the terminal "lane released" state set by ``on_orchestration_complete``,
+#: and treating it as live made finished (even blocked) tickets read "running".
+_RUNNING_QUEUE_STATUSES = (QueuePosition.PROMOTED, QueuePosition.ACTIVE)
 #: Waiting its turn behind whatever holds the slot.
 _QUEUED_QUEUE_STATUSES = (QueuePosition.QUEUED, QueuePosition.SCHEDULED)
 

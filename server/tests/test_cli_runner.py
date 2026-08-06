@@ -130,11 +130,40 @@ def test_resolve_lmstudio_adapter(tmp_path, monkeypatch):
 
     assert inv.adapter == "lmstudio"
     assert "lmstudio_runner" in " ".join(inv.argv)
+    assert "--stream" in inv.argv
     assert "--base-url" in inv.argv
     base_idx = inv.argv.index("--base-url")
     assert inv.argv[base_idx + 1] == "http://127.0.0.1:8080/v1"
     model_idx = inv.argv.index("--model")
     assert inv.argv[model_idx + 1] == "my-model"
+
+
+def test_resolve_lmstudio_adapter_can_disable_stream(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "lmstudio")
+    monkeypatch.setenv("LOREGARDEN_LMSTUDIO_STREAM", "0")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("implement feature", encoding="utf-8")
+    workspace_root = tmp_path / "repo"
+    workspace_root.mkdir()
+    ws = Workspace(
+        slug="test",
+        name="Test",
+        lmstudio_base_url="http://127.0.0.1:8080/v1",
+        lmstudio_model="my-model",
+    )
+
+    inv = resolve_cli_invocation(
+        agent_id="planner",
+        adapter="claude",
+        prompt="implement feature",
+        prompt_file=prompt_file,
+        skill_name="plan",
+        workspace_root=workspace_root,
+        workspace=ws,
+    )
+
+    assert inv.adapter == "lmstudio"
+    assert "--stream" not in inv.argv
 
 
 def test_resolve_cursor_adapter(tmp_path, monkeypatch):
@@ -563,7 +592,34 @@ def test_read_only_triage_invocation_uses_codex_read_only_sandbox(tmp_path, monk
 
     assert inv.adapter == "codex"
     assert inv.argv[2:4] == ["--sandbox", "read-only"]
+    assert "--json" in inv.argv
     assert inv.argv[inv.argv.index("--model") + 1] == "gpt-5"
+
+
+def test_writable_triage_invocation_uses_codex_workspace_write_sandbox(tmp_path, monkeypatch):
+    from loregarden.agents.cli_adapters import build_triage_invocation
+
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "codex")
+    monkeypatch.setenv("LOREGARDEN_CODEX_BIN", "codex")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("triage", encoding="utf-8")
+    workspace_root = tmp_path / "repo"
+    workspace_root.mkdir()
+
+    inv = build_triage_invocation(
+        agent_id="triage",
+        adapter="claude",
+        prompt="execute the plan",
+        prompt_file=prompt_file,
+        skill_name="",
+        workspace_root=workspace_root,
+        workspace=Workspace(slug="test", name="Test", codex_model="gpt-5"),
+        read_only=False,
+    )
+
+    assert inv.adapter == "codex"
+    assert inv.argv[2:4] == ["--sandbox", "workspace-write"]
+    assert "--json" in inv.argv
 
 
 def test_resolve_adapter_ticket_override(tmp_path, monkeypatch):

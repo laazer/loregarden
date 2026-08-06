@@ -5,6 +5,7 @@ import type { DiffChange } from "../components/QueueDiffViewer";
 
 export interface QueueOperationSummary {
   id: string;
+  workspace_id: string;
   operation_type: string;
   description: string;
   created_by: string;
@@ -16,6 +17,7 @@ export interface QueueOperationSummary {
 
 export interface QueueOperationDetails {
   operation_id: string;
+  workspace_id: string;
   operation_type: string;
   description: string;
   created_by: string;
@@ -53,14 +55,21 @@ async function reviewRequest<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function listQueueOperations(
-  workspaceId: string,
+  workspaceIdOrOptions?: string | { workspaceId?: string; approvedOnly?: boolean; limit?: number },
   options?: { approvedOnly?: boolean; limit?: number },
 ): Promise<{ operations: QueueOperationSummary[]; total: number }> {
+  const opts =
+    typeof workspaceIdOrOptions === "string"
+      ? { workspaceId: workspaceIdOrOptions, ...options }
+      : (workspaceIdOrOptions ?? {});
   const params = new URLSearchParams({
-    approved_only: String(options?.approvedOnly ?? false),
-    limit: String(options?.limit ?? 20),
+    approved_only: String(opts.approvedOnly ?? false),
+    limit: String(opts.limit ?? 20),
   });
-  return reviewRequest(`/api/parallel/workspace/${workspaceId}/queue/operations?${params}`);
+  const path = opts.workspaceId
+    ? `/api/parallel/workspace/${opts.workspaceId}/queue/operations?${params}`
+    : `/api/parallel/queue/operations?${params}`;
+  return reviewRequest(path);
 }
 
 export async function getQueueOperationDiff(

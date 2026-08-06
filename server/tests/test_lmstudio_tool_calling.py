@@ -218,6 +218,19 @@ def test_assistant_text_prefers_content_then_reasoning_json():
     )
 
 
+def test_stdout_heartbeat_emits_while_blocked(monkeypatch, capsys):
+    """Idle print-mode budget needs a line during long non-stream completions."""
+    import time
+
+    from loregarden.agents.executors import lmstudio_runner as runner
+
+    monkeypatch.setattr(runner, "_HEARTBEAT_SECONDS", 0.05)
+    with runner._stdout_heartbeat("test"):
+        time.sleep(0.12)
+    out = capsys.readouterr().out
+    assert "[WAIT] test" in out
+
+
 def test_without_mcp_details_it_stays_a_plain_chat(monkeypatch):
     """Existing lmstudio use keeps working; tools are opt-in per run."""
     transport = FakeTransport([{"role": "assistant", "content": "plain answer"}])
@@ -256,6 +269,7 @@ def test_the_invocation_carries_the_run_context(tmp_path, monkeypatch):
         granted_tools=["loregarden_get_ticket", "loregarden_complete_stage"],
     )
     argv = invocation.argv
+    assert "--stream" in argv
     assert "--run-id" in argv and argv[argv.index("--run-id") + 1] == "run-9"
     assert "--mcp-url" in argv
     assert argv[argv.index("--tools") + 1] == "loregarden_get_ticket,loregarden_complete_stage"
@@ -320,6 +334,7 @@ def test_triage_lmstudio_invocation_carries_run_mcp(tmp_path, monkeypatch):
         granted_tools=["loregarden_get_ticket"],
     )
     assert inv.adapter == "lmstudio"
+    assert "--stream" in inv.argv
     assert inv.argv[inv.argv.index("--model") + 1] == "local-chat"
     assert inv.argv[inv.argv.index("--run-id") + 1] == "run-triage-1"
     assert "--mcp-url" in inv.argv

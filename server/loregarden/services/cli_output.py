@@ -39,6 +39,17 @@ def extract_triage_reply(stdout: str) -> str:
                 text = _result_text(payload)
                 if text:
                     return text
+            # Codex final assistant text arrives as item.completed / agent_message.
+            if payload.get("type") == "item.completed":
+                item = payload.get("item") or {}
+                if (
+                    isinstance(item, dict)
+                    and item.get("type") == "agent_message"
+                    and isinstance(item.get("text"), str)
+                    and item["text"].strip()
+                ):
+                    parts.append(item["text"].strip())
+                    continue
             formatted = format_stream_payload(payload)
             if formatted and formatted[0] == "OUT":
                 parts.append(formatted[1])

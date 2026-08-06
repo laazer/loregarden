@@ -24,6 +24,8 @@ export interface AgentsAssembleOptions {
    * start takes a slot now, so this dialog has to say which one.
    */
   slotNumber: LaneChoice;
+  /** Max seconds each agent run may take; undefined keeps the agent default. */
+  timeoutSeconds?: number;
 }
 
 interface AgentsAssembleModalProps {
@@ -60,6 +62,7 @@ export function AgentsAssembleModal({
   const [autoApprove, setAutoApprove] = useState(false);
   const [branch, setBranch] = useState("");
   const [slotNumber, setSlotNumber] = useState<LaneChoice>(defaultSlotNumber);
+  const [timeoutSeconds, setTimeoutSeconds] = useState("");
 
   useEffect(() => {
     if (!open || !ticket) return;
@@ -68,6 +71,7 @@ export function AgentsAssembleModal({
     setAutoApprove(false);
     setBranch(ticket.branch || `loregarden/${ticket.external_id}`);
     setSlotNumber(defaultSlotNumber);
+    setTimeoutSeconds("");
   }, [open, ticket, workspaceRuntime, defaultSlotNumber]);
 
   if (!open || !ticket) return null;
@@ -157,6 +161,23 @@ export function AgentsAssembleModal({
             />
           </div>
 
+          <div style={{ marginBottom: 16 }}>
+            <div className="modal-section-title">Max agent runtime (seconds, optional)</div>
+            <input
+              type="number"
+              min={30}
+              className="btn-secondary"
+              style={{ width: 140, fontSize: 12, boxSizing: "border-box" }}
+              value={timeoutSeconds}
+              disabled={busy}
+              onChange={(e) => setTimeoutSeconds(e.target.value)}
+              placeholder="Agent default"
+            />
+            <p className="modal-hint" style={{ marginTop: 6 }}>
+              Applies to every agent run for this ticket and its child tickets.
+            </p>
+          </div>
+
           <label
             style={{
               display: "flex",
@@ -185,7 +206,10 @@ export function AgentsAssembleModal({
             type="button"
             className="btn-primary"
             disabled={busy || (!isParent && !branch.trim())}
-            onClick={() =>
+            onClick={() => {
+              const parsedTimeout = timeoutSeconds.trim()
+                ? Number(timeoutSeconds)
+                : undefined;
               void onConfirm({
                 runtime: draftRuntime,
                 stopAtStageKey,
@@ -194,8 +218,12 @@ export function AgentsAssembleModal({
                 // treats it as unchanged and never rewrites it.
                 branch: isParent ? (ticket.branch ?? "") : branch.trim(),
                 slotNumber,
-              })
-            }
+                timeoutSeconds:
+                  parsedTimeout !== undefined && Number.isFinite(parsedTimeout)
+                    ? parsedTimeout
+                    : undefined,
+              });
+            }}
           >
             {isSavingRuntime ? "Saving…" : isRunning ? "Starting…" : "Start orchestration"}
           </button>

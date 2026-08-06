@@ -95,6 +95,7 @@ class BuiltinOrchestrator:
         max_stages: int | None = None,
         stop_at_stage_key: str | None = None,
         auto_approve: bool = False,
+        timeout_seconds: int | None = None,
         _subtree_budget: SubtreeBudget | None = None,
     ) -> OrchestrationRun:
         limit = max_stages if max_stages is not None else profile.max_stages_per_run
@@ -109,8 +110,16 @@ class BuiltinOrchestrator:
             profile_slug=profile.slug,
             auto_approve=auto_approve,
             stop_at_stage_key=stop_at_stage_key or "",
+            timeout_override_seconds=timeout_seconds,
         )
         self.session.refresh(ticket)
+        # Prefer the claim's stored timeout when this execute was dispatched from
+        # a lane that already answered the dialog.
+        agent_timeout = (
+            orch_run.timeout_override_seconds
+            if orch_run.timeout_override_seconds is not None
+            else timeout_seconds
+        )
 
         stages_run = 0
         try:
@@ -118,8 +127,13 @@ class BuiltinOrchestrator:
                 if self._should_stop_orchestration(ticket, orch_run):
                     break
 
-                child_pause = self._orchestrate_incomplete_children(
-                    ticket, profile, auto_approve=auto_approve, subtree_budget=budget
+                child_pause = _orchestrate_incomplete_children(
+                    self,
+                    ticket,
+                    profile,
+                    auto_approve=auto_approve,
+                    timeout_seconds=agent_timeout,
+                    subtree_budget=budget,
                 )
                 if child_pause:
                     return self._pause_orchestration(orch_run, ticket, message=child_pause)
@@ -188,23 +202,16 @@ class BuiltinOrchestrator:
                         continue
                     return handled
 
-                if stage_def.stage_type == "parallel":
-                    stopped = self._run_parallel_stage_or_stop(
-                        ticket,
-                        orch_run,
-                        stage_def,
-                        target_key,
-                        auto_approve=auto_approve,
-                        resuming=(target_key == recovered_stage_key),
-                    )
-                else:
-                    stopped = self._run_sequential_stage(
-                        ticket,
-                        orch_run,
-                        target_key,
-                        auto_approve=auto_approve,
-                        stop_at_stage_key=stop_at_stage_key,
-                    )
+                stopped = self._dispatch_agent_stage(
+                    ticket,
+                    orch_run,
+                    stage_def,
+                    target_key,
+                    auto_approve=auto_approve,
+                    timeout_seconds=agent_timeout,
+                    stop_at_stage_key=stop_at_stage_key,
+                    resuming=(target_key == recovered_stage_key),
+                )
                 stages_run += 1
                 budget.consume(terminal=target_is_terminal)
                 if stopped:
@@ -392,6 +399,38 @@ class BuiltinOrchestrator:
             return None
         return self._pause_orchestration(orch_run, ticket, message="Awaiting human approval")
 
+    def _dispatch_agent_stage(
+        self,
+        ticket: Ticket,
+        orch_run: OrchestrationRun,
+        stage_def: WorkflowStageDef,
+        target_key: str,
+        *,
+        auto_approve: bool,
+        timeout_seconds: int | None,
+        stop_at_stage_key: str | None,
+        resuming: bool,
+    ) -> bool:
+        """Run a parallel or sequential agent stage; True means stop the loop."""
+        if stage_def.stage_type == "parallel":
+            return self._run_parallel_stage_or_stop(
+                ticket,
+                orch_run,
+                stage_def,
+                target_key,
+                auto_approve=auto_approve,
+                timeout_seconds=timeout_seconds,
+                resuming=resuming,
+            )
+        return self._run_sequential_stage(
+            ticket,
+            orch_run,
+            target_key,
+            auto_approve=auto_approve,
+            timeout_seconds=timeout_seconds,
+            stop_at_stage_key=stop_at_stage_key,
+        )
+
     def _run_parallel_stage_or_stop(
         self,
         ticket: Ticket,
@@ -400,6 +439,7 @@ class BuiltinOrchestrator:
         target_key: str,
         *,
         auto_approve: bool,
+        timeout_seconds: int | None = None,
         resuming: bool,
     ) -> bool:
         """Run a parallel stage. Returns True if the caller should stop and
@@ -411,6 +451,7 @@ class BuiltinOrchestrator:
             stage_def,
             target_key,
             auto_approve=auto_approve,
+            timeout_seconds=timeout_seconds,
             resuming=resuming,
         )
         if ok:
@@ -430,6 +471,7 @@ class BuiltinOrchestrator:
         target_key: str,
         *,
         auto_approve: bool,
+        timeout_seconds: int | None = None,
         stop_at_stage_key: str | None,
     ) -> bool:
         """Run a single-agent stage. Returns True if the caller should stop
@@ -441,6 +483,7 @@ class BuiltinOrchestrator:
             stage_key=target_key,
             orchestration_run_id=orch_run.id,
             auto_approve=auto_approve,
+            timeout_override_seconds=timeout_seconds,
         )
         completed = self.executor.execute(agent_run, ticket)
         self.session.refresh(ticket)
@@ -777,6 +820,7 @@ class BuiltinOrchestrator:
         stage_key: str,
         *,
         auto_approve: bool = False,
+        timeout_seconds: int | None = None,
         resuming: bool = False,
     ) -> tuple[bool, str]:
         specs = stage_def.parallel_agents
@@ -802,7 +846,13 @@ class BuiltinOrchestrator:
             return False, branch_error
 
         runs = self._start_parallel_stage_runs(
-            ticket, orch_run, stage_def, stage_key, pending_specs, auto_approve=auto_approve
+            ticket,
+            orch_run,
+            stage_def,
+            stage_key,
+            pending_specs,
+            auto_approve=auto_approve,
+            timeout_seconds=timeout_seconds,
         )
         failures, reports, transient = self._run_and_collect_parallel_results(runs)
 
@@ -898,6 +948,7 @@ class BuiltinOrchestrator:
         specs,
         *,
         auto_approve: bool,
+        timeout_seconds: int | None = None,
     ) -> list[AgentRun]:
         runs: list[AgentRun] = []
         for spec in specs:
@@ -908,6 +959,7 @@ class BuiltinOrchestrator:
                 agent_id=spec.agent_id,
                 skill_name=spec.skill_name or stage_def.skill_name,
                 auto_approve=auto_approve,
+                timeout_override_seconds=timeout_seconds,
             )
             runs.append(run)
         return runs
@@ -1028,54 +1080,57 @@ class BuiltinOrchestrator:
                 return key
         return None
 
-    def _orchestrate_incomplete_children(
-        self,
-        ticket: Ticket,
-        profile: OrchestrationProfile,
-        *,
-        auto_approve: bool = False,
-        subtree_budget: SubtreeBudget | None = None,
-    ) -> str | None:
-        """Run direct child workflows sequentially before advancing the parent.
+def _orchestrate_incomplete_children(
+    builtin: BuiltinOrchestrator,
+    ticket: Ticket,
+    profile: OrchestrationProfile,
+    *,
+    auto_approve: bool = False,
+    timeout_seconds: int | None = None,
+    subtree_budget: SubtreeBudget | None = None,
+) -> str | None:
+    """Run direct child workflows sequentially before advancing the parent.
 
-        `auto_approve` and `subtree_budget` propagate into each nested
-        execute() call, recursively covering the whole descendant subtree
-        (ticket 164) — without this, every child run would default back to
-        auto_approve=False and halt on its first non-allowlisted tool call.
-        """
-        children = list(
-            self.session.exec(select(Ticket).where(Ticket.parent_ticket_id == ticket.id)).all()
+    `auto_approve`, `timeout_seconds` and `subtree_budget` propagate into each
+    nested execute() call, recursively covering the whole descendant subtree —
+    without this, every child run would default back to auto_approve=False and
+    the agent's own timeout. Module-level so BuiltinOrchestrator stays under
+    its size cap.
+    """
+    children = list(
+        builtin.session.exec(select(Ticket).where(Ticket.parent_ticket_id == ticket.id)).all()
+    )
+    prereqs = TicketDependencyService(builtin.session).prerequisites_map([c.id for c in children])
+    children = order_children_for_subtree(children, prereqs)
+    for child in children:
+        if child.work_item_type not in WORKFLOW_WORK_ITEM_TYPES:
+            continue
+        builtin.orch.ensure_workflow_instance(child, commit=True)
+        if ticket_workflow_complete(builtin.orch, child):
+            continue
+        child_run = BuiltinOrchestrator(builtin.session).execute(
+            child,
+            profile,
+            max_stages=None,
+            auto_approve=auto_approve,
+            timeout_seconds=timeout_seconds,
+            _subtree_budget=subtree_budget,
         )
-        prereqs = TicketDependencyService(self.session).prerequisites_map([c.id for c in children])
-        children = order_children_for_subtree(children, prereqs)
-        for child in children:
-            if child.work_item_type not in WORKFLOW_WORK_ITEM_TYPES:
-                continue
-            self.orch.ensure_workflow_instance(child, commit=True)
-            if ticket_workflow_complete(self.orch, child):
-                continue
-            child_run = BuiltinOrchestrator(self.session).execute(
-                child,
-                profile,
-                max_stages=None,
-                auto_approve=auto_approve,
-                _subtree_budget=subtree_budget,
-            )
-            self.session.refresh(ticket)
-            self.session.refresh(child)
-            if child.state == TicketState.BLOCKED:
-                return f"Child ticket blocked: {child.title}"
-            if child_run.status == OrchestrationRunStatus.BLOCKED:
-                return f"Child workflow blocked: {child.title}"
-            if not ticket_workflow_complete(self.orch, child):
-                # Chain the child's own pause reason so a block deeper in the
-                # subtree stays visible at every level above it — otherwise a
-                # grandparent's run reports only "Child workflow paused" and the
-                # blocked grandchild two levels down is invisible from the top.
-                reason = (child_run.error_message or "").strip()
-                suffix = f" — {reason}" if reason else ""
-                return f"Child workflow paused: {child.title}{suffix}"
-        return None
+        builtin.session.refresh(ticket)
+        builtin.session.refresh(child)
+        if child.state == TicketState.BLOCKED:
+            return f"Child ticket blocked: {child.title}"
+        if child_run.status == OrchestrationRunStatus.BLOCKED:
+            return f"Child workflow blocked: {child.title}"
+        if not ticket_workflow_complete(builtin.orch, child):
+            # Chain the child's own pause reason so a block deeper in the
+            # subtree stays visible at every level above it — otherwise a
+            # grandparent's run reports only "Child workflow paused" and the
+            # blocked grandchild two levels down is invisible from the top.
+            reason = (child_run.error_message or "").strip()
+            suffix = f" — {reason}" if reason else ""
+            return f"Child workflow paused: {child.title}{suffix}"
+    return None
 
 
 def _handle_parallel_stage_failures(

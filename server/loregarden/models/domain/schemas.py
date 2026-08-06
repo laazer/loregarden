@@ -284,6 +284,9 @@ class StartOrchestrationRequest(SQLModel):
     max_stages: int | None = None
     stop_at_stage_key: str | None = None
     auto_approve: bool = False
+    #: Max seconds each agent run in this orchestration (and its child tickets)
+    #: may take. None keeps each agent's configured default.
+    timeout_seconds: int | None = None
     #: The lane to run in. None means any — the pool picks the quietest free
     #: one, and a full pool parks the request in the shortest queue.
     slot_number: int | None = None

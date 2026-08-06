@@ -350,7 +350,8 @@
 
 .queue-slot-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* minmax(0, 1fr): long hierarchy titles must not stretch one column wider. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -360,6 +361,7 @@
   border-radius: 13px;
   padding: 15px 16px;
   min-height: 150px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
@@ -477,6 +479,57 @@
   -webkit-line-clamp: 2;
   line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+/* Work-items path on a lane card: indented code · title, leaf is the focus. */
+.queue-hierarchy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.queue-hierarchy-node {
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--txl);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-hierarchy-node.is-leaf {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tx);
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.queue-hierarchy-code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txm);
+}
+
+.queue-hierarchy-node.is-leaf .queue-hierarchy-code {
+  font-size: 11.5px;
+  color: var(--tx);
+}
+
+.queue-hierarchy-sep {
+  color: var(--bd2);
+}
+
+.queue-lane-item-copy .queue-hierarchy {
+  margin-bottom: 2px;
+}
+
+.queue-lane-item-copy .queue-hierarchy-node.is-leaf {
+  font-size: 12.5px;
 }
 
 .queue-slot-sub,

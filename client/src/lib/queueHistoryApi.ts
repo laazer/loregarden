@@ -11,6 +11,8 @@ import { API_BASE } from "../api/client";
 export interface QueueHistoryEntry {
   entry_id: string;
   workspace_id: string;
+  workspace_slug: string;
+  workspace_name: string;
   slot_number: number;
   entry_kind: string;
   stage_key: string;
@@ -47,12 +49,15 @@ export interface QueueHistoryPage {
   offset: number;
 }
 
-export async function listQueueHistory(
-  workspaceId: string,
-  options?: { outcome?: string; slotNumber?: number; ticketId?: string; limit?: number },
-): Promise<QueueHistoryPage> {
+export async function listQueueHistory(options?: {
+  workspaceId?: string;
+  outcome?: string;
+  slotNumber?: number;
+  ticketId?: string;
+  limit?: number;
+}): Promise<QueueHistoryPage> {
   const params = new URLSearchParams();
-  if (workspaceId) params.set("workspace_id", workspaceId);
+  if (options?.workspaceId) params.set("workspace_id", options.workspaceId);
   if (options?.outcome) params.set("outcome", options.outcome);
   if (options?.slotNumber !== undefined) params.set("slot_number", String(options.slotNumber));
   if (options?.ticketId) params.set("ticket_id", options.ticketId);

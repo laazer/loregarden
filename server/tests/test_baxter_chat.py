@@ -146,7 +146,7 @@ def test_baxter_chat_session_scoped_to_its_workspace(client: TestClient, monkeyp
 
 
 def test_baxter_chat_prompt_includes_snapshot_and_stored_history(client: TestClient, monkeypatch):
-    from loregarden.services import baxter_chat_service
+    from loregarden.services import agent_turn_runner, baxter_chat_service
 
     captured: dict[str, object] = {}
 
@@ -166,7 +166,7 @@ def test_baxter_chat_prompt_includes_snapshot_and_stored_history(client: TestCli
     monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
     # Force the advisory path so this test stays about prompt content, not the bridge.
     monkeypatch.setattr(baxter_chat_service, "resolve_effective_adapter", lambda **_: "cursor")
-    monkeypatch.setattr(baxter_chat_service, "run_cli_agent_turn", fake_run)
+    monkeypatch.setattr(agent_turn_runner, "run_cli_agent_turn", fake_run)
     client.post(
         f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/messages",
         json={"content": "What should I look at first?"},
@@ -192,7 +192,7 @@ def test_baxter_chat_prompt_includes_snapshot_and_stored_history(client: TestCli
 
 
 def test_baxter_chat_uses_session_runtime_for_turn(client: TestClient, monkeypatch):
-    from loregarden.services import baxter_chat_service
+    from loregarden.services import agent_turn_runner
 
     captured: dict[str, object] = {}
 
@@ -202,7 +202,7 @@ def test_baxter_chat_uses_session_runtime_for_turn(client: TestClient, monkeypat
         return "ok from selected runtime"
 
     monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
-    monkeypatch.setattr(baxter_chat_service, "run_cli_agent_turn", fake_run)
+    monkeypatch.setattr(agent_turn_runner, "run_cli_agent_turn", fake_run)
 
     session_id = _new_session(client)
     client.patch(
@@ -326,19 +326,28 @@ def test_second_turn_rejected_while_one_is_in_flight(client: TestClient):
 
 
 def test_baxter_chat_interactive_prompt_grants_tools(client: TestClient, monkeypatch):
-    from loregarden.services import baxter_chat_service
+    from loregarden.services import agent_turn_runner, baxter_chat_service
 
     captured: dict[str, object] = {}
 
-    def fake_interactive(session, workspace, prompt, *, agent, turn_id=""):
-        captured["prompt"] = prompt
-        captured["workspace"] = workspace.slug
-        captured["turn_id"] = turn_id
-        return "patched the flaky test"
+    def fake_turn(request):
+        captured["prompt"] = request.prompt
+        captured["workspace"] = request.workspace.slug
+        captured["turn_id"] = request.turn_id
+        captured["intent"] = request.intent
+        from loregarden.services.agent_turn_runner import AgentTurnResult
+
+        return AgentTurnResult(
+            reply="patched the flaky test",
+            strategy="permission_bridge",
+            adapter="claude",
+            run_id="run-1",
+        )
 
     monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
     monkeypatch.setattr(baxter_chat_service, "resolve_effective_adapter", lambda **_: "claude")
-    monkeypatch.setattr(baxter_chat_service, "_run_interactive_turn", fake_interactive)
+    monkeypatch.setattr(agent_turn_runner, "run_agent_turn", fake_turn)
+    monkeypatch.setattr(baxter_chat_service, "run_agent_turn", fake_turn)
 
     session_id = _new_session(client)
     res = client.post(
@@ -349,27 +358,100 @@ def test_baxter_chat_interactive_prompt_grants_tools(client: TestClient, monkeyp
 
     snapshot = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").json()
     assert snapshot["messages"][-1]["content"] == "patched the flaky test"
+    assert "adapter_capabilities" in snapshot
     prompt = str(captured["prompt"])
     assert "real tool access" in prompt
     assert "no ticket is implied" in prompt
+    assert captured["intent"] == "execute"
     # The pending assistant row's id, so the turn's reasoning has a channel.
     assert captured["turn_id"] == snapshot["messages"][-1]["id"]
+
+
+def test_baxter_chat_execute_plan_uses_selected_codex_writable(
+    client: TestClient, monkeypatch, db_session: Session
+):
+    """Run on an agent plan must stay on Codex — never silently switch to Claude."""
+    from loregarden.services import agent_turn_runner, baxter_chat_service
+
+    captured: dict[str, object] = {}
+
+    def fake_oneshot(profile, *, workspace, prompt, read_only=False, run_id="", **_kwargs):
+        captured["prompt"] = prompt
+        captured["read_only"] = read_only
+        captured["adapter"] = workspace.cli_adapter
+        captured["run_id"] = run_id
+        return "ran the plan on codex"
+
+    def fail_bridge(*_args, **_kwargs):
+        raise AssertionError("Codex execute-plan must not use the Claude permission bridge")
+
+    monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
+    monkeypatch.setattr(baxter_chat_service, "resolve_effective_adapter", lambda **_: "codex")
+    monkeypatch.setattr(agent_turn_runner, "resolve_effective_adapter", lambda **_: "codex")
+    monkeypatch.setattr(agent_turn_runner, "run_cli_agent_turn", fake_oneshot)
+    monkeypatch.setattr(agent_turn_runner, "_run_permission_bridge", fail_bridge)
+
+    session_id = _new_session(client)
+    client.patch(
+        f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/runtime",
+        json={
+            "cli_adapter": "codex",
+            "claude_model": "",
+            "cursor_model": "",
+            "codex_model": "gpt-5.5",
+            "lmstudio_base_url": "",
+            "lmstudio_model": "",
+            "claude_effort": "",
+            "cursor_effort": "",
+            "lmstudio_effort": "",
+        },
+    )
+    res = client.post(
+        f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/messages",
+        json={
+            "content": (
+                f"{baxter_chat_service.AGENT_PLAN_EXECUTE_PREFIX} "
+                "Complete each unchecked step using tools.\n"
+                "Plan: Agent execution plan\n"
+                "- [ ] Add history API (id: api)"
+            )
+        },
+    )
+    assert res.status_code == 202
+    snapshot = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").json()
+    assert snapshot["messages"][-1]["content"] == "ran the plan on codex"
+    assert snapshot["adapter_capabilities"]["adapter"] == "codex"
+    assert snapshot["adapter_capabilities"]["plan_execute"] is True
+    assert snapshot["adapter_capabilities"]["permission_bridge"] is False
+    assert captured["read_only"] is False
+    assert captured["adapter"] == "codex"
+    assert captured["run_id"]
+    prompt = str(captured["prompt"])
+    assert "real tool access" in prompt
+    assert "selected CLI" in prompt
+    assert "advisory only" not in prompt
+    assert "do not claim you need Claude" in prompt
+    run = db_session.get(AgentRun, str(captured["run_id"]))
+    assert run is not None
+    assert run.stage_key == HOME_CHAT_STAGE_KEY
+    assert run.status == RunStatus.SUCCEEDED
 
 
 def test_baxter_chat_interactive_creates_workspace_scoped_run(
     client: TestClient, monkeypatch, db_session: Session
 ):
-    from loregarden.services import baxter_chat_service
+    from loregarden.services import agent_turn_runner, baxter_chat_service
 
     monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
     monkeypatch.setattr(baxter_chat_service, "resolve_effective_adapter", lambda **_: "claude")
+    monkeypatch.setattr(agent_turn_runner, "resolve_effective_adapter", lambda **_: "claude")
     monkeypatch.setattr(
-        baxter_chat_service,
+        agent_turn_runner,
         "build_interactive_invocation",
         lambda **_: MagicMock(adapter="claude", argv=["claude"], cwd="/tmp", resume_session_id=""),
     )
     monkeypatch.setattr(
-        baxter_chat_service,
+        agent_turn_runner,
         "resolve_workspace_root",
         lambda _ws: MagicMock(is_dir=lambda: True),
     )
@@ -384,8 +466,8 @@ def test_baxter_chat_interactive_creates_workspace_scoped_run(
         assert run.status == RunStatus.RUNNING
         return BridgeResult(status=RunStatus.SUCCEEDED, stdout="done", stderr="")
 
-    monkeypatch.setattr(baxter_chat_service.PermissionBridgeRunner, "run", fake_bridge_run)
-    monkeypatch.setattr(baxter_chat_service, "extract_triage_reply", lambda stdout: stdout)
+    monkeypatch.setattr(agent_turn_runner.PermissionBridgeRunner, "run", fake_bridge_run)
+    monkeypatch.setattr(agent_turn_runner, "extract_triage_reply", lambda stdout: stdout)
 
     session_id = _new_session(client)
     res = client.post(

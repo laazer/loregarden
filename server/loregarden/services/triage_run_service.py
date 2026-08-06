@@ -13,38 +13,28 @@ import os
 import secrets
 import threading
 from datetime import datetime, timezone
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
-from loregarden.agents.cli_adapters import build_interactive_invocation
-from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.registry import get_agent
 from loregarden.db.session import engine
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, TriageMessage, Workspace
+from loregarden.services.agent_turn_runner import AgentTurnRequest, run_agent_turn
 from loregarden.services.chat_primitives import parts_json_for_reply
 from loregarden.services.chat_thinking import (
-    ChatTurnThinkingSink,
     finish_chat_turn_thinking,
     with_thinking_part,
 )
 from loregarden.services.cli_auth_errors import format_agent_unavailable
-from loregarden.services.cli_output import extract_triage_reply
-from loregarden.services.cli_settings import (
-    resolve_effective_adapter,
-    resolve_effort_for_adapter,
-    resolve_model_for_adapter,
-)
+from loregarden.services.cli_settings import resolve_effective_adapter
 from loregarden.services.run_concurrency import find_active_run
 from loregarden.services.run_service import fail_stale_handoff_runs
 from loregarden.services.triage_service import (
     TRIAGE_AGENT_ID,
     TRIAGE_AGENT_NAME,
+    TRIAGE_CLI_PROFILE,
     apply_triage_runtime_overrides,
     build_triage_prompt,
-    invoke_triage_model,
     list_triage_messages,
 )
-from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -131,18 +121,37 @@ class TriageTurnExecutor:
         selected = resolve_effective_adapter(
             agent_adapter=agent.get("adapter", "claude"), workspace=effective_workspace
         )
-
-        if selected == "claude":
-            self._execute_interactive(run, ticket, agent, effective_workspace)
-        else:
-            self._execute_one_shot(run, ticket)
-
-    def _execute_one_shot(self, run: AgentRun, ticket: Ticket) -> None:
+        intent = "execute" if selected == "claude" else "advisory"
         history = list_triage_messages(self.session, ticket.id)
         latest_user_message = history[-1].content if history and history[-1].role == "user" else ""
+        prompt = build_triage_prompt(
+            ticket,
+            history,
+            latest_user_message,
+            session=self.session,
+            interactive=intent == "execute",
+        )
         try:
-            reply = invoke_triage_model(self.session, ticket, latest_user_message, run_id=run.id)
-            self._finish(run, ticket, status=RunStatus.SUCCEEDED, reply=reply, stderr="")
+            turn = run_agent_turn(
+                AgentTurnRequest(
+                    session=self.session,
+                    workspace=effective_workspace,
+                    prompt=prompt,
+                    profile=TRIAGE_CLI_PROFILE,
+                    agent=agent,
+                    intent=intent,
+                    adapter=selected,
+                    turn_id=run.id,
+                    run_id=run.id,
+                    manage_run=False,
+                    ticket=ticket if intent == "execute" else None,
+                    claude_model_env="LOREGARDEN_TRIAGE_CLAUDE_MODEL",
+                    track_workflow_stage=False,
+                )
+            )
+            self._finish(
+                run, ticket, status=RunStatus.SUCCEEDED, reply=turn.reply[:8000], stderr=""
+            )
         except Exception as exc:
             self._finish(
                 run,
@@ -151,68 +160,6 @@ class TriageTurnExecutor:
                 reply=format_agent_unavailable(TRIAGE_AGENT_NAME, exc),
                 stderr=str(exc)[:4000],
             )
-
-    def _execute_interactive(
-        self, run: AgentRun, ticket: Ticket, agent: dict, workspace: Workspace
-    ) -> None:
-        repo_root = resolve_workspace_root(workspace)
-        if not repo_root.is_dir():
-            self._finish(
-                run,
-                ticket,
-                status=RunStatus.FAILED,
-                reply="",
-                stderr=f"Workspace repo path does not exist: {repo_root}",
-            )
-            return
-
-        history = list_triage_messages(self.session, ticket.id)
-        latest_user_message = history[-1].content if history and history[-1].role == "user" else ""
-        prompt = build_triage_prompt(
-            ticket, history, latest_user_message, session=self.session, interactive=True
-        )
-
-        triage_claude_model = (
-            os.environ.get("LOREGARDEN_TRIAGE_CLAUDE_MODEL", "").strip()
-            or resolve_model_for_adapter("claude", workspace)
-            or "haiku"
-        )
-
-        # Ticket triage has no pending message row, so the run *is* the turn —
-        # `triage_run_status` publishes this same id as `active_run_id`.
-        thinking = ChatTurnThinkingSink(run.id)
-        try:
-            with TemporaryDirectory(prefix="loregarden-triage-") as tmp:
-                prompt_file = Path(tmp) / "prompt.md"
-                prompt_file.write_text(prompt, encoding="utf-8")
-                invocation = build_interactive_invocation(
-                    adapter="claude",
-                    prompt_file=prompt_file,
-                    workspace_root=repo_root,
-                    claude_model=triage_claude_model,
-                    claude_effort=resolve_effort_for_adapter("claude", workspace),
-                    partial_messages=True,
-                )
-                timeout = int(
-                    os.environ.get("LOREGARDEN_TRIAGE_TIMEOUT") or agent.get("timeout", 1800)
-                )
-                bridge = PermissionBridgeRunner(self.session, track_workflow_stage=False)
-                result = bridge.run(
-                    run_id=run.id,
-                    ticket=ticket,
-                    invocation=invocation,
-                    prompt=prompt,
-                    timeout_seconds=timeout,
-                    streamer=thinking,
-                )
-        finally:
-            thinking.close()
-
-        reply = extract_triage_reply(result.stdout)
-        if result.status == RunStatus.SUCCEEDED and not reply:
-            result.status = RunStatus.FAILED
-            result.stderr = result.stderr or f"{TRIAGE_AGENT_NAME} returned an empty response"
-        self._finish(run, ticket, status=result.status, reply=reply[:8000], stderr=result.stderr)
 
     def _finish(
         self, run: AgentRun, ticket: Ticket, *, status: RunStatus, reply: str, stderr: str

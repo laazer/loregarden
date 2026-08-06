@@ -707,6 +707,15 @@ export interface BaxterChatSnapshot {
   /** Home-chat permission/question cards for the in-flight turn (also on the board). */
   pending_approvals?: Approval[];
   runtime: WorkspaceRuntimeSettings;
+  /** What the selected adapter can do — same matrix for every chat surface. */
+  adapter_capabilities?: {
+    adapter: string;
+    permission_bridge: boolean;
+    inbox_approvals: boolean;
+    plan_execute: boolean;
+    stream_thinking: boolean;
+    steer: boolean;
+  };
   run_status: TriageRunStatus;
   active_turn_id: string | null;
   created_at: string;

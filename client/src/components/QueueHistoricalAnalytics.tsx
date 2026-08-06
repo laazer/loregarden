@@ -19,7 +19,8 @@ export interface RunMetrics {
 }
 
 export interface QueueAnalyticsProps {
-  workspaceId: string;
+  /** Optional: omit for the shared pool across every workspace. */
+  workspaceId?: string;
 }
 
 export function QueueHistoricalAnalytics({
@@ -36,9 +37,10 @@ export function QueueHistoricalAnalytics({
       setError(null);
 
       try {
-        const response = await fetch(
-          `${API_BASE}/api/parallel/workspace/${workspaceId}/analytics?range=${timeRange}`
-        );
+        const path = workspaceId
+          ? `${API_BASE}/api/parallel/workspace/${workspaceId}/analytics?range=${timeRange}`
+          : `${API_BASE}/api/parallel/analytics?range=${timeRange}`;
+        const response = await fetch(path);
 
         if (!response.ok) {
           throw new Error('Failed to fetch analytics');

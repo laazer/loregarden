@@ -23,6 +23,8 @@ export function agentPlanExecuteMessage(
     return `- [${mark}] ${item.text} (id: ${item.id})`;
   });
   return [
+    // Keep in sync with AGENT_PLAN_EXECUTE_PREFIX in baxter_chat_service.py —
+    // the server grants write access on the selected adapter for this prefix.
     `Execute this agent execution plan now. Complete each unchecked step using tools.`,
     `As you finish steps, re-emit the same todo_list with checked:true on completed items.`,
     "",

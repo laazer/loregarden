@@ -15,6 +15,25 @@ def test_format_stream_payload_assistant_text():
     assert format_stream_payload(payload) == ("OUT", "Planning the implementation")
 
 
+def test_format_stream_payload_codex_json_events():
+    assert format_stream_payload({"type": "thread.started", "thread_id": "abc"}) == (
+        "SYS",
+        "codex thread · abc",
+    )
+    assert format_stream_payload(
+        {
+            "type": "item.started",
+            "item": {"type": "command_execution", "command": "pytest -q"},
+        }
+    ) == ("TOOL", "$ pytest -q")
+    assert format_stream_payload(
+        {
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": "Done."},
+        }
+    ) == ("OUT", "Done.")
+
+
 def test_run_log_streamer_updates_cmd_after_bootstrap():
     engine = create_engine(
         "sqlite://",

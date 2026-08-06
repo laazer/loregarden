@@ -61,7 +61,14 @@ const TOGGLES: ToggleDef[] = [
   },
 ];
 
-export function QueueGitAutomation({ workspaceSlug }: { workspaceSlug: string }) {
+export function QueueGitAutomation({
+  workspaceSlug,
+  workspaceName,
+}: {
+  workspaceSlug: string;
+  /** Shown when several workspaces share the Controls rail. */
+  workspaceName?: string;
+}) {
   const qc = useQueryClient();
 
   const config = useQuery({
@@ -109,9 +116,13 @@ export function QueueGitAutomation({ workspaceSlug }: { workspaceSlug: string })
     save.mutate(next);
   };
 
+  const heading = workspaceName
+    ? `On run completion · ${workspaceName}`
+    : "On run completion";
+
   return (
     <div className="queue-git-automation">
-      <div className="queue-rail-heading">On run completion</div>
+      <div className="queue-rail-heading">{heading}</div>
 
       <div className="queue-git-toggles">
         {TOGGLES.map((toggle) => {

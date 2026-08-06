@@ -1,18 +1,13 @@
 /**
- * The queue dashboard shell: main column, side rail, and the toast stack.
+ * The queue dashboard shell: main column and side rail.
  *
- * The header metrics this file used to assert now live in the top action bar
- * (QueueTopbarControls), so they are covered there instead. What is new here
- * is the toast wiring — QueueNotifications had no producer at all until the
- * socket started forwarding events, so the mapping from event to toast is the
- * thing worth pinning.
+ * Queue event toasts / inbox recording live in `queueNotifications` +
+ * `QueueNotificationsHost` (app-wide), so they are covered there instead.
  */
 
-import { render, screen, fireEvent, within, act } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { QueueDashboard } from '../QueueDashboard';
 import { useQueueStatus, type QueueStatusValue } from '../../state/QueueStatusContext';
-import { useToastStore } from '../../state/toastStore';
-import type { QueueEvent } from '../../lib/queueSocket';
 
 jest.mock('../../state/QueueStatusContext', () => ({
   useQueueStatus: jest.fn(),
@@ -32,9 +27,6 @@ jest.mock('../QueueHistoricalAnalytics', () => ({
 }));
 
 const mockUseQueueStatus = useQueueStatus as jest.MockedFunction<typeof useQueueStatus>;
-
-/** Captures the listener the dashboard registers, so tests can fire events. */
-let emit: (event: QueueEvent) => void;
 
 const baseStatus: QueueStatusValue = {
   activeRuns: [
@@ -78,33 +70,24 @@ const baseStatus: QueueStatusValue = {
   estimatedClearSeconds: 300,
   isWebSocket: true,
   loading: false,
-  // The rail's git-automation and analytics panels are still per-workspace —
-  // only the board went global — so the dashboard needs one to render them.
+  // The whole dashboard is the shared slot pool — no per-workspace rail filter.
   workspaces: [{ id: 'ws-1', slug: 'loregarden', name: 'loregarden' }] as QueueStatusValue['workspaces'],
   workspacesLoading: false,
   lanes: [],
-  onQueueEvent: jest.fn(),
+  onQueueEvent: jest.fn(() => () => {}),
 };
 
 const withStatus = (overrides: Partial<QueueStatusValue> = {}) => {
   mockUseQueueStatus.mockReturnValue({
     ...baseStatus,
-    onQueueEvent: (listener) => {
-      emit = listener;
-      return () => {};
-    },
     ...overrides,
   });
 };
 
 beforeEach(() => {
   jest.clearAllMocks();
-  useToastStore.getState().clear();
   withStatus();
 });
-
-/** What the queue pushed into the app-wide stack. */
-const toasts = () => useToastStore.getState().toasts;
 
 describe('layout', () => {
   test('renders the main panel and the side rail', () => {
@@ -137,7 +120,7 @@ describe('tabs', () => {
     const tab = screen.getByText('Controls');
     fireEvent.click(tab);
 
-    expect(tab).toHaveClass('is-active');
+    expect(tab).toHaveClass('active');
     expect(screen.getByTestId('queue-controls')).toBeInTheDocument();
   });
 
@@ -147,7 +130,7 @@ describe('tabs', () => {
     const tab = screen.getByText('Analytics');
     fireEvent.click(tab);
 
-    expect(tab).toHaveClass('is-active');
+    expect(tab).toHaveClass('active');
     expect(screen.getByTestId('queue-analytics')).toBeInTheDocument();
   });
 
@@ -194,73 +177,6 @@ describe('overview tiles', () => {
 
     expect(within(container.querySelector('.queue-rail-grid')!).getByText('2/3'))
       .toBeInTheDocument();
-  });
-});
-
-describe('queue event toasts', () => {
-  test('a completed run raises a success toast', () => {
-    render(<QueueDashboard />);
-
-    act(() => {
-      emit({
-        type: 'run_completed',
-        timestamp: '2026-07-30T10:00:00Z',
-        data: { runId: 'run-abc12345', status: 'succeeded' },
-      });
-    });
-
-    expect(toasts()).toHaveLength(1);
-    expect(toasts()[0]).toMatchObject({ tone: 'success', title: 'Run complete' });
-    expect(toasts()[0].message).toMatch(/run-abc/);
-  });
-
-  test('a failed run raises an error toast, not a success one', () => {
-    render(<QueueDashboard />);
-
-    act(() => {
-      emit({
-        type: 'run_completed',
-        timestamp: '2026-07-30T10:00:00Z',
-        data: { runId: 'run-abc12345', status: 'failed' },
-      });
-    });
-
-    expect(toasts()[0]).toMatchObject({ tone: 'error', title: 'Run failed' });
-  });
-
-  test('a promotion raises an info toast naming the slot', () => {
-    render(<QueueDashboard />);
-
-    act(() => {
-      emit({
-        type: 'queue_promoted',
-        timestamp: '2026-07-30T10:00:00Z',
-        data: { runId: 'run-abc12345', slotNumber: 2 },
-      });
-    });
-
-    expect(toasts()[0]).toMatchObject({ tone: 'info', title: 'Run promoted' });
-    expect(toasts()[0].message).toMatch(/slot 2/);
-  });
-
-  test('an error event carries the server message', () => {
-    render(<QueueDashboard />);
-
-    act(() => {
-      emit({
-        type: 'error',
-        timestamp: '2026-07-30T10:00:00Z',
-        data: { runId: 'run-1', message: 'Failed to create run: no slots' },
-      });
-    });
-
-    expect(toasts()[0]).toMatchObject({
-      tone: 'error',
-      title: 'Queue error',
-      message: 'Failed to create run: no slots',
-      // Stays until dismissed.
-      duration: 0,
-    });
   });
 });
 

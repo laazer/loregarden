@@ -17,6 +17,13 @@
  * Optional because a snapshot from an older backend will not carry them, and a
  * slot card showing a stale-but-readable id beats one that crashes.
  */
+export interface TicketHierarchyNode {
+  id: string;
+  code: string;
+  title: string;
+  work_item_type?: string;
+}
+
 export interface RunLabels {
   ticket_title?: string;
   ticket_code?: string;
@@ -27,6 +34,17 @@ export interface RunLabels {
    * services/ticket_activity.py.
    */
   ticket_activity?: string;
+  /**
+   * Root → ticket path, same chain the work-items tree walks. Empty when the
+   * ticket is a root or the backend has not labelled it yet.
+   */
+  ticket_ancestry?: TicketHierarchyNode[];
+  /**
+   * Deepest live nested ticket under this lane holder. A parent orchestration
+   * keeps the slot while a child execute does the work — without this the card
+   * only names the parent.
+   */
+  running_descendant?: TicketHierarchyNode | null;
   agent_name?: string;
   stage_key?: string;
   /**
@@ -135,6 +153,10 @@ export interface QueueEvent {
     status?: string;
     message?: string;
     code?: string;
+    ticketId?: string;
+    ticketTitle?: string;
+    stageKey?: string;
+    agentId?: string;
   };
 }
 

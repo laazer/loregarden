@@ -23,6 +23,7 @@ from loregarden.models.domain import (
     QueuedRun,
     QueuePosition,
     RunStatus,
+    Ticket,
 )
 from loregarden.websocket_events import (
     QUEUE_TOPIC,
@@ -45,6 +46,27 @@ LIVE_ORCHESTRATION_STATUSES = (
     OrchestrationRunStatus.QUEUED,
     OrchestrationRunStatus.RUNNING,
 )
+
+
+def run_notify_fields(session: Session, run: AgentRun | None) -> dict[str, str | None]:
+    """Ticket / stage / agent labels for queue toast + inbox notifications."""
+    if run is None:
+        return {
+            "ticket_id": None,
+            "ticket_title": None,
+            "stage_key": None,
+            "agent_id": None,
+        }
+    ticket_title: str | None = None
+    if run.ticket_id:
+        ticket = session.get(Ticket, run.ticket_id)
+        ticket_title = ticket.title if ticket else None
+    return {
+        "ticket_id": run.ticket_id,
+        "ticket_title": ticket_title,
+        "stage_key": run.stage_key or None,
+        "agent_id": run.agent_id or None,
+    }
 
 
 def owned_by_shared_queue():
@@ -568,9 +590,11 @@ class ParallelQueueService:
 
             # Emit queue promoted event
             try:
+                promoted_run = self.session.get(AgentRun, queued_run.run_id)
                 emit_queue_promoted(
                     run_id=queued_run.run_id,
                     slot_number=available_slot.slot_number,
+                    **run_notify_fields(self.session, promoted_run),
                 )
             except Exception as e:
                 logger.warning(f"Failed to emit queue_promoted: {e}")
@@ -631,7 +655,11 @@ class ParallelQueueService:
 
             # Emit run completed event
             try:
-                emit_run_completed(run_id=run_id, status=run_status)
+                emit_run_completed(
+                    run_id=run_id,
+                    status=run_status,
+                    **run_notify_fields(self.session, run),
+                )
             except Exception as e:
                 logger.warning(f"Failed to emit run_completed: {e}")
 

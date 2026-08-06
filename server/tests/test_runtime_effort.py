@@ -174,6 +174,7 @@ def test_lmstudio_invocation_passes_effort_argument(tmp_path):
     )
 
     assert inv.argv[inv.argv.index("--effort") + 1] == "high"
+    assert "--stream" in inv.argv
 
 
 def test_effective_reports_resolved_values_and_their_source():

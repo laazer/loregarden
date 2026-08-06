@@ -26,7 +26,7 @@ import {
 } from '../hooks/useRunningChildTickets';
 import { useQueueStatus } from '../state/QueueStatusContext';
 import { queueLanesApi } from '../lib/queueLanesApi';
-import type { LaneEntry, QueueLane } from '../lib/queueSocket';
+import type { LaneEntry, QueueLane, TicketHierarchyNode } from '../lib/queueSocket';
 import { navigateToTicket } from '../lib/useAppNavigation';
 import {
   runStatusLabel,
@@ -49,6 +49,54 @@ function formatDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const secs = Math.round(seconds % 60);
   return `${minutes}m ${secs}s`;
+}
+
+/**
+ * Work-items style path: indented `code · title` rows, leaf highlighted.
+ *
+ * When a parent holds the lane and a nested child is actually executing, the
+ * chain is ancestry plus that descendant so the card names the real work.
+ */
+function TicketHierarchy({
+  ancestry,
+  runningDescendant,
+}: {
+  ancestry?: TicketHierarchyNode[];
+  runningDescendant?: TicketHierarchyNode | null;
+}) {
+  const chain = [...(ancestry ?? [])];
+  if (
+    runningDescendant &&
+    (!chain.length || chain[chain.length - 1]?.id !== runningDescendant.id)
+  ) {
+    chain.push(runningDescendant);
+  }
+
+  if (chain.length < 2) return null;
+
+  return (
+    <div className="queue-hierarchy" aria-label="Ticket hierarchy">
+      {chain.map((node, index) => {
+        const isLeaf = index === chain.length - 1;
+        return (
+          <div
+            key={node.id}
+            className={`queue-hierarchy-node${isLeaf ? ' is-leaf' : ''}`}
+            style={{ paddingLeft: index * 10 }}
+            title={node.title}
+          >
+            {node.code ? (
+              <>
+                <span className="queue-hierarchy-code">{node.code}</span>
+                {node.title ? <span className="queue-hierarchy-sep"> · </span> : null}
+              </>
+            ) : null}
+            {node.title ? <span className="queue-hierarchy-title">{node.title}</span> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 /**
@@ -110,6 +158,16 @@ function LaneTicketMenu({
       ) : null}
     </OverflowMenu>
   );
+}
+
+function runningChildFromLabels(
+  descendant: TicketHierarchyNode | null | undefined,
+  fallback?: RunningChildTicket,
+): RunningChildTicket | undefined {
+  if (descendant) {
+    return { id: descendant.id, title: descendant.title, code: descendant.code };
+  }
+  return fallback;
 }
 
 export function ParallelQueueVisualization() {
@@ -179,12 +237,24 @@ export function ParallelQueueVisualization() {
       run.status === 'running' && estimate && estimate > 0
         ? Math.min(100, (run.elapsed_seconds / estimate) * 100)
         : null;
+    const hierarchy = (
+      <TicketHierarchy
+        ancestry={run.ticket_ancestry}
+        runningDescendant={run.running_descendant}
+      />
+    );
+    const hasHierarchy = (run.ticket_ancestry?.length ?? 0) > 1 || Boolean(run.running_descendant);
+    const focusTitle =
+      run.running_descendant?.title || run.ticket_title || run.ticket_id;
 
     return (
       <>
-        {/* The id is the fallback, not the label: this is the one place you
-            should be able to read what is running. */}
-        <div className="queue-slot-title">{run.ticket_title || run.ticket_id}</div>
+        {hierarchy}
+        {/* Hierarchy already ends on the live leaf; only fall back to a lone
+            title when there is no path to draw. */}
+        {hasHierarchy ? null : (
+          <div className="queue-slot-title">{focusTitle}</div>
+        )}
         <div className="queue-slot-sub">
           {[run.workspace_name, run.agent_name || run.agent_id, run.stage_key]
             .filter(Boolean)
@@ -316,10 +386,16 @@ export function ParallelQueueVisualization() {
               {lane.running ? (
                 <LaneTicketMenu
                   label={
-                    lane.running.ticket_code || lane.running.ticket_title || lane.running.ticket_id
+                    lane.running.running_descendant?.code ||
+                    lane.running.ticket_code ||
+                    lane.running.ticket_title ||
+                    lane.running.ticket_id
                   }
                   ticketId={lane.running.ticket_id}
-                  runningChild={runningChildByParent.get(lane.running.ticket_id)}
+                  runningChild={runningChildFromLabels(
+                    lane.running.running_descendant,
+                    runningChildByParent.get(lane.running.ticket_id),
+                  )}
                 />
               ) : null}
             </div>
@@ -340,8 +416,18 @@ export function ParallelQueueVisualization() {
                     Next in this lane ({lane.waiting.length})
                   </div>
                   {lane.waiting.map((entry) => {
-                    const runningChild = runningChildByParent.get(entry.ticket_id);
-                    const entryLabel = entry.ticket_code || entry.ticket_title || entry.ticket_id;
+                    const runningChild = runningChildFromLabels(
+                      entry.running_descendant,
+                      runningChildByParent.get(entry.ticket_id),
+                    );
+                    const entryLabel =
+                      entry.running_descendant?.code ||
+                      entry.ticket_code ||
+                      entry.ticket_title ||
+                      entry.ticket_id;
+                    const hasHierarchy =
+                      (entry.ticket_ancestry?.length ?? 0) > 1 ||
+                      Boolean(entry.running_descendant);
                     return (
                       <div
                         key={entry.entry_id}
@@ -355,11 +441,22 @@ export function ParallelQueueVisualization() {
                       >
                         <span className="queue-lane-item-position">{entry.position}</span>
                         <div className="queue-lane-item-copy">
-                          <div className="queue-lane-item-title">
-                            {entry.ticket_title || entry.ticket_id}
-                          </div>
+                          <TicketHierarchy
+                            ancestry={entry.ticket_ancestry}
+                            runningDescendant={entry.running_descendant}
+                          />
+                          {hasHierarchy ? null : (
+                            <div className="queue-lane-item-title">
+                              {entry.ticket_title || entry.ticket_id}
+                            </div>
+                          )}
                           <div className="queue-lane-item-sub">
-                            {[entry.ticket_code, entry.workspace_name].filter(Boolean).join(' · ')}
+                            {[
+                              hasHierarchy ? null : entry.ticket_code,
+                              entry.workspace_name,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
                           </div>
                           <TicketStateChips
                             state={entry.ticket_state}

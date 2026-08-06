@@ -313,6 +313,80 @@ def test_a_lane_entry_that_is_genuinely_running_is_left_alone(session, workspace
     assert entry.status == QueuePosition.ACTIVE
 
 
+def test_an_orphaned_live_orchestration_claims_a_free_slot(session, workspace):
+    """Bypass residue: work is running, every lane reads Available."""
+    lanes = _lanes(session)
+    ticket = _ticket(session, workspace.id, "T-orphan")
+    orch_run = _orch(session, ticket, "orch_orphan", status=OrchestrationRunStatus.RUNNING)
+
+    assert lanes.reconcile_lanes() == []
+
+    slot = session.exec(
+        select(AgentSlot).where(AgentSlot.current_orchestration_run_id == orch_run.id)
+    ).one()
+    assert slot.is_available is False
+    assert slot.slot_number == 1
+
+
+def test_nested_child_orchestrations_do_not_claim_extra_slots(session, workspace):
+    """Parent lane covers the tree; children must not empty the pool."""
+    lanes = _lanes(session)
+    parent = _ticket(session, workspace.id, "T-parent")
+    child = _ticket(session, workspace.id, "T-child")
+    child.parent_ticket_id = parent.id
+    session.add(child)
+    session.commit()
+
+    parent_orch = _orch(session, parent, "orch_parent", status=OrchestrationRunStatus.RUNNING)
+    child_orch = _orch(session, child, "orch_child", status=OrchestrationRunStatus.RUNNING)
+    _occupy(session, 1, current_orchestration_run_id=parent_orch.id)
+
+    assert lanes.reconcile_lanes() == []
+
+    held = {
+        slot.current_orchestration_run_id
+        for slot in session.exec(select(AgentSlot)).all()
+        if slot.current_orchestration_run_id
+    }
+    assert held == {parent_orch.id}
+    assert child_orch.id not in held
+    free = session.exec(select(AgentSlot).where(AgentSlot.is_available == True)).all()  # noqa: E712
+    assert len(free) == 2
+
+
+def test_nested_slot_claims_are_released_when_ancestor_holds_a_lane(session, workspace):
+    """Heal the overclaim: child slots free once the parent already has one."""
+    lanes = _lanes(session)
+    parent = _ticket(session, workspace.id, "T-parent")
+    child = _ticket(session, workspace.id, "T-child")
+    grandchild = _ticket(session, workspace.id, "T-grand")
+    child.parent_ticket_id = parent.id
+    grandchild.parent_ticket_id = child.id
+    session.add(child)
+    session.add(grandchild)
+    session.commit()
+
+    parent_orch = _orch(session, parent, "orch_parent", status=OrchestrationRunStatus.RUNNING)
+    child_orch = _orch(session, child, "orch_child", status=OrchestrationRunStatus.RUNNING)
+    grand_orch = _orch(session, grandchild, "orch_grand", status=OrchestrationRunStatus.RUNNING)
+    _occupy(session, 1, current_orchestration_run_id=parent_orch.id)
+    _occupy(session, 2, current_orchestration_run_id=child_orch.id)
+    _occupy(session, 3, current_orchestration_run_id=grand_orch.id)
+
+    freed = lanes.reconcile_lanes()
+    assert set(freed) == {2, 3}
+
+    slot1 = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    slot2 = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 2)).one()
+    slot3 = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 3)).one()
+    assert slot1.current_orchestration_run_id == parent_orch.id
+    assert slot1.is_available is False
+    assert slot2.is_available is True
+    assert slot2.current_orchestration_run_id is None
+    assert slot3.is_available is True
+    assert slot3.current_orchestration_run_id is None
+
+
 def test_a_slot_release_survives_a_failing_completion_tail(session, workspace):
     """The tail is best-effort; the slot it holds is not the tail's to keep."""
     from loregarden.services.orchestration import OrchestrationService

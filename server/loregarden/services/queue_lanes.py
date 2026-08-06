@@ -85,6 +85,7 @@ class QueueLaneService:
         stage_key: str = "",
         driver: str = "",
         max_stages: int | None = None,
+        timeout_seconds: int | None = None,
     ) -> dict:
         """Put a ticket in a lane, starting it if the lane is idle.
 
@@ -125,6 +126,7 @@ class QueueLaneService:
             stage_key=stage_key,
             driver=driver or "",
             max_stages=max_stages,
+            timeout_seconds=timeout_seconds,
         )
         self.session.add(entry)
         self.session.commit()
@@ -185,6 +187,7 @@ class QueueLaneService:
                 stop_at_stage_key=head.stop_at_stage_key or None,
                 driver=head.driver or "",
                 max_stages=head.max_stages,
+                timeout_seconds=head.timeout_seconds,
             )
             if orch_run is None:
                 # Dispatch refused (already orchestrating, no workflow). Leave
@@ -252,12 +255,141 @@ class QueueLaneService:
         """
         self._requeue_stranded_entries()
         freed = self.slots.reconcile_slots()
+        # Nested child execute shares the parent's lane. Orphan-heal used to
+        # bind free capacity to those children and empty the pool — undo that
+        # before draining / claiming anything else.
+        freed.extend(self._release_nested_slot_claims())
         for slot_number in freed:
             # No-op unless something is actually waiting in that lane.
             self.start_lane_head(slot_number)
-        if freed:
+        # After draining: attach free capacity to live orchestrations that
+        # never claimed a slot (old bypass residue). Waiting entries go first
+        # so a reclaim does not hand the lane to an orphan ahead of its queue.
+        # Nested children of a slotted ancestor are not orphans — they share
+        # that ancestor's lane for the life of the tree.
+        claimed = self._claim_orphaned_orchestrations()
+        if freed or claimed:
             emit_execution_update()
         return freed
+
+    def _ticket_covered_by_ancestor_slot(
+        self, ticket_id: str, held_orchestration_ids: set[str]
+    ) -> bool:
+        """True when a live ancestor orchestration already holds a lane.
+
+        BuiltinOrchestrator walks incomplete children with nested execute and
+        opens a fresh OrchestrationRun per child. Those runs are intentional
+        work under the parent's slot, not separate admissions.
+        """
+        from loregarden.services.parallel_queue import LIVE_ORCHESTRATION_STATUSES
+
+        ticket = self.session.get(Ticket, ticket_id)
+        seen: set[str] = set()
+        while ticket and ticket.parent_ticket_id:
+            parent_id = ticket.parent_ticket_id
+            if parent_id in seen:
+                break
+            seen.add(parent_id)
+            parent_live = self.session.exec(
+                select(OrchestrationRun)
+                .where(OrchestrationRun.ticket_id == parent_id)
+                .where(col(OrchestrationRun.status).in_(LIVE_ORCHESTRATION_STATUSES))
+            ).all()
+            if any(run.id in held_orchestration_ids for run in parent_live):
+                return True
+            ticket = self.session.get(Ticket, parent_id)
+        return False
+
+    def _release_nested_slot_claims(self) -> list[int]:
+        """Free slots bound to nested children when an ancestor already holds one."""
+        self.slots.initialize_slots()
+        slots = list(self.session.exec(select(AgentSlot)).all())
+        held = {
+            slot.current_orchestration_run_id
+            for slot in slots
+            if slot.current_orchestration_run_id
+        }
+        freed: list[int] = []
+        for slot in slots:
+            orch_id = slot.current_orchestration_run_id
+            if not orch_id:
+                continue
+            orch = self.session.get(OrchestrationRun, orch_id)
+            if not orch:
+                continue
+            if not self._ticket_covered_by_ancestor_slot(orch.ticket_id, held - {orch_id}):
+                continue
+            slot.is_available = True
+            slot.current_orchestration_run_id = None
+            slot.current_run_id = None
+            slot.assigned_at = None
+            self.session.add(slot)
+            freed.append(slot.slot_number)
+            logger.info(
+                "Released nested slot %d claim for orchestration %s (ticket %s)",
+                slot.slot_number,
+                orch.id,
+                orch.ticket_id,
+            )
+        if freed:
+            self.session.commit()
+        return freed
+
+    def _claim_orphaned_orchestrations(self) -> list[int]:
+        """Bind free slots to live orchestrations that never claimed one.
+
+        Admission used to be missing from a few start paths, so agents ran while
+        every lane read Available. Healing on reconcile makes the board honest
+        without waiting for those runs to finish and restart through the gate.
+
+        Nested child orchestrations under a slotted ancestor are skipped — they
+        share the ancestor's lane and must not consume the rest of the pool.
+        """
+        from loregarden.services.parallel_queue import LIVE_ORCHESTRATION_STATUSES
+
+        self.slots.initialize_slots()
+        held = {
+            slot.current_orchestration_run_id
+            for slot in self.session.exec(select(AgentSlot)).all()
+            if slot.current_orchestration_run_id
+        }
+        orphans = [
+            run
+            for run in self.session.exec(
+                select(OrchestrationRun)
+                .where(col(OrchestrationRun.status).in_(LIVE_ORCHESTRATION_STATUSES))
+                .order_by(col(OrchestrationRun.started_at).asc())
+            ).all()
+            if run.id not in held
+            and not self._ticket_covered_by_ancestor_slot(run.ticket_id, held)
+        ]
+        if not orphans:
+            return []
+
+        free_slots = list(
+            self.session.exec(
+                select(AgentSlot)
+                .where(AgentSlot.is_available == True)  # noqa: E712
+                .order_by(AgentSlot.slot_number)
+            ).all()
+        )
+        claimed: list[int] = []
+        for run, slot in zip(orphans, free_slots, strict=False):
+            slot.is_available = False
+            slot.current_orchestration_run_id = run.id
+            slot.current_run_id = None
+            slot.assigned_at = datetime.now(timezone.utc)
+            self.session.add(slot)
+            claimed.append(slot.slot_number)
+            logger.info(
+                "Claimed slot %d for orphaned orchestration %s (ticket %s)",
+                slot.slot_number,
+                run.id,
+                run.ticket_id,
+            )
+        if claimed:
+            self.session.commit()
+        return claimed
 
     def _requeue_stranded_entries(self) -> None:
         """Return lane entries that were started by nothing to their lane.
@@ -376,6 +508,7 @@ class QueueLaneService:
                 ticket,
                 stage_key=entry.stage_key or None,
                 auto_approve=entry.auto_approve,
+                timeout_override_seconds=entry.timeout_seconds,
             )
         except ValueError as exc:
             logger.warning("Lane stage dispatch failed for ticket %s: %s", ticket.id, exc)
@@ -392,6 +525,7 @@ class QueueLaneService:
         stop_at_stage_key: str | None,
         driver: str = "",
         max_stages: int | None = None,
+        timeout_seconds: int | None = None,
     ) -> OrchestrationRun | None:
         """Start the ticket's pipeline and return the run that now owns the lane.
 
@@ -432,6 +566,7 @@ class QueueLaneService:
             driver=chosen_driver,
             auto_approve=auto_approve,
             stop_at_stage_key=stop_at_stage_key or "",
+            timeout_override_seconds=timeout_seconds,
         )
         try:
             schedule_orchestration(
@@ -440,6 +575,7 @@ class QueueLaneService:
                 stop_at_stage_key=stop_at_stage_key or None,
                 driver=chosen_driver,
                 max_stages=max_stages,
+                timeout_seconds=timeout_seconds,
             )
         except ValueError as exc:
             logger.warning("Lane dispatch failed for ticket %s: %s", ticket.id, exc)

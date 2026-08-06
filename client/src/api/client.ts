@@ -373,6 +373,7 @@ export const api = {
       max_stages?: number;
       stop_at_stage_key?: string;
       auto_approve?: boolean;
+      timeout_seconds?: number;
       /** Lane to run in; omit for whichever the pool picks. */
       slot_number?: number | null;
     },

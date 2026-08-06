@@ -2,15 +2,43 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api/client";
 import { navigateToTicket } from "../lib/useAppNavigation";
+import { useNotificationStore } from "../state/notificationStore";
 import { useUiStore } from "../state/uiStore";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { IconCloseButton } from "./IconCloseButton";
 import { ApprovalCard } from "./ApprovalCard";
 
+function toneAccent(tone: string): string {
+  if (tone === "error") return "var(--rdl)";
+  if (tone === "success") return "var(--grn)";
+  if (tone === "warning") return "var(--aml)";
+  return "var(--txm)";
+}
+
+function formatWhen(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Combined approvals + queue notifications drawer.
+ *
+ * Approvals need action; notifications are a durable log of run events that
+ * survive toast dismiss and clear individually or all at once.
+ */
 export function ApprovalInboxPanel() {
   const qc = useQueryClient();
   const inboxOpen = useUiStore((s) => s.inboxOpen);
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
+  const notifications = useNotificationStore((s) => s.notifications);
+  const dismissNotification = useNotificationStore((s) => s.dismiss);
+  const clearNotifications = useNotificationStore((s) => s.clear);
 
   const approvals = useQuery({
     queryKey: ["approvals"],
@@ -57,14 +85,19 @@ export function ApprovalInboxPanel() {
 
   if (!inboxOpen) return null;
 
+  const approvalCount = approvals.data?.length ?? 0;
+  const notificationCount = notifications.length;
+  const totalCount = approvalCount + notificationCount;
+  const empty = approvalCount === 0 && notificationCount === 0;
+
   return (
     <>
       <div className="inbox-overlay" onClick={() => setInboxOpen(false)} />
-      <aside className="inbox-panel">
+      <aside className="inbox-panel" aria-label="Approvals and notifications">
         <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--bd)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="pane-title">Global Approval Inbox</span>
-            <span className="count-pill">{approvals.data?.length ?? 0}</span>
+            <span className="pane-title">Inbox</span>
+            <span className="count-pill">{totalCount}</span>
             <div style={{ flex: 1 }} />
             <IconCloseButton onClick={() => setInboxOpen(false)} />
           </div>
@@ -85,28 +118,98 @@ export function ApprovalInboxPanel() {
               {formatApprovalResolveError(resolveApproval.error)}
             </div>
           )}
-          {approvals.data?.map((a) => (
-            <ApprovalCard
-              key={a.id}
-              approval={a}
-              onApprove={(payload) =>
-                resolveApproval.mutate({ id: a.id, action: "approve", ...payload })
-              }
-              onReject={(payload) =>
-                resolveApproval.mutate({ id: a.id, action: "reject", ...payload })
-              }
-              onInspect={
-                a.ticket_id
-                  ? () => {
-                      navigateToTicket(a.ticket_id, { tab: "diff" });
+
+          {!empty ? (
+            <>
+          <section className="inbox-section" aria-label="Pending approvals">
+            <div className="inbox-section-header">
+              <span className="inbox-section-title">Approvals</span>
+              <span className="count-pill">{approvalCount}</span>
+            </div>
+            {approvals.data?.map((a) => (
+              <ApprovalCard
+                key={a.id}
+                approval={a}
+                onApprove={(payload) =>
+                  resolveApproval.mutate({ id: a.id, action: "approve", ...payload })
+                }
+                onReject={(payload) =>
+                  resolveApproval.mutate({ id: a.id, action: "reject", ...payload })
+                }
+                onInspect={
+                  a.ticket_id
+                    ? () => {
+                        navigateToTicket(a.ticket_id, { tab: "diff" });
+                        setInboxOpen(false);
+                      }
+                    : undefined
+                }
+                isSubmitting={resolveApproval.isPending && resolveApproval.variables?.id === a.id}
+              />
+            ))}
+            {!approvalCount ? (
+              <div className="inbox-empty-hint">No pending approvals</div>
+            ) : null}
+          </section>
+
+          <section className="inbox-section" aria-label="Run notifications">
+            <div className="inbox-section-header">
+              <span className="inbox-section-title">Notifications</span>
+              <span className="count-pill">{notificationCount}</span>
+              <div style={{ flex: 1 }} />
+              {notificationCount > 0 ? (
+                <button
+                  type="button"
+                  className="btn-secondary inbox-clear-btn"
+                  onClick={() => clearNotifications()}
+                >
+                  Clear all
+                </button>
+              ) : null}
+            </div>
+            {notifications.map((n) => (
+              <article
+                key={n.id}
+                className="inbox-notification-card"
+                style={{ borderLeftColor: toneAccent(n.tone) }}
+              >
+                <div className="inbox-notification-top">
+                  <div>
+                    <div className="inbox-notification-title">{n.title}</div>
+                    {n.message ? (
+                      <div className="inbox-notification-message">{n.message}</div>
+                    ) : null}
+                    <div className="inbox-notification-meta">{formatWhen(n.createdAt)}</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-secondary inbox-clear-btn"
+                    aria-label="Dismiss notification"
+                    onClick={() => dismissNotification(n.id)}
+                  >
+                    Clear
+                  </button>
+                </div>
+                {n.ticketId ? (
+                  <button
+                    type="button"
+                    className="btn-secondary inbox-notification-link"
+                    onClick={() => {
+                      navigateToTicket(n.ticketId!, { tab: "diff" });
                       setInboxOpen(false);
-                    }
-                  : undefined
-              }
-              isSubmitting={resolveApproval.isPending && resolveApproval.variables?.id === a.id}
-            />
-          ))}
-          {!approvals.data?.length && (
+                    }}
+                  >
+                    Open ticket
+                  </button>
+                ) : null}
+              </article>
+            ))}
+            {!notificationCount ? (
+              <div className="inbox-empty-hint">No notifications yet</div>
+            ) : null}
+          </section>
+            </>
+          ) : (
             <div style={{ textAlign: "center", color: "var(--txm)", padding: 40 }}>
               Inbox zero — nothing needs your attention
             </div>

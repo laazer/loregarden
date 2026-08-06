@@ -12,8 +12,52 @@ from loregarden.models.domain import AgentRun, Artifact, RunStatus, Ticket
 from sqlmodel import Session, select
 
 
+def _format_codex_stream_payload(
+    msg_type: str, payload: dict[str, Any]
+) -> tuple[str, str] | None:
+    """Format Codex ``exec --json`` events (thread/turn/item.*)."""
+    if msg_type == "thread.started":
+        thread_id = payload.get("thread_id") or ""
+        return "SYS", f"codex thread · {thread_id}" if thread_id else "codex thread started"
+    if msg_type == "turn.started":
+        return "SYS", "codex turn started"
+    if msg_type == "turn.completed":
+        usage = payload.get("usage") or {}
+        if isinstance(usage, dict) and usage:
+            return "SYS", (
+                "codex turn done · "
+                f"in={usage.get('input_tokens', '?')} out={usage.get('output_tokens', '?')}"
+            )
+        return "SYS", "codex turn done"
+    if msg_type not in {"item.started", "item.completed"}:
+        return None
+
+    item = payload.get("item") or {}
+    if not isinstance(item, dict):
+        return "SYS", msg_type
+    item_type = str(item.get("type") or "item")
+    if item_type == "agent_message":
+        text = item.get("text")
+        if isinstance(text, str) and text.strip():
+            return "OUT", text.strip()
+        return None
+    if item_type == "command_execution":
+        command = str(item.get("command") or "").strip()
+        status = str(item.get("status") or item.get("exit_code") or "").strip()
+        label = command[:180] or "command"
+        if msg_type == "item.started":
+            return "TOOL", f"$ {label}"
+        suffix = f" · {status}" if status else ""
+        output = item.get("aggregated_output")
+        if isinstance(output, str) and output.strip():
+            # Keep the tool line short; dump a trimmed stdout snippet after.
+            return "TOOL", f"$ {label}{suffix}\n{output.strip()[:2000]}"
+        return "TOOL", f"$ {label}{suffix}"
+    return "TOOL", f"{item_type}"
+
+
 def format_stream_payload(payload: dict[str, Any]) -> tuple[str, str] | None:
-    """Extract a human-readable log line from Claude/Cursor stream-json events."""
+    """Extract a human-readable log line from Claude/Cursor/Codex stream events."""
     msg_type = payload.get("type", "")
 
     if msg_type == "assistant":
@@ -55,6 +99,10 @@ def format_stream_payload(payload: dict[str, Any]) -> tuple[str, str] | None:
             if model:
                 return "SYS", f"session init · {model}"
         return None
+
+    codex = _format_codex_stream_payload(msg_type, payload)
+    if codex is not None or msg_type.startswith(("thread.", "turn.", "item.")):
+        return codex
 
     if msg_type in {"tool_use", "tool_result"}:
         name = payload.get("tool_name") or payload.get("name") or msg_type

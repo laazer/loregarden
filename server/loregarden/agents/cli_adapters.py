@@ -119,7 +119,17 @@ def _codex_invocation(
     codex_model: str = "",
     orchestrated: bool = False,
 ) -> CliInvocation:
-    argv = [_bin("codex", "LOREGARDEN_CODEX_BIN"), "exec", "--cd", str(workspace_root)]
+    # ``--json`` is the Codex equivalent of Claude/Cursor stream-json: events
+    # land on stdout as the turn progresses. Without it, exec is silent until
+    # the final message, and print-mode's idle timeout treats that silence as a
+    # hung process (see CliAgentExecutor._run_print_mode).
+    argv = [
+        _bin("codex", "LOREGARDEN_CODEX_BIN"),
+        "exec",
+        "--json",
+        "--cd",
+        str(workspace_root),
+    ]
     _append_model_flag(argv, codex_model)
     append_mcp_cli_args(argv, adapter="codex", orchestrated=orchestrated)
     argv.append("-")
@@ -469,6 +479,16 @@ def _lmstudio_invocation(
         argv.extend(["--model", model])
     if effort:
         argv.extend(["--effort", effort])
+    # Token/stream output (and tool-round heartbeats in the runner) keep
+    # print-mode's idle budget alive — same role as Claude partial messages
+    # and Codex ``--json``. Opt out with LOREGARDEN_LMSTUDIO_STREAM=0.
+    stream_off = os.environ.get("LOREGARDEN_LMSTUDIO_STREAM", "1").lower() in {
+        "0",
+        "false",
+        "no",
+    }
+    if not stream_off:
+        argv.append("--stream")
     # LM Studio speaks no MCP of its own, so the runner is told where the
     # endpoint is and which run it belongs to. Passed as argv rather than env:
     # the subprocess inherits this process's environment, which is shared with
@@ -749,8 +769,11 @@ def build_triage_invocation(
             workspace_root=workspace_root,
             codex_model=model,
         )
-        if read_only:
-            invocation.argv[2:2] = ["--sandbox", "read-only"]
+        # Explicit either way: omiting -s leaves Codex on whatever ~/.codex says,
+        # which is how advisory Home turns accidentally stayed read-only forever
+        # (or writable without wanting to). Pin the policy to the caller's intent.
+        sandbox = "read-only" if read_only else "workspace-write"
+        invocation.argv[2:2] = ["--sandbox", sandbox]
         return invocation
 
     if selected == "lmstudio":

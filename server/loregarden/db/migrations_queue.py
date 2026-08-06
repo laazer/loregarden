@@ -168,3 +168,31 @@ def m_lane_entry_run_options(conn: Connection) -> None:
             "max_stages": "ALTER TABLE queued_runs ADD COLUMN max_stages INTEGER",
         },
     )
+
+
+def m_orchestration_timeout_override(conn: Connection) -> None:
+    """Carry a per-orchestration agent timeout across every stage and child.
+
+    The assemble dialog can set a max agent runtime for the whole ticket tree.
+    That answer has to survive parking in a lane and nested child executes, the
+    same way `auto_approve` already does — otherwise only the first stage of an
+    immediately-started run would honour it.
+    """
+    if table_exists(conn, "queued_runs"):
+        add_columns_if_missing(
+            conn,
+            "queued_runs",
+            {
+                "timeout_seconds": "ALTER TABLE queued_runs ADD COLUMN timeout_seconds INTEGER",
+            },
+        )
+    if table_exists(conn, "orchestration_runs"):
+        add_columns_if_missing(
+            conn,
+            "orchestration_runs",
+            {
+                "timeout_override_seconds": (
+                    "ALTER TABLE orchestration_runs ADD COLUMN timeout_override_seconds INTEGER"
+                ),
+            },
+        )

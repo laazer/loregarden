@@ -89,6 +89,7 @@ export function QueueAddToLaneModal({ request, onClose, onError }: QueueAddToLan
         ticket_id: request!.ticketId,
         auto_approve: options.autoApprove,
         stop_at_stage_key: options.stopAtStageKey,
+        timeout_seconds: options.timeoutSeconds,
       }),
   });
 

@@ -1,9 +1,9 @@
 /**
- * One queue subscription for the queue screen.
+ * One queue subscription for the whole app.
  *
- * The page used to hold three: the page, the dashboard and the visualization
- * each called `useParallelExecutionWS`, so a single open tab meant three
- * sockets and — whenever one of them was down — three pollers.
+ * Mounted above the layout so run notifications reach the inbox from every
+ * page, and so the queue screen + its portaled topbar controls share one
+ * socket instead of each opening their own.
  *
  * There is no workspace to resolve. The execution slots are one shared pool, so
  * the queue this reports is the whole machine's — the page used to pick a
@@ -11,7 +11,8 @@
  * independent queues when they were competing for the same three slots.
  *
  * The workspace *list* is still here: staging a ticket needs to offer tickets
- * from every workspace, and every card has to say which one it belongs to.
+ * from every workspace, git automation is still per-workspace policy (shown
+ * for each), and every card has to say which one it belongs to.
  * `PageTopbar` portals the topbar controls into the topbar's DOM node while
  * leaving them in this provider's React subtree, which is what lets them share
  * the subscription from up there.

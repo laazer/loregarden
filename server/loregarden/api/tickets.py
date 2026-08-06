@@ -799,6 +799,7 @@ def orchestrate_ticket(
         # the whole record of the ask by the time a lane reaches it.
         driver=body.driver.value if body.driver else "",
         max_stages=body.max_stages,
+        timeout_seconds=body.timeout_seconds,
     )
     if not reservation.admitted:
         session.refresh(ticket)
@@ -816,6 +817,7 @@ def orchestrate_ticket(
         driver=body.driver,
         auto_approve=body.auto_approve,
         stop_at_stage_key=body.stop_at_stage_key or "",
+        timeout_override_seconds=body.timeout_seconds,
     )
     reservation.bind(orchestration_run_id=claim.id)
 
@@ -826,6 +828,7 @@ def orchestrate_ticket(
             driver=body.driver,
             stop_at_stage_key=body.stop_at_stage_key,
             auto_approve=body.auto_approve,
+            timeout_seconds=body.timeout_seconds,
         )
     except ValueError as exc:
         callbacks.abandon_claim(claim, message=str(exc))
@@ -890,6 +893,7 @@ def start_run(
         stage_key=body.stage_key,
         auto_approve=body.auto_approve,
         preferred_slot=body.slot_number,
+        timeout_seconds=body.timeout_seconds,
     )
     if not reservation.admitted:
         session.refresh(ticket)

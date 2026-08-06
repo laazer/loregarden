@@ -26,6 +26,29 @@ def test_external_mcp_start_orchestration(client: TestClient):
     assert body["status"] == OrchestrationRunStatus.RUNNING.value
 
 
+def test_external_mcp_start_claims_a_slot(client: TestClient, db_session):
+    """This path used to bypass admission and leave the board idle."""
+    from loregarden.models.domain import AgentSlot
+    from sqlmodel import select
+
+    ticket_id = None
+    for t in client.get("/api/tickets").json():
+        if t["external_id"] == "02-bootstrap-react-ide-shell":
+            ticket_id = t["id"]
+            break
+    res = client.post(
+        f"/api/orchestration/tickets/{ticket_id}/start",
+        json={"driver": "external_mcp"},
+    )
+    assert res.status_code == 200
+    run_id = res.json()["id"]
+
+    held = db_session.exec(
+        select(AgentSlot).where(AgentSlot.current_orchestration_run_id == run_id)
+    ).one()
+    assert held.is_available is False
+
+
 def test_orchestrate_ticket_one_stage(client: TestClient):
     ticket_id = None
     for t in client.get("/api/tickets").json():
