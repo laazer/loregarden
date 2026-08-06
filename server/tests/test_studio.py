@@ -332,6 +332,51 @@ def test_resolve_classify_route_matches_frontend_synonyms_without_literal_keywor
     assert skill == "apply_patch"
 
 
+def test_resolve_classify_route_ignores_description_keyword_noise():
+    """Specs and rework notes mention client paths without making the ticket frontend.
+
+    Regression for ticket 327: a server skill-lookup fix kept routing to
+    frontend_implementer because the accumulated description scored UI synonyms.
+    """
+    ticket = Ticket(
+        id="t327",
+        external_id="327-skill-lookup-silently-returns-nothing-when-a-wor",
+        workspace_id="ws",
+        title="Skill lookup silently returns nothing when a workspace has no skills",
+        description=(
+            "Frontend R7 is already implemented in client/src/api/types.ts and "
+            "StudioPage.tsx with typescript react component tests. The remaining "
+            "required work is backend-owned under server/**."
+        ),
+        acceptance_criteria_json=json.dumps(
+            [
+                "A workspace without agent_context/skills resolves from the default set",
+                "Missing declared skills fail the run loudly",
+            ]
+        ),
+    )
+    stage = WorkflowStageDef(
+        key="implement",
+        name="Implement",
+        stage_type="classify",
+        classify_routes=[
+            ClassifyRoute(
+                languages=["typescript", "javascript"],
+                specialties=["frontend"],
+                agent_id="frontend_implementer",
+            ),
+            ClassifyRoute(
+                specialties=["backend"],
+                languages=["typescript", "javascript"],
+                agent_id="backend_implementer",
+                default=True,
+            ),
+        ],
+    )
+    agent_id, _ = resolve_classify_route(ticket, stage)
+    assert agent_id == "backend_implementer"
+
+
 def test_resolve_classify_route_word_boundary_avoids_false_substring_match():
     ticket = Ticket(
         id="t1",

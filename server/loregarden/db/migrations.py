@@ -41,6 +41,7 @@ from loregarden.db.migrations_queue import (
 )
 from loregarden.db.migrations_templates import (
     m_adversarial_planning,
+    m_clear_phantom_skill_names,
     m_ensure_terminal_stage,
     m_light_heavy_rigor_triage,
     m_parallel_review_in_v3,
@@ -1332,6 +1333,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0065_workspace_codex_model", _m_workspace_codex_model),
     ("0066_baxter_chat_runtime", _m_baxter_chat_runtime),
     ("0067_orchestration_timeout_override", m_orchestration_timeout_override),
+    ("0068_clear_phantom_skill_names", m_clear_phantom_skill_names),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

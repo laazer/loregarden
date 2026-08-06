@@ -12,33 +12,33 @@ stages:
   - key: domain_consultation
     name: Domain Consultation
     agent_id: retriever
-    skill_name: consult
+    skill_name: ""
     optional: true
     order: 2
   - key: specification
     name: Specification
     agent_id: spec
-    skill_name: spec
+    skill_name: ""
     order: 3
   - key: test_design
     name: Test Design
     agent_id: test_designer
-    skill_name: test_design
+    skill_name: ""
     order: 4
   - key: test_break
     name: Test Break
     agent_id: test_breaker
-    skill_name: test_break
+    skill_name: ""
     order: 5
   - key: implementation
     name: Implementation
     agent_id: backend_implementer
-    skill_name: apply_patch
+    skill_name: ""
     order: 6
   - key: static_qa
     name: Static QA
     agent_id: static_qa
-    skill_name: static_qa
+    skill_name: ""
     order: 7
   - key: review
     name: Script Review
@@ -48,9 +48,9 @@ stages:
     order: 8
     parallel_agents:
       - agent_id: static_qa
-        skill_name: static_qa
+        skill_name: ""
       - agent_id: gatekeeper
-        skill_name: ac_gate
+        skill_name: ""
   - key: approval
     name: Human Verification
     agent_id: ""

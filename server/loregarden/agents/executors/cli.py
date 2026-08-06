@@ -55,7 +55,12 @@ from loregarden.services.workspace_paths import (
     resolve_run_root,
     resolve_workspace_root,
 )
-from loregarden.skills.registry import SKILL_PROMPT_CAP, get_skill
+from loregarden.skills.registry import (
+    SKILL_PROMPT_CAP,
+    SkillNotFoundError,
+    get_skill,
+    skill_search_dirs,
+)
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
@@ -160,7 +165,15 @@ class CliAgentExecutor:
         # and must not be attributed to this ticket.
         paths_before = working_tree_paths(repo_root)
 
-        prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace, stage_def)
+        try:
+            prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace, stage_def)
+        except SkillNotFoundError as exc:
+            return self.orchestration.complete_run(
+                run,
+                status=RunStatus.FAILED,
+                stderr=str(exc),
+                advance_workflow=advance_workflow,
+            )
         with tempfile.TemporaryDirectory(prefix="loregarden-run-") as tmp:
             prompt_file = Path(tmp) / "prompt.md"
             prompt_file.write_text(prompt, encoding="utf-8")
@@ -550,17 +563,17 @@ class CliAgentExecutor:
         # reads role_file from the workspace filesystem — the DB is authoritative.
         role_body = (agent.get("role_body") or "")[:12000]
 
-        skill_name = run.skill_name or agent.get("default_skill", "")
+        stage_skill = (run.skill_name or "").strip()
+        default_skill = (agent.get("default_skill") or "").strip()
+        skill_name = stage_skill or default_skill
         skill_body = get_skill(skill_name, agent_context_dir=agent_context_dir) or ""
         if skill_name and not skill_body:
-            # A stage naming a skill that has no file used to produce an empty
-            # section and no other trace, so the template kept claiming guidance
-            # the agent never received.
-            logger.warning(
-                "run %s: stage %s declares skill %r, which is not registered",
-                run.run_code,
-                run.stage_key,
+            # Declared skills used to log a warning and run with an empty Skill
+            # block — the stage proceeded as if the procedure had been attached.
+            raise SkillNotFoundError(
                 skill_name,
+                skill_search_dirs(agent_context_dir),
+                agent_id="" if stage_skill else run.agent_id,
             )
         ac = json.loads(ticket.acceptance_criteria_json or "[]")
 

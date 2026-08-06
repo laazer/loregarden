@@ -97,6 +97,12 @@ def _route_match_score(route: ClassifyRoute, haystack: str) -> int | None:
 
 
 def _classify_haystack(ticket: Ticket) -> str:
+    """Text used to score classify routes.
+
+    Description is deliberately excluded: stage specs and rework notes accumulate
+    both frontend and backend path mentions, which drowned title/AC signal and
+    stuck server-only tickets on frontend_implementer (ticket 327).
+    """
     acceptance_criteria = ""
     try:
         acceptance_criteria = " ".join(json.loads(ticket.acceptance_criteria_json or "[]"))
@@ -106,7 +112,6 @@ def _classify_haystack(ticket: Ticket) -> str:
     return " ".join(
         [
             ticket.title or "",
-            ticket.description or "",
             ticket.external_id or "",
             acceptance_criteria,
         ]
@@ -209,7 +214,7 @@ def _resolve_next_agent_override(ticket: Ticket, stage: WorkflowStageDef) -> tup
         return _resolve_next_agent_from_routes(ticket, stage)
 
     if stage.key in {"implementation", "route_impl", "implement"}:
-        return next_agent, stage.skill_name or "apply_patch"
+        return next_agent, stage.skill_name or ""
 
     # A stage that names its own agent in the template keeps it. `next_agent` is a
     # sticky routing hint (specialist selection / reject-rework); on a standalone
@@ -344,11 +349,11 @@ def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[st
     if stage.stage_type == "classify":
         return resolve_classify_route(ticket, stage)
     if stage.stage_type == "gate":
-        return stage.agent_id or "gatekeeper", stage.skill_name or "ac_gate"
+        return stage.agent_id or "gatekeeper", stage.skill_name or ""
     if stage.stage_type == "parallel":
         return "", ""
     if stage.stage_type == VERIFY_STAGE_TYPE:
-        return stage.agent_id or DEFAULT_VERIFIER_AGENT, stage.skill_name or "verify"
+        return stage.agent_id or DEFAULT_VERIFIER_AGENT, stage.skill_name or ""
     routed = _resolve_next_agent_override(ticket, stage)
     if routed:
         return routed

@@ -13,37 +13,37 @@ stages:
   - key: context
     name: Context Gathering
     agent_id: retriever
-    skill_name: index_repo
+    skill_name: ""
     order: 2
   - key: specification
     name: Specification
     agent_id: spec
-    skill_name: spec
+    skill_name: ""
     order: 3
   - key: test_design
     name: Test Design
     agent_id: test_designer
-    skill_name: test_design
+    skill_name: ""
     order: 4
   - key: test_break
     name: Test Break
     agent_id: test_breaker
-    skill_name: test_break
+    skill_name: ""
     order: 5
   - key: implementation
     name: Implementation
     agent_id: backend_implementer
-    skill_name: apply_patch
+    skill_name: ""
     order: 6
   - key: testing
     name: Testing
     agent_id: static_qa
-    skill_name: run_tests
+    skill_name: ""
     order: 7
   - key: review
     name: Review Prep
     agent_id: gatekeeper
-    skill_name: ac_gate
+    skill_name: ""
     order: 8
   - key: approval
     name: Awaiting Approval

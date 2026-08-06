@@ -1,9 +1,9 @@
 """The refactor skill, and the routing that decides when an agent gets it."""
 
 import json
-import logging
 from uuid import uuid4
 
+import pytest
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.config import settings
 from loregarden.db.migrations import apply_migrations
@@ -11,7 +11,7 @@ from loregarden.models.domain import AgentRun, ClassifyRoute, Ticket, WorkflowSt
 from loregarden.services.seed import seed_database
 from loregarden.services.studio_routing import resolve_classify_route
 from loregarden.services.workspace_paths import resolve_agent_context_dir
-from loregarden.skills.registry import SKILL_PROMPT_CAP, get_skill, list_skills
+from loregarden.skills.registry import SKILL_PROMPT_CAP, SkillNotFoundError, get_skill, list_skills
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
@@ -168,13 +168,11 @@ def test_the_skill_body_reaches_the_assembled_prompt():
     assert "## 5. Done means" in prompt
 
 
-def test_a_skill_with_no_file_is_reported(caplog):
-    """A stage naming a missing skill rendered an empty section and no other
-    trace, so a template could keep claiming guidance nothing delivered."""
-    with caplog.at_level(logging.WARNING):
-        prompt = _prompt_for_skill("no-such-skill")
-    assert "## Skill" not in prompt
-    assert "no-such-skill" in caplog.text
+def test_a_skill_with_no_file_is_reported():
+    """A stage naming a missing skill must fail loudly, not emit an empty section."""
+    with pytest.raises(SkillNotFoundError) as excinfo:
+        _prompt_for_skill("no-such-skill")
+    assert "no-such-skill" in str(excinfo.value)
 
 
 def _seed_template(engine, routes: list[dict]) -> str:

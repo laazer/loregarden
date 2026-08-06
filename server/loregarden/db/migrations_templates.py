@@ -714,3 +714,74 @@ def m_ensure_terminal_stage(conn: Connection) -> None:
             },
         )
         _snapshot_template_version(conn, row["id"], new_version, "Terminal done stage")
+
+
+#: Skill names that were declared on templates/drafts but never existed as
+#: `agent_context/skills/*/SKILL.md` files. Clearing them is required before
+#: missing-skill resolution becomes fatal — otherwise live stages (notably
+#: `verify` on studio-loregarden-tdd-v3) brick on the loud-failure path.
+_PHANTOM_SKILL_NAMES = frozenset(
+    {
+        "verify",
+        "consult",
+        "spec",
+        "test_design",
+        "test_break",
+        "apply_patch",
+        "static_qa",
+        "index_repo",
+        "run_tests",
+        "ac_gate",
+        "learning",
+        "review",
+    }
+)
+
+
+def _clear_phantom_skill_slots(stages: list[dict]) -> bool:
+    changed = False
+    for stage in stages:
+        if stage.get("skill_name") in _PHANTOM_SKILL_NAMES:
+            stage["skill_name"] = ""
+            changed = True
+        for slot in ("agents", "parallel_agents", "classify_routes"):
+            for item in stage.get(slot) or []:
+                if item.get("skill_name") in _PHANTOM_SKILL_NAMES:
+                    item["skill_name"] = ""
+                    changed = True
+    return changed
+
+
+def m_clear_phantom_skill_names(conn: Connection) -> None:
+    """Strip undeclared skill names from templates and studio drafts.
+
+    Paired with the loud SkillNotFoundError path: clearing phantoms and failing
+    loudly must land together, or every stage that still names a phantom dies.
+    """
+    if table_exists(conn, "workflow_templates"):
+        rows = (
+            conn.execute(text("SELECT id, stages_json, version FROM workflow_templates"))
+            .mappings()
+            .all()
+        )
+        for row in rows:
+            stages = json.loads(row["stages_json"] or "[]")
+            if not _clear_phantom_skill_slots(stages):
+                continue
+            new_version = int(row["version"] or 1) + 1
+            conn.execute(
+                text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
+                {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
+            )
+            _snapshot_template_version(conn, row["id"], new_version, "Clear phantom skill names")
+
+    if table_exists(conn, "studio_workflows"):
+        rows = conn.execute(text("SELECT id, stages_json FROM studio_workflows")).mappings().all()
+        for row in rows:
+            stages = json.loads(row["stages_json"] or "[]")
+            if not _clear_phantom_skill_slots(stages):
+                continue
+            conn.execute(
+                text("UPDATE studio_workflows SET stages_json=:st WHERE id=:id"),
+                {"st": json.dumps(stages), "id": row["id"]},
+            )

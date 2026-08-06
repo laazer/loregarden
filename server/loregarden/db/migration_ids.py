@@ -87,6 +87,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0065_workspace_codex_model",
     "0066_baxter_chat_runtime",
     "0067_orchestration_timeout_override",
+    "0068_clear_phantom_skill_names",
 )
 
 

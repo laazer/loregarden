@@ -44,7 +44,7 @@ AGENT_GENERATE_JSON_SCHEMA = """```json
   "description": "One line — when the orchestrator should reach for this agent",
   "role_body": "Detailed role instructions, constraints, and output expectations",
   "adapter": "claude",
-  "default_skill": "review",
+  "default_skill": "plan",
   "mcp_tools": ["loregarden_get_ticket", "loregarden_attach_artifact"]
 }
 ```"""
@@ -205,7 +205,7 @@ def _normalize_generated_stage(
     skill_name = str(raw.get("skill_name") or "").strip()
     if stage_type == "gate" and not agent_id:
         agent_id = "gatekeeper"
-        skill_name = skill_name or "ac_gate"
+        skill_name = skill_name or ""
     if stage_type == "agent" and agent_id and agent_id not in agent_ids:
         agent_id = "planner" if "planner" in agent_ids else next(iter(agent_ids), "planner")
     if skill_name and skill_name not in skills:
@@ -219,7 +219,7 @@ def _normalize_generated_stage(
             route_agent = "backend_implementer" if "backend_implementer" in agent_ids else agent_id
         route_skill = str(route_raw.get("skill_name") or "").strip()
         if route_skill and route_skill not in skills:
-            route_skill = "apply_patch" if "apply_patch" in skills else route_skill
+            route_skill = ""
         routes.append(
             ClassifyRoute(
                 languages=[

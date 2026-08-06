@@ -76,7 +76,7 @@ def _prompt_for(session, stage_type, tmp_path):
         ticket_id=ticket.id,
         workspace_id=ticket.workspace_id,
         agent_id="verifier",
-        skill_name="verify",
+        skill_name="",
         stage_key="verify",
     )
     executor = CliAgentExecutor(session)
@@ -94,7 +94,7 @@ def _prompt_for(session, stage_type, tmp_path):
 def test_verify_stage_runs_the_verifier_agent():
     agent_id, skill = resolve_stage_execution(_ticket(), _verify_stage())
     assert agent_id == "verifier"
-    assert skill == "verify"
+    assert skill == ""
     # It has an agent, so the orchestrator must not treat it as a human gate.
     assert is_agentless_stage(_verify_stage()) is False
 

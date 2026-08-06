@@ -36,8 +36,10 @@ def test_untrusted_skill_names_never_construct_paths(tmp_path):
     agent_context = tmp_path / "agent_context"
     outside = tmp_path / "outside"
     _write_skill(outside, "secret", "do not read")
-    _write_skill(agent_context, "REFACTOR", "uppercase is distinct")
+    # Use a name that does not exist in the loregarden default tree, so a
+    # case-insensitive miss cannot fall through to a real default skill.
+    _write_skill(agent_context, "ONLYUPPER", "uppercase is distinct")
 
     assert get_skill("../outside/skills/secret", agent_context_dir=agent_context) is None
     assert get_skill(str(outside / "skills" / "secret"), agent_context_dir=agent_context) is None
-    assert get_skill("refactor", agent_context_dir=agent_context) is None
+    assert get_skill("onlyupper", agent_context_dir=agent_context) is None
