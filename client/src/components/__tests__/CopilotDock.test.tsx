@@ -105,6 +105,44 @@ it("shows the bound conversation's turns once opened", () => {
   expect(screen.getByText("No messages yet.")).toBeInTheDocument();
 });
 
+it("renders pending approvals as an in-thread agent ask, not dock chrome", () => {
+  mockResolver.mockReturnValue(
+    bind({
+      session: session({
+        messages: [{ id: "m1", role: "user", content: "Ship queue history" }],
+        isBusy: true,
+      }),
+      label: "Ticket triage",
+      pendingApprovals: [
+        {
+          id: "a1",
+          title: "Which shape?",
+          kind: "cli_question",
+          status: "pending",
+          questions: [
+            {
+              question: "Which shape?",
+              header: "Shape",
+              options: [{ label: "Cards" }, { label: "Table" }],
+            },
+          ],
+        },
+      ],
+    }),
+  );
+  useUiStore.setState({ copilotOpen: true });
+
+  render(<CopilotDock />);
+
+  const ask = screen.getByLabelText("Agent is asking");
+  expect(ask).toBeInTheDocument();
+  expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
+  expect(document.querySelector(".lg-chat-messages")).toContainElement(ask);
+  expect(document.querySelector(".pending-approvals--ask")).toBeTruthy();
+  expect(screen.queryByText("Baxter is looking…")).not.toBeInTheDocument();
+  expect(screen.queryByText("Assistant is thinking…")).not.toBeInTheDocument();
+});
+
 it("stays empty when no screen owns a conversation and no shell was asked for", () => {
   mockResolver.mockReturnValue(bind({ session: null, label: "" }));
   useUiStore.setState({ copilotOpen: true });

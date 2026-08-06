@@ -14,6 +14,13 @@ function approvalKindLabel(kind: Approval["kind"]) {
   }
 }
 
+/**
+ * Pending decisions the agent raised.
+ *
+ * `strip` is chrome (logs panel): a labeled band outside the transcript.
+ * `ask` is chat: the same cards, but as something the agent is asking in-thread —
+ * no inbox banner, no overlay styling.
+ */
 export function PendingApprovalsSection({
   approvals,
   ticketExternalId,
@@ -21,6 +28,7 @@ export function PendingApprovalsSection({
   submitError,
   onApprove,
   onReject,
+  variant = "strip",
 }: {
   approvals: Approval[];
   ticketExternalId?: string;
@@ -28,12 +36,18 @@ export function PendingApprovalsSection({
   submitError?: string | null;
   onApprove: (approval: Approval, payload?: ApprovalResolvePayload) => void;
   onReject: (approval: Approval, payload?: ApprovalResolvePayload) => void;
+  variant?: "strip" | "ask";
 }) {
   if (approvals.length === 0) return null;
 
+  const isAsk = variant === "ask";
+
   return (
-    <section className="pending-approvals">
-      <div className="state-label pending-approvals-label">Needs attention</div>
+    <section
+      className={isAsk ? "pending-approvals pending-approvals--ask" : "pending-approvals"}
+      aria-label={isAsk ? "Agent is asking" : "Needs attention"}
+    >
+      {isAsk ? null : <div className="state-label pending-approvals-label">Needs attention</div>}
       {submitError ? <div className="pending-approvals-error">{submitError}</div> : null}
       {approvals.map((approval) => (
         <div key={approval.id}>

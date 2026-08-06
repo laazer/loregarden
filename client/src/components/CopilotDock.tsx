@@ -88,31 +88,48 @@ export function CopilotDock() {
         {showChat && session && (
           <div className="copilot-dock-chat">
             <div className="copilot-dock-chat-main">
-              {/* Above the turns: an agent question arrives as an approval, not a
-                  message, so it would otherwise be invisible here. */}
-              <PendingApprovalsSection
-                approvals={pendingApprovals}
-                submittingApprovalId={
-                  resolveApproval.isPending ? resolveApproval.variables?.id ?? null : null
-                }
-                submitError={
-                  resolveApproval.isError ? formatApprovalResolveError(resolveApproval.error) : null
-                }
-                onApprove={(approval, payload) =>
-                  resolveApproval.mutate({ id: approval.id, action: "approve", ...payload })
-                }
-                onReject={(approval, payload) =>
-                  resolveApproval.mutate({ id: approval.id, action: "reject", ...payload })
-                }
-              />
               <StudioChatMessages
                 messages={session.messages}
                 emptyMessage="No messages yet."
-                isThinking={session.isBusy}
+                isThinking={session.isBusy && pendingApprovals.length === 0}
                 activeTurnId={session.activeTurnId}
                 assistantLabel="Baxter"
                 className="copilot-dock-messages"
                 onPrimitiveSubmit={(content) => sendQuick(content)}
+                // Agent questions arrive as approvals, not messages — show them
+                // as the agent's ask inside the thread, not as dock chrome.
+                trailingAsk={
+                  pendingApprovals.length ? (
+                    <PendingApprovalsSection
+                      variant="ask"
+                      approvals={pendingApprovals}
+                      submittingApprovalId={
+                        resolveApproval.isPending
+                          ? resolveApproval.variables?.id ?? null
+                          : null
+                      }
+                      submitError={
+                        resolveApproval.isError
+                          ? formatApprovalResolveError(resolveApproval.error)
+                          : null
+                      }
+                      onApprove={(approval, payload) =>
+                        resolveApproval.mutate({
+                          id: approval.id,
+                          action: "approve",
+                          ...payload,
+                        })
+                      }
+                      onReject={(approval, payload) =>
+                        resolveApproval.mutate({
+                          id: approval.id,
+                          action: "reject",
+                          ...payload,
+                        })
+                      }
+                    />
+                  ) : null
+                }
               />
             </div>
             {(showHistory || showOpeners) && (

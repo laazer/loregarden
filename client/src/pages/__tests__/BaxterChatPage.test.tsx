@@ -403,10 +403,17 @@ describe("BaxterChatPage", () => {
 
     renderChat();
 
-    expect(await screen.findByText("Needs attention")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Agent is asking")).toBeInTheDocument();
+    expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
     expect(screen.getByText("We need queue history")).toBeInTheDocument();
     expect(screen.getAllByText("Which queue history shape?").length).toBeGreaterThan(0);
     expect(screen.queryByText("Baxter is looking…")).not.toBeInTheDocument();
+    // Ask lives inside the message list, after the user turn — not a strip
+    // layered above the thread.
+    const thread = document.querySelector(".lg-chat-messages");
+    const ask = screen.getByLabelText("Agent is asking");
+    expect(thread).toContainElement(ask);
+    expect(thread?.querySelector(".lg-chat-turn--ask")).toContainElement(ask);
   });
 
   it("bootstraps a handoff prompt from Home into the thread", async () => {

@@ -48,8 +48,8 @@ export interface ActiveChatSession {
    * Decisions waiting on the operator in this conversation.
    *
    * An agent question never arrives as a chat message — it becomes an approval
-   * — so a surface showing only messages leaves the agent apparently working
-   * with nothing to answer.
+   * — so chat surfaces render these as a trailing in-thread ask rather than
+   * as chrome layered over the transcript.
    */
   pendingApprovals: Approval[];
   /**

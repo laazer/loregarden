@@ -376,25 +376,6 @@ export function BaxterChatPage() {
       ) : (
         <>
           <div className="baxter-chat-thread baxter-chat-thread--faded" aria-live="polite">
-            {/* Same strip triage/dock use: AskUserQuestion arrives as an approval,
-                not a chat message, so the card has to sit in the thread itself. */}
-            <PendingApprovalsSection
-              approvals={turnApprovals}
-              submittingApprovalId={
-                resolveApproval.isPending ? resolveApproval.variables?.id ?? null : null
-              }
-              submitError={
-                resolveApproval.isError
-                  ? formatApprovalResolveError(resolveApproval.error)
-                  : null
-              }
-              onApprove={(approval, payload) =>
-                resolveApproval.mutate({ id: approval.id, action: "approve", ...payload })
-              }
-              onReject={(approval, payload) =>
-                resolveApproval.mutate({ id: approval.id, action: "reject", ...payload })
-              }
-            />
             <StudioChatMessages
               messages={threadMessages}
               isThinking={busy && !awaitingInput && turnApprovals.length === 0}
@@ -405,6 +386,41 @@ export function BaxterChatPage() {
               assistantLabel="Baxter"
               showAssistantAvatar={false}
               onPrimitiveSubmit={(content) => void respond(content)}
+              // AskUserQuestion / permissions arrive as approvals, not messages.
+              // Render them as the agent's ask at the end of the thread — not a
+              // chrome strip layered above the conversation.
+              trailingAsk={
+                turnApprovals.length ? (
+                  <PendingApprovalsSection
+                    variant="ask"
+                    approvals={turnApprovals}
+                    submittingApprovalId={
+                      resolveApproval.isPending
+                        ? resolveApproval.variables?.id ?? null
+                        : null
+                    }
+                    submitError={
+                      resolveApproval.isError
+                        ? formatApprovalResolveError(resolveApproval.error)
+                        : null
+                    }
+                    onApprove={(approval, payload) =>
+                      resolveApproval.mutate({
+                        id: approval.id,
+                        action: "approve",
+                        ...payload,
+                      })
+                    }
+                    onReject={(approval, payload) =>
+                      resolveApproval.mutate({
+                        id: approval.id,
+                        action: "reject",
+                        ...payload,
+                      })
+                    }
+                  />
+                ) : null
+              }
             />
           </div>
 

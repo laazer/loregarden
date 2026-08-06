@@ -57,6 +57,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   autoScroll = true,
   className,
   renderAfterMessage,
+  trailingAsk,
   showAssistantAvatar = true,
   onPrimitiveSubmit,
 }: {
@@ -77,6 +78,12 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   autoScroll?: boolean;
   className?: string;
   renderAfterMessage?: (message: ChatMessageView) => ReactNode;
+  /**
+   * Live decisions waiting on the operator (AskUserQuestion, permissions).
+   * Rendered as a trailing assistant turn inside the thread — not chrome
+   * layered above it.
+   */
+  trailingAsk?: ReactNode;
   /** When false, assistant turns are bubble-only (Baxter main chat look). */
   showAssistantAvatar?: boolean;
   /** Lets interactive primitives, such as Q&A, send a user reply. */
@@ -91,16 +98,17 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   // Activity alone is not enough to replace the placeholder: a header over an
   // empty box reads as broken. There has to be something to actually read.
   const hasLiveThinking = Boolean(thinking.content.trim() || thinking.answer.trim());
+  const hasTrailingAsk = Boolean(trailingAsk);
 
   useEffect(() => {
     if (!autoScroll) return;
     bottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
-  }, [autoScroll, messages.length, isThinking]);
+  }, [autoScroll, messages.length, isThinking, hasTrailingAsk]);
 
   const busyState: BaxterAvatarState = thinkingActivity === "typing" ? "typing" : "thinking";
   const activeState: BaxterAvatarState = isThinking ? busyState : responding ? "responding" : "idle";
 
-  if (messages.length === 0 && !isThinking) {
+  if (messages.length === 0 && !isThinking && !hasTrailingAsk) {
     return (
       <div className={["lg-chat-messages", "ticket-studio-messages", className].filter(Boolean).join(" ")}>
         <p className="lg-chat-messages-empty ticket-studio-messages-empty">
@@ -198,6 +206,18 @@ export const StudioChatMessages = memo(function StudioChatMessages({
           </div>
         );
       })}
+      {hasTrailingAsk ? (
+        <div className="lg-chat-turn lg-chat-turn--assistant lg-chat-turn--ask">
+          <div className="lg-chat-assistant-col">
+            {showAssistantAvatar ? (
+              <div className="lg-chat-assistant-row ticket-studio-msg-row">
+                <BaxterAvatar variant="head" state="idle" label={assistantLabel} />
+              </div>
+            ) : null}
+            {trailingAsk}
+          </div>
+        </div>
+      ) : null}
       {isThinking ? (
         <div className="lg-chat-turn lg-chat-turn--assistant" role="status" aria-live="polite">
           <div className="lg-chat-loading">
