@@ -142,6 +142,83 @@ def test_entry_without_an_orchestration_is_unknown_not_succeeded(session, worksp
     assert entries[0].duration_seconds is None
 
 
+def test_direct_admission_without_a_lane_entry_still_appears_in_history(session, workspace):
+    """reserve+bind used to skip QueuedRun — success must still show on the board."""
+    ticket = Ticket(
+        external_id="t-direct",
+        workspace_id=workspace.id,
+        title="Direct admit",
+    )
+    session.add(ticket)
+    session.commit()
+    orch = OrchestrationRun(
+        run_code="orch_direct",
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        status=OrchestrationRunStatus.SUCCEEDED,
+        finished_at=START + timedelta(minutes=5),
+        started_at=START,
+    )
+    session.add(orch)
+    session.commit()
+
+    entries, total = QueueHistoryService(session).list_history(workspace_id=workspace.id)
+
+    assert total == 1
+    assert entries[0].outcome == "succeeded"
+    assert entries[0].ticket_external_id == "t-direct"
+    assert entries[0].orchestration_run_id == orch.id
+
+
+def test_nested_child_orch_under_parent_is_not_synthesized(session, workspace):
+    parent = Ticket(external_id="t-parent", workspace_id=workspace.id, title="Parent")
+    session.add(parent)
+    session.commit()
+    child = Ticket(
+        external_id="t-child",
+        workspace_id=workspace.id,
+        title="Child",
+        parent_ticket_id=parent.id,
+    )
+    session.add(child)
+    session.commit()
+
+    parent_orch = OrchestrationRun(
+        run_code="orch_parent",
+        ticket_id=parent.id,
+        workspace_id=workspace.id,
+        status=OrchestrationRunStatus.SUCCEEDED,
+        started_at=START,
+        finished_at=START + timedelta(minutes=10),
+    )
+    child_orch = OrchestrationRun(
+        run_code="orch_child",
+        ticket_id=child.id,
+        workspace_id=workspace.id,
+        status=OrchestrationRunStatus.SUCCEEDED,
+        started_at=START + timedelta(minutes=1),
+        finished_at=START + timedelta(minutes=5),
+    )
+    session.add(parent_orch)
+    session.add(child_orch)
+    # Parent went through a lane; child was nested execute.
+    session.add(
+        QueuedRun(
+            workspace_id=workspace.id,
+            ticket_id=parent.id,
+            orchestration_run_id=parent_orch.id,
+            slot_number=1,
+            status=QueuePosition.STARTED,
+            started_at=START,
+        )
+    )
+    session.commit()
+
+    entries, _ = QueueHistoryService(session).list_history(workspace_id=workspace.id)
+    codes = {entry.ticket_external_id for entry in entries}
+    assert codes == {"t-parent"}
+
+
 def test_cancelled_entry_outranks_its_orchestration(session, workspace):
     """The queue cancelling an entry is its own decision, not the pipeline's."""
     _entry(

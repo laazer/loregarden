@@ -213,6 +213,42 @@ class QueueLaneService:
         )
         return head
 
+    def ensure_active_entry_for_orchestration(
+        self, slot_number: int, orchestration_run_id: str
+    ) -> QueuedRun | None:
+        """Make sure a lane entry exists for an orchestration already on a slot.
+
+        Immediate admission (`reserve` + `bind`) and orphan-heal claim a slot
+        without going through ``add_to_lane``. History is read from ``queued_runs``,
+        so without an entry the board can show Failed for an interruption and
+        then never record the ticket's later success.
+        """
+        existing = self.session.exec(
+            select(QueuedRun).where(QueuedRun.orchestration_run_id == orchestration_run_id)
+        ).first()
+        if existing:
+            return existing
+
+        orch = self.session.get(OrchestrationRun, orchestration_run_id)
+        if not orch:
+            return None
+
+        now = datetime.now(timezone.utc)
+        entry = QueuedRun(
+            id=str(uuid4()),
+            workspace_id=orch.workspace_id,
+            ticket_id=orch.ticket_id,
+            orchestration_run_id=orch.id,
+            slot_number=slot_number,
+            position=1,
+            status=QueuePosition.ACTIVE,
+            entry_kind="orchestration",
+            promoted_at=now,
+            started_at=orch.started_at or now,
+        )
+        self.session.add(entry)
+        return entry
+
     def on_orchestration_complete(self, orchestration_run_id: str) -> None:
         """Free whichever lane held this orchestration, then start its next entry.
 
@@ -377,6 +413,7 @@ class QueueLaneService:
             slot.current_run_id = None
             slot.assigned_at = datetime.now(timezone.utc)
             self.session.add(slot)
+            self.ensure_active_entry_for_orchestration(slot.slot_number, run.id)
             claimed.append(slot.slot_number)
             logger.info(
                 "Claimed slot %d for orphaned orchestration %s (ticket %s)",

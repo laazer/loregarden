@@ -10,6 +10,12 @@ state and **`STARTED` is the terminal "lane released" state** set by
 `QueueLaneService.on_orchestration_complete`. An entry's own status therefore
 says which state machine it exited through, not what happened to the ticket.
 The outcome comes from the orchestration run it dispatched.
+
+A second trap: immediate admission (`reserve` + `bind`) and orphan-heal used to
+claim a slot without creating a `QueuedRun`. Those runs finished on the ticket
+but never appeared in history — so a later success after an interruption left
+the board looking like the ticket had only failed. History also synthesizes
+cards for those terminal orchestrations when no lane entry points at them.
 """
 
 from __future__ import annotations
@@ -49,6 +55,13 @@ _ORCHESTRATION_OUTCOME = {
     OrchestrationRunStatus.RUNNING: "running",
     OrchestrationRunStatus.QUEUED: "running",
 }
+
+_TERMINAL_ORCHESTRATION = (
+    OrchestrationRunStatus.SUCCEEDED,
+    OrchestrationRunStatus.BLOCKED,
+    OrchestrationRunStatus.FAILED,
+    OrchestrationRunStatus.CANCELLED,
+)
 
 
 @dataclass(frozen=True)
@@ -102,6 +115,33 @@ def _duration_seconds(started_at: datetime | None, finished_at: datetime | None)
     return max(0, int((finished_at - started_at).total_seconds()))
 
 
+def _history_sort_key(item: QueueHistoryEntry) -> datetime:
+    ts = item.started_at or item.created_at
+    if ts is None:
+        return datetime.min.replace(tzinfo=None)
+    return ts.replace(tzinfo=None) if ts.tzinfo else ts
+
+
+def _ranges_overlap(
+    start_a: datetime | None,
+    end_a: datetime | None,
+    start_b: datetime | None,
+    end_b: datetime | None,
+) -> bool:
+    if not start_a or not start_b:
+        return False
+
+    def _naive(value: datetime) -> datetime:
+        return value.replace(tzinfo=None) if value.tzinfo else value
+
+    start_a = _naive(start_a)
+    start_b = _naive(start_b)
+    # Open-ended ranges still occupy time from start onward.
+    end_a = _naive(end_a) if end_a else datetime.max
+    end_b = _naive(end_b) if end_b else datetime.max
+    return start_a <= end_b and start_b <= end_a
+
+
 class QueueHistoryService:
     """Read finished lane entries back, newest first."""
 
@@ -149,11 +189,117 @@ class QueueHistoryService:
             _to_entry(entry, ticket, orchestration, workspace)
             for entry, ticket, orchestration, workspace in rows
         ]
+        entries.extend(
+            self._synthetic_direct_admissions(workspace_id=workspace_id, ticket_id=ticket_id)
+        )
+        entries.sort(key=_history_sort_key, reverse=True)
+        if slot_number is not None:
+            entries = [item for item in entries if item.slot_number == slot_number]
         if outcome:
             entries = [item for item in entries if item.outcome == outcome]
 
         total = len(entries)
         return entries[offset : offset + limit], total
+
+    def _synthetic_direct_admissions(
+        self, *, workspace_id: str = "", ticket_id: str = ""
+    ) -> list[QueueHistoryEntry]:
+        """Terminal orchestrations that never got a ``QueuedRun``.
+
+        Nested child execute under a parent orchestration is skipped — the
+        parent's lane entry already covers that tree. Standalone admits that
+        reserved a slot without an entry still need a card, or a later success
+        is invisible next to an earlier interruption failure.
+        """
+        linked = {
+            orch_id
+            for orch_id in self.session.exec(
+                select(QueuedRun.orchestration_run_id).where(
+                    col(QueuedRun.orchestration_run_id).is_not(None)
+                )
+            ).all()
+            if orch_id
+        }
+        stmt = select(OrchestrationRun).where(
+            col(OrchestrationRun.status).in_(_TERMINAL_ORCHESTRATION)
+        )
+        if workspace_id:
+            stmt = stmt.where(OrchestrationRun.workspace_id == workspace_id)
+        if ticket_id:
+            stmt = stmt.where(OrchestrationRun.ticket_id == ticket_id)
+        candidates = [orch for orch in self.session.exec(stmt).all() if orch.id not in linked]
+        if not candidates:
+            return []
+
+        ticket_ids = {orch.ticket_id for orch in candidates}
+        tickets = {
+            ticket.id: ticket
+            for ticket in self.session.exec(
+                select(Ticket).where(col(Ticket.id).in_(ticket_ids))
+            ).all()
+        }
+        # Ancestors may not be in candidates; load them for the nest check.
+        pending = {t.parent_ticket_id for t in tickets.values() if t.parent_ticket_id}
+        while pending:
+            rows = self.session.exec(select(Ticket).where(col(Ticket.id).in_(pending))).all()
+            pending = set()
+            for ticket in rows:
+                if ticket.id in tickets:
+                    continue
+                tickets[ticket.id] = ticket
+                if ticket.parent_ticket_id and ticket.parent_ticket_id not in tickets:
+                    pending.add(ticket.parent_ticket_id)
+
+        ancestor_ids = {
+            ticket.parent_ticket_id for ticket in tickets.values() if ticket.parent_ticket_id
+        }
+        parent_orchs: dict[str, list[OrchestrationRun]] = {}
+        if ancestor_ids:
+            for orch in self.session.exec(
+                select(OrchestrationRun).where(col(OrchestrationRun.ticket_id).in_(ancestor_ids))
+            ).all():
+                parent_orchs.setdefault(orch.ticket_id, []).append(orch)
+
+        workspace_ids = {orch.workspace_id for orch in candidates}
+        workspaces = {
+            ws.id: ws
+            for ws in self.session.exec(
+                select(Workspace).where(col(Workspace.id).in_(workspace_ids))
+            ).all()
+        }
+
+        synthetic: list[QueueHistoryEntry] = []
+        for orch in candidates:
+            if self._nested_under_overlapping_parent(orch, tickets, parent_orchs):
+                continue
+            ticket = tickets.get(orch.ticket_id)
+            workspace = workspaces.get(orch.workspace_id)
+            if not ticket or not workspace:
+                continue
+            synthetic.append(_to_synthetic_entry(orch, ticket, workspace))
+        return synthetic
+
+    @staticmethod
+    def _nested_under_overlapping_parent(
+        orch: OrchestrationRun,
+        tickets: dict[str, Ticket],
+        parent_orchs: dict[str, list[OrchestrationRun]],
+    ) -> bool:
+        ticket = tickets.get(orch.ticket_id)
+        seen: set[str] = set()
+        while ticket and ticket.parent_ticket_id and ticket.parent_ticket_id not in seen:
+            parent_id = ticket.parent_ticket_id
+            seen.add(parent_id)
+            for parent_orch in parent_orchs.get(parent_id, []):
+                if _ranges_overlap(
+                    orch.started_at,
+                    orch.finished_at,
+                    parent_orch.started_at,
+                    parent_orch.finished_at,
+                ):
+                    return True
+            ticket = tickets.get(parent_id)
+        return False
 
 
 def _to_entry(
@@ -188,4 +334,37 @@ def _to_entry(
         started_at=entry.started_at,
         finished_at=finished_at,
         duration_seconds=_duration_seconds(entry.started_at, finished_at),
+    )
+
+
+def _to_synthetic_entry(
+    orchestration: OrchestrationRun,
+    ticket: Ticket,
+    workspace: Workspace,
+) -> QueueHistoryEntry:
+    """A history card for a finished orchestration that never had a lane entry."""
+    return QueueHistoryEntry(
+        entry_id=f"orch:{orchestration.id}",
+        workspace_id=orchestration.workspace_id,
+        workspace_slug=workspace.slug,
+        workspace_name=workspace.name,
+        slot_number=0,
+        entry_kind="orchestration",
+        stage_key=orchestration.current_stage_key or "",
+        status=QueuePosition.STARTED.value,
+        outcome=_ORCHESTRATION_OUTCOME.get(orchestration.status, "unknown"),
+        ticket_id=ticket.id,
+        ticket_external_id=ticket.external_id,
+        ticket_title=ticket.title,
+        ticket_state=ticket.state.value,
+        orchestration_run_id=orchestration.id,
+        run_code=orchestration.run_code,
+        last_stage_key=orchestration.current_stage_key or "",
+        failure_reason=orchestration.error_message or "",
+        retry_count=0,
+        created_at=orchestration.started_at,
+        promoted_at=orchestration.started_at,
+        started_at=orchestration.started_at,
+        finished_at=orchestration.finished_at,
+        duration_seconds=_duration_seconds(orchestration.started_at, orchestration.finished_at),
     )

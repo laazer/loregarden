@@ -61,6 +61,10 @@ class Reservation:
         Until this lands the slot is claimed but names nothing, which is what
         stops a second request slipping into it. Callers must either bind or
         release, or the lane stays held by a run that does not exist.
+
+        An admitted request never went through ``add_to_lane``, so without a
+        ``QueuedRun`` here the board's history would never record the outcome —
+        including a later success after an interruption failure.
         """
         if not self.admitted or self.slot_number is None or self._session is None:
             return
@@ -72,6 +76,12 @@ class Reservation:
         if orchestration_run_id:
             slot.current_orchestration_run_id = orchestration_run_id
         self._session.add(slot)
+        if orchestration_run_id:
+            from loregarden.services.queue_lanes import QueueLaneService
+
+            QueueLaneService(self._session).ensure_active_entry_for_orchestration(
+                self.slot_number, orchestration_run_id
+            )
         self._session.commit()
         emit_execution_update()
 

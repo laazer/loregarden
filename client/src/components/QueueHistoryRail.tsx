@@ -116,8 +116,8 @@ export function QueueHistoryRail() {
               {OUTCOME_LABEL[entry.outcome] ?? entry.outcome}
             </span>
             <span className="queue-history-meta">
-              {entry.workspace_slug || entry.workspace_name} · {entry.ticket_external_id} · slot{" "}
-              {entry.slot_number}
+              {entry.workspace_slug || entry.workspace_name} · {entry.ticket_external_id}
+              {entry.slot_number > 0 ? ` · slot ${entry.slot_number}` : ""}
               {entry.last_stage_key ? ` · ${entry.last_stage_key}` : ""} ·{" "}
               {formatDuration(entry.duration_seconds)}
               {entry.retry_count ? ` · ${entry.retry_count} retries` : ""}
