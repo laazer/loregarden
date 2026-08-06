@@ -878,6 +878,7 @@ export interface StudioWorkflow {
   description: string;
   stages: StudioWorkflowStage[];
   transitions: WorkflowTransition[];
+  stripped_skills?: string[];
   published_template_id: string | null;
   published_template_slug: string;
   built_in?: boolean;

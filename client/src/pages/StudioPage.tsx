@@ -19,10 +19,12 @@ import { StageRouteHints } from "../components/StageRouteHints";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { McpToolGuideSection } from "../components/studio/McpToolGuideSection";
 import { GateHandoffEditor } from "../components/studio/GateHandoffEditor";
+import { SkillSelect } from "../components/studio/SkillSelect";
 import { StudioDescribeBar } from "../components/studio/StudioDescribeBar";
 import { TicketStudioPanel } from "../components/studio/TicketStudioPanel";
 import { WorkflowPreviewPanel } from "../components/studio/WorkflowPreviewPanel";
 import { WorkspaceGatesPanel } from "../components/studio/WorkspaceGatesPanel";
+import { notifyStrippedSkills } from "../components/studio/skillOptions";
 import { navigateToStudio, navigateToStudioAgent, navigateToStudioAgentNew, navigateToStudioWorkflow, navigateToStudioWorkflowNew, useStudioResourceFromRoute, useStudioSectionFromRoute } from "../lib/useAppNavigation";
 import { isStudioNewResource, studioPath } from "../lib/appNavigation";
 import { useUiStore } from "../state/uiStore";
@@ -327,7 +329,8 @@ export function StudioPage() {
   const publishWorkflow = useMutation({
     meta: { errorTitle: "Publish workflow" },
     mutationFn: (slug: string) => api.publishStudioWorkflow(slug),
-    onSuccess: () => {
+    onSuccess: (published) => {
+      notifyStrippedSkills("Workflow published", published);
       qc.invalidateQueries({ queryKey: ["studio-workflows"] });
       qc.invalidateQueries({ queryKey: ["workflow-templates"] });
     },
@@ -1363,18 +1366,13 @@ export function StudioPage() {
                                       </option>
                                     ))}
                                   </select>
-                                  <select
+                                  <SkillSelect
                                     className="studio-stage-select mono"
                                     value={route.skill_name}
                                     disabled={isWorkflowReadOnly}
-                                    onChange={(e) => updateRoute(index, routeIndex, { skill_name: e.target.value })}
-                                  >
-                                    {(skills.data ?? []).map((skill) => (
-                                      <option key={skill} value={skill}>
-                                        {skill}
-                                      </option>
-                                    ))}
-                                  </select>
+                                    skills={skills.data}
+                                    onChange={(skillName) => updateRoute(index, routeIndex, { skill_name: skillName })}
+                                  />
                                   <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
                                     <input
                                       type="checkbox"
@@ -1461,18 +1459,13 @@ export function StudioPage() {
                                     </option>
                                   ))}
                                 </select>
-                                <select
+                                <SkillSelect
                                   className="studio-stage-select mono"
                                   value={member.skill_name}
                                   disabled={isWorkflowReadOnly}
-                                  onChange={(e) => updateParallelAgent(index, memberIndex, { skill_name: e.target.value })}
-                                >
-                                  {(skills.data ?? []).map((skill) => (
-                                    <option key={skill} value={skill}>
-                                      {skill}
-                                    </option>
-                                  ))}
-                                </select>
+                                  skills={skills.data}
+                                  onChange={(skillName) => updateParallelAgent(index, memberIndex, { skill_name: skillName })}
+                                />
                                 {!isWorkflowReadOnly && (
                                   <button
                                     type="button"
@@ -1536,18 +1529,13 @@ export function StudioPage() {
                             </div>
                             <div>
                               <div className="studio-stage-field-label">Skill</div>
-                              <select
+                              <SkillSelect
                                 className="studio-stage-select mono"
                                 value={stage.skill_name}
                                 disabled={isWorkflowReadOnly}
-                                onChange={(e) => updateStage(index, { skill_name: e.target.value })}
-                              >
-                                {(skills.data ?? []).map((skill) => (
-                                  <option key={skill} value={skill}>
-                                    {skill}
-                                  </option>
-                                ))}
-                              </select>
+                                skills={skills.data}
+                                onChange={(skillName) => updateStage(index, { skill_name: skillName })}
+                              />
                             </div>
                             <div>
                               <div className="studio-stage-field-label">Model override</div>

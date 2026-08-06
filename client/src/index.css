@@ -4542,7 +4542,7 @@ button {
 .inbox-notification-link {
   margin-top: 8px;
   font-size: 11.5px;
-  padding: 2px 0;
+  padding: 4px 10px;
   color: var(--aml);
 }
 
