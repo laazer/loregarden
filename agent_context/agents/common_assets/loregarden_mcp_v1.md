@@ -42,6 +42,28 @@ When Loregarden starts a stage run, the **`loregarden` MCP server is pre-configu
 
 Use `"type": "stdio"` or `"type": "http"` in MCP config — never bare `url` alone (Claude Code schema validation fails).
 
+### No MCP tools attached? Use the CLI, not curl
+
+If `mcp__loregarden__*` tools are absent from your tool list, or the control-plane server is
+not running, the **same tools are reachable from Bash** — they run in-process against the
+database, so no server is required. This is the supported fallback; do not give up on the
+ticket, and do not hand-write JSON-RPC at the HTTP endpoint.
+
+```bash
+./scripts/loregarden-cli.sh mcp list                    # every tool + description
+./scripts/loregarden-cli.sh mcp describe loregarden_get_ticket    # its arguments
+./scripts/loregarden-cli.sh mcp call loregarden_get_ticket ticket_id=<id> workspace_slug=<slug>
+```
+
+- The wrapper script exists when your cwd is the **loregarden checkout**; when the package is
+  installed, the same command is just `loregarden mcp …`. In another workspace's repo with
+  neither available, fall back to the stdio/HTTP transports above.
+- Arguments are `key=value`, typed from each tool's own schema. `describe` tells you the
+  accepted names — a wrong name is rejected with the list of valid ones, so guess nothing.
+- For long values (`content`, artifact bodies), write the text to a file and pass
+  `content=@path` — never paste a multi-line body onto the command line.
+- Exit codes: `0` ok, `1` the tool failed, `2` you invoked it wrong. Errors go to stderr.
+
 ## When to use MCP
 
 | Situation | Tool |
@@ -124,4 +146,8 @@ CLI permission prompts (Bash, AskUserQuestion, etc.) route to the Loregarden **a
 
 ## Failure handling
 
-If MCP is unreachable, log the error in your output and continue read-only work where possible. Do not invent workflow state — escalate via checkpoint protocol or block the ticket with a clear message.
+If MCP is unreachable, **try the CLI fallback first** (`./scripts/loregarden-cli.sh mcp call …`,
+see *Transport*) — a server that is down does not stop tool calls, since the CLI talks to the
+database directly. Only if that also fails: log the error in your output and continue read-only
+work where possible. Do not invent workflow state — escalate via checkpoint protocol or block
+the ticket with a clear message.
