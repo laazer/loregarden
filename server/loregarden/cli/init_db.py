@@ -30,15 +30,8 @@ def remove_sqlite_files(db_path: Path) -> list[Path]:
     return removed
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Initialize a clean Loregarden SQLite database.")
-    parser.add_argument(
-        "--empty",
-        action="store_true",
-        help="Create schema only; do not seed bootstrap workspaces/tickets.",
-    )
-    args = parser.parse_args(argv)
-
+def _initialize(*, empty: bool) -> str:
+    """Recreate the database from scratch and report what happened."""
     db_path = sqlite_db_path()
     removed = remove_sqlite_files(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -48,21 +41,47 @@ def main(argv: list[str] | None = None) -> int:
     from sqlmodel import Session
 
     init_db()
-    if not args.empty:
+    if not empty:
         with Session(engine) as session:
             seed_database(session)
 
-    if removed:
-        print(f"removed {len(removed)} existing file(s)")
     try:
         display = db_path.relative_to(settings.repo_root)
     except ValueError:
         display = db_path
-    print(f"initialized {display}")
-    if args.empty:
-        print("schema only (--empty)")
-    else:
-        print("seeded bootstrap data")
+    lines = [f"removed {len(removed)} existing file(s)"] if removed else []
+    lines.append(f"initialized {display}")
+    lines.append("schema only (--empty)" if empty else "seeded bootstrap data")
+    return "\n".join(lines)
+
+
+def _run(args: argparse.Namespace) -> str:
+    return _initialize(empty=args.empty)
+
+
+def register(sub: argparse._SubParsersAction) -> None:
+    """Add `db init` to the root CLI's `db` group."""
+    parser = sub.add_parser(
+        "init",
+        help="Recreate the SQLite database from scratch — DELETES the existing file.",
+    )
+    parser.add_argument(
+        "--empty",
+        action="store_true",
+        help="Create schema only; do not seed bootstrap workspaces/tickets.",
+    )
+    parser.set_defaults(run=_run)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Initialize a clean Loregarden SQLite database.")
+    parser.add_argument(
+        "--empty",
+        action="store_true",
+        help="Create schema only; do not seed bootstrap workspaces/tickets.",
+    )
+    args = parser.parse_args(argv)
+    print(_initialize(empty=args.empty))
     return 0
 
 
