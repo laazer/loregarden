@@ -293,8 +293,8 @@ def test_parallel_stage_runs_all_agents(
                     "stage_type": "parallel",
                     "order": 1,
                     "parallel_agents": [
-                        {"agent_id": "static_qa", "skill_name": "static_qa"},
-                        {"agent_id": "gatekeeper", "skill_name": "ac_gate"},
+                        {"agent_id": "static_qa", "skill_name": ""},
+                        {"agent_id": "gatekeeper", "skill_name": ""},
                     ],
                 },
                 {"key": "done", "name": "Done", "agent_id": "", "skill_name": "", "order": 2},

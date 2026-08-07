@@ -666,6 +666,16 @@ def test_local_runner_success(tmp_path, monkeypatch):
         ],
     )
     assert local_runner_main() == 0
+    # Captured via print side effects above; re-run with stdout capture for the report.
+    import io
+    from contextlib import redirect_stdout
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        assert local_runner_main() == 0
+    out = buf.getvalue()
+    assert "<<<LOREGARDEN_STAGE_REPORT>>>" in out
+    assert '"status": "pass"' in out
 
 
 def test_local_runner_forced_fail(tmp_path, monkeypatch):

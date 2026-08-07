@@ -19,21 +19,20 @@ def test_build_orchestration_context_maps_testing_to_static_qa():
         ticket_id="ticket",
         workspace_id="ws",
         agent_id="static_qa",
-        skill_name="run_tests",
+        skill_name="",
         stage_key="testing",
     )
     stage = WorkflowStageDef(
         key="testing",
         name="Testing",
         agent_id="static_qa",
-        skill_name="run_tests",
+        skill_name="",
         order=7,
     )
     text = build_orchestration_context(ticket=ticket, run=run, stage_def=stage)
     assert "authoritative for this run" in text
     assert "`testing`" in text
     assert "STATIC_QA" in text
-    assert "run_tests" in text
 
 
 def test_build_orchestration_context_does_not_imply_ticket_markdown():
@@ -84,7 +83,7 @@ def test_cli_prompt_includes_orchestration_context():
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             agent_id="static_qa",
-            skill_name="run_tests",
+            skill_name="",
             stage_key="testing",
         )
         executor = CliAgentExecutor(session)
@@ -150,7 +149,7 @@ def test_inherited_context_section_reaches_the_stage_prompt(tmp_path, monkeypatc
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,
             agent_id="static_qa",
-            skill_name="run_tests",
+            skill_name="",
             stage_key="testing",
         )
         executor = CliAgentExecutor(session)

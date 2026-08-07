@@ -420,6 +420,41 @@ class CliAgentExecutor:
             proc.stdin.close()
         return proc
 
+    def _record_print_line(
+        self,
+        line: str,
+        *,
+        stdout_lines: list[str],
+        launch_slot,
+        streamer: RunLogStreamer,
+    ) -> None:
+        line = line.rstrip("\n")
+        stdout_lines.append(line)
+        # Output proves this process is past its credential read, so a
+        # sibling lane may start authenticating now.
+        launch_slot.release()
+        streamer.append_stream_line(line)
+
+    def _drain_print_stdout(
+        self,
+        reader: SubprocessLineReader,
+        *,
+        stdout_lines: list[str],
+        launch_slot,
+        streamer: RunLogStreamer,
+    ) -> None:
+        """Empty the pipe after exit so trailing stage-report lines are not lost."""
+        while True:
+            leftover = reader.readline(timeout=0)
+            if leftover is None:
+                return
+            self._record_print_line(
+                leftover,
+                stdout_lines=stdout_lines,
+                launch_slot=launch_slot,
+                streamer=streamer,
+            )
+
     def _run_print_mode(
         self,
         *,
@@ -451,8 +486,6 @@ class CliAgentExecutor:
         cancelled = False
         try:
             while True:
-                if proc.poll() is not None and reader.readline(timeout=0) is None:
-                    break
                 now = time.time()
                 if now >= idle_deadline or now >= hard_deadline:
                     proc.kill()
@@ -461,19 +494,29 @@ class CliAgentExecutor:
                     proc.kill()
                     cancelled = True
                     break
-                line = reader.readline(timeout=0.5)
+                exited = proc.poll() is not None
+                # After exit, keep draining with a short poll so the last
+                # buffered lines (e.g. a stage-report block) are not dropped
+                # by a timeout=0 select race against the closing pipe.
+                line = reader.readline(timeout=0.05 if exited else 0.5)
                 if line is None:
-                    if proc.poll() is not None:
+                    if exited:
+                        self._drain_print_stdout(
+                            reader,
+                            stdout_lines=stdout_lines,
+                            launch_slot=launch_slot,
+                            streamer=streamer,
+                        )
                         break
                     if now - start >= MAX_HOLD_SECONDS:
                         launch_slot.release()
                     continue
-                line = line.rstrip("\n")
-                stdout_lines.append(line)
-                # Output proves this process is past its credential read, so a
-                # sibling lane may start authenticating now.
-                launch_slot.release()
-                streamer.append_stream_line(line)
+                self._record_print_line(
+                    line,
+                    stdout_lines=stdout_lines,
+                    launch_slot=launch_slot,
+                    streamer=streamer,
+                )
                 # Output is progress: extend the idle budget. The hard cap never
                 # moves.
                 idle_deadline = time.time() + timeout

@@ -34,6 +34,18 @@ def main() -> int:
     }
     print(json.dumps(result))
     print(f"[{args.agent_id}] skill={args.skill or '—'} · {len(prompt)} chars")
+    # Fail-closed orchestration requires a stage report even for the local
+    # stub — without it, SUCCEEDED runs block instead of advancing. Emit as
+    # one write so a post-exit drain race cannot split the sentinel pair.
+    report = json.dumps(
+        {
+            "status": "pass",
+            "confidence": 1.0,
+            "reroute_to_stage": None,
+            "reroute_context": "",
+        }
+    )
+    print(f"<<<LOREGARDEN_STAGE_REPORT>>>\n{report}\n<<<END_STAGE_REPORT>>>")
     return 0
 
 
