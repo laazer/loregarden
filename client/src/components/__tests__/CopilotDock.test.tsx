@@ -117,8 +117,19 @@ it("renders pending approvals as an in-thread agent ask, not dock chrome", () =>
         {
           id: "a1",
           title: "Which shape?",
+          level: "low",
+          workspace_slug: "loregarden",
+          stage_key: "home-chat",
+          stage_name: "Home chat",
+          impact: "",
+          ticket_id: "",
+          ticket_external_id: "",
           kind: "cli_question",
           status: "pending",
+          run_id: "r1",
+          tool_name: "AskUserQuestion",
+          tool_input_json: "{}",
+          cli_adapter: "claude",
           questions: [
             {
               question: "Which shape?",

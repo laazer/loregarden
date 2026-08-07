@@ -89,8 +89,7 @@ def test_succeeded_without_stage_report_blocks_instead_of_advancing(db_session: 
         run,
         status=RunStatus.SUCCEEDED,
         stdout=(
-            "AC Gate decision: **REJECT**.\n"
-            "I attempted MCP complete_stage but it was cancelled.\n"
+            "AC Gate decision: **REJECT**.\nI attempted MCP complete_stage but it was cancelled.\n"
         ),
         stderr="",
     )

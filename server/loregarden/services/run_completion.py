@@ -278,9 +278,7 @@ def advance_stage_after_run(
         # but never emitted the sentinel — or whose MCP complete_stage call was
         # cancelled — then silently promoted bad work. Require an explicit
         # report before any agent stage can leave RUNNING.
-        ticket.blocking_issues = _blocking_issue(
-            orch.session, ticket, run, _MISSING_STAGE_REPORT
-        )
+        ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, _MISSING_STAGE_REPORT)
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
         ticket.state = TicketState.BLOCKED
     elif status == RunStatus.SUCCEEDED:
