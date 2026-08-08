@@ -11,6 +11,8 @@
  * triage and ticket triage all speak this without knowing about each other.
  */
 
+import { ReconnectingSocket, type SocketStatus } from "./reconnectingSocket";
+
 /** One frame of a turn's reasoning. Always the whole transcript, not a delta. */
 export interface ChatThinkingFrame {
   turn_id: string;
@@ -44,7 +46,7 @@ export const EMPTY_THINKING_FRAME: ChatThinkingFrame = {
 };
 
 /** Three states, matching `QueueSocket`: a socket is trying, up, or down. */
-export type ChatThinkingSocketStatus = "connecting" | "open" | "closed";
+export type ChatThinkingSocketStatus = SocketStatus;
 
 export interface ChatThinkingSocketHandlers {
   onFrame: (frame: ChatThinkingFrame) => void;
@@ -70,15 +72,9 @@ export function chatThinkingSocketUrl(apiBase: string, turnId: string): string {
   return `${base}/ws/chat-turns/${encodeURIComponent(turnId)}`;
 }
 
-export class ChatThinkingSocket {
-  private socket: WebSocket | null = null;
-  private closed = false;
-  private attempts = 0;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+export class ChatThinkingSocket extends ReconnectingSocket {
   private lastSeq = 0;
-  private readonly url: string;
   private readonly handlers: ChatThinkingSocketHandlers;
-  private readonly factory: (url: string) => WebSocket;
 
   constructor(
     url: string,
@@ -86,88 +82,34 @@ export class ChatThinkingSocket {
     /** Injectable so tests can drive a fake without a live server. */
     factory: (url: string) => WebSocket = (u) => new WebSocket(u),
   ) {
-    this.url = url;
-    this.handlers = handlers;
-    this.factory = factory;
-  }
-
-  open(): void {
-    if (this.closed) return;
-
-    this.handlers.onStatus("connecting");
-    const socket = this.factory(this.url);
-    this.socket = socket;
-
-    socket.onopen = () => {
-      this.attempts = 0;
-      this.handlers.onStatus("open");
-    };
-
-    socket.onmessage = (event: MessageEvent) => {
-      if (typeof event.data !== "string") return;
-      let message: { type?: string; data?: ChatThinkingFrame };
-      try {
-        message = JSON.parse(event.data);
-      } catch {
-        // A frame we cannot parse is the server's problem, not a reason to
-        // tear down a working connection.
-        return;
-      }
-      if (message?.type === "chat_thinking_done") {
-        // Stop reconnecting: the turn is over, and a channel for a settled
-        // turn would retry forever against a server with nothing to say.
-        this.close();
-        this.handlers.onDone?.();
-        return;
-      }
-      if (message?.type !== "chat_thinking" || !message.data) return;
-      const frame = message.data;
-      if (frame.seq < this.lastSeq) return;
-      this.lastSeq = frame.seq;
-      this.handlers.onFrame(frame);
-    };
-
-    socket.onclose = () => this.scheduleReconnect();
-    // onerror carries no detail by design; onclose always follows it and is
-    // where the recovery belongs.
-    socket.onerror = () => {};
-  }
-
-  close(): void {
-    this.closed = true;
-    if (this.reconnectTimer !== null) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    if (this.socket) {
-      // Drop the handlers first: a close we asked for must not be reported as
-      // a connection that dropped, or the caller falls back to polling on its
-      // way out.
-      this.socket.onopen = null;
-      this.socket.onmessage = null;
-      this.socket.onclose = null;
-      this.socket.onerror = null;
-      this.socket.close();
-      this.socket = null;
-    }
-  }
-
-  private scheduleReconnect(): void {
-    this.socket = null;
-    if (this.closed) return;
-
-    // "closed", not "connecting" — the caller polls during the wait rather
-    // than sitting on a hopeful state showing a frozen transcript.
-    this.handlers.onStatus("closed");
-
-    const delay = Math.min(
-      BASE_RECONNECT_DELAY_MS * 2 ** this.attempts,
-      MAX_RECONNECT_DELAY_MS,
+    super(
+      url,
+      {
+        baseDelayMs: BASE_RECONNECT_DELAY_MS,
+        maxDelayMs: MAX_RECONNECT_DELAY_MS,
+      },
+      factory,
     );
-    this.attempts += 1;
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.open();
-    }, delay);
+    this.handlers = handlers;
+  }
+
+  protected emitStatus(status: ChatThinkingSocketStatus): void {
+    this.handlers.onStatus(status);
+  }
+
+  protected handleMessage(raw: unknown): void {
+    const message = raw as { type?: string; data?: ChatThinkingFrame };
+    if (message?.type === "chat_thinking_done") {
+      // Stop reconnecting: the turn is over, and a channel for a settled
+      // turn would retry forever against a server with nothing to say.
+      this.close();
+      this.handlers.onDone?.();
+      return;
+    }
+    if (message?.type !== "chat_thinking" || !message.data) return;
+    const frame = message.data;
+    if (frame.seq < this.lastSeq) return;
+    this.lastSeq = frame.seq;
+    this.handlers.onFrame(frame);
   }
 }
