@@ -35,7 +35,7 @@ const SNAPSHOT: QueueStatusSnapshot = {
     available_slots: 2,
     queued_count: 0,
     total_slots_occupied: 1,
-    queue_wait_time_minutes: 0,
+    longest_wait_seconds: 0,
   },
 };
 

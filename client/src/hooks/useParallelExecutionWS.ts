@@ -41,6 +41,8 @@ export interface ParallelExecutionWSStatus {
   stats: ParallelStats;
   /** Projected seconds to clear, or null when the server has no history. */
   estimatedClearSeconds: number | null;
+  /** Projected seconds until the last queued entry starts, on the same terms. */
+  estimatedWaitSeconds: number | null;
   loading: boolean;
   error: string | null;
   connectionState: QueueSocketStatus;
@@ -102,6 +104,7 @@ export function useParallelExecutionWS(
         lanes: snapshot.lanes ?? [],
         stats: snapshot.stats ?? DEFAULT_PARALLEL_STATS,
         estimatedClearSeconds: snapshot.estimated_clear_seconds ?? null,
+        estimatedWaitSeconds: snapshot.estimated_wait_seconds ?? null,
         loading: false,
         error: null,
         connectionState: status,
@@ -115,6 +118,7 @@ export function useParallelExecutionWS(
       lanes: fallback.lanes,
       stats: fallback.stats,
       estimatedClearSeconds: fallback.estimatedClearSeconds,
+      estimatedWaitSeconds: fallback.estimatedWaitSeconds,
       // Connected but still waiting on the first frame is loading too, or the
       // dashboard would flash an empty queue before its first snapshot.
       loading: live ? true : fallback.loading,

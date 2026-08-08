@@ -546,6 +546,34 @@
   color: var(--txl);
 }
 
+/* The projection, set apart from the measured elapsed time beside it — they
+   are different kinds of claim and should not read as one figure. */
+.queue-slot-remaining {
+  color: var(--txm);
+}
+
+.queue-slot-tree,
+.queue-lane-item-timing {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--txm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-lane-item-timing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  margin-top: 2px;
+}
+
+.queue-lane-item-timing > span + span::before {
+  content: '· ';
+  color: var(--txl);
+}
+
 .queue-slot-bar {
   margin-top: 2px;
   height: 5px;

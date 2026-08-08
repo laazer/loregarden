@@ -104,7 +104,7 @@ const baseStatus = {
     available_slots: 2,
     queued_count: 1,
     total_slots_occupied: 1,
-    queue_wait_time_minutes: 2,
+    longest_wait_seconds: 0,
   },
   estimatedClearSeconds: 480,
   isWebSocket: true,
@@ -487,5 +487,111 @@ describe('empty state', () => {
   test('is absent while anything is running or queued', () => {
     render(<ParallelQueueVisualization />);
     expect(screen.queryByText(/All lanes open/)).not.toBeInTheDocument();
+  });
+});
+
+describe('estimates', () => {
+  /** A lane holding a parent with two unfinished children behind it. */
+  const treeLane = {
+    ...runningLane,
+    running: {
+      ...runningLane.running,
+      orchestration_run_id: 'orch-1',
+      elapsed_seconds: 600,
+      estimated_duration_seconds: 5400,
+      estimated_remaining_seconds: 4800,
+      ticket_tree_estimate: {
+        work_seconds: 9000,
+        critical_path_seconds: 4800,
+        projected_seconds: 4800,
+        ticket_count: 3,
+        unknown_tickets: 0,
+        stage_count: 9,
+      },
+    },
+    waiting: [
+      {
+        ...runningLane.waiting[0],
+        estimated_wait_seconds: 4800,
+        estimated_remaining_seconds: 3600,
+        ticket_tree_estimate: {
+          work_seconds: 3600,
+          critical_path_seconds: 3600,
+          projected_seconds: 3600,
+          ticket_count: 2,
+          unknown_tickets: 1,
+          stage_count: 4,
+        },
+      },
+    ],
+  };
+
+  test('a running lane says how much of its ticket tree is left', () => {
+    withStatus({ lanes: [treeLane], activeRuns: [treeLane.running] });
+    render(<ParallelQueueVisualization />);
+
+    expect(screen.getByTestId('slot-1-remaining')).toHaveTextContent('~1h 20m left');
+    // The count is why the estimate is an hour and not four minutes.
+    expect(screen.getByTestId('slot-1-tree')).toHaveTextContent('3 tickets · 9 stages left');
+  });
+
+  test('a running lane draws a real bar once its whole span is known', () => {
+    withStatus({ lanes: [treeLane], activeRuns: [treeLane.running] });
+    render(<ParallelQueueVisualization />);
+
+    // The indeterminate bar was every lane's permanent state, because no single
+    // agent median could describe a whole pipeline.
+    expect(screen.queryByTestId('slot-1-progress-unknown')).not.toBeInTheDocument();
+  });
+
+  test('a queued entry says when it starts, not just that it is queued', () => {
+    withStatus({ lanes: [treeLane], activeRuns: [treeLane.running] });
+    render(<ParallelQueueVisualization />);
+
+    const timing = screen.getByTestId('lane-entry-entry-1-timing');
+    expect(timing).toHaveTextContent('starts in ~1h 20m');
+    expect(timing).toHaveTextContent('~1h of work');
+    // The part of the subtree with no history is admitted rather than dropped.
+    expect(timing).toHaveTextContent('1 unestimated');
+  });
+
+  test('the wait tile projects forward and reports the observed wait beside it', () => {
+    withStatus({
+      lanes: [treeLane],
+      activeRuns: [treeLane.running],
+      estimatedWaitSeconds: 4800,
+      stats: { ...baseStatus.stats, longest_wait_seconds: 45 },
+    });
+    render(<ParallelQueueVisualization />);
+
+    expect(screen.getByTestId('queue-wait-time')).toHaveTextContent('~1h 20m');
+    // 45 seconds used to render as "0m", on the one figure that was supposed to
+    // show the queue moving.
+    expect(screen.getByText(/waiting 45s/)).toBeInTheDocument();
+  });
+
+  test('no history says so rather than showing a zero', () => {
+    withStatus({
+      lanes: [
+        {
+          ...treeLane,
+          running: { ...treeLane.running, estimated_remaining_seconds: null },
+          waiting: [
+            {
+              ...runningLane.waiting[0],
+              estimated_wait_seconds: null,
+              estimated_remaining_seconds: null,
+            },
+          ],
+        },
+      ],
+      estimatedClearSeconds: null,
+      estimatedWaitSeconds: null,
+    });
+    render(<ParallelQueueVisualization />);
+
+    expect(screen.getByTestId('queue-est-clear')).toHaveTextContent('—');
+    expect(screen.getByTestId('queue-wait-time')).toHaveTextContent('—');
+    expect(screen.queryByTestId('lane-entry-entry-1-timing')).not.toBeInTheDocument();
   });
 });
