@@ -39,6 +39,9 @@ def test_connecting_delivers_a_snapshot_without_being_asked(ws_client):
         "total_slots",
         "queue_length",
         "estimated_clear_seconds",
+        # Projected wait before the last queued entry starts — forward-looking,
+        # unlike stats.longest_wait_seconds.
+        "estimated_wait_seconds",
         "stats",
     }
 

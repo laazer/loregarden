@@ -65,9 +65,10 @@ const baseStatus: QueueStatusValue = {
     available_slots: 2,
     queued_count: 2,
     total_slots_occupied: 1,
-    queue_wait_time_minutes: 5,
+    longest_wait_seconds: 0,
   },
   estimatedClearSeconds: 300,
+  estimatedWaitSeconds: null,
   isWebSocket: true,
   loading: false,
   // The whole dashboard is the shared slot pool — no per-workspace rail filter.
@@ -186,6 +187,7 @@ describe('resilience', () => {
       activeRuns: [],
       queuedRuns: [],
       estimatedClearSeconds: null,
+      estimatedWaitSeconds: null,
       isWebSocket: false,
     });
 

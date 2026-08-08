@@ -13,6 +13,14 @@
  * queue of three across three slots read as three times the wait it was. Both
  * now come from the server's median of what that agent has actually taken, and
  * when there is no history to draw on the UI says so rather than guessing.
+ *
+ * What they were replaced *with* was still not the truth. A lane runs a whole
+ * ticket and everything under it, so a card priced at one agent's median said
+ * four minutes for a feature with nine child tasks behind it, and every lane
+ * drew the indeterminate bar because no single median could describe it. The
+ * server now sends the remaining pipeline of the whole subtree, and a wait is
+ * measured down the entry's own lane rather than across the pool — a lane is
+ * serial, so position 3 does not start when some other lane drains.
  */
 
 import { useMemo, useState } from 'react';
@@ -26,7 +34,12 @@ import {
 } from '../hooks/useRunningChildTickets';
 import { useQueueStatus } from '../state/QueueStatusContext';
 import { queueLanesApi } from '../lib/queueLanesApi';
-import type { LaneEntry, QueueLane, TicketHierarchyNode } from '../lib/queueSocket';
+import type {
+  LaneEntry,
+  QueueLane,
+  TicketHierarchyNode,
+  TicketTreeEstimate,
+} from '../lib/queueSocket';
 import { navigateToTicket } from '../lib/useAppNavigation';
 import {
   runStatusLabel,
@@ -46,9 +59,43 @@ const LIVE_RUN_STATUSES = new Set(['running', 'awaiting_permission']);
 
 function formatDuration(seconds: number): string {
   if (seconds < 60) return `${Math.round(seconds)}s`;
+  // Whole ticket trees run for hours, and "218m 4s" is a number nobody reads.
+  if (seconds >= 3600) {
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.round((seconds % 3600) / 60);
+    return mins ? `${hours}h ${mins}m` : `${hours}h`;
+  }
   const minutes = Math.floor(seconds / 60);
   const secs = Math.round(seconds % 60);
   return `${minutes}m ${secs}s`;
+}
+
+/**
+ * "~2h 10m", or nothing at all.
+ *
+ * The tilde is the point: every one of these is a median projection, and a
+ * bare figure reads as a deadline the queue never promised.
+ */
+function formatEstimate(seconds: number | null | undefined): string | null {
+  if (seconds === null || seconds === undefined) return null;
+  if (seconds <= 0) return 'now';
+  return `~${formatDuration(seconds)}`;
+}
+
+/**
+ * What a lane card says about the tree behind it.
+ *
+ * The count matters as much as the time: "3 tickets" is why the estimate is
+ * an hour and not four minutes, and `unknown_tickets` is the admission that
+ * part of the subtree has no history to price it — the figure is then a floor,
+ * and saying so is the whole difference from making one up.
+ */
+function treeSummary(estimate: TicketTreeEstimate | null | undefined): string | null {
+  if (!estimate || estimate.ticket_count <= 1) return null;
+  const parts = [`${estimate.ticket_count} tickets`];
+  if (estimate.stage_count) parts.push(`${estimate.stage_count} stages left`);
+  if (estimate.unknown_tickets) parts.push(`${estimate.unknown_tickets} unestimated`);
+  return parts.join(' · ');
 }
 
 /**
@@ -170,8 +217,36 @@ function runningChildFromLabels(
   return fallback;
 }
 
+/**
+ * When a queued ticket starts, and how much work it is.
+ *
+ * Both halves used to be missing, and the second is why the first was wrong:
+ * an entry's wait is everything ahead of it in *its own lane*, and each of
+ * those is a whole ticket tree rather than a single agent run.
+ */
+function LaneEntryTiming({ entry }: { entry: LaneEntry }) {
+  const wait = formatEstimate(entry.estimated_wait_seconds);
+  const duration = formatEstimate(entry.estimated_remaining_seconds);
+  const tree = treeSummary(entry.ticket_tree_estimate);
+
+  if (!wait && !duration) return null;
+
+  return (
+    <div className="queue-lane-item-timing" data-testid={`lane-entry-${entry.entry_id}-timing`}>
+      {wait ? <span>{wait === 'now' ? 'starts next' : `starts in ${wait}`}</span> : null}
+      {duration ? <span>{duration} of work</span> : null}
+      {tree ? <span>{tree}</span> : null}
+    </div>
+  );
+}
+
 export function ParallelQueueVisualization() {
-  const { lanes, stats, estimatedClearSeconds, isWebSocket } = useQueueStatus();
+  const { lanes, stats, estimatedClearSeconds, estimatedWaitSeconds, isWebSocket } =
+    useQueueStatus();
+  // Seconds, not the rounded minutes the server used to send: an entry that has
+  // waited 40 seconds is not "0m", and that was the only figure proving the
+  // queue was moving at all.
+  const longestWait = stats?.longest_wait_seconds ?? 0;
 
   const [pendingAdd, setPendingAdd] = useState<QueueAddRequest | null>(null);
   const [laneError, setLaneError] = useState<string | null>(null);
@@ -237,6 +312,8 @@ export function ParallelQueueVisualization() {
       run.status === 'running' && estimate && estimate > 0
         ? Math.min(100, (run.elapsed_seconds / estimate) * 100)
         : null;
+    const remaining = formatEstimate(run.estimated_remaining_seconds);
+    const tree = treeSummary(run.ticket_tree_estimate);
     const hierarchy = (
       <TicketHierarchy
         ancestry={run.ticket_ancestry}
@@ -267,7 +344,18 @@ export function ParallelQueueVisualization() {
             : // The slot is still occupied, but nothing is working. Saying
               // "elapsed" here is what made a stuck lane look like a busy one.
               `${runStatusLabel(run.status)} · slot held ${formatDuration(run.elapsed_seconds)}`}
+          {live && remaining ? (
+            <span className="queue-slot-remaining" data-testid={`slot-${lane.slot_number}-remaining`}>
+              {' · '}
+              {remaining} left
+            </span>
+          ) : null}
         </div>
+        {tree ? (
+          <div className="queue-slot-tree" data-testid={`slot-${lane.slot_number}-tree`}>
+            {tree}
+          </div>
+        ) : null}
         {!live ? null : progress === null ? (
           // No median to measure against, or the run is parked on an approval.
           // An indeterminate bar says "live, duration unknown"; a percentage
@@ -318,19 +406,38 @@ export function ParallelQueueVisualization() {
 
         <div className="queue-stat">
           <div className="queue-stat-label">Est. clear</div>
-          <div className="queue-stat-value">
+          <div className="queue-stat-value" data-testid="queue-est-clear">
             {estimatedClearSeconds === null ? '—' : formatDuration(estimatedClearSeconds)}
           </div>
           <div className="queue-stat-sub">
-            {estimatedClearSeconds === null ? 'no run history yet' : 'all runs complete in'}
+            {estimatedClearSeconds === null
+              ? 'no run history yet'
+              : // Not "all runs": a lane runs a ticket and its children, and
+                // this figure is the whole of that work.
+                'every queued ticket done in'}
           </div>
         </div>
 
         <div className="queue-stat">
           <div className="queue-stat-label">Wait time</div>
-          <div className="queue-stat-value">{stats?.queue_wait_time_minutes || 0}m</div>
+          {/* Projected, not elapsed. The old figure was how long the oldest
+              entry had already sat there, which answered a question nobody
+              asked of a queue: what they want is when their ticket starts. */}
+          <div className="queue-stat-value" data-testid="queue-wait-time">
+            {!totalWaiting
+              ? '—'
+              : estimatedWaitSeconds === null
+                ? '—'
+                : formatEstimate(estimatedWaitSeconds)}
+          </div>
           <div className="queue-stat-sub">
-            {stats?.queue_wait_time_minutes ? 'oldest item waiting' : 'no queue'}
+            {!totalWaiting
+              ? 'no queue'
+              : estimatedWaitSeconds === null
+                ? 'no run history yet'
+                : `until the last one starts${
+                    longestWait ? ` · waiting ${formatDuration(longestWait)}` : ''
+                  }`}
           </div>
         </div>
       </div>
@@ -462,6 +569,7 @@ export function ParallelQueueVisualization() {
                             state={entry.ticket_state}
                             activity={entry.ticket_activity}
                           />
+                          <LaneEntryTiming entry={entry} />
                         </div>
                         <LaneTicketMenu
                           label={entryLabel}

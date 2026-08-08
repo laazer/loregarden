@@ -56,7 +56,39 @@ export interface RunLabels {
   workspace_slug?: string;
 }
 
-export interface ActiveRun extends RunLabels {
+/**
+ * What history says is still to come for a ticket *and everything under it*.
+ *
+ * A lane runs a whole ticket, and a ticket's children run with it, so this is
+ * the only figure that describes what a lane card is actually doing. `work` is
+ * every remaining stage summed; `critical_path` is the part more lanes cannot
+ * shorten; `projected` is the two reconciled against the slots that exist.
+ */
+export interface TicketTreeEstimate {
+  work_seconds: number | null;
+  critical_path_seconds: number | null;
+  projected_seconds: number | null;
+  ticket_count: number;
+  /** Tickets in the subtree with no history to price them. `projected` is then a floor. */
+  unknown_tickets: number;
+  stage_count: number;
+}
+
+/** Timing fields carried by anything holding or awaiting a slot. */
+interface RunEstimates {
+  /**
+   * The whole span this card measures against — for a lane, elapsed plus what
+   * is left of the ticket tree. Null when there is no history to learn from;
+   * never substitute a default, that is the fabrication this replaced.
+   */
+  estimated_duration_seconds?: number | null;
+  /** What is still to come. Null for the same reason. */
+  estimated_remaining_seconds?: number | null;
+  /** Present when this card is a whole ticket rather than a single stage. */
+  ticket_tree_estimate?: TicketTreeEstimate | null;
+}
+
+export interface ActiveRun extends RunLabels, RunEstimates {
   run_id: string;
   ticket_id: string;
   /**
@@ -69,32 +101,36 @@ export interface ActiveRun extends RunLabels {
   elapsed_seconds: number;
   status: string;
   agent_id: string;
-  /**
-   * Median duration for this agent in this workspace, or null when the
-   * workspace has no completed runs to learn from. Null means "no estimate" —
-   * never substitute a default, that is the fabrication this replaced.
-   */
-  estimated_duration_seconds?: number | null;
 }
 
-export interface QueuedRun extends RunLabels {
+export interface QueuedRun extends RunLabels, RunEstimates {
   run_id: string;
   ticket_id: string;
   position: number;
   estimated_start_at: string;
   wait_seconds: number;
   agent_id: string;
+  /** Projected seconds until this starts. Null with no history to project from. */
+  estimated_wait_seconds?: number | null;
 }
 
 /** A ticket waiting its turn in a lane. */
-export interface LaneEntry extends RunLabels {
+export interface LaneEntry extends RunLabels, RunEstimates {
   entry_id: string;
   ticket_id: string;
   workspace_id: string;
+  slot_number?: number;
   position: number;
   auto_approve: boolean;
   stop_at_stage_key: string;
   queued_at: string | null;
+  /**
+   * Projected seconds until this entry starts — everything ahead of it *in its
+   * own lane*, since a lane is a serial pipeline. Distinct from `wait_seconds`,
+   * which is how long it has already waited.
+   */
+  estimated_wait_seconds?: number | null;
+  wait_seconds?: number;
 }
 
 /** One execution slot: what runs in it, and what is queued behind it. */
@@ -110,7 +146,12 @@ export interface ParallelStats {
   available_slots: number;
   queued_count: number;
   total_slots_occupied: number;
-  queue_wait_time_minutes: number;
+  /**
+   * How long the oldest waiting entry has *already* waited. Measured, not
+   * projected — and in seconds, because the minutes this replaced rendered
+   * every wait under a minute as "0m".
+   */
+  longest_wait_seconds: number;
 }
 
 /** What to show before the first snapshot arrives. */
@@ -120,7 +161,7 @@ export const DEFAULT_PARALLEL_STATS: ParallelStats = {
   available_slots: 3,
   queued_count: 0,
   total_slots_occupied: 0,
-  queue_wait_time_minutes: 0,
+  longest_wait_seconds: 0,
 };
 
 /** What `/api/parallel/status` returns, and what the socket pushes. */
@@ -134,6 +175,11 @@ export interface QueueStatusSnapshot {
   queue_length: number;
   /** Projected seconds until the queue empties, or null with no run history. */
   estimated_clear_seconds?: number | null;
+  /**
+   * Longest projected wait before something still queued starts. Forward-looking,
+   * unlike `stats.longest_wait_seconds`.
+   */
+  estimated_wait_seconds?: number | null;
   stats: ParallelStats;
 }
 

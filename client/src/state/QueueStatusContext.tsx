@@ -50,6 +50,8 @@ export interface QueueStatusValue {
   lanes: QueueLane[];
   stats: ParallelStats;
   estimatedClearSeconds: number | null;
+  /** Projected seconds until the last queued entry starts, or null with no history. */
+  estimatedWaitSeconds: number | null;
   isWebSocket: boolean;
   loading: boolean;
 
@@ -67,6 +69,7 @@ const EMPTY_VALUE: QueueStatusValue = {
   lanes: [],
   stats: DEFAULT_PARALLEL_STATS,
   estimatedClearSeconds: null,
+  estimatedWaitSeconds: null,
   isWebSocket: false,
   loading: false,
   onQueueEvent: () => () => {},
@@ -115,6 +118,7 @@ export function QueueStatusProvider({ children }: { children: ReactNode }) {
       lanes: status.lanes,
       stats: status.stats,
       estimatedClearSeconds: status.estimatedClearSeconds,
+      estimatedWaitSeconds: status.estimatedWaitSeconds,
       isWebSocket: status.isWebSocket,
       loading: status.loading,
       onQueueEvent,
