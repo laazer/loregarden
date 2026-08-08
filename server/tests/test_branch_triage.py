@@ -832,6 +832,55 @@ def test_branch_chat_stays_advisory_without_a_checkout(
     assert captured["read_only"] == "True"
 
 
+def test_branch_chat_codex_executes_on_checked_out_branch(
+    triage_workspace: Workspace,
+    triage_repo: Path,
+    triage_session: Session,
+    monkeypatch,
+):
+    """Writable oneshot adapters execute when a checkout exists — not Claude-only."""
+    from loregarden.services import agent_turn_runner, branch_triage_chat_service
+    from loregarden.services.agent_turn_runner import AgentTurnResult
+
+    captured: dict[str, object] = {}
+    monkeypatch.delenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", raising=False)
+    monkeypatch.setattr(
+        branch_triage_chat_service, "resolve_effective_adapter", lambda **_: "codex"
+    )
+    monkeypatch.setattr(branch_triage_chat_service, "_branch_entry", lambda *_: None)
+
+    def fake_turn(request):
+        captured["intent"] = request.intent
+        captured["adapter"] = request.adapter
+        captured["prompt"] = request.prompt
+        captured["workspace_root"] = request.workspace_root
+        return AgentTurnResult(
+            reply="edited on codex",
+            strategy="writable_oneshot",
+            adapter="codex",
+            run_id=request.run_id,
+        )
+
+    monkeypatch.setattr(agent_turn_runner, "run_agent_turn", fake_turn)
+    monkeypatch.setattr(branch_triage_chat_service, "run_agent_turn", fake_turn)
+
+    reply = invoke_branch_triage_model(
+        triage_session,
+        triage_workspace,
+        "main",
+        "Fix the branch",
+        run_id="run_branch",
+    )
+
+    assert reply == "edited on codex"
+    assert captured["adapter"] == "codex"
+    assert captured["intent"] == "execute"
+    assert captured["workspace_root"] == triage_repo.resolve()
+    prompt = str(captured["prompt"])
+    assert "real file, shell, git" in prompt
+    assert "advisory only" not in prompt
+
+
 def test_branch_chat_rejects_a_second_turn_while_one_is_in_flight(
     client: TestClient, triage_repo, db_session: Session
 ):

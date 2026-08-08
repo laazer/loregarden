@@ -139,6 +139,7 @@ def run_cli_agent_turn(
     read_only: bool = False,
     extra_dirs: Sequence[Path | str] = (),
     thinking_sink: RunStreamSink | None = None,
+    workspace_root: Path | None = None,
 ) -> str:
     """Run one turn to completion and return the assistant's reply.
 
@@ -148,6 +149,8 @@ def run_cli_agent_turn(
     ``run_id`` / ``granted_tools`` are forwarded for LM Studio so the runner can
     speak MCP; Claude/Cursor ignore them (they configure MCP themselves).
     `extra_dirs` grants read access to directories outside the workspace repo.
+    ``workspace_root`` overrides the workspace's default repo path (branch triage
+    checkouts).
 
     `thinking_sink` makes the turn visible while it runs: the CLI is asked for
     NDJSON and stdout is read as it arrives rather than in one block at the end.
@@ -155,7 +158,7 @@ def run_cli_agent_turn(
     turn runs exactly as before and the sink simply sees nothing, which is why
     it is safe to pass one unconditionally.
     """
-    repo_root = resolve_workspace_root(workspace)
+    repo_root = workspace_root or resolve_workspace_root(workspace)
     if not repo_root.is_dir():
         raise ValueError(f"Workspace repo path does not exist: {repo_root}")
 

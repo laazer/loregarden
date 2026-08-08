@@ -993,7 +993,12 @@ class PermissionBridgeRunner:
                 streamer=streamer,
             )
 
-        if bare_mcp and is_auto_approved_mcp_tool(tool_name):
+        if bare_mcp and (
+            is_auto_approved_mcp_tool(tool_name)
+            # Interactive chat (triage / Home / branch): full Loregarden MCP access.
+            # Stage runs keep the narrower AUTO_APPROVED allowlist.
+            or not self.track_workflow_stage
+        ):
             enriched = enrich_mcp_tool_input(
                 bare_tool=bare_mcp,
                 tool_input=tool_input,

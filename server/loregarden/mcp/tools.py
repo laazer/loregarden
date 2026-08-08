@@ -13,6 +13,7 @@ from loregarden.mcp.admission import (
     run_admitted,
     start_orchestration_admitted,
 )
+from loregarden.mcp.tool_ids import McpTool
 from loregarden.models.domain import (
     OrchestrationRunStatus,
     Ticket,
@@ -244,10 +245,10 @@ def _normalize_memory_tool_args(name: str, args: dict[str, Any]) -> dict[str, An
         }
 
     # loregarden_memory_status
-    payload: dict[str, Any] = {}
+    status_payload: dict[str, Any] = {}
     if args.get("workspace_slug") is not None:
-        payload["workspace_slug"] = _coerce_optional_string(args.get("workspace_slug")) or ""
-    return payload
+        status_payload["workspace_slug"] = _coerce_optional_string(args.get("workspace_slug")) or ""
+    return status_payload
 
 
 _ALIAS_MAP: dict[str, tuple[str, ...]] = {
@@ -587,7 +588,7 @@ def _run_view(run) -> dict[str, Any]:
 
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
-        "name": "loregarden_get_ticket",
+        "name": McpTool.GET_TICKET,
         "description": "Read ticket workflow state, stage map, hierarchy neighbors, and active orchestration run.",
         "inputSchema": _tool_schema(
             properties={
@@ -603,7 +604,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_list_tickets",
+        "name": McpTool.LIST_TICKETS,
         "description": "Search and list tickets in a workspace (flat results for discovery).",
         "inputSchema": _tool_schema(
             properties={
@@ -629,7 +630,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_get_ticket_by_external",
+        "name": McpTool.GET_TICKET_BY_EXTERNAL,
         "description": "Read ticket state by workspace slug and external_id.",
         "inputSchema": _tool_schema(
             properties={
@@ -642,7 +643,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_start_orchestration",
+        "name": McpTool.START_ORCHESTRATION,
         "description": "Start a top-level orchestration run for a ticket.",
         "inputSchema": _tool_schema(
             properties={
@@ -657,7 +658,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_start_stage",
+        "name": McpTool.START_STAGE,
         "description": "Mark a workflow stage as running before invoking a sub-agent.",
         "inputSchema": _tool_schema(
             properties={
@@ -669,7 +670,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_complete_stage",
+        "name": McpTool.COMPLETE_STAGE,
         "description": (
             "Mark a stage complete and advance the workflow cursor. "
             "Use outcome=reject with next_stage_key to route back to an upstream agent."
@@ -689,7 +690,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_skip_stage",
+        "name": McpTool.SKIP_STAGE,
         "description": "Mark a stage as won't do.",
         "inputSchema": _tool_schema(
             properties={
@@ -701,7 +702,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_block_ticket",
+        "name": McpTool.BLOCK_TICKET,
         "description": "Block the ticket and fail the orchestration run.",
         "inputSchema": _tool_schema(
             properties={
@@ -713,7 +714,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_attach_evidence",
+        "name": McpTool.ATTACH_EVIDENCE,
         "description": (
             "Attach proof that the work behaves as claimed. The commit it proves is "
             "stamped server-side, so evidence captured before your last edit is "
@@ -735,7 +736,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_attach_artifact",
+        "name": McpTool.ATTACH_ARTIFACT,
         "description": "Attach an artifact (log, diff, test output) to a ticket.",
         "inputSchema": _tool_schema(
             properties={
@@ -748,7 +749,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_request_approval",
+        "name": McpTool.REQUEST_APPROVAL,
         "description": "Create a human approval inbox item for a stage.",
         "inputSchema": _tool_schema(
             properties={
@@ -761,7 +762,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_complete_orchestration",
+        "name": McpTool.COMPLETE_ORCHESTRATION,
         "description": "Finish the top-level orchestration run.",
         "inputSchema": _tool_schema(
             properties={
@@ -776,7 +777,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_update_ticket",
+        "name": McpTool.UPDATE_TICKET,
         "description": (
             "Update ticket state or content (state, title, description, acceptance "
             "criteria). Supply at least one field besides ticket_id. Acceptance "
@@ -810,7 +811,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_link_dependency",
+        "name": McpTool.LINK_DEPENDENCY,
         "description": (
             "Link one ticket to wait for another: ticket_id depends on (runs after) "
             "depends_on. Best-effort ordering within a parent's subtree — it does not "
@@ -828,7 +829,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_unlink_dependency",
+        "name": McpTool.UNLINK_DEPENDENCY,
         "description": (
             "Remove a dependency edge: ticket_id no longer waits for depends_on. "
             "No-op if the edge does not exist. Both ids accept a UUID or external_id."
@@ -842,7 +843,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_create_ticket",
+        "name": McpTool.CREATE_TICKET,
         "description": (
             "Create a new ticket. Mirrors the TicketCreate schema — validation "
             "(including milestone-cannot-have-parent and hierarchy rules) is owned "
@@ -876,7 +877,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_memory_status",
+        "name": McpTool.MEMORY_STATUS,
         "description": (
             "Report configured Obsidian/iCloud memory backends and workspace-scoped resolved paths."
         ),
@@ -890,7 +891,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_append_learning",
+        "name": McpTool.APPEND_LEARNING,
         "description": "Persist ticket learnings to Obsidian notes and/or the memory graph SQLite.",
         "inputSchema": _tool_schema(
             properties={
@@ -903,7 +904,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_upsert_memory",
+        "name": McpTool.UPSERT_MEMORY,
         "description": (
             "Upsert a durable memory node under the workspace-scoped Obsidian dir and graph SQLite."
         ),
@@ -922,7 +923,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_upsert_blog_post",
+        "name": McpTool.UPSERT_BLOG_POST,
         "description": (
             "Persist a human-readable blog post markdown note under the workspace-scoped BlogPosts Obsidian dir."
         ),
@@ -939,7 +940,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_append_checkpoint",
+        "name": McpTool.APPEND_CHECKPOINT,
         "description": (
             "Append a checkpoint entry (assumption/ambiguity log) for a ticket+run to the "
             "workspace-scoped Checkpoints Obsidian dir — same vault as memory/learnings, "
@@ -961,7 +962,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_write_handoff",
+        "name": McpTool.WRITE_HANDOFF,
         "description": (
             "Write a ticket's project_board/checkpoints/<ticket>/handoff-latest.yaml from a "
             "STRUCTURED checklist, then validate it against the workspace's own handoff gate and "
@@ -1014,7 +1015,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_search_prior_work",
+        "name": McpTool.SEARCH_PRIOR_WORK,
         "description": (
             "Find finished tickets like this one and what they hit on the way. Use "
             "before starting work to avoid repeating an approach that already failed."
@@ -1029,7 +1030,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_search_memory",
+        "name": McpTool.SEARCH_MEMORY,
         "description": "Search Obsidian notes and memory graph nodes, optionally scoped to a workspace.",
         "inputSchema": _tool_schema(
             properties={
@@ -1041,7 +1042,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
     },
     {
-        "name": "loregarden_create_memory_relation",
+        "name": McpTool.CREATE_MEMORY_RELATION,
         "description": "Link two memory graph nodes in the workspace-scoped SQLite memory store.",
         "inputSchema": _tool_schema(
             properties={

@@ -6,10 +6,11 @@ archive has real threads to list. History is read from the database rather than
 replayed by the client: a client-supplied history is unverifiable and drifts
 from what the thread actually contains.
 
-A turn runs through ``agent_turn_runner``: Claude uses the permission bridge,
-other adapters use advisory or writable oneshot depending on intent. Unlike
-triage there is no work item, so runs and approvals are workspace-scoped
-(see ``ApprovalScope.for_workspace``).
+A turn runs through ``agent_turn_runner``: intent comes from adapter
+capabilities (permission bridge vs writable oneshot), not adapter-name
+checks. Unlike triage there is no work item, so runs and approvals are
+workspace-scoped (see ``ApprovalScope.for_workspace``). Oneshot adapters
+without an inbox path stay advisory until the operator presses Run.
 """
 
 from __future__ import annotations
@@ -34,7 +35,9 @@ from loregarden.models.domain import (
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.agent_turn_runner import (
     AgentTurnRequest,
+    adapter_capabilities,
     capabilities_for_workspace,
+    resolve_chat_intent,
     run_agent_turn,
 )
 from loregarden.services.approval_views import approval_to_view
@@ -477,11 +480,13 @@ def invoke_baxter_chat_model(
     selected = resolve_effective_adapter(
         agent_adapter=agent.get("adapter", "claude"), workspace=workspace
     )
-    # Same intent map as every other chat surface: Claude turns execute via the
-    # bridge; other adapters stay advisory unless the operator pressed Run.
-    wants_execute = is_agent_plan_execute_message(message)
-    intent = "execute" if selected == "claude" or wants_execute else "advisory"
-    use_bridge = selected == "claude"
+    caps = adapter_capabilities(selected)
+    # Oneshot adapters have no inbox approvals — stay advisory until Run.
+    intent = resolve_chat_intent(
+        selected,
+        wants_execute=is_agent_plan_execute_message(message),
+        require_operator_run=True,
+    )
 
     prompt = build_baxter_chat_prompt(
         workspace=workspace,
@@ -490,7 +495,7 @@ def invoke_baxter_chat_model(
         approvals=_pending_approvals(session, workspace.id),
         tickets=_active_tickets(session, workspace.id),
         interactive=intent == "execute",
-        approval_bridge=use_bridge,
+        approval_bridge=caps.permission_bridge,
     )
     result = run_agent_turn(
         AgentTurnRequest(

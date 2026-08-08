@@ -1,4 +1,4 @@
-"""Interactive triage turns: tool-using Baxter runs through the permission bridge.
+"""Interactive triage turns: tool-using Baxter via the shared agent-turn runner.
 
 Deliberately separate from ``run_service.py``'s stage-run executor — a triage
 turn must not check out a git branch, advance the workflow stage, or call
@@ -17,7 +17,11 @@ from datetime import datetime, timezone
 from loregarden.agents.registry import get_agent
 from loregarden.db.session import engine
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, TriageMessage, Workspace
-from loregarden.services.agent_turn_runner import AgentTurnRequest, run_agent_turn
+from loregarden.services.agent_turn_runner import (
+    AgentTurnRequest,
+    resolve_chat_intent,
+    run_agent_turn,
+)
 from loregarden.services.chat_primitives import parts_json_for_reply
 from loregarden.services.chat_thinking import (
     finish_chat_turn_thinking,
@@ -127,7 +131,9 @@ class TriageTurnExecutor:
         selected = resolve_effective_adapter(
             agent_adapter=agent.get("adapter", "claude"), workspace=effective_workspace
         )
-        intent = "execute" if selected == "claude" else "advisory"
+        # Capability map — not adapter name. Codex/Cursor/LM Studio execute via
+        # writable oneshot; Claude via the permission bridge.
+        intent = resolve_chat_intent(selected)
         history = list_triage_messages(self.session, ticket.id)
         latest_user_message = history[-1].content if history and history[-1].role == "user" else ""
         prompt = build_triage_prompt(
