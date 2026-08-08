@@ -28,8 +28,14 @@ function meterBarColor(status: UsageMeter["status"]): string {
   return "var(--grn)";
 }
 
+const PROVIDER_TITLES: Record<UsageProviderSnapshot["provider"], string> = {
+  claude: "Claude",
+  cursor: "Cursor",
+  codex: "Codex",
+};
+
 function providerTitle(provider: UsageProviderSnapshot["provider"]): string {
-  return provider === "claude" ? "Claude" : "Cursor";
+  return PROVIDER_TITLES[provider] ?? provider;
 }
 
 function breakdownLabel(item: UsageBreakdownItem): string {
@@ -51,11 +57,22 @@ function ProviderSection({
           <h3 className="usage-provider-title">
             {provider.plan ?? (provider.logged_in ? "Signed in" : "Not signed in")}
           </h3>
+          <div className="usage-provider-model">
+            <span className="usage-provider-model-value">
+              {provider.configured_model || "CLI default model"}
+            </span>
+            {provider.active_adapter && <span className="usage-provider-active">active</span>}
+          </div>
         </div>
         {provider.error && <span className="usage-provider-error">{provider.error}</span>}
         {provider.from_cache && provider.cached_at && (
           <span className="usage-provider-cached">
             Cached {new Date(provider.cached_at).toLocaleString()}
+          </span>
+        )}
+        {!provider.from_cache && provider.observed_at && (
+          <span className="usage-provider-cached">
+            Recorded {new Date(provider.observed_at).toLocaleString()}
           </span>
         )}
       </div>
@@ -94,7 +111,7 @@ function ProviderSection({
 
       {provider.breakdown.length > 0 && (
         <div className="usage-breakdown">
-          <div className="usage-breakdown-title">Top consumers (last 7 days)</div>
+          <div className="usage-breakdown-title">By model (last 7 days)</div>
           {provider.breakdown.map((item) => (
             <div key={`${provider.provider}-${item.name}`} className="usage-breakdown-row">
               <div className="usage-breakdown-name">{item.name}</div>
@@ -127,10 +144,10 @@ export function UsageModal({ open, snapshot, isLoading, error, onClose, onRefres
           <div>
             <div className="state-label">Providers</div>
             <h2 id="usage-modal-title" className="modal-title">
-              Claude &amp; Cursor usage
+              Claude, Cursor &amp; Codex usage
             </h2>
             <p className="modal-subtitle">
-              Live subscription limits plus local activity breakdown
+              Subscription limits, configured models, and per-model activity
               {snapshot?.fetched_at ? ` · updated ${new Date(snapshot.fetched_at).toLocaleTimeString()}` : ""}
             </p>
           </div>

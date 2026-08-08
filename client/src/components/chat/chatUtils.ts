@@ -30,6 +30,28 @@ function isTableLine(line: string): boolean {
   return line.trim().startsWith("|");
 }
 
+function isFenceLine(line: string): boolean {
+  return /^\s*(?:```|~~~)/.test(line);
+}
+
+/** Bullets, ordered items, headings and quotes — markdown that needs real newlines. */
+function isStructuralLine(line: string): boolean {
+  return /^\s{0,3}(?:[-*+]\s+|\d+[.)]\s+|#{1,6}\s+|>\s?)/.test(line);
+}
+
+function isStructuralContinuation(line: string): boolean {
+  return Boolean(line.trim()) && (isStructuralLine(line) || /^\s+\S/.test(line));
+}
+
+/**
+ * Prepare agent prose for the markdown renderer.
+ *
+ * Single newlines inside a paragraph are hard breaks, because agents wrap prose
+ * by line and markdown would otherwise reflow it into one run. Structural
+ * markdown — lists, headings, quotes, tables, fenced code — must keep its real
+ * newlines instead, or a list written straight under its lead-in line ("Steps:"
+ * with no blank line between) renders as literal `- ` text rather than a list.
+ */
 export function normalizeChatMarkdown(text: string): string {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const blocks: string[] = [];
@@ -45,6 +67,22 @@ export function normalizeChatMarkdown(text: string): string {
   while (index < lines.length) {
     const line = lines[index];
 
+    if (isFenceLine(line)) {
+      flushParagraph();
+      const fenced: string[] = [line];
+      index += 1;
+      // Everything up to and including the closing fence is verbatim — adding
+      // the paragraph hard-break spaces here would put them in the code.
+      while (index < lines.length) {
+        fenced.push(lines[index]);
+        const closed = isFenceLine(lines[index]);
+        index += 1;
+        if (closed) break;
+      }
+      blocks.push(fenced.join("\n"));
+      continue;
+    }
+
     if (isTableLine(line)) {
       flushParagraph();
       const tableLines: string[] = [];
@@ -59,6 +97,22 @@ export function normalizeChatMarkdown(text: string): string {
     if (!line.trim()) {
       flushParagraph();
       index += 1;
+      continue;
+    }
+
+    if (isStructuralLine(line)) {
+      flushParagraph();
+      const group: string[] = [];
+      while (
+        index < lines.length &&
+        !isTableLine(lines[index]) &&
+        !isFenceLine(lines[index]) &&
+        isStructuralContinuation(lines[index])
+      ) {
+        group.push(lines[index]);
+        index += 1;
+      }
+      blocks.push(group.join("\n"));
       continue;
     }
 

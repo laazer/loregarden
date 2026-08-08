@@ -14,7 +14,8 @@ from typing import Any
 
 import httpx
 from loregarden.config import settings
-from loregarden.services import claude_session_usage
+from loregarden.services import claude_session_usage, codex_usage
+from loregarden.services.cli_settings import resolve_model_for_adapter, resolve_runtime_effective
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,15 @@ class ProviderUsage:
     cached_at: str | None = None
     rate_limited_until: str | None = None
     rate_limit_streak: int | None = None
+    # Which model this provider's adapter would run with right now, and whether
+    # it is the adapter a run started now would actually use. Resolved locally
+    # from the settings chain, so it is never served from the usage cache.
+    configured_model: str | None = None
+    active_adapter: bool = False
+    # When the underlying reading was taken, for providers that report their own
+    # freshness instead of being fetched live (Codex). Distinct from
+    # ``cached_at``, which means "a live fetch failed, this is the last good one".
+    observed_at: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -98,6 +108,9 @@ class ProviderUsage:
             "breakdown": [b.as_dict() for b in self.breakdown],
             "from_cache": self.from_cache,
             "cached_at": self.cached_at,
+            "configured_model": self.configured_model,
+            "active_adapter": self.active_adapter,
+            "observed_at": self.observed_at,
         }
 
 
@@ -563,8 +576,11 @@ def _rate_limit_until(response: httpx.Response, streak: int, *, default_seconds:
     return (datetime.now(tz=timezone.utc) + timedelta(seconds=seconds)).isoformat()
 
 
+PROVIDER_LABELS = {"claude": "Claude", "cursor": "Cursor", "codex": "Codex"}
+
+
 def _provider_label(provider: str) -> str:
-    return "Claude" if provider == "claude" else "Cursor"
+    return PROVIDER_LABELS.get(provider, provider.title())
 
 
 def _format_usage_http_error(
@@ -1087,6 +1103,90 @@ def _fetch_cursor_usage(
     )
 
 
+def _scan_codex_activity(days_back: int = 7) -> list[UsageBreakdownItem]:
+    totals = codex_usage.model_token_totals(days_back)
+    grand_total = sum(totals.values())
+    if not grand_total:
+        return []
+    items = [
+        UsageBreakdownItem(
+            name=name,
+            amount=amount,
+            unit="tokens",
+            share_percent=amount / grand_total * 100,
+        )
+        for name, amount in totals.items()
+    ]
+    items.sort(key=lambda item: item.amount, reverse=True)
+    return items[:8]
+
+
+def _append_codex_window(
+    meters: list[UsageMeter],
+    key: str,
+    window: Any,
+) -> None:
+    if not isinstance(window, dict):
+        return
+    used = _as_number(window.get("used_percent"))
+    if used is None:
+        return
+    meters.append(
+        UsageMeter(
+            key=key,
+            label=codex_usage.window_label(window.get("window_minutes")),
+            used=used,
+            limit=100.0,
+            unit="percent",
+            percent_used=used,
+            resets_at=_iso_from_epoch_ms(window.get("resets_at")),
+            status=_meter_status(used),
+        )
+    )
+
+
+def _fetch_codex_usage() -> ProviderUsage:
+    """Codex usage, read from local rollout transcripts (no network, no credential).
+
+    Takes no HTTP client on purpose — nothing here is fetched — so it also has no
+    rate-limit backoff to keep. Staleness is real, though: the numbers are only
+    as fresh as the last Codex run, which is why the reading's own timestamp is
+    surfaced rather than the poll time.
+    """
+    if not codex_usage.is_signed_in():
+        return ProviderUsage(
+            provider="codex",
+            logged_in=False,
+            error="Not logged in. Run `codex login` to authenticate.",
+            breakdown=_scan_codex_activity(),
+        )
+
+    limits, observed_at = codex_usage.latest_rate_limits()
+    breakdown = _scan_codex_activity()
+    if limits is None:
+        return ProviderUsage(
+            provider="codex",
+            logged_in=True,
+            error="No usage recorded yet — Codex writes limits on its first run.",
+            breakdown=breakdown,
+        )
+
+    meters: list[UsageMeter] = []
+    _append_codex_window(meters, "primary", limits.get("primary"))
+    _append_codex_window(meters, "secondary", limits.get("secondary"))
+
+    return ProviderUsage(
+        provider="codex",
+        plan=codex_usage.plan_label(limits),
+        logged_in=True,
+        meters=meters,
+        breakdown=breakdown,
+        # Codex only refreshes these when it runs, so the reading's own age is
+        # the honest "as of" — reusing the poll time would overstate freshness.
+        observed_at=_iso_from_text(observed_at),
+    )
+
+
 def _usage_cache_path() -> Path:
     return settings.repo_root / "data" / USAGE_CACHE_FILENAME
 
@@ -1234,6 +1334,81 @@ def _merge_cache_entry(
     return merged
 
 
+STALE_READING_HOURS = 24
+
+
+def _as_utc(value: str | None) -> datetime | None:
+    parsed = _parse_iso_timestamp(value)
+    if parsed is None:
+        return None
+    return (
+        parsed.replace(tzinfo=timezone.utc)
+        if parsed.tzinfo is None
+        else parsed.astimezone(timezone.utc)
+    )
+
+
+def _readable_timestamp(value: str | None) -> str:
+    parsed = _as_utc(value)
+    return parsed.strftime("%Y-%m-%d %H:%M UTC") if parsed else "an unknown time ago"
+
+
+def _reading_is_stale(observed_at: str | None) -> bool:
+    parsed = _as_utc(observed_at)
+    if parsed is None:
+        return False
+    age = datetime.now(tz=timezone.utc) - parsed
+    return age > timedelta(hours=STALE_READING_HOURS)
+
+
+def _apply_configured_model(provider: ProviderUsage, active_adapter: str) -> None:
+    """Stamp the locally-resolved model pin onto a provider result.
+
+    Applied after cache resolution so a cached reading never carries a stale
+    model: the pin comes from the settings chain, not from the usage API.
+    """
+    provider.configured_model = resolve_model_for_adapter(provider.provider, None) or None
+    provider.active_adapter = provider.provider == active_adapter
+
+
+def _meter_warnings(provider: ProviderUsage) -> list[str]:
+    thresholds = {"warning": WARNING_PERCENT, "critical": CRITICAL_PERCENT}
+    return [
+        f"{provider.provider.title()} {meter.label} is above {thresholds[meter.status]:.0f}%"
+        for meter in provider.meters
+        if meter.status in thresholds
+    ]
+
+
+def _freshness_warning(provider: ProviderUsage) -> str | None:
+    if provider.from_cache and provider.cached_at:
+        return (
+            f"{provider.provider.title()}: live usage unavailable — "
+            f"showing cached data from {_readable_timestamp(provider.cached_at)}"
+        )
+    if provider.error and provider.logged_in:
+        return f"{provider.provider.title()}: {provider.error}"
+    if _reading_is_stale(provider.observed_at):
+        return (
+            f"{provider.provider.title()}: last recorded "
+            f"{_readable_timestamp(provider.observed_at)} — it only updates when it runs."
+        )
+    return None
+
+
+def _snapshot_warnings(providers: list[ProviderUsage]) -> tuple[list[str], bool]:
+    warnings: list[str] = []
+    near_limit = False
+    for provider in providers:
+        meter_warnings = _meter_warnings(provider)
+        near_limit = near_limit or bool(meter_warnings)
+        warnings.extend(meter_warnings)
+        freshness = _freshness_warning(provider)
+        if freshness:
+            warnings.append(freshness)
+    return warnings, near_limit
+
+
 def get_usage_snapshot() -> dict[str, Any]:
     cache = _read_usage_cache()
     with httpx.Client() as client:
@@ -1241,6 +1416,11 @@ def get_usage_snapshot() -> dict[str, Any]:
             _fetch_claude_usage(client, cache.get("claude")),
             _fetch_cursor_usage(client, cache.get("cursor")),
         ]
+    # Read from local transcripts rather than an API, so it neither needs the
+    # HTTP client nor benefits from the failure cache below.
+    local_providers = [_fetch_codex_usage()]
+
+    active_adapter = str(resolve_runtime_effective(None).get("cli_adapter") or "")
 
     updated_cache = dict(cache)
     resolved_providers: list[ProviderUsage] = []
@@ -1257,29 +1437,11 @@ def get_usage_snapshot() -> dict[str, Any]:
     if updated_cache != cache:
         _write_usage_cache(updated_cache)
 
-    warnings: list[str] = []
-    near_limit = False
+    resolved_providers.extend(local_providers)
     for provider in resolved_providers:
-        for meter in provider.meters:
-            if meter.status == "warning":
-                near_limit = True
-                warnings.append(
-                    f"{provider.provider.title()} {meter.label} is above {WARNING_PERCENT:.0f}%"
-                )
-            elif meter.status == "critical":
-                near_limit = True
-                warnings.append(
-                    f"{provider.provider.title()} {meter.label} is above {CRITICAL_PERCENT:.0f}%"
-                )
-        if provider.from_cache and provider.cached_at:
-            cached_time = datetime.fromisoformat(
-                provider.cached_at.replace("Z", "+00:00")
-            ).strftime("%Y-%m-%d %H:%M UTC")
-            warnings.append(
-                f"{provider.provider.title()}: live usage unavailable — showing cached data from {cached_time}"
-            )
-        elif provider.error and provider.logged_in:
-            warnings.append(f"{provider.provider.title()}: {provider.error}")
+        _apply_configured_model(provider, active_adapter)
+
+    warnings, near_limit = _snapshot_warnings(resolved_providers)
 
     return {
         "providers": [provider.as_dict() for provider in resolved_providers],

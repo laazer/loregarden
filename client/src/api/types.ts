@@ -939,43 +939,13 @@ export interface TicketImportResult {
   errors: string[];
 }
 
-export type UsageMeterStatus = "ok" | "warning" | "critical";
-
-export interface UsageMeter {
-  key: string;
-  label: string;
-  used: number;
-  limit: number | null;
-  unit: "percent" | "dollars" | string;
-  percent_used: number | null;
-  resets_at: string | null;
-  status: UsageMeterStatus;
-}
-
-export interface UsageBreakdownItem {
-  name: string;
-  amount: number;
-  unit: string;
-  share_percent: number;
-}
-
-export interface UsageProviderSnapshot {
-  provider: "claude" | "cursor";
-  plan: string | null;
-  logged_in: boolean;
-  error: string | null;
-  meters: UsageMeter[];
-  breakdown: UsageBreakdownItem[];
-  from_cache: boolean;
-  cached_at: string | null;
-}
-
-export interface UsageSnapshot {
-  providers: UsageProviderSnapshot[];
-  near_limit: boolean;
-  warnings: string[];
-  fetched_at: string;
-}
+export type {
+  UsageBreakdownItem,
+  UsageMeter,
+  UsageMeterStatus,
+  UsageProviderSnapshot,
+  UsageSnapshot,
+} from "./usageTypes";
 
 export interface ImportedTicket {
   external_id: string;
