@@ -97,7 +97,22 @@ cd client && npm run lint      # oxlint
 
 # DB
 sqlite3 data/loregarden.db
+
+# The `loregarden` CLI — works against the DB with no server running
+task cli -- mcp list                                        # every MCP tool + description
+task cli -- mcp describe loregarden_get_ticket              # its JSON Schema
+task cli -- mcp call loregarden_get_ticket ticket_id=42     # key=value, typed by the schema
+./scripts/loregarden-cli.sh mcp call loregarden_append_learning content=@notes.md ...  # @file / @- for long values
+./scripts/loregarden-cli.sh mcp serve                       # stdio MCP proxy
+./scripts/loregarden-cli.sh db init                         # fresh database (DELETES the current one)
 ```
+
+> **External callers** (another service, a cron job, an MCP client that only launches
+> commands) get one console script: `loregarden`, with `mcp` and `db` subcommands. Do not
+> depend on `python -m loregarden.cli.*` — the module layout is internal. The CLI finds the
+> database through the installed package's location, so it works from any cwd; set
+> `LOREGARDEN_REPO_ROOT` (or `LOREGARDEN_DATABASE_URL`) to point it at a different checkout.
+> Exit codes: `0` ok, `1` the operation failed, `2` bad invocation.
 
 > **Pushing from a git worktree** used to explode the pre-push suite with `git add .` exit-128
 > errors — git exports an absolute `GIT_DIR` into hooks, and it overrides the `cwd` of the

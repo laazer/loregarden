@@ -1,7 +1,12 @@
-"""Stdio MCP proxy — optional; prefer POST /mcp on the main server."""
+"""Stdio MCP proxy (`loregarden mcp serve`) — optional; prefer POST /mcp on the main server.
+
+For one-off tool calls without a server, use `loregarden mcp call` instead of speaking
+JSON-RPC at this proxy by hand.
+"""
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -42,21 +47,8 @@ def _handle_stdio_line(line: str) -> dict | list | None:
     return None
 
 
-def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] == "--cli":
-        from loregarden.db.session import engine, init_db
-        from loregarden.mcp.tools import execute_tool
-        from sqlmodel import Session
-
-        init_db()
-        cmd = sys.argv[2]
-        raw_args = sys.argv[3:]
-        # Minimal CLI: tool name + json args
-        args = json.loads(raw_args[0]) if raw_args else {}
-        with Session(engine) as session:
-            print(execute_tool(session, cmd, args))
-        return 0
-
+def serve_stdio() -> None:
+    """Read JSON-RPC messages from stdin until EOF, writing each response to stdout."""
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -65,6 +57,24 @@ def main() -> int:
         if resp is not None:
             sys.stdout.write(json.dumps(resp) + "\n")
             sys.stdout.flush()
+
+
+def _run(args: argparse.Namespace) -> str:
+    serve_stdio()
+    return ""
+
+
+def register(sub: argparse._SubParsersAction) -> None:
+    """Add `mcp serve` to the root CLI's `mcp` group."""
+    parser = sub.add_parser(
+        "serve",
+        help="Speak MCP over stdio, for clients that can only launch a command.",
+    )
+    parser.set_defaults(run=_run)
+
+
+def main() -> int:
+    serve_stdio()
     return 0
 
 

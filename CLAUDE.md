@@ -58,6 +58,10 @@ Concretely, and these are the mistakes agents actually make here:
   none of them; the orchestrator sweeps them into an unrelated ticket's commit. Route reports to
   `loregarden_attach_artifact`, decisions to `loregarden_complete_stage`, assumptions to
   `loregarden_append_checkpoint`, learnings to `loregarden_append_learning`.
+- **No MCP tools attached, or the server is down?** Every tool is also a CLI command that runs
+  against the database in-process: `./scripts/loregarden-cli.sh mcp call <tool> key=value…`
+  (`mcp list` / `mcp describe <tool>` to find the arguments). Use it instead of curling `/mcp`
+  or abandoning the write — see `agent_context/agents/common_assets/loregarden_mcp_v1.md`.
 
 Writing real source code and real test files is, of course, still the job. The rule is about
 *reports about* the work.

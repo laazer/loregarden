@@ -78,6 +78,14 @@ tasks:
     cmds:
       - npm run tauri:build
 
+  cli:
+    desc: >-
+      Run the loregarden CLI against the database, no server needed —
+      `task cli -- mcp list`, `task cli -- mcp call loregarden_get_ticket ticket_id=42`
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - ./scripts/loregarden-cli.sh {{.CLI_ARGS}}
+
   self-improve:watch:
     desc: >-
       Poll for human-triage tickets and reload the server once agent streams

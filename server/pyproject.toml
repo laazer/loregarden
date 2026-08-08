@@ -18,6 +18,12 @@ dependencies = [
     "python-multipart>=0.0.9",
 ]
 
+# The entry point for anything outside this repo — another service, a cron job, an MCP
+# client that can only launch a command. One command with subcommands, so callers stay off
+# module paths (`python -m loregarden.cli.*`), which are an internal layout detail.
+[project.scripts]
+loregarden = "loregarden.cli.main:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.0",
