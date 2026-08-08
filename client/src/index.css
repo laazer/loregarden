@@ -3734,6 +3734,29 @@ button {
   font-size: 16px;
 }
 
+.usage-provider-model {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--mut);
+}
+
+.usage-provider-model-value {
+  font-family: var(--mono);
+}
+
+.usage-provider-active {
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--grl);
+}
+
 .usage-provider-error {
   color: var(--amb);
   font-size: 12px;
@@ -4381,33 +4404,53 @@ button {
   line-height: 1.6;
 }
 
-.chat-message-body.markdown-preview > :first-child {
+/* Compact markdown, shared by every surface that renders agent prose inline:
+   chat bubbles, approval impact text, and the plan body on a plan approval. */
+.chat-message-body.markdown-preview > :first-child,
+.approval-impact.markdown-preview > :first-child,
+.permission-details-markdown.markdown-preview > :first-child {
   margin-top: 0;
 }
 
-.chat-message-body.markdown-preview > :last-child {
+.chat-message-body.markdown-preview > :last-child,
+.approval-impact.markdown-preview > :last-child,
+.permission-details-markdown.markdown-preview > :last-child {
   margin-bottom: 0;
 }
 
-.chat-message-body.markdown-preview h1,
-.chat-message-body.markdown-preview h2,
-.chat-message-body.markdown-preview h3,
-.chat-message-body.markdown-preview h4 {
+.chat-message-body.markdown-preview :is(h1, h2, h3, h4),
+.approval-impact.markdown-preview :is(h1, h2, h3, h4),
+.permission-details-markdown.markdown-preview :is(h1, h2, h3, h4) {
   margin-top: 0.65em;
   margin-bottom: 0.35em;
 }
 
-.chat-message-body.markdown-preview p {
+.chat-message-body.markdown-preview :is(p, ul, ol),
+.approval-impact.markdown-preview :is(p, ul, ol),
+.permission-details-markdown.markdown-preview :is(p, ul, ol) {
   margin: 0.35em 0;
 }
 
-.chat-message-body.markdown-preview ul,
-.chat-message-body.markdown-preview ol {
-  margin: 0.35em 0;
-}
-
-.chat-message-body.markdown-preview pre {
+.chat-message-body.markdown-preview pre,
+.approval-impact.markdown-preview pre,
+.permission-details-markdown.markdown-preview pre {
   margin: 0.45em 0;
+}
+
+.approval-impact {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--txm);
+}
+
+.permission-details-markdown {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--tx);
+}
+
+.permission-details-markdown :is(h1, h2, h3, h4) {
+  font-size: 12.5px;
 }
 
 .chat-thinking {

@@ -43,7 +43,8 @@ def resolve_codex_binary() -> str | None:
     return which(name)
 
 
-def _codex_home() -> Path:
+def codex_home() -> Path:
+    """Root of the local Codex CLI state directory (``$CODEX_HOME`` or ``~/.codex``)."""
     override = (os.environ.get("CODEX_HOME") or "").strip()
     if override:
         return Path(override)
@@ -121,7 +122,7 @@ def _list_from_cli() -> list[CodexModel]:
 
 
 def _list_from_cache() -> list[CodexModel]:
-    path = _codex_home() / "models_cache.json"
+    path = codex_home() / "models_cache.json"
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:

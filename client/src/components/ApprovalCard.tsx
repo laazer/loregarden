@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { AgentQuestion, Approval } from "../api/client";
 import { BringInChangesButton } from "./BringInChangesButton";
+import { MarkdownContent } from "./chat/MarkdownContent";
 import { PermissionDetails } from "./PermissionDetails";
 import { RejectApprovalModal } from "./RejectApprovalModal";
 
@@ -135,11 +136,7 @@ export function ApprovalCard({
           {isQuestion && approval.cli_adapter && <span> · {approval.cli_adapter} question</span>}
           {!compact && approval.workspace_slug && <span> · {approval.workspace_slug}</span>}
         </div>
-        <p
-          style={{ margin: 0, fontSize: 12, color: "var(--txm)", lineHeight: 1.55, whiteSpace: "pre-line" }}
-        >
-          {approval.impact}
-        </p>
+        <MarkdownContent content={approval.impact} className="approval-impact" />
 
         {!!approval.checklist?.length && (
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>

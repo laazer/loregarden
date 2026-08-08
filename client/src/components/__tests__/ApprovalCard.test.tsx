@@ -31,6 +31,45 @@ const PERMISSION_APPROVAL: Approval = {
   tool_name: "Bash",
 };
 
+// react-markdown is mocked in jest, so these assert that plan text reaches the
+// markdown renderer rather than the preformatted path — what the rendered
+// markdown then looks like is covered by normalizeChatMarkdown's own tests.
+describe("ApprovalCard plan rendering", () => {
+  it("sends a plan approval's body through the markdown renderer, not <pre>", () => {
+    const plan = "## Rollout\n\n- Ship the reader\n- Wire the modal\n";
+    const { container } = renderWithRouter(
+      <ApprovalCard
+        approval={{
+          ...PERMISSION_APPROVAL,
+          tool_name: "ExitPlanMode",
+          tool_input_json: JSON.stringify({ plan }),
+        }}
+        onApprove={() => {}}
+        onReject={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Implementation plan")).toBeInTheDocument();
+    expect(container.querySelector(".permission-details-markdown")).toBeInTheDocument();
+    expect(container.querySelector(".permission-details-value")).toBeNull();
+  });
+
+  it("renders the impact text as markdown", () => {
+    const { container } = renderWithRouter(
+      <ApprovalCard
+        approval={{
+          ...GATE_APPROVAL,
+          impact: "Acceptance criteria:\n- Dash has a cooldown",
+        }}
+        onApprove={() => {}}
+        onReject={() => {}}
+      />,
+    );
+
+    expect(container.querySelector(".approval-impact.markdown-preview")).toBeInTheDocument();
+  });
+});
+
 describe("ApprovalCard reject flow", () => {
   it("opens the reject modal for a workflow-gate approval instead of rejecting immediately", () => {
     const onReject = jest.fn();
