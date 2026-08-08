@@ -1,11 +1,12 @@
 """Studio agents persisted in SQLite must include memory MCP tools and protocol."""
 
-from loregarden.models.domain import StudioAgent
-from loregarden.services.studio_service import (
-    DEFAULT_MEMORY_MCP_TOOLS,
-    DEFAULT_STAGE_MCP_TOOLS,
-    studio_agent_config,
+from loregarden.mcp.tool_ids import (
+    MEMORY_DEFAULT_MCP_TOOLS,
+    STAGE_DEFAULT_MCP_TOOLS,
+    mcp_tool_values,
 )
+from loregarden.models.domain import StudioAgent
+from loregarden.services.studio_service import studio_agent_config
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 
@@ -32,7 +33,7 @@ def test_legacy_studio_agent_merges_memory_tools_at_runtime():
 
         cfg = studio_agent_config(session, "legacy-custom")
         assert cfg is not None
-        for tool in DEFAULT_MEMORY_MCP_TOOLS:
+        for tool in mcp_tool_values(MEMORY_DEFAULT_MCP_TOOLS):
             assert tool in cfg["mcp_tools"]
         assert "memory_protocol_v1.md" in cfg["role_body"]
         assert "You are a custom agent." in cfg["role_body"]
@@ -42,8 +43,10 @@ def test_studio_defaults_include_memory_tools(client):
     res = client.get("/api/studio/defaults")
     assert res.status_code == 200
     body = res.json()
-    for tool in DEFAULT_MEMORY_MCP_TOOLS:
+    memory = mcp_tool_values(MEMORY_DEFAULT_MCP_TOOLS)
+    stage = mcp_tool_values(STAGE_DEFAULT_MCP_TOOLS)
+    for tool in memory:
         assert tool in body["mcp_tools"]
-    assert body["memory_mcp_tools"] == DEFAULT_MEMORY_MCP_TOOLS
-    for tool in DEFAULT_STAGE_MCP_TOOLS:
+    assert body["memory_mcp_tools"] == memory
+    for tool in stage:
         assert tool in body["mcp_tools"]

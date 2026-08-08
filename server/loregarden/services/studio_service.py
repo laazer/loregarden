@@ -12,6 +12,11 @@ from loregarden.agents.registry import AGENTS
 from loregarden.agents.registry import list_agents as list_builtin_agents
 from loregarden.config import settings
 from loregarden.core.workflow_loader import write_template_version
+from loregarden.mcp.tool_ids import (
+    MEMORY_DEFAULT_MCP_TOOLS,
+    STAGE_DEFAULT_MCP_TOOLS,
+    mcp_tool_values,
+)
 from loregarden.models.domain import (
     StudioAgent,
     StudioAgentCreate,
@@ -50,25 +55,6 @@ from loregarden.services.workflow_service import WorkflowService
 from loregarden.skills.registry import list_skills
 from sqlmodel import Session, select
 
-DEFAULT_STAGE_MCP_TOOLS = [
-    "loregarden_get_ticket",
-    "loregarden_list_tickets",
-    "loregarden_attach_artifact",
-    # A stage that must produce evidence needs the tool to record it, or it is
-    # blocked with no way to comply.
-    "loregarden_attach_evidence",
-    "loregarden_request_approval",
-]
-
-DEFAULT_MEMORY_MCP_TOOLS = [
-    "loregarden_memory_status",
-    "loregarden_search_memory",
-    "loregarden_append_learning",
-    "loregarden_upsert_memory",
-    "loregarden_upsert_blog_post",
-    "loregarden_create_memory_relation",
-]
-
 STUDIO_ROLE_PREAMBLE = """**Loregarden MCP:** Use MCP tools per `agent_context/agents/common_assets/loregarden_mcp_v1.md` for ticket workflow state.
 
 **Memory protocol:** Read `agent_context/agents/common_assets/memory_protocol_v1.md` — use MCP for memory, learnings, and blog posts (Obsidian + SQLite graph); always pass `workspace_slug`; never write vault or SQLite files directly.
@@ -87,14 +73,17 @@ def _merge_tool_lists(*groups: list[str]) -> list[str]:
 
 
 def default_mcp_tools() -> list[str]:
-    return _merge_tool_lists(DEFAULT_STAGE_MCP_TOOLS, DEFAULT_MEMORY_MCP_TOOLS)
+    return _merge_tool_lists(
+        mcp_tool_values(STAGE_DEFAULT_MCP_TOOLS),
+        mcp_tool_values(MEMORY_DEFAULT_MCP_TOOLS),
+    )
 
 
 def _resolve_studio_mcp_tools(raw_tools: list[str] | None, *, mcp_enabled: bool) -> list[str]:
     if not mcp_enabled:
         return []
     base = raw_tools if raw_tools else default_mcp_tools()
-    return _merge_tool_lists(base, DEFAULT_MEMORY_MCP_TOOLS)
+    return _merge_tool_lists(base, mcp_tool_values(MEMORY_DEFAULT_MCP_TOOLS))
 
 
 def _ensure_studio_role_preamble(role_body: str) -> str:
@@ -824,7 +813,7 @@ class StudioService:
     def agent_defaults(self) -> dict:
         return {
             "mcp_tools": default_mcp_tools(),
-            "memory_mcp_tools": DEFAULT_MEMORY_MCP_TOOLS,
+            "memory_mcp_tools": mcp_tool_values(MEMORY_DEFAULT_MCP_TOOLS),
             "handoff_checks": [item.model_dump() for item in DEFAULT_HANDOFF_CHECKS],
             "gate_checks": [item.model_dump() for item in DEFAULT_GATE_CHECKS],
             # Served rather than mirrored in the client so the vocabulary has one

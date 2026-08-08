@@ -123,7 +123,12 @@ def append_mcp_cli_args(
     session: Session | None = None,
     orchestrated: bool = False,
 ) -> None:
-    """Inject Loregarden MCP into headless Claude/Cursor agent subprocesses."""
+    """Inject Loregarden MCP into headless Claude/Cursor/Codex agent subprocesses.
+
+    ``orchestrated=True`` marks pipeline stage runs (denies create_ticket at the
+    MCP dispatch layer). Chat surfaces — triage, Home, branch triage, Ticket
+    Studio — must pass ``orchestrated=False`` so interactive MCP stays open.
+    """
     if not mcp_cli_injection_enabled():
         return
     if adapter == "claude":
@@ -133,36 +138,34 @@ def append_mcp_cli_args(
     elif adapter == "cursor" and "--approve-mcps" not in argv:
         argv.append("--approve-mcps")
     elif adapter == "codex":
+        # Headless `codex exec` has no interactive MCP approval surface; without
+        # in-process + auto-approve, every tool call becomes "user cancelled".
+        # Chat and stage runs share that need — only the orchestrated env flag
+        # differs (pipeline deny list).
+        script = settings.repo_root / "scripts" / "mcp-server.sh"
+        env = {
+            "LOREGARDEN_MCP_INPROCESS": "1",
+            "LOREGARDEN_REPO_ROOT": str(settings.repo_root),
+        }
         if orchestrated:
-            script = settings.repo_root / "scripts" / "mcp-server.sh"
-            env = {
-                "LOREGARDEN_MCP_INPROCESS": "1",
-                "LOREGARDEN_REPO_ROOT": str(settings.repo_root),
-                "LOREGARDEN_MCP_ORCHESTRATED": "1",
-            }
+            env["LOREGARDEN_MCP_ORCHESTRATED"] = "1"
+        argv.extend(
+            [
+                "-c",
+                f"mcp_servers.{MCP_SERVER_NAME}.command={json.dumps(str(script))}",
+                "-c",
+                f"mcp_servers.{MCP_SERVER_NAME}.args=[]",
+                "-c",
+                f'mcp_servers.{MCP_SERVER_NAME}.default_tools_approval_mode="approve"',
+            ]
+        )
+        for key, value in env.items():
             argv.extend(
                 [
                     "-c",
-                    f"mcp_servers.{MCP_SERVER_NAME}.command={json.dumps(str(script))}",
-                    "-c",
-                    f"mcp_servers.{MCP_SERVER_NAME}.args=[]",
-                    # Headless `codex exec` has no interactive MCP approval surface;
-                    # without this, every tool call becomes "user cancelled MCP tool
-                    # call" even for read-only control-plane tools. Scoped to the
-                    # loregarden server we inject — not a global sandbox bypass.
-                    "-c",
-                    f'mcp_servers.{MCP_SERVER_NAME}.default_tools_approval_mode="approve"',
+                    f"mcp_servers.{MCP_SERVER_NAME}.env.{key}={json.dumps(value)}",
                 ]
             )
-            for key, value in env.items():
-                argv.extend(
-                    [
-                        "-c",
-                        f"mcp_servers.{MCP_SERVER_NAME}.env.{key}={json.dumps(value)}",
-                    ]
-                )
-        else:
-            argv.extend(["-c", f'mcp_servers.{MCP_SERVER_NAME}.url="{resolve_mcp_url()}"'])
 
 
 def load_loregarden_mcp_doc(agent_context_dir: Path) -> str:

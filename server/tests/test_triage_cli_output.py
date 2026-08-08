@@ -96,3 +96,29 @@ def test_build_triage_invocation_uses_print_mode_not_stream_json(tmp_path, monke
     assert "--add-dir" not in inv.argv
     assert "haiku" in inv.argv
     assert "bypassPermissions" in inv.argv
+    # Triage oneshot must wire MCP (not orchestrated — create_ticket stays open).
+    assert "--mcp-config" in inv.argv
+    mcp_idx = inv.argv.index("--mcp-config")
+    assert "LOREGARDEN_MCP_ORCHESTRATED" not in inv.argv[mcp_idx + 1]
+
+
+def test_build_triage_invocation_codex_auto_approves_mcp_without_orchestrated(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "codex")
+    monkeypatch.setenv("LOREGARDEN_CODEX_BIN", "codex")
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("context", encoding="utf-8")
+    inv = build_triage_invocation(
+        agent_id="triage",
+        adapter="codex",
+        prompt="context",
+        prompt_file=prompt_file,
+        skill_name="",
+        workspace_root=tmp_path,
+        workspace=None,
+        read_only=False,
+    )
+    assert any(arg.startswith("mcp_servers.loregarden.command=") for arg in inv.argv)
+    assert 'mcp_servers.loregarden.default_tools_approval_mode="approve"' in inv.argv
+    assert not any("LOREGARDEN_MCP_ORCHESTRATED" in arg for arg in inv.argv)

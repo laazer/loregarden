@@ -129,6 +129,28 @@ def resolve_turn_strategy(adapter: str, intent: TurnIntent) -> TurnStrategy:
     return "advisory_oneshot"
 
 
+def resolve_chat_intent(
+    adapter: str,
+    *,
+    wants_execute: bool = False,
+    require_operator_run: bool = False,
+) -> TurnIntent:
+    """Decide advisory vs execute from adapter capabilities — never by adapter name.
+
+    Ticket-scoped surfaces leave ``require_operator_run=False`` so any execute-capable
+    adapter (bridge or writable oneshot) acts. Home chat sets it so oneshot adapters
+    without an inbox approval path stay advisory until the operator presses Run.
+    """
+    caps = adapter_capabilities(adapter)
+    if not (caps.permission_bridge or caps.plan_execute):
+        return "advisory"
+    if caps.permission_bridge or caps.inbox_approvals:
+        return "execute"
+    if require_operator_run and not wants_execute:
+        return "advisory"
+    return "execute"
+
+
 @dataclass
 class AgentTurnRequest:
     session: Session
@@ -246,6 +268,8 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
                 claude_effort=resolve_effort_for_adapter("claude", request.workspace),
                 partial_messages=thinking is not None,
                 db_session=request.session,
+                # Chat surfaces — not pipeline stages. Keep interactive MCP open.
+                orchestrated=False,
             )
             bridge_kwargs: dict = {
                 "run_id": run.id,
@@ -309,6 +333,7 @@ def _run_oneshot(request: AgentTurnRequest, *, read_only: bool) -> tuple[str, st
             granted_tools=(None if read_only else list(request.agent.get("mcp_tools") or [])),
             read_only=read_only,
             thinking_sink=thinking,
+            workspace_root=request.workspace_root,
         )
     except Exception as exc:
         if run is not None and request.manage_run:

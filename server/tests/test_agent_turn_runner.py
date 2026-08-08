@@ -2,6 +2,7 @@
 
 from loregarden.services.agent_turn_runner import (
     adapter_capabilities,
+    resolve_chat_intent,
     resolve_turn_strategy,
 )
 
@@ -28,3 +29,18 @@ def test_resolve_turn_strategy_is_shared_across_adapters():
     assert resolve_turn_strategy("cursor", "execute") == "writable_oneshot"
     assert resolve_turn_strategy("lmstudio", "execute") == "writable_oneshot"
     assert resolve_turn_strategy("local", "execute") == "advisory_oneshot"
+
+
+def test_resolve_chat_intent_uses_capabilities_not_adapter_names():
+    # Ticket-scoped surfaces: any execute-capable adapter acts.
+    assert resolve_chat_intent("claude") == "execute"
+    assert resolve_chat_intent("codex") == "execute"
+    assert resolve_chat_intent("cursor") == "execute"
+    assert resolve_chat_intent("lmstudio") == "execute"
+    assert resolve_chat_intent("local") == "advisory"
+
+    # Home chat: oneshot adapters stay advisory until Run (no inbox path).
+    assert resolve_chat_intent("claude", require_operator_run=True) == "execute"
+    assert resolve_chat_intent("codex", require_operator_run=True) == "advisory"
+    assert resolve_chat_intent("codex", require_operator_run=True, wants_execute=True) == "execute"
+    assert resolve_chat_intent("local", require_operator_run=True, wants_execute=True) == "advisory"

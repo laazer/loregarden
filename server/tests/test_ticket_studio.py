@@ -695,3 +695,41 @@ def test_bootstrap_clarify_stops_when_the_scoper_has_questions(client: TestClien
     assert body["clarifying_questions"]
     # Questions are open, so nothing was generated over the top of them.
     assert body["draft"] == []
+
+
+def test_ticket_studio_prompt_and_turn_grant_ticket_mcp(client: TestClient, monkeypatch):
+    """Scoper turns must advertise and grant ticket MCP tools (create/update/list/get)."""
+    from loregarden.db.session import engine
+    from loregarden.mcp.tool_ids import TICKET_STUDIO_MCP_TOOLS, mcp_tool_values
+    from loregarden.models.domain import TicketStudioSession, Workspace
+    from loregarden.services import ticket_studio_service
+    from loregarden.services.ticket_studio_service import (
+        build_studio_prompt,
+        invoke_ticket_studio_model,
+    )
+    from sqlmodel import Session, select
+
+    captured: dict[str, object] = {}
+
+    def fake_turn(profile, *, prompt, granted_tools=None, **_kwargs):
+        captured["prompt"] = prompt
+        captured["granted_tools"] = granted_tools
+        return "ok"
+
+    monkeypatch.delenv("LOREGARDEN_TICKET_STUDIO_STUB_RESPONSE", raising=False)
+    monkeypatch.setattr(ticket_studio_service, "run_cli_agent_turn", fake_turn)
+
+    session_id = _draft_session(client, "MCP grant check")
+    with Session(engine) as db:
+        row = db.get(TicketStudioSession, session_id)
+        workspace = db.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+        assert row is not None and workspace is not None
+        prompt = build_studio_prompt(row, workspace, [], "hello", session=db, mode="chat")
+        assert "## Loregarden MCP" in prompt
+        assert "loregarden_create_ticket" in prompt
+        assert "loregarden_update_ticket" in prompt
+        invoke_ticket_studio_model(db, row, "hello", mode="chat")
+
+    expected = mcp_tool_values(TICKET_STUDIO_MCP_TOOLS)
+    assert captured["granted_tools"] == expected
+    assert "loregarden_create_ticket" in captured["granted_tools"]
