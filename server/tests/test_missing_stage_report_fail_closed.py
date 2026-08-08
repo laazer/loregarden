@@ -108,6 +108,56 @@ def test_succeeded_without_stage_report_blocks_instead_of_advancing(db_session: 
     assert "LOREGARDEN_STAGE_REPORT" in ticket.blocking_issues
 
 
+def test_usage_limit_blocks_with_the_provider_reason_not_the_missing_report(
+    db_session: Session,
+):
+    """A quota-killed run still blocks, but must not read as a missing report.
+
+    The CLI exits 0 after printing the provider's limit sentence, so this landed
+    in the branch above and told the operator to make the agent emit a stage
+    report — advice that cannot work until the window resets.
+    """
+    ticket, ws, template = _setup_implementation_ticket(db_session, "usage-limit-blocks")
+
+    run = AgentRun(
+        run_code="orch_usage_limit",
+        ticket_id=ticket.id,
+        workspace_id=ws.id,
+        agent_id="core_simulation",
+        skill_name="",
+        stage_key="implementation",
+        status=RunStatus.QUEUED,
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    orch = OrchestrationService(db_session)
+    orch.complete_run(
+        run,
+        status=RunStatus.SUCCEEDED,
+        stdout=(
+            "You've hit your usage limit. Upgrade to Pro "
+            "(https://chatgpt.com/explore/pro), visit "
+            "https://chatgpt.com/codex/settings/usage to purchase more credits or "
+            "try again at Aug 12th, 2026 10:07 AM."
+        ),
+        stderr="",
+    )
+
+    db_session.refresh(ticket)
+    instance = db_session.exec(
+        select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)
+    ).first()
+    assert instance is not None
+    resolved = parse_stage_map(instance, get_template_stages(template))
+
+    assert resolved["implementation"] == StageStatus.BLOCKED
+    assert ticket.state == TicketState.BLOCKED
+    assert "Usage limit reached on Codex / ChatGPT" in ticket.blocking_issues
+    assert "Aug 12, 2026 10:07 AM" in ticket.blocking_issues
+    assert "LOREGARDEN_STAGE_REPORT" not in ticket.blocking_issues
+
+
 def test_succeeded_with_pass_report_still_advances(db_session: Session):
     ticket, ws, template = _setup_implementation_ticket(db_session, "pass-report-advances")
 

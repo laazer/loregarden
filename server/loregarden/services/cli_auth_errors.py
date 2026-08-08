@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from loregarden.services.cli_settings import ADAPTER_BINARIES, CLI_ADAPTER_OPTIONS
+from loregarden.services.usage_limits import detect_usage_limit, format_usage_limit_hint
 
 # errno-style: [Errno 2] No such file or directory: 'codex'
 # pathlib-ish: No such file or directory: '/opt/bin/codex'
@@ -70,6 +71,7 @@ def _compact_cli_detail(detail: str, *, limit: int = _DETAIL_LIMIT) -> str:
                     "authentication",
                     "not logged",
                     "no such file",
+                    "usage limit",
                 )
             )
         ]
@@ -120,6 +122,12 @@ def format_cli_missing_hint(detail: str, exc: BaseException) -> str | None:
 
 def format_cli_auth_hint(detail: str) -> str | None:
     """Return a fix hint when ``detail`` is a Cursor/Claude/LM Studio/Codex failure."""
+    # First: a plan limit is not a misconfiguration, and its wording overlaps the
+    # provider markers below (a ChatGPT quota message names chatgpt.com too).
+    limit = detect_usage_limit(detail)
+    if limit:
+        return format_usage_limit_hint(limit)
+
     lower = detail.lower()
     if "not supported when using codex with a chatgpt account" in lower or (
         "chatgpt account" in lower and ("not supported" in lower or "gpt-5" in lower)

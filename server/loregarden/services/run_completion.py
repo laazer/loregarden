@@ -43,6 +43,12 @@ from loregarden.services.stage_report import (
     parse_stage_report,
     stage_report_artifact_content,
 )
+from loregarden.services.usage_limits import (
+    UsageLimit,
+    detect_usage_limit,
+    format_usage_limit_hint,
+    usage_limit_blocking_issue,
+)
 from loregarden.services.workflow_routing import apply_stage_route, previous_stage_key
 from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session, select
@@ -156,9 +162,9 @@ def complete_run_tail(
 
     report = parse_stage_report(stdout)
     if advance_workflow:
-        advance_stage_after_run(orch, ticket, run, report, status, stderr)
+        advance_stage_after_run(orch, ticket, run, report, status, stderr, stdout=stdout)
 
-    persist_run_artifacts(orch, ticket, run, status, stderr, report, artifacts)
+    persist_run_artifacts(orch, ticket, run, status, stderr, report, artifacts, stdout=stdout)
 
     event_bus.publish(
         orch.session,
@@ -248,6 +254,87 @@ _MISSING_STAGE_REPORT = (
 )
 
 
+def run_usage_limit(status: RunStatus, stdout: str, stderr: str) -> UsageLimit | None:
+    """The provider limit that ended this run, or None.
+
+    stderr is trusted on any non-success: nothing an agent writes reaches it, so a
+    limit phrase there came from the CLI. stdout is the agent's own transcript —
+    an agent working on quota handling will say "usage limit" in prose — so it is
+    only read when the CLI also stated a reset window, which prose does not.
+    """
+    if status == RunStatus.CANCELLED:
+        return None
+    if status != RunStatus.SUCCEEDED:
+        from_stderr = detect_usage_limit(stderr)
+        if from_stderr:
+            return from_stderr
+    limit = detect_usage_limit(stdout)
+    if limit and limit.reset_text:
+        return limit
+    return None
+
+
+def _block_for_usage_limit(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    instance,
+    stages,
+    status: RunStatus,
+    limit: UsageLimit,
+) -> None:
+    """Block on the provider's limit rather than on a symptom of it.
+
+    Same stage disposition as the failure branches this displaces — only the
+    operator-facing reason changes, from a raw provider dump (or the thoroughly
+    misleading "emitted no stage report") to the actual cause. The ticket itself
+    is halted only on the clean-exit path, matching the fail-closed branch a
+    quota-killed exit-0 run used to land in.
+    """
+    ticket.blocking_issues = _blocking_issue(
+        orch.session, ticket, run, usage_limit_blocking_issue(limit)
+    )
+    set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+    if status == RunStatus.SUCCEEDED:
+        ticket.state = TicketState.BLOCKED
+
+
+def _advance_clean_exit(
+    orch: OrchestrationService,
+    ticket: Ticket,
+    run: AgentRun,
+    report,
+    instance,
+    stages,
+) -> Approval | None:
+    """Settle a run whose CLI exited 0, returning any gate approval it created."""
+    if report is None:
+        # Fail closed: a clean CLI exit without a stage report used to advance
+        # as pass (exit-code-only fallback). Gatekeepers that rejected in prose
+        # but never emitted the sentinel — or whose MCP complete_stage call was
+        # cancelled — then silently promoted bad work. Require an explicit
+        # report before any agent stage can leave RUNNING.
+        ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, _MISSING_STAGE_REPORT)
+        set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
+        ticket.state = TicketState.BLOCKED
+        return None
+
+    gate_approval: Approval | None = None
+    stage_status = StageStatus.DONE
+    stage_def = next((s for s in stages if s.key == run.stage_key), None)
+    if stage_def and stage_def.gate_required:
+        stage_status = StageStatus.AWAITING
+        template = orch.get_template_for_ticket(ticket)
+        if template:
+            stage_name = stage_display_name(template, run.stage_key)
+            gate_approval = orch._create_workflow_gate_approval(
+                ticket, run.stage_key, stage_name, stage_def=stage_def
+            )
+    set_stage_status(ticket, instance, stages, run.stage_key, stage_status)
+    ticket.blocking_issues = ""
+    return gate_approval
+
+
 def advance_stage_after_run(
     orch: OrchestrationService,
     ticket: Ticket,
@@ -255,13 +342,22 @@ def advance_stage_after_run(
     report,
     status: RunStatus,
     stderr: str,
+    *,
+    stdout: str = "",
 ) -> None:
     instance, stages = orch._resolve_stages(ticket)
     if not instance or not stages:
         return
 
+    # Only when the agent produced no outcome of its own: a run that emitted a
+    # stage report reached a verdict, and that verdict outranks anything the
+    # provider printed on the way out.
+    limit = run_usage_limit(status, stdout, stderr) if report is None else None
+
     gate_approval: Approval | None = None
-    if report and report.status == "blocked":
+    if limit is not None:
+        _block_for_usage_limit(orch, ticket, run, instance, stages, status, limit)
+    elif report and report.status == "blocked":
         # Distinct from fail/needs_rework: the agent isn't reporting bad work to
         # redo upstream, it's reporting it cannot proceed at all (e.g. needs a
         # human decision) — reroute-for-rework would just waste a cycle, so this
@@ -272,28 +368,8 @@ def advance_stage_after_run(
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
     elif report and report.status in ("fail", "needs_rework"):
         _reroute_or_block_for_rework(orch, ticket, run, report, instance, stages, stderr)
-    elif status == RunStatus.SUCCEEDED and report is None:
-        # Fail closed: a clean CLI exit without a stage report used to advance
-        # as pass (exit-code-only fallback). Gatekeepers that rejected in prose
-        # but never emitted the sentinel — or whose MCP complete_stage call was
-        # cancelled — then silently promoted bad work. Require an explicit
-        # report before any agent stage can leave RUNNING.
-        ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, _MISSING_STAGE_REPORT)
-        set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
-        ticket.state = TicketState.BLOCKED
     elif status == RunStatus.SUCCEEDED:
-        stage_status = StageStatus.DONE
-        stage_def = next((s for s in stages if s.key == run.stage_key), None)
-        if stage_def and stage_def.gate_required:
-            stage_status = StageStatus.AWAITING
-            template = orch.get_template_for_ticket(ticket)
-            if template:
-                stage_name = stage_display_name(template, run.stage_key)
-                gate_approval = orch._create_workflow_gate_approval(
-                    ticket, run.stage_key, stage_name, stage_def=stage_def
-                )
-        set_stage_status(ticket, instance, stages, run.stage_key, stage_status)
-        ticket.blocking_issues = ""
+        gate_approval = _advance_clean_exit(orch, ticket, run, report, instance, stages)
     elif status == RunStatus.CANCELLED:
         # A stop is not a failure — leave the stage re-runnable with no inbox noise.
         ticket.blocking_issues = ""
@@ -325,15 +401,24 @@ def persist_run_artifacts(
     stderr: str,
     report,
     artifacts: list[dict] | None,
+    *,
+    stdout: str = "",
 ) -> None:
     artifacts = list(artifacts or [])
     if status not in (RunStatus.SUCCEEDED, RunStatus.CANCELLED):
+        limit = run_usage_limit(status, stdout, stderr) if report is None else None
+        message = format_usage_limit_hint(limit) if limit else ""
         artifacts.append(
             {
                 "kind": "error",
-                "title": f"Run {run.run_code} failed",
+                "title": (
+                    f"Run {run.run_code} — usage limit" if limit else f"Run {run.run_code} failed"
+                ),
                 "content": {
-                    "message": stderr[:4000] or ticket.blocking_issues or "Agent run failed",
+                    "message": message
+                    or stderr[:4000]
+                    or ticket.blocking_issues
+                    or "Agent run failed",
                     "run_code": run.run_code,
                     "agent_id": run.agent_id,
                     "stage_key": run.stage_key,
