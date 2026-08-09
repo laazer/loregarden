@@ -40,6 +40,7 @@ import { TicketStudioChatMessages, TicketStudioComposer } from "./TicketStudioCh
 import { TicketStudioDraftModal } from "./TicketStudioDraftModal";
 import { StudioWorkspacePicker } from "./StudioWorkspacePicker";
 import { DEFAULT_RUNTIME } from "../../lib/runtimeSettings";
+import { errorDetail } from "../../utils/errorDetail";
 
 function draftSummaryLine(item: TicketStudioDraftItem): string {
   const parts: string[] = [];
@@ -198,30 +199,28 @@ export function TicketStudioPanel({
     clarifyCardRef.current?.scrollIntoView?.({ block: "end" });
   }, [openQuestionsKey, messageCount]);
 
+  // Asking for clarifications and answering them both return the updated session
+  // and land it the same way: swap it into the cached list, then re-seed the
+  // answer draft from what the server stored.
+  const applyClarificationResult = (updated: TicketStudioSession) => {
+    if (qc) {
+      qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
+        current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
+      );
+    }
+    setAnswerDraft(updated.clarifying_answers);
+  };
+
   const requestClarifications = useMutation({
     meta: { errorTitle: "Request clarifications" },
     mutationFn: () => api.requestTicketStudioClarifications(selectedSessionId!),
-    onSuccess: (updated) => {
-      if (qc) {
-        qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
-          current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
-        );
-      }
-      setAnswerDraft(updated.clarifying_answers);
-    },
+    onSuccess: applyClarificationResult,
   });
 
   const saveClarifications = useMutation({
     meta: { errorTitle: "Save answers" },
     mutationFn: () => api.saveTicketStudioClarifications(selectedSessionId!, answerDraft),
-    onSuccess: (updated) => {
-      if (qc) {
-        qc.setQueryData(["ticket-studio-sessions", workspaceSlug], (current: TicketStudioSession[] | undefined) =>
-          current ? current.map((s) => (s.id === updated.id ? updated : s)) : [updated],
-        );
-      }
-      setAnswerDraft(updated.clarifying_answers);
-    },
+    onSuccess: applyClarificationResult,
   });
 
   const createSession = useMutation({
@@ -304,17 +303,7 @@ export function TicketStudioPanel({
     },
   });
 
-  const smartImportError =
-    startSmartImport.error instanceof Error
-      ? (() => {
-          try {
-            const parsed = JSON.parse(startSmartImport.error.message) as { detail?: string };
-            return parsed.detail ?? startSmartImport.error.message;
-          } catch {
-            return startSmartImport.error.message;
-          }
-        })()
-      : null;
+  const smartImportError = errorDetail(startSmartImport.error);
 
   const sendMessage = useMutation({
     meta: { errorTitle: "Send message" },

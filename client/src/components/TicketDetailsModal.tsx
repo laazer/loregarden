@@ -4,6 +4,7 @@ import type { TicketState } from '../api/client';
 import { priorityLabel } from '../lib/importTicketPreview';
 import { IconCloseButton } from './IconCloseButton';
 import { TicketDependencies } from './TicketDependencies';
+import { TicketRelations } from './TicketRelations';
 import { STATE_LABELS } from './UpdateStateModal';
 
 const STATE_OPTIONS = Object.keys(STATE_LABELS) as TicketState[];
@@ -13,6 +14,7 @@ export interface TicketDetailsSaveDraft {
   title: string;
   description: string;
   acceptanceCriteria: string[];
+  tags: string[];
   state: TicketState;
   priority: number;
 }
@@ -23,6 +25,22 @@ function parseCriteria(text: string): string[] {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+}
+
+/** Comma-separated, blanks and case-insensitive duplicates dropped — mirrors
+ * services/ticket_tags.normalize_tags, which has the last word on what is stored. */
+function parseTags(text: string): string[] {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  for (const raw of text.split(',')) {
+    const tag = raw.trim();
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tags.push(tag);
+  }
+  return tags;
 }
 
 export interface TicketDetailsModalProps {
@@ -80,6 +98,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [criteriaText, setCriteriaText] = useState('');
+  const [tagsText, setTagsText] = useState('');
   const [state, setState] = useState<TicketState>('backlog');
   const [priority, setPriority] = useState(3);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -87,16 +106,18 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
   // Joined rather than the array itself: a refetch hands back a new array identity
   // every time, which would re-seed the textarea and discard an in-progress edit.
   const criteriaSeed = asStringArray(ticket?.acceptance_criteria).join('\n');
+  const tagsSeed = asStringArray(ticket?.tags).join(', ');
 
   useEffect(() => {
     if (ticket) {
       setTitle(asDisplayString(ticket.title));
       setDescription(asDisplayString(ticket.description));
       setCriteriaText(criteriaSeed);
+      setTagsText(tagsSeed);
       setState(ticket.state);
       setPriority(ticket.priority);
     }
-  }, [ticket?.id, ticket?.title, ticket?.description, ticket?.state, ticket?.priority, criteriaSeed]);
+  }, [ticket?.id, ticket?.title, ticket?.description, ticket?.state, ticket?.priority, criteriaSeed, tagsSeed]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -123,18 +144,20 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
   }
 
   const acceptanceCriteria = parseCriteria(criteriaText);
+  const tags = parseTags(tagsText);
   const isDirty =
     !!ticket &&
     (title.trim() !== asDisplayString(ticket.title) ||
       description !== asDisplayString(ticket.description) ||
       acceptanceCriteria.join('\n') !== parseCriteria(criteriaSeed).join('\n') ||
+      tags.join(',') !== parseTags(tagsSeed).join(',') ||
       state !== ticket.state ||
       priority !== ticket.priority);
   const canSave = isDirty && title.trim().length > 0 && !!onSave;
 
   const handleSave = async () => {
     if (!canSave) return;
-    await onSave({ title: title.trim(), description, acceptanceCriteria, state, priority });
+    await onSave({ title: title.trim(), description, acceptanceCriteria, tags, state, priority });
   };
 
   const diffArtifact = ticket?.artifacts?.diff;
@@ -270,7 +293,35 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
                 </p>
               </div>
 
+              <div className="state-card">
+                <div className="state-label">Tags</div>
+                <input
+                  type="text"
+                  aria-label="Tags, comma separated"
+                  className="btn-secondary filter-select"
+                  style={{ width: '100%', fontSize: 13, marginTop: 4 }}
+                  value={tagsText}
+                  disabled={isSaving}
+                  placeholder="backend, needs-design…"
+                  onChange={(e) => setTagsText(e.target.value)}
+                />
+                {tags.length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                    {tags.map((tag) => (
+                      <span key={tag.toLowerCase()} className="count-pill">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <p className="modal-hint" style={{ marginTop: 4 }}>
+                  Comma separated
+                </p>
+              </div>
+
               <TicketDependencies ticket={ticket} />
+
+              <TicketRelations ticket={ticket} />
 
               {asDisplayString(ticket.blocking_issues) && (
                 <div className="state-card">

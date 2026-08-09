@@ -1,3 +1,7 @@
+import type { TicketDependencyRef } from "./ticketEdgeTypes";
+
+export type { TicketDependencyRef };
+
 // Shared API type definitions for the Loregarden client.
 // Split out of client.ts so the module boundary separates data shapes from calls.
 
@@ -28,6 +32,8 @@ export interface TicketSummary {
   parent_ticket_id: string | null;
   milestone: string;
   branch: string;
+  /** Free-form labels. Empty when the ticket is untagged. */
+  tags?: string[];
   child_count: number;
   next_agent?: string;
   activity?: TicketActivity;
@@ -93,14 +99,6 @@ export interface WorkflowTransition {
   agent_id?: string;
 }
 
-export interface TicketDependencyRef {
-  id: string;
-  external_id: string;
-  title: string;
-  state: TicketState;
-  work_item_type: WorkItemType;
-  is_integration_review: boolean;
-}
 
 export interface TicketDetail extends TicketSummary {
   /**
@@ -120,6 +118,8 @@ export interface TicketDetail extends TicketSummary {
   dependencies?: TicketDependencyRef[];
   /** Tickets waiting on this one. */
   dependents?: TicketDependencyRef[];
+  /** Tickets linked for context only — symmetric, and never an ordering constraint. */
+  related?: TicketDependencyRef[];
   revision: number;
   last_updated_by: string;
   next_agent: string;

@@ -1,36 +1,8 @@
 import type { ChatThinkingFrame } from "../lib/chatThinkingSocket";
-import { VITE_API_BASE } from "./viteEnv";
+import { request } from "./http";
+import { ticketEdgeApi } from "./ticketEdgeApi";
 
-export const API_BASE = VITE_API_BASE ?? "http://127.0.0.1:8000";
-
-export class ApiError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-  }
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
-    ...init,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    let message = text || res.statusText;
-    try {
-      const parsed = JSON.parse(text);
-      if (parsed && typeof parsed.detail === "string") message = parsed.detail;
-    } catch {
-      // response wasn't JSON — fall back to raw text
-    }
-    throw new ApiError(res.status, message);
-  }
-  return res.json() as Promise<T>;
-}
+export { API_BASE, ApiError } from "./http";
 
 
 export type * from "./types";
@@ -303,6 +275,8 @@ export const api = {
       title?: string;
       description?: string;
       acceptance_criteria?: string[];
+      /** Replaces the stored tags; omit to leave them alone, [] to clear them. */
+      tags?: string[];
       state?: TicketState;
       priority?: number;
       workflow_stage_key?: string;
@@ -382,15 +356,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body ?? {}),
     }),
-  addDependency: (id: string, dependsOn: string) =>
-    request<TicketDetail>(`/api/tickets/${id}/dependencies`, {
-      method: "POST",
-      body: JSON.stringify({ depends_on: dependsOn }),
-    }),
-  removeDependency: (id: string, dependsOnId: string) =>
-    request<TicketDetail>(`/api/tickets/${id}/dependencies/${dependsOnId}`, {
-      method: "DELETE",
-    }),
+  ...ticketEdgeApi,
   openPr: (id: string) =>
     request<TicketDetail>(`/api/tickets/${id}/open-pr`, {
       method: "POST",

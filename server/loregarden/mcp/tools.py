@@ -13,18 +13,18 @@ from loregarden.mcp.admission import (
     run_admitted,
     start_orchestration_admitted,
 )
+from loregarden.mcp.ticket_edit_tools import (
+    execute_ticket_edit_tool,
+    normalize_update_ticket_args,
+    resolve_ticket_payload,
+)
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.models.domain import (
     OrchestrationRunStatus,
-    Ticket,
-    TicketState,
-    UpdateTicketRequest,
     WorkItemType,
 )
 from loregarden.services.acceptance_criteria import (
     CRITERIA_MODES,
-    load_criteria,
-    merge_criteria,
 )
 from loregarden.services.evidence import (
     ARTIFACT_KIND as EVIDENCE_ARTIFACT_KIND,
@@ -34,14 +34,9 @@ from loregarden.services.evidence import (
     resolve_head_sha,
 )
 from loregarden.services.memory_store import AgentMemoryService
-from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.prior_work import search_prior_work
-from loregarden.services.ticket_dependencies import (
-    DependencyCycleError,
-    TicketDependencyService,
-)
-from loregarden.services.ticket_discovery import list_tickets_mcp, ticket_neighbors_mcp
+from loregarden.services.ticket_discovery import list_tickets_mcp
 from loregarden.services.ticket_service import TicketService
 
 
@@ -438,20 +433,9 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
         return payload
 
     if name == "loregarden_update_ticket":
-        # Whitelist, so every field the tool accepts must be listed here too — an
-        # omission drops the argument before the handler sees it, which is exactly
-        # how acceptance_criteria went missing on the HTTP side.
-        payload = {
-            "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
-        }
-        for field in ("state", "title", "description", "mode"):
-            if args.get(field) is not None:
-                payload[field] = _coerce_string(args.get(field), field=field)
-        if args.get("acceptance_criteria") is not None:
-            payload["acceptance_criteria"] = _coerce_string_list(
-                args.get("acceptance_criteria"), field="acceptance_criteria"
-            )
-        return payload
+        return normalize_update_ticket_args(
+            args, coerce_string=_coerce_string, coerce_string_list=_coerce_string_list
+        )
 
     if name == "loregarden_create_ticket":
         # Deliberately loose here: title/workspace_slug are passed through
@@ -504,73 +488,6 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
         return memory_payload
 
     return args
-
-
-def _ticket_state_payload(session: Session, ticket_id: str) -> dict[str, Any]:
-    svc = OrchestrationCallbackService(session)
-    ticket = svc.resolve_ticket(ticket_id=ticket_id)
-    active = svc.get_active_orchestration_run(ticket.id)
-    orch = OrchestrationService(session)
-    return {
-        "ticket_id": ticket.id,
-        "external_id": ticket.external_id,
-        "state": ticket.state.value,
-        "workflow_stage_key": ticket.workflow_stage_key,
-        "workflow_stage_status": ticket.workflow_stage_status.value,
-        "next_agent": ticket.next_agent,
-        "blocking_issues": ticket.blocking_issues,
-        "active_orchestration": (
-            {
-                "id": active.id,
-                "run_code": active.run_code,
-                "status": active.status.value,
-                "driver": active.driver.value,
-                "current_stage_key": active.current_stage_key,
-            }
-            if active
-            else None
-        ),
-        "stages": [s.model_dump() for s in orch.build_stage_views(ticket)],
-        "hierarchy": ticket_neighbors_mcp(session, ticket),
-        "depends_on": _dependency_summaries(
-            session, TicketDependencyService(session).prerequisites(ticket.id)
-        ),
-        "dependents": _dependency_summaries(
-            session, TicketDependencyService(session).dependents(ticket.id)
-        ),
-    }
-
-
-def _dependency_summaries(session: Session, ticket_ids: list[str]) -> list[dict[str, str]]:
-    out: list[dict[str, str]] = []
-    for tid in ticket_ids:
-        dep = session.get(Ticket, tid)
-        if dep is not None:
-            out.append(
-                {
-                    "id": dep.id,
-                    "external_id": dep.external_id,
-                    "title": dep.title,
-                    "state": dep.state.value,
-                }
-            )
-    return out
-
-
-def _resolve_ticket_payload(
-    session: Session,
-    *,
-    ticket_id: str | None = None,
-    external_id: str | None = None,
-    workspace_slug: str | None = None,
-) -> dict[str, Any]:
-    svc = OrchestrationCallbackService(session)
-    ticket = svc.resolve_ticket(
-        ticket_id=ticket_id,
-        external_id=external_id,
-        workspace_slug=workspace_slug,
-    )
-    return _ticket_state_payload(session, ticket.id)
 
 
 def _run_view(run) -> dict[str, Any]:
@@ -806,6 +723,14 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "Read the ticket first if you mean to replace.",
                     list(CRITERIA_MODES),
                 ),
+                "tags": {
+                    "type": "array",
+                    "description": (
+                        "Free-form labels. Replaces the stored tags outright — read the "
+                        "ticket first and resend the ones to keep. Send [] to clear them."
+                    ),
+                    "items": {"type": "string"},
+                },
             },
             required=["ticket_id"],
         ),
@@ -840,6 +765,36 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "depends_on": _string_prop("The prerequisite ticket to unlink."),
             },
             required=["ticket_id", "depends_on"],
+        ),
+    },
+    {
+        "name": McpTool.LINK_RELATION,
+        "description": (
+            "Relate two tickets for context: symmetric and non-blocking, so neither "
+            "waits for the other and subtree run order is unchanged. Use link_dependency "
+            "instead when one must run after the other. Idempotent in both directions; "
+            "rejects self-links. Both ids accept a UUID or external_id slug."
+        ),
+        "inputSchema": _tool_schema(
+            properties={
+                "ticket_id": _string_prop("One ticket (UUID or external_id)."),
+                "related_to": _string_prop("The ticket to relate it to (UUID or external_id)."),
+            },
+            required=["ticket_id", "related_to"],
+        ),
+    },
+    {
+        "name": McpTool.UNLINK_RELATION,
+        "description": (
+            "Remove a relation between two tickets. No-op if they are not related. "
+            "Both ids accept a UUID or external_id slug."
+        ),
+        "inputSchema": _tool_schema(
+            properties={
+                "ticket_id": _string_prop("One ticket (UUID or external_id)."),
+                "related_to": _string_prop("The ticket to unrelate (UUID or external_id)."),
+            },
+            required=["ticket_id", "related_to"],
         ),
     },
     {
@@ -1137,65 +1092,6 @@ def _execute_memory_tool(name: str, arguments: dict[str, Any]) -> str | None:
     return json.dumps(result, indent=2)
 
 
-def _update_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
-    """Apply an agent's edits to ticket state and content.
-
-    Refuses a call carrying only ticket_id. Reporting success for a request that
-    changed nothing is the failure this tool is being widened to fix.
-    """
-    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-
-    fields: dict[str, Any] = {}
-    if "state" in arguments:
-        fields["state"] = TicketState(arguments["state"])
-    if "title" in arguments:
-        fields["title"] = arguments["title"]
-    if "description" in arguments:
-        fields["description"] = arguments["description"]
-
-    mode = arguments.get("mode", "replace")
-    if mode not in CRITERIA_MODES:
-        raise ValueError(f"mode must be one of {', '.join(CRITERIA_MODES)} (got {mode!r})")
-
-    if "acceptance_criteria" in arguments:
-        fields["acceptance_criteria"] = merge_criteria(
-            load_criteria(ticket.acceptance_criteria_json),
-            arguments["acceptance_criteria"],
-            mode,
-        )
-    elif "mode" in arguments:
-        raise ValueError("mode was given without acceptance_criteria")
-
-    if not fields:
-        raise ValueError(
-            "Nothing to update — supply at least one of: state, title, "
-            "description, acceptance_criteria."
-        )
-
-    OrchestrationService(session).update_ticket_manual(ticket, UpdateTicketRequest(**fields))
-    return json.dumps(_ticket_state_payload(session, ticket.id), indent=2)
-
-
-def _link_dependency(session: Session, svc, arguments: dict[str, Any]) -> str:
-    """Make ``ticket_id`` wait for ``depends_on``. Both accept a UUID or external_id."""
-    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-    prerequisite = svc.resolve_ticket(ticket_id=arguments["depends_on"])
-    try:
-        TicketDependencyService(session).add_dependency(
-            ticket.id, prerequisite.id, created_by="agent"
-        )
-    except DependencyCycleError as exc:
-        raise ValueError(str(exc)) from exc
-    return json.dumps(_ticket_state_payload(session, ticket.id), indent=2)
-
-
-def _unlink_dependency(session: Session, svc, arguments: dict[str, Any]) -> str:
-    ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
-    prerequisite = svc.resolve_ticket(ticket_id=arguments["depends_on"])
-    TicketDependencyService(session).remove_dependency(ticket.id, prerequisite.id)
-    return json.dumps(_ticket_state_payload(session, ticket.id), indent=2)
-
-
 def _create_ticket(
     session: Session, svc: OrchestrationCallbackService, arguments: dict[str, Any]
 ) -> str:
@@ -1298,7 +1194,7 @@ def execute_tool(
 
     if name == "loregarden_get_ticket":
         return json.dumps(
-            _resolve_ticket_payload(
+            resolve_ticket_payload(
                 session,
                 ticket_id=arguments.get("ticket_id"),
                 external_id=arguments.get("external_id"),
@@ -1325,7 +1221,7 @@ def execute_tool(
 
     if name == "loregarden_get_ticket_by_external":
         return json.dumps(
-            _resolve_ticket_payload(
+            resolve_ticket_payload(
                 session,
                 external_id=arguments["external_id"],
                 workspace_slug=arguments["workspace_slug"],
@@ -1336,14 +1232,9 @@ def execute_tool(
     if name == "loregarden_start_orchestration":
         return _start_orchestration(session, svc, arguments)
 
-    if name == "loregarden_update_ticket":
-        return _update_ticket(session, svc, arguments)
-
-    if name == "loregarden_link_dependency":
-        return _link_dependency(session, svc, arguments)
-
-    if name == "loregarden_unlink_dependency":
-        return _unlink_dependency(session, svc, arguments)
+    edit_result = execute_ticket_edit_tool(name, session, svc, arguments)
+    if edit_result is not None:
+        return edit_result
 
     if name == "loregarden_create_ticket":
         return _create_ticket(session, svc, arguments)

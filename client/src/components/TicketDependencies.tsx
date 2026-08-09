@@ -3,7 +3,9 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api/client";
-import type { TicketDependencyRef, TicketDetail } from "../api/client";
+import type { TicketDetail } from "../api/client";
+
+import { TicketRefLabel } from "./TicketRefLabel";
 
 interface TicketDependenciesProps {
   ticket: TicketDetail;
@@ -59,7 +61,7 @@ export function TicketDependencies({ ticket }: TicketDependenciesProps) {
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
           {dependencies.map((dep) => (
             <div key={dep.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <DependencyLabel dep={dep} />
+              <TicketRefLabel ticket={dep} />
               <button
                 type="button"
                 className="btn-secondary btn-compact"
@@ -111,7 +113,7 @@ export function TicketDependencies({ ticket }: TicketDependenciesProps) {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
             {dependents.map((dep) => (
-              <DependencyLabel key={dep.id} dep={dep} />
+              <TicketRefLabel key={dep.id} ticket={dep} />
             ))}
           </div>
         </div>
@@ -120,15 +122,3 @@ export function TicketDependencies({ ticket }: TicketDependenciesProps) {
   );
 }
 
-function DependencyLabel({ dep }: { dep: TicketDependencyRef }) {
-  return (
-    <span style={{ fontSize: 13, color: "var(--tx)" }} title={`${dep.external_id} — ${dep.state}`}>
-      <span className="count-pill">{dep.external_id}</span> {dep.title}
-      {dep.is_integration_review && (
-        <span className="count-pill" style={{ marginLeft: 6 }}>
-          review
-        </span>
-      )}
-    </span>
-  );
-}

@@ -30,6 +30,7 @@ from loregarden.models.domain import (
     TicketImportPreviewRequest,
     TicketImportRequest,
     TicketImportResult,
+    TicketRelationRequest,
     TicketState,
     TicketStatusSummary,
     TicketSummary,
@@ -70,7 +71,9 @@ from loregarden.services.ticket_dependencies import (
     TicketDependencyService,
 )
 from loregarden.services.ticket_import_service import TicketImportService
+from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
+from loregarden.services.ticket_tags import load_tags
 from loregarden.services.triage_run_service import (
     TriageConflictError,
     schedule_triage_turn,
@@ -118,6 +121,7 @@ def _ticket_summary(
         parent_ticket_id=ticket.parent_ticket_id,
         milestone=ticket.milestone,
         branch=ticket.branch,
+        tags=load_tags(ticket.tags_json),
         child_count=child_count(session, ticket.id),
         next_agent=ticket.next_agent,
         activity=activity if activity is not None else activity_for(session, ticket.id),
@@ -377,7 +381,7 @@ def list_tickets(
     if parent_ticket_id:
         query = query.where(Ticket.parent_ticket_id == parent_ticket_id)
     if roots_only:
-        query = query.where(Ticket.parent_ticket_id.is_(None))  # type: ignore[union-attr]
+        query = query.where(Ticket.parent_ticket_id.is_(None))
     tickets = session.exec(query.order_by(Ticket.priority, Ticket.created_at)).all()
     activity = classify_ticket_activity(session, [t.id for t in tickets])
     return [_ticket_summary(session, t, activity.get(t.id, TicketActivity.IDLE)) for t in tickets]
@@ -613,6 +617,7 @@ def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Ticke
         acceptance_criteria=load_criteria(ticket.acceptance_criteria_json),
         dependencies=_dependency_refs(session, prereq_ids),
         dependents=_dependency_refs(session, dependent_ids),
+        related=_dependency_refs(session, TicketRelationService(session).related(ticket.id)),
         revision=ticket.revision,
         last_updated_by=ticket.last_updated_by,
         next_status=ticket.next_status,
@@ -690,6 +695,43 @@ def remove_ticket_dependency(
     if not ticket:
         raise HTTPException(404, "Ticket not found")
     TicketDependencyService(session).remove_dependency(ticket.id, depends_on_id)
+    return get_ticket(ticket_id, session)
+
+
+@router.post("/{ticket_id}/relations", response_model=TicketDetail)
+def add_ticket_relation(
+    ticket_id: str,
+    body: TicketRelationRequest,
+    session: Session = Depends(get_session),
+) -> TicketDetail:
+    """Relate this ticket to another (``related_to`` is a UUID or external_id).
+
+    Symmetric and non-blocking: both tickets list the other, and neither waits.
+    """
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    try:
+        other = OrchestrationCallbackService(session).resolve_ticket(ticket_id=body.related_to)
+    except ValueError as exc:
+        raise HTTPException(404, f"Related ticket not found: {body.related_to}") from exc
+    try:
+        TicketRelationService(session).add_relation(ticket.id, other.id, created_by="user")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return get_ticket(ticket_id, session)
+
+
+@router.delete("/{ticket_id}/relations/{related_id}", response_model=TicketDetail)
+def remove_ticket_relation(
+    ticket_id: str,
+    related_id: str,
+    session: Session = Depends(get_session),
+) -> TicketDetail:
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    TicketRelationService(session).remove_relation(ticket.id, related_id)
     return get_ticket(ticket_id, session)
 
 

@@ -177,7 +177,7 @@ describe('TicketDetailsModal', () => {
         expect(onSave).toHaveBeenCalledWith({
           title: 'Updated title',
           description: 'Updated description',
-          acceptanceCriteria: [],
+          acceptanceCriteria: [], tags: [],
           state: 'in_progress',
           priority: 1,
         });

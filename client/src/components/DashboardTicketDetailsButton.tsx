@@ -39,6 +39,10 @@ export const DashboardTicketDetailsButton: React.FC<DashboardTicketDetailsButton
       if (draft.acceptanceCriteria.join('\n') !== currentCriteria.join('\n')) {
         patch.acceptance_criteria = draft.acceptanceCriteria;
       }
+      const currentTags = current.tags ?? [];
+      if (draft.tags.join(',') !== currentTags.join(',')) {
+        patch.tags = draft.tags;
+      }
       if (draft.state !== current.state) {
         patch.state = draft.state;
       }

@@ -38,6 +38,7 @@ from loregarden.services.run_completion import (
 from loregarden.services.run_log_stream import bootstrap_run_log
 from loregarden.services.stage_retry_budget import clear_stage_dispatches
 from loregarden.services.studio_routing import find_terminal_stage, is_terminal_stage
+from loregarden.services.ticket_tags import serialize_tags
 from loregarden.services.triage_question_log import (
     record_home_chat_question_exchange,
     record_triage_question_exchange,
@@ -67,31 +68,50 @@ def _blocking_issue_for_stage(
     return record_blocking_issue(session, ticket, run_id=None, stage_key=stage_key, message=message)
 
 
+def _content_fields(ticket: Ticket) -> tuple[str, str, str, str]:
+    """The stored form of every field a content edit can touch.
+
+    Snapshotting once before and once after is what lets each field below be a
+    plain assignment: no per-field compare-then-flag, and no way to add a field
+    to the edit path but forget to make it bump the revision.
+    """
+    return (
+        ticket.title,
+        ticket.description,
+        ticket.acceptance_criteria_json,
+        ticket.tags_json,
+    )
+
+
+def _apply_content_edits(ticket: Ticket, body: UpdateTicketRequest) -> bool:
+    """The fields whose change earns a revision bump. Returns whether any did."""
+    before = _content_fields(ticket)
+
+    if body.title is not None:
+        title = body.title.strip()
+        if not title:
+            raise ValueError("Title cannot be empty")
+        ticket.title = title
+
+    if body.description is not None:
+        ticket.description = body.description
+
+    if body.acceptance_criteria is not None:
+        ticket.acceptance_criteria_json = serialize_criteria(body.acceptance_criteria)
+
+    if body.tags is not None:
+        ticket.tags_json = serialize_tags(body.tags)
+
+    return _content_fields(ticket) != before
+
+
 def _apply_operator_edits(ticket: Ticket, body: UpdateTicketRequest) -> None:
     """Apply the fields a human edits directly (title, description, criteria, posture).
 
     Module-level rather than another branch inside update_ticket_manual, which is
     already well past its statement budget.
     """
-    content_updated = False
-
-    if body.title is not None:
-        title = body.title.strip()
-        if not title:
-            raise ValueError("Title cannot be empty")
-        if ticket.title != title:
-            ticket.title = title
-            content_updated = True
-
-    if body.description is not None and ticket.description != body.description:
-        ticket.description = body.description
-        content_updated = True
-
-    if body.acceptance_criteria is not None:
-        criteria_json = serialize_criteria(body.acceptance_criteria)
-        if ticket.acceptance_criteria_json != criteria_json:
-            ticket.acceptance_criteria_json = criteria_json
-            content_updated = True
+    content_updated = _apply_content_edits(ticket, body)
 
     if body.priority is not None:
         if body.priority < 1 or body.priority > 3:

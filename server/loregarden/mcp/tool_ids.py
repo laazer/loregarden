@@ -29,6 +29,8 @@ class McpTool(StrEnum):
     UPDATE_TICKET = "loregarden_update_ticket"
     LINK_DEPENDENCY = "loregarden_link_dependency"
     UNLINK_DEPENDENCY = "loregarden_unlink_dependency"
+    LINK_RELATION = "loregarden_link_relation"
+    UNLINK_RELATION = "loregarden_unlink_relation"
     CREATE_TICKET = "loregarden_create_ticket"
     MEMORY_STATUS = "loregarden_memory_status"
     APPEND_LEARNING = "loregarden_append_learning"
@@ -82,6 +84,8 @@ TICKET_STUDIO_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.UPDATE_TICKET,
     McpTool.LINK_DEPENDENCY,
     McpTool.UNLINK_DEPENDENCY,
+    McpTool.LINK_RELATION,
+    McpTool.UNLINK_RELATION,
     McpTool.SEARCH_PRIOR_WORK,
 )
 

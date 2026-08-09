@@ -17,7 +17,11 @@ import pytest
 from fastapi.testclient import TestClient
 from loregarden.mcp.tools import TOOL_DEFINITIONS, normalize_tool_arguments
 
-MCP_TOOLS_SRC = Path(__file__).resolve().parents[1] / "loregarden" / "mcp" / "tools.py"
+MCP_DIR = Path(__file__).resolve().parents[1] / "loregarden" / "mcp"
+#: Every module that owns dispatch for some slice of the tool surface. tools.py
+#: holds the spine; ticket_edit_tools.py owns the ticket-editing handlers it
+#: delegates to, and a name routed there is dispatched just as really.
+MCP_DISPATCH_SRCS = (MCP_DIR / "tools.py", MCP_DIR / "ticket_edit_tools.py")
 
 # Tools that do real work beyond bookkeeping and need care in a smoke test:
 #   loregarden_start_orchestration -> BuiltinOrchestrator.execute() spawns CLI agents, so it is
@@ -43,8 +47,13 @@ def _advertised(client: TestClient) -> set[str]:
 
 
 def _dispatched() -> set[str]:
-    """Tool names the dispatcher actually branches on."""
-    return set(re.findall(r'name == "(loregarden_[a-z_]+)"', MCP_TOOLS_SRC.read_text()))
+    """Tool names the dispatcher actually routes — by branch or by handler table."""
+    names: set[str] = set()
+    for src in MCP_DISPATCH_SRCS:
+        text = src.read_text()
+        names |= set(re.findall(r'name == "(loregarden_[a-z_]+)"', text))
+        names |= set(re.findall(r'"(loregarden_[a-z_]+)": ', text))
+    return names
 
 
 def test_advertised_tools_all_have_a_dispatch_branch(client: TestClient):
@@ -116,6 +125,8 @@ def _args_for(
         "loregarden_get_ticket": {"ticket_id": ticket_id},
         "loregarden_link_dependency": {"ticket_id": ticket_id, "depends_on": prereq_id},
         "loregarden_unlink_dependency": {"ticket_id": ticket_id, "depends_on": prereq_id},
+        "loregarden_link_relation": {"ticket_id": ticket_id, "related_to": prereq_id},
+        "loregarden_unlink_relation": {"ticket_id": ticket_id, "related_to": prereq_id},
         "loregarden_get_ticket_by_external": {"workspace_slug": ws, "external_id": external_id},
         "loregarden_list_tickets": {"workspace_slug": ws},
         "loregarden_memory_status": {"workspace_slug": ws},
@@ -236,6 +247,8 @@ def test_every_advertised_tool_is_callable(client: TestClient):
         "loregarden_get_ticket",
         "loregarden_link_dependency",
         "loregarden_unlink_dependency",
+        "loregarden_link_relation",
+        "loregarden_unlink_relation",
         "loregarden_get_ticket_by_external",
         "loregarden_list_tickets",
         "loregarden_memory_status",

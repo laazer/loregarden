@@ -30,7 +30,9 @@ import { ImportTicketsConfirmModal } from "../components/ImportTicketsConfirmMod
 import { AddWorkspaceModal, type AddWorkspaceDraft } from "../components/AddWorkspaceModal";
 import { DeleteTicketConfirmModal } from "../components/DeleteTicketConfirmModal";
 import { RunLogModal } from "../components/RunLogModal";
-import { addChildActionLabel, canHaveChildren } from "../lib/workItemHierarchy";
+import { canHaveChildren } from "../lib/workItemHierarchy";
+import { errorDetail } from "../utils/errorDetail";
+import { WorkflowPaneTicketMeta } from "../components/WorkflowPaneTicketMeta";
 import { runtimeFromWorkspace, runtimeSettingsEqual, runtimeSummaryLabel } from "../components/WorkspaceRuntimeFields";
 import { TriageModelModal } from "../components/TriageModelModal";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
@@ -55,12 +57,7 @@ const DEFAULT_ORCHESTRATION_RUNTIME: import("../api/client").WorkspaceRuntimeSet
 };
 
 function formatDeleteTicketError(error: Error): string {
-  try {
-    const parsed = JSON.parse(error.message) as { detail?: string };
-    return parsed.detail ?? error.message;
-  } catch {
-    return error.message || "Failed to delete ticket";
-  }
+  return errorDetail(error, "Failed to delete ticket") ?? "Failed to delete ticket";
 }
 
 function PaneHideButton({
@@ -829,29 +826,9 @@ export function Dashboard() {
     }
   };
 
-  const previewTicketImportError =
-    previewTicketImport.error instanceof Error
-      ? (() => {
-          try {
-            const parsed = JSON.parse(previewTicketImport.error.message) as { detail?: string };
-            return parsed.detail ?? previewTicketImport.error.message;
-          } catch {
-            return previewTicketImport.error.message;
-          }
-        })()
-      : null;
+  const previewTicketImportError = errorDetail(previewTicketImport.error);
 
-  const startSmartImportError =
-    startSmartImport.error instanceof Error
-      ? (() => {
-          try {
-            const parsed = JSON.parse(startSmartImport.error.message) as { detail?: string };
-            return parsed.detail ?? startSmartImport.error.message;
-          } catch {
-            return startSmartImport.error.message;
-          }
-        })()
-      : null;
+  const startSmartImportError = errorDetail(startSmartImport.error);
 
   const openCreateSubTicket = (parent: {
     id: string;
@@ -875,29 +852,9 @@ export function Dashboard() {
     setCreateWorkItemOpen(true);
   };
 
-  const createWorkItemError =
-    createWorkItem.error instanceof Error
-      ? (() => {
-          try {
-            const parsed = JSON.parse(createWorkItem.error.message) as { detail?: string };
-            return parsed.detail ?? createWorkItem.error.message;
-          } catch {
-            return createWorkItem.error.message;
-          }
-        })()
-      : null;
+  const createWorkItemError = errorDetail(createWorkItem.error);
 
-  const createWorkspaceError =
-    createWorkspace.error instanceof Error
-      ? (() => {
-          try {
-            const parsed = JSON.parse(createWorkspace.error.message) as { detail?: string };
-            return parsed.detail ?? createWorkspace.error.message;
-          } catch {
-            return createWorkspace.error.message;
-          }
-        })()
-      : null;
+  const createWorkspaceError = errorDetail(createWorkspace.error);
 
   const openAddWorkspace = () => {
     createWorkspace.reset();
@@ -1213,20 +1170,11 @@ export function Dashboard() {
                     {sel.title}
                   </h1>
                 </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8, alignItems: "center" }}>
-                  <span className="count-pill">{sel.workspace_slug}</span>
-                  <span className="count-pill">{sel.work_item_type}</span>
-                  {canHaveChildren(sel.work_item_type) && (
-                    <button
-                      type="button"
-                      className="btn-secondary btn-compact"
-                      title={addChildActionLabel(sel.work_item_type)}
-                      onClick={() => openCreateSubTicket(sel)}
-                    >
-                      + Sub-item
-                    </button>
-                  )}
-                </div>
+                <WorkflowPaneTicketMeta
+                  ticket={sel}
+                  onOpenParent={selectTicket}
+                  onAddChild={openCreateSubTicket}
+                />
                 <button
                   type="button"
                   className="btn-secondary"
@@ -1804,16 +1752,7 @@ export function Dashboard() {
         preview={importPreview}
         isImporting={importTickets.isPending}
         importError={
-          importTickets.error instanceof Error
-            ? (() => {
-                try {
-                  const parsed = JSON.parse(importTickets.error.message) as { detail?: string };
-                  return parsed.detail ?? importTickets.error.message;
-                } catch {
-                  return importTickets.error.message;
-                }
-              })()
-            : null
+          errorDetail(importTickets.error)
         }
         onClose={() => {
           if (importTickets.isPending) return;

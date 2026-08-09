@@ -14,6 +14,7 @@ import {
   TopbarDropdownPaneRow,
 } from "./TopbarDropdown";
 import { UsageModal } from "./UsageModal";
+import { errorDetail } from "../utils/errorDetail";
 
 const USAGE_REFRESH_MS = 30 * 60_000;
 
@@ -160,16 +161,7 @@ export function AppTopbarActions() {
         isLoading={memoryConfig.isLoading}
         isSaving={setMemoryConfig.isPending}
         errorMessage={
-          setMemoryConfig.error
-            ? (() => {
-                try {
-                  const parsed = JSON.parse(setMemoryConfig.error.message) as { detail?: string };
-                  return parsed.detail ?? setMemoryConfig.error.message;
-                } catch {
-                  return setMemoryConfig.error.message;
-                }
-              })()
-            : undefined
+          errorDetail(setMemoryConfig.error) ?? undefined
         }
         onClose={() => {
           if (setMemoryConfig.isPending) return;
