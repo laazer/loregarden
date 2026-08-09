@@ -583,6 +583,63 @@ class StudioAgentVersionView(SQLModel):
     snapshot: StudioAgentView | None = None
 
 
+class StudioSkillCreate(SQLModel):
+    slug: str
+    name: str | None = None
+    description: str | None = None
+    body: str = ""
+    markdown: str | None = None
+    required_capabilities: list[str] = Field(default_factory=list)
+    pack_id: str | None = None
+    pack_commit: str | None = None
+    upstream_name: str | None = None
+    created_by: str = "studio-ui"
+    change_note: str = ""
+
+
+class StudioSkillUpdate(SQLModel):
+    name: str | None = None
+    description: str | None = None
+    body: str | None = None
+    markdown: str | None = None
+    required_capabilities: list[str] | None = None
+    pack_id: str | None = None
+    pack_commit: str | None = None
+    upstream_name: str | None = None
+    created_by: str = "studio-ui"
+    change_note: str
+
+
+class StudioSkillView(SQLModel):
+    id: str
+    slug: str
+    name: str
+    description: str
+    body: str
+    required_capabilities: list[str]
+    pack_id: str | None = None
+    pack_commit: str | None = None
+    upstream_name: str | None = None
+    built_in: bool = False
+    read_only: bool = False
+    version: int = 1
+    created_at: datetime
+    updated_at: datetime
+
+
+class StudioSkillVersionView(SQLModel):
+    version: int
+    created_by: str = ""
+    change_note: str = ""
+    created_at: datetime
+    snapshot: StudioSkillView | None = None
+
+
+class StudioSkillRestore(SQLModel):
+    created_by: str = "studio-ui"
+    change_note: str
+
+
 class StudioMcpToolGuide(SQLModel):
     name: str
     description: str

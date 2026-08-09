@@ -149,6 +149,34 @@ class RunStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class StageFanoutGroupStatus(str, Enum):
+    OPEN = "open"
+    SETTLING = "settling"
+    SETTLED = "settled"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+
+
+class StageFanoutOutcome(str, Enum):
+    PENDING = "pending"
+    PROMOTED = "promoted"
+    DECLINED = "declined"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+
+
+class StageFanoutAttemptStatus(str, Enum):
+    PLANNED = "planned"
+    QUEUED = "queued"
+    RUNNING = "running"
+    AWAITING_PERMISSION = "awaiting_permission"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    DECLINED = "declined"
+    PROMOTED = "promoted"
+
+
 class ApprovalKind(str, Enum):
     WORKFLOW_GATE = "workflow_gate"
     CLI_PERMISSION = "cli_permission"

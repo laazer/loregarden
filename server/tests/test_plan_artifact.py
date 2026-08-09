@@ -14,9 +14,10 @@ from loregarden.config import settings
 from loregarden.db.migrations import apply_migrations
 from loregarden.models.domain import AgentRun, Artifact, Ticket, WorkflowStageDef, Workspace
 from loregarden.services.seed import seed_database
+from loregarden.services.skill_service import parse_skill_markdown
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
 from loregarden.services.workspace_paths import resolve_agent_context_dir
-from loregarden.skills.registry import SKILL_PROMPT_CAP, get_skill, list_skills
+from loregarden.skills.registry import get_skill, list_skills
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
@@ -42,12 +43,12 @@ def _attach_plan(session: Session, ticket: Ticket, content: dict) -> Artifact:
     return artifact
 
 
-def test_the_plan_skill_is_registered_and_fits_the_prompt():
+def test_the_plan_skill_is_registered_without_frontmatter():
     assert "plan" in list_skills()
     source = settings.agent_context_dir / "skills" / "plan" / "SKILL.md"
-    body = source.read_text(encoding="utf-8")
-    assert len(body) <= SKILL_PROMPT_CAP, f"{source.name} is {len(body)} chars"
-    assert get_skill("plan") == body
+    parsed = parse_skill_markdown(source.read_text(encoding="utf-8"), slug="plan")
+
+    assert get_skill("plan") == parsed.body
 
 
 def test_the_skill_names_the_artifact_contract():

@@ -9,6 +9,15 @@ def _columns(engine, table: str) -> set[str]:
     return {row[1] for row in rows}
 
 
+def _index_columns(engine, table: str) -> set[tuple[str, ...]]:
+    with engine.connect() as conn:
+        indexes = conn.execute(text(f"PRAGMA index_list({table})")).fetchall()
+        return {
+            tuple(column[2] for column in conn.execute(text(f"PRAGMA index_info({index[1]})")))
+            for index in indexes
+        }
+
+
 def test_fresh_db_records_all_migrations(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'fresh.db'}")
     # A fully-current schema created by SQLModel — migrations should still be
@@ -49,6 +58,376 @@ def test_old_schema_gets_upgraded(tmp_path):
     assert "parent_ticket_id" in cols
     assert "permission_allowlist_json" in cols
     assert "scope_reroute_agent" in cols
+
+
+def test_skill_tables_exist_in_fresh_metadata_and_migration_seeds(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'skills.db'}")
+    SQLModel.metadata.create_all(engine)
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        skill_cols = _columns(engine, "skills")
+        version_cols = _columns(engine, "skill_versions")
+        slugs = {
+            row[0]
+            for row in conn.execute(text("SELECT slug FROM skills WHERE built_in=1")).fetchall()
+        }
+        plan = conn.execute(
+            text(
+                "SELECT id, body, required_capabilities_json, pack_id, pack_commit, "
+                "upstream_name FROM skills WHERE slug='plan'"
+            )
+        ).fetchone()
+        plan_versions = conn.execute(
+            text("SELECT created_by, change_note FROM skill_versions WHERE skill_id=:sid"),
+            {"sid": plan[0]},
+        ).fetchall()
+
+    assert {
+        "slug",
+        "name",
+        "description",
+        "body",
+        "required_capabilities_json",
+        "pack_id",
+        "pack_commit",
+        "upstream_name",
+        "version",
+        "built_in",
+        "created_at",
+        "updated_at",
+    } <= skill_cols
+    assert {"skill_id", "version", "snapshot_json", "created_by", "change_note", "created_at"} <= (
+        version_cols
+    )
+    assert {
+        "autopilot",
+        "plan",
+        "plan-risk",
+        "plan-seams",
+        "plan-simplest",
+        "plan-synthesis",
+        "refactor",
+    } <= slugs
+    assert not plan[1].startswith("---")
+    assert plan[2] == "[]"
+    assert plan[3] is None
+    assert plan[4] is None
+    assert plan[5] is None
+    assert plan_versions == [("migration", "Seeded built-in skill from agent_context/skills")]
+
+
+def test_skill_migration_preserves_existing_rows_and_is_idempotent(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'existing-skills.db'}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE skills (
+                    id TEXT PRIMARY KEY,
+                    slug TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    body TEXT NOT NULL DEFAULT '',
+                    required_capabilities_json TEXT NOT NULL DEFAULT '[]',
+                    pack_id TEXT,
+                    pack_commit TEXT,
+                    upstream_name TEXT,
+                    version INTEGER NOT NULL DEFAULT 7,
+                    built_in INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO skills "
+                "(id, slug, name, description, body, required_capabilities_json, version, "
+                "built_in, created_at, updated_at) "
+                "VALUES ('existing-plan', 'plan', 'Custom Plan', 'custom', 'custom body', "
+                "'[]', 7, 0, 'then', 'then')"
+            )
+        )
+
+    apply_migrations(engine)
+    with engine.connect() as conn:
+        first = conn.execute(
+            text("SELECT name, body, version, built_in FROM skills WHERE slug='plan'")
+        ).fetchone()
+        first_count = conn.execute(text("SELECT COUNT(*) FROM skill_versions")).scalar()
+
+    assert apply_migrations(engine) == []
+    with engine.connect() as conn:
+        second = conn.execute(
+            text("SELECT name, body, version, built_in FROM skills WHERE slug='plan'")
+        ).fetchone()
+        second_count = conn.execute(text("SELECT COUNT(*) FROM skill_versions")).scalar()
+
+    assert first == ("Custom Plan", "custom body", 7, 0)
+    assert second == first
+    assert second_count == first_count
+
+
+def test_skill_versions_reject_duplicate_skill_version(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'dup-skills.db'}")
+    SQLModel.metadata.create_all(engine)
+    apply_migrations(engine)
+
+    with engine.begin() as conn:
+        skill_id = conn.execute(text("SELECT id FROM skills WHERE slug='plan'")).scalar()
+        row = conn.execute(
+            text("SELECT snapshot_json FROM skill_versions WHERE skill_id=:sid AND version=1"),
+            {"sid": skill_id},
+        ).fetchone()
+        import pytest
+        from sqlalchemy.exc import IntegrityError
+
+        with pytest.raises(IntegrityError):
+            conn.execute(
+                text(
+                    "INSERT INTO skill_versions "
+                    "(id, skill_id, version, snapshot_json, created_by, change_note, created_at) "
+                    "VALUES ('duplicate', :sid, 1, :snap, 'test', '', 'now')"
+                ),
+                {"sid": skill_id, "snap": row[0]},
+            )
+
+
+def test_stage_fanout_tables_exist_in_fresh_metadata_and_migration_history(tmp_path):
+    """R3.AC1/R3.AC6/R5.AC8: fresh metadata includes fan-out tables and records migration 0070."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'fanout-fresh.db'}")
+    SQLModel.metadata.create_all(engine)
+
+    assert _columns(engine, "stage_fanout_groups") >= {
+        "id",
+        "workspace_id",
+        "ticket_id",
+        "orchestration_run_id",
+        "stage_key",
+        "attempt_count",
+        "pre_fanout_workflow_stage_key",
+        "pre_fanout_workflow_stage_status",
+        "pre_fanout_stage_map_json",
+        "pre_fanout_next_agent",
+        "status",
+        "outcome",
+        "winner_attempt_id",
+        "declined_reason",
+        "failure_summary",
+        "created_at",
+        "updated_at",
+        "settled_at",
+    }
+    assert _columns(engine, "stage_fanout_attempts") >= {
+        "id",
+        "group_id",
+        "attempt_index",
+        "attempt_name",
+        "agent_run_id",
+        "worktree_id",
+        "branch",
+        "status",
+        "failure_details",
+        "started_at",
+        "finished_at",
+        "created_at",
+        "updated_at",
+    }
+    assert "0070_stage_fanout_groups" in [migration_id for migration_id, _ in MIGRATIONS]
+
+    apply_migrations(engine)
+    with engine.connect() as conn:
+        recorded = {row[0] for row in conn.execute(text("SELECT id FROM schema_migrations"))}
+    assert "0070_stage_fanout_groups" in recorded
+
+
+def test_stage_fanout_migration_creates_tables_indexes_and_is_idempotent(tmp_path):
+    """R3.AC2/R3.AC3/R5.AC8: older databases get both fan-out tables and indexes once."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'fanout-old.db'}")
+
+    first = apply_migrations(engine)
+    second = apply_migrations(engine)
+
+    assert "0070_stage_fanout_groups" in first
+    assert second == []
+    assert _columns(engine, "stage_fanout_groups") >= {
+        "workspace_id",
+        "ticket_id",
+        "orchestration_run_id",
+        "stage_key",
+        "attempt_count",
+        "status",
+        "outcome",
+        "winner_attempt_id",
+    }
+    assert _columns(engine, "stage_fanout_attempts") >= {
+        "group_id",
+        "attempt_index",
+        "agent_run_id",
+        "worktree_id",
+        "branch",
+        "status",
+    }
+    assert {
+        ("workspace_id",),
+        ("ticket_id", "stage_key"),
+        ("orchestration_run_id",),
+        ("status",),
+        ("winner_attempt_id",),
+    } <= _index_columns(engine, "stage_fanout_groups")
+    assert {
+        ("group_id",),
+        ("agent_run_id",),
+        ("worktree_id",),
+        ("status",),
+        ("group_id", "attempt_index"),
+    } <= _index_columns(engine, "stage_fanout_attempts")
+
+
+def test_stage_fanout_migration_repairs_partially_created_schema(tmp_path):
+    """R3.AC4/R3.AC5/R5.AC8: table and index guards are independent."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'fanout-partial.db'}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE stage_fanout_groups (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    ticket_id TEXT NOT NULL,
+                    orchestration_run_id TEXT,
+                    stage_key TEXT NOT NULL,
+                    attempt_count INTEGER NOT NULL,
+                    pre_fanout_workflow_stage_key TEXT NOT NULL DEFAULT '',
+                    pre_fanout_workflow_stage_status TEXT NOT NULL DEFAULT 'pending',
+                    pre_fanout_stage_map_json TEXT NOT NULL DEFAULT '[]',
+                    pre_fanout_next_agent TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'open',
+                    outcome TEXT NOT NULL DEFAULT 'pending',
+                    winner_attempt_id TEXT,
+                    declined_reason TEXT NOT NULL DEFAULT '',
+                    failure_summary TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL DEFAULT '',
+                    settled_at TEXT
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX ix_stage_fanout_groups_workspace_id "
+                "ON stage_fanout_groups (workspace_id)"
+            )
+        )
+
+    apply_migrations(engine)
+
+    assert _columns(engine, "stage_fanout_attempts") >= {
+        "id",
+        "group_id",
+        "attempt_index",
+        "attempt_name",
+        "agent_run_id",
+        "worktree_id",
+        "branch",
+        "status",
+        "failure_details",
+        "started_at",
+        "finished_at",
+        "created_at",
+        "updated_at",
+    }
+    assert {
+        ("workspace_id",),
+        ("ticket_id", "stage_key"),
+        ("orchestration_run_id",),
+        ("status",),
+        ("winner_attempt_id",),
+    } <= _index_columns(engine, "stage_fanout_groups")
+    assert {
+        ("group_id",),
+        ("agent_run_id",),
+        ("worktree_id",),
+        ("status",),
+        ("group_id", "attempt_index"),
+    } <= _index_columns(engine, "stage_fanout_attempts")
+
+
+def test_stage_fanout_migration_repairs_missing_indexes_when_tables_exist(tmp_path):
+    """R3.AC5/R5.AC8: existing tables must not make the migration skip index repair."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'fanout-missing-indexes.db'}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE stage_fanout_groups (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    ticket_id TEXT NOT NULL,
+                    orchestration_run_id TEXT,
+                    stage_key TEXT NOT NULL,
+                    attempt_count INTEGER NOT NULL,
+                    pre_fanout_workflow_stage_key TEXT NOT NULL DEFAULT '',
+                    pre_fanout_workflow_stage_status TEXT NOT NULL DEFAULT 'pending',
+                    pre_fanout_stage_map_json TEXT NOT NULL DEFAULT '[]',
+                    pre_fanout_next_agent TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'open',
+                    outcome TEXT NOT NULL DEFAULT 'pending',
+                    winner_attempt_id TEXT,
+                    declined_reason TEXT NOT NULL DEFAULT '',
+                    failure_summary TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL DEFAULT '',
+                    settled_at TEXT
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE stage_fanout_attempts (
+                    id TEXT PRIMARY KEY,
+                    group_id TEXT NOT NULL,
+                    attempt_index INTEGER NOT NULL,
+                    attempt_name TEXT NOT NULL DEFAULT '',
+                    agent_run_id TEXT,
+                    worktree_id TEXT,
+                    branch TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'planned',
+                    failure_details TEXT NOT NULL DEFAULT '',
+                    started_at TEXT,
+                    finished_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+        )
+
+    assert _index_columns(engine, "stage_fanout_groups") == {("id",)}
+    assert _index_columns(engine, "stage_fanout_attempts") == {("id",)}
+
+    apply_migrations(engine)
+
+    assert {
+        ("workspace_id",),
+        ("ticket_id", "stage_key"),
+        ("orchestration_run_id",),
+        ("status",),
+        ("winner_attempt_id",),
+    } <= _index_columns(engine, "stage_fanout_groups")
+    assert {
+        ("group_id",),
+        ("agent_run_id",),
+        ("worktree_id",),
+        ("status",),
+        ("group_id", "attempt_index"),
+    } <= _index_columns(engine, "stage_fanout_attempts")
 
 
 def test_backfill_runs_against_a_populated_db(tmp_path):

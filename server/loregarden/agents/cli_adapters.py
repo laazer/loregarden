@@ -65,9 +65,10 @@ def _bin(name: str, env_key: str) -> str:
 
 
 def permission_bypass_enabled() -> bool:
-    if os.environ.get("LOREGARDEN_ALLOW_PERMISSION_BYPASS", "").lower() in {"1", "true", "yes"}:
-        return True
-    return settings.allow_permission_bypass
+    raw = os.environ.get("LOREGARDEN_ALLOW_PERMISSION_BYPASS")
+    if raw is None:
+        return False
+    return raw.lower() in {"1", "true", "yes"}
 
 
 def _claude_permission_mode() -> str:

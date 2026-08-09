@@ -23,6 +23,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.seed import seed_database
+from loregarden.services.skill_service import parse_skill_markdown
 from loregarden.services.workspace_paths import resolve_agent_context_dir
 from loregarden.skills.registry import SKILL_PROMPT_CAP, get_skill, list_skills
 from sqlalchemy import text
@@ -82,7 +83,7 @@ def test_every_lane_skill_is_registered_and_fits_the_prompt():
         source = settings.agent_context_dir / "skills" / skill / "SKILL.md"
         body = source.read_text(encoding="utf-8")
         assert len(body) <= SKILL_PROMPT_CAP, f"{skill} is {len(body)} chars"
-        assert get_skill(skill) == body
+        assert get_skill(skill) == parse_skill_markdown(body, slug=skill).body
 
 
 def test_each_lane_is_told_to_attach_its_plan():

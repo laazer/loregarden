@@ -9,9 +9,10 @@ from loregarden.config import settings
 from loregarden.db.migrations import apply_migrations
 from loregarden.models.domain import AgentRun, ClassifyRoute, Ticket, WorkflowStageDef, Workspace
 from loregarden.services.seed import seed_database
+from loregarden.services.skill_service import parse_skill_markdown
 from loregarden.services.studio_routing import resolve_classify_route
 from loregarden.services.workspace_paths import resolve_agent_context_dir
-from loregarden.skills.registry import SKILL_PROMPT_CAP, SkillNotFoundError, get_skill, list_skills
+from loregarden.skills.registry import SkillNotFoundError, get_skill, list_skills
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
@@ -64,16 +65,11 @@ def test_the_skill_is_registered():
     assert (get_skill(_SKILL) or "").strip()
 
 
-def test_the_skill_reaches_an_agent_whole():
-    """The registry truncates at the prompt cap, so an over-long skill loses its
-    tail silently — and the tail is where "done means" lives."""
+def test_the_skill_reaches_an_agent_without_frontmatter():
     source = settings.agent_context_dir / "skills" / _SKILL / "SKILL.md"
-    body = source.read_text(encoding="utf-8")
-    assert len(body) <= SKILL_PROMPT_CAP, (
-        f"{source.name} is {len(body)} chars; the last "
-        f"{len(body) - SKILL_PROMPT_CAP} would be cut from every prompt"
-    )
-    assert get_skill(_SKILL) == body
+    parsed = parse_skill_markdown(source.read_text(encoding="utf-8"), slug=_SKILL)
+
+    assert get_skill(_SKILL) == parsed.body
 
 
 def test_a_frontend_refactor_keeps_its_specialist():

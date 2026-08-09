@@ -32,6 +32,11 @@ from loregarden.models.domain import (
     StudioGeneratedWorkflow,
     StudioHandoffCheck,
     StudioMcpToolGuide,
+    StudioSkillCreate,
+    StudioSkillRestore,
+    StudioSkillUpdate,
+    StudioSkillVersionView,
+    StudioSkillView,
     StudioWorkflow,
     StudioWorkflowCreate,
     StudioWorkflowStage,
@@ -41,6 +46,7 @@ from loregarden.models.domain import (
     WorkflowTemplate,
     WorkflowTemplateVersion,
 )
+from loregarden.services.skill_service import SkillService
 from loregarden.services.studio_generation import (
     build_agent_generate_prompt,
     build_workflow_generate_prompt,
@@ -962,6 +968,29 @@ class StudioService:
             self.session.delete(version)
         self.session.delete(agent)
         self.session.commit()
+
+    def list_skills(self) -> list[StudioSkillView]:
+        return SkillService(self.session).list_skills()
+
+    def get_skill(self, slug: str) -> StudioSkillView | None:
+        return SkillService(self.session).get_skill(slug)
+
+    def create_skill(self, body: StudioSkillCreate) -> StudioSkillView:
+        return SkillService(self.session).create_skill(body)
+
+    def update_skill(self, slug: str, body: StudioSkillUpdate) -> StudioSkillView:
+        return SkillService(self.session).update_skill(slug, body)
+
+    def list_skill_versions(self, slug: str) -> list[StudioSkillVersionView]:
+        return SkillService(self.session).list_skill_versions(slug)
+
+    def get_skill_version(self, slug: str, version: int) -> StudioSkillVersionView:
+        return SkillService(self.session).get_skill_version(slug, version)
+
+    def restore_skill_version(
+        self, slug: str, version: int, body: StudioSkillRestore | None = None
+    ) -> StudioSkillView:
+        return SkillService(self.session).restore_skill_version(slug, version, body)
 
     def list_agent_versions(self, slug: str) -> list[StudioAgentVersionView]:
         agent = self.session.exec(select(StudioAgent).where(StudioAgent.slug == slug)).first()

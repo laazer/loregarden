@@ -77,7 +77,8 @@ def test_build_prompt_never_emits_empty_skill_block_for_declared_skill(db_sessio
     )
 
     assert "## Skill\n" in prompt
-    assert "name: plan" in prompt
+    assert "name: plan" not in prompt
+    assert "description: " not in prompt
     assert "## Skill\n\n\n##" not in prompt
 
 

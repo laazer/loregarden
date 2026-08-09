@@ -11,8 +11,12 @@ from loregarden.core.workflow_loader import (
     sync_workflow_templates,
 )
 from loregarden.models.domain import (
+    Skill,
+    SkillVersion,
     StudioAgent,
     StudioAgentUpdate,
+    StudioSkillCreate,
+    StudioSkillUpdate,
     StudioWorkflowCreate,
     StudioWorkflowStage,
     StudioWorkflowUpdate,
@@ -24,8 +28,10 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.skill_service import parse_skill_markdown, seed_builtin_skills
 from loregarden.services.studio_service import StudioService, seed_builtin_agents
 from loregarden.services.workflow_state import initial_stages_json
+from loregarden.skills.registry import get_skill
 from sqlmodel import Session, select
 
 # ---- Agent seeding + versioning -------------------------------------------------
@@ -77,6 +83,145 @@ def test_get_agent_resolves_builtin_from_db(db_session: Session):
     assert cfg is not None
     assert cfg.get("studio") is True  # came from studio_agents, not the registry dict
     assert cfg.get("role_body")
+
+
+# ---- Skill seeding + versioning -------------------------------------------------
+
+
+def test_seed_builtin_skills_is_idempotent_and_parses_frontmatter(db_session: Session):
+    before = len(db_session.exec(select(Skill)).all())
+    again = seed_builtin_skills(db_session)
+    after = len(db_session.exec(select(Skill)).all())
+
+    assert again == []
+    assert after == before
+    plan = db_session.exec(select(Skill).where(Skill.slug == "plan")).one()
+    assert plan.name == "plan"
+    assert plan.description
+    assert plan.built_in is True
+    assert plan.version == 1
+    assert plan.required_capabilities_json == "[]"
+    assert plan.pack_id is None
+    assert plan.pack_commit is None
+    assert plan.upstream_name is None
+    assert not plan.body.startswith("---")
+    versions = db_session.exec(select(SkillVersion).where(SkillVersion.skill_id == plan.id)).all()
+    assert len(versions) == 1
+    assert versions[0].version == 1
+    assert versions[0].created_by == "migration"
+    assert "Seeded built-in skill" in versions[0].change_note
+
+
+def test_skill_markdown_parser_only_removes_leading_frontmatter():
+    parsed = parse_skill_markdown(
+        "---\nname: Display Name\ndescription: Summary\n---\n# Body\n---\nexample\n",
+        slug="demo",
+    )
+
+    assert parsed.name == "Display Name"
+    assert parsed.description == "Summary"
+    assert parsed.body == "# Body\n---\nexample\n"
+
+
+def test_skill_markdown_without_leading_frontmatter_keeps_whole_body():
+    body = "\n---\nname: not metadata\n---\nbody\n"
+    parsed = parse_skill_markdown(body, slug="demo")
+
+    assert parsed.name == "demo"
+    assert parsed.description == ""
+    assert parsed.body == body
+
+
+def test_malformed_skill_frontmatter_does_not_crash():
+    body = "---\n[broken\n---\nbody\n"
+    parsed = parse_skill_markdown(body, slug="demo")
+
+    assert parsed.name == "demo"
+    assert parsed.description == ""
+    assert parsed.body == "body\n"
+
+
+def test_skill_edit_is_visible_to_registry_without_restart(db_session: Session):
+    svc = StudioService(db_session)
+    svc.create_skill(
+        StudioSkillCreate(
+            slug="volatile",
+            body="v1 body",
+            created_by="test",
+            change_note="create",
+        )
+    )
+
+    assert get_skill("volatile") == "v1 body"
+    svc.update_skill(
+        "volatile",
+        StudioSkillUpdate(body="v2 body", created_by="test", change_note="update"),
+    )
+
+    assert get_skill("volatile") == "v2 body"
+
+
+def test_skill_create_update_restore_each_append_one_snapshot(db_session: Session):
+    svc = StudioService(db_session)
+    created = svc.create_skill(
+        StudioSkillCreate(
+            slug="versioned-skill",
+            name="Versioned",
+            body="v1",
+            created_by="test",
+            change_note="create",
+        )
+    )
+    assert created.version == 1
+    assert [v.version for v in svc.list_skill_versions("versioned-skill")] == [1]
+
+    updated = svc.update_skill(
+        "versioned-skill",
+        StudioSkillUpdate(body="v2", created_by="test", change_note="update"),
+    )
+    assert updated.version == 2
+    assert [v.version for v in svc.list_skill_versions("versioned-skill")] == [2, 1]
+
+    restored = svc.restore_skill_version("versioned-skill", 1)
+    assert restored.version == 3
+    assert restored.body == "v1"
+    assert restored.slug == "versioned-skill"
+    assert restored.built_in is False
+    rows = db_session.exec(select(SkillVersion).where(SkillVersion.skill_id == restored.id)).all()
+    assert len(rows) == 3
+
+
+def test_skill_slug_validation_rejects_path_like_values(db_session: Session):
+    svc = StudioService(db_session)
+    for slug in ("", ".", "..", "a/b", "a\\b", "a..b"):
+        with pytest.raises(ValueError):
+            svc.create_skill(StudioSkillCreate(slug=slug, body="body"))
+
+
+def test_studio_skill_api_versions(client: TestClient):
+    created = client.post(
+        "/api/studio/skills",
+        json={"slug": "api-skill", "body": "v1", "created_by": "api", "change_note": "c"},
+    )
+    assert created.status_code == 200
+    updated = client.patch(
+        "/api/studio/skills/api-skill",
+        json={"body": "v2", "created_by": "api", "change_note": "u"},
+    )
+    assert updated.status_code == 200
+    versions = client.get("/api/studio/skills/api-skill/versions")
+    assert versions.status_code == 200
+    assert [row["version"] for row in versions.json()] == [2, 1]
+    detail = client.get("/api/studio/skills/api-skill/versions/1")
+    assert detail.status_code == 200
+    assert detail.json()["snapshot"]["body"] == "v1"
+    restored = client.post(
+        "/api/studio/skills/api-skill/versions/1/restore",
+        json={"created_by": "api", "change_note": "restore"},
+    )
+    assert restored.status_code == 200
+    assert restored.json()["version"] == 3
+    assert restored.json()["body"] == "v1"
 
 
 # ---- Workflow seeding + versioning + validation ---------------------------------

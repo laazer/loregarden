@@ -39,6 +39,8 @@ from loregarden.db.migrations_queue import (
     m_orchestration_timeout_override,
     m_per_slot_queues,
 )
+from loregarden.db.migrations_skills import m_skill_versioning
+from loregarden.db.migrations_stage_fanout import m_stage_fanout_groups
 from loregarden.db.migrations_templates import (
     m_adversarial_planning,
     m_clear_phantom_skill_names,
@@ -1334,6 +1336,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0066_baxter_chat_runtime", _m_baxter_chat_runtime),
     ("0067_orchestration_timeout_override", m_orchestration_timeout_override),
     ("0068_clear_phantom_skill_names", m_clear_phantom_skill_names),
+    ("0069_skill_versioning", m_skill_versioning),
+    ("0070_stage_fanout_groups", m_stage_fanout_groups),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
