@@ -35,6 +35,7 @@ def clean_gate_detail(result: GateRunResult) -> str:
 
 
 def run_gates_detail(
+    session: Session,
     ticket: Ticket,
     profile: OrchestrationProfile,
     workspace: Workspace,
@@ -46,6 +47,7 @@ def run_gates_detail(
     human-readable failure detail. Pure — no ticket/stage mutation, so it can be
     re-run after an auto-fix pass to check whether the fix cleared it."""
     result = run_transition_gates(
+        session,
         profile,
         workspace,
         ticket,
