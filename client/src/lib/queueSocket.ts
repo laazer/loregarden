@@ -239,29 +239,11 @@ export function queueSocketUrl(apiBase: string): string {
  * Callers are told the truth about the connection at every point so they can
  * poll while it is down instead of pretending.
  */
-export class QueueSocket extends ReconnectingSocket {
-  private readonly handlers: QueueSocketHandlers;
-
-  constructor(
-    url: string,
-    handlers: QueueSocketHandlers,
-    /** Injectable so tests can drive a fake without a live server. */
-    factory: (url: string) => WebSocket = (u) => new WebSocket(u),
-  ) {
-    super(
-      url,
-      {
-        baseDelayMs: BASE_RECONNECT_DELAY_MS,
-        maxDelayMs: MAX_RECONNECT_DELAY_MS,
-      },
-      factory,
-    );
-    this.handlers = handlers;
-  }
-
-  protected emitStatus(status: QueueSocketStatus): void {
-    this.handlers.onStatus(status);
-  }
+export class QueueSocket extends ReconnectingSocket<QueueSocketHandlers> {
+  protected readonly policy = {
+    baseDelayMs: BASE_RECONNECT_DELAY_MS,
+    maxDelayMs: MAX_RECONNECT_DELAY_MS,
+  };
 
   protected handleMessage(raw: unknown): void {
     const message = raw as {

@@ -26,23 +26,39 @@ export interface ReconnectPolicy {
   maxDelayMs: number;
 }
 
-export abstract class ReconnectingSocket {
+/** The one thing every socket's handlers must offer: where state goes. */
+export interface SocketStatusHandler {
+  onStatus: (status: SocketStatus) => void;
+}
+
+export abstract class ReconnectingSocket<THandlers extends SocketStatusHandler> {
   private socket: WebSocket | null = null;
   private closed = false;
   private attempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly url: string;
-  private readonly policy: ReconnectPolicy;
   private readonly factory: (url: string) => WebSocket;
+  protected readonly handlers: THandlers;
+
+  /**
+   * Declared by the subclass rather than passed up through a constructor.
+   *
+   * Every subclass wired one identically — take a url, handlers and a factory,
+   * hand the base a pair of delay constants — so the constructor was the same
+   * function written twice. A field says the same thing without the ceremony,
+   * and it is read only when a reconnect is scheduled, long after
+   * initialization order stops mattering.
+   */
+  protected abstract readonly policy: ReconnectPolicy;
 
   constructor(
     url: string,
-    policy: ReconnectPolicy,
+    handlers: THandlers,
     /** Injectable so tests can drive a fake without a live server. */
     factory: (url: string) => WebSocket = (u) => new WebSocket(u),
   ) {
     this.url = url;
-    this.policy = policy;
+    this.handlers = handlers;
     this.factory = factory;
   }
 
@@ -102,8 +118,11 @@ export abstract class ReconnectingSocket {
   /** One parsed frame. Subclasses own the shape and what to do with it. */
   protected abstract handleMessage(message: unknown): void;
 
-  /** Where the subclass forwards connection state to its own handlers. */
-  protected abstract emitStatus(status: SocketStatus): void;
+  /** Connection state, straight to the caller. Framing differs between
+   * sockets; "trying, up, or down" does not. */
+  protected emitStatus(status: SocketStatus): void {
+    this.handlers.onStatus(status);
+  }
 
   private scheduleReconnect(): void {
     this.socket = null;
