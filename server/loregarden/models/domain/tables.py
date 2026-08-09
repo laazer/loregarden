@@ -130,6 +130,10 @@ class Ticket(SQLModel, table=True):
     parent_ticket_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
     cycle_id: str | None = Field(default=None, foreign_key="cycles.id", index=True)
     acceptance_criteria_json: str = "[]"
+    #: Free-form labels, a JSON array of strings (see services.ticket_tags for the
+    #: one place they are normalized). Not a table: tags carry no attributes of
+    #: their own and are only ever read alongside the ticket that owns them.
+    tags_json: str = "[]"
     workflow_stage_key: str = ""
     workflow_stage_status: StageStatus = Field(
         default=StageStatus.PENDING,
@@ -724,6 +728,25 @@ class TicketDependency(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     ticket_id: str = Field(foreign_key="tickets.id", index=True)
     depends_on_ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    created_at: datetime = Field(default_factory=utcnow)
+    created_by: str = ""
+
+
+class TicketRelation(SQLModel, table=True):
+    """A symmetric "see also" link between two tickets. Unlike TicketDependency
+    it carries no ordering and never blocks: it exists so an operator or agent
+    reading one ticket finds the others that share its context.
+
+    Stored once per pair with ``ticket_id < related_ticket_id`` (canonical order,
+    enforced by TicketRelationService) so the same pair cannot be inserted twice
+    under two spellings.
+    """
+
+    __tablename__ = "ticket_relations"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    related_ticket_id: str = Field(foreign_key="tickets.id", index=True)
     created_at: datetime = Field(default_factory=utcnow)
     created_by: str = ""
 

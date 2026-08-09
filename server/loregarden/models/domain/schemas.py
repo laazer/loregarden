@@ -122,6 +122,7 @@ class TicketSummary(SQLModel):
     parent_ticket_id: str | None = None
     milestone: str = ""
     branch: str = ""
+    tags: list[str] = []
     child_count: int = 0
     next_agent: str = ""
     #: Whether anything is executing on this ticket — orthogonal to ``state``.
@@ -167,7 +168,8 @@ class TicketTreeNode(SQLModel):
 
 
 class TicketDependencyRef(SQLModel):
-    """A ticket at one end of a dependency edge, enough for the UI to render it."""
+    """A ticket at one end of an edge (dependency or relation), enough for the UI
+    to render it."""
 
     id: str
     external_id: str
@@ -183,6 +185,13 @@ class TicketDependencyRequest(SQLModel):
     depends_on: str
 
 
+class TicketRelationRequest(SQLModel):
+    """Relate this ticket to another (symmetric, non-blocking); accepts a UUID or
+    external_id."""
+
+    related_to: str
+
+
 class TicketDetail(TicketSummary):
     #: Set only on the responses that start work. When the slot pool is full the
     #: request is queued rather than started, and the caller has to be able to
@@ -193,6 +202,8 @@ class TicketDetail(TicketSummary):
     #: Tickets this one waits for (its prerequisites) and tickets waiting on it.
     dependencies: list[TicketDependencyRef] = Field(default_factory=list)
     dependents: list[TicketDependencyRef] = Field(default_factory=list)
+    #: Tickets linked for context only — symmetric, and never an ordering constraint.
+    related: list[TicketDependencyRef] = Field(default_factory=list)
     revision: int
     last_updated_by: str
     next_status: str
@@ -403,6 +414,8 @@ class UpdateTicketRequest(SQLModel):
     description: str | None = None
     #: Replaces the stored list; omit to leave it alone, [] to clear it.
     acceptance_criteria: list[str] | None = None
+    #: Replaces the stored tags; omit to leave them alone, [] to clear them.
+    tags: list[str] | None = None
     state: TicketState | None = None
     priority: int | None = None
     branch: str | None = None

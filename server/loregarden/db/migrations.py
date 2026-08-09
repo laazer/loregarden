@@ -962,6 +962,50 @@ def _m_ticket_dependencies_table(conn: Connection) -> None:
     )
 
 
+def _m_ticket_tags(conn: Connection) -> None:
+    """Free-form ticket labels as a JSON array. Every existing ticket is untagged,
+    so an empty-array default backfills correctly."""
+    add_columns_if_missing(
+        conn,
+        "tickets",
+        {"tags_json": "ALTER TABLE tickets ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'"},
+    )
+
+
+def _m_ticket_relations_table(conn: Connection) -> None:
+    """Symmetric non-blocking "see also" edges between tickets, stored once per
+    pair in canonical id order. Created empty; nothing to backfill."""
+    conn.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS ticket_relations ("
+            "id TEXT PRIMARY KEY, "
+            "ticket_id TEXT NOT NULL, "
+            "related_ticket_id TEXT NOT NULL, "
+            "created_at TEXT NOT NULL, "
+            "created_by TEXT NOT NULL DEFAULT ''"
+            ")"
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_ticket_relations_ticket_id "
+            "ON ticket_relations (ticket_id)"
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_ticket_relations_related_ticket_id "
+            "ON ticket_relations (related_ticket_id)"
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_ticket_relations_pair "
+            "ON ticket_relations (ticket_id, related_ticket_id)"
+        )
+    )
+
+
 def _m_chat_message_parts(conn: Connection) -> None:
     """Persist ordered ChatPart JSON on stored chat messages."""
     add_columns_if_missing(
@@ -1340,6 +1384,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0069_skill_versioning", m_skill_versioning),
     ("0070_stage_fanout_groups", m_stage_fanout_groups),
     ("0071_backfill_handoff_artifacts", m_backfill_handoff_artifacts),
+    ("0072_ticket_tags", _m_ticket_tags),
+    ("0073_ticket_relations", _m_ticket_relations_table),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
