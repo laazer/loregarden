@@ -47,6 +47,12 @@ LIVE_ORCHESTRATION_STATUSES = (
     OrchestrationRunStatus.RUNNING,
 )
 
+#: Statuses that mean "still waiting to start". Lives here rather than in
+#: queue_lanes because the queue's own reads need it too, and one of the two
+#: reading a narrower set than the other is how the board came to report a
+#: queue length of zero while lanes were visibly full.
+WAITING_STATUSES = (QueuePosition.QUEUED, QueuePosition.SCHEDULED)
+
 
 def run_notify_fields(session: Session, run: AgentRun | None) -> dict[str, str | None]:
     """Ticket / stage / agent labels for queue toast + inbox notifications."""
@@ -457,13 +463,22 @@ class ParallelQueueService:
 
     async def get_queued_runs(self) -> list[dict]:
         """
-        Get runs waiting in the shared queue, across all workspaces.
+        Get everything waiting to start, across all workspaces and lanes.
+
+        A lane entry has no ``run_id`` — nothing runs on a ticket's behalf
+        until its lane reaches it — so keying this on the agent run behind the
+        entry dropped every one of them, and with it the queue length and the
+        clear-time projection the board is built from. The entry itself is the
+        record; the agent run is consulted only when one already exists.
 
         Returns:
             List of {
+                "entry_id": "...",
                 "run_id": "...",
                 "ticket_id": "...",
+                "slot_number": 1,
                 "position": 2,
+                "entry_kind": "orchestration",
                 "estimated_start_at": "2026-07-06T10:10:00Z",
                 "queued_at": "2026-07-06T10:00:00Z",
                 "wait_seconds": 180
@@ -472,39 +487,74 @@ class ParallelQueueService:
         try:
             queue_stmt = (
                 select(QueuedRun)
-                .where(QueuedRun.status.in_([QueuePosition.QUEUED, QueuePosition.SCHEDULED]))
-                .order_by(QueuedRun.position)
+                .where(QueuedRun.status.in_(list(WAITING_STATUSES)))
+                .order_by(QueuedRun.slot_number, QueuedRun.position)
             )
 
-            queued_runs_records = self.session.exec(queue_stmt).all()
+            queued_runs_records = list(self.session.exec(queue_stmt).all())
+            if not queued_runs_records:
+                return []
+
+            run_ids = [qr.run_id for qr in queued_runs_records if qr.run_id]
+            runs: dict[str, AgentRun] = {}
+            if run_ids:
+                rows = self.session.exec(
+                    select(AgentRun).where(col(AgentRun.id).in_(run_ids))
+                ).all()
+                runs = {run.id: run for run in rows}
+
+            tickets: dict[str, Ticket] = {}
+            ticket_ids = [qr.ticket_id for qr in queued_runs_records if qr.ticket_id]
+            if ticket_ids:
+                rows = self.session.exec(select(Ticket).where(col(Ticket.id).in_(ticket_ids))).all()
+                tickets = {ticket.id: ticket for ticket in rows}
+
             queued_runs = []
             now = datetime.now(timezone.utc)
 
             for qr in queued_runs_records:
-                # Get run details
-                run_stmt = select(AgentRun).where(AgentRun.id == qr.run_id)
-                run = self.session.exec(run_stmt).first()
+                run = runs.get(qr.run_id or "")
+                ticket = tickets.get(qr.ticket_id or "")
+                created_at = qr.created_at
+                if created_at and created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+                wait = (now - created_at).total_seconds() if created_at else 0
 
-                if run:
-                    created_at = qr.created_at
-                    if created_at and created_at.tzinfo is None:
-                        created_at = created_at.replace(tzinfo=timezone.utc)
-                    wait = (now - created_at).total_seconds() if created_at else 0
-                    queued_runs.append(
-                        {
-                            "run_id": run.id,
-                            "ticket_id": run.ticket_id,
-                            "workspace_id": run.workspace_id,
-                            "agent_id": run.agent_id,
-                            "stage_key": run.stage_key,
-                            "position": qr.position,
-                            "estimated_start_at": qr.estimated_start_at.isoformat()
-                            if qr.estimated_start_at
-                            else None,
-                            "queued_at": created_at.isoformat() if created_at else None,
-                            "wait_seconds": int(wait),
-                        }
-                    )
+                # An entry that has not started has no agent of its own. The
+                # ticket's next agent is the one it will dispatch, which is
+                # what an estimate for this entry has to be priced against.
+                agent_id = run.agent_id if run else (ticket.next_agent if ticket else "")
+                stage_key = (
+                    run.stage_key
+                    if run
+                    else (qr.stage_key or (ticket.workflow_stage_key if ticket else ""))
+                )
+
+                queued_runs.append(
+                    {
+                        "entry_id": qr.id,
+                        "run_id": qr.run_id or "",
+                        "ticket_id": qr.ticket_id,
+                        "workspace_id": qr.workspace_id,
+                        "agent_id": agent_id,
+                        "stage_key": stage_key,
+                        "slot_number": qr.slot_number,
+                        "position": qr.position,
+                        # "orchestration" costs a whole pipeline, "stage" costs
+                        # one run — an estimate that ignores the difference is
+                        # wrong by the length of a workflow.
+                        "entry_kind": qr.entry_kind,
+                        # The lane card shows these, and they are answers from
+                        # a dialog that closed long before this entry starts.
+                        "auto_approve": qr.auto_approve,
+                        "stop_at_stage_key": qr.stop_at_stage_key,
+                        "estimated_start_at": qr.estimated_start_at.isoformat()
+                        if qr.estimated_start_at
+                        else None,
+                        "queued_at": created_at.isoformat() if created_at else None,
+                        "wait_seconds": int(wait),
+                    }
+                )
 
             return queued_runs
 
@@ -807,7 +857,7 @@ class ParallelQueueService:
                 "available_slots": 1,
                 "queued_count": 5,
                 "total_slots_occupied": 2,
-                "queue_wait_time_minutes": 15
+                "longest_wait_seconds": 900
             }
         """
         try:
@@ -816,20 +866,25 @@ class ParallelQueueService:
             active_slots = self.session.exec(active_stmt).all()
             active_count = len(active_slots)
 
-            # Count queued runs
-            queue_stmt = select(QueuedRun).where(QueuedRun.status == QueuePosition.QUEUED)
+            # Everything still waiting, in either regime. Counting only QUEUED
+            # left every SCHEDULED lane entry out of the length the board draws
+            # its "Queued" figure from.
+            queue_stmt = select(QueuedRun).where(QueuedRun.status.in_(list(WAITING_STATUSES)))
             queued_runs = self.session.exec(queue_stmt).all()
             queued_count = len(queued_runs)
 
-            # Calculate estimated queue wait time
-            queue_wait_minutes = 0
+            # How long the oldest entry has *already* waited. Backward-looking
+            # and measured, unlike the projected wait, which is derived from
+            # run history in run_duration_stats — the board shows both and must
+            # not confuse them.
+            longest_wait_seconds = 0
             if queued_runs:
                 oldest_queue = min(queued_runs, key=lambda r: r.created_at)
                 oldest_created_at = oldest_queue.created_at
                 if oldest_created_at and oldest_created_at.tzinfo is None:
                     oldest_created_at = oldest_created_at.replace(tzinfo=timezone.utc)
                 oldest_age = (datetime.now(timezone.utc) - oldest_created_at).total_seconds()
-                queue_wait_minutes = int(oldest_age / 60)
+                longest_wait_seconds = int(max(0.0, oldest_age))
 
             # A pool left over capacity by migration 0058 still has every one of
             # those runs executing. Reporting the nominal limit would draw fewer
@@ -844,7 +899,11 @@ class ParallelQueueService:
                 "available_slots": effective_slots - active_count,
                 "queued_count": queued_count,
                 "total_slots_occupied": active_count,
-                "queue_wait_time_minutes": queue_wait_minutes,
+                # Seconds, because a lane entry that has waited 40 seconds is
+                # not "0m" — which is what the board showed for anything under
+                # a minute, on the only stat that was supposed to prove the
+                # queue was moving.
+                "longest_wait_seconds": longest_wait_seconds,
             }
 
         except Exception as e:

@@ -37,14 +37,13 @@ from loregarden.models.domain import (
     QueuePosition,
     Ticket,
 )
-from loregarden.services.parallel_queue import ParallelQueueService
+from loregarden.services.parallel_queue import WAITING_STATUSES, ParallelQueueService
 from loregarden.websocket_events import emit_execution_update
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
-#: Statuses that mean "still waiting in a lane".
-WAITING_STATUSES = (QueuePosition.QUEUED, QueuePosition.SCHEDULED)
+__all__ = ["WAITING_STATUSES", "QueueLaneService"]
 
 
 class QueueLaneService:

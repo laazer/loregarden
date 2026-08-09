@@ -22,11 +22,13 @@ from loregarden.services.parallel_queue import (
     ParallelQueueService,
 )
 from loregarden.services.run_duration_stats import (
-    estimate_for,
-    median_duration_by_agent,
+    DurationStats,
+    load_duration_stats,
     project_clear_time,
+    project_lane_waits,
 )
 from loregarden.services.ticket_activity import classify_ticket_activity
+from loregarden.services.ticket_tree_estimate import TicketTreeEstimator
 from sqlmodel import Session, col, select
 
 #: Slots in the shared pool. Matches the default the REST endpoint has always
@@ -185,36 +187,98 @@ def _label_runs(session: Session, runs: list[dict[str, Any]]) -> None:
         run["workspace_slug"] = workspace.slug if workspace else ""
 
 
-def _build_lanes(session: Session, active_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Each slot with what is running in it and what is queued behind it."""
+def _build_lanes(
+    session: Session,
+    active_runs: list[dict[str, Any]],
+    queued_runs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Each slot with what is running in it and what is queued behind it.
+
+    The waiting entries are the *same dicts* the queue reported, not a second
+    read of the table: two reads meant a lane card and the queue total could
+    disagree about what was waiting, and only one of them carried estimates.
+    """
     from loregarden.services.queue_lanes import QueueLaneService
 
     lanes_service = QueueLaneService(session, max_concurrent=DEFAULT_MAX_CONCURRENT)
     running_by_slot = {run.get("slot_number"): run for run in active_runs}
 
-    lanes: list[dict[str, Any]] = []
-    for slot_number in lanes_service.lane_numbers():
-        waiting = [
-            {
-                "entry_id": entry.id,
-                "ticket_id": entry.ticket_id,
-                "workspace_id": entry.workspace_id,
-                "position": entry.position,
-                "auto_approve": entry.auto_approve,
-                "stop_at_stage_key": entry.stop_at_stage_key,
-                "queued_at": entry.created_at.isoformat() if entry.created_at else None,
-            }
-            for entry in lanes_service.waiting_in_lane(slot_number)
-        ]
-        _label_runs(session, waiting)
-        lanes.append(
-            {
-                "slot_number": slot_number,
-                "running": running_by_slot.get(slot_number),
-                "waiting": waiting,
-            }
-        )
-    return lanes
+    waiting_by_slot: dict[int, list[dict[str, Any]]] = {}
+    for entry in queued_runs:
+        waiting_by_slot.setdefault(entry.get("slot_number") or 0, []).append(entry)
+
+    return [
+        {
+            "slot_number": slot_number,
+            "running": running_by_slot.get(slot_number),
+            "waiting": waiting_by_slot.get(slot_number, []),
+        }
+        for slot_number in lanes_service.lane_numbers()
+    ]
+
+
+def _attach_estimates(
+    session: Session,
+    active_runs: list[dict[str, Any]],
+    queued_runs: list[dict[str, Any]],
+    duration_stats: DurationStats,
+    max_concurrent: int,
+) -> None:
+    """Price every card by what it actually has left, in place.
+
+    A lane holds a *ticket*, and a ticket carries its unfinished children with
+    it, so the honest figure for a lane card is the remaining pipeline of that
+    whole subtree — not one agent's median, which is what made a feature with
+    nine child tasks read as four minutes of work.
+
+    A "stage" entry is still one run and is still priced as one.
+    """
+    if not duration_stats.has_history():
+        for run in active_runs + queued_runs:
+            run["estimated_duration_seconds"] = None
+            run["estimated_remaining_seconds"] = None
+            run["ticket_tree_estimate"] = None
+        for entry in queued_runs:
+            entry["estimated_wait_seconds"] = None
+        return
+
+    estimator = TicketTreeEstimator(session, stats=duration_stats)
+
+    for run in active_runs:
+        elapsed = float(run.get("elapsed_seconds") or 0)
+        if run.get("orchestration_run_id"):
+            tree = estimator.estimate(run.get("ticket_id") or "")
+            remaining = tree.projected_seconds(max_concurrent)
+            run["ticket_tree_estimate"] = tree.as_payload(max_concurrent)
+            run["estimated_remaining_seconds"] = remaining
+            # The bar needs a whole, and for a lane the whole is what has
+            # already gone plus what is left. Reporting only the median of the
+            # current stage drew a full bar on a ticket half done.
+            run["estimated_duration_seconds"] = None if remaining is None else elapsed + remaining
+        else:
+            estimate = duration_stats.stage_seconds(run.get("stage_key"), run.get("agent_id"))
+            run["ticket_tree_estimate"] = None
+            run["estimated_duration_seconds"] = estimate
+            run["estimated_remaining_seconds"] = (
+                None if estimate is None else max(0.0, estimate - elapsed)
+            )
+
+    for entry in queued_runs:
+        if entry.get("entry_kind") == "stage":
+            estimate = duration_stats.stage_seconds(entry.get("stage_key"), entry.get("agent_id"))
+            entry["ticket_tree_estimate"] = None
+        else:
+            tree = estimator.estimate(entry.get("ticket_id") or "")
+            estimate = tree.projected_seconds(max_concurrent)
+            entry["ticket_tree_estimate"] = tree.as_payload(max_concurrent)
+        entry["estimated_duration_seconds"] = estimate
+        entry["estimated_remaining_seconds"] = estimate
+
+    # After the costs, because a wait is the sum of what is ahead of it in the
+    # same lane — see project_lane_waits for why the lane, not the pool.
+    waits = project_lane_waits(active_runs, queued_runs, duration_stats.by_agent, max_concurrent)
+    for entry, wait in zip(queued_runs, waits, strict=True):
+        entry["estimated_wait_seconds"] = wait
 
 
 async def build_queue_status(session: Session) -> dict[str, Any]:
@@ -239,27 +303,31 @@ async def build_queue_status(session: Session) -> dict[str, Any]:
     # None. The dashboard renders that as "unknown" rather than substituting a
     # constant — see run_duration_stats. Drawn from every workspace, because
     # they all contend for the same slots.
-    medians = median_duration_by_agent(session)
+    duration_stats = load_duration_stats(session)
     max_concurrent = stats.get("max_concurrent", DEFAULT_MAX_CONCURRENT)
-    for run in active_runs:
-        # A lane's elapsed time covers a whole ticket, so a single agent's
-        # median is not something to measure it against — the card says
-        # "running, duration unknown" instead of drawing a bar that is wrong.
-        run["estimated_duration_seconds"] = (
-            None if run.get("orchestration_run_id") else estimate_for(medians, run.get("agent_id"))
-        )
+    _attach_estimates(session, active_runs, queued_runs, duration_stats, max_concurrent)
 
+    medians = duration_stats.by_agent
+    waits = [
+        entry["estimated_wait_seconds"]
+        for entry in queued_runs
+        if entry.get("estimated_wait_seconds") is not None
+    ]
     return {
         "active_runs": active_runs,
         "queued_runs": queued_runs,
         # The board renders lanes, not one list: every waiting entry belongs to
         # a slot, and its position is within that slot.
-        "lanes": _build_lanes(session, active_runs),
+        "lanes": _build_lanes(session, active_runs, queued_runs),
         "available_slots": stats.get("available_slots", 0),
         "total_slots": max_concurrent,
         "queue_length": len(queued_runs),
         "estimated_clear_seconds": project_clear_time(
             active_runs, queued_runs, medians, max_concurrent
         ),
+        # The longest projected wait before something still queued starts.
+        # Distinct from stats.longest_wait_seconds, which is how long the
+        # oldest entry has already been waiting.
+        "estimated_wait_seconds": max(waits) if waits else None,
         "stats": stats,
     }

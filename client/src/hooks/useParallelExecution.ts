@@ -19,6 +19,7 @@ export interface ParallelExecutionStatus {
   lanes: QueueLane[];
   stats: ParallelStats;
   estimatedClearSeconds: number | null;
+  estimatedWaitSeconds: number | null;
   loading: boolean;
   error: string | null;
 }
@@ -40,6 +41,7 @@ export function useParallelExecution(
   const [lanes, setLanes] = useState<QueueLane[]>([]);
   const [stats, setStats] = useState<ParallelStats>(DEFAULT_PARALLEL_STATS);
   const [estimatedClearSeconds, setEstimatedClearSeconds] = useState<number | null>(null);
+  const [estimatedWaitSeconds, setEstimatedWaitSeconds] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,11 +76,12 @@ export function useParallelExecution(
             available_slots: data.available_slots || 3,
             queued_count: data.queued_runs?.length || 0,
             total_slots_occupied: data.active_runs?.length || 0,
-            queue_wait_time_minutes: 0,
+            longest_wait_seconds: 0,
           });
           // Absent (older backend) and null (no run history) mean the same
           // thing to the dashboard: no estimate to show.
           setEstimatedClearSeconds(data.estimated_clear_seconds ?? null);
+          setEstimatedWaitSeconds(data.estimated_wait_seconds ?? null);
           setError(null);
         }
       } catch (err) {
@@ -111,6 +114,7 @@ export function useParallelExecution(
     lanes,
     stats,
     estimatedClearSeconds,
+    estimatedWaitSeconds,
     loading,
     error,
   };
