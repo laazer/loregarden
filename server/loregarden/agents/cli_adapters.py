@@ -65,9 +65,10 @@ def _bin(name: str, env_key: str) -> str:
 
 
 def permission_bypass_enabled() -> bool:
-    if os.environ.get("LOREGARDEN_ALLOW_PERMISSION_BYPASS", "").lower() in {"1", "true", "yes"}:
-        return True
-    return settings.allow_permission_bypass
+    raw = os.environ.get("LOREGARDEN_ALLOW_PERMISSION_BYPASS")
+    if raw is None:
+        return False
+    return raw.lower() in {"1", "true", "yes"}
 
 
 def _claude_permission_mode() -> str:
@@ -151,6 +152,7 @@ def build_interactive_invocation(
     claude_effort: str = "",
     partial_messages: bool = False,
     db_session=None,
+    orchestrated: bool = True,
 ) -> CliInvocation:
     """A headless `claude` session with permission prompts routed through Loregarden.
 
@@ -166,6 +168,10 @@ def build_interactive_invocation(
     finished, which for a long thought is one jump from nothing to everything.
     Off by default: a stage run writes its stream to a log nobody watches
     keystroke by keystroke, and the extra events are pure volume there.
+
+    ``orchestrated`` defaults True for stage runs. Chat surfaces (triage / Home /
+    branch) must pass False so create_ticket and other interactive MCP tools are
+    not denied at the MCP dispatch layer.
     """
     cwd = str(workspace_root)
 
@@ -192,7 +198,7 @@ def build_interactive_invocation(
         _append_claude_effort_flag(argv, claude_effort)
         if resume_session_id:
             argv.extend(["--resume", resume_session_id])
-        append_mcp_cli_args(argv, adapter="claude", session=db_session, orchestrated=True)
+        append_mcp_cli_args(argv, adapter="claude", session=db_session, orchestrated=orchestrated)
         return CliInvocation(
             argv=argv,
             interactive=True,
@@ -726,6 +732,8 @@ def build_triage_invocation(
             argv[2:2] = ["--verbose", "--include-partial-messages"]
         _append_model_flag(argv, triage_model)
         _append_claude_effort_flag(argv, effort)
+        # Chat/studio oneshot — not a pipeline stage. Keep create_ticket open.
+        append_mcp_cli_args(argv, adapter="claude", orchestrated=False)
         return CliInvocation(
             argv=argv,
             use_prompt_file=True,
@@ -761,6 +769,7 @@ def build_triage_invocation(
         extra = os.environ.get("LOREGARDEN_CURSOR_AGENT_ARGS")
         if extra:
             argv[2:2] = shlex.split(extra)
+        append_mcp_cli_args(argv, adapter="cursor", orchestrated=False)
         return CliInvocation(argv=argv, adapter="cursor", cwd=str(workspace_root))
 
     if selected == "codex":
@@ -768,6 +777,7 @@ def build_triage_invocation(
             prompt=prompt,
             workspace_root=workspace_root,
             codex_model=model,
+            orchestrated=False,
         )
         # Explicit either way: omiting -s leaves Codex on whatever ~/.codex says,
         # which is how advisory Home turns accidentally stayed read-only forever

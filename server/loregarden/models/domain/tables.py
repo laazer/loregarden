@@ -19,6 +19,9 @@ from loregarden.models.domain.enums import (
     QueueOperationType,
     QueuePosition,
     RunStatus,
+    StageFanoutAttemptStatus,
+    StageFanoutGroupStatus,
+    StageFanoutOutcome,
     StageStatus,
     TicketState,
     TicketStudioSessionStatus,
@@ -28,6 +31,7 @@ from loregarden.models.domain.enums import (
     utcnow,
 )
 from pydantic import model_validator
+from sqlalchemy import CheckConstraint, Index, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -264,6 +268,71 @@ class AgentRun(SQLModel, table=True):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class StageFanoutGroup(SQLModel, table=True):
+    __tablename__ = "stage_fanout_groups"
+    __table_args__ = (
+        CheckConstraint("attempt_count >= 1", name="ck_stage_fanout_attempt_count"),
+        Index("ix_stage_fanout_groups_ticket_stage", "ticket_id", "stage_key"),
+    )
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    ticket_id: str = Field(foreign_key="tickets.id", index=True)
+    orchestration_run_id: str | None = Field(
+        default=None, foreign_key="orchestration_runs.id", index=True
+    )
+    stage_key: str
+    attempt_count: int = Field(default=1, ge=1)
+    pre_fanout_workflow_stage_key: str = ""
+    pre_fanout_workflow_stage_status: str = StageStatus.PENDING.value
+    pre_fanout_stage_map_json: str = "[]"
+    pre_fanout_next_agent: str = ""
+    status: StageFanoutGroupStatus = Field(
+        default=StageFanoutGroupStatus.OPEN,
+        sa_column=_str_enum_column(StageFanoutGroupStatus, StageFanoutGroupStatus.OPEN, index=True),
+    )
+    outcome: StageFanoutOutcome = Field(
+        default=StageFanoutOutcome.PENDING,
+        sa_column=_str_enum_column(StageFanoutOutcome, StageFanoutOutcome.PENDING),
+    )
+    # Indexed but deliberately not a foreign key: StageFanoutAttempt.group_id
+    # owns the child relation, and adding a reciprocal winner FK creates the
+    # same table-cycle risk as AgentRun.worktree_id.
+    winner_attempt_id: str | None = Field(default=None, index=True)
+    declined_reason: str = ""
+    failure_summary: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+    settled_at: datetime | None = None
+
+
+class StageFanoutAttempt(SQLModel, table=True):
+    __tablename__ = "stage_fanout_attempts"
+    __table_args__ = (
+        UniqueConstraint("group_id", "attempt_index"),
+        CheckConstraint("attempt_index >= 0", name="ck_stage_fanout_attempt_index"),
+    )
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    group_id: str = Field(foreign_key="stage_fanout_groups.id", index=True)
+    attempt_index: int = Field(ge=0)
+    attempt_name: str = ""
+    agent_run_id: str | None = Field(default=None, foreign_key="agent_runs.id", index=True)
+    worktree_id: str | None = Field(default=None, foreign_key="worktrees.id", index=True)
+    branch: str = ""
+    status: StageFanoutAttemptStatus = Field(
+        default=StageFanoutAttemptStatus.PLANNED,
+        sa_column=_str_enum_column(
+            StageFanoutAttemptStatus, StageFanoutAttemptStatus.PLANNED, index=True
+        ),
+    )
+    failure_details: str = ""
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class McpServer(SQLModel, table=True):
@@ -536,6 +605,37 @@ class StudioAgentVersion(SQLModel, table=True):
     version: int
     snapshot_json: str = "{}"
     created_by: str = ""  # seed | studio-ui | api
+    change_note: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class Skill(SQLModel, table=True):
+    __tablename__ = "skills"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    slug: str = Field(index=True, unique=True)
+    name: str
+    description: str = ""
+    body: str = ""
+    required_capabilities_json: str = "[]"
+    pack_id: str | None = None
+    pack_commit: str | None = None
+    upstream_name: str | None = None
+    version: int = Field(default=1)
+    built_in: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class SkillVersion(SQLModel, table=True):
+    __tablename__ = "skill_versions"
+    __table_args__ = (UniqueConstraint("skill_id", "version"),)
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    skill_id: str = Field(foreign_key="skills.id", index=True)
+    version: int
+    snapshot_json: str = "{}"
+    created_by: str = ""
     change_note: str = ""
     created_at: datetime = Field(default_factory=utcnow)
 

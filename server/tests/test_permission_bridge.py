@@ -1339,20 +1339,13 @@ def test_permission_bridge_orchestrated_agent_denied_create_ticket_end_to_end(tm
 
 
 def test_permission_bridge_interactive_triage_create_ticket_is_not_auto_denied(tmp_path):
-    """The orchestrated-agent deny policy must be scoped to orchestrated pipeline
-    runs only. Ticket Studio chat and other interactive contexts use
-    `PermissionBridgeRunner(session, track_workflow_stage=False)` (see
-    `TriageTurnExecutor._execute_interactive`) and, per the ticket's own triage
-    decision, must remain ALLOWED to call `loregarden_create_ticket` — routed
-    through the normal human-approval gate like any other non-auto-approved
-    write, not silently rejected by the orchestrated-agent policy.
+    """Interactive chat (track_workflow_stage=False) gets full Loregarden MCP access.
 
-    Expected to fail red until the orchestrated-denial check in
-    `PermissionBridgeRunner._try_fast_approve` is conditioned on
-    `self.track_workflow_stage` (or equivalent) instead of applying
-    unconditionally to every run that reaches the bridge."""
+    Pipeline stage runs still deny create_ticket; triage / Home / branch auto-approve
+    it instead of routing to the inbox or the orchestrated deny path.
+    """
     from loregarden.agents.cli_adapters import build_interactive_invocation
-    from loregarden.models.domain import AgentRun, Approval, ApprovalKind, RunStatus, Ticket
+    from loregarden.models.domain import AgentRun, Approval, RunStatus, Ticket
     from loregarden.services.seed import seed_database
     from sqlmodel import Session, SQLModel, create_engine, select
     from sqlmodel.pool import StaticPool
@@ -1389,7 +1382,9 @@ def test_permission_bridge_interactive_triage_create_ticket_is_not_auto_denied(t
             adapter="claude",
             prompt_file=prompt_file,
             workspace_root=workspace,
+            orchestrated=False,
         )
+        assert "LOREGARDEN_MCP_ORCHESTRATED" not in " ".join(invocation.argv)
 
         permission_line = json.dumps(
             {
@@ -1416,11 +1411,10 @@ def test_permission_bridge_interactive_triage_create_ticket_is_not_auto_denied(t
             captured_proc = _FakeProc([permission_line, result_line])
             return captured_proc
 
-        approvals_seen: list[str] = []
-
-        def fake_wait(approval_id, **kwargs):
-            approvals_seen.append(approval_id)
-            return ApprovalResolution(approved=True)
+        def fail_wait(approval_id, **kwargs):
+            raise AssertionError(
+                f"Interactive triage must auto-approve Loregarden MCP, not inbox {approval_id}"
+            )
 
         bridge = PermissionBridgeRunner(session, track_workflow_stage=False)
         result = bridge.run(
@@ -1430,15 +1424,11 @@ def test_permission_bridge_interactive_triage_create_ticket_is_not_auto_denied(t
             prompt="triage prompt",
             timeout_seconds=30,
             spawn_process=fake_spawn,
-            wait_for_approval=fake_wait,
+            wait_for_approval=fail_wait,
         )
 
         assert result.status == RunStatus.SUCCEEDED
-        # Reached the normal human-approval gate — proof it was never auto-denied
-        # by the orchestrated-agent policy.
-        assert approvals_seen
-        approval = session.get(Approval, approvals_seen[0])
-        assert approval.kind == ApprovalKind.CLI_PERMISSION
+        assert session.exec(select(Approval).where(Approval.run_id == run.id)).first() is None
         assert captured_proc is not None
         control_writes = []
         for raw in captured_proc.stdin.writes:

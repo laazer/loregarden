@@ -14,7 +14,12 @@ from loregarden.models.domain import (
     Workspace,
     WorkspaceRuntimeSettings,
 )
-from loregarden.services.agent_turn_runner import AgentTurnRequest, run_agent_turn
+from loregarden.services.agent_turn_runner import (
+    AgentTurnRequest,
+    adapter_capabilities,
+    resolve_chat_intent,
+    run_agent_turn,
+)
 from loregarden.services.branch_triage_service import (
     branch_triage_snapshot,
     resolve_branch_checkout,
@@ -252,19 +257,27 @@ def invoke_branch_triage_model(
         agent_adapter=agent.get("adapter", "claude"),
         workspace=effective_workspace,
     )
+    caps = adapter_capabilities(selected)
     checkout_root = resolve_branch_checkout(workspace, branch)
-    can_bridge = selected == "claude" and bool(run_id) and checkout_root is not None
-    intent = "execute" if can_bridge else "advisory"
+    # Capability map decides whether the adapter can execute; a missing checkout
+    # is the only extra gate (writes need a worktree).
+    intent = resolve_chat_intent(selected)
     advisory_reason = ""
-    if selected != "claude":
-        advisory_reason = (
-            f"The selected {selected} adapter uses the shared oneshot path "
-            "(no mid-turn inbox bridge for this checkout)."
-        )
-    elif checkout_root is None:
+    if checkout_root is None:
+        intent = "advisory"
         advisory_reason = (
             f"Branch {branch!r} is not checked out in a worktree. Check it out before asking "
             "Baxter to modify it."
+        )
+    elif intent == "advisory":
+        advisory_reason = (
+            f"The selected {selected} adapter cannot execute turns "
+            "(no permission bridge or writable oneshot path)."
+        )
+    elif caps.permission_bridge and not run_id:
+        intent = "advisory"
+        advisory_reason = (
+            "This turn has no AgentRun id, so the permission bridge cannot attach approvals."
         )
 
     prompt = build_branch_triage_prompt(
@@ -292,7 +305,7 @@ def invoke_branch_triage_model(
             turn_id=turn_id,
             run_id=run_id,
             manage_run=False,
-            workspace_root=checkout_root if can_bridge else None,
+            workspace_root=checkout_root if intent == "execute" else None,
             workspace_stage_key=BRANCH_TRIAGE_STAGE_KEY,
             claude_model_env="LOREGARDEN_BRANCH_TRIAGE_CLAUDE_MODEL",
             track_workflow_stage=False,

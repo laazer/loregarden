@@ -24,6 +24,14 @@ def table_exists(conn: Connection, table: str) -> bool:
     return row is not None
 
 
+def index_exists(conn: Connection, name: str) -> bool:
+    row = conn.execute(
+        text("SELECT 1 FROM sqlite_master WHERE type='index' AND name=:name"),
+        {"name": name},
+    ).fetchone()
+    return row is not None
+
+
 def add_columns_if_missing(conn: Connection, table: str, columns: dict[str, str]) -> None:
     """Add each ``name -> ALTER statement`` whose column is absent from ``table``."""
     if not table_exists(conn, table):

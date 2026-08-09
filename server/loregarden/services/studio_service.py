@@ -12,6 +12,11 @@ from loregarden.agents.registry import AGENTS
 from loregarden.agents.registry import list_agents as list_builtin_agents
 from loregarden.config import settings
 from loregarden.core.workflow_loader import write_template_version
+from loregarden.mcp.tool_ids import (
+    MEMORY_DEFAULT_MCP_TOOLS,
+    STAGE_DEFAULT_MCP_TOOLS,
+    mcp_tool_values,
+)
 from loregarden.models.domain import (
     StudioAgent,
     StudioAgentCreate,
@@ -27,6 +32,11 @@ from loregarden.models.domain import (
     StudioGeneratedWorkflow,
     StudioHandoffCheck,
     StudioMcpToolGuide,
+    StudioSkillCreate,
+    StudioSkillRestore,
+    StudioSkillUpdate,
+    StudioSkillVersionView,
+    StudioSkillView,
     StudioWorkflow,
     StudioWorkflowCreate,
     StudioWorkflowStage,
@@ -36,6 +46,7 @@ from loregarden.models.domain import (
     WorkflowTemplate,
     WorkflowTemplateVersion,
 )
+from loregarden.services.skill_service import SkillService
 from loregarden.services.studio_generation import (
     build_agent_generate_prompt,
     build_workflow_generate_prompt,
@@ -49,25 +60,6 @@ from loregarden.services.studio_routing import SKIP_CONDITIONS, TERMINAL_STAGE_K
 from loregarden.services.workflow_service import WorkflowService
 from loregarden.skills.registry import list_skills
 from sqlmodel import Session, select
-
-DEFAULT_STAGE_MCP_TOOLS = [
-    "loregarden_get_ticket",
-    "loregarden_list_tickets",
-    "loregarden_attach_artifact",
-    # A stage that must produce evidence needs the tool to record it, or it is
-    # blocked with no way to comply.
-    "loregarden_attach_evidence",
-    "loregarden_request_approval",
-]
-
-DEFAULT_MEMORY_MCP_TOOLS = [
-    "loregarden_memory_status",
-    "loregarden_search_memory",
-    "loregarden_append_learning",
-    "loregarden_upsert_memory",
-    "loregarden_upsert_blog_post",
-    "loregarden_create_memory_relation",
-]
 
 STUDIO_ROLE_PREAMBLE = """**Loregarden MCP:** Use MCP tools per `agent_context/agents/common_assets/loregarden_mcp_v1.md` for ticket workflow state.
 
@@ -87,14 +79,17 @@ def _merge_tool_lists(*groups: list[str]) -> list[str]:
 
 
 def default_mcp_tools() -> list[str]:
-    return _merge_tool_lists(DEFAULT_STAGE_MCP_TOOLS, DEFAULT_MEMORY_MCP_TOOLS)
+    return _merge_tool_lists(
+        mcp_tool_values(STAGE_DEFAULT_MCP_TOOLS),
+        mcp_tool_values(MEMORY_DEFAULT_MCP_TOOLS),
+    )
 
 
 def _resolve_studio_mcp_tools(raw_tools: list[str] | None, *, mcp_enabled: bool) -> list[str]:
     if not mcp_enabled:
         return []
     base = raw_tools if raw_tools else default_mcp_tools()
-    return _merge_tool_lists(base, DEFAULT_MEMORY_MCP_TOOLS)
+    return _merge_tool_lists(base, mcp_tool_values(MEMORY_DEFAULT_MCP_TOOLS))
 
 
 def _ensure_studio_role_preamble(role_body: str) -> str:
@@ -824,7 +819,7 @@ class StudioService:
     def agent_defaults(self) -> dict:
         return {
             "mcp_tools": default_mcp_tools(),
-            "memory_mcp_tools": DEFAULT_MEMORY_MCP_TOOLS,
+            "memory_mcp_tools": mcp_tool_values(MEMORY_DEFAULT_MCP_TOOLS),
             "handoff_checks": [item.model_dump() for item in DEFAULT_HANDOFF_CHECKS],
             "gate_checks": [item.model_dump() for item in DEFAULT_GATE_CHECKS],
             # Served rather than mirrored in the client so the vocabulary has one
@@ -973,6 +968,29 @@ class StudioService:
             self.session.delete(version)
         self.session.delete(agent)
         self.session.commit()
+
+    def list_skills(self) -> list[StudioSkillView]:
+        return SkillService(self.session).list_skills()
+
+    def get_skill(self, slug: str) -> StudioSkillView | None:
+        return SkillService(self.session).get_skill(slug)
+
+    def create_skill(self, body: StudioSkillCreate) -> StudioSkillView:
+        return SkillService(self.session).create_skill(body)
+
+    def update_skill(self, slug: str, body: StudioSkillUpdate) -> StudioSkillView:
+        return SkillService(self.session).update_skill(slug, body)
+
+    def list_skill_versions(self, slug: str) -> list[StudioSkillVersionView]:
+        return SkillService(self.session).list_skill_versions(slug)
+
+    def get_skill_version(self, slug: str, version: int) -> StudioSkillVersionView:
+        return SkillService(self.session).get_skill_version(slug, version)
+
+    def restore_skill_version(
+        self, slug: str, version: int, body: StudioSkillRestore | None = None
+    ) -> StudioSkillView:
+        return SkillService(self.session).restore_skill_version(slug, version, body)
 
     def list_agent_versions(self, slug: str) -> list[StudioAgentVersionView]:
         agent = self.session.exec(select(StudioAgent).where(StudioAgent.slug == slug)).first()

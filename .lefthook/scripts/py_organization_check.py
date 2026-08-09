@@ -28,6 +28,11 @@ from precommit_git_diff import (
 )
 
 MAX_FILE_LINES = 1500
+# Test modules get a higher cap. A suite grows by accumulating cases against one
+# surface, and splitting it because it crossed a line count scatters related
+# coverage across files with no seam to justify the split. The cap still exists:
+# past this, the module is testing too many surfaces, not too many cases.
+MAX_TEST_FILE_LINES = 2500
 MAX_CLASS_LINES = 1000
 MIN_DUPLICATE_BODY_LINES = 8
 MAX_INIT_LINES = 120
@@ -113,9 +118,10 @@ def check_file(
     # Whole-file caps only fire when this diff makes the file net longer — a
     # file that's already over the cap can still be freely edited/shrunk;
     # only growing it further is blocked.
-    if lines > MAX_FILE_LINES and net_growing:
+    max_lines = MAX_TEST_FILE_LINES if _is_test_path(py_file) else MAX_FILE_LINES
+    if lines > max_lines and net_growing:
         errors.append(
-            f"{py_file}: module is {lines} lines (max {MAX_FILE_LINES}); split into smaller modules"
+            f"{py_file}: module is {lines} lines (max {max_lines}); split into smaller modules"
         )
 
     try:

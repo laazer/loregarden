@@ -9,13 +9,13 @@ def _write_skill(root: Path, name: str, body: str) -> None:
     (skill_dir / "SKILL.md").write_text(body, encoding="utf-8")
 
 
-def test_hyphen_and_underscore_skill_directories_resolve_exactly(tmp_path):
+def test_hyphen_and_underscore_workspace_directories_do_not_resolve(tmp_path, client):
     agent_context = tmp_path / "agent_context"
     _write_skill(agent_context, "a-b", "hyphen body")
     _write_skill(agent_context, "a_b", "underscore body")
 
-    assert get_skill("a-b", agent_context_dir=agent_context) == "hyphen body"
-    assert get_skill("a_b", agent_context_dir=agent_context) == "underscore body"
+    assert get_skill("a-b", agent_context_dir=agent_context) is None
+    assert get_skill("a_b", agent_context_dir=agent_context) is None
 
 
 def test_hyphen_name_does_not_resolve_underscore_directory(tmp_path):

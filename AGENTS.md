@@ -52,7 +52,7 @@ loregarden/
 | Running a pipeline | `services/orchestration.py`, `services/builtin_orchestrator.py` | Sweeps and commits the working tree |
 | Prompt assembly | `agents/executors/cli.py` | Builds the full agent prompt; embeds MCP + memory modules |
 | Injected run context | `agents/stage_context.py`, `agents/mcp_context.py` | Text every agent sees, before its role file |
-| Approvals / permissions | `agents/executors/permission_bridge.py`, `agents/executors/tool_auto_approve.py` | `AUTO_APPROVED_MCP_TOOLS`, agent scope check, auto_approve |
+| Approvals / permissions | `agents/executors/permission_bridge.py`, `agents/executors/tool_auto_approve.py`, `mcp/tool_ids.py` | `AUTO_APPROVED_MCP_TOOLS`, agent scope check, auto_approve |
 | MCP tools | `mcp/tools.py` | Tool names and schemas |
 | Agent → role file map | `agents/registry.py` | `role_file` is resolved against the **workspace's** `agent_context/` |
 | Migrations | `db/migrations.py` | Append with the next id; never reorder |

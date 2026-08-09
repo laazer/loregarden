@@ -87,6 +87,19 @@ def _titled_block(title: str, body: str, *, cap: int = 0) -> list[str]:
     return ["", title, body[:cap] if cap else body]
 
 
+def _skill_block(skill_name: str, body: str) -> list[str]:
+    if not body:
+        return []
+    rendered = body[:SKILL_PROMPT_CAP]
+    if len(rendered) == len(body):
+        return ["", "## Skill", body]
+    notice = (
+        f"[Skill '{skill_name}' truncated for prompt rendering: "
+        f"original body length: {len(body)}, rendered body length: {len(rendered)}]"
+    )
+    return ["", "## Skill", notice, rendered]
+
+
 def _raw_block(body: str) -> list[str]:
     """An untitled prompt block that supplies its own headings."""
     return ["", body] if body else []
@@ -695,7 +708,7 @@ class CliAgentExecutor:
             # pick up CLAUDE.md the way Claude Code does, so without this they
             # rediscover the layout by grepping on every run.
             _titled_block("## Repository map", render_code_map(resolve_workspace_root(workspace))),
-            _titled_block("## Skill", skill_body, cap=SKILL_PROMPT_CAP),
+            _skill_block(skill_name, skill_body),
             _titled_block("## Agent Role", role_body),
             _raw_block(build_studio_prompt_sections(agent)),
             _titled_block("## Loregarden MCP module", mcp_doc, cap=12000),

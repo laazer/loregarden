@@ -353,6 +353,48 @@ def test_start_triage_run_carries_auto_approve_flag(client: TestClient, db_sessi
     assert run_default.auto_approve is False
 
 
+def test_triage_execute_intent_for_codex_uses_writable_oneshot(
+    client: TestClient, db_session: Session, monkeypatch
+):
+    """Ticket triage must not hard-gate execute on adapter name == claude."""
+    from loregarden.services import agent_turn_runner, triage_run_service
+    from loregarden.services.agent_turn_runner import AgentTurnResult
+    from loregarden.services.triage_run_service import TriageTurnExecutor, start_triage_run
+
+    captured: dict[str, object] = {}
+
+    def fake_turn(request):
+        captured["intent"] = request.intent
+        captured["adapter"] = request.adapter
+        captured["prompt"] = request.prompt
+        captured["ticket_id"] = request.ticket.id if request.ticket else None
+        return AgentTurnResult(
+            reply="updated the ticket via MCP",
+            strategy="writable_oneshot",
+            adapter="codex",
+            run_id=request.run_id,
+        )
+
+    monkeypatch.delenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", raising=False)
+    monkeypatch.setattr(triage_run_service, "resolve_effective_adapter", lambda **_: "codex")
+    monkeypatch.setattr(agent_turn_runner, "run_agent_turn", fake_turn)
+    monkeypatch.setattr(triage_run_service, "run_agent_turn", fake_turn)
+
+    ticket_id = _ticket_id(client)
+    ticket = db_session.get(Ticket, ticket_id)
+    assert ticket is not None
+    _, run = start_triage_run(db_session, ticket, "update the ticket via MCP")
+    TriageTurnExecutor(db_session).execute(run, ticket)
+
+    assert captured["adapter"] == "codex"
+    assert captured["intent"] == "execute"
+    assert captured["ticket_id"] == ticket_id
+    prompt = str(captured["prompt"])
+    assert "real tool access" in prompt
+    assert "advisory only" not in prompt
+    assert "callable directly" in prompt
+
+
 def test_triage_message_endpoint_accepts_auto_approve(
     client: TestClient, db_session: Session, monkeypatch
 ):

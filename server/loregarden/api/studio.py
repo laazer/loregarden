@@ -5,6 +5,9 @@ from loregarden.models.domain import (
     StudioAgentPreviewRequest,
     StudioAgentUpdate,
     StudioGenerateRequest,
+    StudioSkillCreate,
+    StudioSkillRestore,
+    StudioSkillUpdate,
     StudioWorkflowCreate,
     StudioWorkflowUpdate,
 )
@@ -90,6 +93,74 @@ def delete_studio_agent(slug: str, session: Session = Depends(get_session)) -> d
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"ok": True}
+
+
+@router.get("/skills")
+def list_studio_skills(session: Session = Depends(get_session)) -> list[dict]:
+    return [item.model_dump() for item in StudioService(session).list_skills()]
+
+
+@router.get("/skills/{slug}")
+def get_studio_skill(slug: str, session: Session = Depends(get_session)) -> dict:
+    skill = StudioService(session).get_skill(slug)
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    return skill.model_dump()
+
+
+@router.post("/skills")
+def create_studio_skill(body: StudioSkillCreate, session: Session = Depends(get_session)) -> dict:
+    try:
+        return StudioService(session).create_skill(body).model_dump()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/skills/{slug}")
+def update_studio_skill(
+    slug: str,
+    body: StudioSkillUpdate,
+    session: Session = Depends(get_session),
+) -> dict:
+    try:
+        return StudioService(session).update_skill(slug, body).model_dump()
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/skills/{slug}/versions")
+def list_studio_skill_versions(slug: str, session: Session = Depends(get_session)) -> list[dict]:
+    try:
+        return [v.model_dump() for v in StudioService(session).list_skill_versions(slug)]
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/skills/{slug}/versions/{version}")
+def get_studio_skill_version(
+    slug: str, version: int, session: Session = Depends(get_session)
+) -> dict:
+    try:
+        version_view = StudioService(session).get_skill_version(slug, version)
+        payload = version_view.model_dump()
+        if version_view.snapshot:
+            payload.update(version_view.snapshot.model_dump())
+        return payload
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/skills/{slug}/versions/{version}/restore")
+def restore_studio_skill_version(
+    slug: str,
+    version: int,
+    body: StudioSkillRestore,
+    session: Session = Depends(get_session),
+) -> dict:
+    try:
+        return StudioService(session).restore_skill_version(slug, version, body).model_dump()
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/agents/{slug}/versions")

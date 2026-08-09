@@ -7,7 +7,9 @@ import re
 from datetime import datetime, timezone
 
 from loregarden.agents.cli_adapters import resolve_effective_adapter
+from loregarden.agents.mcp_context import resolve_mcp_url
 from loregarden.agents.registry import get_agent
+from loregarden.mcp.tool_ids import TICKET_STUDIO_MCP_TOOLS, mcp_tool_values
 from loregarden.models.domain import (
     VALID_HIERARCHY,
     ReferenceRepo,
@@ -533,6 +535,14 @@ def build_studio_prompt(
         "be a feature, and a feature's parent must be a milestone. A task hanging directly off",
         "a feature or milestone is rejected, as is any ticket parented to a task or a bug.",
         "",
+        "## Loregarden MCP",
+        f"MCP endpoint: `{resolve_mcp_url()}`",
+        f"workspace: `{workspace.slug}`",
+        "Ticket MCP tools are wired in and callable directly — use them to look up existing "
+        "tickets, create missing ones the operator asks for mid-chat, or update titles/"
+        "descriptions/acceptance criteria. Prefer MCP over guessing ids from memory.",
+        "Tools: " + ", ".join(mcp_tool_values(TICKET_STUDIO_MCP_TOOLS)),
+        "",
         f"Workspace: {workspace.slug}",
         f"Session title: {session_row.title}",
         *parent_block,
@@ -734,6 +744,12 @@ def invoke_ticket_studio_model(
             reply_cap=None if mode == "chat" else SCOPE_REPLY_CAP,
             extra_dirs=extra_dirs,
             thinking_sink=thinking,
+            # Ticket MCP floor — DB agent grants may lag (create_ticket was
+            # missing from the seeded scoper). Claude/Cursor/Codex ignore this
+            # list and pick up MCP via build_triage_invocation; LM Studio needs it.
+            run_id=turn_id or "ticket-studio",
+            workspace_slug=effective_workspace.slug or "",
+            granted_tools=mcp_tool_values(TICKET_STUDIO_MCP_TOOLS),
         )
     finally:
         if thinking:

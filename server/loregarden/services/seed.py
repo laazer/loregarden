@@ -1,4 +1,5 @@
 import json
+from typing import TypedDict
 
 from loregarden.core.event_bus import event_bus
 from loregarden.core.workflow_loader import sync_workflow_templates
@@ -17,7 +18,20 @@ from loregarden.services.workflow_service import resolve_workspace_stages
 from loregarden.services.workflow_state import stages_up_to_done_json
 from sqlmodel import Session, select
 
-BOOTSTRAP_TASKS = [
+
+class BootstrapTask(TypedDict):
+    external_id: str
+    title: str
+    description: str
+    state: TicketState
+    priority: int
+    stage_key: str
+    stage_status: StageStatus
+    capability_key: str
+    acceptance_criteria: list[str]
+
+
+BOOTSTRAP_TASKS: list[BootstrapTask] = [
     {
         "external_id": "01-bootstrap-fastapi-control-plane",
         "title": "Bootstrap FastAPI control plane with SQLite state engine",
@@ -270,9 +284,11 @@ def _reconcile_task_workflows(session: Session, ws: Workspace) -> None:
 
 
 def seed_database(session: Session) -> None:
+    from loregarden.services.skill_service import seed_builtin_skills
     from loregarden.services.studio_service import seed_builtin_agents
 
     seed_builtin_agents(session)
+    seed_builtin_skills(session)
     templates = sync_workflow_templates(session)
     loregarden_tpl = session.exec(
         select(WorkflowTemplate).where(WorkflowTemplate.slug == "loregarden-tdd")
