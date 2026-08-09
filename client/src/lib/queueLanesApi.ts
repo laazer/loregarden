@@ -46,6 +46,16 @@ export const queueLanesApi = {
   remove: (entryId: string) =>
     laneRequest<{ status: string }>(`/entries/${entryId}`, { method: "DELETE" }),
 
+  /**
+   * Clear a blocked/failed entry from its lane's needs-attention section.
+   *
+   * Not a delete: the entry stays in queue history. This only records that
+   * someone has seen it, which is why it has to reach the server — a section
+   * that emptied itself on reload would be no better than not having one.
+   */
+  dismiss: (entryId: string) =>
+    laneRequest<{ status: string }>(`/entries/${entryId}/dismiss`, { method: "POST" }),
+
   move: (entryId: string, slotNumber: number, position: number) =>
     laneRequest<{ status: string }>(`/entries/${entryId}/move`, {
       method: "POST",

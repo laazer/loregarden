@@ -21,7 +21,7 @@ cards for those terminal orchestrations when no lane entry points at them.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 from loregarden.models.domain import (
     OrchestrationRun,
@@ -46,6 +46,15 @@ LIVE_STATUSES = (
 #: through. `unknown` is for an entry that ended without an orchestration run to
 #: answer for it (removed before dispatch, or stranded by a restart).
 OUTCOMES = ("succeeded", "blocked", "failed", "cancelled", "running", "unknown")
+
+#: Outcomes a lane keeps on its own card until someone acknowledges them. A
+#: cancelled entry was a decision, not a surprise; these two were not.
+ATTENTION_OUTCOMES = ("blocked", "failed")
+
+#: Cards carried per lane in the queue snapshot. The websocket pushes that
+#: snapshot every few seconds, so an unbounded list would ride along with it —
+#: the count of what is held back travels instead.
+MAX_ATTENTION_PER_LANE = 10
 
 _ORCHESTRATION_OUTCOME = {
     OrchestrationRunStatus.SUCCEEDED: "succeeded",
@@ -200,6 +209,60 @@ class QueueHistoryService:
 
         total = len(entries)
         return entries[offset : offset + limit], total
+
+    def lane_attention(self) -> dict[int, tuple[list[QueueHistoryEntry], int]]:
+        """Per lane: what blocked or failed in it and has not been acknowledged.
+
+        Only real lane entries — a synthetic card stands for an orchestration
+        that never held a lane entry, so there is no lane to pin it to and
+        nothing to dismiss it with. Those stay in the history rail.
+
+        Returns ``{slot_number: (cards, total)}`` where ``total`` counts every
+        undismissed entry for that lane, including any beyond the cap.
+        """
+        stmt = (
+            select(QueuedRun, Ticket, OrchestrationRun, Workspace)
+            .where(col(QueuedRun.status).not_in(LIVE_STATUSES))
+            .where(col(QueuedRun.dismissed_at).is_(None))
+            .where(QueuedRun.slot_number > 0)
+            .join(Ticket, col(QueuedRun.ticket_id) == col(Ticket.id))
+            .join(Workspace, col(QueuedRun.workspace_id) == col(Workspace.id))
+            .join(
+                OrchestrationRun,
+                col(QueuedRun.orchestration_run_id) == col(OrchestrationRun.id),
+                isouter=True,
+            )
+        )
+        cards = [
+            _to_entry(entry, ticket, orchestration, workspace)
+            for entry, ticket, orchestration, workspace in self.session.exec(stmt).all()
+            if derive_outcome(entry, orchestration) in ATTENTION_OUTCOMES
+        ]
+        cards.sort(key=_history_sort_key, reverse=True)
+
+        by_lane: dict[int, list[QueueHistoryEntry]] = {}
+        for card in cards:
+            by_lane.setdefault(card.slot_number, []).append(card)
+        return {
+            slot_number: (lane_cards[:MAX_ATTENTION_PER_LANE], len(lane_cards))
+            for slot_number, lane_cards in by_lane.items()
+        }
+
+    def dismiss_entry(self, entry_id: str) -> bool:
+        """Acknowledge one blocked/failed entry so its lane stops showing it.
+
+        Only a finished entry can be dismissed: doing this to a live one would
+        hide something the lane is still working on, and the card it belongs to
+        is not this section at all.
+        """
+        entry = self.session.get(QueuedRun, entry_id)
+        if not entry or entry.status in LIVE_STATUSES:
+            return False
+        if entry.dismissed_at is None:
+            entry.dismissed_at = datetime.now(timezone.utc)
+            self.session.add(entry)
+            self.session.commit()
+        return True
 
     def _synthetic_direct_admissions(
         self, *, workspace_id: str = "", ticket_id: str = ""

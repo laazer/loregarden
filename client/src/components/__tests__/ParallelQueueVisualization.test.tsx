@@ -19,7 +19,7 @@ jest.mock('../../state/QueueStatusContext', () => ({
 }));
 
 jest.mock('../../lib/queueLanesApi', () => ({
-  queueLanesApi: { add: jest.fn(), remove: jest.fn(), move: jest.fn() },
+  queueLanesApi: { add: jest.fn(), remove: jest.fn(), move: jest.fn(), dismiss: jest.fn() },
 }));
 
 jest.mock('../../api/client', () => ({
@@ -593,5 +593,111 @@ describe('estimates', () => {
     expect(screen.getByTestId('queue-est-clear')).toHaveTextContent('—');
     expect(screen.getByTestId('queue-wait-time')).toHaveTextContent('—');
     expect(screen.queryByTestId('lane-entry-entry-1-timing')).not.toBeInTheDocument();
+  });
+});
+
+describe('what stopped in a lane', () => {
+  /** A lane whose last ticket blocked and released the slot. */
+  const stoppedCard = {
+    entry_id: 'entry-stopped',
+    ticket_id: 'ticket-uuid-9',
+    ticket_external_id: 'LG-109',
+    ticket_title: 'Persist the creature definition',
+    ticket_state: 'blocked',
+    workspace_id: 'ws-1',
+    workspace_slug: 'loregarden',
+    workspace_name: 'loregarden',
+    slot_number: 2,
+    outcome: 'blocked' as const,
+    run_code: 'orch-9',
+    last_stage_key: 'test_design',
+    failure_reason: 'No workflow template for this ticket',
+    retry_count: 0,
+    started_at: null,
+    finished_at: null,
+    duration_seconds: null,
+  };
+
+  const withAttention = (attention = [stoppedCard], attentionTotal = 1) =>
+    withStatus({
+      lanes: [
+        runningLane,
+        {
+          slot_number: 2,
+          running: null,
+          waiting: [],
+          attention,
+          attention_total: attentionTotal,
+        },
+        { slot_number: 3, running: null, waiting: [] },
+      ],
+    });
+
+  test('an idle lane still shows the ticket that stopped in it', () => {
+    withAttention();
+    render(<ParallelQueueVisualization />);
+
+    const section = screen.getByTestId('slot-2-attention');
+    // Without this the lane read "Available" — indistinguishable from one that
+    // has never run anything.
+    expect(section).toHaveTextContent('Stopped in this lane (1)');
+    expect(section).toHaveTextContent('Blocked');
+    expect(section).toHaveTextContent('Persist the creature definition');
+    expect(section).toHaveTextContent('No workflow template for this ticket');
+  });
+
+  test('lanes with nothing to answer for show no section', () => {
+    withAttention();
+    render(<ParallelQueueVisualization />);
+
+    expect(screen.queryByTestId('slot-1-attention')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('slot-3-attention')).not.toBeInTheDocument();
+  });
+
+  test('dismissing tells the server, since a reload must not clear it', async () => {
+    (queueLanesApi.dismiss as jest.Mock).mockResolvedValue({ status: 'dismissed' });
+    withAttention();
+    render(<ParallelQueueVisualization />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Dismiss LG-109/ }));
+
+    await waitFor(() => expect(queueLanesApi.dismiss).toHaveBeenCalledWith('entry-stopped'));
+  });
+
+  test('a failed dismissal surfaces rather than looking like it worked', async () => {
+    (queueLanesApi.dismiss as jest.Mock).mockRejectedValue(new Error('Entry is live'));
+    withAttention();
+    render(<ParallelQueueVisualization />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Dismiss LG-109/ }));
+
+    expect(await screen.findByText('Entry is live')).toBeInTheDocument();
+  });
+
+  test('re-queueing opens the add dialog for that same lane', async () => {
+    withAttention();
+    await openLaneMenu('LG-109 actions');
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Re-queue in this lane' }));
+
+    expect(screen.getByTestId('add-dialog')).toHaveAttribute('data-slot', '2');
+  });
+
+  test('the menu still jumps to the stopped ticket', async () => {
+    withAttention();
+    await openLaneMenu('LG-109 actions');
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Go to ticket' }));
+
+    expect(navigateToTicket).toHaveBeenCalledWith('ticket-uuid-9');
+  });
+
+  test('the count is the true one, and the tail is admitted', () => {
+    withAttention([stoppedCard], 4);
+    render(<ParallelQueueVisualization />);
+
+    const section = screen.getByTestId('slot-2-attention');
+    expect(section).toHaveTextContent('Stopped in this lane (4)');
+    expect(section).toHaveTextContent('3 older not shown');
   });
 });

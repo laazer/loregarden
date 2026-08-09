@@ -7,6 +7,8 @@ shape depending on which one replied — so neither builds the payload itself.
 
 from __future__ import annotations
 
+from dataclasses import asdict
+from datetime import datetime
 from typing import Any
 
 from loregarden.models.domain import (
@@ -21,6 +23,7 @@ from loregarden.services.parallel_queue import (
     LIVE_ORCHESTRATION_STATUSES,
     ParallelQueueService,
 )
+from loregarden.services.queue_history import QueueHistoryEntry, QueueHistoryService
 from loregarden.services.run_duration_stats import (
     DurationStats,
     load_duration_stats,
@@ -187,16 +190,35 @@ def _label_runs(session: Session, runs: list[dict[str, Any]]) -> None:
         run["workspace_slug"] = workspace.slug if workspace else ""
 
 
+def _attention_payload(card: QueueHistoryEntry) -> dict[str, Any]:
+    """One casualty card, JSON-safe.
+
+    The websocket sends the snapshot with `json.dumps`, which has no opinion
+    about `datetime` other than raising — so the stamps go out as ISO strings
+    the way every other timestamp in this payload already does.
+    """
+    payload: dict[str, Any] = asdict(card)
+    for key, value in payload.items():
+        if isinstance(value, datetime):
+            payload[key] = value.isoformat()
+    return payload
+
+
 def _build_lanes(
     session: Session,
     active_runs: list[dict[str, Any]],
     queued_runs: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Each slot with what is running in it and what is queued behind it.
+    """Each slot with what is running in it, what is queued, and what went wrong.
 
     The waiting entries are the *same dicts* the queue reported, not a second
     read of the table: two reads meant a lane card and the queue total could
     disagree about what was waiting, and only one of them carried estimates.
+
+    `attention` is the opposite half of the lane's life — entries that blocked
+    or failed in it and released the slot. They used to leave the board with the
+    lane, visible only in a history tab nobody has open while watching lanes, so
+    a lane that had just eaten a ticket was indistinguishable from an idle one.
     """
     from loregarden.services.queue_lanes import QueueLaneService
 
@@ -207,14 +229,21 @@ def _build_lanes(
     for entry in queued_runs:
         waiting_by_slot.setdefault(entry.get("slot_number") or 0, []).append(entry)
 
-    return [
-        {
-            "slot_number": slot_number,
-            "running": running_by_slot.get(slot_number),
-            "waiting": waiting_by_slot.get(slot_number, []),
-        }
-        for slot_number in lanes_service.lane_numbers()
-    ]
+    attention_by_slot = QueueHistoryService(session).lane_attention()
+
+    lanes: list[dict[str, Any]] = []
+    for slot_number in lanes_service.lane_numbers():
+        attention, attention_total = attention_by_slot.get(slot_number, ([], 0))
+        lanes.append(
+            {
+                "slot_number": slot_number,
+                "running": running_by_slot.get(slot_number),
+                "waiting": waiting_by_slot.get(slot_number, []),
+                "attention": [_attention_payload(card) for card in attention],
+                "attention_total": attention_total,
+            }
+        )
+    return lanes
 
 
 def _attach_estimates(

@@ -35,6 +35,7 @@ import {
 import { useQueueStatus } from '../state/QueueStatusContext';
 import { queueLanesApi } from '../lib/queueLanesApi';
 import type {
+  LaneAttentionEntry,
   LaneEntry,
   QueueLane,
   TicketHierarchyNode,
@@ -238,6 +239,25 @@ function LaneEntryTiming({ entry }: { entry: LaneEntry }) {
       {tree ? <span>{tree}</span> : null}
     </div>
   );
+}
+
+const ATTENTION_LABEL: Record<LaneAttentionEntry['outcome'], string> = {
+  blocked: 'Blocked',
+  failed: 'Failed',
+};
+
+/** "Aug 9, 14:32", or nothing when the entry never recorded an end. */
+function formatWhen(entry: LaneAttentionEntry): string {
+  const stamp = entry.finished_at ?? entry.started_at;
+  if (!stamp) return '';
+  const parsed = new Date(stamp);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 export function ParallelQueueVisualization() {
@@ -516,6 +536,85 @@ export function ParallelQueueVisualization() {
                   <div className="queue-slot-sub">Idle · add a ticket to start one</div>
                 </>
               )}
+
+              {lane.attention?.length ? (
+                <div
+                  className="queue-lane-attention"
+                  data-testid={`slot-${lane.slot_number}-attention`}
+                >
+                  <div className="queue-lane-attention-label">
+                    Stopped in this lane ({lane.attention_total ?? lane.attention.length})
+                  </div>
+                  {lane.attention.map((entry) => (
+                    <div
+                      key={entry.entry_id}
+                      className={`queue-lane-attention-item${
+                        busyEntryId === entry.entry_id ? ' is-busy' : ''
+                      }`}
+                      data-testid={`lane-attention-${entry.entry_id}`}
+                    >
+                      <span
+                        className="queue-lane-attention-badge"
+                        data-outcome={entry.outcome}
+                      >
+                        {ATTENTION_LABEL[entry.outcome] ?? entry.outcome}
+                      </span>
+                      <div className="queue-lane-attention-copy">
+                        <div className="queue-lane-attention-title">
+                          {entry.ticket_title || entry.ticket_id}
+                        </div>
+                        <div className="queue-lane-attention-sub">
+                          {[
+                            entry.ticket_external_id,
+                            entry.workspace_slug || entry.workspace_name,
+                            entry.last_stage_key,
+                            formatWhen(entry),
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </div>
+                        {entry.failure_reason ? (
+                          <div className="queue-lane-attention-reason" title={entry.failure_reason}>
+                            {entry.failure_reason}
+                          </div>
+                        ) : null}
+                      </div>
+                      <OverflowMenu label={`${entry.ticket_external_id || entry.ticket_title} actions`}>
+                        <OverflowMenuItem onSelect={() => navigateToTicket(entry.ticket_id)}>
+                          Go to ticket
+                        </OverflowMenuItem>
+                        <OverflowMenuItem
+                          onSelect={() =>
+                            setPendingAdd({
+                              ticketId: entry.ticket_id,
+                              slotNumber: lane.slot_number,
+                              workspaceSlug: entry.workspace_slug,
+                              laneIsIdle: !lane.running,
+                            })
+                          }
+                        >
+                          Re-queue in this lane
+                        </OverflowMenuItem>
+                      </OverflowMenu>
+                      <IconCloseButton
+                        disabled={busyEntryId === entry.entry_id}
+                        aria-label={`Dismiss ${entry.ticket_external_id || entry.ticket_title} from slot ${lane.slot_number}`}
+                        onClick={() =>
+                          void runLaneAction(
+                            () => queueLanesApi.dismiss(entry.entry_id),
+                            entry.entry_id
+                          )
+                        }
+                      />
+                    </div>
+                  ))}
+                  {(lane.attention_total ?? 0) > lane.attention.length ? (
+                    <div className="queue-lane-attention-more">
+                      {(lane.attention_total ?? 0) - lane.attention.length} older not shown
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               {lane.waiting.length ? (
                 <div className="queue-lane-queue" data-testid={`slot-${lane.slot_number}-queue`}>
