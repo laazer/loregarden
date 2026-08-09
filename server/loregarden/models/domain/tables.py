@@ -1121,6 +1121,9 @@ class QueuedRun(SQLModel, table=True):
     started_at: datetime | None = None
     failure_reason: str = ""
     last_failed_at: datetime | None = None
+    #: When someone acknowledged this entry's blocked/failed outcome on the lane
+    #: card. Null while it still needs attention — the lane keeps showing it.
+    dismissed_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
 

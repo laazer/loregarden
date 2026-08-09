@@ -170,6 +170,30 @@ def m_lane_entry_run_options(conn: Connection) -> None:
     )
 
 
+def m_lane_entry_dismissed(conn: Connection) -> None:
+    """Let a lane keep showing what blocked or failed in it until someone clears it.
+
+    An entry left the board the instant its lane released, so a ticket that
+    blocked mid-pipeline was only visible in the history rail — a separate tab
+    nobody is looking at while watching the lanes. The lane card now holds its
+    own casualties, which needs a way to say "I have seen this one"; a derived
+    rule (newest N, or hide once the ticket runs again) cannot, because a
+    failure the operator has not looked at yet is exactly what must not scroll
+    away on its own.
+
+    NULL means undismissed, which is what every entry written before this meant.
+    """
+    if not table_exists(conn, "queued_runs"):
+        return
+    add_columns_if_missing(
+        conn,
+        "queued_runs",
+        {
+            "dismissed_at": "ALTER TABLE queued_runs ADD COLUMN dismissed_at TEXT",
+        },
+    )
+
+
 def m_orchestration_timeout_override(conn: Connection) -> None:
     """Carry a per-orchestration agent timeout across every stage and child.
 

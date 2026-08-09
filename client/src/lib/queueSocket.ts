@@ -135,11 +135,42 @@ export interface LaneEntry extends RunLabels, RunEstimates {
   wait_seconds?: number;
 }
 
-/** One execution slot: what runs in it, and what is queued behind it. */
+/**
+ * A ticket that blocked or failed in this lane and has not been acknowledged.
+ *
+ * The board only ever showed live entries, so a lane that had just eaten a
+ * ticket looked exactly like an idle one. These stay on the lane card until
+ * someone dismisses them — `outcome` is derived from the orchestration run, not
+ * from the entry's own queue status, which is a trap (`started` is terminal).
+ */
+export interface LaneAttentionEntry {
+  entry_id: string;
+  ticket_id: string;
+  ticket_external_id: string;
+  ticket_title: string;
+  ticket_state: string;
+  workspace_id: string;
+  workspace_slug: string;
+  workspace_name: string;
+  slot_number: number;
+  outcome: "blocked" | "failed";
+  run_code: string;
+  last_stage_key: string;
+  failure_reason: string;
+  retry_count: number;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_seconds: number | null;
+}
+
+/** One execution slot: what runs in it, what is queued behind it, what went wrong in it. */
 export interface QueueLane {
   slot_number: number;
   running: ActiveRun | null;
   waiting: LaneEntry[];
+  /** Capped for payload size; `attention_total` is the true count. */
+  attention?: LaneAttentionEntry[];
+  attention_total?: number;
 }
 
 export interface ParallelStats {
@@ -239,29 +270,11 @@ export function queueSocketUrl(apiBase: string): string {
  * Callers are told the truth about the connection at every point so they can
  * poll while it is down instead of pretending.
  */
-export class QueueSocket extends ReconnectingSocket {
-  private readonly handlers: QueueSocketHandlers;
-
-  constructor(
-    url: string,
-    handlers: QueueSocketHandlers,
-    /** Injectable so tests can drive a fake without a live server. */
-    factory: (url: string) => WebSocket = (u) => new WebSocket(u),
-  ) {
-    super(
-      url,
-      {
-        baseDelayMs: BASE_RECONNECT_DELAY_MS,
-        maxDelayMs: MAX_RECONNECT_DELAY_MS,
-      },
-      factory,
-    );
-    this.handlers = handlers;
-  }
-
-  protected emitStatus(status: QueueSocketStatus): void {
-    this.handlers.onStatus(status);
-  }
+export class QueueSocket extends ReconnectingSocket<QueueSocketHandlers> {
+  protected readonly policy = {
+    baseDelayMs: BASE_RECONNECT_DELAY_MS,
+    maxDelayMs: MAX_RECONNECT_DELAY_MS,
+  };
 
   protected handleMessage(raw: unknown): void {
     const message = raw as {

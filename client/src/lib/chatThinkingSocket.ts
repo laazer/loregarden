@@ -72,30 +72,12 @@ export function chatThinkingSocketUrl(apiBase: string, turnId: string): string {
   return `${base}/ws/chat-turns/${encodeURIComponent(turnId)}`;
 }
 
-export class ChatThinkingSocket extends ReconnectingSocket {
+export class ChatThinkingSocket extends ReconnectingSocket<ChatThinkingSocketHandlers> {
   private lastSeq = 0;
-  private readonly handlers: ChatThinkingSocketHandlers;
-
-  constructor(
-    url: string,
-    handlers: ChatThinkingSocketHandlers,
-    /** Injectable so tests can drive a fake without a live server. */
-    factory: (url: string) => WebSocket = (u) => new WebSocket(u),
-  ) {
-    super(
-      url,
-      {
-        baseDelayMs: BASE_RECONNECT_DELAY_MS,
-        maxDelayMs: MAX_RECONNECT_DELAY_MS,
-      },
-      factory,
-    );
-    this.handlers = handlers;
-  }
-
-  protected emitStatus(status: ChatThinkingSocketStatus): void {
-    this.handlers.onStatus(status);
-  }
+  protected readonly policy = {
+    baseDelayMs: BASE_RECONNECT_DELAY_MS,
+    maxDelayMs: MAX_RECONNECT_DELAY_MS,
+  };
 
   protected handleMessage(raw: unknown): void {
     const message = raw as { type?: string; data?: ChatThinkingFrame };

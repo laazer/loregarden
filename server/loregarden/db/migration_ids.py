@@ -93,6 +93,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0071_backfill_handoff_artifacts",
     "0072_ticket_tags",
     "0073_ticket_relations",
+    "0074_lane_entry_dismissed",
 )
 
 

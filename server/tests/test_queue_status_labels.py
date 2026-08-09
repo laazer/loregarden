@@ -154,3 +154,50 @@ async def test_a_waiting_entry_carries_its_own_state(db_session):
     # before you wonder why the lane is not moving.
     assert entry["ticket_state"] == "blocked"
     assert entry["ticket_activity"] == "queued"
+
+
+async def test_a_lane_carries_what_blocked_or_failed_in_it(db_session):
+    """A lane that just ate a ticket must not look like one that never ran."""
+    import json
+
+    from loregarden.models.domain import OrchestrationRun, OrchestrationRunStatus
+
+    ws = _workspace(db_session)
+    stopped = _ticket(db_session, ws, "LANE-4", TicketState.BLOCKED)
+    orch = OrchestrationRun(
+        run_code="orch-stopped",
+        ticket_id=stopped.id,
+        workspace_id=ws.id,
+        status=OrchestrationRunStatus.BLOCKED,
+        current_stage_key="test_design",
+        error_message="No workflow template",
+    )
+    db_session.add(orch)
+    db_session.commit()
+    db_session.add(
+        QueuedRun(
+            workspace_id=ws.id,
+            ticket_id=stopped.id,
+            orchestration_run_id=orch.id,
+            slot_number=2,
+            position=1,
+            status=QueuePosition.STARTED,
+        )
+    )
+    db_session.commit()
+
+    snapshot = await build_queue_status(db_session)
+    lane = next(lane for lane in snapshot["lanes"] if lane["slot_number"] == 2)
+
+    assert lane["attention_total"] == 1
+    card = lane["attention"][0]
+    assert card["ticket_id"] == stopped.id
+    assert card["outcome"] == "blocked"
+    assert card["last_stage_key"] == "test_design"
+    assert card["failure_reason"] == "No workflow template"
+    # The websocket sends this snapshot with json.dumps, which has no opinion
+    # about datetime other than raising.
+    json.dumps(snapshot)
+
+    other = next(lane for lane in snapshot["lanes"] if lane["slot_number"] == 1)
+    assert other["attention"] == []

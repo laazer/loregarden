@@ -13,6 +13,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
 from loregarden.db.session import get_session
 from loregarden.services.queue_history import OUTCOMES, QueueHistoryService
 from loregarden.services.queue_lanes import QueueLaneService
+from loregarden.websocket_events import emit_execution_update
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
@@ -91,6 +92,23 @@ def get_lane_history(
         "limit": limit,
         "offset": offset,
     }
+
+
+@router.post("/entries/{entry_id}/dismiss")
+def dismiss_lane_entry(
+    entry_id: str = Path(...),
+    session: Session = Depends(get_session),
+):
+    """Acknowledge a blocked/failed entry so its lane card stops holding it.
+
+    Nothing is deleted — the entry stays in history. This only clears it from
+    the lane's needs-attention section, which is the part that must not empty
+    itself while an operator has not looked at it.
+    """
+    if not QueueHistoryService(session).dismiss_entry(entry_id):
+        raise HTTPException(status_code=404, detail="No finished lane entry with that id")
+    emit_execution_update()
+    return {"status": "dismissed", "entry_id": entry_id}
 
 
 @router.delete("/entries/{entry_id}")

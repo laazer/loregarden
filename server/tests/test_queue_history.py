@@ -17,7 +17,7 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
-from loregarden.services.queue_history import QueueHistoryService
+from loregarden.services.queue_history import MAX_ATTENTION_PER_LANE, QueueHistoryService
 from sqlmodel import Session
 
 START = datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc)
@@ -286,3 +286,111 @@ def test_other_workspaces_are_excluded(session, workspace):
     entries, total = QueueHistoryService(session).list_history(workspace_id=workspace.id)
 
     assert (entries, total) == ([], 0)
+
+
+def test_lane_attention_holds_only_undismissed_blocked_and_failed(session, workspace):
+    """A lane keeps what stopped in it — and nothing else, whatever the outcome."""
+    blocked = _entry(
+        session,
+        workspace,
+        code="t-blocked",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.BLOCKED,
+        slot_number=1,
+        minutes_ago=1,
+    )
+    failed = _entry(
+        session,
+        workspace,
+        code="t-failed",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.FAILED,
+        slot_number=1,
+        minutes_ago=5,
+    )
+    _entry(
+        session,
+        workspace,
+        code="t-ok",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.SUCCEEDED,
+        slot_number=1,
+    )
+    _entry(
+        session,
+        workspace,
+        code="t-cancelled",
+        status=QueuePosition.CANCELLED,
+        orchestration_status=OrchestrationRunStatus.FAILED,
+        slot_number=1,
+    )
+    _entry(
+        session,
+        workspace,
+        code="t-other-lane",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.FAILED,
+        slot_number=2,
+    )
+
+    attention = QueueHistoryService(session).lane_attention()
+
+    cards, total = attention[1]
+    assert total == 2
+    # Newest first, so the most recent failure is not buried under older ones.
+    assert [card.entry_id for card in cards] == [blocked.id, failed.id]
+    assert [card.outcome for card in cards] == ["blocked", "failed"]
+    assert [card.ticket_external_id for card in attention[2][0]] == ["t-other-lane"]
+
+
+def test_dismissing_clears_a_card_from_its_lane_but_not_from_history(session, workspace):
+    entry = _entry(
+        session,
+        workspace,
+        code="t-failed",
+        status=QueuePosition.STARTED,
+        orchestration_status=OrchestrationRunStatus.FAILED,
+        slot_number=1,
+    )
+    service = QueueHistoryService(session)
+
+    assert service.dismiss_entry(entry.id) is True
+
+    assert service.lane_attention() == {}
+    entries, total = service.list_history(workspace_id=workspace.id)
+    assert total == 1
+    assert entries[0].entry_id == entry.id
+
+
+def test_a_live_entry_cannot_be_dismissed(session, workspace):
+    """Dismissal is an acknowledgement of a finished entry, not a way to hide one."""
+    entry = _entry(
+        session,
+        workspace,
+        code="t-running",
+        status=QueuePosition.ACTIVE,
+        orchestration_status=OrchestrationRunStatus.RUNNING,
+    )
+
+    assert QueueHistoryService(session).dismiss_entry(entry.id) is False
+    session.refresh(entry)
+    assert entry.dismissed_at is None
+
+
+def test_lane_attention_caps_cards_but_not_the_count(session, workspace):
+    """The websocket carries this every few seconds; the tail travels as a number."""
+    for index in range(MAX_ATTENTION_PER_LANE + 3):
+        _entry(
+            session,
+            workspace,
+            code=f"t-fail-{index}",
+            status=QueuePosition.STARTED,
+            orchestration_status=OrchestrationRunStatus.FAILED,
+            slot_number=1,
+            minutes_ago=index,
+        )
+
+    cards, total = QueueHistoryService(session).lane_attention()[1]
+
+    assert len(cards) == MAX_ATTENTION_PER_LANE
+    assert total == MAX_ATTENTION_PER_LANE + 3
