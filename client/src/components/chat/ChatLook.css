@@ -46,6 +46,26 @@
   justify-content: flex-start;
 }
 
+/* An operator action (Run on a plan card), not something they typed. */
+.lg-chat-action-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(520px, 92%);
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--blue) 10%, var(--bg4));
+  border: 1px solid color-mix(in srgb, var(--blue) 28%, var(--bd2));
+  color: var(--txm);
+  font-size: 12.5px;
+  line-height: 1.3;
+}
+
+.lg-chat-action-chip svg {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
 .lg-chat-user-bubble {
   max-width: min(520px, 92%);
   padding: 12px 14px;

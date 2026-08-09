@@ -182,7 +182,11 @@ def test_baxter_chat_prompt_includes_snapshot_and_stored_history(client: TestCli
     assert "Agent execution plan" in prompt
     assert '"primitive":"todo_list"' in prompt
     assert "Execute this agent execution plan now" in prompt
-    assert "Re-emit the same" in prompt
+    assert "Re-emit the plan (same `plan_id`)" in prompt
+    # A plan is a living card: one per thread, updated in place by its id.
+    assert "One plan per thread" in prompt
+    assert '"plan_id"' in prompt
+    assert "Never for a question" in prompt
     assert "emit `qa`" in prompt
     # History comes from the stored thread, not from the client.
     assert "user: Hi" in prompt
