@@ -11,6 +11,8 @@
  * "Polling".
  */
 
+import { ReconnectingSocket, type SocketStatus } from "./reconnectingSocket";
+
 /**
  * The names behind the ids, resolved server-side in `queue_status.py`.
  *
@@ -160,14 +162,8 @@ export interface QueueEvent {
   };
 }
 
-/**
- * Deliberately three states, not four.
- *
- * The old client had a separate 'error' that behaved identically to
- * 'disconnected' for every consumer, and an 'error' that never cleared was
- * how the dashboard got stuck. A socket is either trying, up, or down.
- */
-export type QueueSocketStatus = "connecting" | "open" | "closed";
+/** Three states, not four — see `SocketStatus`. */
+export type QueueSocketStatus = SocketStatus;
 
 export interface QueueSocketHandlers {
   onSnapshot: (snapshot: QueueStatusSnapshot) => void;
@@ -197,14 +193,8 @@ export function queueSocketUrl(apiBase: string): string {
  * Callers are told the truth about the connection at every point so they can
  * poll while it is down instead of pretending.
  */
-export class QueueSocket {
-  private socket: WebSocket | null = null;
-  private closed = false;
-  private attempts = 0;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly url: string;
+export class QueueSocket extends ReconnectingSocket {
   private readonly handlers: QueueSocketHandlers;
-  private readonly factory: (url: string) => WebSocket;
 
   constructor(
     url: string,
@@ -212,84 +202,30 @@ export class QueueSocket {
     /** Injectable so tests can drive a fake without a live server. */
     factory: (url: string) => WebSocket = (u) => new WebSocket(u),
   ) {
-    this.url = url;
-    this.handlers = handlers;
-    this.factory = factory;
-  }
-
-  open(): void {
-    if (this.closed) return;
-
-    this.handlers.onStatus("connecting");
-    const socket = this.factory(this.url);
-    this.socket = socket;
-
-    socket.onopen = () => {
-      // Reset here rather than on the first message: the connection is up
-      // whether or not the server has anything to say yet, and a backoff that
-      // only resets on data would keep growing across quiet reconnects.
-      this.attempts = 0;
-      this.handlers.onStatus("open");
-    };
-
-    socket.onmessage = (event: MessageEvent) => {
-      if (typeof event.data !== "string") return;
-      let message: { type?: string; data?: QueueStatusSnapshot | QueueEvent };
-      try {
-        message = JSON.parse(event.data);
-      } catch {
-        // A frame we cannot parse is the server's problem, not a reason to
-        // tear down a working connection.
-        return;
-      }
-      if (message?.type === "queue_status" && message.data) {
-        this.handlers.onSnapshot(message.data as QueueStatusSnapshot);
-      } else if (message?.type === "queue_event" && message.data) {
-        this.handlers.onEvent?.(message.data as QueueEvent);
-      }
-    };
-
-    socket.onclose = () => this.scheduleReconnect();
-    // onerror carries no detail by design; onclose always follows it and is
-    // where the recovery belongs.
-    socket.onerror = () => {};
-  }
-
-  close(): void {
-    this.closed = true;
-    if (this.reconnectTimer !== null) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    if (this.socket) {
-      // Drop the handlers first: a close we asked for must not be reported as
-      // a connection that dropped, or the caller falls back to polling on its
-      // way out of the page.
-      this.socket.onopen = null;
-      this.socket.onmessage = null;
-      this.socket.onclose = null;
-      this.socket.onerror = null;
-      this.socket.close();
-      this.socket = null;
-    }
-  }
-
-  private scheduleReconnect(): void {
-    this.socket = null;
-    if (this.closed) return;
-
-    // "closed", not "connecting" — the caller must start polling now, during
-    // the wait, rather than sit on a hopeful state showing nothing.
-    this.handlers.onStatus("closed");
-
-    const delay = Math.min(
-      BASE_RECONNECT_DELAY_MS * 2 ** this.attempts,
-      MAX_RECONNECT_DELAY_MS,
+    super(
+      url,
+      {
+        baseDelayMs: BASE_RECONNECT_DELAY_MS,
+        maxDelayMs: MAX_RECONNECT_DELAY_MS,
+      },
+      factory,
     );
-    this.attempts += 1;
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.open();
-    }, delay);
+    this.handlers = handlers;
+  }
+
+  protected emitStatus(status: QueueSocketStatus): void {
+    this.handlers.onStatus(status);
+  }
+
+  protected handleMessage(raw: unknown): void {
+    const message = raw as {
+      type?: string;
+      data?: QueueStatusSnapshot | QueueEvent;
+    };
+    if (message?.type === "queue_status" && message.data) {
+      this.handlers.onSnapshot(message.data as QueueStatusSnapshot);
+    } else if (message?.type === "queue_event" && message.data) {
+      this.handlers.onEvent?.(message.data as QueueEvent);
+    }
   }
 }
