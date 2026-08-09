@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
+import { errorDetail } from "../../utils/errorDetail";
+
 import {
   api,
   type ReferenceRepo,
@@ -14,16 +16,6 @@ const VERDICT_LABEL: Record<string, string> = {
   inspire: "Inspire",
   skip: "Skip",
 };
-
-function errorText(error: unknown): string | null {
-  if (!(error instanceof Error)) return null;
-  try {
-    const parsed = JSON.parse(error.message) as { detail?: string };
-    return parsed.detail ?? error.message;
-  } catch {
-    return error.message;
-  }
-}
 
 /** Add a repo to the workspace catalog, or pick from what is already cloned. */
 export function ReferenceRepoPicker({
@@ -65,7 +57,7 @@ export function ReferenceRepoPicker({
     );
   };
 
-  const addError = errorText(addRepo.error);
+  const addError = errorDetail(addRepo.error);
 
   return (
     <div className="studio-field">
@@ -181,7 +173,7 @@ export function ReferenceReposSection({
     saveSurvey.mutate(next);
   };
 
-  const surveyError = errorText(survey.error) ?? errorText(saveSurvey.error);
+  const surveyError = errorDetail(survey.error) ?? errorDetail(saveSurvey.error);
   const selectedCount = findings.filter((finding) => finding.selected).length;
 
   return (

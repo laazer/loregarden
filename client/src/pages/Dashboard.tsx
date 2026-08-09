@@ -1752,16 +1752,7 @@ export function Dashboard() {
         preview={importPreview}
         isImporting={importTickets.isPending}
         importError={
-          importTickets.error instanceof Error
-            ? (() => {
-                try {
-                  const parsed = JSON.parse(importTickets.error.message) as { detail?: string };
-                  return parsed.detail ?? importTickets.error.message;
-                } catch {
-                  return importTickets.error.message;
-                }
-              })()
-            : null
+          errorDetail(importTickets.error)
         }
         onClose={() => {
           if (importTickets.isPending) return;

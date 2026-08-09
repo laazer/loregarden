@@ -2,8 +2,7 @@
  *
  * FastAPI returns `{"detail": "..."}` and the api client throws that body as the
  * error message, so nearly every mutation needs the same unwrap. It was copied
- * inline at a dozen call sites; this is the one implementation. Call sites still
- * carrying their own copy should move here as they are next touched.
+ * inline at a dozen call sites; this is now the only implementation.
  *
  * Returns null for a non-Error, so callers can render "no error" without a
  * separate instanceof check.
