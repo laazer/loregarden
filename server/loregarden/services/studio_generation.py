@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 
 from loregarden.models.domain import (
@@ -15,6 +16,22 @@ from loregarden.models.domain import (
 from loregarden.services.cli_agent_runner import CliAgentProfile, run_cli_agent_turn, stub_response
 from loregarden.services.ticket_studio_service import extract_json_block
 from sqlmodel import Session, select
+
+logger = logging.getLogger(__name__)
+
+
+def _drop_unknown_skill(skill_name: str, known: set[str], *, where: str) -> str:
+    """Blank a generated skill reference that names no real skill.
+
+    Blanking is right — a generated workflow should not fail to parse over one
+    bad field — but doing it silently produced a stage that looks like it has a
+    procedure attached and has none. That is the same state that let phantom
+    skill names sit in templates unnoticed, so the drop is logged.
+    """
+    if skill_name and skill_name not in known:
+        logger.warning("studio generation dropped unknown skill %r on %s", skill_name, where)
+        return ""
+    return skill_name
 
 
 def tool_names() -> list[str]:
@@ -167,7 +184,9 @@ def invoke_studio_generate_model(session: Session, prompt: str) -> str:
     )
 
 
-def parse_agent_generate_payload(text: str) -> StudioGeneratedAgent | None:
+def parse_agent_generate_payload(
+    text: str, *, skills: list[str] | None = None
+) -> StudioGeneratedAgent | None:
     payload = extract_json_block(text)
     if not payload:
         return None
@@ -182,13 +201,18 @@ def parse_agent_generate_payload(text: str) -> StudioGeneratedAgent | None:
     mcp_tools = [str(item).strip() for item in tools_raw if str(item).strip()]
     known_tools = set(tool_names())
     mcp_tools = [tool for tool in mcp_tools if tool in known_tools]
+    default_skill = str(payload.get("default_skill") or "").strip()
+    if skills is not None:
+        default_skill = _drop_unknown_skill(
+            default_skill, set(skills), where=f"agent {slug!r} default_skill"
+        )
     return StudioGeneratedAgent(
         name=name,
         slug=slug,
         description=str(payload.get("description") or "").strip(),
         role_body=str(payload.get("role_body") or "").strip(),
         adapter=adapter,
-        default_skill=str(payload.get("default_skill") or "").strip(),
+        default_skill=default_skill,
         mcp_tools=mcp_tools,
     )
 
@@ -208,8 +232,7 @@ def _normalize_generated_stage(
         skill_name = skill_name or ""
     if stage_type == "agent" and agent_id and agent_id not in agent_ids:
         agent_id = "planner" if "planner" in agent_ids else next(iter(agent_ids), "planner")
-    if skill_name and skill_name not in skills:
-        skill_name = ""
+    skill_name = _drop_unknown_skill(skill_name, skills, where=f"stage {key!r}")
     routes: list[ClassifyRoute] = []
     for route_raw in raw.get("classify_routes") or []:
         if not isinstance(route_raw, dict):
@@ -217,9 +240,9 @@ def _normalize_generated_stage(
         route_agent = str(route_raw.get("agent_id") or "").strip()
         if route_agent and route_agent not in agent_ids:
             route_agent = "backend_implementer" if "backend_implementer" in agent_ids else agent_id
-        route_skill = str(route_raw.get("skill_name") or "").strip()
-        if route_skill and route_skill not in skills:
-            route_skill = ""
+        route_skill = _drop_unknown_skill(
+            str(route_raw.get("skill_name") or "").strip(), skills, where=f"stage {key!r} route"
+        )
         routes.append(
             ClassifyRoute(
                 languages=[
@@ -256,9 +279,11 @@ def _normalize_generated_stage(
         member_agent = str(member_raw.get("agent_id") or "").strip()
         if member_agent and member_agent not in agent_ids:
             continue
-        member_skill = str(member_raw.get("skill_name") or "").strip()
-        if member_skill and member_skill not in skills:
-            member_skill = ""
+        member_skill = _drop_unknown_skill(
+            str(member_raw.get("skill_name") or "").strip(),
+            skills,
+            where=f"stage {key!r} parallel member {member_agent!r}",
+        )
         if member_agent:
             parallel_agents.append(
                 ParallelAgentSpec(agent_id=member_agent, skill_name=member_skill)

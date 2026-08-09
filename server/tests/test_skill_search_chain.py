@@ -48,6 +48,7 @@ def test_skill_search_dirs_without_workspace_returns_default_only():
 
 def test_list_skills_returns_seeded_database_slugs(client):
     assert list_skills() == [
+        "absorb-adapt",
         "autopilot",
         "plan",
         "plan-risk",
@@ -55,4 +56,5 @@ def test_list_skills_returns_seeded_database_slugs(client):
         "plan-simplest",
         "plan-synthesis",
         "refactor",
+        "vulcan",
     ]
