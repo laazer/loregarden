@@ -794,6 +794,40 @@ def _available_skills() -> list[str]:
     return list_skills()
 
 
+def _collect_stage_skill_names(stages: list[StudioWorkflowStage]) -> set[str]:
+    names: set[str] = set()
+    for stage in stages:
+        if stage.skill_name:
+            names.add(stage.skill_name)
+        for route in stage.classify_routes or []:
+            if route.skill_name:
+                names.add(route.skill_name)
+        for spec in stage.parallel_agents or []:
+            if spec.skill_name:
+                names.add(spec.skill_name)
+    return names
+
+
+def _validate_stage_skill_names(stages: list[StudioWorkflowStage]) -> None:
+    """Reject a workflow whose stages declare skills that do not exist.
+
+    The mirror of _validate_stage_agent_ids, and missing for the same reason it
+    was: nothing checked skills on the way in, so a dangling name saved cleanly
+    and raised SkillNotFoundError at prompt-build time instead — a run that dies
+    several steps from the edit that caused it.
+    """
+    unknown = sorted(_collect_stage_skill_names(stages) - set(_available_skills()))
+    if unknown:
+        raise ValueError(f"Workflow references unknown skill(s): {', '.join(unknown)}")
+
+
+def _validate_default_skill(default_skill: str) -> None:
+    """Reject an agent whose default skill does not exist. Every stage that
+    dispatches the agent would otherwise fail at render, not at save."""
+    if default_skill and default_skill not in set(_available_skills()):
+        raise ValueError(f"Agent references unknown skill: {default_skill}")
+
+
 class StudioService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -841,7 +875,7 @@ class StudioService:
             mcp_tools=tool_names(),
         )
         reply = invoke_studio_generate_model(self.session, prompt)
-        generated = parse_agent_generate_payload(reply)
+        generated = parse_agent_generate_payload(reply, skills=_available_skills())
         if not generated:
             raise ValueError("Could not parse agent draft from assistant response")
         if generated.slug in AGENTS:
@@ -891,6 +925,7 @@ class StudioService:
             raise ValueError(f"Studio agent already exists: {slug}")
         if slug in AGENTS:
             raise ValueError(f"Slug conflicts with built-in agent: {slug}")
+        _validate_default_skill(body.default_skill)
         now = datetime.now(timezone.utc)
         mcp_tools = body.mcp_tools if body.mcp_tools else default_mcp_tools()
         handoffs = body.handoff_checks if body.handoff_checks else DEFAULT_HANDOFF_CHECKS
@@ -936,6 +971,7 @@ class StudioService:
         if body.timeout is not None:
             agent.timeout = body.timeout
         if body.default_skill is not None:
+            _validate_default_skill(body.default_skill)
             agent.default_skill = body.default_skill
         if body.mcp_enabled is not None:
             agent.mcp_enabled = body.mcp_enabled
@@ -1102,6 +1138,7 @@ class StudioService:
         _validate_stage_agent_ids(self.session, stages)
         _validate_stage_route_targets(stages)
         _validate_has_terminal_stage(stages)
+        _validate_stage_skill_names(stages)
         transitions = body.transitions or _auto_transitions(stages)
         now = datetime.now(timezone.utc)
         workflow = StudioWorkflow(
@@ -1133,6 +1170,7 @@ class StudioService:
             _validate_stage_agent_ids(self.session, stages)
             _validate_stage_route_targets(stages)
             _validate_has_terminal_stage(stages)
+            _validate_stage_skill_names(stages)
             workflow.stages_json = json.dumps([stage.model_dump() for stage in stages])
             if body.transitions is None:
                 # Editing a stage must not destroy hand-authored routes. This used to
@@ -1177,6 +1215,7 @@ class StudioService:
         _validate_stage_agent_ids(self.session, stages)
         _validate_stage_route_targets(stages)
         _validate_has_terminal_stage(stages)
+        _validate_stage_skill_names(stages)
 
         published_slug = f"studio-{workflow.slug}"
         stage_defs: list[dict] = []
