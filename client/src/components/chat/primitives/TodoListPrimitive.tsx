@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { AGENT_PLAN_EXECUTE_PREFIX, DEFAULT_AGENT_PLAN_TITLE } from "./agentPlan";
 import { PrimitiveCard } from "./PrimitiveCard";
 import { PlayButton } from "./RunControlButton";
 import type { TodoItem, TodoListPart } from "./types";
@@ -16,17 +17,22 @@ function itemSignature(items: TodoItem[]): string {
 export function agentPlanExecuteMessage(
   title: string | null | undefined,
   items: Required<TodoItem>[],
+  planId?: string | null,
 ): string {
-  const heading = title?.trim() || "Agent execution plan";
+  const heading = title?.trim() || DEFAULT_AGENT_PLAN_TITLE;
   const lines = items.map((item) => {
     const mark = item.checked ? "x" : " ";
     return `- [${mark}] ${item.text} (id: ${item.id})`;
   });
+  const id = planId?.trim();
   return [
-    // Keep in sync with AGENT_PLAN_EXECUTE_PREFIX in baxter_chat_service.py —
-    // the server grants write access on the selected adapter for this prefix.
-    `Execute this agent execution plan now. Complete each unchecked step using tools.`,
-    `As you finish steps, re-emit the same todo_list with checked:true on completed items.`,
+    // The prefix is load-bearing: it is how baxter_chat_service grants write
+    // access on the selected adapter, and how the thread renders this turn as
+    // a Run chip instead of the operator quoting the plan back.
+    `${AGENT_PLAN_EXECUTE_PREFIX} Complete each unchecked step using tools.`,
+    id
+      ? `As you finish steps, re-emit the same todo_list with plan_id "${id}" and checked:true on completed items.`
+      : `As you finish steps, re-emit the same todo_list with checked:true on completed items.`,
     "",
     `Plan: ${heading}`,
     ...lines,
@@ -67,7 +73,7 @@ export function TodoListPrimitive({
 
   const run = () => {
     if (!onSubmit || !canRun) return;
-    onSubmit(agentPlanExecuteMessage(part.title, items));
+    onSubmit(agentPlanExecuteMessage(part.title, items, part.plan_id));
     setState((current) => ({ ...current, started: true }));
   };
 

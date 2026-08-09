@@ -1,11 +1,16 @@
 import type { ReactNode } from "react";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { useChatTurnThinking } from "../../hooks/useChatTurnThinking";
 import { BaxterAvatar, type BaxterAvatarState } from "../chat/BaxterAvatar";
 import { LiveThinkingStream } from "../chat/LiveThinkingStream";
 import { MarkdownContent } from "../chat/MarkdownContent";
 import { PrimitiveParts } from "../chat/primitives/PrimitiveParts";
+import {
+  agentPlanPartKey,
+  agentPlanRunSummary,
+  supersededAgentPlanKeys,
+} from "../chat/primitives/agentPlan";
 import { widestPrimitiveSize } from "../chat/primitives/primitiveFrame";
 import type { ChatPart } from "../chat/primitives/types";
 import { chatMessageBody, isUserChatRole, type ChatMessageView } from "../chat/chatUtils";
@@ -99,6 +104,9 @@ export const StudioChatMessages = memo(function StudioChatMessages({
   // empty box reads as broken. There has to be something to actually read.
   const hasLiveThinking = Boolean(thinking.content.trim() || thinking.answer.trim());
   const hasTrailingAsk = Boolean(trailingAsk);
+  // A re-emitted execution plan replaces its earlier card rather than stacking
+  // another one, so only the newest copy stays live in the thread.
+  const supersededPlans = useMemo(() => supersededAgentPlanKeys(messages), [messages]);
 
   useEffect(() => {
     if (!autoScroll) return;
@@ -129,7 +137,10 @@ export const StudioChatMessages = memo(function StudioChatMessages({
         // thinking card leads rather than trailing the other primitives.
         const leadingParts = (parts ?? []).filter((p) => p.primitive === "thinking");
         const nonTextParts = (parts ?? []).filter(
-          (p) => p.primitive !== "text" && p.primitive !== "thinking",
+          (p, index) =>
+            p.primitive !== "text" &&
+            p.primitive !== "thinking" &&
+            !supersededPlans.has(agentPlanPartKey(message.id, index)),
         );
         const hasNonTextParts = nonTextParts.length > 0;
         const partsSize = widestPrimitiveSize(nonTextParts);
@@ -146,11 +157,28 @@ export const StudioChatMessages = memo(function StudioChatMessages({
             : body;
 
         if (isUser) {
+          // Pressing Run posts the full plan so the agent has the steps
+          // verbatim; the operator did not type it, so it reads as an action.
+          const runSummary = agentPlanRunSummary(body);
           return (
             <div key={message.id} className="lg-chat-turn lg-chat-turn--user">
-              <div className="lg-chat-user-bubble ticket-studio-msg ticket-studio-msg-user">
-                <MarkdownContent content={body} className="ticket-studio-msg-body" />
-              </div>
+              {runSummary ? (
+                <div className="lg-chat-action-chip" title={body}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                  <span>
+                    Ran {runSummary.title}
+                    {runSummary.steps
+                      ? ` · ${runSummary.steps} step${runSummary.steps === 1 ? "" : "s"}`
+                      : ""}
+                  </span>
+                </div>
+              ) : (
+                <div className="lg-chat-user-bubble ticket-studio-msg ticket-studio-msg-user">
+                  <MarkdownContent content={body} className="ticket-studio-msg-body" />
+                </div>
+              )}
               {renderAfterMessage?.(message)}
             </div>
           );

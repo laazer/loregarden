@@ -164,6 +164,9 @@ class TodoListPart(BaseModel):
     owner: Literal["agent", "user"] = "agent"
     items: list[TodoItem] = Field(default_factory=list)
     title: str | None = None
+    # Identity of an agent execution plan across turns. Re-emitting a plan with
+    # the same id supersedes the earlier card instead of stacking a new one.
+    plan_id: str | None = None
 
 
 class BranchHistoryPart(BaseModel):

@@ -175,6 +175,8 @@ export interface TodoListPart {
   owner?: "agent" | "user";
   items?: TodoItem[];
   title?: string | null;
+  /** Identity of an agent execution plan across turns; see `agentPlan.ts`. */
+  plan_id?: string | null;
 }
 
 export interface BranchHistoryPart {

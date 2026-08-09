@@ -125,6 +125,19 @@ def test_new_primitive_fences_parse(payload, part_type):
         assert parts[0].path == "a.md"
 
 
+def test_todo_list_carries_plan_id():
+    """The plan's identity across turns — the UI replaces the card keyed on it."""
+    parts = parse_primitive_parts(
+        '```loregarden\n{"primitive":"todo_list","owner":"agent","plan_id":"history-api",'
+        '"title":"Agent execution plan","items":[{"id":"api","text":"Add API"}]}\n```'
+    )
+
+    assert len(parts) == 1
+    part = parts[0]
+    assert isinstance(part, TodoListPart)
+    assert part.plan_id == "history-api"
+
+
 def _make_ticket(session: Session, workspace_id: str, external_id: str, title: str) -> Ticket:
     ticket = Ticket(
         workspace_id=workspace_id,
