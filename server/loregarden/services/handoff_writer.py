@@ -2,11 +2,12 @@
 
 Finishing agents historically hand-wrote ``project_board/checkpoints/<ticket>/
 handoff-latest.yaml`` as free-form YAML, with no schema and no catalog at write
-time — so they invented item keys the CI gate rejects, and only found out when the
-orchestrator ran the gate much later. This service renders the canonical YAML from
-structured input, writes it into the workspace repo (where the hermetic CI gate
-reads it), then runs the workspace's *own* handoff gate as the validator and returns
-its violations so the agent can self-correct in the same turn.
+time — so they invented item keys the gate rejects, and only found out when the
+orchestrator ran the gate much later. This service builds the canonical document from
+structured input, stores it (see `handoff_store` for why the database rather than a
+committed file), exports the YAML the gate reads to a gitignored scratch tree, then runs
+the workspace's *own* handoff gate as the validator and returns its violations so the
+agent can self-correct in the same turn.
 
 The frozen catalog stays single-sourced in the workspace gate
 (``ci/scripts/gates/handoff_validation_check.py``); loregarden never duplicates it —
@@ -20,18 +21,20 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import yaml
 from loregarden.models.domain import Workspace
+from loregarden.services.handoff_store import (
+    HANDOFF_SCRATCH_SUBDIR,
+    build_handoff_doc,
+    export_for_gate,
+    store_handoff,
+)
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
-CHECKPOINTS_SUBDIR = "project_board/checkpoints"
-HANDOFF_FILENAME = "handoff-latest.yaml"
 GATE_MODULE_RELPATH = "ci/scripts/gates/handoff_validation_check.py"
 GATE_PACKAGE_ROOT = "ci/scripts"
 VALIDATION_TIMEOUT_SECONDS = 60
@@ -122,35 +125,13 @@ def _counters(checklist: list[dict[str, Any]]) -> tuple[int, int]:
     return met, total
 
 
-def _render_yaml(
-    *,
-    external_id: str,
-    from_agent: str,
-    to_agent: str,
-    checklist: list[dict[str, Any]],
-) -> str:
-    met, total = _counters(checklist)
-    doc = {
-        "handoff": {
-            "schema_version": "1.0",
-            "ticket_id": external_id,
-            "from_agent": from_agent,
-            "to_agent": to_agent,
-            "validated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "required_items_met": met,
-            "total_required_items": total,
-            "checklist": checklist,
-        }
-    }
-    return yaml.safe_dump(doc, sort_keys=False, allow_unicode=True, width=100)
-
-
 def _validate_via_workspace_gate(
     repo_root: Path,
     *,
     external_id: str,
     from_agent: str,
     to_agent: str,
+    checkpoints_dir: str,
 ) -> dict[str, Any]:
     """Run the workspace's own handoff gate module against the just-written file.
 
@@ -161,7 +142,14 @@ def _validate_via_workspace_gate(
     if not (repo_root / GATE_MODULE_RELPATH).is_file():
         return {"ran": False, "reason": f"No handoff gate at {GATE_MODULE_RELPATH}"}
 
-    payload = json.dumps({"ticket_id": external_id, "from_agent": from_agent, "to_agent": to_agent})
+    payload = json.dumps(
+        {
+            "ticket_id": external_id,
+            "from_agent": from_agent,
+            "to_agent": to_agent,
+            "checkpoints_dir": checkpoints_dir,
+        }
+    )
     try:
         completed = subprocess.run(
             [sys.executable, "-c", _VALIDATOR_SRC, payload, str(repo_root / GATE_PACKAGE_ROOT)],
@@ -208,11 +196,12 @@ def write_handoff(
     to_agent: str,
     checklist: Any,
 ) -> dict[str, Any]:
-    """Render, write, and gate-validate a ticket's ``handoff-latest.yaml``.
+    """Store a ticket's handoff and gate-validate it.
 
-    On validation FAIL the just-written file is rolled back (to the prior artifact,
-    or removed if none existed) unless a concurrent writer has since replaced it, so
-    a broken authoring attempt never clobbers a previously valid handoff.
+    The handoff is persisted as an artifact row; the YAML the gate reads is exported to
+    the gitignored scratch tree, never into the repo's tracked checkpoints. On validation
+    FAIL nothing is committed to the database, so a broken authoring attempt never becomes
+    the ticket's latest handoff.
     """
     from_agent = str(from_agent).strip()
     to_agent = str(to_agent).strip()
@@ -232,26 +221,31 @@ def write_handoff(
         raise HandoffWriteError(f"Workspace repo path does not exist: {repo_root}")
 
     external_id = ticket.external_id
-    ticket_dir = repo_root / CHECKPOINTS_SUBDIR / external_id
-    target = ticket_dir / HANDOFF_FILENAME
-
-    content = _render_yaml(
+    met, total = _counters(normalized)
+    doc = build_handoff_doc(
         external_id=external_id,
         from_agent=from_agent,
         to_agent=to_agent,
         checklist=normalized,
+        required_items_met=met,
+        total_required_items=total,
     )
 
-    prior: bytes | None = target.read_bytes() if target.is_file() else None
-    ticket_dir.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
+    # Store first, then export: the gate validates what was actually persisted, and a
+    # rollback below un-stores it. Flushing without committing keeps the row visible to
+    # `export_for_gate` in this session while leaving the transaction abortable.
+    artifact = store_handoff(session, ticket=ticket, doc=doc)
+    export_for_gate(session, workspace, ticket)
 
     validation = _validate_via_workspace_gate(
-        repo_root, external_id=external_id, from_agent=from_agent, to_agent=to_agent
+        repo_root,
+        external_id=external_id,
+        from_agent=from_agent,
+        to_agent=to_agent,
+        checkpoints_dir=HANDOFF_SCRATCH_SUBDIR,
     )
-    met, total = _counters(normalized)
     base: dict[str, Any] = {
-        "path": str(target),
+        "artifact_id": artifact.id,
         "from_agent": from_agent,
         "to_agent": to_agent,
         "required_items_met": met,
@@ -259,33 +253,34 @@ def write_handoff(
     }
 
     if not validation["ran"]:
-        # Could not validate (no gate / infra error). Keep the file — there's no
-        # catalog to have violated — but tell the caller it is unverified.
+        # No gate for this workspace, or the gate could not run. There is no catalog to
+        # have violated, so the handoff stands — but say plainly that nothing checked it,
+        # rather than letting "unvalidated" read as "passed" (ticket 88).
+        session.commit()
         return {
             **base,
-            "status": "written_unvalidated",
-            "message": f"Handoff written but not gate-validated: {validation['reason']}",
+            "status": "stored_unvalidated",
+            "message": f"Handoff stored but not gate-validated: {validation['reason']}",
         }
 
     if validation["status"] == "PASS":
+        session.commit()
         return {
             **base,
             "status": "PASS",
-            "message": validation.get("message") or "Handoff written and gate-validated.",
+            "message": validation.get("message") or "Handoff stored and gate-validated.",
         }
 
-    # Validation failed — roll back so a broken artifact does not linger or clobber a
-    # previously valid one, but never overwrite a concurrent writer's newer file.
-    if target.read_bytes() == content.encode("utf-8"):
-        if prior is None:
-            target.unlink(missing_ok=True)
-        else:
-            target.write_bytes(prior)
+    # Validation failed — discard the row so the ticket's latest handoff stays whatever
+    # last passed, and re-export so the scratch tree matches the database again.
+    session.rollback()
+    export_for_gate(session, workspace, ticket)
 
     return {
         **base,
+        "artifact_id": "",
         "status": "FAIL",
-        "message": validation.get("message") or "Handoff failed gate validation; not written.",
+        "message": validation.get("message") or "Handoff failed gate validation; not stored.",
         "violations": validation.get("violations", []),
         "remediation_hints": validation.get("remediation_hints", []),
         "gaps": validation.get("gaps", []),

@@ -592,6 +592,7 @@ class BuiltinOrchestrator:
             # cheaply for the disabled/skipped cases; only a real "failed" sets
             # detail and pulls in the recovery path below.
             result = run_transition_gates(
+                self.session,
                 profile,
                 workspace,
                 ticket,
@@ -626,7 +627,7 @@ class BuiltinOrchestrator:
             )
             if autofix.ran:
                 residual = run_gates_detail(
-                    ticket, profile, workspace, stage_def, from_stage, to_stage
+                    self.session, ticket, profile, workspace, stage_def, from_stage, to_stage
                 )
                 if not residual:
                     self._commit_autofix(ticket, from_stage, autofix.output)

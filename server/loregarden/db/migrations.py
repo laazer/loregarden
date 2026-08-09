@@ -24,6 +24,7 @@ from loregarden.db.migration_utils import (
     table_columns,
     table_exists,
 )
+from loregarden.db.migrations_handoffs import m_backfill_handoff_artifacts
 from loregarden.db.migrations_mcp import (
     m_mcp_server_health,
     m_mcp_server_rate_limit,
@@ -1338,6 +1339,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0068_clear_phantom_skill_names", m_clear_phantom_skill_names),
     ("0069_skill_versioning", m_skill_versioning),
     ("0070_stage_fanout_groups", m_stage_fanout_groups),
+    ("0071_backfill_handoff_artifacts", m_backfill_handoff_artifacts),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

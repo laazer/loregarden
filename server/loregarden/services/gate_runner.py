@@ -11,8 +11,10 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from loregarden.models.domain import Ticket, WorkflowStageDef, Workspace
+from loregarden.services.handoff_store import HANDOFF_SCRATCH_SUBDIR, export_for_gate
 from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile
 from loregarden.services.workspace_paths import resolve_workspace_root
+from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +200,7 @@ def gates_can_run(profile: OrchestrationProfile, workspace: Workspace) -> bool:
 
 
 def run_transition_gates(
+    session: Session,
     profile: OrchestrationProfile,
     workspace: Workspace,
     ticket: Ticket,
@@ -234,10 +237,16 @@ def run_transition_gates(
     # still blocks.
     script = _resolve_transition_script(profile.gates, repo_root)
     if script is not None:
+        # The handoff lives in the database, so point the workspace's gates at an
+        # exported tree rather than the repo's tracked checkpoints. The export mirrors
+        # the ticket's checkpoint dir first, because the todo gate reads the same
+        # `--checkpoints-dir` and its artifact is still a committed file.
+        export_for_gate(session, workspace, ticket)
         script_command = format_gate_command(
             f"{sys.executable} {script.relative_to(repo_root)} "
             f"--ticket-id {context['external_id']} "
-            f"--transition {context['transition']}",
+            f"--transition {context['transition']} "
+            f"--checkpoints-dir {HANDOFF_SCRATCH_SUBDIR}",
             context,
         )
         result = _run_command(script_command, repo_root)

@@ -1,6 +1,7 @@
 import stat
 import textwrap
 
+import pytest
 from loregarden.models.domain import Ticket, WorkflowStageDef, Workspace
 from loregarden.services.gate_runner import (
     build_gate_context,
@@ -12,6 +13,16 @@ from loregarden.services.gate_runner import (
     transition_name,
 )
 from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile
+from sqlmodel import Session
+
+
+@pytest.fixture(name="session")
+def session_fixture(isolated_db):
+    """run_transition_gates reads the ticket's stored handoff to export it for the
+    workspace gates; these fixtures' tickets have none, which is the normal
+    no-handoff-yet path."""
+    with Session(isolated_db) as db:
+        yield db
 
 
 def test_transition_name():
@@ -26,7 +37,7 @@ def test_format_gate_command_substitutes_context():
     assert cmd == "echo M57-01 planning_to_spec"
 
 
-def test_run_transition_gates_executes_script(tmp_path):
+def test_run_transition_gates_executes_script(session, tmp_path):
     script_dir = tmp_path / "ci" / "scripts"
     script_dir.mkdir(parents=True)
     script = script_dir / "run_workflow_transition_gates.py"
@@ -56,6 +67,7 @@ def test_run_transition_gates_executes_script(tmp_path):
     )
 
     result = run_transition_gates(
+        session,
         profile,
         ws,
         ticket,
@@ -73,7 +85,7 @@ def _write_transition_script(tmp_path, body: str):
     return script
 
 
-def test_run_transition_gates_skips_transition_the_script_does_not_model(tmp_path):
+def test_run_transition_gates_skips_transition_the_script_does_not_model(session, tmp_path):
     # A workspace gate script that rejects the transition NAME (argparse
     # `choices=` style: exit 2, "invalid choice" on stderr) means "no gate on
     # this edge" — the orchestrator must skip it, not wedge the workflow.
@@ -93,6 +105,7 @@ def test_run_transition_gates_skips_transition_the_script_does_not_model(tmp_pat
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=True))
 
     result = run_transition_gates(
+        session,
         profile,
         ws,
         ticket,
@@ -102,7 +115,7 @@ def test_run_transition_gates_skips_transition_the_script_does_not_model(tmp_pat
     assert result.ok, result.message
 
 
-def test_run_transition_gates_blocks_on_real_transition_gate_failure(tmp_path):
+def test_run_transition_gates_blocks_on_real_transition_gate_failure(session, tmp_path):
     # A gate that actually ran and FAILED (exit 1, no "invalid choice"/"unknown
     # transition" marker) must still block.
     _write_transition_script(
@@ -118,6 +131,7 @@ def test_run_transition_gates_blocks_on_real_transition_gate_failure(tmp_path):
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=True))
 
     result = run_transition_gates(
+        session,
         profile,
         ws,
         ticket,
@@ -128,7 +142,7 @@ def test_run_transition_gates_blocks_on_real_transition_gate_failure(tmp_path):
     assert "FAIL" in result.message
 
 
-def test_run_transition_gates_runs_profile_commands(tmp_path):
+def test_run_transition_gates_runs_profile_commands(session, tmp_path):
     gate_script = tmp_path / "gate.sh"
     gate_script.write_text("#!/bin/sh\necho ok\n", encoding="utf-8")
     gate_script.chmod(gate_script.stat().st_mode | stat.S_IEXEC)
@@ -144,6 +158,7 @@ def test_run_transition_gates_runs_profile_commands(tmp_path):
     )
 
     result = run_transition_gates(
+        session,
         profile,
         ws,
         ticket,
@@ -153,7 +168,7 @@ def test_run_transition_gates_runs_profile_commands(tmp_path):
     assert result.ok, result.message
 
 
-def test_run_transition_gates_blocks_on_failure(tmp_path):
+def test_run_transition_gates_blocks_on_failure(session, tmp_path):
     ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
     ticket = Ticket(id="tid", external_id="M57-03", workspace_id="ws", title="Test")
     profile = OrchestrationProfile(
@@ -165,6 +180,7 @@ def test_run_transition_gates_blocks_on_failure(tmp_path):
     )
 
     result = run_transition_gates(
+        session,
         profile,
         ws,
         ticket,
@@ -174,7 +190,7 @@ def test_run_transition_gates_blocks_on_failure(tmp_path):
     assert not result.ok
 
 
-def test_run_transition_gates_includes_stage_gate_commands(tmp_path):
+def test_run_transition_gates_includes_stage_gate_commands(session, tmp_path):
     marker = tmp_path / "marker.txt"
     ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
     ticket = Ticket(id="tid", external_id="M57-04", workspace_id="ws", title="Test")
@@ -192,6 +208,7 @@ def test_run_transition_gates_includes_stage_gate_commands(tmp_path):
     )
 
     result = run_transition_gates(
+        session,
         profile,
         ws,
         ticket,
@@ -269,19 +286,21 @@ def test_run_gate_autofix_noop_without_commands(tmp_path):
 # `ok` is True.
 
 
-def test_run_transition_gates_disabled_reports_disabled_outcome(tmp_path):
+def test_run_transition_gates_disabled_reports_disabled_outcome(session, tmp_path):
     ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
     ticket = Ticket(id="tid", external_id="M88-01", workspace_id="ws", title="Test")
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=False))
 
-    result = run_transition_gates(profile, ws, ticket, from_stage="spec", to_stage="test_design")
+    result = run_transition_gates(
+        session, profile, ws, ticket, from_stage="spec", to_stage="test_design"
+    )
 
     assert result.ok
     assert result.outcome == "disabled"
     assert result.message  # non-empty — distinguishable from "ran and passed"
 
 
-def test_run_transition_gates_no_commands_reports_skipped_outcome(tmp_path):
+def test_run_transition_gates_no_commands_reports_skipped_outcome(session, tmp_path):
     # gates.enabled is True but nothing is configured to run: this must be
     # reported as "skipped", never as "passed" — a config that gates nothing
     # is not the same as a gate that actually ran clean.
@@ -290,7 +309,7 @@ def test_run_transition_gates_no_commands_reports_skipped_outcome(tmp_path):
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=True))
 
     result = run_transition_gates(
-        profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+        session, profile, ws, ticket, from_stage="test_design", to_stage="test_break"
     )
 
     assert result.ok
@@ -298,7 +317,7 @@ def test_run_transition_gates_no_commands_reports_skipped_outcome(tmp_path):
     assert result.message == "no gate commands configured"
 
 
-def test_run_transition_gates_undefined_transition_script_edge_reports_skipped(tmp_path):
+def test_run_transition_gates_undefined_transition_script_edge_reports_skipped(session, tmp_path):
     # The workspace transition script rejects the transition *name* (an edge
     # it doesn't model) and no other commands are configured — the whole
     # evaluation ran nothing, so it must be "skipped", not "passed".
@@ -317,19 +336,19 @@ def test_run_transition_gates_undefined_transition_script_edge_reports_skipped(t
     ticket = Ticket(id="tid", external_id="M88-03", workspace_id="ws", title="Test")
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=True))
 
-    result = run_transition_gates(profile, ws, ticket, from_stage="a", to_stage="b")
+    result = run_transition_gates(session, profile, ws, ticket, from_stage="a", to_stage="b")
 
     assert result.ok
     assert result.outcome == "skipped"
 
 
-def test_run_transition_gates_passing_reports_passed_outcome_with_message(tmp_path):
+def test_run_transition_gates_passing_reports_passed_outcome_with_message(session, tmp_path):
     ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
     ticket = Ticket(id="tid", external_id="M88-04", workspace_id="ws", title="Test")
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=True, commands=["true"]))
 
     result = run_transition_gates(
-        profile, ws, ticket, from_stage="implementation", to_stage="review"
+        session, profile, ws, ticket, from_stage="implementation", to_stage="review"
     )
 
     assert result.ok
@@ -337,13 +356,15 @@ def test_run_transition_gates_passing_reports_passed_outcome_with_message(tmp_pa
     assert result.message == "passed 1 gate command(s)"
 
 
-def test_run_transition_gates_failure_reports_failed_outcome_and_preserves_message(tmp_path):
+def test_run_transition_gates_failure_reports_failed_outcome_and_preserves_message(
+    session, tmp_path
+):
     ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
     ticket = Ticket(id="tid", external_id="M88-05", workspace_id="ws", title="Test")
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=True, commands=["false"]))
 
     result = run_transition_gates(
-        profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+        session, profile, ws, ticket, from_stage="test_design", to_stage="test_break"
     )
 
     assert not result.ok
@@ -351,12 +372,12 @@ def test_run_transition_gates_failure_reports_failed_outcome_and_preserves_messa
     assert result.message
 
 
-def test_run_transition_gates_missing_workspace_root_reports_failed_outcome():
+def test_run_transition_gates_missing_workspace_root_reports_failed_outcome(session):
     ws = Workspace(slug="demo", name="Demo", repo_path="/no/such/path-does-not-exist-anywhere")
     ticket = Ticket(id="tid", external_id="M88-06", workspace_id="ws", title="Test")
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=True, commands=["true"]))
 
-    result = run_transition_gates(profile, ws, ticket, from_stage="a", to_stage="b")
+    result = run_transition_gates(session, profile, ws, ticket, from_stage="a", to_stage="b")
 
     assert not result.ok
     assert result.outcome == "failed"
@@ -404,7 +425,7 @@ def test_gates_can_run_true_when_transition_script_resolves_with_no_commands(tmp
 # handling — a blank command entry must not take down the whole evaluation.
 
 
-def test_run_transition_gates_blank_and_whitespace_only_commands_do_not_crash(tmp_path):
+def test_run_transition_gates_blank_and_whitespace_only_commands_do_not_crash(session, tmp_path):
     ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
     ticket = Ticket(id="tid", external_id="M88-09", workspace_id="ws", title="Test")
     profile = OrchestrationProfile(
@@ -412,7 +433,7 @@ def test_run_transition_gates_blank_and_whitespace_only_commands_do_not_crash(tm
     )
 
     result = run_transition_gates(
-        profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+        session, profile, ws, ticket, from_stage="test_design", to_stage="test_break"
     )
 
     assert result.ok
@@ -432,7 +453,7 @@ def test_gates_can_run_false_when_only_blank_commands_configured(tmp_path):
 # well-meaning `outcome` implementation could still leave in place. ---
 
 
-def test_run_transition_gates_malformed_quoting_reports_failed_not_crash(tmp_path):
+def test_run_transition_gates_malformed_quoting_reports_failed_not_crash(session, tmp_path):
     # shlex.split raises ValueError on an unterminated quote. `_run_command`
     # today only catches FileNotFoundError/TimeoutExpired around
     # subprocess.run — the shlex.split call itself is unguarded, so one badly
@@ -446,7 +467,7 @@ def test_run_transition_gates_malformed_quoting_reports_failed_not_crash(tmp_pat
     )
 
     result = run_transition_gates(
-        profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+        session, profile, ws, ticket, from_stage="test_design", to_stage="test_break"
     )
 
     assert not result.ok
@@ -454,7 +475,7 @@ def test_run_transition_gates_malformed_quoting_reports_failed_not_crash(tmp_pat
     assert result.message
 
 
-def test_run_transition_gates_non_executable_script_reports_failed_not_crash(tmp_path):
+def test_run_transition_gates_non_executable_script_reports_failed_not_crash(session, tmp_path):
     # A gate command pointing at a file that exists but lacks the execute bit
     # (e.g. checked in without chmod +x, or edited on a filesystem that
     # dropped permissions) raises PermissionError from subprocess.run.
@@ -472,7 +493,7 @@ def test_run_transition_gates_non_executable_script_reports_failed_not_crash(tmp
     )
 
     result = run_transition_gates(
-        profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+        session, profile, ws, ticket, from_stage="test_design", to_stage="test_break"
     )
 
     assert not result.ok
@@ -480,7 +501,9 @@ def test_run_transition_gates_non_executable_script_reports_failed_not_crash(tmp
     assert result.message
 
 
-def test_run_transition_gates_mixed_blank_and_real_commands_counts_only_real_ones(tmp_path):
+def test_run_transition_gates_mixed_blank_and_real_commands_counts_only_real_ones(
+    session, tmp_path
+):
     # A blank entry must not be silently treated as "ran" — the passed-count
     # in the message exists specifically so an operator can tell "1 real gate
     # ran" from "1 real gate + N no-ops ran". Miscounting blanks as executed
@@ -492,7 +515,7 @@ def test_run_transition_gates_mixed_blank_and_real_commands_counts_only_real_one
     )
 
     result = run_transition_gates(
-        profile, ws, ticket, from_stage="test_design", to_stage="test_break"
+        session, profile, ws, ticket, from_stage="test_design", to_stage="test_break"
     )
 
     assert result.ok
@@ -501,6 +524,7 @@ def test_run_transition_gates_mixed_blank_and_real_commands_counts_only_real_one
 
 
 def test_run_transition_gates_skipped_transition_script_plus_passing_command_is_passed(
+    session,
     tmp_path,
 ):
     # Combinatorial case: the workspace transition script rejects this edge
@@ -523,13 +547,13 @@ def test_run_transition_gates_skipped_transition_script_plus_passing_command_is_
     ticket = Ticket(id="tid", external_id="M88-13", workspace_id="ws", title="Test")
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=True, commands=["true"]))
 
-    result = run_transition_gates(profile, ws, ticket, from_stage="a", to_stage="b")
+    result = run_transition_gates(session, profile, ws, ticket, from_stage="a", to_stage="b")
 
     assert result.ok
     assert result.outcome == "passed"
 
 
-def test_run_transition_gates_disabled_outcome_still_carries_stage_context(tmp_path):
+def test_run_transition_gates_disabled_outcome_still_carries_stage_context(session, tmp_path):
     # The GATE_EVALUATED event payload is expected to carry from_stage/to_stage
     # (see test_gate_domain_events.py) on every evaluation including disabled
     # ones. If the disabled short-circuit in run_transition_gates returns
@@ -542,7 +566,7 @@ def test_run_transition_gates_disabled_outcome_still_carries_stage_context(tmp_p
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=False))
 
     result = run_transition_gates(
-        profile, ws, ticket, from_stage="implementation", to_stage="review"
+        session, profile, ws, ticket, from_stage="implementation", to_stage="review"
     )
 
     assert result.outcome == "disabled"

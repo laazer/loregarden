@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments, tool_names
 from loregarden.models.domain import Ticket, Workspace
+from loregarden.services.handoff_store import latest_handoff_doc
 from loregarden.services.handoff_writer import HandoffWriteError, write_handoff
 from sqlmodel import Session
 
@@ -25,7 +26,8 @@ _STUB_GATE = textwrap.dedent(
 
     def run(inputs):
         tid = inputs["ticket_id"]
-        p = pathlib.Path("project_board/checkpoints") / tid / "handoff-latest.yaml"
+        root = inputs.get("checkpoints_dir", "project_board/checkpoints")
+        p = pathlib.Path(root) / tid / "handoff-latest.yaml"
         if not p.is_file():
             return {"status": "FAIL", "message": "missing",
                     "violations": [{"rule": "handoff_artifact_missing", "message": "no file"}]}
@@ -87,6 +89,7 @@ def test_write_handoff_pass(isolated_db, tmp_path):
     _make_repo(repo)
     with Session(isolated_db) as session:
         ticket = _seed(session, repo)
+        ticket_pk = ticket.id
         result = write_handoff(
             session,
             ticket_id=ticket.external_id,
@@ -98,20 +101,34 @@ def test_write_handoff_pass(isolated_db, tmp_path):
     assert result["status"] == "PASS"
     assert result["required_items_met"] == 2
     assert result["total_required_items"] == 2
-    written = repo / "project_board/checkpoints" / ticket.external_id / "handoff-latest.yaml"
-    assert written.is_file()
-    assert "test_suite_complete" in written.read_text()
+    assert result["artifact_id"]
+    with Session(isolated_db) as session:
+        doc = latest_handoff_doc(session, ticket_pk)
+    assert doc is not None
+    assert {c["item_key"] for c in doc["handoff"]["checklist"]} == {
+        "test_suite_complete",
+        "test_all_runnable",
+    }
+    # Nothing lands in the repo's tracked checkpoints any more.
+    tracked = repo / "project_board/checkpoints" / "t1-demo" / "handoff-latest.yaml"
+    assert not tracked.exists()
 
 
 def test_write_handoff_fail_rolls_back_to_prior(isolated_db, tmp_path):
     repo = tmp_path / "repo"
     _make_repo(repo)
-    target = repo / "project_board/checkpoints" / "t1-demo" / "handoff-latest.yaml"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("PRIOR VALID CONTENT with test_suite_complete\n", encoding="utf-8")
-
     with Session(isolated_db) as session:
         ticket = _seed(session, repo)
+        ticket_pk = ticket.id
+        good = write_handoff(
+            session,
+            ticket_id=ticket.external_id,
+            workspace_slug="wsx",
+            from_agent="test_designer",
+            to_agent="test_breaker",
+            checklist=_good_checklist(),
+        )
+        assert good["status"] == "PASS"
         result = write_handoff(
             session,
             ticket_id=ticket.external_id,
@@ -125,8 +142,15 @@ def test_write_handoff_fail_rolls_back_to_prior(isolated_db, tmp_path):
     assert result["status"] == "FAIL"
     assert result["rolled_back"] is True
     assert result["violations"]
-    # Prior file must be intact — a bad write never clobbers a valid handoff.
-    assert target.read_text() == "PRIOR VALID CONTENT with test_suite_complete\n"
+    # The prior stored handoff must still be the ticket's latest — a bad write
+    # never clobbers a valid one.
+    with Session(isolated_db) as session:
+        doc = latest_handoff_doc(session, ticket_pk)
+    assert doc is not None
+    assert {c["item_key"] for c in doc["handoff"]["checklist"]} == {
+        "test_suite_complete",
+        "test_all_runnable",
+    }
 
 
 def test_write_handoff_fail_removes_when_no_prior(isolated_db, tmp_path):
@@ -134,6 +158,7 @@ def test_write_handoff_fail_removes_when_no_prior(isolated_db, tmp_path):
     _make_repo(repo)
     with Session(isolated_db) as session:
         ticket = _seed(session, repo)
+        ticket_pk = ticket.id
         result = write_handoff(
             session,
             ticket_id=ticket.external_id,
@@ -143,8 +168,8 @@ def test_write_handoff_fail_removes_when_no_prior(isolated_db, tmp_path):
             checklist=[{"item_key": "bogus", "item": "n", "status": "complete", "evidence": "x"}],
         )
     assert result["status"] == "FAIL"
-    target = repo / "project_board/checkpoints" / ticket.external_id / "handoff-latest.yaml"
-    assert not target.exists()
+    with Session(isolated_db) as session:
+        assert latest_handoff_doc(session, ticket_pk) is None
 
 
 def test_write_handoff_unvalidated_without_gate(isolated_db, tmp_path):
@@ -152,6 +177,7 @@ def test_write_handoff_unvalidated_without_gate(isolated_db, tmp_path):
     _make_repo(repo, with_gate=False)
     with Session(isolated_db) as session:
         ticket = _seed(session, repo)
+        ticket_pk = ticket.id
         result = write_handoff(
             session,
             ticket_id=ticket.external_id,
@@ -160,10 +186,10 @@ def test_write_handoff_unvalidated_without_gate(isolated_db, tmp_path):
             to_agent="test_breaker",
             checklist=_good_checklist(),
         )
-    assert result["status"] == "written_unvalidated"
-    # File is still written (no catalog to violate).
-    target = repo / "project_board/checkpoints" / ticket.external_id / "handoff-latest.yaml"
-    assert target.is_file()
+    assert result["status"] == "stored_unvalidated"
+    # Stored anyway — there is no catalog to have violated.
+    with Session(isolated_db) as session:
+        assert latest_handoff_doc(session, ticket_pk) is not None
 
 
 def test_bad_checklist_raises(isolated_db, tmp_path):
