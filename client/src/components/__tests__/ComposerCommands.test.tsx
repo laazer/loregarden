@@ -46,6 +46,7 @@ function session(overrides = {}) {
     messages: [],
     isBusy: false,
     activeTurnId: null,
+    canAct: true,
     isLoading: false,
     error: null,
     loadError: false,

@@ -39,6 +39,16 @@ export interface ChatSession {
    * asks the session rather than working out which snapshot field to read.
    */
   activeTurnId: string | null;
+  /**
+   * Whether this conversation can act, or can only answer.
+   *
+   * Server-resolved from the adapter behind the rail, and published by all
+   * three surfaces. It reads as a property of the screen but is not: two
+   * tickets in different workspaces can have the same panel and different
+   * answers, and nothing in the transcript distinguishes them until a turn is
+   * asked for something it silently cannot do.
+   */
+  canAct: boolean;
   /** First load only — distinct from `isBusy`, which means the agent is working. */
   isLoading: boolean;
   /** Last send failure, already formatted for display, or null. */

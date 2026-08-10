@@ -376,7 +376,7 @@ def test_triage_execute_intent_for_codex_uses_writable_oneshot(
         )
 
     monkeypatch.delenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", raising=False)
-    monkeypatch.setattr(triage_run_service, "resolve_effective_adapter", lambda **_: "codex")
+    monkeypatch.setattr(triage_run_service, "resolve_chat_adapter", lambda **_: "codex")
     monkeypatch.setattr(agent_turn_runner, "run_agent_turn", fake_turn)
     monkeypatch.setattr(triage_run_service, "run_agent_turn", fake_turn)
 
@@ -435,3 +435,154 @@ def test_triage_async_send_returns_immediately_reply_via_poll(client: TestClient
     assert snapshot["run_status"] == "idle"
     assert len(snapshot["messages"]) == 2
     assert "Async reply from Baxter." in snapshot["messages"][-1]["content"]
+
+
+def test_triage_ignores_workspace_pipeline_adapter(
+    client: TestClient, db_session: Session, monkeypatch
+):
+    """A chat rail keeps the permission bridge even on a codex workspace.
+
+    The workspace `cli_adapter` is a choice about unattended pipeline runs. When
+    it reached ticket triage too, the rail silently lost approvals, streamed
+    thinking and steering, and could only answer.
+    """
+    from loregarden.services import agent_turn_runner, triage_run_service
+    from loregarden.services.agent_turn_runner import AgentTurnResult
+    from loregarden.services.triage_run_service import TriageTurnExecutor, start_triage_run
+
+    captured: dict[str, object] = {}
+
+    def fake_turn(request):
+        captured["intent"] = request.intent
+        captured["adapter"] = request.adapter
+        captured["prompt"] = request.prompt
+        return AgentTurnResult(
+            reply="done", strategy="permission_bridge", adapter="claude", run_id=request.run_id
+        )
+
+    monkeypatch.delenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", raising=False)
+    monkeypatch.delenv("LOREGARDEN_CLI_ADAPTER", raising=False)
+    monkeypatch.setattr(agent_turn_runner, "run_agent_turn", fake_turn)
+    monkeypatch.setattr(triage_run_service, "run_agent_turn", fake_turn)
+
+    ticket_id = _ticket_id(client)
+    ticket = db_session.get(Ticket, ticket_id)
+    assert ticket is not None
+    workspace = db_session.get(Workspace, ticket.workspace_id)
+    assert workspace is not None
+    workspace.cli_adapter = "codex"
+    db_session.add(workspace)
+    db_session.commit()
+
+    _, run = start_triage_run(db_session, ticket, "why is this blocked?")
+    TriageTurnExecutor(db_session).execute(run, ticket)
+
+    assert captured["adapter"] == "claude"
+    assert captured["intent"] == "execute"
+
+
+def test_triage_honours_explicit_per_ticket_adapter_override(
+    client: TestClient, db_session: Session, monkeypatch
+):
+    """Ignoring the workspace adapter must not ignore a deliberate override."""
+    from loregarden.services import agent_turn_runner, triage_run_service
+    from loregarden.services.agent_turn_runner import AgentTurnResult
+    from loregarden.services.triage_run_service import TriageTurnExecutor, start_triage_run
+
+    captured: dict[str, object] = {}
+
+    def fake_turn(request):
+        captured["adapter"] = request.adapter
+        return AgentTurnResult(
+            reply="done", strategy="writable_oneshot", adapter="codex", run_id=request.run_id
+        )
+
+    monkeypatch.delenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", raising=False)
+    monkeypatch.delenv("LOREGARDEN_CLI_ADAPTER", raising=False)
+    monkeypatch.setattr(agent_turn_runner, "run_agent_turn", fake_turn)
+    monkeypatch.setattr(triage_run_service, "run_agent_turn", fake_turn)
+
+    ticket_id = _ticket_id(client)
+    res = client.patch(
+        f"/api/tickets/{ticket_id}/triage/runtime",
+        json={
+            "cli_adapter": "codex",
+            "claude_model": "",
+            "cursor_model": "",
+            "lmstudio_base_url": "",
+            "lmstudio_model": "",
+        },
+    )
+    assert res.status_code == 200
+
+    ticket = db_session.get(Ticket, ticket_id)
+    assert ticket is not None
+    db_session.refresh(ticket)
+    _, run = start_triage_run(db_session, ticket, "go")
+    TriageTurnExecutor(db_session).execute(run, ticket)
+
+    assert captured["adapter"] == "codex"
+
+
+def test_triage_snapshot_publishes_capability(client: TestClient, monkeypatch):
+    """The panel can tell an advisory rail from an executing one before asking."""
+    # conftest pins every test run to the `local` adapter; this is about what the
+    # panel reports for a real one.
+    monkeypatch.delenv("LOREGARDEN_CLI_ADAPTER", raising=False)
+    ticket_id = _ticket_id(client)
+    body = client.get(f"/api/tickets/{ticket_id}/triage").json()
+
+    assert body["chat_intent"] == "execute"
+    assert body["adapter_capabilities"]["adapter"] == "claude"
+    assert body["adapter_capabilities"]["permission_bridge"] is True
+
+    res = client.patch(
+        f"/api/tickets/{ticket_id}/triage/runtime",
+        json={
+            "cli_adapter": "lmstudio",
+            "claude_model": "",
+            "cursor_model": "",
+            "lmstudio_base_url": "",
+            "lmstudio_model": "",
+        },
+    )
+    assert res.status_code == 200
+    body = client.get(f"/api/tickets/{ticket_id}/triage").json()
+    assert body["adapter_capabilities"]["adapter"] == "lmstudio"
+    assert body["adapter_capabilities"]["permission_bridge"] is False
+
+
+def test_triage_snapshot_reports_advisory_for_a_toolless_adapter(client: TestClient, monkeypatch):
+    """An adapter with neither execution path must show as advisory, not execute."""
+    monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "local")
+    body = client.get(f"/api/tickets/{_ticket_id(client)}/triage").json()
+
+    assert body["chat_intent"] == "advisory"
+    assert body["adapter_capabilities"]["permission_bridge"] is False
+    assert body["adapter_capabilities"]["plan_execute"] is False
+
+
+def test_advisory_triage_prompt_forbids_narrating_tool_work(
+    client: TestClient, db_session: Session
+):
+    """An advisory one-shot must not open with "I'll check X, then I'll do Y".
+
+    That reply is the whole turn — nothing runs after it — so an announced plan
+    is a promise the channel can never keep.
+    """
+    from loregarden.services.triage_service import build_triage_prompt
+
+    ticket = db_session.get(Ticket, _ticket_id(client))
+    assert ticket is not None
+    prompt = build_triage_prompt(
+        ticket,
+        [],
+        "fix the gate",
+        session=db_session,
+        interactive=False,
+        advisory_reason="The selected lmstudio adapter cannot execute turns.",
+    )
+
+    assert "Do not announce work you are about to do" in prompt
+    assert "The selected lmstudio adapter cannot execute turns." in prompt
+    assert "real tool access" not in prompt

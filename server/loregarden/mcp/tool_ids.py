@@ -32,6 +32,10 @@ class McpTool(StrEnum):
     LINK_RELATION = "loregarden_link_relation"
     UNLINK_RELATION = "loregarden_unlink_relation"
     CREATE_TICKET = "loregarden_create_ticket"
+    MOVE_TICKET_WORKSPACE = "loregarden_move_ticket_workspace"
+    SET_TICKET_WORKFLOW = "loregarden_set_ticket_workflow"
+    REQUEUE_TICKET = "loregarden_requeue_ticket"
+    SUPERSEDE_TICKET = "loregarden_supersede_ticket"
     MEMORY_STATUS = "loregarden_memory_status"
     APPEND_LEARNING = "loregarden_append_learning"
     UPSERT_MEMORY = "loregarden_upsert_memory"
@@ -88,6 +92,7 @@ TICKET_STUDIO_MCP_TOOLS: tuple[McpTool, ...] = (
     McpTool.LINK_RELATION,
     McpTool.UNLINK_RELATION,
     McpTool.SEARCH_PRIOR_WORK,
+    McpTool.SUPERSEDE_TICKET,
 )
 
 # --- Permission-bridge policy (auto-approve vs inbox vs hard deny) ------------
@@ -132,9 +137,24 @@ AUTO_APPROVED_MCP_TOOLS: frozenset[McpTool] = READ_ONLY_MCP_TOOLS | CONTROL_PLAN
 #: the write. `argument_gated_auto_approval` decides per call.
 ARGUMENT_GATED_MCP_TOOLS: frozenset[McpTool] = frozenset({McpTool.CHECK_ORGANIZATION})
 
+#: The operator moves triage can make on a work item: where it lives, how it
+#: runs, and whether it should exist at all. Offered to the ticket rail and the
+#: studio; never to a pipeline stage, which has no business rehoming the ticket
+#: it was dispatched for.
+TRIAGE_OPS_MCP_TOOLS: tuple[McpTool, ...] = (
+    McpTool.MOVE_TICKET_WORKSPACE,
+    McpTool.SET_TICKET_WORKFLOW,
+    McpTool.REQUEUE_TICKET,
+    McpTool.SUPERSEDE_TICKET,
+)
+
 #: Interim allowlist (a9-create-ticket-mcp-tool): orchestrated pipeline agents
-#: may not spawn tickets mid-run. Interactive chat is exempt.
-ORCHESTRATED_DENIED_MCP_TOOLS: frozenset[McpTool] = frozenset({McpTool.CREATE_TICKET})
+#: may not spawn tickets mid-run, and none of them may rehome, re-route or
+#: retire the ticket they are running — a stage clearing its own retry budget
+#: would defeat the circuit breaker that stopped it. Interactive chat is exempt.
+ORCHESTRATED_DENIED_MCP_TOOLS: frozenset[McpTool] = frozenset(
+    {McpTool.CREATE_TICKET, *TRIAGE_OPS_MCP_TOOLS}
+)
 
 # Ticket-scoped chat enrichment: fill ticket_id when the open work item is known.
 TICKET_SCOPED_MCP_TOOLS: frozenset[McpTool] = frozenset(
@@ -153,5 +173,6 @@ TICKET_SCOPED_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.SKIP_STAGE,
         McpTool.COMPLETE_ORCHESTRATION,
         McpTool.SEARCH_PRIOR_WORK,
+        *TRIAGE_OPS_MCP_TOOLS,
     }
 )

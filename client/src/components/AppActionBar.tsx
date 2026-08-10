@@ -295,6 +295,19 @@ export function AppActionBar() {
         </span>
       ) : null}
 
+      {/* An aside is read-only by definition, so this would be noise there. */}
+      {session && !session.canAct && !asideMode ? (
+        <span
+          className="app-action-bar-pill"
+          title={
+            "Baxter can only answer in this conversation — the adapter behind it has no " +
+            "way to run tools, so it cannot read code, edit files, or change the ticket."
+          }
+        >
+          advisory
+        </span>
+      ) : null}
+
       {/* Redundant in aside mode: the observer is given the log tail server-side. */}
       {ticketId && !asideMode ? (
         <button

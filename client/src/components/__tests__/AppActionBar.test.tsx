@@ -48,6 +48,7 @@ function session(overrides = {}) {
     messages: [],
     isBusy: false,
     activeTurnId: null,
+    canAct: true,
     isLoading: false,
     error: null,
     loadError: false,
@@ -611,4 +612,26 @@ it("snaps the dock to the other edge", () => {
   );
 
   expect(useUiStore.getState().utilityDockEdge).toBe("right");
+});
+
+describe("advisory rails", () => {
+  it("warns when the bound conversation can only answer", () => {
+    mockResolver.mockReturnValue(
+      bind({ session: session({ canAct: false }), label: "Ticket triage" }),
+    );
+
+    renderBar();
+
+    expect(screen.getByText("advisory")).toBeInTheDocument();
+  });
+
+  it("stays quiet when the conversation can act", () => {
+    mockResolver.mockReturnValue(
+      bind({ session: session({ canAct: true }), label: "Ticket triage" }),
+    );
+
+    renderBar();
+
+    expect(screen.queryByText("advisory")).not.toBeInTheDocument();
+  });
 });

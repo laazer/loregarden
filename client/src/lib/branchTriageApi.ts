@@ -1,4 +1,4 @@
-import type { DiffArtifact } from "../api/client";
+import type { AdapterCapabilities, ChatIntent, DiffArtifact } from "../api/client";
 import type { ChatPart } from "../components/chat/primitives/types";
 import { VITE_API_BASE } from "../api/viteEnv";
 
@@ -122,6 +122,8 @@ export interface BranchTriageChatSnapshot {
     lmstudio_base_url: string;
     lmstudio_model: string;
   };
+  adapter_capabilities?: AdapterCapabilities;
+  chat_intent?: ChatIntent;
   run_status: "idle" | "running";
   active_turn_id: string | null;
 }

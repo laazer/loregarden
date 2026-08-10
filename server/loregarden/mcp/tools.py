@@ -19,8 +19,17 @@ from loregarden.mcp.ticket_edit_tools import (
     normalize_update_ticket_args,
     resolve_ticket_payload,
 )
+from loregarden.mcp.ticket_ops_tools import (
+    TICKET_OPS_TOOL_DEFINITIONS,
+    execute_ticket_ops_tool,
+    normalize_ticket_ops_args,
+)
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_registry import EXTENDED_TOOLS
+from loregarden.mcp.tool_schemas import enum_string_prop as _enum_string_prop
+from loregarden.mcp.tool_schemas import integer_prop as _integer_prop
+from loregarden.mcp.tool_schemas import string_prop as _string_prop
+from loregarden.mcp.tool_schemas import tool_schema as _tool_schema
 from loregarden.models.domain import (
     OrchestrationRunStatus,
     WorkItemType,
@@ -39,32 +48,6 @@ from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.ticket_discovery import list_tickets_mcp
 from loregarden.services.ticket_service import TicketService
-
-
-def _tool_schema(
-    *,
-    properties: dict[str, dict[str, Any]],
-    required: list[str],
-) -> dict[str, Any]:
-    """JSON Schema shape compatible with Claude Code / Zod MCP validators."""
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": required,
-        "additionalProperties": False,
-    }
-
-
-def _string_prop(description: str) -> dict[str, str]:
-    return {"type": "string", "description": description}
-
-
-def _integer_prop(description: str) -> dict[str, str]:
-    return {"type": "integer", "description": description}
-
-
-def _enum_string_prop(description: str, values: list[str]) -> dict[str, Any]:
-    return {"type": "string", "description": description, "enum": values}
 
 
 def _coerce_mapping(raw: Any) -> dict[str, Any]:
@@ -349,6 +332,17 @@ def _normalize_attach_evidence(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _normalize_ticket_ops_args(name: str, args: dict[str, Any]) -> dict[str, Any] | None:
+    """`normalize_ticket_ops_args` with this module's coercers already bound."""
+    return normalize_ticket_ops_args(
+        name,
+        args,
+        coerce_string=_coerce_string,
+        coerce_optional_string=_coerce_optional_string,
+        coerce_string_list=_coerce_string_list,
+    )
+
+
 def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
     """Coerce Claude MCP bridge quirks (aliases, stringified JSON, camelCase)."""
     args = _coerce_mapping(arguments)
@@ -484,11 +478,12 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
             "checklist": checklist,
         }
 
-    memory_payload = _normalize_memory_tool_args(name, args)
-    if memory_payload is not None:
-        return memory_payload
-
-    return args
+    # Whatever the branches above did not claim goes to the modules that own
+    # their own tools. Each returns None for a name it does not own, and neither
+    # ever returns an empty payload — every branch it takes builds a dict with at
+    # least the tool's required field — so `or` reads the same as an
+    # `is not None` chain here, and `args` remains the fallthrough it always was.
+    return _normalize_memory_tool_args(name, args) or _normalize_ticket_ops_args(name, args) or args
 
 
 def _run_view(run) -> dict[str, Any]:
@@ -1014,6 +1009,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 
 # Tools that live in their own module rather than in this file's chain.
 TOOL_DEFINITIONS.append(ORGANIZATION_TOOL_DEFINITION)
+TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
 
 
 def _get_run(session: Session, run_id: str):
@@ -1240,9 +1236,16 @@ def execute_tool(
     if name == "loregarden_start_orchestration":
         return _start_orchestration(session, svc, arguments)
 
-    edit_result = execute_ticket_edit_tool(name, session, svc, arguments)
-    if edit_result is not None:
-        return edit_result
+    # The modules that own their own ticket tools, tried in one branch rather
+    # than one branch each: this chain is already well past the complexity cap,
+    # so a per-module `if` would tax the next tool anyone adds. Each returns None
+    # for a name it does not own, and a handler that runs always returns a
+    # non-empty JSON document, so `or` reads the same as an `is not None` chain.
+    delegated = execute_ticket_edit_tool(name, session, svc, arguments) or (
+        execute_ticket_ops_tool(name, session, svc, arguments)
+    )
+    if delegated is not None:
+        return delegated
 
     if name == "loregarden_create_ticket":
         return _create_ticket(session, svc, arguments)

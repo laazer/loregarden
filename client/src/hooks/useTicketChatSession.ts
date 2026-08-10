@@ -39,6 +39,10 @@ export function useTicketChatSession(ticketId: string | undefined): ChatSession 
     isBusy: isBusy || sendMessage.isPending,
     // Ticket triage has no pending message row: the run is the turn.
     activeTurnId: triage.data?.active_run_id ?? null,
+    // Assume it can until the snapshot says otherwise — a first paint that
+    // warned "advisory" and then took it back on load would be worse than
+    // silence.
+    canAct: (triage.data?.chat_intent ?? "execute") === "execute",
     isLoading: triage.isLoading,
     loadError: triage.isError,
     error: sendMessage.isError

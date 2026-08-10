@@ -23,12 +23,21 @@ MCP_DIR = Path(__file__).resolve().parents[1] / "loregarden" / "mcp"
 #: Every module that owns dispatch for some slice of the tool surface. tools.py
 #: holds the spine; ticket_edit_tools.py owns the ticket-editing handlers it
 #: delegates to, and a name routed there is dispatched just as really.
-MCP_DISPATCH_SRCS = (MCP_DIR / "tools.py", MCP_DIR / "ticket_edit_tools.py")
+MCP_DISPATCH_SRCS = (
+    MCP_DIR / "tools.py",
+    MCP_DIR / "ticket_edit_tools.py",
+    MCP_DIR / "ticket_ops_tools.py",
+)
 
 # Tools that do real work beyond bookkeeping and need care in a smoke test:
 #   loregarden_start_orchestration -> BuiltinOrchestrator.execute() spawns CLI agents, so it is
 #   exercised only through the external_mcp driver, which records a run and returns.
 SPAWNS_AGENTS_WITH_BUILTIN_DRIVER = "loregarden_start_orchestration"
+#   loregarden_move_ticket_workspace -> needs a second workspace to move to, and
+#   refuses a move to the workspace the ticket is already in. The seed has one
+#   workspace, so there is no well-formed call to make here; test_mcp_ticket_ops
+#   builds the destination and covers it.
+NEEDS_A_SECOND_WORKSPACE = "loregarden_move_ticket_workspace"
 
 
 def _rpc(client: TestClient, method: str, params: dict | None = None, rpc_id: int = 1) -> dict:
@@ -139,6 +148,13 @@ def _args_for(
     ws = "loregarden"
     table: dict[str, dict] = {
         "loregarden_get_ticket": {"ticket_id": ticket_id},
+        "loregarden_set_ticket_workflow": {"ticket_id": ticket_id, "stage_key": stage_key},
+        "loregarden_requeue_ticket": {"ticket_id": ticket_id, "reason": "smoke"},
+        "loregarden_supersede_ticket": {
+            "ticket_id": prereq_id,
+            "title": "smoke replacement",
+            "reason": "smoke",
+        },
         "loregarden_link_dependency": {"ticket_id": ticket_id, "depends_on": prereq_id},
         "loregarden_unlink_dependency": {"ticket_id": ticket_id, "depends_on": prereq_id},
         "loregarden_link_relation": {"ticket_id": ticket_id, "related_to": prereq_id},
@@ -290,12 +306,15 @@ def test_every_advertised_tool_is_callable(client: TestClient):
         "loregarden_complete_stage",
         "loregarden_skip_stage",
         "loregarden_block_ticket",
+        "loregarden_set_ticket_workflow",
+        "loregarden_requeue_ticket",
+        "loregarden_supersede_ticket",
         "loregarden_complete_orchestration",
     ]
     advertised = _advertised(client)
-    assert set(ordered) | {SPAWNS_AGENTS_WITH_BUILTIN_DRIVER} >= advertised, (
-        "tool advertised but not covered here: "
-        f"{sorted(advertised - (set(ordered) | {SPAWNS_AGENTS_WITH_BUILTIN_DRIVER}))}"
+    exempt = {SPAWNS_AGENTS_WITH_BUILTIN_DRIVER, NEEDS_A_SECOND_WORKSPACE}
+    assert set(ordered) | exempt >= advertised, (
+        f"tool advertised but not covered here: {sorted(advertised - (set(ordered) | exempt))}"
     )
 
     failures: list[str] = []

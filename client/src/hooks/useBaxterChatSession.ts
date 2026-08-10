@@ -183,6 +183,13 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
     },
   });
 
+  // Home chat publishes the capability matrix rather than the resolved intent,
+  // so read the same two flags `resolve_chat_intent` reads. Unknown counts as
+  // capable: a first paint that warned "advisory" and then took it back on load
+  // would be worse than silence.
+  const capabilities = snapshot.data?.adapter_capabilities;
+  const canAct = !capabilities || capabilities.permission_bridge || capabilities.plan_execute;
+
   return {
     kind: "baxter-home",
     id: sessionId,
@@ -193,6 +200,7 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
     // The in-flight POST covers the gap before the first poll reports "running".
     isBusy: isRunStatusBusy(snapshot.data?.run_status) || sendMessage.isPending,
     activeTurnId: snapshot.data?.active_turn_id ?? null,
+    canAct,
     isLoading: enabled && snapshot.isLoading,
     // A missing thread is recovered from above, so it is not a load failure.
     loadError:
