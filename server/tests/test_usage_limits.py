@@ -167,3 +167,47 @@ def test_claude_window_wording_counts_as_a_transient_failure():
     assert is_transient_failure("API Error: You've hit your session limit · resets 3pm", "")
     assert is_transient_failure("", "You've hit your weekly limit · resets Sep 12")
     assert not is_transient_failure("The tests failed on an assertion.", "")
+
+
+def test_detects_cursor_error_code_without_any_cursor_prose():
+    """Cursor's server writes the prose; only the code is Cursor's own."""
+    limit = detect_usage_limit('{"error":"ERROR_PRO_USER_USAGE_LIMIT","message":"..."}')
+
+    assert limit is not None
+    assert limit.provider == "cursor"
+    assert limit.scope == "Pro usage limit"
+    assert limit.clears_on_reset
+
+
+def test_detects_cursor_resource_exhausted_transport_code():
+    limit = detect_usage_limit("cursor-agent: [resource_exhausted] request rejected")
+
+    assert limit is not None
+    assert limit.provider == "cursor"
+    assert limit.scope == "rate limit"
+
+
+def test_cursor_retry_after_metadata_is_a_reset():
+    now = datetime(2026, 8, 8, 12, 0, tzinfo=timezone.utc)
+    limit = detect_usage_limit("Error: rate limit exceeded (retryAfterMs=120000)", now=now)
+
+    assert limit is not None
+    assert limit.reset_at == datetime(2026, 8, 8, 12, 2, tzinfo=timezone.utc)
+    assert limit.reset_text == "in 2 minutes"
+
+
+def test_cursor_spend_cap_is_not_described_as_something_waiting_fixes():
+    limit = detect_usage_limit("ERROR_USAGE_PRICING_REQUIRED: enable usage-based pricing")
+
+    assert limit is not None
+    assert limit.scope == "usage-pricing limit"
+    assert not limit.clears_on_reset
+    assert "does not lift on its own" in usage_limit_blocking_issue(limit)
+    assert "Wait for the reset" not in format_usage_limit_hint(limit)
+
+
+def test_cursor_code_wins_over_a_generic_phrase_on_the_same_line():
+    limit = detect_usage_limit("Error: usage limit hit [ERROR_FREE_USER_USAGE_LIMIT]")
+
+    assert limit is not None
+    assert limit.scope == "free-plan usage limit"

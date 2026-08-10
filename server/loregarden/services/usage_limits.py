@@ -15,6 +15,20 @@ Detection is deliberately conservative. A false positive would tell an operator
 to wait out a window that does not exist and hide a real failure behind it, so a
 match needs an explicit limit phrase — not merely the word "limit", and not a
 bare 429, which an MCP server or a git host can just as easily emit.
+
+The three adapters state a limit in three different places, which is why this
+matches on more than prose:
+
+- **Codex** writes one sentence with the reset in it.
+- **Claude** composes the refusal locally from a fixed window vocabulary
+  ("You've hit your <session|weekly|Opus|Sonnet> limit · resets <when>"), so its
+  wording is stable enough to match and specific enough to be worth reporting.
+- **Cursor** composes nothing. Its CLI receives a server error and prints
+  whatever title the server sent, so the prose is not ours to rely on. What it
+  *does* own is the error code — ``FREE_USER_USAGE_LIMIT``, ``RATE_LIMITED``,
+  ``USAGE_PRICING_REQUIRED`` and friends, plus the ``resource_exhausted`` its
+  transport maps every 429 to. Those are matched directly, so a Cursor refusal
+  is recognised even when the server rewords it.
 """
 
 from __future__ import annotations
@@ -54,6 +68,28 @@ _LIMIT_PHRASES = (
     "credit balance too low",
     "credit balance is too low",
 )
+
+#: Cursor's own error codes, which are the only part of its refusal that Cursor
+#: controls — see ``_CURSOR_CODES`` below for why that matters.
+_CURSOR_CODES: tuple[tuple[str, str], ...] = (
+    ("free_user_usage_limit", "free-plan usage limit"),
+    ("pro_user_usage_limit", "Pro usage limit"),
+    ("free_user_rate_limit_exceeded", "free-plan rate limit"),
+    ("pro_user_rate_limit_exceeded", "Pro rate limit"),
+    ("generic_rate_limit_exceeded", "rate limit"),
+    ("rate_limited_changeable", "rate limit"),
+    ("rate_limited", "rate limit"),
+    ("usage_pricing_required_changeable", "usage-pricing limit"),
+    ("usage_pricing_required", "usage-pricing limit"),
+    ("pro_user_only", "plan limit"),
+    # The connect-RPC code an HTTP 429 maps to. Cursor's transport turns every
+    # 429 into this before any prose exists, so it survives wording changes.
+    ("resource_exhausted", "rate limit"),
+)
+
+#: Cursor codes that no amount of waiting clears — the account needs a payment or
+#: plan change, so "wait for the reset" would be the wrong instruction.
+_CURSOR_NO_RESET_SCOPES = frozenset({"usage-pricing limit", "plan limit"})
 
 #: Sentences that carry a limit phrase but are not a refusal — the turn ran, or
 #: something other than this account's quota was the cause. Checked against the
@@ -138,6 +174,11 @@ _RELATIVE_RESET = re.compile(
 
 _SPAN_PART = re.compile(r"(\d+)\s*(second|minute|hour|day)s?", re.IGNORECASE)
 
+# Cursor's transport carries the wait as connect metadata rather than prose:
+# "retryAfterMs=120000". A plain "retry-after: 120" header is seconds.
+_RETRY_AFTER_MS = re.compile(r"retry[-_ ]?after[-_ ]?ms[=:]\s*(?P<ms>\d+)", re.IGNORECASE)
+_RETRY_AFTER_S = re.compile(r"retry[-_ ]?after[=:]\s*(?P<seconds>\d+)", re.IGNORECASE)
+
 # The Claude CLI reports its reset as a unix timestamp: "…usage limit reached|1786530420"
 _EPOCH_RESET = re.compile(r"usage limit reached\s*\|\s*(?P<epoch>\d{9,13})", re.IGNORECASE)
 
@@ -192,9 +233,10 @@ class UsageLimit:
     scope: str = ""
     """Which window was exhausted, in the provider's words ("weekly limit").
 
-    Only Claude distinguishes them, and the distinction is actionable: a session
-    limit is an hour of waiting, an Opus limit leaves Sonnet available, and a
-    weekly limit means neither.
+    Claude names it in prose and Cursor in an error code; the distinction is
+    actionable either way. A session limit is an hour of waiting, an Opus limit
+    leaves Sonnet available, a weekly limit means neither, and a usage-pricing
+    limit is not a window at all.
     """
 
     @property
@@ -205,6 +247,15 @@ class UsageLimit:
     def window_label(self) -> str:
         """What to call the exhausted window in a sentence."""
         return self.scope or "usage limit"
+
+    @property
+    def clears_on_reset(self) -> bool:
+        """Whether waiting fixes this, or only a payment / plan change does.
+
+        Cursor's spend-cap and Pro-only codes never lift on their own, so telling
+        an operator to wait for a window would leave the ticket parked forever.
+        """
+        return self.scope not in _CURSOR_NO_RESET_SCOPES
 
 
 def _to_24h(hour: int, ampm: str | None) -> int:
@@ -292,6 +343,23 @@ def _date_reset(text: str, now: datetime) -> tuple[datetime | None, str] | None:
     return None, when
 
 
+def _retry_after_reset(text: str, now: datetime) -> tuple[datetime | None, str] | None:
+    """A machine-readable wait, which is the only reset Cursor ever states."""
+    ms_match = _RETRY_AFTER_MS.search(text)
+    seconds = int(ms_match.group("ms")) / 1000 if ms_match else None
+    if seconds is None:
+        s_match = _RETRY_AFTER_S.search(text)
+        seconds = int(s_match.group("seconds")) if s_match else None
+    if not seconds:
+        return None
+    span = timedelta(seconds=seconds)
+    minutes = round(span.total_seconds() / 60)
+    wording = (
+        f"in {minutes} minute{'s' if minutes != 1 else ''}" if minutes else "in under a minute"
+    )
+    return now + span, wording
+
+
 def _relative_reset(text: str, now: datetime) -> tuple[datetime | None, str] | None:
     match = _RELATIVE_RESET.search(text)
     span = _parse_span(match.group("span")) if match else None
@@ -314,7 +382,14 @@ def _clock_reset(text: str, now: datetime) -> tuple[datetime | None, str] | None
 
 #: Most specific wording first — a message carrying a full date should not be
 #: read as the bare clock time inside it.
-_RESET_READERS = (_epoch_reset, _absolute_reset, _date_reset, _relative_reset, _clock_reset)
+_RESET_READERS = (
+    _epoch_reset,
+    _absolute_reset,
+    _date_reset,
+    _retry_after_reset,
+    _relative_reset,
+    _clock_reset,
+)
 
 
 def _resolve_reset(text: str, *, now: datetime) -> tuple[datetime | None, str]:
@@ -342,8 +417,26 @@ def detect_usage_limit(*texts: str, now: datetime | None = None) -> UsageLimit |
 
 
 def _limit_indexes(text_lower: str) -> list[int]:
-    """Every limit-phrase hit, earliest first, so a later one can be tried."""
-    return sorted({text_lower.find(p) for p in _LIMIT_PHRASES} - {-1})
+    """Every limit hit — prose phrase or Cursor code — earliest first."""
+    hits = {text_lower.find(p) for p in _LIMIT_PHRASES}
+    hits |= {text_lower.find(code) for code, _ in _CURSOR_CODES}
+    return sorted(hits - {-1})
+
+
+def _cursor_scope(sentence: str) -> str:
+    """The window a Cursor error code names, if the sentence carries one.
+
+    Read from the whole sentence rather than the matched offset: Cursor prints
+    the server's prose and its code on one line, and the code is the half that
+    means something precise ("usage limit hit [ERROR_FREE_USER_USAGE_LIMIT]").
+    Ordered longest-first in ``_CURSOR_CODES`` so ``rate_limited_changeable``
+    is not read as ``rate_limited``.
+    """
+    lowered = sentence.lower()
+    for code, scope in _CURSOR_CODES:
+        if code in lowered:
+            return scope
+    return ""
 
 
 def _claude_scope(sentence: str) -> str:
@@ -370,18 +463,22 @@ def _first_refusal(text: str, *, now: datetime) -> UsageLimit | None:
         sentence_lower = sentence.lower()
         if any(marker in sentence_lower for marker in _NON_REFUSAL_MARKERS):
             continue
+        code_scope = _cursor_scope(sentence)
         # Prefer the refusal's own sentence so an unrelated "resets" elsewhere in
         # the log cannot be attached to it; fall back to the whole text for CLIs
         # that print the window on the next line.
         reset_at, reset_text = _resolve_reset(sentence, now=now)
         if not reset_text:
             reset_at, reset_text = _resolve_reset(text, now=now)
+        provider = _detect_provider(lower)
         return UsageLimit(
-            provider=_detect_provider(lower),
+            # A Cursor error code identifies the provider on its own — its
+            # transport can emit one with no other Cursor word in the line.
+            provider=provider or ("cursor" if code_scope else ""),
             reset_at=reset_at,
             reset_text=reset_text,
             quote=sentence,
-            scope=_claude_scope(sentence),
+            scope=code_scope or _claude_scope(sentence),
         )
     return None
 
@@ -392,15 +489,28 @@ def format_usage_limit_hint(limit: UsageLimit) -> str:
     if limit.reset_text and limit.reset_text[0].isdigit():
         when = f" It resets at {limit.reset_text}."
 
+    if limit.clears_on_reset:
+        why = (
+            "This is a plan limit, not a failure of the work — re-running before "
+            "the window resets will fail the same way."
+        )
+        first_step = "1. Wait for the reset and re-run the stage, or"
+    else:
+        when = ""
+        why = (
+            "This is a spend/plan cap, not a failure of the work — and unlike a "
+            "rate limit it does not lift on its own, so waiting will not clear it."
+        )
+        first_step = "1. Raise the cap (or enable usage-based pricing) for this account, or"
+
     lines = [
         f"{limit.provider_label} refused this turn: the account's "
         f"{limit.window_label} is reached.{when}",
         "",
-        "This is a plan limit, not a failure of the work — re-running before the "
-        "window resets will fail the same way.",
+        why,
         "",
         "Fix:",
-        "1. Wait for the reset and re-run the stage, or",
+        first_step,
     ]
     link = _PROVIDER_LINKS.get(limit.provider)
     if link:
@@ -415,12 +525,19 @@ def format_usage_limit_hint(limit: UsageLimit) -> str:
 
 def usage_limit_blocking_issue(limit: UsageLimit) -> str:
     """One-line form for ``ticket.blocking_issues`` — the workflow pane truncates."""
+    window = limit.window_label
+    headline = f"{window[0].upper()}{window[1:]} reached on {limit.provider_label}"
+    if not limit.clears_on_reset:
+        return (
+            f"{headline}. The stage did not fail on its merits, and this cap does "
+            "not lift on its own — raise it (or enable usage-based pricing), or "
+            "switch adapter, before re-running."
+        )
     when = f" — resets {limit.reset_text}" if limit.reset_text else ""
     if limit.reset_text and limit.reset_text[0].isdigit():
         when = f" — resets at {limit.reset_text}"
-    window = limit.window_label
     return (
-        f"{window[0].upper()}{window[1:]} reached on {limit.provider_label}{when}. "
+        f"{headline}{when}. "
         "The stage did not fail on its merits; re-run it after the window resets, "
         "raise the plan limit, or switch adapter."
     )
