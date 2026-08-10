@@ -9,6 +9,8 @@ import json
 import re
 from dataclasses import dataclass
 
+from loregarden.services.usage_limits import detect_usage_limit
+
 _SENTINEL_RE = re.compile(
     r"<<<LOREGARDEN_STAGE_REPORT>>>\s*(\{.*?\})\s*<<<END_STAGE_REPORT>>>",
     re.DOTALL,
@@ -157,7 +159,13 @@ def is_transient_failure(stdout: str, stderr: str) -> bool:
         return True
     if any(sig in blob for sig in _AUTH_FAILURE_SIGNATURES):
         return True
-    return any(sig in blob for sig in _TRANSIENT_SIGNATURES)
+    if any(sig in blob for sig in _TRANSIENT_SIGNATURES):
+        return True
+    # The substring list above predates the Claude CLI's current wording, which
+    # names the window instead of the word "limit" it was written for: "You've hit
+    # your session limit · resets 3pm" matched nothing here, so a quota death was
+    # rerouted for rework as though the agent had reported bad work.
+    return detect_usage_limit(stdout, stderr) is not None
 
 
 def stage_report_artifact_content(stage_key: str, report: StageReport) -> dict:

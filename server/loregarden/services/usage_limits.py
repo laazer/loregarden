@@ -24,6 +24,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 #: Phrases that only appear when a plan/quota window is exhausted.
+#:
+#: The Claude entries are its own strings, read out of the CLI bundle rather than
+#: guessed: it builds every refusal as "You've hit your <window> · resets <when>"
+#: over a fixed set of windows (session/weekly/Opus/Sonnet/usage/spend), and has
+#: a separate vocabulary for running out of credits or being disabled by an admin.
 _LIMIT_PHRASES = (
     "usage limit",
     "rate limit reached",
@@ -38,12 +43,69 @@ _LIMIT_PHRASES = (
     "no credits remaining",
     "monthly limit",
     "weekly limit",
+    # Claude CLI
+    "you've hit your",
+    "youve hit your",
+    "you've reached your",
+    "out of usage credits",
+    "out of usage",
+    "usage allocation has been disabled",
+    "seat type doesn't include usage",
+    "credit balance too low",
+    "credit balance is too low",
+)
+
+#: Sentences that carry a limit phrase but are not a refusal — the turn ran, or
+#: something other than this account's quota was the cause. Checked against the
+#: matched sentence, so a warning early in a log cannot mask a real refusal later.
+#:
+#: These are not hypothetical. Claude emits "Server is temporarily limiting
+#: requests (not your usage limit)" for a capacity 429, announces overage with
+#: "You're now using usage credits · Your weekly limit resets 3pm" while the turn
+#: keeps going, and degrades Fast mode with "Fast limit reached and temporarily
+#: disabled" without stopping the run. Reading any of those as a stop would tell
+#: an operator to wait out a window that is not blocking them.
+_NON_REFUSAL_MARKERS = (
+    "not your usage limit",
+    "temporarily limiting requests",
+    "you're close to",
+    "youre close to",
+    "now using usage credits",
+    "now using your usage allocation",
+    "you're now using",
+    "youre now using",
+    "approaching",
+    "fast limit reached",
+    "fast mode",
+    "will consume a substantial portion",
+)
+
+#: Claude names the exhausted window in the refusal. Keeping its own wording is
+#: the difference between "wait" and "wait, or switch off Opus for an hour".
+_CLAUDE_SCOPE = re.compile(
+    r"you'?ve (?:hit|reached) your\s+(?P<scope>[A-Za-z0-9' ]{0,40}?limit)",
+    re.IGNORECASE,
 )
 
 #: Provider fingerprints, checked in order — the first hit names the provider.
+#: Claude carries its own window vocabulary, which identifies it even when the
+#: refusal never says "Claude" ("You've hit your session limit · resets 3pm").
 _PROVIDER_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("codex", ("chatgpt.com", "codex", "openai")),
-    ("claude", ("claude", "anthropic")),
+    (
+        "claude",
+        (
+            "claude",
+            "anthropic",
+            "usage-credits",
+            "session limit",
+            "weekly limit",
+            "opus limit",
+            "sonnet limit",
+            "usage allocation",
+            "usage credits",
+        ),
+    ),
     ("cursor", ("cursor.com", "cursor-agent", "cursor")),
 )
 
@@ -79,10 +141,19 @@ _SPAN_PART = re.compile(r"(\d+)\s*(second|minute|hour|day)s?", re.IGNORECASE)
 # The Claude CLI reports its reset as a unix timestamp: "…usage limit reached|1786530420"
 _EPOCH_RESET = re.compile(r"usage limit reached\s*\|\s*(?P<epoch>\d{9,13})", re.IGNORECASE)
 
-# A bare clock time, no date: "resets at 3pm", "try again at 10:07 AM"
+# Claude writes the reset with no "at" and no year: "· resets Sep 12 at 3pm",
+# "· resets Sep 12". Year-bearing text is handled by _ABSOLUTE_RESET above.
+_DATE_RESET = re.compile(
+    r"resets?(?:\s+at)?\s+"
+    r"(?P<month>[A-Z][a-z]{2,8})\.?\s+(?P<day>\d{1,2})(?:st|nd|rd|th)?"
+    r"(?:\s+at\s+(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>[AaPp]\.?[Mm]\.?)?)?",
+)
+
+# A bare clock time, no date: "resets 3pm", "resets at 3pm", "try again at 10:07 AM".
+# The "at" is optional because Claude omits it.
 _CLOCK_RESET = re.compile(
-    r"(?:try again at|resets? at|available again at)\s+"
-    r"(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>[AaPp]\.?[Mm]\.?)?",
+    r"(?:try again at|resets?(?:\s+at)?|available again at)\s+"
+    r"(?P<when>(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>[AaPp]\.?[Mm]\.?)?)",
 )
 
 _MONTHS = {
@@ -118,10 +189,22 @@ class UsageLimit:
     """The provider's own wording for the reset, e.g. "Aug 12th, 2026 10:07 AM"."""
     quote: str
     """The matched sentence, trimmed for display."""
+    scope: str = ""
+    """Which window was exhausted, in the provider's words ("weekly limit").
+
+    Only Claude distinguishes them, and the distinction is actionable: a session
+    limit is an hour of waiting, an Opus limit leaves Sonnet available, and a
+    weekly limit means neither.
+    """
 
     @property
     def provider_label(self) -> str:
         return _PROVIDER_LABELS.get(self.provider, _PROVIDER_LABELS[""])
+
+    @property
+    def window_label(self) -> str:
+        """What to call the exhausted window in a sentence."""
+        return self.scope or "usage limit"
 
 
 def _to_24h(hour: int, ampm: str | None) -> int:
@@ -195,6 +278,20 @@ def _absolute_reset(text: str, now: datetime) -> tuple[datetime | None, str] | N
     return None, moment.strftime("%b %d, %Y %I:%M %p").replace(" 0", " ")
 
 
+def _date_reset(text: str, now: datetime) -> tuple[datetime | None, str] | None:
+    """A month/day reset with no year, which is how Claude writes a weekly one."""
+    match = _DATE_RESET.search(text)
+    if not match or match.group("month")[:3].lower() not in _MONTHS:
+        return None
+    when = f"{match.group('month')} {match.group('day')}"
+    if match.group("hour"):
+        minute = f":{match.group('minute')}" if match.group("minute") else ""
+        when = f"{when} at {match.group('hour')}{minute}{match.group('ampm') or ''}"
+    # Deliberately no instant: without a year or a zone, resolving one would be a
+    # guess, and a wrong instant is worse than none for a window an operator waits on.
+    return None, when
+
+
 def _relative_reset(text: str, now: datetime) -> tuple[datetime | None, str] | None:
     match = _RELATIVE_RESET.search(text)
     span = _parse_span(match.group("span")) if match else None
@@ -211,13 +308,13 @@ def _clock_reset(text: str, now: datetime) -> tuple[datetime | None, str] | None
     minute = int(match.group("minute") or 0)
     if not (0 <= hour < 24 and 0 <= minute < 60):
         return None
-    suffix = f":{minute:02d}" if match.group("minute") else ""
-    return None, f"{match.group('hour')}{suffix} {match.group('ampm') or ''}".strip()
+    # Echo the provider's own spacing ("3pm", not "3 pm").
+    return None, " ".join(match.group("when").split())
 
 
 #: Most specific wording first — a message carrying a full date should not be
 #: read as the bare clock time inside it.
-_RESET_READERS = (_epoch_reset, _absolute_reset, _relative_reset, _clock_reset)
+_RESET_READERS = (_epoch_reset, _absolute_reset, _date_reset, _relative_reset, _clock_reset)
 
 
 def _resolve_reset(text: str, *, now: datetime) -> tuple[datetime | None, str]:
@@ -238,21 +335,53 @@ def detect_usage_limit(*texts: str, now: datetime | None = None) -> UsageLimit |
     for text in texts:
         if not text:
             continue
-        lower = text.lower()
-        index = -1
-        for phrase in _LIMIT_PHRASES:
-            found = lower.find(phrase)
-            if found != -1:
-                index = found
-                break
-        if index == -1:
+        limit = _first_refusal(text, now=now or datetime.now(timezone.utc))
+        if limit:
+            return limit
+    return None
+
+
+def _limit_indexes(text_lower: str) -> list[int]:
+    """Every limit-phrase hit, earliest first, so a later one can be tried."""
+    return sorted({text_lower.find(p) for p in _LIMIT_PHRASES} - {-1})
+
+
+def _claude_scope(sentence: str) -> str:
+    match = _CLAUDE_SCOPE.search(sentence)
+    if not match:
+        return ""
+    # Keep the provider's capitalisation — "Opus limit" is a model name, not a
+    # sentence start.
+    scope = " ".join(match.group("scope").split())
+    # "You've hit your limit" names no window; leave it to the generic wording.
+    return "" if scope.lower() == "limit" else scope
+
+
+def _first_refusal(text: str, *, now: datetime) -> UsageLimit | None:
+    """The first limit phrase in ``text`` that is an actual refusal.
+
+    Warnings are skipped rather than ending the scan: a long run's log can carry
+    "You're close to your weekly limit" an hour before the refusal that killed it,
+    and stopping at the first hit would report the warning and miss the stop.
+    """
+    lower = text.lower()
+    for index in _limit_indexes(lower):
+        sentence = _sentence_around(text, index)
+        sentence_lower = sentence.lower()
+        if any(marker in sentence_lower for marker in _NON_REFUSAL_MARKERS):
             continue
-        reset_at, reset_text = _resolve_reset(text, now=now or datetime.now(timezone.utc))
+        # Prefer the refusal's own sentence so an unrelated "resets" elsewhere in
+        # the log cannot be attached to it; fall back to the whole text for CLIs
+        # that print the window on the next line.
+        reset_at, reset_text = _resolve_reset(sentence, now=now)
+        if not reset_text:
+            reset_at, reset_text = _resolve_reset(text, now=now)
         return UsageLimit(
             provider=_detect_provider(lower),
             reset_at=reset_at,
             reset_text=reset_text,
-            quote=_sentence_around(text, index),
+            quote=sentence,
+            scope=_claude_scope(sentence),
         )
     return None
 
@@ -264,7 +393,8 @@ def format_usage_limit_hint(limit: UsageLimit) -> str:
         when = f" It resets at {limit.reset_text}."
 
     lines = [
-        f"{limit.provider_label} refused this turn: the account's usage limit is reached.{when}",
+        f"{limit.provider_label} refused this turn: the account's "
+        f"{limit.window_label} is reached.{when}",
         "",
         "This is a plan limit, not a failure of the work — re-running before the "
         "window resets will fail the same way.",
@@ -288,8 +418,9 @@ def usage_limit_blocking_issue(limit: UsageLimit) -> str:
     when = f" — resets {limit.reset_text}" if limit.reset_text else ""
     if limit.reset_text and limit.reset_text[0].isdigit():
         when = f" — resets at {limit.reset_text}"
+    window = limit.window_label
     return (
-        f"Usage limit reached on {limit.provider_label}{when}. "
+        f"{window[0].upper()}{window[1:]} reached on {limit.provider_label}{when}. "
         "The stage did not fail on its merits; re-run it after the window resets, "
         "raise the plan limit, or switch adapter."
     )
