@@ -7,12 +7,14 @@ from pathlib import PurePath
 from typing import Any
 
 from loregarden.mcp.tool_ids import (
+    ARGUMENT_GATED_MCP_TOOLS,
     AUTO_APPROVED_MCP_TOOLS,
     ORCHESTRATED_DENIED_MCP_TOOLS,
     TICKET_SCOPED_MCP_TOOLS,
     McpTool,
 )
 from loregarden.models.domain import Ticket
+from loregarden.services.organization_gate_service import READ_ONLY_ACTIONS, OrganizationAction
 
 ASK_USER_QUESTION_TOOL = "AskUserQuestion"
 
@@ -99,12 +101,35 @@ def bare_mcp_tool_name(tool_name: str) -> str | None:
     return None
 
 
-def is_auto_approved_mcp_tool(tool_name: str) -> bool:
+def is_auto_approved_mcp_tool(tool_name: str, tool_input: dict[str, Any] | None = None) -> bool:
+    """Whether this call skips the approval inbox.
+
+    ``tool_input`` matters only for the argument-gated tools: a tool that both
+    reads and writes cannot be judged by its name alone, and defaulting such a
+    call to "approved" would let the write ride in on the read's reputation.
+    Callers that pass nothing get the safe answer (not auto-approved) for those
+    tools, never the permissive one.
+    """
     bare = bare_mcp_tool_name(tool_name)
     if not bare:
         return False
     tool = McpTool.try_parse(bare)
-    return tool in AUTO_APPROVED_MCP_TOOLS if tool else False
+    if tool is None:
+        return False
+    if tool in ARGUMENT_GATED_MCP_TOOLS:
+        # No arguments passed at all means the caller cannot tell us which action
+        # this is — not that it is the default one. Refuse rather than guess.
+        if tool_input is None:
+            return False
+        return _argument_gated_auto_approval(tool, tool_input)
+    return tool in AUTO_APPROVED_MCP_TOOLS
+
+
+def _argument_gated_auto_approval(tool: McpTool, tool_input: dict[str, Any]) -> bool:
+    if tool is McpTool.CHECK_ORGANIZATION:
+        action = tool_input.get("action") or OrganizationAction.CHECK.value
+        return OrganizationAction.try_parse(action) in READ_ONLY_ACTIONS
+    return False
 
 
 def is_orchestrated_agent_denied_mcp_tool(tool_name: str) -> bool:

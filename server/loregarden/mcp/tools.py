@@ -13,12 +13,14 @@ from loregarden.mcp.admission import (
     run_admitted,
     start_orchestration_admitted,
 )
+from loregarden.mcp.organization_tool import TOOL_DEFINITION as ORGANIZATION_TOOL_DEFINITION
 from loregarden.mcp.ticket_edit_tools import (
     execute_ticket_edit_tool,
     normalize_update_ticket_args,
     resolve_ticket_payload,
 )
 from loregarden.mcp.tool_ids import McpTool
+from loregarden.mcp.tool_registry import EXTENDED_TOOLS
 from loregarden.models.domain import (
     OrchestrationRunStatus,
     WorkItemType,
@@ -35,7 +37,6 @@ from loregarden.services.evidence import (
 )
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-from loregarden.services.prior_work import search_prior_work
 from loregarden.services.ticket_discovery import list_tickets_mcp
 from loregarden.services.ticket_service import TicketService
 
@@ -1011,6 +1012,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
 ]
 
+# Tools that live in their own module rather than in this file's chain.
+TOOL_DEFINITIONS.append(ORGANIZATION_TOOL_DEFINITION)
+
 
 def _get_run(session: Session, run_id: str):
     from loregarden.models.domain import OrchestrationRun
@@ -1192,6 +1196,10 @@ def execute_tool(
     svc = OrchestrationCallbackService(session)
     arguments = normalize_tool_arguments(name, arguments)
 
+    table_handler = EXTENDED_TOOLS.get(name)
+    if table_handler is not None:
+        return table_handler(session, arguments)
+
     if name == "loregarden_get_ticket":
         return json.dumps(
             resolve_ticket_payload(
@@ -1251,19 +1259,6 @@ def execute_tool(
             checklist=arguments["checklist"],
         )
         return json.dumps(result, indent=2)
-
-    if name == "loregarden_search_prior_work":
-        return json.dumps(
-            {
-                "results": search_prior_work(
-                    session,
-                    arguments["query"],
-                    workspace_slug=arguments.get("workspace_slug", ""),
-                    exclude_ticket_id=arguments.get("ticket_id", ""),
-                )
-            },
-            indent=2,
-        )
 
     memory_result = _execute_memory_tool(name, arguments)
     if memory_result is not None:

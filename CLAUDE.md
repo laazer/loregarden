@@ -111,6 +111,17 @@ Applies to `server/**/*.py`. Enforce, beyond the automated gates:
 - Pydantic **v2** idioms (`model_validate`, `model_dump`); v1 patterns are a bug.
 - No defensive normalization (`str(x).strip().lower()` on a value already normalized at its
   source) — the `detect-defensive-normalization` gate enforces this.
+- No stringly-typed vocabularies. A closed set of values is an enum
+  (`models/domain/enums.py`, `mcp/tool_ids.py`), not a string: no `run.status == "failed"`
+  next to `RunStatus`, no `status: str` / `kind: str` parameters, no inline `x in {"a", …}`
+  sets, no literal compared all over a module with no type behind it. The `py-organization`
+  gate enforces all four on staged lines; `# py-org: allow-string` waives a line, and is for
+  vocabularies we do not own (a GitHub conclusion of `"skipped"` is not `CIStatus.SKIPPED`).
+- No `isinstance`. `isinstance(payload, dict)` is a schema check written by hand — model the
+  payload with Pydantic at the boundary and pass the model. `isinstance(x, SomeClass)` is a
+  type switch — dispatch polymorphically or through a `typing.Protocol`. Same gate, same
+  scoping; `# py-org: allow-isinstance` waives a line for genuinely foreign objects
+  (`__eq__`, a `TypeDecorator`, a third-party payload not yet modelled).
 - Migrations append-only, each guarding its own changes; never rewrite an applied id.
 - Test isolation via `unittest.mock` over `monkeypatch`, unless mocking handles the case poorly.
 - No ticket IDs in filenames.
@@ -123,7 +134,32 @@ Applies to `server/**/*.py`. Enforce, beyond the automated gates:
   `py-git-subprocess` gate enforces this.
 
 The automated gates (Ruff, Pylint diff-scoped, organization, defensive-normalization,
-git-subprocess routing) run on staged files via lefthook. A reviewer adds judgment the gates cannot: is this the right shape,
+git-subprocess routing) run on staged files via lefthook.
+
+**The organization gates are workspace-agnostic and run twice.** One copy lives in
+`.lefthook/scripts/`; both surfaces invoke it from there rather than copying it around:
+
+- **Pre-commit**, on staged files — for loregarden via `lefthook.yml`, for other workspaces via
+  `scripts/install-workspace-hooks.sh <workspace-root>`, which writes a marker-delimited block
+  into that repo's `lefthook.yml` pointing back at this checkout (`--check` reports drift
+  without writing).
+- **Orchestration gates**, on every stage transition in every workspace — the `gates.commands`
+  in `agent_context/orchestration/*.yaml`, including `default.yaml`, so a workspace with no
+  profile of its own still gets them. They run `--scope worktree`, because an agent's edits are
+  uncommitted when the gate fires, and that scope includes untracked files — a module the agent
+  just wrote is the least-reviewed code in the run and `git diff` never lists it.
+
+- **On demand**, via `loregarden_check_organization` — ask what the gate will say before
+  spending a stage finding out:
+
+      loregarden_check_organization workspace_slug=blobert action=check scope=worktree
+
+  `action` is `check` (default, read-only), `hooks_status`, or `install_hooks`. Approval
+  policy follows the *action*, not the tool name: the reads auto-approve, `install_hooks`
+  goes to the inbox because it rewrites another repo's git hooks.
+
+Layout is detected per repo (Python root, TypeScript root, enum home, error helper), so the
+messages name the target workspace's own modules. Nothing here assumes loregarden's tree. A reviewer adds judgment the gates cannot: is this the right shape,
 in the right place, with the right seams.
 
 ### GDScript (`gdscript-reviewer`)
@@ -136,6 +172,10 @@ GDScript rules. If a loregarden ticket routes here, that is a routing bug, not a
 
 Applies to `client/**/*.{ts,tsx}`. oxlint runs on staged files. Beyond it: no `as any` or
 `@ts-ignore` suppression, no empty catch blocks, and no assertions on copy that no spec pins.
+No inline `err instanceof Error ? err.message : "…"` ternary either — that narrowing is
+`describeError(error, fallback)` in `state/toastStore`, which also recovers the `ApiError`
+status line the ternary discards. The `ts-organization` gate enforces it on staged lines;
+`// ts-org: allow-instanceof` waives one. Type guards inside a helper stay legal.
 
 ## Workflow discipline
 

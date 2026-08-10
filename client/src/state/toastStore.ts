@@ -77,8 +77,15 @@ export function pushToast(input: ToastInput): string {
   return useToastStore.getState().push(input);
 }
 
-/** Best readable line for whatever a rejected action threw. */
-export function describeError(error: unknown): string {
+/**
+ * Best readable line for whatever a rejected action threw.
+ *
+ * `fallback` is what the caller wants shown when the throw carries no message
+ * of its own ("Failed to delete branch") — it replaces the inline
+ * `err instanceof Error ? err.message : "…"` ternary, which loses the ApiError
+ * status line and was copy-pasted across ~45 call sites.
+ */
+export function describeError(error: unknown, fallback = "Unexpected error"): string {
   if (error instanceof ApiError) {
     return error.message || `Request failed (${error.status})`;
   }
@@ -86,7 +93,7 @@ export function describeError(error: unknown): string {
     return error.message || error.name;
   }
   if (typeof error === "string" && error) return error;
-  return "Unexpected error";
+  return fallback;
 }
 
 /**

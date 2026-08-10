@@ -95,6 +95,12 @@ task hooks:py-pylint           # Pylint (diff-scoped)
 task hooks:py-organization     # organization guardrails
 cd client && npm run lint      # oxlint
 
+# Organization guardrails against any workspace (what the orchestration gate runs)
+python3 .lefthook/scripts/py_organization_check.py --repo <workspace-root> --scope worktree
+node .lefthook/scripts/ts_organization_check.cjs --repo <workspace-root> --scope worktree
+scripts/install-workspace-hooks.sh [--check] <workspace-root>   # same checks, their pre-commit
+./scripts/loregarden-cli.sh mcp call loregarden_check_organization workspace_slug=<slug> action=check
+
 # DB
 sqlite3 data/loregarden.db
 
@@ -137,6 +143,9 @@ task cli -- mcp call loregarden_get_ticket ticket_id=42     # key=value, typed b
 | Hand-editing files while an orchestration runs | It commits the **whole** working tree into whatever ticket is open | commit `49096a5` re-added 13 deleted files |
 | Ticket IDs in test/doc filenames | Produces the `TICKET_39_*` sprawl that was just deleted | `docs/AUDIT.md` L-3 |
 | `str(...).strip().lower()` defensively | Redundant normalization; normalize at the source | `.lefthook/scripts/detect-defensive-normalization.sh` |
+| `run.status == "failed"`, `kind: str`, inline literal sets | Stringly-typed vocabularies. ~100 enum members already exist in `models/domain/enums.py` and `mcp/tool_ids.py`; use them, or add one | `.lefthook/scripts/py_string_vocab.py` |
+| `isinstance(payload, dict)` | A schema check by hand. Model it with Pydantic at the boundary; `isinstance` on a class wants polymorphism | 220 of 238 target builtins; `py_organization_check.py` → `isinstance_errors` |
+| `err instanceof Error ? err.message : "…"` | Copy-pasted 46× and drops the `ApiError` status; use `describeError(error, fallback)` | `.lefthook/scripts/ts_organization_check.cjs` |
 | Assuming `alwaysApply: true` in prompt frontmatter does anything | It is a Cursor convention loregarden does not honor. A common asset reaches an agent only if its `role_file` says to read it, or the executor embeds it | `agents/executors/cli.py` |
 
 ## NOTES

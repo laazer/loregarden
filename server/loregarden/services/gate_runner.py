@@ -10,6 +10,7 @@ import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from loregarden.config import settings
 from loregarden.models.domain import Ticket, WorkflowStageDef, Workspace
 from loregarden.services.handoff_store import HANDOFF_SCRATCH_SUBDIR, export_for_gate
 from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile
@@ -76,6 +77,10 @@ def build_gate_context(
         "to_stage": to_stage,
         "workspace_root": str(repo_root),
         "workspace_slug": workspace.slug,
+        # Loregarden's own checkout, so a profile can invoke a check that ships
+        # here and runs against any workspace — one copy of the rules rather
+        # than a copy per repo that drifts.
+        "loregarden_root": str(settings.repo_root),
     }
 
 
