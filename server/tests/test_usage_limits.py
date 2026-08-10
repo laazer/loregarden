@@ -46,6 +46,78 @@ def test_detects_relative_reset_and_resolves_an_instant():
     assert limit.reset_at == datetime(2026, 8, 8, 16, 12, tzinfo=timezone.utc)
 
 
+def test_detects_claude_session_limit_and_names_the_window():
+    """Claude's live wording: "You've hit your <window> · resets <when>"."""
+    limit = detect_usage_limit("API Error: You've hit your session limit · resets 3pm")
+
+    assert limit is not None
+    assert limit.provider == "claude"
+    assert limit.scope == "session limit"
+    assert limit.reset_text == "3pm"
+    assert usage_limit_blocking_issue(limit).startswith("Session limit reached on Claude")
+
+
+def test_detects_claude_weekly_limit_with_a_dated_reset():
+    limit = detect_usage_limit("You've hit your weekly limit · resets Sep 12 at 3pm")
+
+    assert limit is not None
+    assert limit.scope == "weekly limit"
+    assert limit.reset_text == "Sep 12 at 3pm"
+
+
+def test_detects_claude_opus_limit_without_lowercasing_the_model():
+    limit = detect_usage_limit("You've hit your Opus limit · resets Sep 12")
+
+    assert limit is not None
+    assert limit.scope == "Opus limit"
+    assert "Opus limit reached on Claude" in usage_limit_blocking_issue(limit)
+    assert "the account's Opus limit is reached" in format_usage_limit_hint(limit)
+
+
+def test_detects_claude_out_of_credits():
+    limit = detect_usage_limit("You're out of usage credits · resets 10am")
+
+    assert limit is not None
+    assert limit.provider == "claude"
+    assert limit.reset_text == "10am"
+
+
+def test_capacity_429_is_not_the_accounts_usage_limit():
+    """Claude says so explicitly, and reading it as a quota wait is wrong advice."""
+    assert (
+        detect_usage_limit(
+            "API Error: Server is temporarily limiting requests (not your usage limit) "
+            "· this is a temporary capacity issue."
+        )
+        is None
+    )
+
+
+def test_overage_and_warning_notices_are_not_refusals():
+    # The turn kept running in both of these.
+    assert (
+        detect_usage_limit("You're now using usage credits · Your weekly limit resets 3pm") is None
+    )
+    assert detect_usage_limit("You're close to your weekly limit · resets Sep 12") is None
+    assert (
+        detect_usage_limit("Fast limit reached and temporarily disabled · resets in 5 minutes")
+        is None
+    )
+
+
+def test_a_warning_earlier_in_the_log_does_not_mask_the_refusal():
+    log = (
+        "You're close to your weekly limit · resets Sep 12\n"
+        "…the agent kept working…\n"
+        "API Error: You've hit your session limit · resets 3pm\n"
+    )
+    limit = detect_usage_limit(log)
+
+    assert limit is not None
+    assert limit.scope == "session limit"
+    assert limit.reset_text == "3pm"
+
+
 def test_ignores_unrelated_limit_wording():
     assert detect_usage_limit("Reached the file size limit for this diff") is None
     assert detect_usage_limit("HTTP 429 from the git host") is None
@@ -86,3 +158,56 @@ def test_failed_run_reads_stderr_but_stdout_prose_needs_a_reset_window():
     # Exit 0 with the provider's own message (Claude prints it and exits clean).
     assert run_usage_limit(RunStatus.SUCCEEDED, CODEX_MESSAGE, "") is not None
     assert run_usage_limit(RunStatus.CANCELLED, "", CODEX_MESSAGE) is None
+
+
+def test_claude_window_wording_counts_as_a_transient_failure():
+    """Otherwise a quota death is rerouted for rework as though the work was bad."""
+    from loregarden.services.stage_report import is_transient_failure
+
+    assert is_transient_failure("API Error: You've hit your session limit · resets 3pm", "")
+    assert is_transient_failure("", "You've hit your weekly limit · resets Sep 12")
+    assert not is_transient_failure("The tests failed on an assertion.", "")
+
+
+def test_detects_cursor_error_code_without_any_cursor_prose():
+    """Cursor's server writes the prose; only the code is Cursor's own."""
+    limit = detect_usage_limit('{"error":"ERROR_PRO_USER_USAGE_LIMIT","message":"..."}')
+
+    assert limit is not None
+    assert limit.provider == "cursor"
+    assert limit.scope == "Pro usage limit"
+    assert limit.clears_on_reset
+
+
+def test_detects_cursor_resource_exhausted_transport_code():
+    limit = detect_usage_limit("cursor-agent: [resource_exhausted] request rejected")
+
+    assert limit is not None
+    assert limit.provider == "cursor"
+    assert limit.scope == "rate limit"
+
+
+def test_cursor_retry_after_metadata_is_a_reset():
+    now = datetime(2026, 8, 8, 12, 0, tzinfo=timezone.utc)
+    limit = detect_usage_limit("Error: rate limit exceeded (retryAfterMs=120000)", now=now)
+
+    assert limit is not None
+    assert limit.reset_at == datetime(2026, 8, 8, 12, 2, tzinfo=timezone.utc)
+    assert limit.reset_text == "in 2 minutes"
+
+
+def test_cursor_spend_cap_is_not_described_as_something_waiting_fixes():
+    limit = detect_usage_limit("ERROR_USAGE_PRICING_REQUIRED: enable usage-based pricing")
+
+    assert limit is not None
+    assert limit.scope == "usage-pricing limit"
+    assert not limit.clears_on_reset
+    assert "does not lift on its own" in usage_limit_blocking_issue(limit)
+    assert "Wait for the reset" not in format_usage_limit_hint(limit)
+
+
+def test_cursor_code_wins_over_a_generic_phrase_on_the_same_line():
+    limit = detect_usage_limit("Error: usage limit hit [ERROR_FREE_USER_USAGE_LIMIT]")
+
+    assert limit is not None
+    assert limit.scope == "free-plan usage limit"
