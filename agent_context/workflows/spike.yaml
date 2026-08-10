@@ -1,0 +1,65 @@
+slug: spike
+name: Spike
+description: >-
+  Investigation workflow for spike tickets, whose deliverable is a verdict rather
+  than a shipped change. Research, run a real experiment, decide, record what was
+  learned. No test-design, no test-break, no AC gate — a spike has nothing to
+  test-drive and its acceptance is evidence, not a passing suite.
+stages:
+  - key: triage
+    name: Triage
+    agent_id: ticket_scoper
+    skill_name: ""
+    order: 1
+  - key: research
+    name: Research
+    agent_id: retriever
+    skill_name: spike-research
+    order: 2
+  - key: experiment
+    name: Experiment
+    stage_type: classify
+    agent_id: backend_implementer
+    skill_name: ""
+    order: 3
+    classify_routes:
+      - languages: [gdscript]
+        specialties: [godot, engine]
+        agent_id: engine_integration
+        default: false
+      - languages: [typescript, javascript]
+        specialties: [frontend]
+        agent_id: frontend_implementer
+        default: false
+      - languages: []
+        specialties: []
+        agent_id: backend_implementer
+        default: true
+  - key: decision
+    name: Decision
+    agent_id: planner
+    skill_name: spike-decision
+    order: 4
+  - key: learning
+    name: Record learnings
+    agent_id: learning
+    skill_name: ""
+    optional: true
+    order: 5
+  - key: done
+    name: Done
+    agent_id: ""
+    skill_name: ""
+    terminal: true
+    order: 6
+transitions:
+  - from: triage
+    to: research
+  - from: research
+    to: experiment
+  - from: experiment
+    to: decision
+  - from: decision
+    to: learning
+  - from: learning
+    to: done
