@@ -39,6 +39,10 @@ class BaxterChatSessionUpdate(BaseModel):
 
 class BaxterChatMessageCreate(BaseModel):
     content: str = Field(min_length=1)
+    #: A registered skill slug chosen from the composer's `/` menu, or "" for an
+    #: ordinary message. An unknown name is rejected rather than ignored: a skill
+    #: that silently does nothing is worse than one that says it isn't there.
+    skill: str = ""
 
 
 def _workspace(session: Session, slug: str) -> Workspace:
@@ -145,7 +149,7 @@ def send_baxter_chat_message(
     chat_session = _chat_session(session, workspace.id, session_id)
     try:
         _user_message, assistant_message = start_baxter_chat_turn(
-            session, chat_session, body.content
+            session, chat_session, body.content, skill_name=body.skill
         )
     except BaxterChatConflictError as exc:
         raise HTTPException(409, str(exc)) from exc

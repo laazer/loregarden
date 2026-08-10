@@ -27,6 +27,8 @@ export interface ChatArchive {
   sessionId: string;
   openSession: (id: string) => void;
   startNewChat: () => void;
+  /** Create a fresh thread and send into it — what a note's "new chat" does. */
+  sendInNewChat: (content: string) => Promise<unknown>;
   runtime: WorkspaceRuntimeSettings;
   setRuntime: (runtime: WorkspaceRuntimeSettings) => Promise<void>;
   isSavingRuntime: boolean;
@@ -116,6 +118,7 @@ export function useActiveChatSession(): ActiveChatSession {
         sessionId: baxterSession.sessionId,
         openSession: baxterSession.openSession,
         startNewChat: baxterSession.startNewChat,
+        sendInNewChat: baxterSession.sendInNewChat,
         runtime: baxterSession.runtime,
         setRuntime: baxterSession.setRuntime,
         isSavingRuntime: baxterSession.isSavingRuntime,

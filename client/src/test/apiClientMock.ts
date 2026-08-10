@@ -70,4 +70,5 @@ export const api = {
   createTicket: jest.fn(),
   createTicketStudioSession: jest.fn(),
   browseImportDirectory: jest.fn().mockResolvedValue([]),
+  skills: jest.fn().mockResolvedValue([]),
 };

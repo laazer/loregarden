@@ -161,7 +161,10 @@ describe("the composer while a run is working", () => {
     fireEvent.change(input, { target: { value: "what is blocking this?" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    expect(bound.send).toHaveBeenCalledWith("what is blocking this?", { autoApprove: false });
+    expect(bound.send).toHaveBeenCalledWith("what is blocking this?", {
+      autoApprove: false,
+      skill: "",
+    });
     expect(mockApi.askAside).not.toHaveBeenCalled();
   });
 

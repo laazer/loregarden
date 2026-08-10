@@ -33,6 +33,7 @@ from loregarden.services.cli_settings import apply_runtime_overrides
 from loregarden.services.run_cancellation import request_cancel
 from loregarden.services.run_concurrency import find_active_workspace_chat_run
 from loregarden.services.triage_service import TRIAGE_AGENT_NAME
+from loregarden.skills.registry import list_skills
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -46,15 +47,22 @@ CANCELLED_TURN_MESSAGE = f"{TRIAGE_AGENT_NAME} stopped this turn at your request
 
 
 def start_baxter_chat_turn(
-    session: Session, chat_session: BaxterChatSession, content: str
+    session: Session, chat_session: BaxterChatSession, content: str, *, skill_name: str = ""
 ) -> tuple[BaxterChatMessage, BaxterChatMessage]:
     """Persist the user message and a pending assistant row, then return.
 
     Executes nothing — call ``schedule_baxter_chat_turn(assistant.id)`` next.
+
+    ``skill_name`` is the skill picked from the composer's `/` menu. It rides on
+    the user row so the background worker reads it from the same place it reads
+    the message — the request thread is long gone by then.
     """
     text = content.strip()
     if not text:
         raise ValueError("Message content is required")
+    skill = skill_name.strip()
+    if skill and skill not in list_skills():
+        raise ValueError(f"Skill '{skill}' is not registered")
 
     if latest_pending_turn(session, chat_session.id):
         raise BaxterChatConflictError(
@@ -67,6 +75,7 @@ def start_baxter_chat_turn(
         role="user",
         content=text,
         status="complete",
+        skill_name=skill,
     )
     assistant_message = BaxterChatMessage(
         session_id=chat_session.id,
@@ -118,8 +127,8 @@ def _settle(
     return assistant
 
 
-def _latest_user_content(session: Session, session_id: str) -> str:
-    latest_user = session.exec(
+def _latest_user_message(session: Session, session_id: str) -> BaxterChatMessage | None:
+    return session.exec(
         select(BaxterChatMessage)
         .where(
             BaxterChatMessage.session_id == session_id,
@@ -128,7 +137,6 @@ def _latest_user_content(session: Session, session_id: str) -> str:
         .order_by(col(BaxterChatMessage.created_at).desc())
         .limit(1)
     ).first()
-    return latest_user.content if latest_user else ""
 
 
 def execute_baxter_chat_turn_background(assistant_id: str) -> None:
@@ -150,7 +158,7 @@ def execute_baxter_chat_turn_background(assistant_id: str) -> None:
                 )
                 return
 
-            latest_user_message = _latest_user_content(session, chat_session.id)
+            latest_user = _latest_user_message(session, chat_session.id)
             effective_workspace = apply_runtime_overrides(workspace, chat_session.runtime_json)
             # Settled rows only, so the pending assistant row is not fed back as history.
             history = list_chat_messages(session, chat_session.id)
@@ -158,9 +166,10 @@ def execute_baxter_chat_turn_background(assistant_id: str) -> None:
                 reply = invoke_baxter_chat_model(
                     session,
                     effective_workspace,
-                    content=latest_user_message,
+                    content=latest_user.content if latest_user else "",
                     history=history,
                     turn_id=assistant_id,
+                    skill_name=latest_user.skill_name if latest_user else "",
                 )
             except Exception as exc:
                 logger.exception("Baxter chat turn failed: %s", assistant_id)

@@ -253,6 +253,7 @@ describe("BaxterChatPage", () => {
         "loregarden",
         "s1",
         "Hello Baxter",
+        "",
       );
     });
     await waitFor(() => {
@@ -330,6 +331,7 @@ describe("BaxterChatPage", () => {
         "blobert",
         "s1",
         "What is next here?",
+        "",
       );
     });
   });

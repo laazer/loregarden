@@ -105,6 +105,7 @@ it("sends through the bound session, not its own transport", () => {
 
   expect(bound.send).toHaveBeenCalledWith("why did verify reject?", {
     autoApprove: false,
+    skill: "",
   });
 });
 
@@ -139,6 +140,7 @@ it("carries the auto-approve choice into the turn it was set for", () => {
 
   expect(bound.send).toHaveBeenCalledWith("run the tests", {
     autoApprove: true,
+    skill: "",
   });
 });
 
@@ -155,6 +157,7 @@ it("sends a quick opener while collapsed", () => {
 
   expect(bound.send).toHaveBeenCalledWith("What is blocking this ticket?", {
     autoApprove: false,
+    skill: "",
   });
 });
 
@@ -169,6 +172,7 @@ it("offers shipping the work when the conversation sits on its own branch", () =
 
   expect(bound.send).toHaveBeenCalledWith("Commit, push, and open a PR", {
     autoApprove: false,
+    skill: "",
   });
 });
 
@@ -273,6 +277,7 @@ it("turns Send into Stop while a Baxter turn is in flight", () => {
         sessionId: "s1",
         openSession: jest.fn(),
         startNewChat: jest.fn(),
+        sendInNewChat: jest.fn().mockResolvedValue(undefined),
         runtime: DEFAULT_RUNTIME,
         setRuntime: jest.fn(),
         isSavingRuntime: false,
@@ -352,7 +357,7 @@ describe("the run-logs toggle", () => {
 
     expect(bound.send).toHaveBeenCalledWith(
       "Question about the run logs below:\n\n```\n10:00:00 ERR pytest exited 1\n```\n\nwhy did this fail?",
-      { autoApprove: false },
+      { autoApprove: false, skill: "" },
     );
   });
 
@@ -373,6 +378,7 @@ describe("the run-logs toggle", () => {
 
     expect(bound.send).toHaveBeenCalledWith("why did this fail?", {
       autoApprove: false,
+      skill: "",
     });
   });
 
@@ -447,6 +453,7 @@ describe("a screen that composes for its own thread", () => {
           sessionId: "s1",
           openSession: jest.fn(),
           startNewChat: jest.fn(),
+          sendInNewChat: jest.fn().mockResolvedValue(undefined),
           runtime: DEFAULT_RUNTIME,
           setRuntime,
           isSavingRuntime: false,
@@ -484,6 +491,7 @@ describe("the chat options", () => {
     sessionId: "s1",
     openSession: jest.fn(),
     startNewChat: jest.fn(),
+    sendInNewChat: jest.fn().mockResolvedValue(undefined),
     runtime: DEFAULT_RUNTIME,
     setRuntime: jest.fn().mockResolvedValue({}),
     isSavingRuntime: false,

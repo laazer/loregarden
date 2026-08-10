@@ -14,6 +14,7 @@ from loregarden.api import (
     calendar_events,
     chat_turn_events,
     ci,
+    composer_notes,
     diff_review,
     editor,
     events,
@@ -116,6 +117,7 @@ app.include_router(calendar_events.router, prefix="/api")
 app.include_router(editor.router, prefix="/api")
 app.include_router(branch_triage.router, prefix="/api")
 app.include_router(baxter_chat.router, prefix="/api")
+app.include_router(composer_notes.router, prefix="/api")
 app.include_router(system.router, prefix="/api")
 app.include_router(inbox.router, prefix="/api")
 app.include_router(events.router, prefix="/api")

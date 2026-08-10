@@ -24,6 +24,7 @@ from loregarden.db.migration_utils import (
     table_columns,
     table_exists,
 )
+from loregarden.db.migrations_composer import m_composer_commands
 from loregarden.db.migrations_handoffs import m_backfill_handoff_artifacts
 from loregarden.db.migrations_mcp import (
     m_mcp_server_health,
@@ -1388,6 +1389,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0072_ticket_tags", _m_ticket_tags),
     ("0073_ticket_relations", _m_ticket_relations_table),
     ("0074_lane_entry_dismissed", m_lane_entry_dismissed),
+    ("0075_composer_commands", m_composer_commands),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

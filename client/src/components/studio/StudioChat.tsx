@@ -2,7 +2,10 @@ import type { ReactNode } from "react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { useChatTurnThinking } from "../../hooks/useChatTurnThinking";
+import type { ComposerCommandsBinding } from "../../hooks/useComposerCommands";
 import { BaxterAvatar, type BaxterAvatarState } from "../chat/BaxterAvatar";
+import { ComposerCommandMenu } from "../chat/ComposerCommandMenu";
+import { ComposerNotes } from "../chat/ComposerNotes";
 import { LiveThinkingStream } from "../chat/LiveThinkingStream";
 import { MarkdownContent } from "../chat/MarkdownContent";
 import { PrimitiveParts } from "../chat/primitives/PrimitiveParts";
@@ -317,6 +320,7 @@ export function StudioChatComposer({
   variant = "panel",
   showShortcut,
   iconOnlySend,
+  commands,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -337,6 +341,14 @@ export function StudioChatComposer({
   showShortcut?: boolean;
   /** Round icon send button (Baxter main chat). Default when variant is dock. */
   iconOnlySend?: boolean;
+  /**
+   * `/` commands and `@` references, from `useComposerCommands`.
+   *
+   * Optional because not every composer belongs to a conversation that can act
+   * on them — a surface without one gets a plain composer rather than a menu
+   * whose entries would do nothing.
+   */
+  commands?: ComposerCommandsBinding;
 }) {
   const canStop = Boolean(isSending && onStop) && !isStopping && !disabled;
   const canSend = value.trim().length > 0 && !isSending && !disabled;
@@ -347,6 +359,10 @@ export function StudioChatComposer({
 
   const submit = () => {
     if (!canSend) return;
+    // A leading `/command` is not a message: it queues, writes a note, or picks
+    // the skill for this turn. Only fall through to the ordinary send when the
+    // draft turned out to be plain text after all.
+    if (commands?.submit()) return;
     onSubmit();
   };
 
@@ -363,22 +379,42 @@ export function StudioChatComposer({
         "ticket-studio-composer-wrap",
       ].join(" ")}
     >
+      {commands ? <ComposerNotes commands={commands} /> : null}
       <div className="lg-chat-composer ticket-studio-composer">
-        <textarea
-          className="lg-chat-composer-input ticket-studio-composer-input"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          disabled={disabled || isSending}
-          rows={variant === "dock" ? 1 : 2}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              if (showStop) stop();
-              else submit();
+        <div className="lg-composer-commands">
+          {commands ? (
+            <ComposerCommandMenu
+              items={commands.items}
+              activeIndex={commands.activeIndex}
+              triggerKind={commands.triggerKind}
+              anchorRef={commands.inputRef}
+              onHover={commands.setActiveIndex}
+              onPick={commands.accept}
+            />
+          ) : null}
+          <textarea
+            ref={commands?.inputRef as React.Ref<HTMLTextAreaElement>}
+            className="lg-chat-composer-input ticket-studio-composer-input"
+            value={value}
+            onChange={(e) =>
+              commands ? commands.handleChange(e.target.value, e.target) : onChange(e.target.value)
             }
-          }}
-        />
+            onBlur={() => commands?.close()}
+            placeholder={placeholder}
+            disabled={disabled || isSending}
+            rows={variant === "dock" ? 1 : 2}
+            onKeyDown={(e) => {
+              // The menu owns Enter, Tab and the arrows while it is open, so a
+              // completion is accepted rather than sent as a half-typed draft.
+              if (commands?.handleKeyDown(e)) return;
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (showStop) stop();
+                else submit();
+              }
+            }}
+          />
+        </div>
         <div className="lg-chat-composer-toolbar ticket-studio-composer-toolbar">
           {toolbar}
           <div className="lg-chat-composer-spacer ticket-studio-composer-spacer" />

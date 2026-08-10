@@ -462,10 +462,10 @@ export const api = {
       { method: "PATCH", body: JSON.stringify(body) },
     ),
   /** Accepted, not answered: the reply lands on the thread and arrives by polling. */
-  sendBaxterChatMessage: (slug: string, sessionId: string, content: string) =>
+  sendBaxterChatMessage: (slug: string, sessionId: string, content: string, skill = "") =>
     request<BaxterChatSnapshot>(
       `/api/workspaces/${encodeURIComponent(slug)}/baxter-chat/sessions/${sessionId}/messages`,
-      { method: "POST", body: JSON.stringify({ content }) },
+      { method: "POST", body: JSON.stringify({ content, skill }) },
     ),
   /** Settles the pending turn immediately so the composer unlocks. */
   stopBaxterChatTurn: (slug: string, sessionId: string) =>

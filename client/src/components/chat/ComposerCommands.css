@@ -1,0 +1,232 @@
+/* `/` command menu, `@` path picker, `/note` post-its, `/queue` chips. */
+
+.lg-composer-commands {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* In the action bar the composer is one item of a row, so it has to claim the
+   space itself; in a panel the column already gives it the full width. */
+.lg-composer-commands--bar {
+  flex: 1;
+}
+
+/* Placement is measured against the input (see ComposerCommandMenu) — the same
+   composer sits at the bottom of the screen in the bar and halfway up it in the
+   chat hero, so a fixed side would run off one edge or the other. */
+.lg-composer-menu {
+  z-index: 40;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg2);
+  border: 1px solid var(--bd2);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 45%);
+  padding: 4px;
+}
+
+.lg-composer-menu-hint {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px 6px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--txl);
+}
+
+.lg-composer-menu-keys {
+  font-family: var(--mono);
+  text-transform: none;
+}
+
+.lg-composer-menu-item {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lg-composer-menu-item.is-active {
+  background: var(--bg4);
+}
+
+.lg-composer-menu-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ac2);
+  white-space: nowrap;
+}
+
+.lg-composer-menu-alias {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--txl);
+  white-space: nowrap;
+}
+
+.lg-composer-menu-summary {
+  color: var(--txm);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lg-composer-menu-path {
+  font-family: var(--mono);
+  font-size: 11px;
+  /* The tail of a path identifies it; the head repeats across every hit. */
+  direction: rtl;
+  text-align: left;
+}
+
+.lg-composer-menu-tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg1);
+  border: 1px solid var(--bd2);
+  color: var(--txm);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.lg-composer-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 0 6px;
+}
+
+.lg-composer-note {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 200px;
+  padding: 9px 10px;
+  border-radius: 3px 12px 3px 3px;
+  /* Paper, not panel: a post-it should read as something stuck onto the UI
+     rather than another card of it. */
+  background: linear-gradient(160deg, #f5e9a8, #ecd97f);
+  color: #2b2712;
+  box-shadow: 0 6px 14px rgb(0 0 0 / 35%);
+  transform: rotate(-0.6deg);
+}
+
+.lg-composer-note.is-sent {
+  opacity: 0.72;
+}
+
+.lg-composer-note-body {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: inherit;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+
+.lg-composer-note-input {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid rgb(0 0 0 / 18%);
+  border-radius: 4px;
+  background: rgb(255 255 255 / 45%);
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 6px;
+}
+
+.lg-composer-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.lg-composer-note-btn {
+  padding: 3px 8px;
+  border: 1px solid rgb(0 0 0 / 22%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 35%);
+  color: #2b2712;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.lg-composer-note-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.lg-composer-note-btn--primary {
+  background: #2b2712;
+  border-color: #2b2712;
+  color: #f5e9a8;
+}
+
+.lg-composer-note-btn--quiet {
+  margin-left: auto;
+  border-color: transparent;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.lg-composer-queued {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 4px 6px 4px 10px;
+  border: 1px dashed var(--bd2);
+  border-radius: 999px;
+  background: var(--bg2);
+  font-size: 11.5px;
+  color: var(--txm);
+}
+
+.lg-composer-queued-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ac2);
+}
+
+.lg-composer-queued-body {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40ch;
+  color: var(--tx);
+}
+
+.lg-composer-queued .lg-composer-note-btn {
+  border-color: var(--bd2);
+  background: transparent;
+  color: var(--txm);
+}
