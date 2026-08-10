@@ -8,6 +8,7 @@ from loregarden.services.file_editor import (
     read_editor_file,
     write_editor_file,
 )
+from loregarden.services.path_search import DEFAULT_LIMIT, search_workspace_paths
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -70,6 +71,22 @@ def editor_browse(
     ws = _workspace_or_404(session, slug)
     try:
         return list_editor_browse(ws, path, context_root=context_root)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/{slug}/editor/search")
+def editor_search(
+    slug: str,
+    q: str = "",
+    limit: int = DEFAULT_LIMIT,
+    context_root: str | None = None,
+    session: Session = Depends(get_session),
+) -> list[dict]:
+    """Rank workspace paths for the composer's `@` picker."""
+    ws = _workspace_or_404(session, slug)
+    try:
+        return search_workspace_paths(ws, q, context_root=context_root, limit=limit)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 

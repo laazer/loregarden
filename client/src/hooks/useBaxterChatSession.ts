@@ -16,6 +16,8 @@ export interface BaxterChatSessionBinding extends ChatSession {
   pendingApprovals: Approval[];
   openSession: (id: string) => void;
   startNewChat: () => void;
+  /** Create a fresh thread and send into it, in that order. */
+  sendInNewChat: (content: string) => Promise<unknown>;
   renameSession: (id: string, title: string) => Promise<unknown>;
   deleteSession: (id: string) => Promise<unknown>;
   /** Stop the in-flight turn and unlock the composer. */
@@ -85,14 +87,14 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
 
   const sendMessage = useMutation({
     meta: { errorTitle: "Send message" },
-    mutationFn: async (content: string) => {
+    mutationFn: async ({ content, skill = "" }: { content: string; skill?: string }) => {
       let id = sessionId;
       if (!id) {
         const created = await api.createBaxterChatSession(workspaceSlug);
         id = created.id;
         setSessionId(id);
       }
-      return api.sendBaxterChatMessage(workspaceSlug, id, content);
+      return api.sendBaxterChatMessage(workspaceSlug, id, content, skill);
     },
     onSuccess: (result) => {
       // The POST returns the thread with the user turn already on it, so the
@@ -102,6 +104,23 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["baxter-chat-session", workspaceSlug] });
+    },
+  });
+
+  // A note's "Send in new chat" cannot be `startNewChat()` followed by `send()`:
+  // the id this hook closes over is still the old thread's for the rest of the
+  // tick, so the message would land in the conversation the operator just left.
+  // Creating the thread first makes the target explicit.
+  const sendInNewChat = useMutation({
+    meta: { errorTitle: "Send message" },
+    mutationFn: async (content: string) => {
+      const created = await api.createBaxterChatSession(workspaceSlug);
+      setSessionId(created.id);
+      return api.sendBaxterChatMessage(workspaceSlug, created.id, content);
+    },
+    onSuccess: (result) => {
+      qc.setQueryData(baxterChatSessionKey(workspaceSlug, result.id), result);
+      invalidateArchive();
     },
   });
 
@@ -183,7 +202,9 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
       : saveRuntime.isError
         ? (saveRuntime.error as Error)?.message || "Failed to save model settings"
       : null,
-    send: (content: string) => sendMessage.mutateAsync(content),
+    send: (content: string, options) =>
+      sendMessage.mutateAsync({ content, skill: options?.skill }),
+    sendInNewChat: (content: string) => sendInNewChat.mutateAsync(content),
     stop: () => stopTurn.mutateAsync(),
     isStopping: stopTurn.isPending,
     snapshot: snapshot.data,

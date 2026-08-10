@@ -56,9 +56,9 @@ from loregarden.services.workspace_paths import (
     resolve_workspace_root,
 )
 from loregarden.skills.registry import (
-    SKILL_PROMPT_CAP,
     SkillNotFoundError,
     get_skill,
+    skill_prompt_block,
     skill_search_dirs,
 )
 from sqlmodel import Session
@@ -85,19 +85,6 @@ def _titled_block(title: str, body: str, *, cap: int = 0) -> list[str]:
     if not body:
         return []
     return ["", title, body[:cap] if cap else body]
-
-
-def _skill_block(skill_name: str, body: str) -> list[str]:
-    if not body:
-        return []
-    rendered = body[:SKILL_PROMPT_CAP]
-    if len(rendered) == len(body):
-        return ["", "## Skill", body]
-    notice = (
-        f"[Skill '{skill_name}' truncated for prompt rendering: "
-        f"original body length: {len(body)}, rendered body length: {len(rendered)}]"
-    )
-    return ["", "## Skill", notice, rendered]
 
 
 def _raw_block(body: str) -> list[str]:
@@ -708,7 +695,7 @@ class CliAgentExecutor:
             # pick up CLAUDE.md the way Claude Code does, so without this they
             # rediscover the layout by grepping on every run.
             _titled_block("## Repository map", render_code_map(resolve_workspace_root(workspace))),
-            _skill_block(skill_name, skill_body),
+            skill_prompt_block(skill_name, skill_body),
             _titled_block("## Agent Role", role_body),
             _raw_block(build_studio_prompt_sections(agent)),
             _titled_block("## Loregarden MCP module", mcp_doc, cap=12000),

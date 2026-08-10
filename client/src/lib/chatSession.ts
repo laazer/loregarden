@@ -65,6 +65,13 @@ export interface ChatSession {
 export interface ChatSendOptions {
   /** Approve the agent's tool calls without prompting for this turn. */
   autoApprove?: boolean;
+  /**
+   * A skill to put in front of this turn, picked from the composer's `/` menu.
+   *
+   * Only the Home Baxter thread carries one today; the other surfaces ignore
+   * it, which is why their composers do not offer skills in the first place.
+   */
+  skill?: string;
 }
 
 /**

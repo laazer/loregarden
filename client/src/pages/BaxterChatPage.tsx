@@ -9,11 +9,24 @@ import { PendingApprovalsSection } from "../components/PendingApprovalsSection";
 import { StudioChatComposer, StudioChatMessages } from "../components/studio/StudioChat";
 import { useApprovalResolution } from "../hooks/useApprovalResolution";
 import { useBaxterChatSession } from "../hooks/useBaxterChatSession";
+import {
+  composerQueueKey,
+  useComposerCommands,
+  type UseComposerCommandsOptions,
+} from "../hooks/useComposerCommands";
 import { useChatWorkspace } from "../hooks/useChatWorkspace";
 import { takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import "./BaxterChatPage.css";
+
+/**
+ * Everything a composer needs for `/` and `@` except its own draft.
+ *
+ * The two composers on this page own their drafts locally so typing does not
+ * re-render the thread; the rest is the page's, and identical for both.
+ */
+type ComposerHostOptions = Omit<UseComposerCommandsOptions, "value" | "onChange">;
 
 type ChatRole = "user" | "assistant";
 
@@ -69,6 +82,7 @@ function BaxterHeroAsk({
   busy,
   stopping = false,
   blocked = false,
+  commandOptions,
 }: {
   onSend: (text: string) => void;
   onStop?: () => void;
@@ -76,8 +90,14 @@ function BaxterHeroAsk({
   stopping?: boolean;
   /** No workspace resolved yet — nothing can answer the question. */
   blocked?: boolean;
+  commandOptions: ComposerHostOptions;
 }) {
   const [draft, setDraft] = useState("");
+  const commands = useComposerCommands({
+    ...commandOptions,
+    value: draft,
+    onChange: setDraft,
+  });
 
   const submit = () => {
     const text = draft.trim();
@@ -104,6 +124,7 @@ function BaxterHeroAsk({
           disabled={blocked}
           variant="dock"
           iconOnlySend={false}
+          commands={commands}
         />
         <div className="lg-chat-chip-row baxter-chat-chip-row" role="list">
           {EMPTY_CHIPS.map((chip) => (
@@ -131,6 +152,7 @@ function BaxterReplyDock({
   stopping = false,
   suggestions,
   blocked = false,
+  commandOptions,
 }: {
   onSend: (text: string) => void;
   onStop?: () => void;
@@ -139,8 +161,14 @@ function BaxterReplyDock({
   suggestions?: string[];
   /** No workspace resolved yet — nothing can answer the question. */
   blocked?: boolean;
+  commandOptions: ComposerHostOptions;
 }) {
   const [draft, setDraft] = useState("");
+  const commands = useComposerCommands({
+    ...commandOptions,
+    value: draft,
+    onChange: setDraft,
+  });
 
   const submit = () => {
     const text = draft.trim();
@@ -178,6 +206,7 @@ function BaxterReplyDock({
         disabled={blocked}
         variant="dock"
         showShortcut
+        commands={commands}
       />
     </div>
   );
@@ -257,7 +286,7 @@ export function BaxterChatPage() {
     return parts.join(" · ");
   }, [approvals.length, tickets]);
 
-  const respond = (prompt: string) => {
+  const respond = (prompt: string, skill = "") => {
     const content = prompt.trim();
     if (!content || busy || !workspaceSlug) return;
     // Sending from the gallery leaves it: the canned thread is a reference, not
@@ -265,7 +294,20 @@ export function BaxterChatPage() {
     setGalleryTurns(null);
     // The failure is shown from `chat.error`; swallowing here keeps a failed
     // send from surfacing as an unhandled rejection as well.
-    void chat.send(content).catch(() => undefined);
+    void chat.send(content, { skill }).catch(() => undefined);
+  };
+
+  const commandOptions: ComposerHostOptions = {
+    workspaceSlug,
+    queueKey: workspaceSlug ? composerQueueKey("baxter-home", chat.sessionId, workspaceSlug) : null,
+    isBusy: busy,
+    onSend: (content, skill) => respond(content, skill),
+    onSendInNewChat: (content) => {
+      setGalleryTurns(null);
+      void chat.sendInNewChat(content).catch(() => undefined);
+    },
+    // This is the one thread whose turn carries a skill to the agent.
+    skillsEnabled: true,
   };
 
   const openPrimitiveGallery = () => {
@@ -370,6 +412,7 @@ export function BaxterChatPage() {
             busy={busy}
             stopping={chat.isStopping}
             blocked={!workspaceSlug}
+            commandOptions={commandOptions}
           />
           {sendError}
         </div>
@@ -432,6 +475,7 @@ export function BaxterChatPage() {
             stopping={chat.isStopping}
             suggestions={latestSuggestions}
             blocked={!workspaceSlug}
+            commandOptions={commandOptions}
           />
         </>
       )}

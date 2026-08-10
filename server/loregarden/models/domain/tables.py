@@ -838,7 +838,31 @@ class BaxterChatMessage(SQLModel, table=True):
     status: str = Field(default="complete", index=True)
     # Ordered ChatPart JSON (see chat_primitives). Empty when the turn is plain text.
     parts_json: str = "[]"
+    # The skill the operator picked from the composer's `/` menu for this turn,
+    # or "" for an ordinary message. Recorded on the user row because that is
+    # whose choice it was; the assistant row is what the choice produced.
+    skill_name: str = ""
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class ComposerNote(SQLModel, table=True):
+    """A post-it written from the composer's `/note` command.
+
+    Workspace-scoped rather than session-scoped: a note exists to outlive the
+    conversation it was written beside, and "send this into a new chat" is one
+    of the two things it can do.
+    """
+
+    __tablename__ = "composer_notes"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    body: str = ""
+    # When the note was last sent into a conversation, or None while unsent.
+    # Kept rather than deleting on send: a note is a draft you may send twice.
+    sent_at: datetime | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow, index=True)
 
 
 class ChatTurnThinking(SQLModel, table=True):

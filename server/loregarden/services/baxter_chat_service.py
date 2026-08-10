@@ -56,6 +56,7 @@ from loregarden.services.triage_service import (
     TRIAGE_AGENT_NAME,
     TRIAGE_CLI_PROFILE,
 )
+from loregarden.skills.registry import get_skill, skill_prompt_block
 from sqlmodel import Session, col, select
 
 BAXTER_CHAT_CLI_PROFILE = replace(
@@ -269,6 +270,8 @@ def _message_view(message: BaxterChatMessage) -> dict:
         "role": message.role,
         "content": message.content,
         "parts": load_parts_json(message.parts_json),
+        # "" on every turn sent without a `/skill`, which is most of them.
+        "skill_name": message.skill_name,
         "created_at": message.created_at.isoformat(),
     }
 
@@ -351,6 +354,7 @@ def build_baxter_chat_prompt(
     tickets: list[Ticket],
     interactive: bool = False,
     approval_bridge: bool = False,
+    skill_name: str = "",
 ) -> str:
     sections = [
         "# Baxter — Home chat",
@@ -358,6 +362,10 @@ def build_baxter_chat_prompt(
         f"Workspace: {workspace.slug}",
         "",
     ]
+    # The operator picked this skill from the composer's `/` menu for this turn.
+    # It leads the prompt: a skill is instructions for *how* to do the work, so
+    # it has to be read before the request it applies to.
+    sections.extend(skill_prompt_block(skill_name, get_skill(skill_name) or ""))
     if interactive:
         sections.extend(
             [
@@ -468,12 +476,17 @@ def invoke_baxter_chat_model(
     content: str,
     history: list[BaxterChatMessage] | None = None,
     turn_id: str = "",
+    skill_name: str = "",
 ) -> str:
     """Run one Home chat turn against the workspace's current CLI/model runtime.
 
     ``turn_id`` is the pending assistant row this turn will settle onto. Passing
     it streams the agent's reasoning to that turn's thinking channel; omitting
     it runs the turn silently, which is all the one-shot adapters can do anyway.
+
+    ``skill_name`` is the skill the operator picked from the composer's `/` menu
+    for this turn; its body is rendered into the prompt the same way a stage
+    run's skill is.
     """
     message = (content or "").strip()
     if not message:
@@ -503,6 +516,7 @@ def invoke_baxter_chat_model(
         tickets=_active_tickets(session, workspace.id),
         interactive=intent == "execute",
         approval_bridge=caps.permission_bridge,
+        skill_name=skill_name,
     )
     result = run_agent_turn(
         AgentTurnRequest(

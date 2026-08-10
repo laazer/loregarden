@@ -65,3 +65,22 @@ def list_skills() -> list[str]:
             seed_builtin_skills(session)
             slugs = service.list_skill_slugs()
         return slugs
+
+
+def skill_prompt_block(skill_name: str, body: str) -> list[str]:
+    """Render a skill body as prompt lines, capped at ``SKILL_PROMPT_CAP``.
+
+    Shared by every caller that puts a skill in front of an agent — stage runs
+    and the chat composer's `/` menu alike — so a skill reads the same either
+    way, truncation notice included.
+    """
+    if not body:
+        return []
+    rendered = body[:SKILL_PROMPT_CAP]
+    if len(rendered) == len(body):
+        return ["", "## Skill", body]
+    notice = (
+        f"[Skill '{skill_name}' truncated for prompt rendering: "
+        f"original body length: {len(body)}, rendered body length: {len(rendered)}]"
+    )
+    return ["", "## Skill", notice, rendered]

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { api } from "../api/client";
 import { useActiveChatSession } from "../hooks/useActiveChatSession";
+import { composerQueueKey, useComposerCommands } from "../hooks/useComposerCommands";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useTicketAsides } from "../hooks/useTicketAsides";
 import {
@@ -13,6 +14,8 @@ import {
 import { useUiStore, type UtilityDockEdge } from "../state/uiStore";
 import { formatLogExcerpt } from "../utils/logExcerpt";
 import { BaxterAvatar } from "./chat/BaxterAvatar";
+import { ComposerCommandMenu } from "./chat/ComposerCommandMenu";
+import { ComposerNotes } from "./chat/ComposerNotes";
 import { TriageModelModal } from "./TriageModelModal";
 import { runtimeSummaryLabel } from "./WorkspaceRuntimeFields";
 
@@ -98,7 +101,7 @@ export function AppActionBar() {
     ? promptsFor(session.kind, branch).slice(0, DOCK_QUICK_PROMPT_LIMIT)
     : [];
 
-  const submit = (content: string) => {
+  const send = (content: string, skill = "") => {
     if (!session || !content.trim()) return;
     const question = content.trim();
     setDraft("");
@@ -115,7 +118,34 @@ export function AppActionBar() {
     const message = excerpt
       ? `Question about the run logs below:\n\n\`\`\`\n${excerpt}\n\`\`\`\n\n${question}`
       : question;
-    void session.send(message, { autoApprove }).catch(() => {});
+    void session.send(message, { autoApprove, skill }).catch(() => {});
+  };
+
+  const commands = useComposerCommands({
+    value: draft,
+    onChange: setDraft,
+    workspaceSlug: terminal.workspaceSlug,
+    // An aside is answered by an observer reading the log, not by the thread —
+    // there is no turn to wait on, so there is nothing to queue behind.
+    queueKey:
+      session && !asideMode
+        ? composerQueueKey(session.kind, session.id, terminal.workspaceSlug)
+        : null,
+    isBusy: Boolean(session?.isBusy),
+    onSend: send,
+    onSendInNewChat: archive
+      ? (content) => {
+          setChatOpen(true);
+          void archive.sendInNewChat(content).catch(() => {});
+        }
+      : undefined,
+    skillsEnabled: session?.kind === "baxter-home" && !asideMode,
+  });
+
+  /** Enter and the send button: a `/command` acts, anything else is a message. */
+  const submit = (content: string) => {
+    if (commands.submit()) return;
+    send(content);
   };
 
   const screenControls = (
@@ -188,28 +218,46 @@ export function AppActionBar() {
         />
       </button>
 
-      <input
-        className="app-action-bar-input"
-        value={draft}
-        disabled={!sendable}
-        placeholder={
-          asideMode
-            ? "btw — ask about the run without interrupting it"
-            : session
-              ? (COMPOSER_PLACEHOLDER[session.kind] ??
-                "Ask anything, or tell an agent what to do — without leaving this screen")
-              : NO_SESSION_PLACEHOLDER
-        }
-        aria-label={asideMode ? "Ask an aside about this run" : "Message this conversation"}
-        onChange={(e) => setDraft(e.target.value)}
-        onFocus={() => session && setChatOpen(true)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            submit(draft);
+      <div className="app-action-bar-notes">
+        <ComposerNotes commands={commands} />
+      </div>
+
+      <div className="lg-composer-commands lg-composer-commands--bar">
+        <ComposerCommandMenu
+          items={commands.items}
+          activeIndex={commands.activeIndex}
+          triggerKind={commands.triggerKind}
+          anchorRef={commands.inputRef}
+          onHover={commands.setActiveIndex}
+          onPick={commands.accept}
+        />
+        <input
+          ref={commands.inputRef as React.Ref<HTMLInputElement>}
+          className="app-action-bar-input"
+          value={draft}
+          disabled={!sendable}
+          placeholder={
+            asideMode
+              ? "btw — ask about the run without interrupting it"
+              : session
+                ? (COMPOSER_PLACEHOLDER[session.kind] ??
+                  "Ask anything, or tell an agent what to do — without leaving this screen")
+                : NO_SESSION_PLACEHOLDER
           }
-        }}
-      />
+          aria-label={asideMode ? "Ask an aside about this run" : "Message this conversation"}
+          onChange={(e) => commands.handleChange(e.target.value, e.target)}
+          onFocus={() => session && setChatOpen(true)}
+          onBlur={() => commands.close()}
+          onKeyDown={(e) => {
+            // While the menu is open it owns Enter, Tab and the arrows.
+            if (commands.handleKeyDown(e)) return;
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              submit(draft);
+            }
+          }}
+        />
+      </div>
 
       {!expanded && quickPrompts.length > 0 && (
         <div className="app-action-bar-quick">
