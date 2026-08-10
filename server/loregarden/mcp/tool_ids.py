@@ -41,6 +41,7 @@ class McpTool(StrEnum):
     SEARCH_PRIOR_WORK = "loregarden_search_prior_work"
     SEARCH_MEMORY = "loregarden_search_memory"
     CREATE_MEMORY_RELATION = "loregarden_create_memory_relation"
+    CHECK_ORGANIZATION = "loregarden_check_organization"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:
@@ -124,6 +125,12 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
 )
 
 AUTO_APPROVED_MCP_TOOLS: frozenset[McpTool] = READ_ONLY_MCP_TOOLS | CONTROL_PLANE_WRITE_MCP_TOOLS
+
+#: Tools whose safety depends on *which* action was asked for, not just the tool
+#: name. `check_organization` reads a workspace for one action and rewrites that
+#: workspace's git hooks for another; auto-approving the name would auto-approve
+#: the write. `argument_gated_auto_approval` decides per call.
+ARGUMENT_GATED_MCP_TOOLS: frozenset[McpTool] = frozenset({McpTool.CHECK_ORGANIZATION})
 
 #: Interim allowlist (a9-create-ticket-mcp-tool): orchestrated pipeline agents
 #: may not spawn tickets mid-run. Interactive chat is exempt.

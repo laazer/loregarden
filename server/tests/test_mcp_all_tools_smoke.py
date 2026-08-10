@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from loregarden.mcp.tool_ids import McpTool
+from loregarden.mcp.tool_registry import EXTENDED_TOOLS
 from loregarden.mcp.tools import TOOL_DEFINITIONS, normalize_tool_arguments
 
 MCP_DIR = Path(__file__).resolve().parents[1] / "loregarden" / "mcp"
@@ -47,12 +49,26 @@ def _advertised(client: TestClient) -> set[str]:
 
 
 def _dispatched() -> set[str]:
-    """Tool names the dispatcher actually routes — by branch or by handler table."""
-    names: set[str] = set()
+    """Tool names the dispatcher actually routes — by branch or by handler table.
+
+    Three spellings count: the `name == "loregarden_x"` literal, the
+    `name == McpTool.X` form the organization gate requires of new branches, and
+    the EXTENDED_TOOLS table a tool registers in instead of growing
+    `execute_tool`'s chain. Reading the table through its import rather than by
+    regex is deliberate: its keys are enum members, so pattern-matching the
+    source would miss them and report a routed tool as undispatched — the
+    detector would be enforcing the anti-pattern.
+    """
+    names: set[str] = set(EXTENDED_TOOLS)
     for src in MCP_DISPATCH_SRCS:
         text = src.read_text()
         names |= set(re.findall(r'name == "(loregarden_[a-z_]+)"', text))
         names |= set(re.findall(r'"(loregarden_[a-z_]+)": ', text))
+        names |= {
+            McpTool[member].value
+            for member in re.findall(r"name == McpTool\.([A-Z_]+)", text)
+            if member in McpTool.__members__
+        }
     return names
 
 
@@ -168,6 +184,10 @@ def _args_for(
             "query": "smoke prior work",
             "workspace_slug": "loregarden",
         },
+        # hooks_status only reads: the smoke test must not rewrite a real repo's
+        # lefthook.yml, and `check` would shell out to both checkers over the
+        # whole workspace.
+        "loregarden_check_organization": {"workspace_slug": ws, "action": "hooks_status"},
         "loregarden_attach_evidence": {
             "run_id": run_id,
             "evidence_kind": "real_surface",
@@ -261,6 +281,7 @@ def test_every_advertised_tool_is_callable(client: TestClient):
         "loregarden_attach_artifact",
         "loregarden_attach_evidence",
         "loregarden_search_prior_work",
+        "loregarden_check_organization",
         "loregarden_update_ticket",
         "loregarden_create_ticket",
         "loregarden_request_approval",

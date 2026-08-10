@@ -8,7 +8,13 @@ orchestrator:
 gates:
   enabled: true
   transition_script: ci/scripts/run_workflow_transition_gates.py
-  commands: []
+  # Blobert keeps its own gate registry in ci/scripts; these two are loregarden's,
+  # invoked from loregarden's tree so the rules stay in one place instead of being
+  # copied into every workspace. Both auto-detect this repo's layout — blobert's
+  # Python lives under asset_generation/, not server/.
+  commands:
+    - python3 {loregarden_root}/.lefthook/scripts/py_organization_check.py --repo {workspace_root} --scope worktree
+    - node {loregarden_root}/.lefthook/scripts/ts_organization_check.cjs --repo {workspace_root} --scope worktree
 subagents:
   spawn_via: cli
 callbacks:
