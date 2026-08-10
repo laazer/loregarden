@@ -213,6 +213,44 @@ def _install(config: Path, check: bool = False) -> int:
         sys.argv = saved
 
 
+def test_installer_namespaces_its_commands(tmp_path: Path):
+    """A workspace with its own `py-organization` must keep it.
+
+    blobert has one. An unnamespaced block would put two entries under the same
+    key in one map — a duplicate YAML key that either fails to parse or silently
+    keeps whichever the loader saw last, disabling a real gate.
+    """
+    yaml = pytest.importorskip("yaml")
+    config = tmp_path / "lefthook.yml"
+    config.write_text(LEFTHOOK.replace("existing-check:", "py-organization:"))
+
+    assert _install(config) == 0
+    commands = yaml.safe_load(config.read_text())["pre-commit"]["commands"]
+    assert set(installer.MANAGED_COMMAND_NAMES) <= set(commands)
+    assert commands["py-organization"]["run"] == "echo hi"
+
+
+def test_installer_refuses_a_collision_on_its_own_names(tmp_path: Path):
+    config = tmp_path / "lefthook.yml"
+    original = LEFTHOOK.replace("existing-check:", installer.MANAGED_COMMAND_NAMES[0] + ":")
+    config.write_text(original)
+
+    assert _install(config) == 1
+    assert config.read_text() == original
+
+
+def test_glob_matches_root_level_and_nested_files():
+    """`**/*.py` alone skips a root-level file.
+
+    lefthook reported "no files for inspection" for a root `foo.py` and moved on —
+    which reads exactly like a pass. Verified against lefthook v2.1.10; the
+    alternation is what makes both depths match.
+    """
+    for glob in (installer.PY_GLOB, installer.TS_GLOB):
+        assert glob.startswith("{*."), f"{glob} would skip root-level files"
+        assert "**/" in glob, f"{glob} would skip nested files"
+
+
 def test_installer_nests_entries_under_precommit_commands(tmp_path: Path):
     yaml = pytest.importorskip("yaml")
     config = tmp_path / "lefthook.yml"
@@ -221,7 +259,7 @@ def test_installer_nests_entries_under_precommit_commands(tmp_path: Path):
     assert _install(config) == 0
     parsed = yaml.safe_load(config.read_text())
     commands = parsed["pre-commit"]["commands"]
-    assert set(commands) == {"existing-check", "py-organization", "ts-organization"}
+    assert set(commands) == {"existing-check", *installer.MANAGED_COMMAND_NAMES}
     # Everything around the managed block survives untouched.
     assert parsed["pre-commit"]["parallel"] is True
     assert list(parsed["pre-push"]["commands"]) == ["tests"]
