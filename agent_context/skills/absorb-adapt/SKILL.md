@@ -1,6 +1,6 @@
 ---
 name: absorb-adapt
-description: Method for evolving loregarden's own pipeline — read the run telemetry the control plane already records, find friction that repeats across tickets, and land the fix as a ticket, a skill body, or a workflow template change rather than a proposal document.
+description: Method for evolving loregarden's own pipeline — read the run telemetry the control plane already records, find friction that repeats across tickets, and land the fix as a ticket, a skill body, or a workflow template change rather than a proposal document. Use after several tickets or runs, when the same friction shows up more than once, or during a retrospective. Not for one ticket's postmortem, and not for a change you cannot point at a repeated failure for.
 ---
 
 # Absorb-Adapt — change the system, not the ticket

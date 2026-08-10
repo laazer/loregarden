@@ -1,6 +1,6 @@
 ---
 name: vulcan
-description: Method for finding logic that is being prompted when it should be executed — mechanical steps in loregarden's skills, stages, and gates that belong in a script, a lefthook gate, a service function, or an MCP tool instead of an agent turn.
+description: Method for finding logic that is being prompted when it should be executed — mechanical steps in loregarden's skills, stages, and gates that belong in a script, a lefthook gate, a service function, or an MCP tool instead of an agent turn. Use when a deterministic step repeats across runs, or a rule agents are told to follow could be enforced instead. Not for reasoning-heavy or still-unsettled logic, or an extraction whose payoff you cannot state.
 ---
 
 # Vulcan — stop paying an agent to do arithmetic
