@@ -409,8 +409,17 @@ export function StudioChatComposer({
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 if (value.trim().startsWith("/") && commands?.submit()) return;
-                if (showStop) stop();
-                else submit();
+                if (showStop) {
+                  // Enter aborts the turn only on an empty draft. The textarea
+                  // stays live mid-turn so `/stop` can be typed at all, which
+                  // newly exposes this path to someone typing their next
+                  // message while the agent works — and killing the run is not
+                  // what they pressed Enter for. The Stop button is still one
+                  // click away, and `/stop` still works with text in the box.
+                  if (!value.trim()) stop();
+                  return;
+                }
+                submit();
               }
             }}
           />
