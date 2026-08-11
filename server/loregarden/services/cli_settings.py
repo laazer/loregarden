@@ -8,7 +8,8 @@ selected — they do not each invent their own.
 Effort is stored per adapter rather than shared, because the ladders differ
 (`xhigh` means nothing to LM Studio) and so does the delivery mechanism: Claude
 Code has a `--effort` flag, cursor takes a bracket parameter on a parameterized
-model id, and LM Studio reads OpenAI's `reasoning_effort` request field.
+model id, LM Studio reads OpenAI's `reasoning_effort` request field, and opencode
+takes `--variant`.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from datetime import datetime, timezone
 
 from loregarden.config import settings
 from loregarden.models.domain import (
+    CliAdapter,
     Ticket,
     Workspace,
     WorkspaceRuntimeSettings,
@@ -35,6 +37,7 @@ CLI_ADAPTER_OPTIONS: list[dict[str, str]] = [
     {"id": "cursor", "label": "Cursor Agent"},
     {"id": "codex", "label": "Codex CLI"},
     {"id": "lmstudio", "label": "LM Studio"},
+    {"id": "opencode", "label": "OpenCode"},
 ]
 
 # The executable each adapter spawns, and the env key that overrides its path.
@@ -45,6 +48,7 @@ ADAPTER_BINARIES: dict[str, tuple[str, str]] = {
     "claude": ("claude", "LOREGARDEN_CLAUDE_BIN"),
     "cursor": ("cursor-agent", "LOREGARDEN_CURSOR_BIN"),
     "codex": ("codex", "LOREGARDEN_CODEX_BIN"),
+    "opencode": ("opencode", "LOREGARDEN_OPENCODE_BIN"),
 }
 
 
@@ -108,6 +112,13 @@ CODEX_MODEL_OPTIONS: list[dict[str, str]] = [
 # discovery finds nothing — never a hard-coded model id that ChatGPT/API accounts
 # may reject.
 
+OPENCODE_MODEL_OPTIONS: list[dict[str, str]] = [
+    {"id": "", "label": "Default (OpenCode profile)"},
+]
+# Same arrangement, live list from ``opencode_discovery.opencode_model_options``.
+# OpenCode ids are ``provider/model`` and depend on which providers the operator
+# has authenticated, so there is no static id worth shipping here either.
+
 # Effort ladders differ by provider, so they are catalogued per adapter rather
 # than shared. Claude Code takes `--effort` natively; cursor expresses it as a
 # bracket parameter on a parameterized model id; LM Studio is OpenAI-compatible,
@@ -136,10 +147,24 @@ LMSTUDIO_EFFORT_OPTIONS: list[dict[str, str]] = [
     {"id": "high", "label": "High"},
 ]
 
+# `opencode run --variant` is described by the CLI as "provider-specific reasoning
+# effort, e.g. high, max, minimal". OpenCode drops a variant the selected model
+# does not define rather than erroring, so an unsupported level costs the run
+# nothing — unlike claude/cursor, where a bad value fails the invocation.
+OPENCODE_EFFORT_OPTIONS: list[dict[str, str]] = [
+    {"id": "", "label": "Default (model's own variant)"},
+    {"id": "minimal", "label": "Minimal"},
+    {"id": "low", "label": "Low"},
+    {"id": "medium", "label": "Medium"},
+    {"id": "high", "label": "High"},
+    {"id": "max", "label": "Max"},
+]
+
 EFFORT_OPTIONS_BY_ADAPTER: dict[str, list[dict[str, str]]] = {
     "claude": CLAUDE_EFFORT_OPTIONS,
     "cursor": CURSOR_EFFORT_OPTIONS,
     "lmstudio": LMSTUDIO_EFFORT_OPTIONS,
+    "opencode": OPENCODE_EFFORT_OPTIONS,
 }
 
 VALID_CLI_ADAPTERS = {opt["id"] for opt in CLI_ADAPTER_OPTIONS}
@@ -147,10 +172,13 @@ VALID_CLI_ADAPTERS = {opt["id"] for opt in CLI_ADAPTER_OPTIONS}
 #: The adapter id that means "no opinion — inherit from the level below".
 #: Not a provider; it is the absence of a choice, spelled so a stored setting can
 #: hold it. See `pinned_adapter`.
+#: Spelled as the bare value, not ``CliAdapter.DEFAULT``: ``CliAdapter`` is a
+#: ``str, Enum``, whose ``str()`` renders the member name rather than the value,
+#: and ``pinned_adapter`` puts this through ``str()``.
 INHERIT_ADAPTER = "default"
 
 # Adapters that take a ``--model`` / model-id pin. local does not.
-MODEL_PIN_ADAPTERS = frozenset({"claude", "cursor", "codex", "lmstudio"})
+MODEL_PIN_ADAPTERS = frozenset({"claude", "cursor", "codex", "lmstudio", "opencode"})
 
 # Adapters with a reasoning-effort control. Same set today, but the two are
 # distinct concepts — keep them separate so adding a model-only adapter does not
@@ -166,9 +194,11 @@ class WorkspaceCliSettings:
     codex_model: str = ""
     lmstudio_base_url: str = ""
     lmstudio_model: str = ""
+    opencode_model: str = ""
     claude_effort: str = ""
     cursor_effort: str = ""
     lmstudio_effort: str = ""
+    opencode_effort: str = ""
 
 
 def workspace_cli_settings(workspace: Workspace | None) -> WorkspaceCliSettings:
@@ -181,9 +211,11 @@ def workspace_cli_settings(workspace: Workspace | None) -> WorkspaceCliSettings:
         codex_model=workspace.codex_model or "",
         lmstudio_base_url=workspace.lmstudio_base_url or "",
         lmstudio_model=workspace.lmstudio_model or "",
+        opencode_model=workspace.opencode_model or "",
         claude_effort=workspace.claude_effort or "",
         cursor_effort=workspace.cursor_effort or "",
         lmstudio_effort=workspace.lmstudio_effort or "",
+        opencode_effort=workspace.opencode_effort or "",
     )
 
 
@@ -197,11 +229,11 @@ def resolve_effective_adapter(
     if env_override:
         return env_override
 
-    if ticket_adapter and ticket_adapter != "default":
+    if ticket_adapter and ticket_adapter != CliAdapter.DEFAULT:
         return ticket_adapter
 
     ws = workspace_cli_settings(workspace)
-    if ws.cli_adapter and ws.cli_adapter != "default":
+    if ws.cli_adapter and ws.cli_adapter != CliAdapter.DEFAULT:
         return ws.cli_adapter
 
     return agent_adapter or settings.cli_adapter
@@ -259,7 +291,7 @@ def adapter_model_pins_apply(*, agent_adapter: str, selected_adapter: str) -> bo
     the provider, forwarding them would send the wrong namespace to the CLI.
     """
     declared = agent_adapter or ""
-    if not declared or declared == "default":
+    if not declared or declared == CliAdapter.DEFAULT:
         return True
     return declared == selected_adapter
 
@@ -271,16 +303,19 @@ def ticket_model_for_adapter(
     cursor_model: str = "",
     codex_model: str = "",
     lmstudio_model: str = "",
+    opencode_model: str = "",
 ) -> str:
     """Pick the ticket-runtime model field that matches the selected adapter."""
-    if adapter == "claude":
+    if adapter == CliAdapter.CLAUDE:
         return claude_model
-    if adapter == "cursor":
+    if adapter == CliAdapter.CURSOR:
         return cursor_model
-    if adapter == "codex":
+    if adapter == CliAdapter.CODEX:
         return codex_model
-    if adapter == "lmstudio":
+    if adapter == CliAdapter.LMSTUDIO:
         return lmstudio_model
+    if adapter == CliAdapter.OPENCODE:
+        return opencode_model
     return ""
 
 
@@ -290,14 +325,17 @@ def ticket_effort_for_adapter(
     claude_effort: str = "",
     cursor_effort: str = "",
     lmstudio_effort: str = "",
+    opencode_effort: str = "",
 ) -> str:
     """Pick the ticket-runtime effort field that matches the selected adapter."""
-    if adapter == "claude":
+    if adapter == CliAdapter.CLAUDE:
         return claude_effort
-    if adapter == "cursor":
+    if adapter == CliAdapter.CURSOR:
         return cursor_effort
-    if adapter == "lmstudio":
+    if adapter == CliAdapter.LMSTUDIO:
         return lmstudio_effort
+    if adapter == CliAdapter.OPENCODE:
+        return opencode_effort
     return ""
 
 
@@ -319,7 +357,7 @@ def resolve_model_for_adapter(
         return ""
 
     ws = workspace_cli_settings(workspace)
-    if adapter == "claude":
+    if adapter == CliAdapter.CLAUDE:
         return _first_set(
             os.environ.get("LOREGARDEN_CLAUDE_MODEL", ""),
             ticket_model,
@@ -328,7 +366,7 @@ def resolve_model_for_adapter(
             ws.claude_model,
             settings.claude_model,
         )
-    if adapter == "cursor":
+    if adapter == CliAdapter.CURSOR:
         return _first_set(
             os.environ.get("LOREGARDEN_CURSOR_MODEL", ""),
             ticket_model,
@@ -337,7 +375,7 @@ def resolve_model_for_adapter(
             ws.cursor_model,
             settings.cursor_model,
         )
-    if adapter == "codex":
+    if adapter == CliAdapter.CODEX:
         return _first_set(
             os.environ.get("LOREGARDEN_CODEX_MODEL", ""),
             ticket_model,
@@ -345,6 +383,15 @@ def resolve_model_for_adapter(
             agent_model,
             ws.codex_model,
             settings.codex_model,
+        )
+    if adapter == CliAdapter.OPENCODE:
+        return _first_set(
+            os.environ.get("LOREGARDEN_OPENCODE_MODEL", ""),
+            ticket_model,
+            stage_model,
+            agent_model,
+            ws.opencode_model,
+            settings.opencode_model,
         )
     # lmstudio
     return _first_set(
@@ -375,13 +422,20 @@ def resolve_effort_for_adapter(
 
     ws = workspace_cli_settings(workspace)
     env_key = f"LOREGARDEN_{adapter.upper()}_EFFORT"
-    if adapter == "claude":
+    if adapter == CliAdapter.CLAUDE:
         resolved = _first_set(
             os.environ.get(env_key, ""), ticket_effort, ws.claude_effort, settings.claude_effort
         )
-    elif adapter == "cursor":
+    elif adapter == CliAdapter.CURSOR:
         resolved = _first_set(
             os.environ.get(env_key, ""), ticket_effort, ws.cursor_effort, settings.cursor_effort
+        )
+    elif adapter == CliAdapter.OPENCODE:
+        resolved = _first_set(
+            os.environ.get(env_key, ""),
+            ticket_effort,
+            ws.opencode_effort,
+            settings.opencode_effort,
         )
     else:
         resolved = _first_set(
@@ -435,7 +489,7 @@ WEAK_MCP_CLAUDE_MODELS = ("haiku",)
 def weak_mcp_model_warning(model: str, adapter: str) -> str | None:
     """Return a warning if a claude agent that must drive MCP tools is pinned to a
     model too weak to call them reliably; otherwise None."""
-    if adapter != "claude" or not model:
+    if adapter != CliAdapter.CLAUDE or not model:
         return None
     lowered = model.lower()
     if any(weak in lowered for weak in WEAK_MCP_CLAUDE_MODELS):
@@ -492,9 +546,11 @@ RUNTIME_OVERRIDE_FIELDS = (
     "codex_model",
     "lmstudio_base_url",
     "lmstudio_model",
+    "opencode_model",
     "claude_effort",
     "cursor_effort",
     "lmstudio_effort",
+    "opencode_effort",
 )
 
 
@@ -508,9 +564,11 @@ def parse_runtime_settings(runtime_json: str) -> WorkspaceRuntimeSettings:
         codex_model=str(data.get("codex_model") or ""),
         lmstudio_base_url=str(data.get("lmstudio_base_url") or ""),
         lmstudio_model=str(data.get("lmstudio_model") or ""),
+        opencode_model=str(data.get("opencode_model") or ""),
         claude_effort=str(data.get("claude_effort") or ""),
         cursor_effort=str(data.get("cursor_effort") or ""),
         lmstudio_effort=str(data.get("lmstudio_effort") or ""),
+        opencode_effort=str(data.get("opencode_effort") or ""),
     )
 
 
@@ -545,6 +603,7 @@ def validated_effort_pins(body: WorkspaceRuntimeUpdate) -> dict[str, str]:
         "claude_effort": body.claude_effort.strip(),
         "cursor_effort": body.cursor_effort.strip(),
         "lmstudio_effort": body.lmstudio_effort.strip(),
+        "opencode_effort": body.opencode_effort.strip(),
     }
     for field, value in pins.items():
         adapter = field.removesuffix("_effort")
@@ -572,6 +631,7 @@ def set_ticket_orchestration_runtime(
         "codex_model": body.codex_model.strip(),
         "lmstudio_base_url": body.lmstudio_base_url.strip(),
         "lmstudio_model": body.lmstudio_model.strip(),
+        "opencode_model": body.opencode_model.strip(),
         **efforts,
     }
     ticket.orchestration_runtime_json = json.dumps(payload)
@@ -607,8 +667,8 @@ def resolve_runtime_effective(
 
     adapter, adapter_source = _effective_source(
         (os.environ.get("LOREGARDEN_CLI_ADAPTER", ""), "env"),
-        ("" if ticket.cli_adapter == "default" else ticket.cli_adapter, "ticket"),
-        ("" if ws.cli_adapter == "default" else ws.cli_adapter, "workspace"),
+        ("" if ticket.cli_adapter == CliAdapter.DEFAULT else ticket.cli_adapter, "ticket"),
+        ("" if ws.cli_adapter == CliAdapter.DEFAULT else ws.cli_adapter, "workspace"),
         (settings.cli_adapter, "global"),
     )
 
@@ -621,6 +681,7 @@ def resolve_runtime_effective(
             cursor_model=ticket.cursor_model,
             codex_model=ticket.codex_model,
             lmstudio_model=ticket.lmstudio_model,
+            opencode_model=ticket.opencode_model,
         ),
     )
     effort = resolve_effort_for_adapter(
@@ -631,6 +692,7 @@ def resolve_runtime_effective(
             claude_effort=ticket.claude_effort,
             cursor_effort=ticket.cursor_effort,
             lmstudio_effort=ticket.lmstudio_effort,
+            opencode_effort=ticket.opencode_effort,
         ),
     )
 
@@ -646,6 +708,7 @@ def resolve_runtime_effective(
                 cursor_model=ticket.cursor_model,
                 codex_model=ticket.codex_model,
                 lmstudio_model=ticket.lmstudio_model,
+                opencode_model=ticket.opencode_model,
             ),
             "ticket",
         ),
@@ -656,6 +719,7 @@ def resolve_runtime_effective(
                 cursor_model=ws.cursor_model,
                 codex_model=ws.codex_model,
                 lmstudio_model=ws.lmstudio_model,
+                opencode_model=ws.opencode_model,
             ),
             "workspace",
         ),
@@ -669,6 +733,7 @@ def resolve_runtime_effective(
                 claude_effort=ticket.claude_effort,
                 cursor_effort=ticket.cursor_effort,
                 lmstudio_effort=ticket.lmstudio_effort,
+                opencode_effort=ticket.opencode_effort,
             ),
             "ticket",
         ),
@@ -678,6 +743,7 @@ def resolve_runtime_effective(
                 claude_effort=ws.claude_effort,
                 cursor_effort=ws.cursor_effort,
                 lmstudio_effort=ws.lmstudio_effort,
+                opencode_effort=ws.opencode_effort,
             ),
             "workspace",
         ),
@@ -701,6 +767,7 @@ def runtime_options_payload(
 ) -> dict:
     from loregarden.services.codex_discovery import codex_model_options
     from loregarden.services.lmstudio_discovery import lmstudio_model_options
+    from loregarden.services.opencode_discovery import opencode_model_options
 
     return {
         "cli_adapters": cli_adapter_options(),
@@ -708,9 +775,11 @@ def runtime_options_payload(
         "cursor_models": CURSOR_MODEL_OPTIONS,
         "codex_models": codex_model_options(),
         "lmstudio_models": lmstudio_model_options(lmstudio_base_url),
+        "opencode_models": opencode_model_options(),
         "claude_efforts": CLAUDE_EFFORT_OPTIONS,
         "cursor_efforts": CURSOR_EFFORT_OPTIONS,
         "lmstudio_efforts": LMSTUDIO_EFFORT_OPTIONS,
+        "opencode_efforts": OPENCODE_EFFORT_OPTIONS,
         "cursor_effort_models": sorted(CURSOR_EFFORT_MODELS),
         "effective": resolve_runtime_effective(workspace),
     }

@@ -90,9 +90,11 @@ class WorkspaceRuntimeUpdate(SQLModel):
     codex_model: str = ""
     lmstudio_base_url: str = ""
     lmstudio_model: str = ""
+    opencode_model: str = ""
     claude_effort: str = ""
     cursor_effort: str = ""
     lmstudio_effort: str = ""
+    opencode_effort: str = ""
 
 
 class WorkspaceRuntimeSettings(SQLModel):
@@ -102,9 +104,11 @@ class WorkspaceRuntimeSettings(SQLModel):
     codex_model: str = ""
     lmstudio_base_url: str = ""
     lmstudio_model: str = ""
+    opencode_model: str = ""
     claude_effort: str = ""
     cursor_effort: str = ""
     lmstudio_effort: str = ""
+    opencode_effort: str = ""
 
 
 class TicketSummary(SQLModel):

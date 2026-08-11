@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from loregarden.agents.cli_adapters import build_triage_invocation
+from loregarden.agents.cli_adapters import build_triage_invocation, invocation_env
 from loregarden.agents.registry import get_agent
 from loregarden.config import settings
 from loregarden.models.domain import Workspace
@@ -193,6 +193,7 @@ def run_cli_agent_turn(
         proc = subprocess.Popen(
             invocation.argv,
             cwd=invocation.cwd or str(repo_root),
+            env=invocation_env(invocation),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             stdin=subprocess.PIPE if invocation.stdin_prompt else None,

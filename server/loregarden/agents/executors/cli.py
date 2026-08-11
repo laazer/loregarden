@@ -8,6 +8,7 @@ from pathlib import Path
 
 from loregarden.agents.cli_adapters import (
     CliInvocation,
+    invocation_env,
     resolve_cli_invocation,
     resolve_terminal_handoff_invocation,
 )
@@ -193,9 +194,11 @@ class CliAgentExecutor:
                     ticket_cursor_model=ticket_runtime.cursor_model,
                     ticket_codex_model=ticket_runtime.codex_model,
                     ticket_lmstudio_model=ticket_runtime.lmstudio_model,
+                    ticket_opencode_model=ticket_runtime.opencode_model,
                     ticket_claude_effort=ticket_runtime.claude_effort,
                     ticket_cursor_effort=ticket_runtime.cursor_effort,
                     ticket_lmstudio_effort=ticket_runtime.lmstudio_effort,
+                    ticket_opencode_effort=ticket_runtime.opencode_effort,
                     stage_model=stage_def.model if stage_def else "",
                     agent_model=agent.get("default_model", ""),
                     run_id=run.id,
@@ -415,6 +418,7 @@ class CliAgentExecutor:
         proc = subprocess.Popen(
             invocation.argv,
             cwd=invocation.cwd or str(repo_root),
+            env=invocation_env(invocation),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             stdin=subprocess.PIPE if invocation.stdin_prompt else None,

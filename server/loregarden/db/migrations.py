@@ -159,6 +159,21 @@ def _m_workspace_effort_columns(conn: Connection) -> None:
     )
 
 
+def _m_workspace_opencode_columns(conn: Connection) -> None:
+    add_columns_if_missing(
+        conn,
+        "workspaces",
+        {
+            "opencode_model": (
+                "ALTER TABLE workspaces ADD COLUMN opencode_model TEXT NOT NULL DEFAULT ''"
+            ),
+            "opencode_effort": (
+                "ALTER TABLE workspaces ADD COLUMN opencode_effort TEXT NOT NULL DEFAULT ''"
+            ),
+        },
+    )
+
+
 def _m_approval_columns(conn: Connection) -> None:
     add_columns_if_missing(
         conn,
@@ -1410,6 +1425,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0074_lane_entry_dismissed", m_lane_entry_dismissed),
     ("0075_composer_commands", m_composer_commands),
     ("0076_worktree_ticket_id", _m_worktree_ticket_id),
+    ("0077_workspace_opencode_columns", _m_workspace_opencode_columns),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

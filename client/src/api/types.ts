@@ -420,9 +420,11 @@ export interface WorkspaceSummary {
   codex_model?: string;
   lmstudio_base_url: string;
   lmstudio_model: string;
+  opencode_model?: string;
   claude_effort?: string;
   cursor_effort?: string;
   lmstudio_effort?: string;
+  opencode_effort?: string;
 }
 
 export interface RuntimeOption {
@@ -452,9 +454,11 @@ export interface RuntimeOptions {
   cursor_models: RuntimeOption[];
   codex_models?: RuntimeOption[];
   lmstudio_models?: RuntimeOption[];
+  opencode_models?: RuntimeOption[];
   claude_efforts?: RuntimeOption[];
   cursor_efforts?: RuntimeOption[];
   lmstudio_efforts?: RuntimeOption[];
+  opencode_efforts?: RuntimeOption[];
   /** Cursor model ids that accept an `[effort=...]` bracket override. */
   cursor_effort_models?: string[];
   effective?: RuntimeEffective;
@@ -467,9 +471,11 @@ export interface WorkspaceRuntimeSettings {
   codex_model?: string;
   lmstudio_base_url: string;
   lmstudio_model: string;
+  opencode_model?: string;
   claude_effort?: string;
   cursor_effort?: string;
   lmstudio_effort?: string;
+  opencode_effort?: string;
 }
 
 export interface WorkflowTemplateSummary {

@@ -139,3 +139,59 @@ test("runtimeSettingsEqual notices an effort-only change", () => {
   ).toBe(false);
   expect(runtimeSettingsEqual(DEFAULT_RUNTIME, { ...DEFAULT_RUNTIME })).toBe(true);
 });
+
+const OPENCODE_OPTIONS: RuntimeOptions = {
+  ...OPTIONS,
+  cli_adapters: [...OPTIONS.cli_adapters, { id: "opencode", label: "OpenCode" }],
+  opencode_models: [
+    { id: "", label: "Default (OpenCode profile)" },
+    { id: "opencode/nemotron-3.5-lightning-free", label: "opencode/nemotron-3.5-lightning-free" },
+  ],
+  opencode_efforts: [
+    { id: "", label: "Default (model's own variant)" },
+    { id: "high", label: "High" },
+  ],
+};
+
+test("opencode pins a discovered model", () => {
+  const onChange = renderFields({ cli_adapter: "opencode" }, OPENCODE_OPTIONS);
+
+  fireEvent.change(screen.getByLabelText("OpenCode model"), {
+    target: { value: "opencode/nemotron-3.5-lightning-free" },
+  });
+
+  expect(onChange).toHaveBeenCalledWith(
+    expect.objectContaining({ opencode_model: "opencode/nemotron-3.5-lightning-free" }),
+  );
+});
+
+test("opencode accepts a model id the picker never discovered", () => {
+  // The catalogue depends on which providers OpenCode is signed in to, so the
+  // select is a shortcut rather than the set of legal values.
+  const onChange = renderFields({ cli_adapter: "opencode" }, OPENCODE_OPTIONS);
+
+  fireEvent.change(screen.getByPlaceholderText("Or type a provider/model id"), {
+    target: { value: "anthropic/claude-opus-5" },
+  });
+
+  expect(onChange).toHaveBeenCalledWith(
+    expect.objectContaining({ opencode_model: "anthropic/claude-opus-5" }),
+  );
+});
+
+test("opencode reports its effort level as a variant pin", () => {
+  const onChange = renderFields({ cli_adapter: "opencode" }, OPENCODE_OPTIONS);
+
+  fireEvent.change(screen.getByLabelText("Reasoning effort"), { target: { value: "high" } });
+
+  expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ opencode_effort: "high" }));
+});
+
+test("runtimeSettingsEqual notices an opencode-only change", () => {
+  expect(
+    runtimeSettingsEqual(DEFAULT_RUNTIME, { ...DEFAULT_RUNTIME, opencode_model: "a/b" }),
+  ).toBe(false);
+  expect(
+    runtimeSettingsEqual(DEFAULT_RUNTIME, { ...DEFAULT_RUNTIME, opencode_effort: "max" }),
+  ).toBe(false);
+});

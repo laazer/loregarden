@@ -110,9 +110,11 @@ def update_workspace_runtime(
     ws.codex_model = body.codex_model.strip()
     ws.lmstudio_base_url = body.lmstudio_base_url.strip()
     ws.lmstudio_model = body.lmstudio_model.strip()
+    ws.opencode_model = body.opencode_model.strip()
     ws.claude_effort = efforts["claude_effort"]
     ws.cursor_effort = efforts["cursor_effort"]
     ws.lmstudio_effort = efforts["lmstudio_effort"]
+    ws.opencode_effort = efforts["opencode_effort"]
     session.add(ws)
     session.commit()
     session.refresh(ws)

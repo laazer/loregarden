@@ -35,6 +35,7 @@ def _invocation(script: str) -> SimpleNamespace:
         stdin_prompt=None,
         interactive=False,
         adapter="local",
+        env={},
     )
 
 

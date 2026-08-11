@@ -14,7 +14,7 @@ from sqlmodel import Session
 
 if TYPE_CHECKING:
     from loregarden.services.run_stream_sink import RunStreamSink
-from loregarden.agents.cli_adapters import CliInvocation
+from loregarden.agents.cli_adapters import CliInvocation, invocation_env
 from loregarden.agents.executors.approval_scope import (  # noqa: F401
     BRANCH_TRIAGE_STAGE_KEY,
     HOME_CHAT_STAGE_KEY,
@@ -477,6 +477,7 @@ class PermissionBridgeRunner:
             proc = spawn(
                 invocation.argv,
                 cwd=invocation.cwd,
+                env=invocation_env(invocation),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

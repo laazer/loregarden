@@ -74,6 +74,23 @@ VALID_HIERARCHY: dict[WorkItemType, list[WorkItemType]] = {
 WORKFLOW_WORK_ITEM_TYPES = frozenset(WorkItemType)
 
 
+class CliAdapter(str, Enum):
+    """Which CLI (or in-process runner) executes an agent turn.
+
+    ``DEFAULT`` is not an executor — it is the "inherit the next tier down"
+    sentinel that workspace and ticket pins store, and ``resolve_effective_adapter``
+    never returns it.
+    """
+
+    DEFAULT = "default"
+    LOCAL = "local"
+    CLAUDE = "claude"
+    CURSOR = "cursor"
+    CODEX = "codex"
+    LMSTUDIO = "lmstudio"
+    OPENCODE = "opencode"
+
+
 class CompatibilityPosture(str, Enum):
     """How much freedom an agent has to change existing interfaces and tests.
 

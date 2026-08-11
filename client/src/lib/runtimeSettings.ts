@@ -8,7 +8,9 @@ export const DEFAULT_RUNTIME: WorkspaceRuntimeSettings = {
   codex_model: "",
   lmstudio_base_url: "",
   lmstudio_model: "",
+  opencode_model: "",
   claude_effort: "",
   cursor_effort: "",
   lmstudio_effort: "",
+  opencode_effort: "",
 };
