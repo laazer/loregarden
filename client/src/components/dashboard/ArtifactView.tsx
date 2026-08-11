@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { TicketDetail } from "../../api/client";
 import type { ContextSection } from "../../api/types";
+import { formatLocalTimestamp, formatRelativeAge, runTimestamp } from "../../lib/timestamps";
 import { InlineCodeDiffReview } from "../InlineCodeDiffReview";
 import { RunLedgerPanel } from "../RunLedgerPanel";
 
@@ -24,6 +25,9 @@ export function ArtifactView({
     command: string;
     agent_id?: string;
     stage_key?: string;
+    created_at?: string | null;
+    started_at?: string | null;
+    finished_at?: string | null;
     stderr?: string;
     stdout?: string;
   }[];
@@ -80,10 +84,10 @@ export function ArtifactView({
     const failedRuns = runs.filter((r) => r.status === "failed");
     const hasContent = Boolean(ticket.blocking_issues || errorArt || failedRuns.length);
     if (!hasContent) return <EmptyArtifacts label="No errors recorded" />;
-    // The error artifact records a run_code, not an id — the log fetch needs an id.
-    const errorRunId = errorArt
-      ? runs.find((r) => r.run_code === errorArt.run_code)?.id
-      : undefined;
+    // The error artifact records a run_code, not an id — the log fetch needs an
+    // id, and the run row is also where that failure's timestamps live.
+    const errorRun = errorArt ? runs.find((r) => r.run_code === errorArt.run_code) : undefined;
+    const errorRunId = errorRun?.id;
 
     return (
       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 6, minHeight: 0 }}>
@@ -126,6 +130,7 @@ export function ArtifactView({
             <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--txm)", marginTop: 6 }}>
               {errorArt.run_code} · {errorArt.agent_id} · {errorArt.stage_key}
             </div>
+            {errorRun && <RunWhen run={errorRun} />}
             {errorArt.command && (
               <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--txl)", marginTop: 8, wordBreak: "break-all" }}>
                 {errorArt.command}
@@ -142,6 +147,7 @@ export function ArtifactView({
             <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--txm)", marginTop: 6 }}>
               {run.agent_id ?? "—"} · {run.stage_key ?? "—"}
             </div>
+            <RunWhen run={run} />
             {run.stderr && (
               <pre
                 style={{
@@ -309,6 +315,7 @@ export function ArtifactView({
               }}
             >
               {r.run_code} · {r.status} · {r.command.slice(0, 60)}
+              <RunWhen run={r} />
             </button>
           ))}
         </div>
@@ -370,6 +377,28 @@ export function ArtifactView({
           ))}
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * When a run happened, in the viewer's timezone — the answer to "which of these
+ * three identical-looking failures am I looking at?". Absolute local time carries
+ * the zone name so it can be compared against a provider's reset window; the age
+ * beside it saves the arithmetic.
+ */
+function RunWhen({
+  run,
+}: {
+  run: { created_at?: string | null; started_at?: string | null; finished_at?: string | null };
+}) {
+  const when = runTimestamp(run);
+  if (!when) return null;
+  const age = formatRelativeAge(when);
+  return (
+    <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txl)", marginTop: 4 }}>
+      {formatLocalTimestamp(when)}
+      {age && ` · ${age}`}
     </div>
   );
 }

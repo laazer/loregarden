@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { LedgerVisit } from "../api/types";
 import { duration } from "../lib/duration";
 import { ACTIVE_LEDGER_STATUSES } from "../lib/ledgerStatus";
+import { formatLocalTimestamp } from "../lib/timestamps";
 
 function VisitRow({
   visit,
@@ -66,6 +67,9 @@ function VisitRow({
                 {attempt.agent_id}
                 {attempt.skill_name ? ` · ${attempt.skill_name}` : ""} · {attempt.status}
                 {attempt.duration_seconds !== null ? ` · ${duration(attempt.duration_seconds)}` : ""}
+                {/* Duration alone says how long, never when — the ledger is read
+                    to place an attempt against something outside it. */}
+                {attempt.started_at ? ` · ${formatLocalTimestamp(attempt.started_at)}` : ""}
               </button>
             </li>
           ))}

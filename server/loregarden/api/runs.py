@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from loregarden.core.timestamps import iso_utc
 from loregarden.db.session import get_session
 from loregarden.models.domain import HandoffCheckinRequest, RunMessageCreate, RunStatus
 from loregarden.services.artifact_service import load_run_log
@@ -39,8 +40,11 @@ def list_runs(
             "stage_key": r.stage_key,
             "status": r.status.value,
             "command": r.command,
-            "started_at": r.started_at.isoformat() if r.started_at else None,
-            "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+            # created_at is the only stamp a run that never started still has —
+            # the errors list must be able to say when a dispatch failed too.
+            "created_at": iso_utc(r.created_at),
+            "started_at": iso_utc(r.started_at),
+            "finished_at": iso_utc(r.finished_at),
             "stdout": r.stdout[:2000] if r.stdout else "",
             "stderr": normalize_timeout_stderr(r.stderr[:2000] if r.stderr else ""),
         }
@@ -73,8 +77,8 @@ def get_run_log(run_id: str, session: Session = Depends(get_session)) -> dict:
         "stage_key": run.stage_key,
         "status": run.status.value,
         "command": run.command,
-        "started_at": run.started_at.isoformat() if run.started_at else None,
-        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        "started_at": iso_utc(run.started_at),
+        "finished_at": iso_utc(run.finished_at),
         "lines": lines if isinstance(lines, list) else [],
         "live": live if isinstance(live, str) else None,
         "stderr": normalize_timeout_stderr(run.stderr or ""),
@@ -206,6 +210,7 @@ def get_run(run_id: str, session: Session = Depends(get_session)) -> dict:
         "command": run.command,
         "stdout": run.stdout,
         "stderr": normalize_timeout_stderr(run.stderr or ""),
-        "started_at": run.started_at.isoformat() if run.started_at else None,
-        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        "created_at": iso_utc(run.created_at),
+        "started_at": iso_utc(run.started_at),
+        "finished_at": iso_utc(run.finished_at),
     }

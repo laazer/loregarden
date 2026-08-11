@@ -15,6 +15,9 @@ type RunRow = {
   command: string;
   agent_id?: string;
   stage_key?: string;
+  created_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
   stderr?: string;
   stdout?: string;
 };
