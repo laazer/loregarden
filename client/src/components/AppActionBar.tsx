@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../api/client";
 import { useActiveChatSession } from "../hooks/useActiveChatSession";
 import { composerQueueKey, useComposerCommands } from "../hooks/useComposerCommands";
+import { useComposerHostActions } from "../hooks/useComposerHostActions";
 import { useTerminalTarget } from "../hooks/useTerminalTarget";
 import { useTicketAsides } from "../hooks/useTicketAsides";
 import {
@@ -121,6 +122,30 @@ export function AppActionBar() {
     void session.send(message, { autoApprove, skill }).catch(() => {});
   };
 
+  const onAfterNewChat = useCallback(() => {
+    setHistoryOpen(false);
+    setChatOpen(true);
+  }, [setHistoryOpen, setChatOpen]);
+
+  const onBtw = useCallback(
+    (message: string) => {
+      if (!ticketId) return;
+      setChatOpen(true);
+      asides.ask.mutate(message);
+    },
+    [ticketId, asides.ask, setChatOpen],
+  );
+
+  const commandActions = useComposerHostActions({
+    workspaceSlug: terminal.workspaceSlug,
+    ticketId,
+    pendingApprovals,
+    archive,
+    session: asideMode ? null : session,
+    onBtw: ticketId ? onBtw : undefined,
+    onAfterNewChat,
+  });
+
   const commands = useComposerCommands({
     value: draft,
     onChange: setDraft,
@@ -140,6 +165,7 @@ export function AppActionBar() {
         }
       : undefined,
     skillsEnabled: session?.kind === "baxter-home" && !asideMode,
+    actions: commandActions,
   });
 
   /** Enter and the send button: a `/command` acts, anything else is a message. */

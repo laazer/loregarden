@@ -127,11 +127,39 @@ describe("resolveCommand", () => {
     expect(resolveCommand(commands, "q")?.name).toBe("queue");
   });
 
+  it("resolves /run to orchestrate", () => {
+    expect(resolveCommand(commands, "run")?.name).toBe("orchestrate");
+  });
+
+  it("resolves /open to ticket", () => {
+    expect(resolveCommand(commands, "open")?.name).toBe("ticket");
+  });
+
   it("resolves a skill by name", () => {
     expect(resolveCommand(commands, "review")?.kind).toBe("skill");
   });
 
   it("refuses an unknown token, so it is sent as ordinary text", () => {
     expect(resolveCommand(commands, "nope")).toBeNull();
+  });
+});
+
+describe("BUILTIN_COMMANDS", () => {
+  it("ships the b12 vocabulary", () => {
+    expect(BUILTIN_COMMANDS.map((command) => command.name)).toEqual([
+      "help",
+      "queue",
+      "note",
+      "new",
+      "fork",
+      "clear",
+      "orchestrate",
+      "stop",
+      "approve",
+      "reject",
+      "btw",
+      "ticket",
+      "create",
+    ]);
   });
 });

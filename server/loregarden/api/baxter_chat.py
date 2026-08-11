@@ -19,6 +19,7 @@ from loregarden.services.baxter_chat_service import (
     chat_session_summary,
     create_chat_session,
     delete_chat_session,
+    fork_chat_session,
     get_chat_session,
     list_chat_sessions,
     set_chat_runtime,
@@ -112,6 +113,17 @@ def remove_baxter_chat_session(
     chat_session = _chat_session(session, workspace.id, session_id)
     delete_chat_session(session, chat_session)
     return {"deleted": session_id}
+
+
+@router.post("/{slug}/baxter-chat/sessions/{session_id}/fork", status_code=201)
+def fork_baxter_chat_session(
+    slug: str, session_id: str, session: Session = Depends(get_session)
+) -> dict:
+    """Copy settled messages into a new session; leave the source alone."""
+    workspace = _workspace(session, slug)
+    chat_session = _chat_session(session, workspace.id, session_id)
+    forked = fork_chat_session(session, chat_session)
+    return chat_session_snapshot(session, forked)
 
 
 @router.patch(

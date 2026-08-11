@@ -93,6 +93,8 @@ describe("the / menu", () => {
 
     expect(await screen.findByRole("option", { name: /queue/ })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /note/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /help/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /clear/ })).toBeInTheDocument();
   });
 
   it("stays shut for a slash inside the message", () => {
@@ -178,6 +180,28 @@ describe("the @ picker", () => {
     fireEvent.keyDown(input, { key: "Enter" });
 
     expect(input).toHaveValue("@client/src/components/");
+  });
+});
+
+describe("/help and /clear", () => {
+  it("lists available commands without sending a turn", async () => {
+    const bound = session();
+    mockResolver.mockReturnValue(bind({ session: bound, label: "Ticket triage" }));
+    renderBar();
+    // A trailing space closes the `/` menu so Enter submits rather than completes.
+    fireEvent.keyDown(type("/help "), { key: "Enter" });
+
+    expect(bound.send).not.toHaveBeenCalled();
+    expect(await screen.findByRole("region", { name: "Composer commands" })).toBeInTheDocument();
+    expect(screen.getByText("/queue")).toBeInTheDocument();
+  });
+
+  it("empties the draft", () => {
+    mockResolver.mockReturnValue(bind({ session: session(), label: "Ticket triage" }));
+    renderBar();
+    const input = type("/clear leftover");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input).toHaveValue("");
   });
 });
 
