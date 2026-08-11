@@ -56,5 +56,7 @@ def test_list_skills_returns_seeded_database_slugs(client):
         "plan-simplest",
         "plan-synthesis",
         "refactor",
+        "spike-decision",
+        "spike-research",
         "vulcan",
     ]
