@@ -14,6 +14,7 @@ from loregarden.config import settings
 from loregarden.models.domain import Ticket, WorkflowStageDef, Workspace
 from loregarden.services.handoff_store import HANDOFF_SCRATCH_SUBDIR, export_for_gate
 from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile
+from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -66,8 +67,12 @@ def build_gate_context(
     ticket: Ticket,
     from_stage: str,
     to_stage: str,
+    repo_root: Path | None = None,
 ) -> dict[str, str]:
-    repo_root = resolve_workspace_root(workspace)
+    # Defaults to the shared checkout for callers with no ticket tree in hand;
+    # the orchestration paths pass the ticket's worktree, which is where the
+    # edits a gate is meant to judge actually are.
+    repo_root = repo_root or resolve_workspace_root(workspace)
     transition = transition_name(from_stage, to_stage)
     return {
         "ticket_id": ticket.id,
@@ -218,7 +223,10 @@ def run_transition_gates(
     if not profile.gates.enabled:
         return GateRunResult(ok=True, outcome="disabled", message="gates disabled")
 
-    repo_root = resolve_workspace_root(workspace)
+    # The tree the stage just wrote in. Running gates in the shared checkout
+    # would lint a copy of the repo that has none of the ticket's changes —
+    # every gate would pass on work it never saw.
+    repo_root = resolve_ticket_root(session, ticket, workspace)
     if not repo_root.is_dir():
         return GateRunResult(
             ok=False,
@@ -231,6 +239,7 @@ def run_transition_gates(
         ticket=ticket,
         from_stage=from_stage,
         to_stage=to_stage,
+        repo_root=repo_root,
     )
 
     ran = 0
@@ -293,6 +302,7 @@ def run_transition_gates(
 
 
 def run_gate_autofix(
+    session: Session,
     profile: OrchestrationProfile,
     workspace: Workspace,
     ticket: Ticket,
@@ -310,7 +320,8 @@ def run_gate_autofix(
     if not profile.gates.enabled or not profile.gates.autofix_commands:
         return GateAutofixResult(ran=False, commands=[])
 
-    repo_root = resolve_workspace_root(workspace)
+    # Same tree the gate ran in, or the fixer edits files nobody is checking.
+    repo_root = resolve_ticket_root(session, ticket, workspace)
     if not repo_root.is_dir():
         return GateAutofixResult(
             ran=False, commands=[], output=f"Workspace repo path does not exist: {repo_root}"
@@ -321,6 +332,7 @@ def run_gate_autofix(
         ticket=ticket,
         from_stage=from_stage,
         to_stage=to_stage,
+        repo_root=repo_root,
     )
 
     commands: list[str] = []

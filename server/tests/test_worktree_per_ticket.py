@@ -14,7 +14,7 @@ import pytest
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace, WorktreeState
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session
-from tests.worktree_helpers import head_branch, make_repo
+from tests.worktree_helpers import head_branch, make_repo, make_ticket
 
 
 @pytest.fixture(name="session")
@@ -39,16 +39,7 @@ def workspace_fixture(session, repo):
 
 @pytest.fixture(name="ticket")
 def ticket_fixture(session, workspace):
-    ticket = Ticket(
-        external_id="LG-1",
-        workspace_id=workspace.id,
-        title="Add the thing",
-        branch="loregarden/lg-1-add-the-thing",
-    )
-    session.add(ticket)
-    session.commit()
-    session.refresh(ticket)
-    return ticket
+    return make_ticket(session, workspace)
 
 
 def _run(session, workspace, ticket, code):

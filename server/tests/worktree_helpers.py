@@ -30,3 +30,19 @@ def make_repo(tmp_path: Path, name: str = "project") -> Path:
 
 def head_branch(path: Path | str) -> str:
     return git(path, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+
+
+def make_ticket(session, workspace, external_id: str = "LG-1", title: str = "Add the thing"):
+    """A ticket on its own branch, which is all these tests need one for."""
+    from loregarden.models.domain import Ticket
+
+    ticket = Ticket(
+        external_id=external_id,
+        workspace_id=workspace.id,
+        title=title,
+        branch=f"loregarden/{external_id.lower()}-{title.lower().replace(' ', '-')}",
+    )
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    return ticket

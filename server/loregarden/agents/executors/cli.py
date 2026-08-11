@@ -50,7 +50,7 @@ from loregarden.services.run_log_stream import RunLogStreamer
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
 from loregarden.services.studio_service import build_studio_prompt_sections
 from loregarden.services.subprocess_lines import SubprocessLineReader
-from loregarden.services.ticket_worktree import resolve_execution_root
+from loregarden.services.ticket_worktree import resolve_execution_root, resolve_ticket_root
 from loregarden.services.workspace_paths import (
     resolve_agent_context_dir,
     resolve_workspace_root,
@@ -606,6 +606,10 @@ class CliAgentExecutor:
         workspace: Workspace,
         stage_def: WorkflowStageDef | None,
     ) -> str:
+        # The tree this run will work in — the ticket's worktree once it has
+        # one. A prompt built from the shared checkout would describe a repo
+        # without any of the ticket's own work in it.
+        repo_root = resolve_ticket_root(self.session, ticket, workspace)
         # Role body comes from the agent config (DB-backed studio agent, or the
         # registry fallback which loads it in get_agent). The executor no longer
         # reads role_file from the workspace filesystem — the DB is authoritative.
@@ -644,7 +648,7 @@ class CliAgentExecutor:
         is_synthesis = skill_name == SYNTHESIS_SKILL
         full_suite_note = self._full_suite_producer_note(skill_name)
         evidence_ledger = build_evidence_ledger(
-            self.session, ticket, resolve_workspace_root(workspace), is_verify=is_verify
+            self.session, ticket, repo_root, is_verify=is_verify
         )
 
         # Ordered prompt blocks. Add a section by inserting a block here rather
@@ -699,7 +703,7 @@ class CliAgentExecutor:
             # is told its job. The implementers run on cursor, which does not
             # pick up CLAUDE.md the way Claude Code does, so without this they
             # rediscover the layout by grepping on every run.
-            _titled_block("## Repository map", render_code_map(resolve_workspace_root(workspace))),
+            _titled_block("## Repository map", render_code_map(repo_root)),
             skill_prompt_block(skill_name, skill_body),
             _titled_block("## Agent Role", role_body),
             _raw_block(build_studio_prompt_sections(agent)),

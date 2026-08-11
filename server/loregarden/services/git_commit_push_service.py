@@ -80,9 +80,11 @@ def commit_paths(session: Session, ticket: Ticket, message: str, paths: Iterable
     workspace = session.get(Workspace, ticket.workspace_id)
     if not workspace:
         return False
-    repo_root = resolve_workspace_root(workspace)
-    if not (repo_root / ".git").exists():
+    if not (resolve_workspace_root(workspace) / ".git").exists():
         return False
+    # The stage wrote these paths in the ticket's worktree. Staging them in the
+    # shared checkout would match nothing and silently commit no work.
+    repo_root = resolve_ticket_root(session, ticket, workspace)
 
     # Only stage what is still dirty; a path recorded earlier may have been
     # committed or reverted since, and `git add` on a pathspec matching nothing

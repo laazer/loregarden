@@ -621,6 +621,7 @@ class BuiltinOrchestrator:
         # "basic problems" (imports, formatting, trivial lint) with no agent run.
         if profile.gates.autofix_commands:
             autofix = run_gate_autofix(
+                self.session,
                 profile,
                 workspace,
                 ticket,
