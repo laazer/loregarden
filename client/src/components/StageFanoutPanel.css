@@ -1,0 +1,59 @@
+.fanout-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--bd, #23252b);
+}
+
+.fanout-panel__title {
+  display: block;
+  font-family: var(--dp, inherit);
+  font-size: 13px;
+  color: var(--txm, #8b8f98);
+}
+
+.fanout-panel__hint {
+  display: block;
+  max-width: 62ch;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--txm, #8b8f98);
+}
+
+.fanout-panel__error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger, #d9534f);
+}
+
+.fanout-panel__launcher {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.fanout-panel__launcher label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--txm, #8b8f98);
+}
+
+.fanout-panel__launcher select {
+  padding: 5px 8px;
+  border: 1px solid var(--bd, #23252b);
+  border-radius: 6px;
+  background: var(--panel-2, #1b1e24);
+  color: var(--tx, #e6e8ec);
+  font-size: 12px;
+}
+
+.fanout-panel__history {
+  margin: 0;
+  font-size: 11px;
+  color: var(--txm, #8b8f98);
+}

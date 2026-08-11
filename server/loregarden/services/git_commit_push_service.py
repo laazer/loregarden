@@ -85,6 +85,19 @@ def commit_paths(session: Session, ticket: Ticket, message: str, paths: Iterable
     # The stage wrote these paths in the ticket's worktree. Staging them in the
     # shared checkout would match nothing and silently commit no work.
     repo_root = resolve_ticket_root(session, ticket, workspace)
+    return commit_paths_in(repo_root, message, wanted)
+
+
+def commit_paths_in(repo_root: Path, message: str, paths: Iterable[str]) -> bool:
+    """`commit_paths` against an explicit tree, for callers that know theirs.
+
+    A fan-out attempt's tree is one of those: it belongs to the attempt, not to
+    the ticket, so resolving the ticket's worktree would commit in the wrong
+    place.
+    """
+    wanted = sorted({path for path in paths if path})
+    if not wanted:
+        return False
 
     # Only stage what is still dirty; a path recorded earlier may have been
     # committed or reverted since, and `git add` on a pathspec matching nothing

@@ -4,6 +4,7 @@ import type { ContextSection } from "../../api/types";
 import { formatLocalTimestamp, formatRelativeAge, runTimestamp } from "../../lib/timestamps";
 import { InlineCodeDiffReview } from "../InlineCodeDiffReview";
 import { RunLedgerPanel } from "../RunLedgerPanel";
+import { StageFanoutPanel } from "../StageFanoutPanel";
 
 export function ArtifactView({
   tab,
@@ -361,6 +362,12 @@ export function ArtifactView({
             );
           })}
         </div>
+      )}
+      {stages.length > 0 && (
+        <StageFanoutPanel
+          ticketId={ticket.id}
+          stages={stages.map((stage) => ({ key: stage.key, name: stage.name }))}
+        />
       )}
       {otherSections.map((sec, i) => (
         <div key={i} style={{ display: "flex", flexDirection: "column", gap: 6 }}>

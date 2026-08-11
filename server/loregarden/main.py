@@ -30,6 +30,7 @@ from loregarden.api import (
     queue_review,
     reference_repos,
     runs,
+    stage_fanout,
     studio,
     system,
     terminal,
@@ -131,6 +132,7 @@ app.include_router(agents.router, prefix="/api")
 app.include_router(mcp_servers.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
 app.include_router(orchestration.router, prefix="/api")
+app.include_router(stage_fanout.router)
 app.include_router(studio.router, prefix="/api")
 app.include_router(ticket_studio.router, prefix="/api")
 app.include_router(reference_repos.router, prefix="/api")

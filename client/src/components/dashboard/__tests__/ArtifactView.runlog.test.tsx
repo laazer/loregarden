@@ -1,7 +1,16 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
 
 import { ArtifactView } from "../ArtifactView";
 import type { TicketDetail } from "../../../api/client";
+
+// The context tab hosts the fan-out panel, which reads the ticket's fan-out
+// groups through react-query.
+function render(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 const RUNS = [
   { id: "run-id-1", run_code: "run_aaa", status: "succeeded", command: "claude -p plan", agent_id: "planner", stage_key: "plan" },
