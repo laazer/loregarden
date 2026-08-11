@@ -93,9 +93,10 @@ describe("UsageModal", () => {
   it("breaks usage down per model", () => {
     const dialog = renderModal();
 
-    expect(within(dialog).getByText("By model (last 7 days)")).toBeInTheDocument();
+    expect(within(dialog).getByText("Local activity by model (last 7 days)")).toBeInTheDocument();
     expect(within(dialog).getByText("gpt-5.5")).toBeInTheDocument();
     expect(within(dialog).getByText("84,188,405 tokens")).toBeInTheDocument();
+    expect(within(dialog).getByText("79% share")).toBeInTheDocument();
   });
 
   it("dates a self-reported reading so a stale one is not read as current", () => {

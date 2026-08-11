@@ -511,11 +511,21 @@ def test_usage_rate_limit_backoff_skips_live_fetch(tmp_path, monkeypatch):
         raise AssertionError("should not call Claude usage API during backoff")
 
     monkeypatch.setattr(usage_service, "_claude_oauth", lambda: {"accessToken": "token"})
+    # `fake_get` patches httpx wholesale, so it trips on *any* provider's live
+    # call. The other providers are stubbed out for that reason — this test is
+    # about Claude's own backoff, not about whether cursor or codex fetch.
     monkeypatch.setattr(
         usage_service,
         "_fetch_cursor_usage",
         lambda client, cache_entry=None: usage_service.ProviderUsage(
             provider="cursor", logged_in=False
+        ),
+    )
+    monkeypatch.setattr(
+        usage_service,
+        "_fetch_codex_usage",
+        lambda client, cache_entry=None: usage_service.ProviderUsage(
+            provider="codex", logged_in=False
         ),
     )
 

@@ -111,13 +111,13 @@ function ProviderSection({
 
       {provider.breakdown.length > 0 && (
         <div className="usage-breakdown">
-          <div className="usage-breakdown-title">By model (last 7 days)</div>
+          <div className="usage-breakdown-title">Local activity by model (last 7 days)</div>
           {provider.breakdown.map((item) => (
             <div key={`${provider.provider}-${item.name}`} className="usage-breakdown-row">
               <div className="usage-breakdown-name">{item.name}</div>
               <div className="usage-breakdown-meta">
                 <span>{breakdownLabel(item)}</span>
-                <span>{item.share_percent.toFixed(0)}%</span>
+                <span>{item.share_percent.toFixed(0)}% share</span>
               </div>
               <div className="usage-meter-track">
                 <div

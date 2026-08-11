@@ -1103,88 +1103,18 @@ def _fetch_cursor_usage(
     )
 
 
-def _scan_codex_activity(days_back: int = 7) -> list[UsageBreakdownItem]:
-    totals = codex_usage.model_token_totals(days_back)
-    grand_total = sum(totals.values())
-    if not grand_total:
-        return []
-    items = [
-        UsageBreakdownItem(
-            name=name,
-            amount=amount,
-            unit="tokens",
-            share_percent=amount / grand_total * 100,
-        )
-        for name, amount in totals.items()
-    ]
-    items.sort(key=lambda item: item.amount, reverse=True)
-    return items[:8]
+def _fetch_codex_usage(
+    client: httpx.Client,
+    cache_entry: dict[str, Any] | None = None,
+) -> ProviderUsage:
+    """Codex usage: live ChatGPT meters, local activity breakdown.
 
-
-def _append_codex_window(
-    meters: list[UsageMeter],
-    key: str,
-    window: Any,
-) -> None:
-    if not isinstance(window, dict):
-        return
-    used = _as_number(window.get("used_percent"))
-    if used is None:
-        return
-    meters.append(
-        UsageMeter(
-            key=key,
-            label=codex_usage.window_label(window.get("window_minutes")),
-            used=used,
-            limit=100.0,
-            unit="percent",
-            percent_used=used,
-            resets_at=_iso_from_epoch_ms(window.get("resets_at")),
-            status=_meter_status(used),
-        )
-    )
-
-
-def _fetch_codex_usage() -> ProviderUsage:
-    """Codex usage, read from local rollout transcripts (no network, no credential).
-
-    Takes no HTTP client on purpose — nothing here is fetched — so it also has no
-    rate-limit backoff to keep. Staleness is real, though: the numbers are only
-    as fresh as the last Codex run, which is why the reading's own timestamp is
-    surfaced rather than the poll time.
+    Implementation lives in ``codex_provider_usage`` so this module stays under
+    the size gate; this wrapper keeps the call site next to the other providers.
     """
-    if not codex_usage.is_signed_in():
-        return ProviderUsage(
-            provider="codex",
-            logged_in=False,
-            error="Not logged in. Run `codex login` to authenticate.",
-            breakdown=_scan_codex_activity(),
-        )
+    from loregarden.services.codex_provider_usage import fetch_codex_provider
 
-    limits, observed_at = codex_usage.latest_rate_limits()
-    breakdown = _scan_codex_activity()
-    if limits is None:
-        return ProviderUsage(
-            provider="codex",
-            logged_in=True,
-            error="No usage recorded yet — Codex writes limits on its first run.",
-            breakdown=breakdown,
-        )
-
-    meters: list[UsageMeter] = []
-    _append_codex_window(meters, "primary", limits.get("primary"))
-    _append_codex_window(meters, "secondary", limits.get("secondary"))
-
-    return ProviderUsage(
-        provider="codex",
-        plan=codex_usage.plan_label(limits),
-        logged_in=True,
-        meters=meters,
-        breakdown=breakdown,
-        # Codex only refreshes these when it runs, so the reading's own age is
-        # the honest "as of" — reusing the poll time would overstate freshness.
-        observed_at=_iso_from_text(observed_at),
-    )
+    return fetch_codex_provider(client, cache_entry)
 
 
 def _usage_cache_path() -> Path:
@@ -1288,6 +1218,9 @@ def _resolve_provider_with_cache(
                 breakdown=provider.breakdown,
                 from_cache=False,
                 cached_at=cached_at,
+                # Keep the reading's own age (Codex local fallback) so a stale
+                # transcript isn't re-stamped as "just fetched" by the cache write.
+                observed_at=provider.observed_at,
             ),
             {**provider.as_dict(), "cached_at": cached_at},
         )
@@ -1366,8 +1299,13 @@ def _apply_configured_model(provider: ProviderUsage, active_adapter: str) -> Non
 
     Applied after cache resolution so a cached reading never carries a stale
     model: the pin comes from the settings chain, not from the usage API.
+    When Codex has no pin, fall back to the model named in the newest local
+    transcript so the modal matches what the last run actually used.
     """
-    provider.configured_model = resolve_model_for_adapter(provider.provider, None) or None
+    pinned = resolve_model_for_adapter(provider.provider, None) or None
+    if not pinned and provider.provider == "codex":
+        pinned = codex_usage.recent_model()
+    provider.configured_model = pinned
     provider.active_adapter = provider.provider == active_adapter
 
 
@@ -1415,10 +1353,8 @@ def get_usage_snapshot() -> dict[str, Any]:
         providers = [
             _fetch_claude_usage(client, cache.get("claude")),
             _fetch_cursor_usage(client, cache.get("cursor")),
+            _fetch_codex_usage(client, cache.get("codex")),
         ]
-    # Read from local transcripts rather than an API, so it neither needs the
-    # HTTP client nor benefits from the failure cache below.
-    local_providers = [_fetch_codex_usage()]
 
     active_adapter = str(resolve_runtime_effective(None).get("cli_adapter") or "")
 
@@ -1437,7 +1373,6 @@ def get_usage_snapshot() -> dict[str, Any]:
     if updated_cache != cache:
         _write_usage_cache(updated_cache)
 
-    resolved_providers.extend(local_providers)
     for provider in resolved_providers:
         _apply_configured_model(provider, active_adapter)
 

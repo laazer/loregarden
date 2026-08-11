@@ -1,17 +1,20 @@
-"""Local Codex CLI usage, read from the rollout transcripts it already writes.
+"""Codex usage: live ChatGPT meters plus local activity from rollout transcripts.
 
-Codex has no public usage endpoint, but it records everything its own
-``/status`` shows into ``$CODEX_HOME/sessions/<y>/<m>/<d>/rollout-*.jsonl``:
+Meters (weekly / session windows) come from
+``GET https://chatgpt.com/backend-api/codex/usage`` using the tokens already in
+``$CODEX_HOME/auth.json``. Those values are what ChatGPT's own usage page
+shows; rollout ``rate_limits`` blocks are only a fallback when the network
+call fails.
 
-- ``event_msg`` rows of type ``token_count`` carry a ``rate_limits`` block with
-  ``primary``/``secondary`` windows (``used_percent``, ``window_minutes``,
-  ``resets_at``) and the account's ``plan_type``.
-- The same rows carry ``info.total_token_usage``, which is cumulative for the
-  session, and ``turn_context`` rows name the model that spent it.
+Per-model activity still comes from local
+``$CODEX_HOME/sessions/**/rollout-*.jsonl`` transcripts. Each turn's
+``last_token_usage`` is counted once as uncached work
+(``input - cached_input + output``). Using ``total_token_usage``'s cumulative
+``total_tokens`` would re-count the growing context on every turn and inflate
+the breakdown by an order of magnitude.
 
-Reading those files keeps this off the network entirely and — unlike the Claude
-and Cursor providers — never touches a credential. Sign-in is inferred from the
-mere existence of ``auth.json``; its contents are deliberately never read.
+``auth.json`` is read only for the bearer + account id headers; values are
+never logged.
 """
 
 from __future__ import annotations
@@ -22,12 +25,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import httpx
 from loregarden.services.codex_discovery import codex_home
 
 logger = logging.getLogger(__name__)
 
+CODEX_USAGE_URL = "https://chatgpt.com/backend-api/codex/usage"
+
 # How many of the newest transcripts to search for a rate-limit reading before
-# giving up. The newest session normally has one; a handful of covers the case
+# giving up. The newest session normally has one; a handful covers the case
 # where the last runs died before their first token_count.
 RATE_LIMIT_SEARCH_FILES = 6
 
@@ -43,6 +49,29 @@ def is_signed_in() -> bool:
         return auth.is_file() and auth.stat().st_size > 0
     except OSError:
         return False
+
+
+def auth_tokens() -> tuple[str, str] | None:
+    """Return ``(access_token, account_id)`` for the live usage API, or None.
+
+    Contents are never logged — callers must treat the return value as secret.
+    """
+    path = codex_home() / "auth.json"
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.debug("could not read codex auth.json: %s", exc)
+        return None
+    if not isinstance(raw, dict):  # py-org: allow-isinstance — auth.json is foreign JSON
+        return None
+    tokens = raw.get("tokens")
+    if not isinstance(tokens, dict):  # py-org: allow-isinstance — auth.json is foreign JSON
+        return None
+    access = str(tokens.get("access_token") or "").strip()
+    account = str(tokens.get("account_id") or "").strip()
+    if not access or not account:
+        return None
+    return access, account
 
 
 def _as_number(value: Any) -> float | None:
@@ -113,6 +142,94 @@ def latest_rate_limits() -> tuple[dict[str, Any] | None, str | None]:
     return None, None
 
 
+def _window_from_api(window: Any) -> dict[str, Any] | None:
+    """Normalize a live ``primary_window`` / ``secondary_window`` into local shape."""
+    if not isinstance(window, dict):  # py-org: allow-isinstance — /codex/usage JSON
+        return None
+    used = _as_number(
+        window.get("used_percent") if "used_percent" in window else window.get("usedPercent")
+    )
+    if used is None:
+        return None
+    seconds = _as_number(
+        window.get("limit_window_seconds")
+        if "limit_window_seconds" in window
+        else window.get("limitWindowSeconds")
+    )
+    resets = window.get("reset_at") if "reset_at" in window else window.get("resetAt")
+    if resets is None:
+        resets = window.get("resets_at") if "resets_at" in window else window.get("resetsAt")
+    minutes = None
+    if seconds is not None and seconds > 0:
+        minutes = int((seconds + 59) // 60)
+    out: dict[str, Any] = {"used_percent": used}
+    if minutes is not None:
+        out["window_minutes"] = minutes
+    if isinstance(resets, (int, float)):  # py-org: allow-isinstance — /codex/usage JSON
+        out["resets_at"] = int(resets)
+    return out
+
+
+def limits_from_usage_body(body: Any) -> dict[str, Any] | None:
+    """Map ``/codex/usage`` JSON onto the local ``rate_limits`` snapshot shape."""
+    if not isinstance(body, dict):  # py-org: allow-isinstance — /codex/usage JSON
+        return None
+    rate_raw = body.get("rate_limit")
+    rate = rate_raw if isinstance(rate_raw, dict) else body  # py-org: allow-isinstance
+    if not isinstance(rate, dict):  # py-org: allow-isinstance — /codex/usage JSON
+        return None
+    primary = _window_from_api(
+        rate.get("primary_window") or rate.get("primaryWindow") or rate.get("primary")
+    )
+    secondary = _window_from_api(
+        rate.get("secondary_window") or rate.get("secondaryWindow") or rate.get("secondary")
+    )
+    plan = (
+        body.get("plan_type")
+        or body.get("planType")
+        or rate.get("plan_type")
+        or rate.get("planType")
+    )
+    if primary is None and secondary is None and not plan:
+        return None
+    return {
+        "primary": primary,
+        "secondary": secondary,
+        "plan_type": str(plan).strip() if plan else None,
+    }
+
+
+def fetch_live_rate_limits(
+    client: httpx.Client,
+) -> tuple[dict[str, Any] | None, httpx.Response | None]:
+    """Hit ChatGPT's Codex usage endpoint. Returns ``(limits, response)``.
+
+    ``limits`` is None when auth is missing or the body cannot be parsed.
+    ``response`` is None only when there were no credentials to send.
+    """
+    creds = auth_tokens()
+    if creds is None:
+        return None, None
+    access, account_id = creds
+    response = client.get(
+        CODEX_USAGE_URL,
+        headers={
+            "Authorization": f"Bearer {access}",
+            "ChatGPT-Account-Id": account_id,
+            "Accept": "application/json",
+            "User-Agent": "loregarden/0.1",
+        },
+        timeout=10,
+    )
+    if response.status_code >= 400:
+        return None, response
+    try:
+        body = response.json()
+    except (json.JSONDecodeError, ValueError):
+        return None, response
+    return limits_from_usage_body(body), response
+
+
 def _turn_context_model(line: str) -> str | None:
     try:
         row = json.loads(line)
@@ -125,42 +242,47 @@ def _turn_context_model(line: str) -> str | None:
     return named or None
 
 
-def _cumulative_tokens(line: str) -> float | None:
+def _uncached_turn_tokens(line: str) -> float | None:
+    """Tokens of new work on one turn — not the cumulative session total.
+
+    ``total_token_usage.total_tokens`` restates the sum of every prior turn's
+    full prompt (context grows), so taking its max over the file multiplies
+    the same tokens by the turn count. ``last_token_usage`` is per-turn; drop
+    the cached prefix so long chats don't look like 100M+ tokens of spend.
+    """
     payload = _event_payload(line, "token_count")
     if payload is None:
         return None
     info = payload.get("info")
-    usage = info.get("total_token_usage") if isinstance(info, dict) else None
-    if not isinstance(usage, dict):
+    if not isinstance(info, dict):  # py-org: allow-isinstance — rollout token_count JSON
         return None
-    return _as_number(usage.get("total_tokens"))
+    usage = info.get("last_token_usage")
+    if not isinstance(usage, dict):  # py-org: allow-isinstance — rollout token_count JSON
+        return None
+    input_tokens = _as_number(usage.get("input_tokens")) or 0.0
+    cached = _as_number(usage.get("cached_input_tokens")) or 0.0
+    output = _as_number(usage.get("output_tokens")) or 0.0
+    return max(0.0, input_tokens - cached) + output
 
 
 def _session_usage(path: Path) -> tuple[str, float]:
-    """One session's model and total tokens.
-
-    ``total_token_usage`` is cumulative within a session, so the largest value
-    in the file is the session total — summing every ``token_count`` event would
-    multiply-count it. The session is attributed to the last model its
-    ``turn_context`` rows named, which did most of the work when a model switch
-    happened mid-session.
-    """
+    """One session's model and uncached token total."""
     model = "unknown"
     total = 0.0
     for line in _read_lines(path):
         if '"turn_context"' in line:
             model = _turn_context_model(line) or model
             continue
-        if '"total_token_usage"' not in line:
+        if '"last_token_usage"' not in line:
             continue
-        tokens = _cumulative_tokens(line)
-        if tokens is not None and tokens > total:
-            total = tokens
+        tokens = _uncached_turn_tokens(line)
+        if tokens is not None:
+            total += tokens
     return model, total
 
 
 def model_token_totals(days_back: int = 7) -> dict[str, float]:
-    """Total tokens per model across recent sessions."""
+    """Uncached tokens per model across recent sessions."""
     since = datetime.now(tz=timezone.utc).timestamp() - days_back * 86400
     totals: dict[str, float] = {}
     for path in _rollout_files(since=since):
@@ -168,6 +290,19 @@ def model_token_totals(days_back: int = 7) -> dict[str, float]:
         if session_total > 0:
             totals[model] = totals.get(model, 0.0) + session_total
     return totals
+
+
+def recent_model() -> str | None:
+    """Most recent model named in a local transcript, if any."""
+    for path in _rollout_files()[:RATE_LIMIT_SEARCH_FILES]:
+        model = "unknown"
+        for line in _read_lines(path):
+            if '"turn_context"' not in line:
+                continue
+            model = _turn_context_model(line) or model
+        if model != "unknown":
+            return model
+    return None
 
 
 def plan_label(limits: dict[str, Any] | None) -> str | None:
