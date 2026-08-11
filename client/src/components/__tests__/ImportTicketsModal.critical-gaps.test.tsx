@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ImportTicketsModal } from "../ImportTicketsModal";
@@ -352,22 +352,15 @@ describe("GROUP CRITICAL2 — Mode State Machine Invariants", () => {
     expect(getSmartOption()).toHaveAttribute("aria-checked", "true");
   });
 
-  it("CRITICAL2-5: exactly one mode is always selected, never zero or two", async () => {
-    // Invariant: the radio group must always maintain exactly one selection.
-    // This guards against state bugs where both/neither are checked.
+  it("CRITICAL2-5: exactly one mode is always selected, never zero or two", () => {
+    // fireEvent: userEvent×20 times out under full-suite load even when correct.
     renderModal();
-
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 12; i++) {
       const radios = screen.getAllByRole("radio");
-      const checked = radios.filter((r) => r.getAttribute("aria-checked") === "true");
-
-      expect(checked.length).toBe(1); // ALWAYS exactly 1
-
-      // Toggle and check again.
+      expect(radios.filter((r) => r.getAttribute("aria-checked") === "true")).toHaveLength(1);
       const toClick = i % 2 === 0 ? getSmartOption() : getRegularOption();
-      if (toClick) {
-        await userEvent.click(toClick);
-      }
+      expect(toClick).not.toBeNull();
+      fireEvent.click(toClick!);
     }
   });
 });

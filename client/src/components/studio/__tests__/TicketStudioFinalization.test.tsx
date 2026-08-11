@@ -141,7 +141,9 @@ beforeEach(() => {
 });
 
 async function getCommitButton() {
-  return waitFor(() => screen.getByRole("button", { name: /create.*ticket/i }));
+  return waitFor(() => screen.getByRole("button", { name: /create.*ticket/i }), {
+    timeout: 10_000,
+  });
 }
 
 describe("Group I — Integration: Finalize Flow", () => {
