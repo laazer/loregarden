@@ -5,7 +5,6 @@ both known failure modes — a crash leaves it half-applied, and two tickets
 cannot run at once. These tests pin that ticket execution never moves it.
 """
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -14,6 +13,7 @@ from loregarden.services.git_automation_config import serialize_override
 from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session
+from tests.worktree_helpers import head_branch, make_repo
 
 
 @pytest.fixture(name="session")
@@ -24,19 +24,7 @@ def session_fixture(isolated_db):
 
 @pytest.fixture(name="repo")
 def repo_fixture(tmp_path):
-    root = tmp_path / "project"
-    root.mkdir()
-
-    def git(*args):
-        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
-
-    git("init", "-q", "-b", "main")
-    git("config", "user.email", "t@example.com")
-    git("config", "user.name", "Test")
-    (root / "seed.txt").write_text("seed\n")
-    git("add", "-A")
-    git("commit", "-q", "-m", "seed")
-    return root
+    return make_repo(tmp_path)
 
 
 @pytest.fixture(name="workspace")
@@ -76,17 +64,6 @@ def _run(session, workspace, ticket, code):
     return run
 
 
-def _head_branch(path):
-    result = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        cwd=path,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return result.stdout.strip()
-
-
 def test_a_stage_runs_in_the_ticket_worktree_and_leaves_the_checkout_alone(
     session, workspace, ticket, repo
 ):
@@ -95,10 +72,10 @@ def test_a_stage_runs_in_the_ticket_worktree_and_leaves_the_checkout_alone(
     root = resolve_execution_root(session, run, ticket, workspace)
 
     assert root != repo
-    assert _head_branch(root) == "loregarden/lg-1-add-the-thing"
+    assert head_branch(root) == "loregarden/lg-1-add-the-thing"
     # The branch was created by `git worktree add -b`, so the shared checkout
     # never left main.
-    assert _head_branch(repo) == "main"
+    assert head_branch(repo) == "main"
     assert run.worktree_id
 
 
@@ -166,4 +143,4 @@ def test_two_tickets_resolve_to_two_trees(session, workspace, ticket, repo):
     two = resolve_execution_root(session, _run(session, workspace, other, "r2"), other, workspace)
 
     assert one != two
-    assert _head_branch(repo) == "main"
+    assert head_branch(repo) == "main"

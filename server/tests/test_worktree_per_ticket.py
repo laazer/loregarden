@@ -14,6 +14,7 @@ import pytest
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace, WorktreeState
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session
+from tests.worktree_helpers import head_branch, make_repo
 
 
 @pytest.fixture(name="session")
@@ -24,19 +25,7 @@ def session_fixture(isolated_db):
 
 @pytest.fixture(name="repo")
 def repo_fixture(tmp_path):
-    root = tmp_path / "project"
-    root.mkdir()
-
-    def git(*args):
-        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
-
-    git("init", "-q", "-b", "main")
-    git("config", "user.email", "t@example.com")
-    git("config", "user.name", "Test")
-    (root / "seed.txt").write_text("seed\n")
-    git("add", "-A")
-    git("commit", "-q", "-m", "seed")
-    return root
+    return make_repo(tmp_path)
 
 
 @pytest.fixture(name="workspace")
@@ -76,17 +65,6 @@ def _run(session, workspace, ticket, code):
     return run
 
 
-def _head_branch(path):
-    result = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        cwd=path,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return result.stdout.strip()
-
-
 def test_first_stage_creates_the_ticket_worktree_on_the_ticket_branch(
     session, workspace, ticket, repo
 ):
@@ -98,9 +76,9 @@ def test_first_stage_creates_the_ticket_worktree_on_the_ticket_branch(
     assert worktree.ticket_id == ticket.id
     assert worktree.branch == "loregarden/lg-1-add-the-thing"
     assert Path(worktree.worktree_path).is_dir()
-    assert _head_branch(worktree.worktree_path) == "loregarden/lg-1-add-the-thing"
+    assert head_branch(worktree.worktree_path) == "loregarden/lg-1-add-the-thing"
     # The shared checkout keeps its own branch — the whole point of isolation.
-    assert _head_branch(repo) == "main"
+    assert head_branch(repo) == "main"
 
 
 def test_a_later_stage_reuses_the_same_worktree_row_and_path(session, workspace, ticket, repo):
@@ -171,4 +149,4 @@ def test_two_tickets_get_two_worktrees(session, workspace, ticket, repo):
 
     assert one is not None and two is not None
     assert one.worktree_path != two.worktree_path
-    assert _head_branch(two.worktree_path) == "loregarden/lg-2-other-thing"
+    assert head_branch(two.worktree_path) == "loregarden/lg-2-other-thing"

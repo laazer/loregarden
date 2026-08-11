@@ -1,0 +1,104 @@
+.dash-active-tickets {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border, #23252b);
+  background: var(--panel, #16181d);
+  overflow-x: auto;
+}
+
+.dash-active-tickets__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim, #8b8f98);
+}
+
+.dash-active-tickets__list {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dash-active-ticket {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+  padding: 4px 10px;
+  border: 1px solid var(--border, #23252b);
+  border-radius: 999px;
+  background: var(--panel-2, #1b1e24);
+  color: var(--text, #e6e8ec);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dash-active-ticket:hover {
+  border-color: var(--accent, #5b8cff);
+}
+
+.dash-active-ticket.is-selected {
+  border-color: var(--accent, #5b8cff);
+  box-shadow: inset 0 0 0 1px var(--accent, #5b8cff);
+}
+
+.dash-active-ticket__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+/* A live run pulses; a slot held by finished work sits still. */
+.dash-active-ticket__dot.is-live {
+  animation: dash-active-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes dash-active-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* External ids here are slugs — "49-promote-parallel-queue-orchestration-to-
+   the-prim" — and an unbounded one fills the whole chip, pushing the title and
+   the elapsed time out of sight. */
+.dash-active-ticket__code {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  color: var(--text-dim, #8b8f98);
+  flex: 0 1 auto;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-active-ticket__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-active-ticket__meta {
+  flex: none;
+  color: var(--text-dim, #8b8f98);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-active-ticket__dot.is-live {
+    animation: none;
+  }
+}

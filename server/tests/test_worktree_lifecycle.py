@@ -23,6 +23,7 @@ from loregarden.models.domain import (
 from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.worktree_lifecycle import reconcile_worktrees, release_ticket_worktree
 from sqlmodel import Session
+from tests.worktree_helpers import make_repo
 
 
 @pytest.fixture(name="session")
@@ -33,19 +34,7 @@ def session_fixture(isolated_db):
 
 @pytest.fixture(name="repo")
 def repo_fixture(tmp_path):
-    root = tmp_path / "project"
-    root.mkdir()
-
-    def git(*args):
-        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
-
-    git("init", "-q", "-b", "main")
-    git("config", "user.email", "t@example.com")
-    git("config", "user.name", "Test")
-    (root / "seed.txt").write_text("seed\n")
-    git("add", "-A")
-    git("commit", "-q", "-m", "seed")
-    return root
+    return make_repo(tmp_path)
 
 
 @pytest.fixture(name="workspace")
