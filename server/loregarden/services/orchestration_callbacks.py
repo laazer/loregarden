@@ -27,6 +27,7 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
+from loregarden.services.worktree_lifecycle import release_ticket_worktree
 from sqlmodel import Session, col, select
 
 
@@ -540,6 +541,9 @@ class OrchestrationCallbackService:
         self.session.add(ticket)
         self.session.commit()
         self._release_execution_lane(orch_run)
+        # A finished ticket's tree has nothing left to run in it, and leaving
+        # it costs a directory and a branch checkout that blocks the next one.
+        release_ticket_worktree(self.session, ticket)
         event_bus.publish(
             self.session,
             EventType.ORCHESTRATION_RUN_COMPLETED,

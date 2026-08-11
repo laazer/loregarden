@@ -8,10 +8,12 @@ from uuid import uuid4
 
 from loregarden.models.domain import (
     AgentRun,
+    Ticket,
     Workspace,
     Worktree,
     WorktreeState,
 )
+from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
@@ -129,6 +131,133 @@ class WorktreeService:
             return None
         except Exception as e:
             logger.error(f"Error creating worktree: {e}", exc_info=True)
+            return None
+
+    def get_or_create_for_ticket(
+        self,
+        ticket: Ticket,
+        agent_run_id: str,
+        parent_branch: str = "main",
+    ) -> Worktree | None:
+        """The one worktree a ticket's stages share, creating it on first use.
+
+        Distinct from :meth:`create_worktree`, which cuts a fresh tree per run:
+        a pipeline's stages have to see each other's work, so the second stage
+        must land in the tree the first one wrote. That also rules out the
+        ``-B`` create_worktree uses — resetting the ticket branch to its parent
+        between stages would discard everything committed so far.
+        """
+        existing = self.active_worktree_for_ticket(ticket.id)
+        if existing:
+            if Path(existing.worktree_path).is_dir():
+                return existing
+            # Recorded but gone: a manual `git worktree remove`, a wiped temp
+            # directory, or a cleanup that crashed halfway. Handing the path
+            # back would set a nonexistent cwd on the run.
+            logger.warning(
+                "Worktree %s for ticket %s is missing at %s; cutting a replacement",
+                existing.id,
+                ticket.id,
+                existing.worktree_path,
+            )
+            self._retire_missing(existing)
+
+        branch = resolve_ticket_branch(ticket)
+        validate_branch_name(branch)
+        slug = branch.replace("/", "-")[:32]
+        return self._add_worktree(
+            workspace_id=ticket.workspace_id,
+            agent_run_id=agent_run_id,
+            ticket_id=ticket.id,
+            branch=branch,
+            parent_branch=parent_branch,
+            name=f"ticket-{slug}-{str(uuid4())[:8]}",
+        )
+
+    def active_worktree_for_ticket(self, ticket_id: str) -> Worktree | None:
+        """The tree this ticket's stages are sharing, if it has one."""
+        stmt = (
+            select(Worktree)
+            .where(Worktree.ticket_id == ticket_id)
+            .where(Worktree.state == WorktreeState.ACTIVE)
+            .order_by(Worktree.created_at.desc())
+        )
+        return self.session.exec(stmt).first()
+
+    def _retire_missing(self, worktree: Worktree) -> None:
+        """Mark a vanished worktree cleaned and free the branch it still holds.
+
+        Git keeps admin metadata for a directory deleted behind its back and
+        refuses to check the branch out again until the metadata is pruned.
+        """
+        worktree.state = WorktreeState.CLEANUP
+        worktree.cleaned_at = datetime.now(timezone.utc)
+        self.session.add(worktree)
+        self.session.commit()
+        run_git(
+            ["worktree", "prune"],
+            cwd=str(self.repo_path),
+            check=False,
+            capture_output=True,
+        )
+
+    def _branch_exists(self, branch: str) -> bool:
+        result = run_git(
+            ["rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+            cwd=str(self.repo_path),
+            check=False,
+            capture_output=True,
+        )
+        return result.returncode == 0
+
+    def _add_worktree(
+        self,
+        workspace_id: str,
+        agent_run_id: str,
+        ticket_id: str,
+        branch: str,
+        parent_branch: str,
+        name: str,
+    ) -> Worktree | None:
+        """Check `branch` out in a new directory without ever resetting it."""
+        try:
+            self.worktree_base.mkdir(parents=True, exist_ok=True)
+            worktree_path = self.worktree_base / name
+
+            if self._branch_exists(branch):
+                add_args = ["worktree", "add", str(worktree_path), branch]
+            else:
+                add_args = ["worktree", "add", "-b", branch, str(worktree_path), parent_branch]
+
+            logger.info("Creating ticket worktree %s on %s", worktree_path, branch)
+            run_git(add_args, cwd=str(self.repo_path), check=True, capture_output=True)
+
+            head = run_git(
+                ["rev-parse", "HEAD"],
+                cwd=str(worktree_path),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            worktree = Worktree(
+                id=str(uuid4()),
+                workspace_id=workspace_id,
+                agent_run_id=agent_run_id,
+                ticket_id=ticket_id,
+                parent_branch=parent_branch,
+                branch=branch,
+                worktree_path=str(worktree_path),
+                state=WorktreeState.ACTIVE,
+                merge_base=head.stdout.strip(),
+            )
+            self.session.add(worktree)
+            self.session.commit()
+            self.session.refresh(worktree)
+            return worktree
+
+        except subprocess.CalledProcessError as exc:
+            logger.error("git worktree add failed: %s", exc.stderr, exc_info=True)
             return None
 
     def detect_conflicts(self, worktree: Worktree, target_branch: str = "main") -> bool:

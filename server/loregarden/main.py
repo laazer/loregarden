@@ -56,6 +56,7 @@ from loregarden.services.run_service import (
 from loregarden.services.seed import seed_database
 from loregarden.services.ticket_studio_run_service import fail_interrupted_studio_turns
 from loregarden.services.triage_run_service import fail_interrupted_triage_turns
+from loregarden.services.worktree_lifecycle import reconcile_worktrees
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,10 @@ async def lifespan(app: FastAPI):
         # the slots they were holding come back rather than staying claimed by
         # a run this process will never hear from again.
         QueueLaneService(session).reconcile_lanes()
+        # The trees those dead runs were working in. After the reaps, so a
+        # ticket the crash left mid-stage counts as unfinished and keeps its
+        # worktree for the resume below.
+        reconcile_worktrees(session)
         # Resume only after every orphan row and stranded stage has been made
         # durable. Recovery adds a fresh run; the failed rows remain the audit trail.
         resume_interrupted_orchestrations(session)

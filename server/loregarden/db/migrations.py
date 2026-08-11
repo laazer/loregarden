@@ -20,6 +20,7 @@ from uuid import uuid4
 from loregarden.db.migration_ids import assert_migration_ids_are_sound
 from loregarden.db.migration_utils import (
     add_columns_if_missing,
+    index_exists,
     relax_not_null,
     table_columns,
     table_exists,
@@ -1314,6 +1315,24 @@ def _m_baxter_chat_runtime(conn: Connection) -> None:
     )
 
 
+def _m_worktree_ticket_id(conn: Connection) -> None:
+    """``worktrees.ticket_id`` — one worktree per ticket, reused by its stages.
+
+    Worktrees have only ever been keyed by run, which is right for N competing
+    attempts at one stage and wrong for a pipeline: each stage would get its
+    own tree and never see the previous stage's work.
+    """
+    add_columns_if_missing(
+        conn,
+        "worktrees",
+        {
+            "ticket_id": "ALTER TABLE worktrees ADD COLUMN ticket_id TEXT",
+        },
+    )
+    if table_exists(conn, "worktrees") and not index_exists(conn, "ix_worktrees_ticket_id"):
+        conn.execute(text("CREATE INDEX ix_worktrees_ticket_id ON worktrees (ticket_id)"))
+
+
 MIGRATIONS: list[tuple[str, Migration]] = [
     ("0001_workspace_workflow_override", _m_workspace_workflow_override),
     ("0002_ticket_columns", _m_ticket_columns),
@@ -1390,6 +1409,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0073_ticket_relations", _m_ticket_relations_table),
     ("0074_lane_entry_dismissed", m_lane_entry_dismissed),
     ("0075_composer_commands", m_composer_commands),
+    ("0076_worktree_ticket_id", _m_worktree_ticket_id),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

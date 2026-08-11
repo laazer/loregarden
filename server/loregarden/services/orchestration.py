@@ -53,6 +53,7 @@ from loregarden.services.workflow_state import (
     set_stage_status,
     settle_unreached_stages,
 )
+from loregarden.services.worktree_lifecycle import release_ticket_worktree
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -361,14 +362,21 @@ class OrchestrationService:
         self.session.commit()
 
         if body.state is not None:
-            event_bus.publish(
-                self.session,
-                EventType.TICKET_STATE_CHANGED,
-                workspace_id=ticket.workspace_id,
-                ticket_id=ticket.id,
-                payload={"state": ticket.state.value, "manual": True},
-            )
+            self._settle_manual_state_change(ticket)
         return ticket
+
+    def _settle_manual_state_change(self, ticket: Ticket) -> None:
+        """What follows a human (or MCP) setting a ticket's state by hand."""
+        # Abandoning or finishing a ticket retires its tree too; otherwise the
+        # directory and its branch checkout outlive every reason they existed.
+        release_ticket_worktree(self.session, ticket)
+        event_bus.publish(
+            self.session,
+            EventType.TICKET_STATE_CHANGED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            payload={"state": ticket.state.value, "manual": True},
+        )
 
     def refresh_stage_retry_budget(self, ticket: Ticket, stage_key: str) -> None:
         """Give a continued / human-reset stage a full dispatch budget again.

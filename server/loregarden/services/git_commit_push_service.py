@@ -8,6 +8,7 @@ from pathlib import Path
 from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -125,9 +126,13 @@ def commit_and_push_ticket_branch(session: Session, ticket: Ticket) -> dict:
     if not workspace:
         raise ValueError("Workspace not found")
 
-    repo_root = resolve_workspace_root(workspace)
-    if not (repo_root / ".git").exists():
+    if not (resolve_workspace_root(workspace) / ".git").exists():
         raise ValueError("Workspace repo is not a git repository")
+
+    # The ticket's tree, which is its worktree once it has run: `git add -A` in
+    # the shared checkout would commit whatever else is sitting there and miss
+    # everything the stages wrote.
+    repo_root = resolve_ticket_root(session, ticket, workspace)
 
     branch = resolve_ticket_branch(ticket)
     validate_branch_name(branch)

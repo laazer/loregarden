@@ -1007,6 +1007,12 @@ class Worktree(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
     agent_run_id: str = Field(foreign_key="agent_runs.id", index=True)
+    #: Set when the worktree belongs to a ticket rather than to one run. A
+    #: ticket's stages share one tree, so reuse is a lookup on this column;
+    #: `agent_run_id` stays as provenance for whichever run cut it. Null for
+    #: the fan-out and parallel-queue paths, where a run really does want its
+    #: own tree.
+    ticket_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
     parent_branch: str = "main"
     worktree_path: str = ""
     state: WorktreeState = Field(
