@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from loregarden.core.timestamps import iso_utc
 from loregarden.models.domain import AgentRun, RunStatus
 
 #: Statuses that mean a run is still going, so its visit has no end yet.
@@ -135,8 +136,8 @@ def ledger_payload(runs: list[AgentRun]) -> dict:
                         "agent_id": a.agent_id,
                         "skill_name": a.skill_name,
                         "status": a.status,
-                        "started_at": a.started_at.isoformat() if a.started_at else None,
-                        "finished_at": a.finished_at.isoformat() if a.finished_at else None,
+                        "started_at": iso_utc(a.started_at),
+                        "finished_at": iso_utc(a.finished_at),
                         "duration_seconds": a.duration_seconds,
                     }
                     for a in visit.attempts
