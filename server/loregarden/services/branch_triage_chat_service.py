@@ -17,6 +17,7 @@ from loregarden.models.domain import (
 from loregarden.services.agent_turn_runner import (
     AgentTurnRequest,
     adapter_capabilities,
+    chat_advisory_reason,
     resolve_chat_intent,
     run_agent_turn,
 )
@@ -33,6 +34,7 @@ from loregarden.services.triage_service import (
     TRIAGE_CLI_PROFILE,
     apply_triage_runtime_overrides,
     get_triage_runtime,
+    resolve_chat_capabilities,
 )
 from sqlmodel import Session, select
 
@@ -124,6 +126,7 @@ def branch_chat_snapshot(session: Session, workspace: Workspace, branch: str) ->
     ticket = _linked_ticket(session, workspace.id, branch)
     messages = list_branch_triage_messages(session, workspace.id, branch)
     run_status, active_turn_id = branch_triage_run_status(session, workspace.id, branch)
+    capabilities, intent = resolve_chat_capabilities(ticket.triage_runtime_json if ticket else "")
     return {
         "workspace_id": workspace.id,
         "branch": branch,
@@ -140,6 +143,11 @@ def branch_chat_snapshot(session: Session, workspace: Workspace, branch: str) ->
             for msg in messages
         ],
         "runtime": _runtime_for_branch(session, workspace, ticket).model_dump(),
+        # Adapter-level only. A turn can still drop to advisory for reasons the
+        # snapshot cannot know — the branch is not checked out, or the turn has no
+        # run id for the bridge to attach approvals to — and says so in its reply.
+        "adapter_capabilities": capabilities.as_dict(),
+        "chat_intent": intent,
         "run_status": run_status,
         "active_turn_id": active_turn_id,
     }
@@ -270,10 +278,7 @@ def invoke_branch_triage_model(
             "Baxter to modify it."
         )
     elif intent == "advisory":
-        advisory_reason = (
-            f"The selected {selected} adapter cannot execute turns "
-            "(no permission bridge or writable oneshot path)."
-        )
+        advisory_reason = chat_advisory_reason(selected)
     elif caps.permission_bridge and not run_id:
         intent = "advisory"
         advisory_reason = (

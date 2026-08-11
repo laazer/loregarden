@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 
 from loregarden.agents.mcp_context import build_mcp_triage_context
+from loregarden.agents.registry import get_agent
 from loregarden.core.workflow_loader import expand_gate_checklist
 from loregarden.models.domain import (
     AgentRun,
@@ -17,6 +18,12 @@ from loregarden.models.domain import (
     Workspace,
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
+)
+from loregarden.services.agent_turn_runner import (
+    AdapterCapabilities,
+    TurnIntent,
+    adapter_capabilities,
+    resolve_chat_intent,
 )
 from loregarden.services.approval_views import approval_to_view
 from loregarden.services.chat_primitives import load_parts_json, parts_json_for_reply
@@ -31,6 +38,7 @@ from loregarden.services.cli_settings import (
     VALID_CLI_ADAPTERS,
     apply_runtime_overrides,
     parse_runtime_settings,
+    resolve_chat_adapter,
 )
 from loregarden.services.hierarchy_service import collect_ticket_scope_ids
 from sqlmodel import Session, col, select
@@ -132,13 +140,33 @@ def triage_run_status(session: Session, ticket_id: str) -> tuple[str, str | None
     return "idle", None
 
 
+def resolve_chat_capabilities(override_json: str = "") -> tuple[AdapterCapabilities, TurnIntent]:
+    """What a Baxter rail can actually do, resolved the same way the turn
+    executor resolves it.
+
+    Published on the snapshots so the operator can see whether Baxter can act
+    before they ask it to. An advisory rail and an executing rail are
+    indistinguishable in the transcript until a turn fails to do the thing it
+    was asked for.
+    """
+    agent = get_agent(TRIAGE_AGENT_ID) or {}
+    adapter = resolve_chat_adapter(
+        agent_adapter=agent.get("adapter", "claude"),
+        override_json=override_json,
+    )
+    return adapter_capabilities(adapter), resolve_chat_intent(adapter)
+
+
 def triage_snapshot(session: Session, ticket: Ticket) -> dict:
     pending, recent = list_ticket_approvals(session, ticket.id)
     messages = list_triage_messages(session, ticket.id)
     run_status, active_run_id = triage_run_status(session, ticket.id)
+    capabilities, intent = resolve_chat_capabilities(ticket.triage_runtime_json)
     return {
         "pending_approvals": pending,
         "recent_approvals": recent,
+        "adapter_capabilities": capabilities.as_dict(),
+        "chat_intent": intent,
         "messages": [
             {
                 "id": msg.id,
@@ -297,6 +325,30 @@ def build_gate_triage_sections(session: Session, ticket: Ticket) -> list[str]:
     return sections
 
 
+def build_advisory_sections(advisory_reason: str) -> list[str]:
+    """What to tell a rail that has no tools this turn.
+
+    A one-shot advisory turn ends with its reply: there is no later message in
+    which announced work happens. An answer opening "I'll check X, then I'll do
+    Y" therefore reads to the operator as a promise that was silently dropped —
+    which is what made this rail feel broken rather than merely limited.
+    """
+    sections = [
+        "You are advisory only in this channel — you have no tools. Do not claim to have "
+        "executed tools or changed the repo.",
+        "Do not announce work you are about to do — no 'I'll check…', 'I'll inspect…', "
+        "'let me look at…'. This reply is the whole turn; nothing runs after it. "
+        "Answer from what you already have.",
+        "When the operator asks for an action you cannot take, say so in one line and "
+        "name who or what can take it — do not narrate an attempt.",
+    ]
+    if advisory_reason:
+        # Naming the cause turns "I can't do that" into something the operator
+        # can act on, and stops the model inventing a reason of its own.
+        sections.append(f"Why this channel is advisory: {advisory_reason}")
+    return sections
+
+
 def build_triage_prompt(
     ticket: Ticket,
     history: list[TriageMessage],
@@ -304,6 +356,7 @@ def build_triage_prompt(
     *,
     session: Session,
     interactive: bool = False,
+    advisory_reason: str = "",
 ) -> str:
     workspace = session.get(Workspace, ticket.workspace_id)
     ac = json.loads(ticket.acceptance_criteria_json or "[]")
@@ -334,9 +387,7 @@ def build_triage_prompt(
             ]
         )
     else:
-        sections.append(
-            "You are advisory only in this channel — do not claim to have executed tools or changed the repo."
-        )
+        sections.extend(build_advisory_sections(advisory_reason))
     sections.extend(build_gate_triage_sections(session, ticket))
     sections.append("")
     if workspace:

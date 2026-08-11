@@ -19,6 +19,7 @@ from loregarden.db.session import engine
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, TriageMessage, Workspace
 from loregarden.services.agent_turn_runner import (
     AgentTurnRequest,
+    chat_advisory_reason,
     resolve_chat_intent,
     run_agent_turn,
 )
@@ -29,7 +30,7 @@ from loregarden.services.chat_thinking import (
 )
 from loregarden.services.cli_agent_runner import stub_response
 from loregarden.services.cli_auth_errors import format_agent_unavailable
-from loregarden.services.cli_settings import resolve_effective_adapter
+from loregarden.services.cli_settings import resolve_chat_adapter
 from loregarden.services.run_concurrency import find_active_run
 from loregarden.services.run_service import fail_stale_handoff_runs
 from loregarden.services.triage_service import (
@@ -128,8 +129,12 @@ class TriageTurnExecutor:
             return
 
         agent = get_agent(TRIAGE_AGENT_ID) or {}
-        selected = resolve_effective_adapter(
-            agent_adapter=agent.get("adapter", "claude"), workspace=effective_workspace
+        # Chat surface, so the workspace's pipeline `cli_adapter` does not apply —
+        # see `resolve_chat_adapter`. An operator who does want this rail on
+        # another provider sets it per ticket via `triage_runtime_json`.
+        selected = resolve_chat_adapter(
+            agent_adapter=agent.get("adapter", "claude"),
+            override_json=ticket.triage_runtime_json,
         )
         # Capability map — not adapter name. Codex/Cursor/LM Studio execute via
         # writable oneshot; Claude via the permission bridge.
@@ -142,6 +147,7 @@ class TriageTurnExecutor:
             latest_user_message,
             session=self.session,
             interactive=intent == "execute",
+            advisory_reason=chat_advisory_reason(selected),
         )
         try:
             turn = run_agent_turn(

@@ -151,6 +151,25 @@ def resolve_chat_intent(
     return "execute"
 
 
+def chat_advisory_reason(adapter: str) -> str:
+    """Why this adapter cannot act, in the operator's terms, or "" when it can.
+
+    Both the prompt and the panel say the same sentence, from one place: an
+    operator told "I can't do that" without a cause has no way to tell a
+    misconfigured adapter from a refusal.
+
+    Derived from the same two capability flags ``resolve_chat_intent`` reads, so
+    the explanation cannot drift from the decision it explains.
+    """
+    caps = adapter_capabilities(adapter)
+    if caps.permission_bridge or caps.plan_execute:
+        return ""
+    return (
+        f"The selected {adapter} adapter cannot execute turns "
+        "(no permission bridge or writable oneshot path)."
+    )
+
+
 @dataclass
 class AgentTurnRequest:
     session: Session

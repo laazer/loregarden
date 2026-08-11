@@ -96,6 +96,7 @@ export function useBranchChatSession(
     // the next poll reporting "running"; without it the composer flickers idle.
     isBusy: isRunStatusBusy(chat.data?.run_status) || sendMessage.isPending,
     activeTurnId: chat.data?.active_turn_id ?? null,
+    canAct: (chat.data?.chat_intent ?? "execute") === "execute",
     isLoading: chat.isLoading,
     loadError: chat.isError,
     error: sendMessage.isError

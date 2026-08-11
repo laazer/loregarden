@@ -144,6 +144,11 @@ EFFORT_OPTIONS_BY_ADAPTER: dict[str, list[dict[str, str]]] = {
 
 VALID_CLI_ADAPTERS = {opt["id"] for opt in CLI_ADAPTER_OPTIONS}
 
+#: The adapter id that means "no opinion — inherit from the level below".
+#: Not a provider; it is the absence of a choice, spelled so a stored setting can
+#: hold it. See `pinned_adapter`.
+INHERIT_ADAPTER = "default"
+
 # Adapters that take a ``--model`` / model-id pin. local does not.
 MODEL_PIN_ADAPTERS = frozenset({"claude", "cursor", "codex", "lmstudio"})
 
@@ -200,6 +205,43 @@ def resolve_effective_adapter(
         return ws.cli_adapter
 
     return agent_adapter or settings.cli_adapter
+
+
+def resolve_chat_adapter(*, agent_adapter: str, override_json: str = "") -> str:
+    """The adapter for an interactive chat surface — the workspace pipeline
+    adapter deliberately does not reach it.
+
+    A workspace's ``cli_adapter`` is a throughput and cost decision about
+    unattended pipeline runs. A chat rail is the opposite situation: an operator
+    is sitting in front of it, and an adapter without the permission bridge costs
+    them the whole interactive surface — inbox approvals, streamed thinking,
+    steering — so the rail can only answer, never act on anything that needs a
+    decision. Inheriting that choice is what made ticket triage feel powerless on
+    a codex workspace.
+
+    Only an explicit, deliberate override reaches chat: the global
+    ``LOREGARDEN_CLI_ADAPTER`` env pin, or the surface's own runtime override
+    blob (a ticket's ``triage_runtime_json``). Otherwise the chat agent's own
+    declared adapter wins.
+    """
+    env_override = os.environ.get("LOREGARDEN_CLI_ADAPTER")
+    if env_override:
+        return env_override
+
+    return (
+        pinned_adapter(json.loads(override_json or "{}")) or agent_adapter or settings.cli_adapter
+    )
+
+
+def pinned_adapter(overrides: dict) -> str:
+    """The adapter a runtime-override blob actually pins, or "" when it defers.
+
+    ``INHERIT_ADAPTER`` and a missing key mean the same thing — "no opinion, use
+    whatever the surface would have used" — and every caller has to collapse the
+    two before it can ask "was an adapter chosen here?".
+    """
+    adapter = str(overrides.get("cli_adapter") or INHERIT_ADAPTER)
+    return "" if adapter == INHERIT_ADAPTER else adapter
 
 
 def _first_set(*values: str) -> str:
@@ -482,8 +524,8 @@ def apply_runtime_overrides(workspace: Workspace, runtime_json: str) -> Workspac
     if not overrides:
         return workspace
     data = workspace.model_dump()
-    adapter = str(overrides.get("cli_adapter") or "default")
-    if adapter != "default":
+    adapter = pinned_adapter(overrides)
+    if adapter:
         data["cli_adapter"] = adapter
     for field in RUNTIME_OVERRIDE_FIELDS:
         value = str(overrides.get(field) or "").strip()
