@@ -145,7 +145,7 @@ AGENTS: dict[str, dict] = {
     },
     "triage": {
         "name": "Baxter",
-        "role_file": "agents/misc_agents/research_librarian_v1.md",
+        "role_file": "agents/misc_agents/baxter_v1.md",
         "adapter": "claude",
         "timeout": 1800,
         "claude_model": "haiku",
