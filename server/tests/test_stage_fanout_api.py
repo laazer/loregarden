@@ -114,7 +114,7 @@ def test_launch_returns_the_group_with_one_attempt_each(client, fanout_ticket):
     assert len({a["branch"] for a in body["attempts"]}) == 3
 
 
-def test_reading_a_group_includes_a_diff_per_attempt(client, fanout_ticket):
+def test_reading_a_group_includes_a_manifest_per_attempt(client, fanout_ticket):
     group = _launch(client, fanout_ticket.id).json()
 
     response = client.get(f"/api/tickets/{fanout_ticket.id}/fanout/{group['id']}")
@@ -122,7 +122,34 @@ def test_reading_a_group_includes_a_diff_per_attempt(client, fanout_ticket):
     assert response.status_code == 200, response.text
     body = response.json()
     assert len(body["diffs"]) == 2
-    assert all("answer.txt" in diff["patch"] for diff in body["diffs"])
+    for diff in body["diffs"]:
+        assert [f["path"] for f in diff["files"]] == ["answer.txt"]
+        assert diff["additions"] == 1
+
+
+def test_a_file_patch_is_a_separate_request(client, fanout_ticket):
+    group = _launch(client, fanout_ticket.id).json()
+    attempt = group["attempts"][0]
+
+    response = client.get(
+        f"/api/tickets/{fanout_ticket.id}/fanout/{group['id']}/attempts/{attempt['id']}/file",
+        params={"path": "answer.txt"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert attempt["branch"] in response.json()["patch"]
+
+
+def test_listing_names_the_group_still_awaiting_a_verdict(client, fanout_ticket):
+    group = _launch(client, fanout_ticket.id).json()
+
+    response = client.get(f"/api/tickets/{fanout_ticket.id}/fanout")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["open_group_id"] == group["id"]
+    assert len(body["groups"]) == 1
+    assert body["groups"][0]["diffs"]
 
 
 def test_promoting_settles_the_group(client, fanout_ticket):

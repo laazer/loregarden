@@ -11,7 +11,7 @@ for N agent runs.
 
 import logging
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Path
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
 from loregarden.db.session import get_session
 from loregarden.models.domain import StageFanoutGroup, Ticket
 from loregarden.services import stage_fanout_groups as groups
@@ -19,6 +19,7 @@ from loregarden.services.stage_fanout_service import (
     MAX_ATTEMPTS,
     FanoutError,
     attempt_diffs,
+    attempt_file_diff,
     decline_fanout,
     launch_fanout,
     promote_attempt,
@@ -112,6 +113,22 @@ def read(
         raise HTTPException(404, "That fan-out belongs to another ticket")
     group["diffs"] = attempt_diffs(session, group_id)
     return group
+
+
+@router.get("/{group_id}/attempts/{attempt_id}/file")
+def read_file_diff(
+    ticket_id: str = Path(...),
+    group_id: str = Path(...),
+    attempt_id: str = Path(...),
+    path: str = Query(..., min_length=1),
+    session: Session = Depends(get_session),
+) -> dict:
+    """One file's patch from one attempt, fetched when the reader opens it."""
+    _ticket(session, ticket_id)
+    try:
+        return attempt_file_diff(session, group_id, attempt_id, path)
+    except FanoutError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 @router.post("/{group_id}/promote/{attempt_id}")

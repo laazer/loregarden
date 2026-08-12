@@ -2,20 +2,22 @@
  * The fan-out review surface.
  *
  * What matters here is that all attempts are on screen at once with their own
- * diffs, that exactly one decision can be taken, and that a settled group
- * stops offering decisions — a second promote would 409 and confuse everyone.
+ * numbers, that a patch is only fetched when someone opens a file, that
+ * exactly one decision can be taken, and that nothing can be promoted while an
+ * attempt is still running or after the group has settled.
  */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StageFanoutReview } from "../StageFanoutReview";
 import { stageFanoutApi, type FanoutGroup } from "../../lib/stageFanoutApi";
 
 jest.mock("../../lib/stageFanoutApi", () => ({
-  stageFanoutApi: { promote: jest.fn(), decline: jest.fn() },
+  stageFanoutApi: { promote: jest.fn(), decline: jest.fn(), fileDiff: jest.fn() },
 }));
 
 const mockPromote = stageFanoutApi.promote as jest.MockedFunction<typeof stageFanoutApi.promote>;
 const mockDecline = stageFanoutApi.decline as jest.MockedFunction<typeof stageFanoutApi.decline>;
+const mockFileDiff = stageFanoutApi.fileDiff as jest.MockedFunction<typeof stageFanoutApi.fileDiff>;
 
 function attempt(index: number, overrides: Record<string, unknown> = {}) {
   return {
@@ -49,18 +51,21 @@ function group(overrides: Partial<FanoutGroup> = {}): FanoutGroup {
       {
         attempt_id: "attempt-0",
         branch: "loregarden/lg-1-attempt-1",
-        stat: " a.py | 2 +-",
-        patch: "--- a/a.py\n+++ b/a.py\n+the first answer",
+        files: [{ path: "a.py", additions: 2, deletions: 1 }],
         files_changed: 1,
-        truncated: false,
+        additions: 2,
+        deletions: 1,
       },
       {
         attempt_id: "attempt-1",
         branch: "loregarden/lg-1-attempt-2",
-        stat: " b.py | 9 +++",
-        patch: "--- a/b.py\n+++ b/b.py\n+the second answer",
-        files_changed: 3,
-        truncated: false,
+        files: [
+          { path: "a.py", additions: 9, deletions: 0 },
+          { path: "b.py", additions: 4, deletions: 2 },
+        ],
+        files_changed: 2,
+        additions: 13,
+        deletions: 2,
       },
     ],
     ...overrides,
@@ -71,12 +76,34 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
-test("every attempt is on screen with its own diff", () => {
+test("every attempt is on screen with its own totals", () => {
   render(<StageFanoutReview group={group()} onSettled={() => {}} />);
 
-  expect(screen.getByTestId("fanout-attempt-0")).toHaveTextContent("the first answer");
-  expect(screen.getByTestId("fanout-attempt-1")).toHaveTextContent("the second answer");
-  expect(screen.getByTestId("fanout-attempt-1")).toHaveTextContent("3 file(s)");
+  expect(screen.getByTestId("fanout-attempt-0")).toHaveTextContent("1 file(s)");
+  const second = screen.getByTestId("fanout-attempt-1");
+  expect(second).toHaveTextContent("2 file(s)");
+  expect(second).toHaveTextContent("+13");
+  expect(second).toHaveTextContent("−2");
+});
+
+test("a patch is fetched only when its file is opened", async () => {
+  mockFileDiff.mockResolvedValue({
+    attempt_id: "attempt-1",
+    path: "b.py",
+    patch: "+++ the second answer",
+    truncated: false,
+  });
+
+  render(<StageFanoutReview group={group()} onSettled={() => {}} />);
+  expect(mockFileDiff).not.toHaveBeenCalled();
+
+  fireEvent.click(within(screen.getByTestId("fanout-attempt-1")).getByText("b.py"));
+
+  await waitFor(() =>
+    expect(screen.getByTestId("patch-1")).toHaveTextContent("the second answer"),
+  );
+  expect(mockFileDiff).toHaveBeenCalledWith("ticket-1", "group-1", "attempt-1", "b.py");
+  expect(mockFileDiff).toHaveBeenCalledTimes(1);
 });
 
 test("promoting one names that attempt", async () => {
@@ -103,6 +130,16 @@ test("keeping none declines the whole group", async () => {
   expect(mockDecline).toHaveBeenCalledWith("ticket-1", "group-1");
 });
 
+test("nothing can be settled while an attempt is still running", () => {
+  const running = group({ attempts: [attempt(0), attempt(1, { status: "running" })] });
+
+  render(<StageFanoutReview group={running} onSettled={() => {}} />);
+
+  expect(screen.getByRole("button", { name: "Keep none" })).toBeDisabled();
+  const buttons = screen.getAllByRole("button", { name: "Promote this one" });
+  expect(buttons[1]).toBeDisabled();
+});
+
 test("a settled group offers no further decisions", () => {
   render(
     <StageFanoutReview
@@ -127,6 +164,14 @@ test("a failed attempt says why, and cannot be promoted", () => {
   render(<StageFanoutReview group={failed} onSettled={() => {}} />);
 
   expect(screen.getByTestId("fanout-attempt-1")).toHaveTextContent("agent exited with no report");
-  const buttons = screen.getAllByRole("button", { name: "Promote this one" });
-  expect(buttons[1]).toBeDisabled();
+  expect(screen.getAllByRole("button", { name: "Promote this one" })[1]).toBeDisabled();
+});
+
+test("an error from the settle call is shown, not swallowed", async () => {
+  mockPromote.mockRejectedValue(new Error("merge conflict in a.py"));
+
+  render(<StageFanoutReview group={group()} onSettled={() => {}} />);
+  fireEvent.click(screen.getAllByRole("button", { name: "Promote this one" })[0]);
+
+  await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("merge conflict in a.py"));
 });

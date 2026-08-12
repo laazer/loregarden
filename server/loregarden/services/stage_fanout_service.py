@@ -9,6 +9,12 @@ than another trip through review → implement.
 
 It is not a default execution mode, and nothing here schedules itself.
 
+Attempts run outside the execution-slot pool. Reserving a slot per attempt
+would deadlock a synchronous launch the moment the pool is full, and the pool
+exists to bound *tickets* in flight rather than the branches of one decision.
+`MAX_ATTEMPTS` is what bounds this instead — a fan-out is a deliberate, bounded
+spend, not a queue.
+
 Isolation is the whole design. Each attempt gets its own worktree cut from the
 ticket's branch and its own branch to commit on, because the orchestrator
 commits whole trees and two attempts sharing one would sweep each other's work.
@@ -68,22 +74,45 @@ class FanoutError(ValueError):
 
 
 @dataclass(frozen=True)
+class AttemptFile:
+    """One file an attempt touched, with the numbers that make columns scannable."""
+
+    path: str
+    additions: int
+    deletions: int
+
+    def as_dict(self) -> dict:
+        return {"path": self.path, "additions": self.additions, "deletions": self.deletions}
+
+
+@dataclass(frozen=True)
 class AttemptDiff:
+    """An attempt's manifest: what it touched and by how much, not the patch.
+
+    The patches are fetched per file (`attempt_file_diff`). Sending N whole
+    diffs to open the comparison would mean shipping every attempt's entire
+    output before anyone has decided which one they care about, and a fan-out
+    over an implement stage is exactly where those are largest.
+    """
+
     attempt_id: str
     branch: str
-    stat: str
-    patch: str
-    files_changed: int
-    truncated: bool
+    files: list[AttemptFile]
+    additions: int
+    deletions: int
+
+    @property
+    def files_changed(self) -> int:
+        return len(self.files)
 
     def as_dict(self) -> dict:
         return {
             "attempt_id": self.attempt_id,
             "branch": self.branch,
-            "stat": self.stat,
-            "patch": self.patch,
+            "files": [f.as_dict() for f in self.files],
             "files_changed": self.files_changed,
-            "truncated": self.truncated,
+            "additions": self.additions,
+            "deletions": self.deletions,
         }
 
 
@@ -237,50 +266,91 @@ def _commit_attempt_work(session: Session, run: AgentRun, attempt_id: str) -> No
 
 
 def attempt_diffs(session: Session, group_id: str) -> list[dict]:
-    """Each attempt's work as a patch against the branch they were all cut from.
+    """Every attempt's manifest, all measured against the branch they share.
 
     The same base for every attempt is what makes them comparable — diffing
     each against its own parent would answer a different question per column.
     """
     group = _require_group(session, group_id)
-    attempts = _attempts_for(session, group.id)
-    diffs: list[AttemptDiff] = []
-    for attempt in attempts:
-        worktree = session.get(Worktree, attempt.worktree_id) if attempt.worktree_id else None
-        if not worktree or not Path(worktree.worktree_path).is_dir():
-            diffs.append(AttemptDiff(attempt.id, attempt.branch, "", "", 0, False))
-            continue
-        base = worktree.parent_branch or "main"
-        cwd = worktree.worktree_path
-        stat = run_git(
-            ["diff", "--stat", f"{base}...HEAD"],
-            cwd=cwd,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        patch = run_git(
-            ["diff", f"{base}...HEAD"], cwd=cwd, check=False, capture_output=True, text=True
-        )
-        body = patch.stdout if patch.returncode == 0 else ""
-        names = run_git(
-            ["diff", "--name-only", f"{base}...HEAD"],
-            cwd=cwd,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        diffs.append(
-            AttemptDiff(
-                attempt_id=attempt.id,
-                branch=attempt.branch,
-                stat=stat.stdout if stat.returncode == 0 else "",
-                patch=body[:MAX_DIFF_CHARS],
-                files_changed=len([line for line in names.stdout.splitlines() if line.strip()]),
-                truncated=len(body) > MAX_DIFF_CHARS,
+    return [
+        _manifest_for(session, attempt).as_dict() for attempt in _attempts_for(session, group.id)
+    ]
+
+
+def attempt_file_diff(session: Session, group_id: str, attempt_id: str, path: str) -> dict:
+    """One file's patch from one attempt, fetched when someone opens it."""
+    group = _require_group(session, group_id)
+    attempt = session.get(StageFanoutAttempt, attempt_id)
+    if attempt is None or attempt.group_id != group.id:
+        raise FanoutError("attempt_id does not belong to this fan-out")
+
+    tree = _attempt_tree(session, attempt)
+    if tree is None:
+        raise FanoutError("That attempt has no worktree to read")
+    worktree_path, base = tree
+
+    result = run_git(
+        ["diff", f"{base}...HEAD", "--", path],
+        cwd=worktree_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    body = result.stdout if result.returncode == 0 else ""
+    return {
+        "attempt_id": attempt_id,
+        "path": path,
+        "patch": body[:MAX_DIFF_CHARS],
+        "truncated": len(body) > MAX_DIFF_CHARS,
+    }
+
+
+def _attempt_tree(session: Session, attempt: StageFanoutAttempt) -> tuple[str, str] | None:
+    """An attempt's worktree path and the base to diff it against, if it has one."""
+    worktree = session.get(Worktree, attempt.worktree_id) if attempt.worktree_id else None
+    if not worktree or not worktree.worktree_path:
+        return None
+    if not Path(worktree.worktree_path).is_dir():
+        return None
+    return worktree.worktree_path, worktree.parent_branch or "main"
+
+
+def _manifest_for(session: Session, attempt: StageFanoutAttempt) -> AttemptDiff:
+    tree = _attempt_tree(session, attempt)
+    if tree is None:
+        return AttemptDiff(attempt.id, attempt.branch, [], 0, 0)
+    worktree_path, base = tree
+
+    # --numstat, not --stat: machine-readable counts per file, and it says
+    # "-\t-" for binaries rather than inventing line numbers for them.
+    numstat = run_git(
+        ["diff", "--numstat", f"{base}...HEAD"],
+        cwd=worktree_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    files: list[AttemptFile] = []
+    if numstat.returncode == 0:
+        for line in numstat.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) != 3:
+                continue
+            added, removed, path = parts
+            files.append(
+                AttemptFile(
+                    path=path,
+                    additions=int(added) if added.isdigit() else 0,
+                    deletions=int(removed) if removed.isdigit() else 0,
+                )
             )
-        )
-    return [diff.as_dict() for diff in diffs]
+    return AttemptDiff(
+        attempt_id=attempt.id,
+        branch=attempt.branch,
+        files=files,
+        additions=sum(f.additions for f in files),
+        deletions=sum(f.deletions for f in files),
+    )
 
 
 def promote_attempt(session: Session, group_id: str, attempt_id: str) -> dict:

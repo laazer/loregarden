@@ -32,6 +32,7 @@ from loregarden.models.domain import (
 from loregarden.services.stage_fanout_service import (
     FanoutError,
     attempt_diffs,
+    attempt_file_diff,
     decline_fanout,
     launch_fanout,
     promote_attempt,
@@ -171,17 +172,53 @@ def test_a_failing_attempt_is_recorded_without_sinking_the_others(session, ticke
     assert failed["failure_details"]
 
 
-def test_the_diffs_are_comparable_because_they_share_a_base(session, ticket):
+def test_the_manifests_are_comparable_because_they_share_a_base(session, ticket):
     group, _ = _launch(session, ticket, count=2)
 
     diffs = attempt_diffs(session, group["id"])
 
     assert len(diffs) == 2
     for diff in diffs:
-        assert "answer.txt" in diff["patch"]
+        assert [f["path"] for f in diff["files"]] == ["answer.txt"]
         assert diff["files_changed"] == 1
-    # Different attempts, different content — which is the thing being compared.
-    assert diffs[0]["patch"] != diffs[1]["patch"]
+        assert diff["additions"] == 1
+        assert diff["deletions"] == 0
+
+
+def test_a_file_s_patch_is_fetched_on_demand(session, ticket):
+    group, _ = _launch(session, ticket, count=2)
+    first, second = group["attempts"]
+
+    one = attempt_file_diff(session, group["id"], first["id"], "answer.txt")
+    two = attempt_file_diff(session, group["id"], second["id"], "answer.txt")
+
+    assert first["branch"] in one["patch"]
+    # Different attempts, different content — the thing being compared.
+    assert one["patch"] != two["patch"]
+
+
+def test_a_file_diff_for_a_foreign_attempt_is_refused(session, ticket):
+    group, _ = _launch(session, ticket, count=2)
+
+    with pytest.raises(FanoutError, match="does not belong"):
+        attempt_file_diff(session, group["id"], "not-an-attempt", "answer.txt")
+
+
+def test_discarding_twice_is_harmless(session, ticket, repo):
+    """Cleanup has to be idempotent: settle races and startup reconciliation
+    can both reach the same worktree."""
+    group, _ = _launch(session, ticket, count=2)
+    decline_fanout(session, group["id"])
+
+    # The second sweep finds directories already gone and branches already
+    # deleted, and must not raise.
+    from loregarden.models.domain import StageFanoutGroup
+    from loregarden.services.stage_fanout_service import _discard_attempts
+
+    row = session.get(StageFanoutGroup, group["id"])
+    again = _discard_attempts(session, row, keep_attempt_id=None)
+
+    assert len(again) == 2
 
 
 def test_promoting_lands_the_winner_and_removes_every_loser(session, ticket, workspace, repo):
@@ -264,3 +301,33 @@ def _live_worktrees_for(session, group_id, keep):
         if worktree and Path(worktree.worktree_path).exists():
             live.append(worktree.worktree_path)
     return live
+
+
+def test_a_group_with_a_failed_attempt_is_still_settleable(session, ticket, workspace, repo):
+    """One agent giving up must not strand the other two: the comparison is
+    still worth having, and the group still has to be closable."""
+    group, _ = _launch(session, ticket, count=3, fail_indexes=(0,))
+    survivor = next(a for a in group["attempts"] if a["status"] == "succeeded")
+
+    settled = promote_attempt(session, group["id"], survivor["id"])
+
+    assert settled["outcome"] == StageFanoutOutcome.PROMOTED.value
+    assert not _live_worktrees_for(session, group["id"], keep=survivor["id"])
+    branches = git(repo, "branch", "--list").stdout
+    failed = next(a for a in group["attempts"] if a["status"] == "failed")
+    assert failed["branch"] not in branches
+
+
+def test_a_fanout_does_not_consume_execution_slots(session, ticket):
+    """Attempts run outside the slot pool by design — see the checkpoint on 347.
+    The invariant that matters is that they neither claim nor leak one."""
+    from loregarden.models.domain import AgentSlot
+    from loregarden.services.parallel_queue import ParallelQueueService
+
+    ParallelQueueService(session, max_concurrent=3).initialize_slots()
+    group, _ = _launch(session, ticket, count=2)
+    decline_fanout(session, group["id"])
+
+    slots = session.exec(select(AgentSlot)).all()
+    assert slots, "the pool should still exist"
+    assert all(slot.is_available for slot in slots)

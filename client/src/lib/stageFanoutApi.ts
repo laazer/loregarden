@@ -24,12 +24,26 @@ export interface FanoutAttempt {
   failure_details: string;
 }
 
+export interface FanoutFile {
+  path: string;
+  additions: number;
+  deletions: number;
+}
+
+/** What an attempt touched — the patches come one file at a time. */
 export interface FanoutDiff {
   attempt_id: string;
   branch: string;
-  stat: string;
-  patch: string;
+  files: FanoutFile[];
   files_changed: number;
+  additions: number;
+  deletions: number;
+}
+
+export interface FanoutFilePatch {
+  attempt_id: string;
+  path: string;
+  patch: string;
   truncated: boolean;
 }
 
@@ -73,6 +87,12 @@ export const stageFanoutApi = {
 
   read: (ticketId: string, groupId: string) =>
     request<FanoutGroup>(`/api/tickets/${ticketId}/fanout/${groupId}`),
+
+  fileDiff: (ticketId: string, groupId: string, attemptId: string, path: string) =>
+    request<FanoutFilePatch>(
+      `/api/tickets/${ticketId}/fanout/${groupId}/attempts/${attemptId}/file` +
+        `?path=${encodeURIComponent(path)}`,
+    ),
 
   promote: (ticketId: string, groupId: string, attemptId: string) =>
     request<FanoutGroup>(`/api/tickets/${ticketId}/fanout/${groupId}/promote/${attemptId}`, {
