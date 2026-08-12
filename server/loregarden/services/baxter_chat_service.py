@@ -16,15 +16,19 @@ without an inbox path stay advisory until the operator presses Run.
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+import re
+from dataclasses import dataclass, replace
+from datetime import datetime
 
 from loregarden.agents.executors.permission_bridge import HOME_CHAT_STAGE_KEY
 from loregarden.agents.registry import get_agent
 from loregarden.models.domain import (
+    AgentRun,
     Approval,
     ApprovalStatus,
     BaxterChatMessage,
     BaxterChatSession,
+    OrchestrationRun,
     RunStatus,
     Ticket,
     TicketState,
@@ -57,7 +61,7 @@ from loregarden.services.triage_service import (
     TRIAGE_CLI_PROFILE,
 )
 from loregarden.skills.registry import get_skill, skill_prompt_block
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, or_, select
 
 BAXTER_CHAT_CLI_PROFILE = replace(
     TRIAGE_CLI_PROFILE,
@@ -121,6 +125,101 @@ def _active_tickets(session: Session, workspace_id: str) -> list[Ticket]:
             .limit(MAX_SNAPSHOT_ROWS)
         ).all()
     )
+
+
+# Any id-shaped token: a ticket UUID, an ``external_id`` slug, a ``run_``/``orch_``
+# code. One rule for all three — a token is worth a lookup if it is long enough to
+# be an identifier and carries a separator, which ordinary prose does not. Matching
+# is exact against indexed columns, so a token that is not an id simply finds
+# nothing; the pattern only has to be cheap, not precise.
+_REFERENCE_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{5,}")
+MAX_REFERENCE_TOKENS = 24
+MAX_RESOLVED_REFERENCES = 5
+
+
+@dataclass(frozen=True)
+class ResolvedReferences:
+    """Records the operator named by id, looked up before the turn runs.
+
+    Not a substitute for MCP — an advisory turn *does* still carry the Loregarden
+    tools, verified against a real ``codex exec --sandbox read-only`` run. This is
+    a guarantee rather than a capability: the agent runs ``--cd`` the workspace
+    checkout, which is a different repository from the control plane, so a model
+    that decides to go looking instead of calling MCP finds nothing and invents a
+    path. Putting the answer in the prompt removes that decision.
+    """
+
+    tickets: list[Ticket]
+    agent_runs: list[AgentRun]
+    orchestration_runs: list[OrchestrationRun]
+    workspace_slugs: dict[str, str]
+
+    def __bool__(self) -> bool:
+        return bool(self.tickets or self.agent_runs or self.orchestration_runs)
+
+
+def _reference_tokens(text: str) -> list[str]:
+    tokens: list[str] = []
+    for match in _REFERENCE_TOKEN_PATTERN.finditer(text or ""):
+        token = match.group(0).strip("._-")
+        if len(token) < 6 or not ("-" in token or "_" in token):
+            continue
+        if token not in tokens:
+            tokens.append(token)
+        if len(tokens) >= MAX_REFERENCE_TOKENS:
+            break
+    return tokens
+
+
+def resolve_references(session: Session, text: str) -> ResolvedReferences:
+    """Look up every id-shaped token in the operator's message.
+
+    Deliberately not workspace-scoped: an operator who pastes an id expects it
+    resolved, and a Home chat that answers "not in my snapshot" to a real id is
+    the failure this exists to prevent. Rows from another workspace are labelled
+    with their slug rather than hidden.
+    """
+    tokens = _reference_tokens(text)
+    if not tokens:
+        return ResolvedReferences([], [], [], {})
+
+    tickets = list(
+        session.exec(
+            select(Ticket)
+            .where(or_(col(Ticket.id).in_(tokens), col(Ticket.external_id).in_(tokens)))
+            .limit(MAX_RESOLVED_REFERENCES)
+        ).all()
+    )
+    agent_runs = list(
+        session.exec(
+            select(AgentRun)
+            .where(or_(col(AgentRun.id).in_(tokens), col(AgentRun.run_code).in_(tokens)))
+            .order_by(col(AgentRun.created_at).desc())
+            .limit(MAX_RESOLVED_REFERENCES)
+        ).all()
+    )
+    orchestration_runs = list(
+        session.exec(
+            select(OrchestrationRun)
+            .where(
+                or_(
+                    col(OrchestrationRun.id).in_(tokens),
+                    col(OrchestrationRun.run_code).in_(tokens),
+                )
+            )
+            .order_by(col(OrchestrationRun.created_at).desc())
+            .limit(MAX_RESOLVED_REFERENCES)
+        ).all()
+    )
+
+    workspace_ids = {ticket.workspace_id for ticket in tickets}
+    slugs = {
+        workspace.id: workspace.slug
+        for workspace in session.exec(
+            select(Workspace).where(col(Workspace.id).in_(workspace_ids))
+        ).all()
+    }
+    return ResolvedReferences(tickets, agent_runs, orchestration_runs, slugs)
 
 
 def derive_session_title(text: str) -> str:
@@ -345,6 +444,49 @@ def set_chat_runtime(
     return get_chat_runtime(chat_session)
 
 
+def _stamp(moment: datetime | None) -> str:
+    return moment.isoformat(sep=" ", timespec="seconds") if moment else "—"
+
+
+def _ticket_reference_lines(ticket: Ticket, workspace_slugs: dict[str, str]) -> list[str]:
+    lines = [
+        f"- ticket {ticket.id} ({ticket.external_id or 'no external id'}) "
+        f"in workspace {workspace_slugs.get(ticket.workspace_id, ticket.workspace_id)}",
+        f"  title: {ticket.title}",
+        f"  state: {ticket.state.value} | stage: {ticket.workflow_stage_key or '—'}"
+        f"/{ticket.workflow_stage_status.value} | next agent: {ticket.next_agent or '—'}",
+        f"  locked: {'yes' if ticket.state_locked else 'no'} | updated: {_stamp(ticket.updated_at)}",
+    ]
+    if ticket.blocking_issues:
+        lines.append(f"  blocking issues: {_clip(ticket.blocking_issues, 400)}")
+    return lines
+
+
+def _reference_section(references: ResolvedReferences | None) -> list[str]:
+    if not references:
+        return []
+    lines = ["", "## Resolved references", "Looked up from the ids in the operator's message."]
+    for ticket in references.tickets:
+        lines.extend(_ticket_reference_lines(ticket, references.workspace_slugs))
+    for run in references.agent_runs:
+        lines.append(
+            f"- agent run {run.run_code} (id {run.id}) agent={run.agent_id} "
+            f"stage={run.stage_key or '—'} status={run.status.value} "
+            f"started={_stamp(run.started_at)} finished={_stamp(run.finished_at)} "
+            f"ticket={run.ticket_id or '—'}"
+        )
+    for run in references.orchestration_runs:
+        lines.append(
+            f"- orchestration {run.run_code} (id {run.id}) driver={run.driver.value} "
+            f"status={run.status.value} stage={run.current_stage_key or '—'} "
+            f"started={_stamp(run.started_at)} finished={_stamp(run.finished_at)} "
+            f"ticket={run.ticket_id}"
+        )
+        if run.error_message:
+            lines.append(f"  error: {_clip(run.error_message, 400)}")
+    return lines
+
+
 def build_baxter_chat_prompt(
     *,
     workspace: Workspace,
@@ -352,6 +494,7 @@ def build_baxter_chat_prompt(
     latest_user_message: str,
     approvals: list[Approval],
     tickets: list[Ticket],
+    references: ResolvedReferences | None = None,
     interactive: bool = False,
     approval_bridge: bool = False,
     skill_name: str = "",
@@ -391,8 +534,18 @@ def build_baxter_chat_prompt(
     else:
         sections.extend(
             [
-                "You are advisory only in this channel — do not claim to have executed tools "
-                "or changed the repo.",
+                "You are advisory only in this channel — you cannot write to the repo, and "
+                "must not claim to have executed tools or changed it.",
+                # The workspace checkout is not the control plane. An agent that goes
+                # looking for Loregarden's records on this filesystem finds nothing and
+                # invents a path that sounds right, which is what happened here.
+                "Loregarden's tickets, runs, and approvals live in the control plane's own "
+                "database, not in this workspace's files. Never grep, `rg`, `find`, or guess "
+                "at file paths to locate them — no such files exist here.",
+                "Every id in the operator's message has already been resolved for you under "
+                "Resolved references. If you need more than that, call the Loregarden MCP "
+                "tools, which stay available on this read-only turn. If a lookup is genuinely "
+                "unavailable to you, say so plainly rather than inventing a way to do it.",
                 "",
             ]
         )
@@ -408,11 +561,14 @@ def build_baxter_chat_prompt(
     if tickets:
         sections.append(f"Active tickets ({len(tickets)}):")
         for ticket in tickets:
-            sections.append(
-                f"- [{ticket.state.value}] p{ticket.priority} {ticket.external_id or ticket.id}: {ticket.title}"
-            )
+            # Both ids, always. Rendering only ``external_id`` left an operator who
+            # pasted a ticket UUID unmatchable against a row that was right there.
+            label = f"{ticket.external_id} (id {ticket.id})" if ticket.external_id else ticket.id
+            sections.append(f"- [{ticket.state.value}] p{ticket.priority} {label}: {ticket.title}")
     else:
         sections.append("Active tickets: none")
+
+    sections.extend(_reference_section(references))
 
     trimmed = history[-MAX_HISTORY:]
     if trimmed:
@@ -436,7 +592,8 @@ def build_baxter_chat_prompt(
             "branch_history, commit, qa, giphy.",
             "Rules:",
             "- Never invent ticket/agent ids. Only reference ids from Active tickets",
-            "  above, or ids returned by MCP after you create/look them up.",
+            "  or Resolved references above, or ids returned by MCP after you",
+            "  create/look them up.",
             "- `ticket` / `ticket_list` / `kanban` cards are for existing tickets only.",
             '- Agent execution plan (`todo_list`, owner "agent"): only when you are',
             "  about to do multi-step work in this workspace and the operator has",
@@ -514,6 +671,7 @@ def invoke_baxter_chat_model(
         latest_user_message=message,
         approvals=_pending_approvals(session, workspace.id),
         tickets=_active_tickets(session, workspace.id),
+        references=resolve_references(session, message),
         interactive=intent == "execute",
         approval_bridge=caps.permission_bridge,
         skill_name=skill_name,
