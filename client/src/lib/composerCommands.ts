@@ -24,6 +24,12 @@ export interface ComposerCommand {
 
 export const BUILTIN_COMMANDS: readonly ComposerCommand[] = [
   {
+    name: "help",
+    aliases: [],
+    summary: "List the / commands available right now",
+    kind: "builtin",
+  },
+  {
     name: "queue",
     aliases: ["q"],
     summary: "Send this the moment the current reply lands",
@@ -33,6 +39,66 @@ export const BUILTIN_COMMANDS: readonly ComposerCommand[] = [
     name: "note",
     aliases: [],
     summary: "Keep this as a post-it you can send later, here or in a new chat",
+    kind: "builtin",
+  },
+  {
+    name: "new",
+    aliases: ["newchat"],
+    summary: "Start a blank Baxter conversation",
+    kind: "builtin",
+  },
+  {
+    name: "fork",
+    aliases: [],
+    summary: "Branch this chat into a copy and continue there",
+    kind: "builtin",
+  },
+  {
+    name: "clear",
+    aliases: [],
+    summary: "Empty the draft without sending",
+    kind: "builtin",
+  },
+  {
+    name: "orchestrate",
+    aliases: ["run", "go"],
+    summary: "Run the ticket's workflow from here",
+    kind: "builtin",
+  },
+  {
+    name: "stop",
+    aliases: [],
+    summary: "Stop the turn that is in flight",
+    kind: "builtin",
+  },
+  {
+    name: "approve",
+    aliases: [],
+    summary: "Approve the pending ask for this conversation",
+    kind: "builtin",
+  },
+  {
+    name: "reject",
+    aliases: [],
+    summary: "Reject the pending ask for this conversation",
+    kind: "builtin",
+  },
+  {
+    name: "btw",
+    aliases: [],
+    summary: "Ask about the run without interrupting it",
+    kind: "builtin",
+  },
+  {
+    name: "ticket",
+    aliases: ["open"],
+    summary: "Jump to a ticket by id or slug",
+    kind: "builtin",
+  },
+  {
+    name: "create",
+    aliases: [],
+    summary: "Create a ticket from this title",
     kind: "builtin",
   },
 ] as const;

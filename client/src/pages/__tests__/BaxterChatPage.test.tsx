@@ -509,10 +509,10 @@ describe("BaxterChatPage", () => {
     renderChat();
 
     // Busy is server-derived, so a reload mid-turn still shows the agent working.
+    // The composer stays editable on purpose: `/queue` and `/stop` have to be
+    // typeable while a turn is in flight (Send morphs to Stop separately).
     expect(await screen.findByText("Baxter is looking…")).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByPlaceholderText("Reply to Baxter…")).toBeDisabled(),
-    );
+    expect(screen.getByPlaceholderText("Reply to Baxter…")).toBeEnabled();
     // Send becomes a working Stop control so a bad turn can be exited.
     expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
   });

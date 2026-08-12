@@ -29,6 +29,11 @@ export interface ChatArchive {
   startNewChat: () => void;
   /** Create a fresh thread and send into it — what a note's "new chat" does. */
   sendInNewChat: (content: string) => Promise<unknown>;
+  /**
+   * Branch the open thread into a copy. Optional `body` is sent as the first
+   * new turn on the fork. No-op when there is no session id yet.
+   */
+  forkSession: (body?: string) => Promise<unknown>;
   runtime: WorkspaceRuntimeSettings;
   setRuntime: (runtime: WorkspaceRuntimeSettings) => Promise<void>;
   isSavingRuntime: boolean;
@@ -119,6 +124,7 @@ export function useActiveChatSession(): ActiveChatSession {
         openSession: baxterSession.openSession,
         startNewChat: baxterSession.startNewChat,
         sendInNewChat: baxterSession.sendInNewChat,
+        forkSession: baxterSession.forkSession,
         runtime: baxterSession.runtime,
         setRuntime: baxterSession.setRuntime,
         isSavingRuntime: baxterSession.isSavingRuntime,

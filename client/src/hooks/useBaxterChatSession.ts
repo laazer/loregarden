@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 
 import { ApiError, api, type Approval, type BaxterChatSnapshot, type WorkspaceRuntimeSettings } from "../api/client";
+import { baxterChatApi } from "../api/baxterChatApi";
 import type { ChatSession } from "../lib/chatSession";
 import { isRunStatusBusy } from "../lib/chatSession";
 import { DEFAULT_RUNTIME } from "../lib/runtimeSettings";
@@ -18,6 +19,11 @@ export interface BaxterChatSessionBinding extends ChatSession {
   startNewChat: () => void;
   /** Create a fresh thread and send into it, in that order. */
   sendInNewChat: (content: string) => Promise<unknown>;
+  /**
+   * Branch the open thread: copy settled history into a new session, switch to
+   * it, and optionally send `body` as the first new turn.
+   */
+  forkSession: (body?: string) => Promise<unknown>;
   renameSession: (id: string, title: string) => Promise<unknown>;
   deleteSession: (id: string) => Promise<unknown>;
   /** Stop the in-flight turn and unlock the composer. */
@@ -124,6 +130,24 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
     },
   });
 
+  const forkSession = useMutation({
+    meta: { errorTitle: "Fork chat" },
+    mutationFn: async (body: string = "") => {
+      if (!sessionId) throw new Error("No chat session to fork");
+      const forked = await baxterChatApi.forkSession(workspaceSlug, sessionId);
+      setSessionId(forked.id);
+      qc.setQueryData(baxterChatSessionKey(workspaceSlug, forked.id), forked);
+      invalidateArchive();
+      const text = body.trim();
+      if (!text) return forked;
+      return api.sendBaxterChatMessage(workspaceSlug, forked.id, text);
+    },
+    onSuccess: (result) => {
+      qc.setQueryData(baxterChatSessionKey(workspaceSlug, result.id), result);
+      invalidateArchive();
+    },
+  });
+
   const renameSession = useMutation({
     meta: { errorTitle: "Rename session" },
     mutationFn: ({ id, title }: { id: string; title: string }) =>
@@ -213,6 +237,7 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
     send: (content: string, options) =>
       sendMessage.mutateAsync({ content, skill: options?.skill }),
     sendInNewChat: (content: string) => sendInNewChat.mutateAsync(content),
+    forkSession: (body = "") => forkSession.mutateAsync(body),
     stop: () => stopTurn.mutateAsync(),
     isStopping: stopTurn.isPending,
     snapshot: snapshot.data,

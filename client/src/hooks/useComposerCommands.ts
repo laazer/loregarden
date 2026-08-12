@@ -34,6 +34,27 @@ export type ComposerMenuItem =
 /** Any composer input this can drive — the bar uses an input, panels a textarea. */
 type ComposerInput = HTMLInputElement | HTMLTextAreaElement;
 
+/**
+ * Host-supplied verbs for builtins that need screen context.
+ *
+ * A command whose callback is missing is left out of the menu rather than
+ * offered and ignored — the same rule `/queue` and skills already follow.
+ */
+export interface ComposerCommandActions {
+  onNewChat?: () => void;
+  /** Fork the open Baxter thread; `body` is an optional first message on the branch. */
+  onFork?: (body: string) => void;
+  onOrchestrate?: () => void;
+  onStop?: () => void;
+  onApprove?: () => void;
+  onReject?: () => void;
+  onBtw?: (message: string) => void;
+  onOpenTicket?: (id: string) => void;
+  onCreateTicket?: (title: string) => void;
+}
+
+const EMPTY_ACTIONS: ComposerCommandActions = {};
+
 export interface UseComposerCommandsOptions {
   value: string;
   onChange: (value: string) => void;
@@ -54,6 +75,8 @@ export interface UseComposerCommandsOptions {
   skillsEnabled?: boolean;
   /** Start a fresh conversation and send into it; omit to hide that note action. */
   onSendInNewChat?: (content: string) => void;
+  /** Optional builtins that need host context (ticket, archive, approvals). */
+  actions?: ComposerCommandActions;
 }
 
 export interface ComposerCommandsBinding {
@@ -84,6 +107,9 @@ export interface ComposerCommandsBinding {
   sendNoteInNewChat: ((note: ComposerNote) => void) | null;
   queued: QueuedComposerMessage[];
   cancelQueued: (id: string) => void;
+  /** Commands listed by `/help`, or null when the strip is closed. */
+  helpCommands: ComposerCommand[] | null;
+  closeHelp: () => void;
 }
 
 function useDebounced<T>(value: T, delay: number): T {
@@ -111,6 +137,7 @@ export function useComposerCommands({
   onSend,
   onSendInNewChat,
   skillsEnabled = false,
+  actions = EMPTY_ACTIONS,
 }: UseComposerCommandsOptions): ComposerCommandsBinding {
   const qc = useQueryClient();
   const inputRef = useRef<ComposerInput | null>(null);
@@ -118,6 +145,7 @@ export function useComposerCommands({
   const [dismissed, setDismissed] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [draftNote, setDraftNote] = useState<string | null>(null);
+  const [helpCommands, setHelpCommands] = useState<ComposerCommand[] | null>(null);
   // Set when a completion rewrites the draft; applied once React has rendered
   // the new value, or the browser drops the caret at the end of the text.
   const pendingCaret = useRef<number | null>(null);
@@ -138,11 +166,34 @@ export function useComposerCommands({
   // queue into; `/note` needs a workspace to belong to.
   const available = useMemo(() => {
     const supported: Record<string, boolean> = {
+      help: true,
+      clear: true,
       queue: Boolean(queueKey),
       note: Boolean(workspaceSlug),
+      new: Boolean(actions.onNewChat),
+      fork: Boolean(actions.onFork),
+      orchestrate: Boolean(actions.onOrchestrate),
+      stop: Boolean(actions.onStop),
+      approve: Boolean(actions.onApprove),
+      reject: Boolean(actions.onReject),
+      btw: Boolean(actions.onBtw),
+      ticket: Boolean(actions.onOpenTicket),
+      create: Boolean(actions.onCreateTicket),
     };
     return BUILTIN_COMMANDS.filter((command) => supported[command.name] ?? true);
-  }, [queueKey, workspaceSlug]);
+  }, [
+    queueKey,
+    workspaceSlug,
+    actions.onNewChat,
+    actions.onFork,
+    actions.onOrchestrate,
+    actions.onStop,
+    actions.onApprove,
+    actions.onReject,
+    actions.onBtw,
+    actions.onOpenTicket,
+    actions.onCreateTicket,
+  ]);
   const commands = useMemo(
     () => [...available, ...skillCommands(skillsEnabled ? skillsQuery.data : [])],
     [available, skillsQuery.data, skillsEnabled],
@@ -297,21 +348,72 @@ export function useComposerCommands({
       reset();
       return true;
     }
-    if (resolved.name === "queue") {
-      const text = body.trim();
-      // Nothing to queue, and no conversation to queue into, are both no-ops
-      // rather than a silent ordinary send.
-      if (!text || !queueKey) return true;
-      enqueue(queueKey, text);
-      reset();
-      return true;
+
+    const text = body.trim();
+    switch (resolved.name) {
+      case "help":
+        setHelpCommands(commands);
+        reset();
+        return true;
+      case "clear":
+        reset();
+        return true;
+      case "queue":
+        // Nothing to queue, and no conversation to queue into, are both no-ops
+        // rather than a silent ordinary send.
+        if (!text || !queueKey) return true;
+        enqueue(queueKey, text);
+        reset();
+        return true;
+      case "note":
+        // `/note` with no text opens an empty post-it to type into; it persists
+        // once it has something to persist.
+        setDraftNote(text);
+        reset();
+        return true;
+      case "new":
+        actions.onNewChat?.();
+        reset();
+        return true;
+      case "fork":
+        actions.onFork?.(text);
+        reset();
+        return true;
+      case "orchestrate":
+        actions.onOrchestrate?.();
+        reset();
+        return true;
+      case "stop":
+        actions.onStop?.();
+        reset();
+        return true;
+      case "approve":
+        actions.onApprove?.();
+        reset();
+        return true;
+      case "reject":
+        actions.onReject?.();
+        reset();
+        return true;
+      case "btw":
+        if (!text) return true;
+        actions.onBtw?.(text);
+        reset();
+        return true;
+      case "ticket":
+        if (!text) return true;
+        actions.onOpenTicket?.(text.split(/\s+/)[0] ?? text);
+        reset();
+        return true;
+      case "create":
+        if (!text) return true;
+        actions.onCreateTicket?.(text);
+        reset();
+        return true;
+      default:
+        return false;
     }
-    // `/note` with no text opens an empty post-it to type into; it persists
-    // once it has something to persist.
-    setDraftNote(body.trim());
-    reset();
-    return true;
-  }, [value, commands, onSend, reset, queueKey, enqueue]);
+  }, [value, commands, onSend, reset, queueKey, enqueue, actions]);
 
   // The drain. One message per idle transition, and only from the surface that
   // owns this conversation's send — two composers sharing a key would double up.
@@ -373,6 +475,8 @@ export function useComposerCommands({
     cancelQueued: (id) => {
       if (queueKey) removeQueued(queueKey, id);
     },
+    helpCommands,
+    closeHelp: () => setHelpCommands(null),
   };
 }
 

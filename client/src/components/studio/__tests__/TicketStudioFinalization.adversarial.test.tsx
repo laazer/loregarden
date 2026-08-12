@@ -125,7 +125,11 @@ beforeEach(() => {
 });
 
 async function getCommitButton() {
-  return waitFor(() => screen.getByRole("button", { name: /create.*ticket/i }));
+  // Session query + draft chrome can take longer under a loaded pre-push run
+  // than waitFor's default 1s, which made this suite flake without a product bug.
+  return waitFor(() => screen.getByRole("button", { name: /create.*ticket/i }), {
+    timeout: 10_000,
+  });
 }
 
 describe("ADVA-INT-1: API Response Mutations", () => {

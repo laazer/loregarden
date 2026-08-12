@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type Approval, type TicketSummary } from "../api/client";
 import { BaxterAvatar } from "../components/chat/BaxterAvatar";
@@ -8,12 +8,14 @@ import { primitiveGallerySections } from "../components/chat/primitiveGallery";
 import { PendingApprovalsSection } from "../components/PendingApprovalsSection";
 import { StudioChatComposer, StudioChatMessages } from "../components/studio/StudioChat";
 import { useApprovalResolution } from "../hooks/useApprovalResolution";
+import type { ChatArchive } from "../hooks/useActiveChatSession";
 import { useBaxterChatSession } from "../hooks/useBaxterChatSession";
 import {
   composerQueueKey,
   useComposerCommands,
   type UseComposerCommandsOptions,
 } from "../hooks/useComposerCommands";
+import { useComposerHostActions } from "../hooks/useComposerHostActions";
 import { useChatWorkspace } from "../hooks/useChatWorkspace";
 import { takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
@@ -297,6 +299,45 @@ export function BaxterChatPage() {
     void chat.send(content, { skill }).catch(() => undefined);
   };
 
+  const archive = useMemo<ChatArchive | null>(() => {
+    if (!workspaceSlug) return null;
+    return {
+      workspaceSlug,
+      sessionId: chat.sessionId,
+      openSession: chat.openSession,
+      startNewChat: chat.startNewChat,
+      sendInNewChat: chat.sendInNewChat,
+      forkSession: chat.forkSession,
+      runtime: chat.runtime,
+      setRuntime: chat.setRuntime,
+      isSavingRuntime: chat.isSavingRuntime,
+    };
+  }, [
+    workspaceSlug,
+    chat.sessionId,
+    chat.openSession,
+    chat.startNewChat,
+    chat.sendInNewChat,
+    chat.forkSession,
+    chat.runtime,
+    chat.setRuntime,
+    chat.isSavingRuntime,
+  ]);
+
+  const onAfterNewChat = useCallback(() => {
+    setGalleryTurns(null);
+    setHistoryOpen(false);
+  }, [setHistoryOpen]);
+
+  const commandActions = useComposerHostActions({
+    workspaceSlug,
+    ticketId: null,
+    pendingApprovals: turnApprovals,
+    archive,
+    session: inGallery ? null : chat,
+    onAfterNewChat,
+  });
+
   const commandOptions: ComposerHostOptions = {
     workspaceSlug,
     queueKey: workspaceSlug ? composerQueueKey("baxter-home", chat.sessionId, workspaceSlug) : null,
@@ -308,6 +349,7 @@ export function BaxterChatPage() {
     },
     // This is the one thread whose turn carries a skill to the agent.
     skillsEnabled: true,
+    actions: commandActions,
   };
 
   const openPrimitiveGallery = () => {

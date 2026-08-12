@@ -358,11 +358,10 @@ export function StudioChatComposer({
   const roundSend = (iconOnlySend ?? variant === "dock") && !showStop;
 
   const submit = () => {
-    if (!canSend) return;
-    // A leading `/command` is not a message: it queues, writes a note, or picks
-    // the skill for this turn. Only fall through to the ordinary send when the
-    // draft turned out to be plain text after all.
+    // `/stop`, `/queue`, `/help` and friends must work while a turn is in
+    // flight — gate the ordinary send on canSend, not the command path.
     if (commands?.submit()) return;
+    if (!canSend) return;
     onSubmit();
   };
 
@@ -401,7 +400,7 @@ export function StudioChatComposer({
             }
             onBlur={() => commands?.close()}
             placeholder={placeholder}
-            disabled={disabled || isSending}
+            disabled={disabled}
             rows={variant === "dock" ? 1 : 2}
             onKeyDown={(e) => {
               // The menu owns Enter, Tab and the arrows while it is open, so a
@@ -409,8 +408,18 @@ export function StudioChatComposer({
               if (commands?.handleKeyDown(e)) return;
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                if (showStop) stop();
-                else submit();
+                if (value.trim().startsWith("/") && commands?.submit()) return;
+                if (showStop) {
+                  // Enter aborts the turn only on an empty draft. The textarea
+                  // stays live mid-turn so `/stop` can be typed at all, which
+                  // newly exposes this path to someone typing their next
+                  // message while the agent works — and killing the run is not
+                  // what they pressed Enter for. The Stop button is still one
+                  // click away, and `/stop` still works with text in the box.
+                  if (!value.trim()) stop();
+                  return;
+                }
+                submit();
               }
             }}
           />

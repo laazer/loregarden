@@ -101,6 +101,53 @@ def test_baxter_chat_runtime_round_trips_on_session(client: TestClient):
     assert snapshot["runtime"]["cursor_model"] == "gpt-5"
 
 
+def test_baxter_chat_fork_copies_settled_messages_and_leaves_source(
+    client: TestClient, monkeypatch
+):
+    monkeypatch.setenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", "Forkable answer.")
+    session_id = _new_session(client)
+    client.post(
+        f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/messages",
+        json={"content": "What should we fork from?"},
+    )
+    client.patch(
+        f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/runtime",
+        json={
+            "cli_adapter": "cursor",
+            "claude_model": "",
+            "cursor_model": "gpt-5",
+            "codex_model": "",
+            "lmstudio_base_url": "",
+            "lmstudio_model": "",
+            "claude_effort": "",
+            "cursor_effort": "",
+            "lmstudio_effort": "",
+        },
+    )
+
+    forked = client.post(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/fork")
+    assert forked.status_code == 201
+    body = forked.json()
+    assert body["id"] != session_id
+    assert body["title"].startswith("Fork of ")
+    assert [m["role"] for m in body["messages"]] == ["user", "assistant"]
+    assert body["messages"][0]["content"] == "What should we fork from?"
+    assert body["messages"][1]["content"] == "Forkable answer."
+    assert body["runtime"]["cli_adapter"] == "cursor"
+    assert body["runtime"]["cursor_model"] == "gpt-5"
+
+    source = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").json()
+    assert len(source["messages"]) == 2
+    assert source["messages"][0]["content"] == "What should we fork from?"
+    # Message ids must not be shared — editing one thread must not rewrite the other.
+    assert {m["id"] for m in source["messages"]}.isdisjoint({m["id"] for m in body["messages"]})
+
+
+def test_baxter_chat_fork_unknown_session(client: TestClient):
+    res = client.post("/api/workspaces/loregarden/baxter-chat/sessions/no-such-session/fork")
+    assert res.status_code == 404
+
+
 def test_baxter_chat_rename_and_delete(client: TestClient, monkeypatch):
     monkeypatch.setenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", "ok")
     session_id = _new_session(client)

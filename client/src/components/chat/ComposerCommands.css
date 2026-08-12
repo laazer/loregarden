@@ -230,3 +230,47 @@
   background: transparent;
   color: var(--txm);
 }
+
+.lg-composer-help {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--bd2);
+  border-radius: 10px;
+  background: var(--bg2);
+  font-size: 12px;
+  color: var(--txm);
+  max-width: min(520px, 100%);
+}
+
+.lg-composer-help-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lg-composer-help-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.lg-composer-help-list code {
+  font-family: var(--mono);
+  color: var(--ac2);
+}
+
+.lg-composer-help-aliases {
+  color: var(--txl);
+}
+
+.lg-composer-help-summary {
+  color: var(--txm);
+}

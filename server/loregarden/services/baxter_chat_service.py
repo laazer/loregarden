@@ -263,6 +263,41 @@ def create_chat_session(
     return row
 
 
+def fork_chat_session(session: Session, source: BaxterChatSession) -> BaxterChatSession:
+    """Branch a conversation: new session, same settled history, source untouched.
+
+    Pending assistant rows are left behind on purpose — a fork is a place to
+    continue from what has already been said, not from a turn still in flight.
+    Runtime pins copy with the thread so the branch keeps the same model.
+    """
+    source_title = (source.title or "").strip() or UNTITLED_SESSION_TITLE
+    fork_title = _clip(f"Fork of {source_title}", MAX_TITLE_CHARS)
+    row = BaxterChatSession(
+        workspace_id=source.workspace_id,
+        title=fork_title,
+        runtime_json=source.runtime_json or "{}",
+    )
+    session.add(row)
+    session.flush()
+
+    for message in list_chat_messages(session, source.id):
+        session.add(
+            BaxterChatMessage(
+                session_id=row.id,
+                role=message.role,
+                content=message.content,
+                status=message.status,
+                parts_json=message.parts_json,
+                skill_name=message.skill_name,
+                created_at=message.created_at,
+            )
+        )
+
+    session.commit()
+    session.refresh(row)
+    return row
+
+
 def get_chat_session(
     session: Session, workspace_id: str, session_id: str
 ) -> BaxterChatSession | None:

@@ -13,11 +13,40 @@ import "./ComposerCommands.css";
  * said; putting them in a drawer would hide the fact that they exist.
  */
 export function ComposerNotes({ commands }: { commands: ComposerCommandsBinding }) {
-  const { notes, draftNote, queued } = commands;
-  if (!notes.length && draftNote === null && !queued.length) return null;
+  const { notes, draftNote, queued, helpCommands } = commands;
+  if (!notes.length && draftNote === null && !queued.length && !helpCommands) return null;
 
   return (
     <div className="lg-composer-notes" role="group" aria-label="Notes and queued messages">
+      {helpCommands ? (
+        <div className="lg-composer-help" role="region" aria-label="Composer commands">
+          <div className="lg-composer-help-header">
+            <span className="lg-composer-queued-label">Commands</span>
+            <button
+              type="button"
+              className="lg-composer-note-btn lg-composer-note-btn--quiet"
+              aria-label="Dismiss help"
+              onClick={commands.closeHelp}
+            >
+              ×
+            </button>
+          </div>
+          <ul className="lg-composer-help-list">
+            {helpCommands.map((command) => (
+              <li key={command.name}>
+                <code>/{command.name}</code>
+                {command.aliases.length ? (
+                  <span className="lg-composer-help-aliases">
+                    {" "}
+                    ({command.aliases.map((alias) => `/${alias}`).join(", ")})
+                  </span>
+                ) : null}
+                <span className="lg-composer-help-summary"> — {command.summary}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {queued.map((entry) => (
         <div key={entry.id} className="lg-composer-queued" title="Sends as soon as the reply lands">
           <span className="lg-composer-queued-label">Queued</span>
