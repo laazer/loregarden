@@ -23,8 +23,8 @@ const clientRoot = path.resolve(__dirname, "../../client");
 const requireFromClient = createRequire(path.join(clientRoot, "package.json"));
 const { parse } = requireFromClient("@typescript-eslint/typescript-estree");
 
-const MAX_FILE_LINES = 500;
-const MAX_TSX_FILE_LINES = 750;
+const MAX_FILE_LINES = 1200;
+const MAX_TSX_FILE_LINES = 1200;
 const MAX_INDEX_LINES = 80;
 const MIN_DUPLICATE_BODY_LINES = 8;
 

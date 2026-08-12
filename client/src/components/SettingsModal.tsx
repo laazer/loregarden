@@ -36,7 +36,7 @@ export function SettingsModal({
   useEffect(() => {
     if (!open) return;
     setDraft(runtimeFromWorkspace(workspace));
-  }, [open, workspace?.cli_adapter, workspace?.claude_model, workspace?.cursor_model, workspace?.codex_model, workspace?.lmstudio_base_url, workspace?.lmstudio_model, workspace?.claude_effort, workspace?.cursor_effort, workspace?.lmstudio_effort, workspaceSlug]);
+  }, [open, workspace?.cli_adapter, workspace?.claude_model, workspace?.cursor_model, workspace?.codex_model, workspace?.lmstudio_base_url, workspace?.lmstudio_model, workspace?.opencode_model, workspace?.claude_effort, workspace?.cursor_effort, workspace?.lmstudio_effort, workspace?.opencode_effort, workspaceSlug]);
 
   if (!open) return null;
 

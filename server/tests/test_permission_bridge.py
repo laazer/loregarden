@@ -1027,6 +1027,7 @@ def test_permission_bridge_streaming_output_extends_idle_timeout(tmp_path):
             cwd=str(tmp_path),
             adapter="claude",
             resume_session_id="",
+            env={},
         )
 
         bridge = PermissionBridgeRunner(session)

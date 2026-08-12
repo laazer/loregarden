@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal, get_args
 
 from loregarden.db.session import engine
 from loregarden.dot_line import (
@@ -66,45 +67,123 @@ def _format_codex_stream_payload(msg_type: str, payload: dict[str, Any]) -> LogL
     return TOOL / item_type
 
 
+# OpenCode's own event names, so a payload is routed to its formatter rather than
+# falling through to the Claude/Cursor shapes that share none of its field names.
+# A `Literal` and not an enum: this vocabulary belongs to the OpenCode CLI, and an
+# enum here would imply Loregarden gets a say in when it changes.
+OpencodeEvent = Literal["step_start", "step_finish", "tool_use", "text"]
+
+_OPENCODE_EVENT_TYPES = frozenset(get_args(OpencodeEvent))
+
+
+def _format_opencode_stream_payload(
+    msg_type: OpencodeEvent, payload: dict[str, Any]
+) -> LogLine | None:
+    """Format OpenCode ``run --format json`` events.
+
+    Every event carries its real content in ``part``, so the generic fallbacks at
+    the end of ``format_stream_payload`` — which read a top-level ``text`` or
+    ``tool_name`` — see an empty envelope and drop the whole turn from the log.
+    """
+    part = payload.get("part") or {}
+    if not isinstance(part, dict):  # py-org: allow-isinstance - third-party CLI payload
+        return None
+    if msg_type == "text":
+        return OUT.maybe(part.get("text"))
+    if msg_type == "tool_use":  # py-org: allow-string - OpenCode's event name, not ours
+        return TOOL / clip(str(part.get("tool") or "tool"), 200)
+    if msg_type == "step_finish":
+        tokens = part.get("tokens") or {}
+        if isinstance(tokens, dict) and tokens:  # py-org: allow-isinstance - third-party payload
+            return (
+                SYS
+                / "opencode step done"
+                / kv_space(in_=tokens.get("input", "?"), out=tokens.get("output", "?"))
+            )
+        return SYS / "opencode step done"
+    return None
+
+
+def _untyped_stream_payload(payload: dict[str, Any]) -> LogLine | None:
+    """Last resort for an event no adapter's formatter claimed.
+
+    Also the tail of the Claude/Cursor shapes: an `assistant` event carrying no
+    text, or a `result` whose payload is neither string nor object, historically
+    fell through to exactly this, and a stream nobody has characterised is worth
+    more in the log verbatim than dropped.
+    """
+    return OUT.maybe(payload.get("text") or payload.get("message"))
+
+
+def _format_assistant_message(payload: dict[str, Any]) -> LogLine | None:
+    """Concatenated text/thinking blocks of a Claude `assistant` message."""
+    message = payload.get("message") or {}
+    parts: list[str] = []
+    for block in message.get("content") or []:
+        if isinstance(block, dict):  # py-org: allow-isinstance - third-party CLI payload
+            text = block.get("text") or block.get("thinking")
+            if text:
+                parts.append(str(text))
+    return OUT / " ".join(parts) if parts else _untyped_stream_payload(payload)
+
+
+def _format_result_event(payload: dict[str, Any]) -> LogLine | None:
+    """A terminal `result`, whose payload is a bare string on some CLIs and an
+    object on others."""
+    result = payload.get("result")
+    if isinstance(result, str):  # py-org: allow-isinstance - third-party CLI payload
+        return OUT.maybe(result)
+    if isinstance(result, dict):  # py-org: allow-isinstance - third-party CLI payload
+        return OUT.maybe(result.get("text") or result.get("output"))
+    return _untyped_stream_payload(payload)
+
+
+def _format_system_event(payload: dict[str, Any]) -> LogLine | None:
+    """Only the init frame names a model worth a line; the rest is noise."""
+    if (payload.get("subtype") or "") != "init":
+        return None
+    model = payload.get("model") or payload.get("permissionMode")
+    return SYS / "session init" / model if model else None
+
+
+def _format_content_block_delta(payload: dict[str, Any]) -> LogLine | None:
+    delta = payload.get("delta") or {}
+    return OUT.maybe(delta.get("text") or delta.get("thinking"))
+
+
+# The Claude/Cursor stream-json shapes, each keyed by its own event name. A table
+# rather than a chain: the shapes share no fields, so there is nothing for a
+# chain's fallthrough to express.
+_ASSISTANT_FORMATTERS: dict[str, Callable[[dict[str, Any]], LogLine | None]] = {
+    "assistant": _format_assistant_message,
+    "content_block_delta": _format_content_block_delta,
+    "result": _format_result_event,
+    "system": _format_system_event,
+}
+
+# Event types whose answer is "log nothing", as opposed to "not my shape".
+# Cursor's stream-partial-output emits token deltas as `thinking`; those are
+# coalesced by RunLogStreamer.append_stream_line, so a finished OUT line here
+# would duplicate them.
+_SILENT_EVENT_TYPES = frozenset({"thinking"})
+
+
 def format_stream_payload(payload: dict[str, Any]) -> LogLine | None:
-    """Extract a human-readable log line from Claude/Cursor/Codex stream events."""
+    """Extract a human-readable log line from Claude/Cursor/Codex/OpenCode stream events."""
     msg_type = payload.get("type", "")
 
-    if msg_type == "assistant":
-        message = payload.get("message") or {}
-        parts: list[str] = []
-        for block in message.get("content") or []:
-            if isinstance(block, dict):
-                text = block.get("text") or block.get("thinking")
-                if text:
-                    parts.append(str(text))
-        if parts:
-            return OUT / " ".join(parts)
-
-    if msg_type == "content_block_delta":
-        delta = payload.get("delta") or {}
-        return OUT.maybe(delta.get("text") or delta.get("thinking"))
-
-    # Cursor stream-partial-output emits token deltas as thinking events.
-    # Handled by RunLogStreamer.append_stream_line (coalesced); do not treat as
-    # a finished OUT line here.
-    if msg_type == "thinking":
+    if msg_type in _SILENT_EVENT_TYPES:
         return None
 
-    if msg_type == "result":
-        result = payload.get("result")
-        if isinstance(result, str):
-            return OUT.maybe(result)
-        if isinstance(result, dict):
-            return OUT.maybe(result.get("text") or result.get("output"))
+    # OpenCode first: it reuses `text` and `tool_use` as envelope types, and both
+    # would otherwise be read with Claude's field names and come out empty.
+    # `sessionID` is the discriminator — no other adapter's events carry it.
+    if msg_type in _OPENCODE_EVENT_TYPES and "sessionID" in payload:
+        return _format_opencode_stream_payload(msg_type, payload)
 
-    if msg_type == "system":
-        subtype = payload.get("subtype") or ""
-        if subtype == "init":
-            model = payload.get("model") or payload.get("permissionMode")
-            if model:
-                return SYS / "session init" / model
-        return None
+    assistant_formatter = _ASSISTANT_FORMATTERS.get(msg_type)
+    if assistant_formatter is not None:
+        return assistant_formatter(payload)
 
     codex = _format_codex_stream_payload(msg_type, payload)
     if codex is not None or msg_type.startswith(("thread.", "turn.", "item.")):
@@ -114,7 +193,7 @@ def format_stream_payload(payload: dict[str, Any]) -> LogLine | None:
         name = payload.get("tool_name") or payload.get("name") or msg_type
         return TOOL / clip(name, 200)
 
-    return OUT.maybe(payload.get("text") or payload.get("message"))
+    return _untyped_stream_payload(payload)
 
 
 class RunLogStreamer:

@@ -96,6 +96,7 @@ def test_print_mode_frees_the_slot_once_the_process_emits(db_session: Session):
         stdin_prompt=None,
         interactive=False,
         adapter="cursor",
+        env={},
     )
     streamer = _CollectingStreamer()
     executor = CliAgentExecutor(db_session)

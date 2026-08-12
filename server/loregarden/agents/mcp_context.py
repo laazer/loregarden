@@ -116,6 +116,57 @@ def mcp_cli_injection_enabled() -> bool:
     return os.environ.get("LOREGARDEN_DISABLE_MCP_CLI", "").lower() not in {"1", "true", "yes"}
 
 
+def _opencode_mcp_server_entry(*, orchestrated: bool) -> dict[str, Any]:
+    """Loregarden's entry in OpenCode's own MCP config vocabulary.
+
+    OpenCode names the two transports ``remote``/``local`` and puts a stdio
+    server's argv in a single ``command`` list with ``environment`` beside it —
+    none of which matches the shape ``loregarden_mcp_server_entry`` renders for
+    Claude Code. Translating here keeps that difference in one place.
+    """
+    entry = loregarden_mcp_server_entry(orchestrated=orchestrated)
+    if entry["type"] == "http":
+        remote: dict[str, Any] = {"type": "remote", "url": entry["url"], "enabled": True}
+        if entry.get("headers"):
+            remote["headers"] = entry["headers"]
+        return remote
+    return {
+        "type": "local",
+        "command": [entry["command"], *entry["args"]],
+        "enabled": True,
+        "environment": entry["env"],
+    }
+
+
+def loregarden_mcp_opencode_config_json(*, orchestrated: bool = False) -> str:
+    """``OPENCODE_CONFIG_CONTENT`` payload wiring Loregarden's MCP server in.
+
+    OpenCode has no ``--mcp-config`` flag; an inline config is the only per-run
+    channel (``opencode mcp add`` writes the operator's own config file, which a
+    stage run has no business editing). The registry is deliberately not merged
+    in the way ``loregarden_mcp_cli_config_json`` does it: OpenCode reads the
+    operator's own config too, so registered servers reach the agent from there
+    and duplicating them here would fight that file rather than extend it.
+    """
+    return json.dumps(
+        {"mcp": {MCP_SERVER_NAME: _opencode_mcp_server_entry(orchestrated=orchestrated)}}
+    )
+
+
+def mcp_cli_env(*, adapter: str, orchestrated: bool = False) -> dict[str, str]:
+    """Environment an agent subprocess needs to see Loregarden's MCP server.
+
+    The argv-based counterpart is ``append_mcp_cli_args``; opencode is the one
+    adapter that configures MCP through the environment instead, so it is the
+    only adapter this returns anything for.
+    """
+    if not mcp_cli_injection_enabled() or adapter != "opencode":
+        return {}
+    return {
+        "OPENCODE_CONFIG_CONTENT": loregarden_mcp_opencode_config_json(orchestrated=orchestrated)
+    }
+
+
 def append_mcp_cli_args(
     argv: list[str],
     *,
@@ -128,6 +179,9 @@ def append_mcp_cli_args(
     ``orchestrated=True`` marks pipeline stage runs (denies create_ticket at the
     MCP dispatch layer). Chat surfaces — triage, Home, branch triage, Ticket
     Studio — must pass ``orchestrated=False`` so interactive MCP stays open.
+
+    opencode is absent by design: it has no MCP flag, so its config rides in the
+    subprocess environment instead — see ``mcp_cli_env``.
     """
     if not mcp_cli_injection_enabled():
         return

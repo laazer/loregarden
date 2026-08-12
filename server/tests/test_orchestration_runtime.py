@@ -16,9 +16,11 @@ def test_ticket_detail_includes_default_orchestration_runtime(client: TestClient
         "codex_model": "",
         "lmstudio_base_url": "",
         "lmstudio_model": "",
+        "opencode_model": "",
         "claude_effort": "",
         "cursor_effort": "",
         "lmstudio_effort": "",
+        "opencode_effort": "",
     }
 
 

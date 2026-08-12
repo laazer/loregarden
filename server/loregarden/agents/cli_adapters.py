@@ -3,15 +3,17 @@ import shlex
 import shutil
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from loregarden.agents.mcp_context import (
     append_mcp_cli_args,
+    mcp_cli_env,
     resolve_api_base_url,
     resolve_mcp_url,
 )
 from loregarden.config import settings
+from loregarden.models.domain import CliAdapter
 from loregarden.services.cli_settings import (
     adapter_model_pins_apply,
     apply_cursor_effort,
@@ -54,6 +56,22 @@ class CliInvocation:
     adapter: str = "local"
     cwd: str = ""
     resume_session_id: str = ""
+    # Overlaid on the spawning process's environment, not a replacement for it.
+    # Only opencode populates this: it has no MCP flag, so its per-run config
+    # travels as OPENCODE_CONFIG_CONTENT (see ``mcp_context.mcp_cli_env``).
+    env: dict[str, str] = field(default_factory=dict)
+
+
+def invocation_env(invocation: CliInvocation) -> dict[str, str] | None:
+    """Full environment for spawning ``invocation``, or None to inherit unchanged.
+
+    ``None`` rather than a copy of ``os.environ`` so a run with no overlay keeps
+    the pre-existing inherit-the-parent behaviour exactly, including any variable
+    the supervising process sets after import.
+    """
+    if not invocation.env:
+        return None
+    return {**os.environ, **invocation.env}
 
 
 def _bin(name: str, env_key: str) -> str:
@@ -175,7 +193,7 @@ def build_interactive_invocation(
     """
     cwd = str(workspace_root)
 
-    if adapter == "claude":
+    if adapter == CliAdapter.CLAUDE:
         argv = [
             _bin("claude", "LOREGARDEN_CLAUDE_BIN"),
             "--output-format",
@@ -285,7 +303,7 @@ def resolve_terminal_handoff_invocation(
     model = resolve_model_for_adapter(selected, workspace)
     effort = resolve_effort_for_adapter(selected, workspace)
 
-    if selected == "claude":
+    if selected == CliAdapter.CLAUDE:
         return _claude_terminal_handoff_invocation(
             prompt_file=prompt_file,
             workspace_root=workspace_root,
@@ -293,22 +311,31 @@ def resolve_terminal_handoff_invocation(
             claude_effort=effort,
         )
 
-    if selected == "cursor":
+    if selected == CliAdapter.CURSOR:
         return _cursor_print_invocation(
             prompt=prompt,
             workspace_root=workspace_root,
             cursor_model=apply_cursor_effort(model, effort),
         )
 
-    if selected == "codex":
+    if selected == CliAdapter.CODEX:
         return _codex_invocation(
             prompt=prompt,
             workspace_root=workspace_root,
             codex_model=model,
         )
 
+    if selected == CliAdapter.OPENCODE:
+        return _opencode_invocation(
+            prompt=prompt,
+            prompt_file=prompt_file,
+            workspace_root=workspace_root,
+            opencode_model=model,
+            opencode_effort=effort,
+        )
+
     raise ValueError(
-        "Terminal handoff only supports claude/cursor/codex CLIs "
+        "Terminal handoff only supports claude/cursor/codex/opencode CLIs "
         f"(workspace resolves to '{selected}')"
     )
 
@@ -352,7 +379,13 @@ def render_terminal_handoff_command(
     AgentRun stays RUNNING forever — blocking triage chat and the self-improve
     restart watcher — since no process supervises it.
     """
-    prefix = _claude_oauth_env_prefix() if invocation.adapter == "claude" else ""
+    prefix = _claude_oauth_env_prefix() if invocation.adapter == CliAdapter.CLAUDE else ""
+    # An invocation whose MCP config rides in the environment (opencode) would
+    # otherwise reach the operator's shell configured for nothing at all, and the
+    # agent would run the stage with no loregarden_* tools rather than fail loudly.
+    prefix += "".join(
+        f"{key}={shlex.quote(value)} " for key, value in sorted(invocation.env.items())
+    )
     command = prefix + " ".join(shlex.quote(token) for token in invocation.argv)
     if run_id is not None:
         base = f"{resolve_api_base_url()}/api/runs/{run_id}"
@@ -444,6 +477,84 @@ def _cursor_print_invocation(
     return CliInvocation(argv=argv, adapter="cursor", cwd=str(workspace_root))
 
 
+DEFAULT_OPENCODE_USER_PROMPT = (
+    "Execute the Loregarden stage task in the attached prompt file. "
+    "Work in the workspace directory and complete the stage deliverables."
+)
+
+
+def _opencode_invocation(
+    *,
+    prompt: str,
+    workspace_root: Path,
+    opencode_model: str = "",
+    opencode_effort: str = "",
+    orchestrated: bool = False,
+    read_only: bool = False,
+    prompt_file: Path | None = None,
+) -> CliInvocation:
+    """`opencode run` in JSON-event mode, for stage runs and one-shot chat alike.
+
+    ``--format json`` is opencode's stream-json equivalent: NDJSON events land on
+    stdout as tools fire, which is what keeps print mode's idle timeout from
+    treating a long turn as a hung process (see `_codex_invocation`).
+
+    The prompt goes over stdin rather than as the positional ``message``. A stage
+    prompt runs tens of KB, which is argv-length territory, and opencode reads
+    stdin when no message is given. ``prompt_file`` switches that to ``--file``
+    plus a short message, for a terminal handoff: the rendered command is a
+    single pasteable line with no stdin producer to lose.
+
+    ``--variant`` is opencode's effort control. Unlike `claude --effort`, a value
+    the selected model does not define is ignored rather than rejected, so it is
+    forwarded without gating on a per-model support table the way cursor's
+    bracket parameter must be.
+    """
+    argv = [
+        _bin("opencode", "LOREGARDEN_OPENCODE_BIN"),
+        "run",
+        "--format",
+        "json",
+        "--dir",
+        str(workspace_root),
+    ]
+    if opencode_model:
+        argv.extend(["--model", opencode_model])
+    if opencode_effort:
+        argv.extend(["--variant", opencode_effort])
+    # opencode's own permission prompts have no headless surface: unanswered,
+    # every write becomes a denial the agent reports as a failed stage. Read-only
+    # callers get the CLI's defaults instead, which is what "ask" means here.
+    if not read_only and permission_bypass_enabled():
+        argv.append("--dangerously-skip-permissions")
+    extra = os.environ.get("LOREGARDEN_OPENCODE_ARGS")
+    if extra:
+        argv[2:2] = shlex.split(extra)
+    env = mcp_cli_env(adapter="opencode", orchestrated=orchestrated)
+    if prompt_file is not None:
+        argv.extend(
+            [
+                "--file",
+                str(prompt_file),
+                os.environ.get("LOREGARDEN_OPENCODE_USER_PROMPT", DEFAULT_OPENCODE_USER_PROMPT),
+            ]
+        )
+        return CliInvocation(
+            argv=argv,
+            use_prompt_file=True,
+            adapter="opencode",
+            cwd=str(workspace_root),
+            env=env,
+        )
+    return CliInvocation(
+        argv=argv,
+        stdin_prompt=prompt,
+        adapter="opencode",
+        cwd=str(workspace_root),
+        env=env,
+    )
+
+
 def _local_invocation(*, agent_id: str, skill_name: str, prompt_file: Path) -> CliInvocation:
     return CliInvocation(
         argv=[
@@ -528,9 +639,11 @@ def resolve_cli_invocation(
     ticket_cursor_model: str = "",
     ticket_codex_model: str = "",
     ticket_lmstudio_model: str = "",
+    ticket_opencode_model: str = "",
     ticket_claude_effort: str = "",
     ticket_cursor_effort: str = "",
     ticket_lmstudio_effort: str = "",
+    ticket_opencode_effort: str = "",
     stage_model: str = "",
     agent_model: str = "",
     run_id: str = "",
@@ -562,6 +675,7 @@ def resolve_cli_invocation(
             cursor_model=ticket_cursor_model,
             codex_model=ticket_codex_model,
             lmstudio_model=ticket_lmstudio_model,
+            opencode_model=ticket_opencode_model,
         ),
         stage_model=stage_model if pins_apply else "",
         agent_model=agent_model if pins_apply else "",
@@ -574,17 +688,18 @@ def resolve_cli_invocation(
             claude_effort=ticket_claude_effort,
             cursor_effort=ticket_cursor_effort,
             lmstudio_effort=ticket_lmstudio_effort,
+            opencode_effort=ticket_opencode_effort,
         ),
     )
 
-    if selected == "local":
+    if selected == CliAdapter.LOCAL:
         return _local_invocation(
             agent_id=agent_id,
             skill_name=skill_name,
             prompt_file=prompt_file,
         )
 
-    if selected == "claude" and not permission_bypass_enabled():
+    if selected == CliAdapter.CLAUDE and not permission_bypass_enabled():
         return build_interactive_invocation(
             adapter=selected,
             db_session=db_session,
@@ -595,7 +710,7 @@ def resolve_cli_invocation(
             claude_effort=effort,
         )
 
-    if selected == "claude":
+    if selected == CliAdapter.CLAUDE:
         return _claude_print_invocation(
             prompt_file=prompt_file,
             workspace_root=workspace_root,
@@ -603,7 +718,7 @@ def resolve_cli_invocation(
             claude_effort=effort,
         )
 
-    if selected == "cursor":
+    if selected == CliAdapter.CURSOR:
         return _cursor_print_invocation(
             prompt=prompt,
             workspace_root=workspace_root,
@@ -611,7 +726,7 @@ def resolve_cli_invocation(
             orchestrated=True,
         )
 
-    if selected == "codex":
+    if selected == CliAdapter.CODEX:
         return _codex_invocation(
             prompt=prompt,
             workspace_root=workspace_root,
@@ -619,7 +734,7 @@ def resolve_cli_invocation(
             orchestrated=True,
         )
 
-    if selected == "lmstudio":
+    if selected == CliAdapter.LMSTUDIO:
         return _lmstudio_invocation(
             prompt_file=prompt_file,
             workspace_root=workspace_root,
@@ -631,7 +746,74 @@ def resolve_cli_invocation(
             granted_tools=granted_tools,
         )
 
+    if selected == CliAdapter.OPENCODE:
+        return _opencode_invocation(
+            prompt=prompt,
+            workspace_root=workspace_root,
+            opencode_model=model,
+            opencode_effort=effort,
+            orchestrated=True,
+        )
+
     raise ValueError(f"Unknown CLI adapter: {selected}")
+
+
+def _claude_triage_invocation(
+    *,
+    prompt_file: Path,
+    workspace_root: Path,
+    triage_user_prompt: str,
+    model: str,
+    effort: str,
+    read_only: bool,
+    extra_dirs: Sequence[Path | str],
+    stream_json: bool,
+) -> CliInvocation:
+    """Claude's one-shot chat invocation — see ``build_triage_invocation``.
+
+    Falls back to `haiku` rather than the workspace pin: a chat turn is short and
+    latency-visible, and the caller has not asked for stage-grade reasoning.
+    """
+    triage_model = os.environ.get("LOREGARDEN_TRIAGE_CLAUDE_MODEL", "").strip() or model or "haiku"
+    argv = [
+        _bin("claude", "LOREGARDEN_CLAUDE_BIN"),
+        "-p",
+        "--output-format",
+        "stream-json" if stream_json else "text",
+        "--permission-mode",
+        (
+            "plan"
+            if read_only
+            else os.environ.get("LOREGARDEN_TRIAGE_PERMISSION_MODE", "bypassPermissions")
+        ),
+        "--append-system-prompt-file",
+        str(prompt_file),
+        triage_user_prompt,
+    ]
+    for extra in extra_dirs:
+        argv.extend(["--add-dir", str(extra)])
+    argv.extend(
+        [
+            "--append-system-prompt-file",
+            str(prompt_file),
+            triage_user_prompt,
+        ]
+    )
+    if stream_json:
+        # `--verbose` is required alongside stream-json for `-p`, and partial
+        # messages are the whole point: without them a thinking block lands
+        # finished, which is not streaming.
+        argv[2:2] = ["--verbose", "--include-partial-messages"]
+    _append_model_flag(argv, triage_model)
+    _append_claude_effort_flag(argv, effort)
+    # Chat/studio oneshot — not a pipeline stage. Keep create_ticket open.
+    append_mcp_cli_args(argv, adapter="claude", orchestrated=False)
+    return CliInvocation(
+        argv=argv,
+        use_prompt_file=True,
+        adapter="claude",
+        cwd=str(workspace_root),
+    )
 
 
 def build_triage_invocation(
@@ -661,7 +843,9 @@ def build_triage_invocation(
     it works. It changes what stdout looks like, not what the turn returns —
     `extract_triage_reply` reads either. Only claude and cursor can express it;
     for any other adapter the flag is silently a no-op, which is why callers
-    treat streaming as a bonus rather than something to depend on.
+    treat streaming as a bonus rather than something to depend on. (opencode
+    ignores it by streaming NDJSON either way — its text mode is decorated for a
+    terminal, not for a parser.)
 
     ``run_id`` / ``granted_tools`` matter for LM Studio only: that runner has no
     native MCP, so the subprocess needs the control-plane endpoint + tool grant.
@@ -690,58 +874,26 @@ def build_triage_invocation(
         "LOREGARDEN_TRIAGE_USER_PROMPT", DEFAULT_TRIAGE_USER_PROMPT
     )
 
-    if selected == "local":
+    if selected == CliAdapter.LOCAL:
         return _local_invocation(
             agent_id=agent_id,
             skill_name=skill_name,
             prompt_file=prompt_file,
         )
 
-    if selected == "claude":
-        triage_model = (
-            os.environ.get("LOREGARDEN_TRIAGE_CLAUDE_MODEL", "").strip() or model or "haiku"
-        )
-        argv = [
-            _bin("claude", "LOREGARDEN_CLAUDE_BIN"),
-            "-p",
-            "--output-format",
-            "stream-json" if stream_json else "text",
-            "--permission-mode",
-            (
-                "plan"
-                if read_only
-                else os.environ.get("LOREGARDEN_TRIAGE_PERMISSION_MODE", "bypassPermissions")
-            ),
-            "--append-system-prompt-file",
-            str(prompt_file),
-            triage_user_prompt,
-        ]
-        for extra in extra_dirs:
-            argv.extend(["--add-dir", str(extra)])
-        argv.extend(
-            [
-                "--append-system-prompt-file",
-                str(prompt_file),
-                triage_user_prompt,
-            ]
-        )
-        if stream_json:
-            # `--verbose` is required alongside stream-json for `-p`, and
-            # partial messages are the whole point: without them a thinking
-            # block lands finished, which is not streaming.
-            argv[2:2] = ["--verbose", "--include-partial-messages"]
-        _append_model_flag(argv, triage_model)
-        _append_claude_effort_flag(argv, effort)
-        # Chat/studio oneshot — not a pipeline stage. Keep create_ticket open.
-        append_mcp_cli_args(argv, adapter="claude", orchestrated=False)
-        return CliInvocation(
-            argv=argv,
-            use_prompt_file=True,
-            adapter="claude",
-            cwd=str(workspace_root),
+    if selected == CliAdapter.CLAUDE:
+        return _claude_triage_invocation(
+            prompt_file=prompt_file,
+            workspace_root=workspace_root,
+            triage_user_prompt=triage_user_prompt,
+            model=model,
+            effort=effort,
+            read_only=read_only,
+            extra_dirs=extra_dirs,
+            stream_json=stream_json,
         )
 
-    if selected == "cursor":
+    if selected == CliAdapter.CURSOR:
         argv = [
             _bin("cursor-agent", "LOREGARDEN_CURSOR_BIN"),
             "agent",
@@ -772,7 +924,7 @@ def build_triage_invocation(
         append_mcp_cli_args(argv, adapter="cursor", orchestrated=False)
         return CliInvocation(argv=argv, adapter="cursor", cwd=str(workspace_root))
 
-    if selected == "codex":
+    if selected == CliAdapter.CODEX:
         invocation = _codex_invocation(
             prompt=prompt,
             workspace_root=workspace_root,
@@ -786,7 +938,7 @@ def build_triage_invocation(
         invocation.argv[2:2] = ["--sandbox", sandbox]
         return invocation
 
-    if selected == "lmstudio":
+    if selected == CliAdapter.LMSTUDIO:
         return _lmstudio_invocation(
             prompt_file=prompt_file,
             workspace_root=workspace_root,
@@ -796,6 +948,15 @@ def build_triage_invocation(
             run_id="" if read_only else run_id,
             workspace_slug=workspace_slug,
             granted_tools=[] if read_only else granted_tools,
+        )
+
+    if selected == CliAdapter.OPENCODE:
+        return _opencode_invocation(
+            prompt=f"{triage_user_prompt}\n\n{prompt}",
+            workspace_root=workspace_root,
+            opencode_model=model,
+            opencode_effort=effort,
+            read_only=read_only,
         )
 
     raise ValueError(f"Unknown CLI adapter for triage: {selected}")

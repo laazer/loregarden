@@ -59,26 +59,35 @@ export function runtimeSummaryLabel(
   if (adapterId === "lmstudio") {
     return runtime.lmstudio_model?.trim() || "LM Studio";
   }
+  if (adapterId === "opencode") {
+    return runtime.opencode_model?.trim() || "OpenCode";
+  }
 
   return adapterLabel(options, adapterId);
 }
 
 function providerNeedsModel(adapter: string): boolean {
-  return ["claude", "cursor", "codex", "lmstudio"].includes(adapter);
+  return ["claude", "cursor", "codex", "lmstudio", "opencode"].includes(adapter);
 }
 
-type EffortKey = "claude_effort" | "cursor_effort" | "lmstudio_effort";
+type EffortKey =
+  | "claude_effort"
+  | "cursor_effort"
+  | "lmstudio_effort"
+  | "opencode_effort";
 
 const EFFORT_FIELD: Record<string, EffortKey> = {
   claude: "claude_effort",
   cursor: "cursor_effort",
   lmstudio: "lmstudio_effort",
+  opencode: "opencode_effort",
 };
 
 function effortOptions(options: RuntimeOptions, adapter: string): RuntimeOption[] {
   if (adapter === "claude") return options.claude_efforts ?? [];
   if (adapter === "cursor") return options.cursor_efforts ?? [];
   if (adapter === "lmstudio") return options.lmstudio_efforts ?? [];
+  if (adapter === "opencode") return options.opencode_efforts ?? [];
   return [];
 }
 
@@ -272,6 +281,56 @@ export function WorkspaceRuntimeFields({
         </div>
       </div>
     );
+  } else if (adapter === "opencode") {
+    const ocOptions = options.opencode_models ?? [];
+    modelStep = (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {ocOptions.length > 1 ? (
+          <select
+            className="btn-secondary filter-select"
+            style={selectStyle}
+            aria-label="OpenCode model"
+            value={
+              ocOptions.some((opt) => opt.id === (runtime.opencode_model ?? ""))
+                ? (runtime.opencode_model ?? "")
+                : ""
+            }
+            disabled={disabled}
+            onChange={(e) =>
+              onChange({
+                ...runtime,
+                opencode_model: e.target.value,
+              })
+            }
+          >
+            {ocOptions.map((opt) => (
+              <option key={opt.id || "default"} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        {/* The catalogue depends on which providers OpenCode is authenticated
+            to, so a model the picker has not discovered is still valid to pin. */}
+        <input
+          className="btn-secondary"
+          style={{ ...selectStyle, boxSizing: "border-box" }}
+          value={runtime.opencode_model ?? ""}
+          placeholder={
+            ocOptions.length > 1
+              ? "Or type a provider/model id"
+              : "provider/model id (install OpenCode to discover)"
+          }
+          disabled={disabled}
+          onChange={(e) =>
+            onChange({
+              ...runtime,
+              opencode_model: e.target.value,
+            })
+          }
+        />
+      </div>
+    );
   } else if (adapter === "default") {
     modelStep = (
       <p className="modal-hint" style={{ margin: 0 }}>
@@ -376,9 +435,11 @@ export function runtimeFromWorkspace(workspace: WorkspaceSummary | undefined): W
     codex_model: workspace?.codex_model ?? "",
     lmstudio_base_url: workspace?.lmstudio_base_url ?? "",
     lmstudio_model: workspace?.lmstudio_model ?? "",
+    opencode_model: workspace?.opencode_model ?? "",
     claude_effort: workspace?.claude_effort ?? "",
     cursor_effort: workspace?.cursor_effort ?? "",
     lmstudio_effort: workspace?.lmstudio_effort ?? "",
+    opencode_effort: workspace?.opencode_effort ?? "",
   };
 }
 
@@ -390,8 +451,10 @@ export function runtimeSettingsEqual(a: WorkspaceRuntimeSettings, b: WorkspaceRu
     (a.codex_model ?? "") === (b.codex_model ?? "") &&
     (a.lmstudio_base_url ?? "") === (b.lmstudio_base_url ?? "") &&
     (a.lmstudio_model ?? "") === (b.lmstudio_model ?? "") &&
+    (a.opencode_model ?? "") === (b.opencode_model ?? "") &&
     (a.claude_effort ?? "") === (b.claude_effort ?? "") &&
     (a.cursor_effort ?? "") === (b.cursor_effort ?? "") &&
-    (a.lmstudio_effort ?? "") === (b.lmstudio_effort ?? "")
+    (a.lmstudio_effort ?? "") === (b.lmstudio_effort ?? "") &&
+    (a.opencode_effort ?? "") === (b.opencode_effort ?? "")
   );
 }

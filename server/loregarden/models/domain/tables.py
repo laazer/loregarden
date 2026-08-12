@@ -51,9 +51,11 @@ class Workspace(SQLModel, table=True):
     codex_model: str = ""
     lmstudio_base_url: str = ""
     lmstudio_model: str = ""
+    opencode_model: str = ""
     claude_effort: str = ""
     cursor_effort: str = ""
     lmstudio_effort: str = ""
+    opencode_effort: str = ""
     permission_allowlist_json: str = "[]"
     # Workspace-wide default; a ticket or any of its ancestors may override it.
     compatibility_posture: str = DEFAULT_COMPATIBILITY_POSTURE.value
