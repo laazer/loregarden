@@ -7,7 +7,19 @@ from loregarden.agents.executors.permission_bridge import (
     HOME_CHAT_STAGE_KEY,
     BridgeResult,
 )
-from loregarden.models.domain import AgentRun, RunStatus, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    OrchestrationRun,
+    OrchestrationRunStatus,
+    RunStatus,
+    Ticket,
+    TicketState,
+    Workspace,
+)
+from loregarden.services.baxter_chat_service import (
+    build_baxter_chat_prompt,
+    resolve_references,
+)
 from sqlmodel import Session, select
 
 
@@ -595,3 +607,184 @@ def test_home_chat_snapshot_surfaces_pending_approvals_and_awaiting_input(
     other = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{idle}").json()
     assert other["pending_approvals"] == []
     assert other["run_status"] == "idle"
+
+
+def _seeded_workspace(db_session: Session) -> Workspace:
+    return db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+
+
+def test_snapshot_rows_carry_both_ids(db_session: Session):
+    """An operator who pastes a ticket UUID must be able to match a snapshot row.
+
+    Rendering only ``external_id`` left Home chat answering "not in the active
+    ticket snapshot" about a ticket that was in the snapshot.
+    """
+    workspace = _seeded_workspace(db_session)
+    ticket = Ticket(
+        external_id="22-godot-sdf-blend-shell",
+        workspace_id=workspace.id,
+        title="SDF blend-shell spike",
+        state=TicketState.BLOCKED,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    prompt = build_baxter_chat_prompt(
+        workspace=workspace,
+        history=[],
+        latest_user_message="status?",
+        approvals=[],
+        tickets=[ticket],
+    )
+    assert "22-godot-sdf-blend-shell" in prompt
+    assert f"(id {ticket.id})" in prompt
+
+
+def test_resolve_references_finds_a_ticket_by_uuid(db_session: Session):
+    workspace = _seeded_workspace(db_session)
+    ticket = Ticket(
+        external_id="22-godot-sdf-blend-shell",
+        workspace_id=workspace.id,
+        title="SDF blend-shell spike",
+        state=TicketState.BLOCKED,
+        workflow_stage_key="implementation",
+        next_agent="engine_integration",
+        blocking_issues="Triage is currently running for this ticket",
+        state_locked=True,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    references = resolve_references(db_session, f"{ticket.id} is stuck blocked")
+    assert [t.id for t in references.tickets] == [ticket.id]
+
+    prompt = build_baxter_chat_prompt(
+        workspace=workspace,
+        history=[],
+        latest_user_message=f"{ticket.id} is stuck blocked",
+        approvals=[],
+        tickets=[],
+        references=references,
+    )
+    assert "## Resolved references" in prompt
+    assert "Triage is currently running for this ticket" in prompt
+    assert "locked: yes" in prompt
+    assert "next agent: engine_integration" in prompt
+
+
+def test_resolve_references_finds_a_ticket_by_external_id(db_session: Session):
+    workspace = _seeded_workspace(db_session)
+    ticket = Ticket(
+        external_id="22-godot-sdf-blend-shell",
+        workspace_id=workspace.id,
+        title="SDF blend-shell spike",
+        state=TicketState.BLOCKED,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    references = resolve_references(db_session, "what happened to 22-godot-sdf-blend-shell?")
+    assert [t.id for t in references.tickets] == [ticket.id]
+
+
+def test_resolve_references_crosses_workspaces(db_session: Session):
+    """A pasted id resolves wherever it lives — the snapshot's scope is not the lookup's."""
+    other = Workspace(slug="blobert", name="Blobert", repo_path="/tmp/blobert")
+    db_session.add(other)
+    db_session.commit()
+    ticket = Ticket(
+        external_id="22-elsewhere",
+        workspace_id=other.id,
+        title="Lives in another workspace",
+        state=TicketState.BLOCKED,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    references = resolve_references(db_session, ticket.id)
+    assert [t.id for t in references.tickets] == [ticket.id]
+    assert references.workspace_slugs[other.id] == "blobert"
+
+    prompt = build_baxter_chat_prompt(
+        workspace=_seeded_workspace(db_session),
+        history=[],
+        latest_user_message=ticket.id,
+        approvals=[],
+        tickets=[],
+        references=references,
+    )
+    assert "in workspace blobert" in prompt
+
+
+def test_resolve_references_finds_runs_by_code(db_session: Session):
+    workspace = _seeded_workspace(db_session)
+    ticket = Ticket(external_id="22-x", workspace_id=workspace.id, title="T")
+    db_session.add(ticket)
+    db_session.commit()
+    run = AgentRun(
+        run_code="run_5dc6e0",
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        agent_id="triage",
+        stage_key="triage",
+        status=RunStatus.SUCCEEDED,
+    )
+    orchestration = OrchestrationRun(
+        run_code="orch_e69072",
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        status=OrchestrationRunStatus.BLOCKED,
+        current_stage_key="implementation",
+        error_message="Triage is currently running for this ticket",
+    )
+    db_session.add(run)
+    db_session.add(orchestration)
+    db_session.commit()
+
+    references = resolve_references(db_session, "run_5dc6e0 then orch_e69072 blocked")
+    assert [r.run_code for r in references.agent_runs] == ["run_5dc6e0"]
+    assert [r.run_code for r in references.orchestration_runs] == ["orch_e69072"]
+
+    prompt = build_baxter_chat_prompt(
+        workspace=workspace,
+        history=[],
+        latest_user_message="run_5dc6e0 then orch_e69072 blocked",
+        approvals=[],
+        tickets=[],
+        references=references,
+    )
+    assert "agent run run_5dc6e0" in prompt
+    assert "orchestration orch_e69072" in prompt
+    assert "error: Triage is currently running for this ticket" in prompt
+
+
+def test_prose_alone_resolves_nothing(db_session: Session):
+    """Ordinary words must not turn every turn into a fan of lookups."""
+    references = resolve_references(db_session, "the triage agent seems to be stuck with it")
+    assert not references
+    prompt = build_baxter_chat_prompt(
+        workspace=_seeded_workspace(db_session),
+        history=[],
+        latest_user_message="the triage agent seems to be stuck with it",
+        approvals=[],
+        tickets=[],
+        references=references,
+    )
+    assert "## Resolved references" not in prompt
+
+
+def test_advisory_prompt_forbids_inventing_a_lookup(db_session: Session):
+    """Advisory Baxter answered a real UUID with a fabricated `rg` over paths that do not exist."""
+    prompt = build_baxter_chat_prompt(
+        workspace=_seeded_workspace(db_session),
+        history=[],
+        latest_user_message="look this up",
+        approvals=[],
+        tickets=[],
+        interactive=False,
+    )
+    assert "not in this workspace's files" in prompt
+    assert "Never grep, `rg`, `find`, or guess" in prompt
+    # Advisory is read-only, not toolless: codex/cursor still get Loregarden MCP,
+    # so the prompt must not tell them they have no lookup.
+    assert "stay available on this read-only turn" in prompt
