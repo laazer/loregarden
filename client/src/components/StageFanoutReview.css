@@ -1,0 +1,174 @@
+.fanout-review {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.fanout-review__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fanout-review__title {
+  display: block;
+  font-size: 13px;
+  color: var(--text, #e6e8ec);
+}
+
+.fanout-review__hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-dim, #8b8f98);
+}
+
+.fanout-review__error {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--danger, #d9534f);
+  border-radius: 6px;
+  color: var(--danger, #d9534f);
+  font-size: 12px;
+}
+
+/* A row, not a grid: the columns are meant to be read against each other, and
+   a wrapped third column is no longer beside the first two. */
+.fanout-review__columns {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.fanout-attempt {
+  display: flex;
+  flex: 0 0 clamp(280px, 32%, 460px);
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border, #23252b);
+  border-radius: 8px;
+  background: var(--panel, #16181d);
+}
+
+.fanout-attempt.is-winner {
+  border-color: var(--success, #4caf82);
+}
+
+.fanout-attempt__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fanout-attempt__name {
+  font-size: 13px;
+  color: var(--text, #e6e8ec);
+}
+
+.fanout-attempt__status {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim, #8b8f98);
+}
+
+.fanout-attempt__status.is-succeeded,
+.fanout-attempt__status.is-promoted {
+  color: var(--success, #4caf82);
+}
+
+.fanout-attempt__status.is-failed {
+  color: var(--danger, #d9534f);
+}
+
+.fanout-attempt__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-dim, #8b8f98);
+}
+
+.fanout-attempt__meta code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fanout-attempt__failure {
+  margin: 0;
+  font-size: 11px;
+  color: var(--danger, #d9534f);
+}
+
+.fanout-attempt__files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fanout-attempt__file {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text, #e6e8ec);
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fanout-attempt__file:hover,
+.fanout-attempt__file.is-open {
+  background: var(--panel-2, #1b1e24);
+}
+
+.fanout-attempt__file-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fanout-attempt__added {
+  color: var(--success, #4caf82);
+}
+
+.fanout-attempt__removed {
+  color: var(--danger, #d9534f);
+}
+
+.fanout-attempt__empty {
+  padding: 4px 6px;
+  font-size: 11px;
+  color: var(--text-dim, #8b8f98);
+}
+
+.fanout-attempt__diff {
+  max-height: 420px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--panel-2, #1b1e24);
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.fanout-attempt__promote {
+  align-self: flex-start;
+}

@@ -4,11 +4,29 @@ from __future__ import annotations
 
 import json
 import subprocess
+from pathlib import Path
 
 from loregarden.models.domain import Artifact, Ticket, Workspace
-from loregarden.services.git_subprocess import scrubbed_git_env
+from loregarden.services.git_subprocess import run_git, scrubbed_git_env
+from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
+
+
+def run_gh(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+    """Shell out to `gh` from `cwd`, with git's repo bindings scrubbed.
+
+    `gh` picks its target repository by shelling out to git, so an inherited
+    GIT_DIR would open the PR against whatever repo the parent was bound to —
+    and `cwd` decides which worktree's branch it reads.
+    """
+    return subprocess.run(
+        ["gh", *args],
+        cwd=cwd,
+        env=scrubbed_git_env(),
+        capture_output=True,
+        text=True,
+    )
 
 
 def _build_pr_body(ticket: Ticket) -> str:
@@ -40,35 +58,33 @@ def create_ticket_pull_request(session: Session, ticket: Ticket) -> dict:
     if not workspace:
         raise ValueError("Workspace not found")
 
-    repo_root = resolve_workspace_root(workspace)
-    if not (repo_root / ".git").exists():
+    if not (resolve_workspace_root(workspace) / ".git").exists():
         raise ValueError("Workspace repo is not a git repository")
 
     branch = ticket.branch.strip()
     if not branch:
         raise ValueError("Set a branch on the ticket before opening a pull request")
 
+    # The ticket's commits are in its worktree, and the shared checkout is not
+    # even on its branch any more. Pushing and opening the PR from anywhere
+    # else publishes whatever that other tree happens to hold.
+    repo_root = resolve_ticket_root(session, ticket, workspace)
+
+    push = run_git(
+        ["push", "-u", "origin", branch],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    if push.returncode != 0:
+        raise ValueError((push.stderr or push.stdout or "git push failed").strip())
+
     title = f"{ticket.external_id}: {ticket.title}"
     body = _build_pr_body(ticket)
 
-    result = subprocess.run(
-        [
-            "gh",
-            "pr",
-            "create",
-            "--title",
-            title,
-            "--body",
-            body,
-            "--head",
-            branch,
-        ],
+    result = run_gh(
+        ["pr", "create", "--title", title, "--body", body, "--head", branch],
         cwd=repo_root,
-        # `gh` picks its target repository by shelling out to git, so an
-        # inherited GIT_DIR would open this PR against the wrong repo.
-        env=scrubbed_git_env(),
-        capture_output=True,
-        text=True,
     )
     if result.returncode != 0:
         stderr = (result.stderr or result.stdout or "gh pr create failed").strip()

@@ -33,6 +33,7 @@ from loregarden.services.gate_observability import (
     run_gates_detail,
 )
 from loregarden.services.gate_runner import run_gate_autofix, run_transition_gates
+from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_commit_push_service import commit_paths
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -67,8 +68,10 @@ from loregarden.services.subtree_auto_run import (
     ticket_workflow_complete,
 )
 from loregarden.services.ticket_dependencies import TicketDependencyService
+from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.workflow_routing import apply_stage_route, previous_stage_key
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
+from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
 
@@ -618,6 +621,7 @@ class BuiltinOrchestrator:
         # "basic problems" (imports, formatting, trivial lint) with no agent run.
         if profile.gates.autofix_commands:
             autofix = run_gate_autofix(
+                self.session,
                 profile,
                 workspace,
                 ticket,
@@ -842,10 +846,6 @@ class BuiltinOrchestrator:
             self.session.refresh(ticket)
             return True, ""
 
-        branch_error = self._checkout_branch_for_parallel_stage(ticket, stage_key)
-        if branch_error:
-            return False, branch_error
-
         runs = self._start_parallel_stage_runs(
             ticket,
             orch_run,
@@ -855,6 +855,9 @@ class BuiltinOrchestrator:
             auto_approve=auto_approve,
             timeout_seconds=timeout_seconds,
         )
+        tree_error = self._prepare_tree_for_parallel_stage(ticket, stage_key, runs)
+        if tree_error:
+            return False, tree_error
         failures, reports, transient = _run_and_collect_parallel_results(runs)
 
         for agent_id, report in reports:
@@ -910,25 +913,31 @@ class BuiltinOrchestrator:
                 incomplete.append(spec)
         return incomplete
 
-    def _checkout_branch_for_parallel_stage(self, ticket: Ticket, stage_key: str) -> str:
-        """Ensure the ticket's branch is checked out before spawning parallel agents.
+    def _prepare_tree_for_parallel_stage(
+        self, ticket: Ticket, stage_key: str, runs: list[AgentRun]
+    ) -> str:
+        """Have the tree the members will share ready before any of them start.
 
-        Returns an error message (and finalizes the stage as BLOCKED) on failure,
-        else an empty string.
+        Resolved once, here, rather than by each member: the workers run
+        concurrently and would otherwise race to create the ticket's worktree
+        and end up in three different trees. Only when the worktree policy is
+        off does this fall back to checking the branch out in the shared tree.
+
+        Returns an error message (and finalizes the stage as BLOCKED) on
+        failure, else an empty string.
         """
         workspace = self.session.get(Workspace, ticket.workspace_id)
-        if not workspace:
+        if not workspace or not runs:
             return ""
 
-        from loregarden.services.git_branch import ensure_ticket_branch
-        from loregarden.services.workspace_paths import resolve_workspace_root
-
-        repo_root = resolve_workspace_root(workspace)
-        if not repo_root.is_dir():
+        workspace_root = resolve_workspace_root(workspace)
+        if not workspace_root.is_dir():
             return ""
 
         try:
-            ensure_ticket_branch(repo_root, ticket)
+            if resolve_execution_root(self.session, runs[0], ticket, workspace) != workspace_root:
+                return ""
+            ensure_ticket_branch(workspace_root, ticket)
         except (ValueError, subprocess.CalledProcessError) as exc:
             message = f"Failed to checkout branch: {exc}"
             self.orch.finalize_stage(

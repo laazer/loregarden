@@ -13,6 +13,7 @@ from typing import Any
 
 from loregarden.models.domain import AgentRun, Artifact, Ticket, Workspace
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -543,9 +544,14 @@ def _artifact_from_git_diff(
     }
 
 
-def capture_git_diff(workspace: Workspace) -> dict[str, Any] | None:
-    """Return diff artifact payload from the workspace git checkout."""
-    cwd = resolve_workspace_root(workspace)
+def capture_git_diff(workspace: Workspace, repo_root: Path | None = None) -> dict[str, Any] | None:
+    """Return the diff artifact payload from `repo_root`, or the shared checkout.
+
+    Ticket-scoped callers pass the ticket's worktree: its changes are not in the
+    shared checkout at all, so the Diff tab would show whatever else happened to
+    be dirty there — or nothing.
+    """
+    cwd = repo_root or resolve_workspace_root(workspace)
     if not (cwd / ".git").exists():
         return None
 
@@ -964,7 +970,7 @@ def refresh_execution_artifacts(
     workspace: Workspace,
 ) -> None:
     """Update diff/test artifacts after an agent run completes."""
-    diff = capture_git_diff(workspace)
+    diff = capture_git_diff(workspace, resolve_ticket_root(session, ticket, workspace))
     if diff and diff.get("sections"):
         _upsert_artifact(
             session,
@@ -1013,7 +1019,7 @@ def ensure_diff_artifact(
         if _diff_artifact_is_valid(stored):
             return stored
 
-    diff = capture_git_diff(workspace)
+    diff = capture_git_diff(workspace, resolve_ticket_root(session, ticket, workspace))
     if diff and diff.get("sections"):
         _upsert_artifact(
             session,

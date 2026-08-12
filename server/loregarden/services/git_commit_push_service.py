@@ -8,6 +8,7 @@ from pathlib import Path
 from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
 from loregarden.services.git_subprocess import run_git
+from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -79,8 +80,23 @@ def commit_paths(session: Session, ticket: Ticket, message: str, paths: Iterable
     workspace = session.get(Workspace, ticket.workspace_id)
     if not workspace:
         return False
-    repo_root = resolve_workspace_root(workspace)
-    if not (repo_root / ".git").exists():
+    if not (resolve_workspace_root(workspace) / ".git").exists():
+        return False
+    # The stage wrote these paths in the ticket's worktree. Staging them in the
+    # shared checkout would match nothing and silently commit no work.
+    repo_root = resolve_ticket_root(session, ticket, workspace)
+    return commit_paths_in(repo_root, message, wanted)
+
+
+def commit_paths_in(repo_root: Path, message: str, paths: Iterable[str]) -> bool:
+    """`commit_paths` against an explicit tree, for callers that know theirs.
+
+    A fan-out attempt's tree is one of those: it belongs to the attempt, not to
+    the ticket, so resolving the ticket's worktree would commit in the wrong
+    place.
+    """
+    wanted = sorted({path for path in paths if path})
+    if not wanted:
         return False
 
     # Only stage what is still dirty; a path recorded earlier may have been
@@ -125,9 +141,13 @@ def commit_and_push_ticket_branch(session: Session, ticket: Ticket) -> dict:
     if not workspace:
         raise ValueError("Workspace not found")
 
-    repo_root = resolve_workspace_root(workspace)
-    if not (repo_root / ".git").exists():
+    if not (resolve_workspace_root(workspace) / ".git").exists():
         raise ValueError("Workspace repo is not a git repository")
+
+    # The ticket's tree, which is its worktree once it has run: `git add -A` in
+    # the shared checkout would commit whatever else is sitting there and miss
+    # everything the stages wrote.
+    repo_root = resolve_ticket_root(session, ticket, workspace)
 
     branch = resolve_ticket_branch(ticket)
     validate_branch_name(branch)

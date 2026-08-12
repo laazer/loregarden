@@ -22,6 +22,7 @@ _ENGINE_BINDINGS = (
     "loregarden.services.chat_thinking.engine",
     "loregarden.api.chat_turn_events.engine",
     "loregarden.services.builtin_orchestrator.engine",
+    "loregarden.services.stage_fanout_service.engine",
     "loregarden.services.run_cancellation.engine",
     "loregarden.agents.executors.permission_bridge.engine",
     "loregarden.services.triage_run_service.engine",

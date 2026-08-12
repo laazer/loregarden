@@ -238,7 +238,7 @@ def test_strip_ansi_removes_escape_codes():
     assert strip_ansi("\x1b[31merror\x1b[0m: bad") == "error: bad"
 
 
-def test_run_gate_autofix_runs_commands(tmp_path):
+def test_run_gate_autofix_runs_commands(session, tmp_path):
     ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
     ticket = Ticket(id="tid", external_id="M57-07", workspace_id="ws", title="Test")
     profile = OrchestrationProfile(
@@ -250,6 +250,7 @@ def test_run_gate_autofix_runs_commands(tmp_path):
     )
 
     result = run_gate_autofix(
+        session,
         profile,
         ws,
         ticket,
@@ -261,12 +262,13 @@ def test_run_gate_autofix_runs_commands(tmp_path):
     assert (tmp_path / "fixed.txt").is_file()
 
 
-def test_run_gate_autofix_noop_without_commands(tmp_path):
+def test_run_gate_autofix_noop_without_commands(session, tmp_path):
     ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
     ticket = Ticket(id="tid", external_id="M57-08", workspace_id="ws", title="Test")
     profile = OrchestrationProfile(slug="demo", gates=GatesConfig(enabled=True))
 
     result = run_gate_autofix(
+        session,
         profile,
         ws,
         ticket,

@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ApiError, api, API_BASE, type StageStatus, type TicketDetail, type TicketImportPreviewResponse, type TicketTreeNode, type WorkItemType, type WorkflowStageView, type WorkflowReassignmentPreview } from "../api/client";
+import { ApiError, api, API_BASE, type StageStatus, type TicketDetail, type TicketImportPreviewResponse, type TicketTreeNode, type WorkItemType, type WorkflowReassignmentPreview } from "../api/client";
+import { canRunStage } from "../lib/stageRunPolicy";
+import { DashboardActiveTickets } from "../components/DashboardActiveTickets";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
 import { PrioBars } from "../components/PrioBars";
 import { TicketPaneFilters } from "../components/TicketPaneFilters";
@@ -97,52 +99,6 @@ function treeHasRunningWorkflow(nodes: TicketTreeNode[]): boolean {
     if (treeHasRunningWorkflow(n.children)) return true;
   }
   return false;
-}
-
-function canRunStage(
-  ticket: TicketDetail,
-  stage: WorkflowStageView,
-): { allowed: boolean; reason: string } {
-  if (stage.key === "done") {
-    if (ticket.state === "done") {
-      return { allowed: false, reason: "Ticket already complete" };
-    }
-    if (stage.status === "done") {
-      return { allowed: false, reason: "Ticket already complete" };
-    }
-  }
-  if (stage.status === "wont_do") {
-    return { allowed: false, reason: "Stage marked won't do" };
-  }
-  if (ticket.state === "done" || ticket.state === "wont_do") {
-    return { allowed: false, reason: `Ticket is ${STATE_LABELS[ticket.state]}` };
-  }
-  if (ticket.workflow_stage_status === "awaiting") {
-    return { allowed: false, reason: "Resolve approval before running another stage" };
-  }
-  if (
-    ticket.workflow_stage_status === "running" &&
-    stage.key !== ticket.workflow_stage_key
-  ) {
-    return { allowed: false, reason: "Current stage is still running" };
-  }
-  if (ticket.state === "blocked") {
-    const retryable =
-      stage.status === "blocked" ||
-      stage.status === "done" ||
-      (stage.key === ticket.workflow_stage_key &&
-        (ticket.workflow_stage_status === "blocked" || ticket.workflow_stage_status === "running"));
-    if (!retryable) {
-      return { allowed: false, reason: "Resolve the blocked stage before running another" };
-    }
-  }
-  const verb =
-    stage.key === "done"
-      ? "Complete"
-      : stage.status === "done" || stage.status === "blocked"
-        ? "Re-run"
-        : "Run";
-  return { allowed: true, reason: `${verb} ${stage.name}` };
 }
 
 
@@ -955,6 +911,9 @@ export function Dashboard() {
 
   return (
     <div className="screen-view screen-view--ide">
+      {/* Three tickets can hold slots at once now that each runs in its own
+          worktree; a page built around one selection would show only one. */}
+      <DashboardActiveTickets selectedTicketId={sel?.id} onSelect={selectTicket} />
       <div className="main-panes">
         {showSidebar && (
           <aside

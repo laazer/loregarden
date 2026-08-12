@@ -50,9 +50,9 @@ from loregarden.services.run_log_stream import RunLogStreamer
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
 from loregarden.services.studio_service import build_studio_prompt_sections
 from loregarden.services.subprocess_lines import SubprocessLineReader
+from loregarden.services.ticket_worktree import resolve_execution_root, resolve_ticket_root
 from loregarden.services.workspace_paths import (
     resolve_agent_context_dir,
-    resolve_run_root,
     resolve_workspace_root,
 )
 from loregarden.skills.registry import (
@@ -135,12 +135,13 @@ class CliAgentExecutor:
                 advance_workflow=advance_workflow,
             )
 
-        # A run with a worktree executes inside it. Without this the worktree
-        # was created, recorded, and then ignored — every run, parallel or not,
-        # ran in the one shared checkout and fought over its working tree.
-        # A worktree whose directory has gone falls back to the checkout above,
-        # so this is always a real directory.
-        repo_root = resolve_run_root(self.session, run, workspace_root)
+        # The ticket's own worktree, cut on its first stage and reused by every
+        # later one. Without this every run, parallel or not, executed in the
+        # one shared checkout and fought over its working tree — and a crash
+        # mid-run left that shared tree on a half-applied ticket branch.
+        # A worktree that cannot be cut falls back to the checkout above, so
+        # this is always a real directory.
+        repo_root = resolve_execution_root(self.session, run, ticket, workspace)
         in_worktree = repo_root != workspace_root
 
         # A worktree is already on its own branch, created with it. Running
@@ -341,14 +342,18 @@ class CliAgentExecutor:
         if not workspace:
             raise ValueError(f"Unknown workspace for ticket: {ticket.id}")
 
-        repo_root = resolve_workspace_root(workspace)
+        workspace_root = resolve_workspace_root(workspace)
         agent_context_dir = resolve_agent_context_dir(workspace)
-        if not repo_root.is_dir():
-            raise ValueError(f"Workspace repo path does not exist: {repo_root}")
+        if not workspace_root.is_dir():
+            raise ValueError(f"Workspace repo path does not exist: {workspace_root}")
 
-        from loregarden.services.git_branch import ensure_ticket_branch
-
-        ensure_ticket_branch(repo_root, ticket)
+        # The handed-off terminal gets the same tree the supervised run would:
+        # the ticket's worktree, already on its branch. Checking the branch out
+        # in the shared tree instead is what left it half-applied when the
+        # handoff was abandoned.
+        repo_root = resolve_execution_root(self.session, run, ticket, workspace)
+        if repo_root == workspace_root:
+            ensure_ticket_branch(repo_root, ticket)
 
         stage_def = self._resolve_stage_def(ticket, run)
         prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace, stage_def)
@@ -601,6 +606,10 @@ class CliAgentExecutor:
         workspace: Workspace,
         stage_def: WorkflowStageDef | None,
     ) -> str:
+        # The tree this run will work in — the ticket's worktree once it has
+        # one. A prompt built from the shared checkout would describe a repo
+        # without any of the ticket's own work in it.
+        repo_root = resolve_ticket_root(self.session, ticket, workspace)
         # Role body comes from the agent config (DB-backed studio agent, or the
         # registry fallback which loads it in get_agent). The executor no longer
         # reads role_file from the workspace filesystem — the DB is authoritative.
@@ -639,7 +648,7 @@ class CliAgentExecutor:
         is_synthesis = skill_name == SYNTHESIS_SKILL
         full_suite_note = self._full_suite_producer_note(skill_name)
         evidence_ledger = build_evidence_ledger(
-            self.session, ticket, resolve_workspace_root(workspace), is_verify=is_verify
+            self.session, ticket, repo_root, is_verify=is_verify
         )
 
         # Ordered prompt blocks. Add a section by inserting a block here rather
@@ -694,7 +703,7 @@ class CliAgentExecutor:
             # is told its job. The implementers run on cursor, which does not
             # pick up CLAUDE.md the way Claude Code does, so without this they
             # rediscover the layout by grepping on every run.
-            _titled_block("## Repository map", render_code_map(resolve_workspace_root(workspace))),
+            _titled_block("## Repository map", render_code_map(repo_root)),
             skill_prompt_block(skill_name, skill_body),
             _titled_block("## Agent Role", role_body),
             _raw_block(build_studio_prompt_sections(agent)),
