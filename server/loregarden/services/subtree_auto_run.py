@@ -22,6 +22,7 @@ from loregarden.models.domain import (
 from loregarden.services.orchestration import ApprovalService, OrchestrationService
 from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.studio_routing import is_terminal_stage
+from loregarden.services.ticket_rollup import reconcile_ancestors
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session, select
 
@@ -67,6 +68,9 @@ def mark_aggregator_done(session: Session, orch: OrchestrationService, ticket: T
     ticket.last_updated_by = "orchestrator"
     session.add(ticket)
     session.commit()
+    # This parent is itself a child: finishing a feature can finish the
+    # milestone above it, and nothing else would notice.
+    reconcile_ancestors(session, ticket)
 
 
 class SubtreeBudget:

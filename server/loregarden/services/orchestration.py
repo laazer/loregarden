@@ -38,6 +38,7 @@ from loregarden.services.run_completion import (
 from loregarden.services.run_log_stream import bootstrap_run_log
 from loregarden.services.stage_retry_budget import clear_stage_dispatches
 from loregarden.services.studio_routing import find_terminal_stage, is_terminal_stage
+from loregarden.services.ticket_rollup import reconcile_ancestors
 from loregarden.services.ticket_tags import serialize_tags
 from loregarden.services.triage_question_log import (
     record_home_chat_question_exchange,
@@ -263,6 +264,12 @@ class OrchestrationService:
             self.session.add(ticket)
             self.session.add(instance)
             self.session.commit()
+            if before[0] != after[0]:
+                # This ticket's state moved, so every parent above it is now a
+                # summary of something that changed. Hooked here because this is
+                # the widest point an orchestrated state change passes through;
+                # the startup sweep covers whatever still slips past it.
+                reconcile_ancestors(self.session, ticket)
         return ticket
 
     def build_stage_views(self, ticket: Ticket) -> list[WorkflowStageView]:
@@ -370,6 +377,9 @@ class OrchestrationService:
         # Abandoning or finishing a ticket retires its tree too; otherwise the
         # directory and its branch checkout outlive every reason they existed.
         release_ticket_worktree(self.session, ticket)
+        # Closing the last open child finishes its parent, and a human closing
+        # it by hand is no different from an agent doing so.
+        reconcile_ancestors(self.session, ticket)
         event_bus.publish(
             self.session,
             EventType.TICKET_STATE_CHANGED,
