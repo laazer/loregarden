@@ -34,15 +34,13 @@ from __future__ import annotations
 import logging
 
 from loregarden.models.domain import Ticket, TicketState
+from loregarden.services.ticket_state_service import derive
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
 #: A child in one of these has nothing left to contribute to its parent.
 _RESOLVED = (TicketState.DONE, TicketState.WONT_DO)
-
-#: A parent this module may write to. Everything else is somebody's decision.
-_WRITABLE = (TicketState.BACKLOG, TicketState.IN_PROGRESS, TicketState.BLOCKED, TicketState.DONE)
 
 
 def derive_parent_state(child_states: list[TicketState]) -> TicketState | None:
@@ -75,24 +73,12 @@ def reconcile_parent(session: Session, parent: Ticket) -> bool:
 
     Does not commit — callers batch this with whatever else they are writing.
     """
-    if parent.state_locked or parent.state not in _WRITABLE:
-        return False
     target = derive_parent_state(_child_states(session, parent.id))
-    if target is None or target == parent.state:
+    if target is None:
         return False
-
-    logger.info(
-        "Rolling up ticket %s: %s -> %s (from %d child ticket(s))",
-        parent.external_id or parent.id,
-        parent.state.value,
-        target.value,
-        len(_child_states(session, parent.id)),
-    )
-    parent.state = target
-    parent.revision += 1
-    parent.last_updated_by = "rollup"
-    session.add(parent)
-    return True
+    # `derive` owns the state_locked / wont_do guards and the bookkeeping; a
+    # parent's state is a function of its children, not a move anyone chose.
+    return derive(session, parent, target, actor="rollup")
 
 
 def reconcile_ancestors(session: Session, ticket: Ticket) -> list[Ticket]:

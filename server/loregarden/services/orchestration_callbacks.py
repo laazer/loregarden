@@ -27,6 +27,7 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
+from loregarden.services.ticket_state_service import choose
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from loregarden.services.worktree_lifecycle import release_ticket_worktree
@@ -437,7 +438,8 @@ class OrchestrationCallbackService:
         if instance and stages and key:
             set_stage_status(ticket, instance, stages, key, StageStatus.BLOCKED)
             self.session.add(instance)
-        ticket.state = TicketState.BLOCKED
+        # Chosen, not derived: something decided this ticket cannot proceed.
+        choose(self.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
         ticket.blocking_issues = record_blocking_issue(
             self.session,
             ticket,
@@ -446,8 +448,6 @@ class OrchestrationCallbackService:
             message=message,
         )
         ticket.next_status = "Blocked"
-        ticket.revision += 1
-        ticket.last_updated_by = "orchestrator"
         if key:
             orch_run.current_stage_key = key
         self.session.add(ticket)

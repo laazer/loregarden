@@ -23,6 +23,7 @@ from loregarden.services.orchestration import ApprovalService, OrchestrationServ
 from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.studio_routing import is_terminal_stage
 from loregarden.services.ticket_rollup import reconcile_ancestors
+from loregarden.services.ticket_state_service import choose
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session, select
 
@@ -61,11 +62,9 @@ def mark_aggregator_done(session: Session, orch: OrchestrationService, ticket: T
             if stage_map.get(stage.key) not in (StageStatus.DONE, StageStatus.WONT_DO):
                 set_stage_status(ticket, instance, stages, stage.key, StageStatus.WONT_DO)
         session.add(instance)
-    ticket.state = TicketState.DONE
+    choose(session, ticket, TicketState.DONE, actor="orchestrator", emit=False)
     ticket.state_locked = True
     ticket.blocking_issues = ""
-    ticket.revision += 1
-    ticket.last_updated_by = "orchestrator"
     session.add(ticket)
     session.commit()
     # This parent is itself a child: finishing a feature can finish the

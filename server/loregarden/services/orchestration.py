@@ -41,6 +41,7 @@ from loregarden.services.scheduling import schedule_orchestration
 from loregarden.services.stage_retry_budget import clear_stage_dispatches
 from loregarden.services.studio_routing import find_terminal_stage, is_terminal_stage
 from loregarden.services.ticket_rollup import reconcile_ancestors
+from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_tags import serialize_tags
 from loregarden.services.triage_question_log import (
     record_home_chat_question_exchange,
@@ -286,20 +287,10 @@ class OrchestrationService:
         return views
 
     def start_ticket(self, ticket: Ticket) -> Ticket:
-        result = StateMachine.can_transition_ticket(ticket.state, TicketState.IN_PROGRESS)
-        if not result.ok:
-            raise ValueError(result.message)
-        ticket.state = TicketState.IN_PROGRESS
+        choose(self.session, ticket, TicketState.IN_PROGRESS, actor="human")
         ticket.updated_at = datetime.now(timezone.utc)
         self.session.add(ticket)
         self.session.commit()
-        event_bus.publish(
-            self.session,
-            EventType.TICKET_STATE_CHANGED,
-            workspace_id=ticket.workspace_id,
-            ticket_id=ticket.id,
-            payload={"state": ticket.state.value},
-        )
         return ticket
 
     def update_ticket_manual(self, ticket: Ticket, body: UpdateTicketRequest) -> Ticket:
@@ -322,9 +313,9 @@ class OrchestrationService:
             ticket.state_locked = True
 
         if body.state is not None:
-            ticket.state = body.state
-            ticket.revision += 1
-            ticket.last_updated_by = "human"
+            # The one writer that took any value from the API and wrote it
+            # unchecked. `choose` validates it as a move somebody decided on.
+            choose(self.session, ticket, body.state, actor="human", emit=False)
             if body.state == TicketState.WONT_DO:
                 ticket.state_locked = True
 
@@ -403,7 +394,7 @@ class OrchestrationService:
         if "retry budget" in (ticket.blocking_issues or "").lower():
             ticket.blocking_issues = ""
         if ticket.state == TicketState.BLOCKED and not ticket.state_locked:
-            ticket.state = TicketState.IN_PROGRESS
+            choose(self.session, ticket, TicketState.IN_PROGRESS, actor="human", emit=False)
             ticket.next_status = ""
 
     def _apply_manual_stage_updates(
