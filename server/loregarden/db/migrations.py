@@ -26,6 +26,7 @@ from loregarden.db.migration_utils import (
     table_exists,
 )
 from loregarden.db.migrations_composer import m_composer_commands
+from loregarden.db.migrations_external_harness import m_external_harness_columns
 from loregarden.db.migrations_handoffs import m_backfill_handoff_artifacts
 from loregarden.db.migrations_mcp import (
     m_mcp_server_health,
@@ -1426,6 +1427,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0075_composer_commands", m_composer_commands),
     ("0076_worktree_ticket_id", _m_worktree_ticket_id),
     ("0077_workspace_opencode_columns", _m_workspace_opencode_columns),
+    ("0078_external_harness_columns", m_external_harness_columns),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

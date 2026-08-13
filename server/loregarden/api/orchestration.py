@@ -44,6 +44,7 @@ def _run_view(run: OrchestrationRun) -> OrchestrationRunView:
         ticket_id=run.ticket_id,
         driver=run.driver,
         profile_slug=run.profile_slug,
+        external_harness=run.external_harness,
         status=run.status,
         current_stage_key=run.current_stage_key,
         error_message=run.error_message,

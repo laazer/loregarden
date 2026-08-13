@@ -171,6 +171,12 @@ def fail_interrupted_runs(
     )
     if ticket_id:
         query = query.where(AgentRun.ticket_id == ticket_id)
+    else:
+        # Same reasoning as fail_interrupted_orchestration_runs: a stage checked
+        # out to an outside harness is not orphaned by this process restarting.
+        # A ticket-scoped reap still claims it — that call is a deliberate
+        # "start this stage again", which does supersede whoever held it.
+        query = query.where(col(AgentRun.external_harness).is_(None))
     if stage_key:
         query = query.where(AgentRun.stage_key == stage_key)
     if exclude_run_id:
@@ -265,7 +271,12 @@ def fail_interrupted_orchestration_runs(
     already fails the orphaned AgentRun beneath it; this does the same for the parent.
     """
     query = select(OrchestrationRun).where(
-        OrchestrationRun.status == OrchestrationRunStatus.RUNNING
+        OrchestrationRun.status == OrchestrationRunStatus.RUNNING,
+        # An external-harness run has no process here to be orphaned by a reload:
+        # it lives in someone's own terminal, which is the reason to use one.
+        # Failing it on startup would end the run mid-ticket every time this
+        # server restarted. Abandoned ones are cancelled by the operator.
+        col(OrchestrationRun.external_harness).is_(None),
     )
     if ticket_id:
         query = query.where(OrchestrationRun.ticket_id == ticket_id)

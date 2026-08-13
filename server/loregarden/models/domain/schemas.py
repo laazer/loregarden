@@ -5,8 +5,10 @@ from typing import Any
 
 from loregarden.models.domain.enums import (
     EventType,
+    ExternalHarness,
     OrchestrationDriver,
     OrchestrationRunStatus,
+    RunStatus,
     StageStatus,
     TicketActivity,
     TicketState,
@@ -307,6 +309,56 @@ class StartOrchestrationRequest(SQLModel):
     slot_number: int | None = None
 
 
+class ExternalHarnessPromptRequest(SQLModel):
+    """Which outside harness the copied ticket prompt is being written for."""
+
+    harness: ExternalHarness
+
+
+class ExternalHarnessPromptView(SQLModel):
+    harness: ExternalHarness
+    ticket_id: str
+    external_id: str
+    workspace_slug: str
+    prompt: str
+
+
+class ExternalStageView(SQLModel):
+    """A stage checked out to an external harness, with the prompt to run it.
+
+    ``agent_run_id`` is empty for a stage that runs no agent — a human approval
+    gate, or the terminal stage that finalized the workflow. ``message`` says
+    which, so the harness stops instead of inventing work.
+    """
+
+    agent_run_id: str = ""
+    run_code: str = ""
+    stage_key: str = ""
+    stage_name: str = ""
+    agent_id: str = ""
+    skill_name: str = ""
+    prompt: str = ""
+    repo_path: str = ""
+    started_at: datetime | None = None
+    message: str = ""
+
+
+class ExternalStageResultView(SQLModel):
+    """What one external stage cost, and where the workflow went next."""
+
+    agent_run_id: str
+    stage_key: str
+    status: RunStatus
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    duration_seconds: float = 0.0
+    workflow_stage_key: str = ""
+    workflow_stage_status: StageStatus
+    ticket_state: TicketState
+    blocking_issues: str = ""
+    workflow_finished: bool = False
+
+
 class CompleteStageRequest(SQLModel):
     stage_key: str
     next_agent: str = ""
@@ -355,6 +407,9 @@ class OrchestrationRunView(SQLModel):
     ticket_id: str
     driver: OrchestrationDriver
     profile_slug: str
+    #: The outside harness that drove this run, when one did. Null means this
+    #: control plane's own agents ran it — the comparison baseline.
+    external_harness: ExternalHarness | None = None
     status: OrchestrationRunStatus
     current_stage_key: str
     error_message: str

@@ -1,21 +1,12 @@
 import type { TicketDetail } from "../api/client";
+import { copyText } from "../lib/clipboard";
+import {
+  EXTERNAL_HARNESSES,
+  EXTERNAL_HARNESS_LABELS,
+  copyExternalHarnessPrompt,
+} from "../lib/externalHarnessPrompt";
 import { isAgentWorkflowTicket } from "../lib/terminalCommands";
 import { OverflowMenu, OverflowMenuItem, OverflowMenuSection } from "./OverflowMenu";
-
-async function copyText(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand("copy");
-    document.body.removeChild(textarea);
-  }
-}
 
 interface WorkflowRunOverflowMenuProps {
   ticket: TicketDetail;
@@ -50,6 +41,16 @@ export function WorkflowRunOverflowMenu({
           >
             Copy orchestrate command
           </OverflowMenuItem>
+          <OverflowMenuSection title="Copy prompt for" />
+          {EXTERNAL_HARNESSES.map((harness) => (
+            <OverflowMenuItem
+              key={harness}
+              title={`Copy a prompt that runs this ticket in ${EXTERNAL_HARNESS_LABELS[harness]}, reporting progress and timing back over MCP`}
+              onSelect={() => void copyExternalHarnessPrompt(ticket, harness)}
+            >
+              {EXTERNAL_HARNESS_LABELS[harness]}
+            </OverflowMenuItem>
+          ))}
         </>
       ) : null}
       {ticket.run_code ? (
