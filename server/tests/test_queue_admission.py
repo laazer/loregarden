@@ -7,7 +7,7 @@ that: capacity free means start now, capacity full means wait your turn — and
 the caller is told which.
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from loregarden.models.domain import AgentSlot, QueuedRun, Ticket, Workspace
@@ -183,13 +183,14 @@ def test_a_queued_entry_starts_when_the_lane_drains(session, workspace, endpoint
     session.add(slot)
     session.commit()
 
-    with (
-        patch.object(admission.lanes, "_dispatch_orchestration") as dispatch_orch,
-        patch.object(admission.lanes, "_dispatch_stage") as dispatch_stage,
-    ):
-        dispatch_orch.return_value = type("O", (), {"id": "orch-1", "run_code": "orch_1"})()
-        dispatch_stage.return_value = type("R", (), {"id": "run-1"})()
-        admission.lanes.start_lane_head(1)
+    dispatcher = MagicMock()
+    dispatch_orch = dispatcher.dispatch_orchestration
+    dispatch_stage = dispatcher.dispatch_stage
+    dispatch_orch.return_value = type("O", (), {"id": "orch-1", "run_code": "orch_1"})()
+    dispatch_stage.return_value = type("R", (), {"id": "run-1"})()
+    admission.lanes.dispatcher = dispatcher
+
+    admission.lanes.start_lane_head(1)
 
     if endpoint_kind == "orchestration":
         dispatch_orch.assert_called_once()
@@ -360,7 +361,10 @@ def test_the_lane_starts_a_parked_request_with_its_own_options(session, workspac
     session.add(slot)
     session.commit()
 
-    with patch("loregarden.services.run_service.schedule_orchestration") as dispatch:
+    # Patched where it is used, not where it is defined: `queue_dispatch` binds
+    # the name at import now that dispatch lives above the lane, so patching
+    # run_service would leave that binding untouched.
+    with patch("loregarden.services.queue_dispatch.schedule_orchestration") as dispatch:
         lanes.start_lane_head(1)
 
     kwargs = dispatch.call_args.kwargs

@@ -24,6 +24,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
@@ -584,8 +585,6 @@ def _release_execution_lane_impl(session, orch_run) -> None:
     Best-effort: the orchestration's terminal status is already committed, and
     a lane that fails to release is recoverable — a lost completion is not.
     """
-    from loregarden.services.queue_lanes import QueueLaneService
-
     try:
         QueueLaneService(session).on_orchestration_complete(orch_run.id)
     except Exception:

@@ -6,7 +6,8 @@ waits, and a lane drains itself when its orchestration finishes rather than
 waiting to be poked.
 """
 
-from unittest.mock import patch
+import subprocess
+import sys
 
 import pytest
 from loregarden.models.domain import (
@@ -57,13 +58,17 @@ def _orch(session: Session, ticket: Ticket, code: str) -> OrchestrationRun:
 
 
 class _Dispatcher:
-    """Stands in for the orchestrator, recording what each lane launched."""
+    """Stands in for the orchestrator, recording what each lane launched.
+
+    Injected rather than patched: dispatch lives above the lane now (see
+    `queue_dispatch`), and `LaneDispatcher` is the seam it calls through.
+    """
 
     def __init__(self, session: Session):
         self.session = session
         self.launched: list[str] = []
 
-    def __call__(
+    def dispatch_orchestration(
         self,
         ticket,
         *,
@@ -76,14 +81,62 @@ class _Dispatcher:
         self.launched.append(ticket.id)
         return _orch(self.session, ticket, f"orch_{len(self.launched)}")
 
+    def dispatch_stage(self, ticket, entry):
+        raise AssertionError("these lanes only run orchestrations")
+
 
 @pytest.fixture(name="lanes")
 def lanes_fixture(session):
-    service = QueueLaneService(session, max_concurrent=3)
     dispatcher = _Dispatcher(session)
-    with patch.object(service, "_dispatch_orchestration", dispatcher):
-        service.dispatcher = dispatcher
-        yield service
+    service = QueueLaneService(session, max_concurrent=3, dispatcher=dispatcher)
+    service.dispatcher = dispatcher
+    yield service
+
+
+@pytest.mark.parametrize(
+    "entry_point",
+    ["loregarden.main", "loregarden.cli.mcp_server", "loregarden.cli.main", "loregarden.mcp.tools"],
+)
+def test_every_entry_point_installs_a_lane_dispatcher(entry_point):
+    """The wiring dispatch-above-the-lane depends on.
+
+    `queue_lanes` resolves its dispatcher at runtime so it does not have to
+    import the orchestrator, which is what broke the cycle. The cost is that a
+    process which never imports `queue_dispatch` has lanes that start nothing —
+    so every process that can start work is pinned here rather than trusted.
+    """
+    # A fresh interpreter, because `import_module` on an already-imported entry
+    # point is a no-op — the assertion would pass on wiring some earlier test
+    # did, which is exactly the regression this is meant to catch.
+    probe = (
+        f"import {entry_point};"
+        "from loregarden.services import queue_lanes;"
+        "import sys; sys.exit(0 if queue_lanes._dispatcher_factory else 1)"
+    )
+    result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
+
+    assert result.returncode == 0, (
+        f"{entry_point} can start work but installs no lane dispatcher\n{result.stderr}"
+    )
+
+
+def test_a_lane_with_no_dispatcher_refuses_rather_than_silently_idling(session, workspace, caplog):
+    """The failure mode the registry introduces must be loud.
+
+    A lane that quietly starts nothing is the bug this whole audit was about;
+    an unwired process says so in the log instead.
+    """
+    service = QueueLaneService(session, max_concurrent=3, dispatcher=None)
+    service.dispatcher = None
+    ticket = _ticket(session, workspace.id, "LG-1")
+    service.add_to_lane(ticket_id=ticket.id, slot_number=1)
+
+    with caplog.at_level("ERROR"):
+        assert service.start_lane_head(1) is None
+
+    assert "no dispatcher is installed" in caplog.text
+    # The entry keeps its place rather than being consumed by a failed start.
+    assert [e.ticket_id for e in service.waiting_in_lane(1)] == [ticket.id]
 
 
 def test_adding_to_an_idle_lane_starts_it(lanes, session, workspace):
@@ -260,12 +313,11 @@ def test_completion_releases_the_lane_through_the_orchestrator(session, workspac
     """
     from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 
-    service = QueueLaneService(session, max_concurrent=3)
     dispatcher = _Dispatcher(session)
+    service = QueueLaneService(session, max_concurrent=3, dispatcher=dispatcher)
     ticket = _ticket(session, workspace.id, "LG-1")
 
-    with patch.object(service, "_dispatch_orchestration", dispatcher):
-        service.add_to_lane(ticket_id=ticket.id, slot_number=1)
+    service.add_to_lane(ticket_id=ticket.id, slot_number=1)
 
     slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
     orch_run = session.get(OrchestrationRun, slot.current_orchestration_run_id)
@@ -289,12 +341,11 @@ def test_blocking_a_ticket_releases_the_lane(session, workspace):
     from loregarden.models.domain import QueuedRun
     from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 
-    service = QueueLaneService(session, max_concurrent=3)
     dispatcher = _Dispatcher(session)
+    service = QueueLaneService(session, max_concurrent=3, dispatcher=dispatcher)
     blocked = _ticket(session, workspace.id, "LG-1")
 
-    with patch.object(service, "_dispatch_orchestration", dispatcher):
-        service.add_to_lane(ticket_id=blocked.id, slot_number=1)
+    service.add_to_lane(ticket_id=blocked.id, slot_number=1)
 
     slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
     orch_run = session.get(OrchestrationRun, slot.current_orchestration_run_id)

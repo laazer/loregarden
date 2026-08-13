@@ -38,6 +38,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from loregarden.models.domain import AgentSlot, Ticket
+
+# Imported for its install side effect as much as for anything: admission is the
+# gate every externally-started run passes through, so installing the lane
+# dispatcher here covers the API, MCP and CLI processes in one place.
+from loregarden.services import queue_dispatch  # noqa: F401
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.websocket_events import emit_execution_update
 from sqlmodel import Session, select
@@ -84,8 +89,6 @@ class Reservation:
         self._bound_id = orchestration_run_id or run_id
         self._session.add(slot)
         if orchestration_run_id:
-            from loregarden.services.queue_lanes import QueueLaneService
-
             QueueLaneService(self._session).ensure_active_entry_for_orchestration(
                 self.slot_number, orchestration_run_id
             )

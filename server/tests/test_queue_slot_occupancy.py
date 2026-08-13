@@ -7,6 +7,7 @@ orchestration was keyed on `current_run_id`, which a lane never sets, so an
 occupied slot drew as "Available" and offered to start a second ticket in it.
 """
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -150,7 +151,10 @@ def test_reclaiming_a_lane_starts_what_was_queued_behind_it(session, workspace):
     session.commit()
 
     started = _orch(session, waiting_ticket, "orch_next")
-    lanes._dispatch_orchestration = lambda ticket, **kwargs: started
+    lanes.dispatcher = SimpleNamespace(
+        dispatch_orchestration=lambda ticket, **kwargs: started,
+        dispatch_stage=lambda ticket, entry: None,
+    )
 
     assert lanes.reconcile_lanes() == [1]
     session.refresh(waiting)
@@ -285,7 +289,10 @@ def test_a_lane_entry_started_by_nothing_goes_back_in_line(session, workspace):
     _occupy(session, 2)
 
     started = _orch(session, ticket, "orch_next")
-    lanes._dispatch_orchestration = lambda ticket, **kwargs: started
+    lanes.dispatcher = SimpleNamespace(
+        dispatch_orchestration=lambda ticket, **kwargs: started,
+        dispatch_stage=lambda ticket, entry: None,
+    )
 
     assert lanes.reconcile_lanes() == [2]
 
