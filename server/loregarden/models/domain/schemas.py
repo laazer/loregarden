@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import Any
 
 from loregarden.models.domain.enums import (
+    DoctorCheck,
+    DoctorStatus,
     EventType,
     OrchestrationDriver,
     OrchestrationRunStatus,
@@ -422,6 +424,26 @@ class GitBoundary(SQLModel):
     def is_recorded(self) -> bool:
         """Whether this boundary says anything. An empty one is unknown."""
         return bool(self.repo_path and self.head_sha)
+
+
+class DoctorFinding(SQLModel):
+    """One environment check's result.
+
+    Carries its own remediation because the person reading it is usually not the
+    person who learned the fix — that knowledge currently lives in CLAUDE.md, in
+    agent memory files, and in whoever hit the trap last.
+    """
+
+    check: DoctorCheck
+    status: DoctorStatus = DoctorStatus.PASS
+    #: One line on what was observed.
+    finding: str = ""
+    #: What to do about it. Empty on a PASS, where there is nothing to do.
+    remediation: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.status is not DoctorStatus.FAIL
 
 
 class AdvanceStageRequest(SQLModel):

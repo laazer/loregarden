@@ -166,6 +166,58 @@ class RunStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class DoctorStatus(str, Enum):
+    """A doctor check's outcome. WARN exists because several of these matter only
+    in a running dev loop, and failing a dispatch over one would be worse than
+    the condition it reports."""
+
+    PASS = "pass"
+    WARN = "warn"
+    FAIL = "fail"
+
+
+class DoctorCheck(str, Enum):
+    """The environment traps this control plane hits repeatedly.
+
+    Each one has cost a real run and each is currently prevented by an agent
+    remembering it, which is the thing worth replacing. See `services.doctor`.
+    """
+
+    #: `core.bare` true in a working checkout — every work-tree git operation
+    #: then fails with a misleading exit-128 checkout error.
+    GIT_CORE_BARE = "git_core_bare"
+    #: GIT_DIR / GIT_WORK_TREE in the ambient environment, where they beat `cwd`
+    #: and point work at the wrong repository.
+    GIT_ENV_LEAK = "git_env_leak"
+    #: The database resolved relative to a worktree, which answers every ticket
+    #: query with a silent zero instead of an error.
+    DB_RESOLUTION = "db_resolution"
+    #: Backend `.py` edits newer than the reload sentinel, so a running dev
+    #: server is still serving the code the fix replaced.
+    BACKEND_RELOAD_SENTINEL = "backend_reload_sentinel"
+    #: No usable credential for the configured agent CLI, which reports "not
+    #: logged in" in a way that reads as a code bug.
+    CLI_CREDENTIALS = "cli_credentials"
+    #: Where the branch stands against its remote.
+    GIT_PORTABILITY = "git_portability"
+    #: A repository with no commit at all, which several git helpers assume away.
+    REPO_HAS_COMMIT = "repo_has_commit"
+
+
+class PortabilityState(str, Enum):
+    """Where a branch stands against its remote, reported rather than judged —
+    PUSH_REQUIRED is the normal state in the middle of a ticket."""
+
+    #: No remote, or no upstream for this branch.
+    LOCAL_ONLY = "local_only"
+    #: Ahead of upstream: work exists only on this machine.
+    PUSH_REQUIRED = "push_required"
+    #: Ahead and behind. Landing this needs a decision, not a push.
+    REMOTE_DIVERGED = "remote_diverged"
+    #: In sync with upstream.
+    REMOTE_READY = "remote_ready"
+
+
 class ClaimCertainty(str, Enum):
     """How much weight a handoff checklist item's claim carries.
 
