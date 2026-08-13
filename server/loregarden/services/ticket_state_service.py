@@ -81,20 +81,16 @@ def can_choose(current: TicketState, target: TicketState) -> bool:
 
 
 def _write(
-    session: Session | None,
     ticket: Ticket,
     target: TicketState,
     *,
     actor: str,
-    emit: bool,
 ) -> bool:
     """The bookkeeping every state write owes, in one place. False if unchanged.
 
-    `session` may be None for callers that deliberately mutate in memory and let
-    whoever owns the transaction commit — `reconcile_workflow_state` is written
-    that way on purpose, and threading a session through it would mean adding
-    one to `set_stage_status` and its ten call sites to no benefit. Without a
-    session there is nothing to publish an event on, so `emit` is ignored.
+    Mutates only. Persistence is the caller's transaction to commit: a ticket
+    reached through a session is already tracked, so SQLAlchemy writes a dirty
+    field at commit whether or not anything called `add` on it.
     """
     if ticket.state == target:
         return False
@@ -103,8 +99,6 @@ def _write(
     ticket.state = target
     ticket.revision += 1
     ticket.last_updated_by = actor
-    if session is not None:
-        session.add(ticket)
 
     logger.info(
         "Ticket %s: %s -> %s (%s)",
@@ -113,14 +107,6 @@ def _write(
         target.value,
         actor,
     )
-    if emit and session is not None:
-        event_bus.publish(
-            session,
-            EventType.TICKET_STATE_CHANGED,
-            workspace_id=ticket.workspace_id,
-            ticket_id=ticket.id,
-            payload={"state": target.value, "previous": previous.value, "actor": actor},
-        )
     return True
 
 
@@ -135,7 +121,9 @@ def choose(
     """Move a ticket because someone decided to. Validated. False if unchanged.
 
     Raises `InvalidTicketTransition` rather than writing a state the machine
-    does not allow from here.
+    does not allow from here. A decision is worth announcing, so this one takes
+    a session in order to publish `TicketStateChanged`; pass ``emit=False`` when
+    the caller publishes its own, richer event.
     """
     if ticket.state == target:
         return False
@@ -143,21 +131,26 @@ def choose(
         raise InvalidTicketTransition(
             f"Invalid ticket transition {ticket.state.value} -> {target.value}"
         )
-    return _write(session, ticket, target, actor=actor, emit=emit)
+    if not _write(ticket, target, actor=actor):
+        return False
+    if emit and session is not None:
+        event_bus.publish(
+            session,
+            EventType.TICKET_STATE_CHANGED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            payload={"state": target.value, "actor": actor},
+        )
+    return True
 
 
-def derive(
-    session: Session | None,
-    ticket: Ticket,
-    target: TicketState,
-    *,
-    actor: str,
-    emit: bool = False,
-) -> bool:
+def derive(ticket: Ticket, target: TicketState, *, actor: str) -> bool:
     """Recompute a ticket's state from its stages or children. False if unchanged.
 
-    Unvalidated on purpose — see the module docstring. Refuses two things the
-    inputs have no authority over:
+    No session, because it needs none: a recomputation announces nothing, and
+    the ticket it is handed is already tracked by whichever transaction will
+    commit it. Unvalidated on purpose — see the module docstring. Refuses two
+    things the inputs have no authority over:
 
     - a `state_locked` ticket, which is how an operator says "I decided this"
     - a `wont_do` ticket, since abandoning is a statement about the ticket
@@ -165,4 +158,4 @@ def derive(
     """
     if ticket.state_locked or ticket.state == TicketState.WONT_DO:
         return False
-    return _write(session, ticket, target, actor=actor, emit=emit)
+    return _write(ticket, target, actor=actor)

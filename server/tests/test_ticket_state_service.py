@@ -110,30 +110,38 @@ def test_a_derived_write_skips_the_table(session, workspace):
     """The rollup reopening a done parent — a move `choose` would reject."""
     ticket = _ticket(session, workspace, TicketState.DONE)
 
-    assert derive(session, ticket, TicketState.IN_PROGRESS, actor="rollup") is True
+    assert derive(ticket, TicketState.IN_PROGRESS, actor="rollup") is True
     assert ticket.state == TicketState.IN_PROGRESS
 
 
 def test_a_derived_write_respects_the_lock(session, workspace):
     ticket = _ticket(session, workspace, TicketState.IN_PROGRESS, locked=True)
 
-    assert derive(session, ticket, TicketState.DONE, actor="rollup") is False
+    assert derive(ticket, TicketState.DONE, actor="rollup") is False
     assert ticket.state == TicketState.IN_PROGRESS
 
 
 def test_a_derived_write_will_not_revive_an_abandoned_ticket(session, workspace):
     ticket = _ticket(session, workspace, TicketState.WONT_DO)
 
-    assert derive(session, ticket, TicketState.IN_PROGRESS, actor="rollup") is False
+    assert derive(ticket, TicketState.IN_PROGRESS, actor="rollup") is False
     assert ticket.state == TicketState.WONT_DO
 
 
-def test_a_derived_write_works_without_a_session(session, workspace):
-    """`reconcile_workflow_state` mutates in memory and lets its caller commit."""
+def test_a_derived_write_persists_without_anyone_calling_add(session, workspace):
+    """Why `derive` needs no session: a tracked ticket is written on commit.
+
+    `session.add` on an instance the session already tracks is a no-op, so the
+    parameter it used to take did nothing — no derived caller emits an event
+    either.
+    """
     ticket = _ticket(session, workspace, TicketState.BACKLOG)
 
-    assert derive(None, ticket, TicketState.IN_PROGRESS, actor="workflow") is True
-    assert ticket.state == TicketState.IN_PROGRESS
+    assert derive(ticket, TicketState.IN_PROGRESS, actor="workflow") is True
+    session.commit()
+    session.expire_all()
+
+    assert session.get(Ticket, ticket.id).state == TicketState.IN_PROGRESS
 
 
 # ---- nobody bypasses it ------------------------------------------------

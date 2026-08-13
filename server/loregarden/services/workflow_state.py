@@ -147,7 +147,7 @@ def reconcile_workflow_state(
     # template change) must not silently un-finish a ticket. `derive` owns the
     # state_locked / wont_do guards and the revision bookkeeping.
     if not (ticket.state == TicketState.DONE and ticket_state != TicketState.DONE):
-        derive(None, ticket, ticket_state, actor="workflow")
+        derive(ticket, ticket_state, actor="workflow")
     ticket.updated_at = datetime.now(timezone.utc)
 
     instance.current_stage_key = current_key

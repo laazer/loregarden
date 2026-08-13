@@ -78,7 +78,7 @@ def reconcile_parent(session: Session, parent: Ticket) -> bool:
         return False
     # `derive` owns the state_locked / wont_do guards and the bookkeeping; a
     # parent's state is a function of its children, not a move anyone chose.
-    return derive(session, parent, target, actor="rollup")
+    return derive(parent, target, actor="rollup")
 
 
 def reconcile_ancestors(session: Session, ticket: Ticket) -> list[Ticket]:
