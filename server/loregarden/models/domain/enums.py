@@ -172,6 +172,110 @@ class RunStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class DoctorStatus(str, Enum):
+    """A doctor check's outcome. WARN exists because several of these matter only
+    in a running dev loop, and failing a dispatch over one would be worse than
+    the condition it reports."""
+
+    PASS = "pass"
+    WARN = "warn"
+    FAIL = "fail"
+
+
+class DoctorCheck(str, Enum):
+    """The environment traps this control plane hits repeatedly.
+
+    Each one has cost a real run and each is currently prevented by an agent
+    remembering it, which is the thing worth replacing. See `services.doctor`.
+    """
+
+    #: `core.bare` true in a working checkout — every work-tree git operation
+    #: then fails with a misleading exit-128 checkout error.
+    GIT_CORE_BARE = "git_core_bare"
+    #: GIT_DIR / GIT_WORK_TREE in the ambient environment, where they beat `cwd`
+    #: and point work at the wrong repository.
+    GIT_ENV_LEAK = "git_env_leak"
+    #: The database resolved relative to a worktree, which answers every ticket
+    #: query with a silent zero instead of an error.
+    DB_RESOLUTION = "db_resolution"
+    #: Backend `.py` edits newer than the reload sentinel, so a running dev
+    #: server is still serving the code the fix replaced.
+    BACKEND_RELOAD_SENTINEL = "backend_reload_sentinel"
+    #: No usable credential for the configured agent CLI, which reports "not
+    #: logged in" in a way that reads as a code bug.
+    CLI_CREDENTIALS = "cli_credentials"
+    #: Where the branch stands against its remote.
+    GIT_PORTABILITY = "git_portability"
+    #: A repository with no commit at all, which several git helpers assume away.
+    REPO_HAS_COMMIT = "repo_has_commit"
+
+
+class PortabilityState(str, Enum):
+    """Where a branch stands against its remote, reported rather than judged —
+    PUSH_REQUIRED is the normal state in the middle of a ticket."""
+
+    #: No remote, or no upstream for this branch.
+    LOCAL_ONLY = "local_only"
+    #: Ahead of upstream: work exists only on this machine.
+    PUSH_REQUIRED = "push_required"
+    #: Ahead and behind. Landing this needs a decision, not a push.
+    REMOTE_DIVERGED = "remote_diverged"
+    #: In sync with upstream.
+    REMOTE_READY = "remote_ready"
+
+
+class ClaimCertainty(str, Enum):
+    """How much weight a handoff checklist item's claim carries.
+
+    Items used to carry a free-text `evidence` string, and the met-counter
+    treated any non-empty string as proof. "ran the suite, all green" satisfied
+    it exactly as well as an attached test artifact did, which is how a stage
+    claims a suite nobody ran.
+
+    Three levels, not AHP+'s six. STALE is missing on purpose: it is not a claim
+    anyone makes, it is something that happens to a claim when the code moves
+    underneath it, and it is derived at read time (see
+    `services.handoff_certainty.ClaimStanding`). CONFLICTED needs two claims to
+    compare and nothing here writes a second one yet.
+    """
+
+    #: An evidence artifact on this ticket backs it.
+    VERIFIED = "verified"
+    #: A human approved it. Not artifact-backed, but not the agent's own word.
+    USER_CONFIRMED = "user_confirmed"
+    #: The agent believes it and has no artifact. The default, and deliberately
+    #: the weak claim — an omitted certainty must never read as proof.
+    INFERRED = "inferred"
+
+
+class BoundaryVerdict(str, Enum):
+    """How the tree a stage is about to run on compares to the one its
+    predecessor attested against. See `services.handoff_boundary`.
+
+    Three of these proceed and three do not, but none of them mean "broken" on
+    their own — a mismatch is far more often a human working in the same
+    checkout than a damaged ticket.
+    """
+
+    #: Same checkout, same branch, same commit.
+    MATCH = "match"
+    #: One side recorded no boundary: a handoff written before boundaries
+    #: existed, or a repo that could not be read. Not the same claim as a
+    #: mismatch, and the reason enforcement can be switched on at all.
+    UNKNOWN = "unknown"
+    #: Same checkout and branch, receiver's HEAD descends from the sender's.
+    #: The ordinary case between stages, since the orchestrator commits.
+    ADVANCED = "advanced"
+    #: Same branch, receiver's HEAD is not a descendant — a force-push, a reset,
+    #: or a squash-merge that landed underneath the ticket.
+    DIVERGED = "diverged"
+    #: A different branch than the sender attested against.
+    BRANCH_CHANGED = "branch_changed"
+    #: A different checkout entirely, or one that no longer contains the
+    #: sender's commit — the worktree case, in both directions.
+    REPO_CHANGED = "repo_changed"
+
+
 class StageFanoutGroupStatus(str, Enum):
     OPEN = "open"
     SETTLING = "settling"

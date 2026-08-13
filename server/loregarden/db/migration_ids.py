@@ -98,6 +98,9 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0076_worktree_ticket_id",
     "0077_workspace_opencode_columns",
     "0078_external_harness_columns",
+    "0079_agent_run_git_boundary",
+    "0080_agent_run_boundary_verdict",
+    "0081_agent_run_preflight",
 )
 
 

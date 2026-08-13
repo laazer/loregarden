@@ -10,6 +10,7 @@ from loregarden.models.domain.enums import (
     ApprovalKind,
     ApprovalStatus,
     AutoFixStatus,
+    BoundaryVerdict,
     BtwStatus,
     CIStatus,
     CycleStatus,
@@ -263,6 +264,28 @@ class AgentRun(SQLModel, table=True):
     # Paths this run left dirty, so its commit can be scoped to its own work
     # instead of sweeping unrelated edits out of the workspace.
     changed_paths_json: str = "[]"
+    # The git boundary this run started from — see schemas.GitBoundary, which is
+    # how these four are read and written. Recorded at dispatch, after the
+    # execution root and branch are resolved, so it describes the tree the agent
+    # actually saw. All empty means the boundary could not be read, which is
+    # `unknown` rather than a mismatch.
+    start_repo_path: str = ""
+    start_branch: str = ""
+    start_head_sha: str = ""
+    start_dirty_paths_json: str = "[]"
+    # How that boundary compared to the one the last handoff attested against.
+    # Written for every dispatch, matching verdicts included, so the mismatch
+    # rate is queryable — it is what decides when enforcement can move from
+    # record-only to blocking.
+    start_boundary_verdict: BoundaryVerdict = Field(
+        default=BoundaryVerdict.UNKNOWN,
+        sa_column=_str_enum_column(BoundaryVerdict, BoundaryVerdict.UNKNOWN),
+    )
+    # Doctor checks that failed before this run was dispatched, as a JSON array
+    # of check ids. Only the failures: an empty array is a healthy environment,
+    # and storing seven "fine"s per dispatch to record the one case anyone
+    # queries is not worth the rows.
+    start_preflight_failures_json: str = "[]"
     stdout: str = ""
     stderr: str = ""
     auto_approve: bool = Field(default=False)

@@ -121,3 +121,11 @@ def test_endpoint_commits_and_pushes_dirty_changes(client: TestClient, isolated_
 def test_missing_ticket_returns_404(client: TestClient):
     res = client.post("/api/tickets/does-not-exist/commit-push")
     assert res.status_code == 404
+
+
+def test_head_commit_sha_on_a_missing_directory_is_empty_not_an_error(tmp_path):
+    """It documents "" for anything that is not a repo, and a path that does not
+    exist is the commonest case of that — a workspace whose repo is not mounted
+    on this machine. It used to inherit subprocess's exception for the missing
+    cwd, so merely asking which commit was current could raise."""
+    assert git_commit_push_service.head_commit_sha(tmp_path / "never-existed") == ""

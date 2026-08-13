@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from loregarden.models.domain import Artifact, Ticket, Workspace
+from loregarden.models.domain import Artifact, GitBoundary, Ticket, Workspace
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
 
@@ -42,7 +42,19 @@ CHECKPOINTS_SUBDIR = "project_board/checkpoints"
 # runtime tree so an export is never committable.
 HANDOFF_SCRATCH_SUBDIR = ".loregarden/handoffs"
 
+#: Deliberately still 1.0 after the `boundary` block was added. The validator is
+#: each workspace's *own* gate (see `handoff_writer`), and it accepts a closed set
+#: of versions — blobert's, the only one on disk, allows {"1.0", "1"} and nothing
+#: else. Announcing 1.1 from here would fail every handoff in every workspace whose
+#: gate had not been updated first, and `write_handoff` rolls back on FAIL, so the
+#: write path would simply stop working. Adding a key those gates ignore is
+#: backward compatible; renaming the version is not. The bump belongs with a change
+#: that updates the gates, not with the field.
 SCHEMA_VERSION = "1.0"
+
+#: The document key holding the boundary. Absent on every handoff written before
+#: this existed, which reads back as an unrecorded boundary — unknown, not changed.
+BOUNDARY_KEY = "boundary"
 
 
 def build_handoff_doc(
@@ -53,6 +65,7 @@ def build_handoff_doc(
     checklist: list[dict[str, Any]],
     required_items_met: int,
     total_required_items: int,
+    boundary: GitBoundary,
 ) -> dict[str, Any]:
     """The canonical handoff document. Both the stored row and the YAML export
     project from this, so the two can never describe different handoffs."""
@@ -66,8 +79,22 @@ def build_handoff_doc(
             "required_items_met": required_items_met,
             "total_required_items": total_required_items,
             "checklist": checklist,
+            # The tree the author attested against, so a receiving stage can ask
+            # whether the world it inherited is still the one being described.
+            BOUNDARY_KEY: boundary.model_dump(),
         }
     }
+
+
+def boundary_from_doc(doc: dict[str, Any]) -> GitBoundary:
+    """The boundary a stored handoff attested against.
+
+    Documents written before the block existed have none, and answer with an
+    unrecorded boundary rather than an error — the whole point of `is_recorded`
+    is that "we never looked" is a third state beside match and mismatch.
+    """
+    raw = doc.get("handoff", {}).get(BOUNDARY_KEY)
+    return GitBoundary.model_validate(raw) if raw else GitBoundary()
 
 
 def render_handoff_yaml(doc: dict[str, Any]) -> str:
@@ -80,11 +107,17 @@ def store_handoff(
     ticket: Ticket,
     doc: dict[str, Any],
     run_id: str | None = None,
-    commit_sha: str = "",
 ) -> Artifact:
     """Append a handoff artifact. Rows are append-only: the history of what each
     agent attested to at each transition is the point, so a re-write adds a row
-    rather than replacing one."""
+    rather than replacing one.
+
+    The row's `commit_sha` is read off the document's own boundary rather than
+    taken as an argument. It was a parameter no caller ever passed, so every
+    handoff artifact carried an empty sha and none of them were reachable from
+    the commit-scoped evidence queries in `services.evidence`. Deriving it here
+    also makes the row and the document structurally unable to disagree.
+    """
     handoff = doc["handoff"]
     artifact = Artifact(
         ticket_id=ticket.id,
@@ -92,7 +125,7 @@ def store_handoff(
         kind=HANDOFF_ARTIFACT_KIND,
         title=f"handoff {handoff['from_agent']} → {handoff['to_agent']}",
         content_json=json.dumps(doc),
-        commit_sha=commit_sha,
+        commit_sha=boundary_from_doc(doc).head_sha,
     )
     session.add(artifact)
     session.flush()

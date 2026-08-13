@@ -507,6 +507,14 @@ class BuiltinOrchestrator:
             # continue so the stage re-dispatches to the sibling the pin names.
             if ticket.scope_reroute_agent:
                 return False
+            # The boundary check parked this stage on an approval rather than
+            # running it (see services.handoff_boundary). Nothing failed and
+            # nothing is wrong with the ticket — a human has been asked whether
+            # the tree the stage would run on is the one it should. Pause, so the
+            # answer arrives at an inbox item instead of a blocked ticket.
+            if ticket.workflow_stage_status == StageStatus.AWAITING:
+                self._pause_orchestration(orch_run, ticket, message="Awaiting human approval")
+                return True
             self.callbacks.block_ticket(
                 orch_run,
                 ticket,

@@ -13,6 +13,7 @@ from loregarden.mcp.admission import (
     run_admitted,
     start_orchestration_admitted,
 )
+from loregarden.mcp.doctor_tool import TOOL_DEFINITION as DOCTOR_TOOL_DEFINITION
 from loregarden.mcp.external_harness_tools import (
     EXTERNAL_HARNESS_TOOL_DEFINITIONS,
     normalize_external_harness_args,
@@ -981,6 +982,23 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                             "evidence_type": _string_prop(
                                 "Optional 'path' or 'attestation'; defaults to the catalog's type."
                             ),
+                            "certainty": _enum_string_prop(
+                                "How much this claim is worth, and the only field that "
+                                "counts an item as met. 'verified' means an evidence "
+                                "artifact on this ticket backs it, and requires "
+                                "evidence_artifact_id. 'user_confirmed' means a human "
+                                "approved it. 'inferred' means you believe it and have no "
+                                "artifact — the default, and honest. Prose in `evidence` "
+                                "is not proof; if you ran something, attach it with "
+                                "loregarden_attach_evidence and claim verified.",
+                                ["verified", "user_confirmed", "inferred"],
+                            ),
+                            "evidence_artifact_id": _string_prop(
+                                "Id of an evidence artifact on this ticket, from "
+                                "loregarden_attach_evidence. Required when "
+                                "certainty=verified. Evidence captured before your last "
+                                "edit reads as stale and stops counting."
+                            ),
                             "required": {
                                 "type": "boolean",
                                 "description": "Optional; defaults true. Match the catalog default.",
@@ -1038,6 +1056,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 
 # Tools that live in their own module rather than in this file's chain.
 TOOL_DEFINITIONS.append(ORGANIZATION_TOOL_DEFINITION)
+TOOL_DEFINITIONS.append(DOCTOR_TOOL_DEFINITION)
 TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(EXTERNAL_HARNESS_TOOL_DEFINITIONS)
 

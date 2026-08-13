@@ -72,6 +72,19 @@ class GitAutomationConfig(BaseModel):
     base_branch: str = "main"
 
 
+class BoundaryConfig(BaseModel):
+    """Whether a boundary mismatch stops a stage or is merely recorded.
+
+    Off by default, and deliberately so for its first milestone. The verdict is
+    written for every dispatch either way, so switching this on later is a
+    decision made against a measured mismatch rate rather than a guess. Turning a
+    brand-new precondition into a hard stop across every stage in every workspace
+    on the day it ships converts a diagnostic into an outage.
+    """
+
+    enforce: bool = False
+
+
 class RetryBudgetConfig(BaseModel):
     enabled: bool = True
     max_attempts_per_stage: int = 5
@@ -93,6 +106,7 @@ class OrchestrationProfile(BaseModel):
     orchestrator: OrchestratorConfig = Field(default_factory=OrchestratorConfig)
     gates: GatesConfig = Field(default_factory=GatesConfig)
     git: GitAutomationConfig = Field(default_factory=GitAutomationConfig)
+    boundary: BoundaryConfig = Field(default_factory=BoundaryConfig)
     retry_budget: RetryBudgetConfig = Field(default_factory=RetryBudgetConfig)
     subagents: SubagentsConfig = Field(default_factory=SubagentsConfig)
     callbacks: CallbacksConfig = Field(default_factory=CallbacksConfig)
