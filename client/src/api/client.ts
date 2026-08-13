@@ -15,6 +15,8 @@ import type {
   TicketSummary,
   TicketTreeNode,
   TicketDetail,
+  ExternalHarness,
+  ExternalHarnessPrompt,
   CalendarEventView,
   WorkspaceSummary,
   RuntimeOptions,
@@ -341,6 +343,11 @@ export const api = {
         body: JSON.stringify({ stage_key: stageKey }),
       },
     ),
+  buildExternalHarnessPrompt: (id: string, harness: ExternalHarness) =>
+    request<ExternalHarnessPrompt>(`/api/tickets/${id}/external_harness_prompt`, {
+      method: "POST",
+      body: JSON.stringify({ harness }),
+    }),
   orchestrate: (
     id: string,
     body?: {

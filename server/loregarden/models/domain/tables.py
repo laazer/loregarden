@@ -14,6 +14,7 @@ from loregarden.models.domain.enums import (
     CIStatus,
     CycleStatus,
     EventType,
+    ExternalHarness,
     OrchestrationDriver,
     OrchestrationRunStatus,
     QueueOperationType,
@@ -204,6 +205,14 @@ class OrchestrationRun(SQLModel, table=True):
         ),
     )
     profile_slug: str = ""
+    # Set when a harness outside this control plane drove the run from a pasted
+    # prompt (see services/external_harness.py). Null means loregarden's own
+    # agents ran it. Indexed because comparing harnesses is the point of the
+    # column — it is always read as a filter, never on its own.
+    external_harness: ExternalHarness | None = Field(
+        default=None,
+        sa_column=_str_enum_column(ExternalHarness, index=True, nullable=True),
+    )
     status: OrchestrationRunStatus = Field(
         default=OrchestrationRunStatus.QUEUED,
         sa_column=_str_enum_column(OrchestrationRunStatus, OrchestrationRunStatus.QUEUED),
@@ -238,6 +247,12 @@ class AgentRun(SQLModel, table=True):
     agent_id: str
     # Version of the agent definition this run executed under (null pre-versioning).
     agent_version: int | None = Field(default=None)
+    # The harness that executed this stage, when it was not this control plane's
+    # own subprocess — inherited from the orchestration run that opened it.
+    external_harness: ExternalHarness | None = Field(
+        default=None,
+        sa_column=_str_enum_column(ExternalHarness, index=True, nullable=True),
+    )
     skill_name: str = ""
     stage_key: str = ""
     status: RunStatus = Field(

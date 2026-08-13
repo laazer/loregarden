@@ -20,6 +20,8 @@ class McpTool(StrEnum):
     START_ORCHESTRATION = "loregarden_start_orchestration"
     START_STAGE = "loregarden_start_stage"
     COMPLETE_STAGE = "loregarden_complete_stage"
+    BEGIN_EXTERNAL_STAGE = "loregarden_begin_external_stage"
+    FINISH_EXTERNAL_STAGE = "loregarden_finish_external_stage"
     SKIP_STAGE = "loregarden_skip_stage"
     BLOCK_TICKET = "loregarden_block_ticket"
     ATTACH_EVIDENCE = "loregarden_attach_evidence"
@@ -153,7 +155,15 @@ TRIAGE_OPS_MCP_TOOLS: tuple[McpTool, ...] = (
 #: retire the ticket they are running — a stage clearing its own retry budget
 #: would defeat the circuit breaker that stopped it. Interactive chat is exempt.
 ORCHESTRATED_DENIED_MCP_TOOLS: frozenset[McpTool] = frozenset(
-    {McpTool.CREATE_TICKET, *TRIAGE_OPS_MCP_TOOLS}
+    {
+        McpTool.CREATE_TICKET,
+        # An agent this control plane dispatched is *inside* a stage; checking
+        # another one out to an outside harness from there would fork the
+        # pipeline it is running.
+        McpTool.BEGIN_EXTERNAL_STAGE,
+        McpTool.FINISH_EXTERNAL_STAGE,
+        *TRIAGE_OPS_MCP_TOOLS,
+    }
 )
 
 # Ticket-scoped chat enrichment: fill ticket_id when the open work item is known.

@@ -11,6 +11,8 @@ from loregarden.models.domain import (
     Artifact,
     BtwExchange,
     BtwQuestionCreate,
+    ExternalHarnessPromptRequest,
+    ExternalHarnessPromptView,
     FinalizeHierarchyRequest,
     FinalizeHierarchyResponse,
     OrchestrationRun,
@@ -52,6 +54,7 @@ from loregarden.services.cli_settings import (
     set_ticket_orchestration_runtime,
 )
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
+from loregarden.services.external_harness import build_external_harness_prompt
 from loregarden.services.hierarchy_service import build_tree, child_count
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
@@ -1043,6 +1046,27 @@ def build_terminal_handoff_command(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"run_id": run.id, "adapter": invocation.adapter, "command": command}
+
+
+@router.post("/{ticket_id}/external_harness_prompt", response_model=ExternalHarnessPromptView)
+def build_external_harness_prompt_endpoint(
+    ticket_id: str,
+    body: ExternalHarnessPromptRequest,
+    session: Session = Depends(get_session),
+) -> ExternalHarnessPromptView:
+    """Render the prompt an operator pastes into their own Claude Code / Codex session.
+
+    Read-only: no run is opened here. The pasted prompt opens one when the harness
+    actually starts, so a prompt copied and never used costs nothing and the
+    recorded start time is the real one.
+    """
+    ticket = session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    try:
+        return build_external_harness_prompt(session, ticket, harness=body.harness)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/{ticket_id}/advance", response_model=TicketDetail)

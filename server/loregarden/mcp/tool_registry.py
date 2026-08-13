@@ -18,6 +18,10 @@ from typing import Any
 
 from sqlmodel import Session
 
+from loregarden.mcp.external_harness_tools import (
+    begin_external_stage_tool,
+    finish_external_stage_tool,
+)
 from loregarden.mcp.organization_tool import check_organization
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.services.prior_work import search_prior_work
@@ -42,4 +46,6 @@ def _search_prior_work(session: Session, arguments: dict[str, Any]) -> str:
 EXTENDED_TOOLS: dict[str, ToolHandler] = {
     McpTool.CHECK_ORGANIZATION.value: check_organization,
     McpTool.SEARCH_PRIOR_WORK.value: _search_prior_work,
+    McpTool.BEGIN_EXTERNAL_STAGE.value: begin_external_stage_tool,
+    McpTool.FINISH_EXTERNAL_STAGE.value: finish_external_stage_tool,
 }

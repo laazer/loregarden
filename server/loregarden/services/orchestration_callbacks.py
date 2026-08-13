@@ -15,6 +15,7 @@ from loregarden.models.domain import (
     ApprovalStatus,
     Artifact,
     EventType,
+    ExternalHarness,
     OrchestrationRun,
     OrchestrationRunStatus,
     StageStatus,
@@ -175,6 +176,7 @@ class OrchestrationCallbackService:
         auto_approve: bool = False,
         stop_at_stage_key: str = "",
         timeout_override_seconds: int | None = None,
+        external_harness: ExternalHarness | None = None,
     ) -> OrchestrationRun:
         active = self.get_active_orchestration_run(ticket.id)
         if active and active.status == OrchestrationRunStatus.QUEUED:
@@ -186,6 +188,7 @@ class OrchestrationCallbackService:
                 driver=driver,
                 profile_slug=profile_slug,
                 timeout_override_seconds=timeout_override_seconds,
+                external_harness=external_harness,
             )
         if active:
             raise ValueError(f"Orchestration already running: {active.run_code}")
@@ -199,6 +202,7 @@ class OrchestrationCallbackService:
                 driver=driver,
                 profile_slug=profile_slug,
                 status=OrchestrationRunStatus.SUCCEEDED,
+                external_harness=external_harness,
                 current_stage_key=ticket.workflow_stage_key,
                 error_message="Nothing to orchestrate",
                 started_at=now,
@@ -220,6 +224,7 @@ class OrchestrationCallbackService:
             driver=driver,
             profile_slug=profile_slug,
             status=OrchestrationRunStatus.RUNNING,
+            external_harness=external_harness,
             current_stage_key=ticket.workflow_stage_key,
             auto_approve=auto_approve,
             stop_at_stage_key=stop_at_stage_key or "",
@@ -247,6 +252,7 @@ class OrchestrationCallbackService:
         driver,
         profile_slug: str,
         timeout_override_seconds: int | None = None,
+        external_harness: ExternalHarness | None = None,
     ) -> OrchestrationRun:
         """Turn a claim into the running orchestration it stood for.
 
@@ -262,6 +268,7 @@ class OrchestrationCallbackService:
         run.status = OrchestrationRunStatus.RUNNING
         run.driver = driver
         run.profile_slug = profile_slug
+        run.external_harness = external_harness
         run.current_stage_key = ticket.workflow_stage_key
         run.started_at = datetime.now(timezone.utc)
         self.session.add(run)
