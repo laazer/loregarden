@@ -37,7 +37,12 @@ from loregarden.models.domain import (
     QueuePosition,
     Ticket,
 )
-from loregarden.services.parallel_queue import WAITING_STATUSES, ParallelQueueService
+from loregarden.services.parallel_queue import (
+    LIVE_ORCHESTRATION_STATUSES,
+    LIVE_RUN_STATUSES,
+    WAITING_STATUSES,
+    ParallelQueueService,
+)
 from loregarden.websocket_events import emit_execution_update
 from sqlmodel import Session, col, select
 
@@ -298,6 +303,7 @@ class QueueLaneService:
         every status read rather than waiting for a hand-reset.
         """
         self._requeue_stranded_entries()
+        settled = self._settle_finished_entries()
         freed = self.slots.reconcile_slots()
         # Nested child execute shares the parent's lane. Orphan-heal used to
         # bind free capacity to those children and empty the pool — undo that
@@ -312,7 +318,7 @@ class QueueLaneService:
         # Nested children of a slotted ancestor are not orphans — they share
         # that ancestor's lane for the life of the tree.
         claimed = self._claim_orphaned_orchestrations()
-        if freed or claimed:
+        if freed or claimed or settled:
             emit_execution_update()
         return freed
 
@@ -325,8 +331,6 @@ class QueueLaneService:
         opens a fresh OrchestrationRun per child. Those runs are intentional
         work under the parent's slot, not separate admissions.
         """
-        from loregarden.services.parallel_queue import LIVE_ORCHESTRATION_STATUSES
-
         ticket = self.session.get(Ticket, ticket_id)
         seen: set[str] = set()
         while ticket and ticket.parent_ticket_id:
@@ -387,8 +391,6 @@ class QueueLaneService:
         Nested child orchestrations under a slotted ancestor are skipped — they
         share the ancestor's lane and must not consume the rest of the pool.
         """
-        from loregarden.services.parallel_queue import LIVE_ORCHESTRATION_STATUSES
-
         self.slots.initialize_slots()
         held = {
             slot.current_orchestration_run_id
@@ -471,6 +473,66 @@ class QueueLaneService:
 
         for slot_number in {entry.slot_number for entry in stranded}:
             self._renumber(slot_number)
+
+    def _entry_work_is_over(self, entry: QueuedRun) -> bool:
+        """Whether the thing this entry started has reached a terminal status.
+
+        `queued_runs` holds two regimes and this has to answer for both: a lane
+        entry names an orchestration, a shared-queue or stage entry names an
+        agent run. A row that has gone missing counts as over — nothing will
+        ever complete it.
+        """
+        if entry.orchestration_run_id:
+            orch = self.session.get(OrchestrationRun, entry.orchestration_run_id)
+            return not orch or orch.status not in LIVE_ORCHESTRATION_STATUSES
+        if entry.run_id:
+            run = self.session.get(AgentRun, entry.run_id)
+            return not run or run.status not in LIVE_RUN_STATUSES
+        # Names nothing — `_requeue_stranded_entries` owns that shape.
+        return False
+
+    def _settle_finished_entries(self) -> list[str]:
+        """Retire entries whose work finished but whose release stopped short.
+
+        The happy paths (`on_orchestration_complete`, `on_run_complete_sync`)
+        settle an entry as part of giving its lane back. Neither runs to
+        completion on every route out: a restart between the two writes, or a
+        success on the run side, which frees the slot but only ever writes the
+        entry's status when the run *failed*.
+
+        The residue is an entry reading ACTIVE with nothing behind it, and it is
+        permanent without this — the slot is reclaimed independently by
+        `reconcile_slots`, and once it no longer names the work there is nothing
+        left tying the entry to what finished. `ticket_activity` counts ACTIVE
+        and PROMOTED as running, so the ticket reports an agent on it forever,
+        and `queue_history` counts them as live, so the lane never shows the
+        blocked/failed card that would have made it visible.
+
+        Returns the entry ids settled, so a caller can tell a quiet sweep from
+        one that changed the board.
+        """
+        candidates = self.session.exec(
+            select(QueuedRun).where(
+                col(QueuedRun.status).in_((QueuePosition.ACTIVE, QueuePosition.PROMOTED))
+            )
+        ).all()
+        settled: list[str] = []
+        for entry in candidates:
+            if not self._entry_work_is_over(entry):
+                continue
+            entry.status = QueuePosition.STARTED
+            self.session.add(entry)
+            settled.append(entry.id)
+            logger.warning(
+                "Settling lane entry %s (ticket %s, lane %d): its work finished without "
+                "releasing the entry",
+                entry.id,
+                entry.ticket_id,
+                entry.slot_number,
+            )
+        if settled:
+            self.session.commit()
+        return settled
 
     def remove_entry(self, entry_id: str) -> bool:
         """Take a waiting entry out of its lane. Running entries are untouched."""

@@ -311,6 +311,88 @@ def test_blocking_a_ticket_releases_the_lane(session, workspace):
     assert slot.is_available is True
 
 
+def test_reconcile_settles_an_entry_whose_orchestration_already_finished(lanes, session, workspace):
+    """The sweep for residue neither release path got to.
+
+    A restart between "the run went terminal" and "the entry was retired" leaves
+    an ACTIVE entry that no later pass can find by itself: `reconcile_slots`
+    reclaims the slot independently, and once it stops naming the orchestration
+    nothing ties the two together. `ticket_activity` reads ACTIVE as running, so
+    the ticket claims an agent forever.
+    """
+    from loregarden.models.domain import QueuedRun
+
+    ticket = _ticket(session, workspace.id, "LG-1")
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1)
+
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    orch = session.get(OrchestrationRun, slot.current_orchestration_run_id)
+    orch.status = OrchestrationRunStatus.BLOCKED
+    session.add(orch)
+    # The slot was reclaimed already; only the entry is left behind.
+    slot.is_available = True
+    slot.current_orchestration_run_id = None
+    session.add(slot)
+    session.commit()
+
+    lanes.reconcile_lanes()
+
+    entry = session.exec(select(QueuedRun).where(QueuedRun.orchestration_run_id == orch.id)).one()
+    assert entry.status == QueuePosition.STARTED
+
+
+def test_reconcile_settles_a_stage_entry_whose_run_succeeded(lanes, session, workspace):
+    """The run-side half: success never wrote the entry's status at all.
+
+    `on_run_complete_sync` frees the slot and marks the entry FAILED only when
+    the run failed, so a stage entry that *succeeded* stayed ACTIVE — the same
+    permanent ghost, reached through the other regime in `queued_runs`.
+    """
+    from loregarden.models.domain import AgentRun, QueuedRun, RunStatus
+
+    ticket = _ticket(session, workspace.id, "LG-1")
+    run = AgentRun(
+        run_code="run_1",
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        agent_id="implementer",
+        status=RunStatus.SUCCEEDED,
+    )
+    session.add(run)
+    entry = QueuedRun(
+        workspace_id=workspace.id,
+        ticket_id=ticket.id,
+        run_id=run.id,
+        slot_number=1,
+        status=QueuePosition.ACTIVE,
+        entry_kind="stage",
+        stage_key="implement",
+    )
+    session.add(entry)
+    session.commit()
+
+    lanes.reconcile_lanes()
+
+    session.refresh(entry)
+    assert entry.status == QueuePosition.STARTED
+
+
+def test_reconcile_leaves_a_live_entry_alone(lanes, session, workspace):
+    """The sweep must not retire a lane that is genuinely working."""
+    from loregarden.models.domain import QueuedRun
+
+    ticket = _ticket(session, workspace.id, "LG-1")
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1)
+
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    orch_id = slot.current_orchestration_run_id
+
+    lanes.reconcile_lanes()
+
+    entry = session.exec(select(QueuedRun).where(QueuedRun.orchestration_run_id == orch_id)).one()
+    assert entry.status == QueuePosition.ACTIVE
+
+
 def test_the_entry_settles_even_when_the_slot_is_already_gone(lanes, session, workspace):
     """`reconcile_slots` reclaims a terminal occupant's slot on any status read.
 
