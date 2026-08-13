@@ -370,3 +370,44 @@ def test_the_lane_starts_a_parked_request_with_its_own_options(session, workspac
     kwargs = dispatch.call_args.kwargs
     assert kwargs["max_stages"] == 2
     assert kwargs["driver"] is not None
+
+
+def test_a_fresh_reservation_is_not_reclaimed_as_residue(session, workspace):
+    """Reserve claims a slot naming nothing so nobody else can take it.
+
+    A slot with both ids null is normally dead residue, and `reconcile_slots`
+    runs on every status read — the queue websocket polls every few seconds.
+    Landing in the window between reserve and bind, it would free a slot that is
+    about to be bound and let a second orchestration into the same lane.
+    """
+    admission = QueueAdmissionService(session, max_concurrent=3)
+    reservation = admission.reserve_orchestration(_ticket(session, workspace.id, "T-fresh"))
+    assert reservation.admitted
+
+    freed = admission.lanes.slots.reconcile_slots()
+
+    assert freed == []
+    slot = session.exec(
+        select(AgentSlot).where(AgentSlot.slot_number == reservation.slot_number)
+    ).one()
+    assert slot.is_available is False
+
+
+def test_a_reservation_that_never_binds_is_collected_after_the_grace(session, workspace):
+    """The grace defers the sweep; it must not disable it."""
+    from datetime import timedelta
+
+    from loregarden.services.parallel_queue import RESERVATION_GRACE
+
+    admission = QueueAdmissionService(session, max_concurrent=3)
+    reservation = admission.reserve_orchestration(_ticket(session, workspace.id, "T-stale"))
+    slot = session.exec(
+        select(AgentSlot).where(AgentSlot.slot_number == reservation.slot_number)
+    ).one()
+    slot.assigned_at = slot.assigned_at - RESERVATION_GRACE - timedelta(seconds=1)
+    session.add(slot)
+    session.commit()
+
+    assert admission.lanes.slots.reconcile_slots() == [reservation.slot_number]
+    session.refresh(slot)
+    assert slot.is_available is True

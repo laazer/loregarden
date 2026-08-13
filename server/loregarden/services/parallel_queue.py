@@ -47,6 +47,12 @@ LIVE_ORCHESTRATION_STATUSES = (
     OrchestrationRunStatus.RUNNING,
 )
 
+#: How long a slot claimed by a reservation may name nothing before a sweep
+#: treats it as residue. Long enough to cover reserve-to-bind, which is a few
+#: statements on the same thread; short enough that a caller which dies between
+#: them costs one lane for one minute rather than until restart.
+RESERVATION_GRACE = timedelta(seconds=60)
+
 #: Statuses that mean "still waiting to start". Lives here rather than in
 #: queue_lanes because the queue's own reads need it too, and one of the two
 #: reading a narrower set than the other is how the board came to report a
@@ -349,14 +355,33 @@ class ParallelQueueService:
         return freed
 
     def _occupant_is_live(self, slot: AgentSlot) -> bool:
-        """Whether whatever holds this slot still has work in flight."""
+        """Whether whatever holds this slot still has work in flight.
+
+        A slot naming nothing is usually dead residue, but for a moment it is a
+        *fresh reservation*: `QueueAdmissionService` claims a slot with both ids
+        null so two requests cannot read it as free, and the caller fills them in
+        on `bind`. The two are indistinguishable by id alone, and a status read
+        landing in that window — the queue websocket polls every few seconds —
+        would reclaim a slot that is about to be bound and let a second
+        orchestration into it. A reservation that never binds is still collected,
+        just a grace period later.
+        """
         if slot.current_orchestration_run_id:
             orch_run = self.session.get(OrchestrationRun, slot.current_orchestration_run_id)
             return bool(orch_run) and orch_run.status in LIVE_ORCHESTRATION_STATUSES
         if slot.current_run_id:
             run = self.session.get(AgentRun, slot.current_run_id)
             return bool(run) and run.status in LIVE_RUN_STATUSES
-        return False
+        return self._within_reservation_grace(slot)
+
+    def _within_reservation_grace(self, slot: AgentSlot) -> bool:
+        """Whether a slot naming nothing was claimed too recently to reclaim."""
+        assigned_at = slot.assigned_at
+        if assigned_at is None:
+            return False
+        if assigned_at.tzinfo is None:
+            assigned_at = assigned_at.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - assigned_at < RESERVATION_GRACE
 
     async def get_active_runs(self) -> list[dict]:
         """
