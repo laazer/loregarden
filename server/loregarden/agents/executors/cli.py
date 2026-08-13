@@ -42,6 +42,7 @@ from loregarden.services.cli_settings import (
 from loregarden.services.code_map import render_code_map
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
 from loregarden.services.evidence import FULL_SUITE_EVIDENCE_KIND
+from loregarden.services.git_boundary import read_boundary, stamp_run_boundary
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_commit_push_service import working_tree_paths
 from loregarden.services.orchestration import OrchestrationService
@@ -166,6 +167,11 @@ class CliAgentExecutor:
         # already dirty beforehand belong to whatever else is in the workspace
         # and must not be attributed to this ticket.
         paths_before = working_tree_paths(repo_root)
+
+        # Record the tree this run inherited, now that the execution root and
+        # branch are both settled. Stamping any earlier would name the shared
+        # checkout for a run that goes on to execute in a worktree.
+        stamp_run_boundary(self.session, run, read_boundary(repo_root, dirty_paths=paths_before))
 
         try:
             prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace, stage_def)
@@ -357,6 +363,10 @@ class CliAgentExecutor:
         repo_root = resolve_execution_root(self.session, run, ticket, workspace)
         if repo_root == workspace_root:
             ensure_ticket_branch(repo_root, ticket)
+
+        # A handed-off run is still a run against a tree, and the terminal it is
+        # pasted into is the surface most likely to be on a stale branch.
+        stamp_run_boundary(self.session, run, read_boundary(repo_root))
 
         stage_def = self._resolve_stage_def(ticket, run)
         prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace, stage_def)

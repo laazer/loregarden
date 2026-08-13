@@ -393,6 +393,37 @@ class GitAutomationView(SQLModel):
     base_branch: str = "main"
 
 
+class GitBoundary(SQLModel):
+    """The git state a run executed against: which checkout, on what branch, at
+    which commit, over how dirty a tree.
+
+    One value rather than four loose parameters because the interesting uses are
+    comparisons — the tree a stage inherited against the tree its predecessor
+    attested to — and a comparison of four positional strings is a bug waiting
+    for its argument order to be swapped.
+
+    Every field is optional. A repo that cannot be read yields an empty boundary
+    rather than an exception: a git read must never be the reason a dispatch
+    fails, and an unrecorded boundary is `unknown`, which is not the same claim
+    as a mismatch.
+    """
+
+    #: The checkout actually used — a worktree path when the run has one, the
+    #: workspace root otherwise. A branch and sha say nothing without it.
+    repo_path: str = ""
+    #: Empty on a detached HEAD, which is a state, not a failure.
+    branch: str = ""
+    head_sha: str = ""
+    #: Paths already dirty when the run started, so a sweep of pre-existing
+    #: edits stays attributable to the tree the run inherited.
+    dirty_paths: list[str] = Field(default_factory=list)
+
+    @property
+    def is_recorded(self) -> bool:
+        """Whether this boundary says anything. An empty one is unknown."""
+        return bool(self.repo_path and self.head_sha)
+
+
 class AdvanceStageRequest(SQLModel):
     # backend decides transition; optional hint only for logging
     reason: str = ""

@@ -248,6 +248,15 @@ class AgentRun(SQLModel, table=True):
     # Paths this run left dirty, so its commit can be scoped to its own work
     # instead of sweeping unrelated edits out of the workspace.
     changed_paths_json: str = "[]"
+    # The git boundary this run started from — see schemas.GitBoundary, which is
+    # how these four are read and written. Recorded at dispatch, after the
+    # execution root and branch are resolved, so it describes the tree the agent
+    # actually saw. All empty means the boundary could not be read, which is
+    # `unknown` rather than a mismatch.
+    start_repo_path: str = ""
+    start_branch: str = ""
+    start_head_sha: str = ""
+    start_dirty_paths_json: str = "[]"
     stdout: str = ""
     stderr: str = ""
     auto_approve: bool = Field(default=False)
