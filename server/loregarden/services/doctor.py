@@ -15,12 +15,15 @@ first surprise is worse than no doctor.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable
 from pathlib import Path
 
 from loregarden.config import resolved_database_path, settings
 from loregarden.models.domain import (
+    AgentRun,
+    Approval,
     DoctorCheck,
     DoctorFinding,
     DoctorStatus,
@@ -29,15 +32,25 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS, run_git
+from loregarden.services.stage_parking import park_stage
 from sqlmodel import Session, select
 
 #: Checks cheap and decisive enough to run before every agent dispatch. The rest
 #: are informational, and a doctor that adds a second to every stage gets turned
 #: off. See `services.handoff_boundary` for the sibling pre-dispatch check.
+#:
+#: Both of these describe *this machine* rather than the work, and both make the
+#: run fail somewhere far from the cause — which is the whole argument for
+#: stopping ahead of the dispatch instead of letting it report its own error.
+#:
+#: REPO_HAS_COMMIT is deliberately not here, though it is a real check. A
+#: workspace whose repo has no commit is caught by `ensure_ticket_branch` a few
+#: lines later, which fails the run with a precise git message; parking on it
+#: instead replaces that message with an approval a human has to clear, and turns
+#: every not-yet-a-repo workspace into a stalled ticket.
 DISPATCH_PREFLIGHT_CHECKS = (
     DoctorCheck.GIT_CORE_BARE,
     DoctorCheck.GIT_ENV_LEAK,
-    DoctorCheck.REPO_HAS_COMMIT,
 )
 
 
@@ -266,6 +279,58 @@ CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] =
     DoctorCheck.CLI_CREDENTIALS: check_cli_credentials,
     DoctorCheck.GIT_PORTABILITY: check_git_portability,
 }
+
+
+def preflight_run(
+    session: Session, run: AgentRun, workspace: Workspace, repo_root: Path
+) -> list[DoctorFinding]:
+    """Run the fast subset before a stage, and record which checks failed.
+
+    Recorded on the run rather than raised: knowing that a stage started in a
+    broken environment is worth having afterwards even when nobody stopped it at
+    the time. The caller decides what a failure means; this only observes.
+    """
+    findings = run_checks(session, workspace, repo_root, checks=DISPATCH_PREFLIGHT_CHECKS)
+    failures = [f.check.value for f in findings if f.status is DoctorStatus.FAIL]
+    run.start_preflight_failures_json = json.dumps(failures)
+    session.add(run)
+    session.commit()
+    return findings
+
+
+def park_for_environment(
+    session: Session, *, run: AgentRun, ticket: Ticket, summary: str
+) -> Approval:
+    """Send a failed preflight to the approval inbox instead of blocking.
+
+    A broken checkout is a fact about this machine, not about the ticket — see
+    `services.stage_parking`.
+    """
+    return park_stage(
+        session,
+        run=run,
+        ticket=ticket,
+        title=f"Environment preflight failed on {ticket.external_id}",
+        impact=summary,
+    )
+
+
+def preflight_summary(findings: list[DoctorFinding]) -> str:
+    """The failing checks and their remediations, for an approval's impact text.
+
+    Written for whoever opens the inbox: the remediation is the whole point, and
+    it is the part that otherwise lives only in someone's memory.
+    """
+    failures = [f for f in findings if f.status is DoctorStatus.FAIL]
+    lines = ["Environment preflight failed before this stage could run."]
+    for finding in failures:
+        lines.append(f"  {finding.check.value}: {finding.finding}")
+        lines.append(f"    fix: {finding.remediation}")
+    lines.append(
+        "Approving lets the stage run anyway. It does not fix any of the above, and "
+        "the run will most likely fail the same way."
+    )
+    return "\n".join(lines)
 
 
 def run_checks(

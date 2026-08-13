@@ -18,6 +18,7 @@ from typing import Any
 
 from sqlmodel import Session
 
+from loregarden.mcp.doctor_tool import doctor
 from loregarden.mcp.organization_tool import check_organization
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.services.prior_work import search_prior_work
@@ -42,4 +43,5 @@ def _search_prior_work(session: Session, arguments: dict[str, Any]) -> str:
 EXTENDED_TOOLS: dict[str, ToolHandler] = {
     McpTool.CHECK_ORGANIZATION.value: check_organization,
     McpTool.SEARCH_PRIOR_WORK.value: _search_prior_work,
+    McpTool.DOCTOR.value: doctor,
 }

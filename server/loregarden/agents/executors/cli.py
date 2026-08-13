@@ -31,7 +31,14 @@ from loregarden.agents.plan_context import (
 from loregarden.agents.registry import get_agent
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.agents.verify_context import build_verify_context
-from loregarden.models.domain import AgentRun, RunStatus, Ticket, WorkflowStageDef, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    DoctorStatus,
+    RunStatus,
+    Ticket,
+    WorkflowStageDef,
+    Workspace,
+)
 from loregarden.services.cli_settings import (
     WorkspaceRuntimeSettings,
     adapter_model_pins_apply,
@@ -41,6 +48,7 @@ from loregarden.services.cli_settings import (
 )
 from loregarden.services.code_map import render_code_map
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
+from loregarden.services.doctor import park_for_environment, preflight_run, preflight_summary
 from loregarden.services.evidence import FULL_SUITE_EVIDENCE_KIND
 from loregarden.services.git_boundary import read_boundary, stamp_run_boundary
 from loregarden.services.git_branch import ensure_ticket_branch
@@ -635,6 +643,21 @@ class CliAgentExecutor:
         which is why this lives in the executor rather than beside any one caller.
         """
         stamp_run_boundary(self.session, run, read_boundary(repo_root, dirty_paths=dirty_paths))
+
+        # The environment first: a stage started in a checkout with core.bare set,
+        # or under a leaked GIT_DIR, fails in ways that point at anything but the
+        # cause. Recorded on the run whatever happens next.
+        preflight = preflight_run(self.session, run, workspace, repo_root)
+        if any(finding.status is DoctorStatus.FAIL for finding in preflight):
+            park_for_environment(
+                self.session, run=run, ticket=ticket, summary=preflight_summary(preflight)
+            )
+            return self.orchestration.complete_run(
+                run,
+                status=RunStatus.CANCELLED,
+                stderr="Environment preflight failed: awaiting human confirmation.",
+                advance_workflow=False,
+            )
 
         verdict = verify_run_boundary(self.session, run, ticket)
         if verdict_proceeds(verdict) or not boundary_enforced(workspace):

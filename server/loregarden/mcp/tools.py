@@ -13,6 +13,7 @@ from loregarden.mcp.admission import (
     run_admitted,
     start_orchestration_admitted,
 )
+from loregarden.mcp.doctor_tool import TOOL_DEFINITION as DOCTOR_TOOL_DEFINITION
 from loregarden.mcp.organization_tool import TOOL_DEFINITION as ORGANIZATION_TOOL_DEFINITION
 from loregarden.mcp.ticket_edit_tools import (
     execute_ticket_edit_tool,
@@ -1026,6 +1027,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 
 # Tools that live in their own module rather than in this file's chain.
 TOOL_DEFINITIONS.append(ORGANIZATION_TOOL_DEFINITION)
+TOOL_DEFINITIONS.append(DOCTOR_TOOL_DEFINITION)
 TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
 
 

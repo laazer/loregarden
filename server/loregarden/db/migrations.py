@@ -26,6 +26,7 @@ from loregarden.db.migration_utils import (
     table_exists,
 )
 from loregarden.db.migrations_composer import m_composer_commands
+from loregarden.db.migrations_doctor import m_agent_run_preflight
 from loregarden.db.migrations_git_boundary import (
     m_agent_run_boundary_verdict,
     m_agent_run_git_boundary,
@@ -1432,6 +1433,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0077_workspace_opencode_columns", _m_workspace_opencode_columns),
     ("0078_agent_run_git_boundary", m_agent_run_git_boundary),
     ("0079_agent_run_boundary_verdict", m_agent_run_boundary_verdict),
+    ("0080_agent_run_preflight", m_agent_run_preflight),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

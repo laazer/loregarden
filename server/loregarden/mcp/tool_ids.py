@@ -46,6 +46,7 @@ class McpTool(StrEnum):
     SEARCH_MEMORY = "loregarden_search_memory"
     CREATE_MEMORY_RELATION = "loregarden_create_memory_relation"
     CHECK_ORGANIZATION = "loregarden_check_organization"
+    DOCTOR = "loregarden_doctor"
 
     @classmethod
     def try_parse(cls, name: str) -> McpTool | None:
@@ -104,6 +105,7 @@ READ_ONLY_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.LIST_TICKETS,
         McpTool.MEMORY_STATUS,
         McpTool.SEARCH_MEMORY,
+        McpTool.DOCTOR,
     }
 )
 

@@ -31,9 +31,8 @@ from loregarden.models.domain import (
 from loregarden.services.git_boundary import boundary_of_run
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.handoff_store import boundary_from_doc, latest_handoff_doc
-from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
-from loregarden.services.stage_retry_budget import clear_stage_dispatches
+from loregarden.services.stage_parking import park_stage
 from sqlmodel import Session
 
 #: Verdicts a stage may start on. ADVANCED is here because the orchestrator
@@ -180,11 +179,9 @@ def park_for_boundary(
 ) -> Approval:
     """Send a failing verdict to the approval inbox instead of blocking.
 
-    A mismatch is usually someone else's concurrent work, not a broken ticket. A
-    block costs a retry budget and a deliberate requeue to undo; an approval costs
-    a click. The stage's dispatch budget is refunded for the same reason — parking
-    to ask a question is not an attempt at the work, and charging for it would
-    walk a ticket toward its breaker every time a human touched the checkout.
+    A mismatch is usually someone else's concurrent work, not a broken ticket.
+    See `services.stage_parking` for why an approval rather than a block, and why
+    the dispatch budget is refunded.
     """
     sender_doc = latest_handoff_doc(session, ticket.id)
     impact = describe(
@@ -192,12 +189,10 @@ def park_for_boundary(
         receiver=boundary_of_run(run),
         sender=boundary_from_doc(sender_doc) if sender_doc else GitBoundary(),
     )
-    approval = OrchestrationCallbackService(session).request_approval(
-        ticket,
-        stage_key=run.stage_key,
+    return park_stage(
+        session,
+        run=run,
+        ticket=ticket,
         title=f"Boundary check on {ticket.external_id}: {verdict.value}",
         impact=impact,
-        level="high",
     )
-    clear_stage_dispatches(session, ticket.id, run.stage_key)
-    return approval

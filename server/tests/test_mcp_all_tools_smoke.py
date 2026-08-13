@@ -204,6 +204,13 @@ def _args_for(
         # lefthook.yml, and `check` would shell out to both checkers over the
         # whole workspace.
         "loregarden_check_organization": {"workspace_slug": ws, "action": "hooks_status"},
+        # The two config checks only read the environment; the rest shell out to
+        # git over the whole workspace or stat every backend source, which is
+        # more than a smoke test needs to prove the tool is wired up.
+        "loregarden_doctor": {
+            "workspace_slug": ws,
+            "checks": ["git_core_bare", "git_env_leak"],
+        },
         "loregarden_attach_evidence": {
             "run_id": run_id,
             "evidence_kind": "real_surface",
@@ -298,6 +305,7 @@ def test_every_advertised_tool_is_callable(client: TestClient):
         "loregarden_attach_evidence",
         "loregarden_search_prior_work",
         "loregarden_check_organization",
+        "loregarden_doctor",
         "loregarden_update_ticket",
         "loregarden_create_ticket",
         "loregarden_request_approval",

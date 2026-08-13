@@ -7,14 +7,17 @@ would prove only that the mock works.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
 import pytest
 from loregarden.models.domain import (
+    AgentRun,
     DoctorCheck,
     DoctorStatus,
     PortabilityState,
+    RunStatus,
     Ticket,
     Workspace,
 )
@@ -27,6 +30,8 @@ from loregarden.services.doctor import (
     check_git_env_leak,
     check_repo_has_commit,
     portability_state,
+    preflight_run,
+    preflight_summary,
     run_checks,
 )
 from sqlmodel import Session
@@ -272,3 +277,86 @@ def test_a_populated_database_passes(session, workspace, repo, monkeypatch):
     session.commit()
 
     assert doctor.check_db_resolution(session, workspace, repo).status is DoctorStatus.PASS
+
+
+# -- the preflight ------------------------------------------------------------
+
+
+def _run(session, workspace, ticket) -> AgentRun:
+    run = AgentRun(
+        run_code="r-preflight",
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        agent_id="backend_implementer",
+        stage_key=ticket.workflow_stage_key,
+        status=RunStatus.RUNNING,
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    return run
+
+
+def test_a_healthy_preflight_records_no_failures(session, workspace, repo, monkeypatch):
+    monkeypatch.delenv("GIT_DIR", raising=False)
+    monkeypatch.delenv("GIT_WORK_TREE", raising=False)
+    ticket = Ticket(external_id="t1", workspace_id=workspace.id, title="demo")
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    run = _run(session, workspace, ticket)
+
+    findings = preflight_run(session, run, workspace, repo)
+
+    assert all(f.status is not DoctorStatus.FAIL for f in findings)
+    session.refresh(run)
+    assert json.loads(run.start_preflight_failures_json) == []
+
+
+def test_the_preflight_records_which_checks_failed(session, workspace, repo):
+    git(repo, "config", "--local", "core.bare", "true")
+    ticket = Ticket(external_id="t1", workspace_id=workspace.id, title="demo")
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    run = _run(session, workspace, ticket)
+
+    preflight_run(session, run, workspace, repo)
+
+    session.refresh(run)
+    assert json.loads(run.start_preflight_failures_json) == [DoctorCheck.GIT_CORE_BARE.value]
+
+
+def test_the_preflight_runs_only_the_fast_subset(session, workspace, repo, monkeypatch):
+    """A doctor that adds a second to every dispatch gets turned off. The
+    informational checks — portability, the reload sentinel — must not run here."""
+    ran: list[DoctorCheck] = []
+    for check_id, original in list(CHECKS.items()):
+
+        def spy(session, workspace, repo_root, _check=check_id, _original=original):
+            ran.append(_check)
+            return _original(session, workspace, repo_root)
+
+        monkeypatch.setitem(CHECKS, check_id, spy)
+
+    ticket = Ticket(external_id="t1", workspace_id=workspace.id, title="demo")
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+
+    preflight_run(session, _run(session, workspace, ticket), workspace, repo)
+
+    assert ran == list(DISPATCH_PREFLIGHT_CHECKS)
+    assert DoctorCheck.GIT_PORTABILITY not in ran
+
+
+def test_the_summary_carries_the_remediation_not_just_the_diagnosis(session, workspace, repo):
+    """The remediation is the part that otherwise lives only in someone's memory."""
+    git(repo, "config", "--local", "core.bare", "true")
+    findings = run_checks(session, workspace, repo, checks=DISPATCH_PREFLIGHT_CHECKS)
+
+    summary = preflight_summary(findings)
+
+    assert "core.bare false" in summary
+    # Approving is not a fix, and must not read as one.
+    assert "does not fix" in summary

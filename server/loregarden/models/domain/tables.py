@@ -266,6 +266,11 @@ class AgentRun(SQLModel, table=True):
         default=BoundaryVerdict.UNKNOWN,
         sa_column=_str_enum_column(BoundaryVerdict, BoundaryVerdict.UNKNOWN),
     )
+    # Doctor checks that failed before this run was dispatched, as a JSON array
+    # of check ids. Only the failures: an empty array is a healthy environment,
+    # and storing seven "fine"s per dispatch to record the one case anyone
+    # queries is not worth the rows.
+    start_preflight_failures_json: str = "[]"
     stdout: str = ""
     stderr: str = ""
     auto_approve: bool = Field(default=False)
