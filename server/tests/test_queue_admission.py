@@ -248,6 +248,46 @@ def test_a_refused_start_gives_the_slot_back(client, db_session):
     assert not held
 
 
+def test_releasing_does_not_take_a_lane_someone_else_now_holds(session, workspace):
+    """A failed start releases its own slot, not whatever moved into it.
+
+    The lane drains as part of giving the failed run up, so by the time the
+    caller releases its reservation the slot can already hold the next entry's
+    orchestration. Freeing it blindly reports an occupied lane as available and
+    lets the pool admit past `max_concurrent`.
+    """
+    admission = QueueAdmissionService(session, max_concurrent=3)
+    reservation = admission.reserve_orchestration(_ticket(session, workspace.id, "T-first"))
+    reservation.bind(orchestration_run_id="orch-first")
+
+    slot = session.exec(
+        select(AgentSlot).where(AgentSlot.slot_number == reservation.slot_number)
+    ).one()
+    slot.current_orchestration_run_id = "orch-next"
+    session.add(slot)
+    session.commit()
+
+    reservation.release()
+
+    session.refresh(slot)
+    assert slot.is_available is False
+    assert slot.current_orchestration_run_id == "orch-next"
+
+
+def test_releasing_gives_back_a_slot_that_is_still_ours(session, workspace):
+    admission = QueueAdmissionService(session, max_concurrent=3)
+    reservation = admission.reserve_orchestration(_ticket(session, workspace.id, "T-first"))
+    reservation.bind(orchestration_run_id="orch-first")
+
+    reservation.release()
+
+    slot = session.exec(
+        select(AgentSlot).where(AgentSlot.slot_number == reservation.slot_number)
+    ).one()
+    assert slot.is_available is True
+    assert slot.current_orchestration_run_id is None
+
+
 def test_a_named_lane_is_honoured(session, workspace):
     """The operator picked a lane on a board that showed what each was doing."""
     admission = QueueAdmissionService(session, max_concurrent=3)

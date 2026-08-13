@@ -254,19 +254,28 @@ class QueueLaneService:
         The lane is identified by the orchestration rather than by any single
         agent run: a ticket's pipeline spans many, and releasing on the first to
         finish would hand the lane away mid-ticket.
+
+        The entry is settled whether or not a slot still names this orchestration.
+        Those are two records of one release, and `reconcile_slots` reclaims a slot
+        the moment its occupant goes terminal — so on any path where it ran first
+        (a restart, a status read racing this call) the slot lookup finds nothing,
+        and gating the entry on it left the entry ACTIVE forever with no later pass
+        able to find it.
         """
+        entry = self.session.exec(
+            select(QueuedRun).where(QueuedRun.orchestration_run_id == orchestration_run_id)
+        ).first()
+        if entry and entry.status != QueuePosition.STARTED:
+            entry.status = QueuePosition.STARTED
+            self.session.add(entry)
+            self.session.commit()
+
         slot = self.session.exec(
             select(AgentSlot).where(AgentSlot.current_orchestration_run_id == orchestration_run_id)
         ).first()
         if not slot:
+            emit_execution_update()
             return
-
-        entry = self.session.exec(
-            select(QueuedRun).where(QueuedRun.orchestration_run_id == orchestration_run_id)
-        ).first()
-        if entry:
-            entry.status = QueuePosition.STARTED
-            self.session.add(entry)
 
         slot_number = slot.slot_number
         slot.is_available = True

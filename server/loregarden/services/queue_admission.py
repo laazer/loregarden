@@ -54,6 +54,12 @@ class Reservation:
     position: int | None = None
     message: str = ""
     _session: Session | None = field(default=None, repr=False)
+    #: What ``bind`` pointed the slot at, so ``release`` can tell "still mine"
+    #: from "someone else's now". A lane that drains between the two — which it
+    #: does whenever the caller's start failed and the release of *that* run
+    #: started the next entry — hands the slot to a live orchestration, and a
+    #: blind release would mark it available while an agent is in it.
+    _bound_id: str | None = field(default=None, repr=False)
 
     def bind(self, *, run_id: str | None = None, orchestration_run_id: str | None = None) -> None:
         """Point the reserved slot at what the caller actually started.
@@ -75,6 +81,7 @@ class Reservation:
             slot.current_run_id = run_id
         if orchestration_run_id:
             slot.current_orchestration_run_id = orchestration_run_id
+        self._bound_id = orchestration_run_id or run_id
         self._session.add(slot)
         if orchestration_run_id:
             from loregarden.services.queue_lanes import QueueLaneService
@@ -86,11 +93,19 @@ class Reservation:
         emit_execution_update()
 
     def release(self) -> None:
-        """Give the slot back — the caller's start failed or did nothing."""
+        """Give the slot back — the caller's start failed or did nothing.
+
+        A no-op once the slot has moved on to something else: releasing a lane
+        that a *different* orchestration now holds would report an occupied lane
+        as available and let the pool admit past its own limit.
+        """
         if not self.admitted or self.slot_number is None or self._session is None:
             return
         slot = _slot(self._session, self.slot_number)
         if not slot:
+            return
+        occupant = slot.current_orchestration_run_id or slot.current_run_id
+        if occupant and occupant != self._bound_id:
             return
         slot.is_available = True
         slot.current_run_id = None

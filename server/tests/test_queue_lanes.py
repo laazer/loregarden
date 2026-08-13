@@ -276,3 +276,63 @@ def test_completion_releases_the_lane_through_the_orchestrator(session, workspac
 
     session.refresh(slot)
     assert slot.is_available is True
+
+
+def test_blocking_a_ticket_releases_the_lane(session, workspace):
+    """`block_ticket` is a terminal status too, and used to skip the release.
+
+    It set BLOCKED and finished_at directly instead of going through the exit
+    every other terminal path uses, so the lane entry stayed ACTIVE and
+    `ticket_activity` reported the ticket as running for as long as the row
+    existed.
+    """
+    from loregarden.models.domain import QueuedRun
+    from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+
+    service = QueueLaneService(session, max_concurrent=3)
+    dispatcher = _Dispatcher(session)
+    blocked = _ticket(session, workspace.id, "LG-1")
+
+    with patch.object(service, "_dispatch_orchestration", dispatcher):
+        service.add_to_lane(ticket_id=blocked.id, slot_number=1)
+
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    orch_run = session.get(OrchestrationRun, slot.current_orchestration_run_id)
+
+    OrchestrationCallbackService(session).block_ticket(
+        orch_run, blocked, message="Tests failed after 3 attempts"
+    )
+
+    entry = session.exec(
+        select(QueuedRun).where(QueuedRun.orchestration_run_id == orch_run.id)
+    ).one()
+    assert entry.status == QueuePosition.STARTED
+    session.refresh(slot)
+    assert slot.is_available is True
+
+
+def test_the_entry_settles_even_when_the_slot_is_already_gone(lanes, session, workspace):
+    """`reconcile_slots` reclaims a terminal occupant's slot on any status read.
+
+    When it wins that race the slot no longer names the orchestration, and
+    gating the entry update on that lookup left the entry ACTIVE with nothing
+    able to find it again — a finished ticket reading "running" forever.
+    """
+    from loregarden.models.domain import QueuedRun
+
+    ticket = _ticket(session, workspace.id, "LG-1")
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1)
+
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    orch_id = slot.current_orchestration_run_id
+
+    # Whoever got there first: the slot is back in the pool, pointing at nothing.
+    slot.is_available = True
+    slot.current_orchestration_run_id = None
+    session.add(slot)
+    session.commit()
+
+    lanes.on_orchestration_complete(orch_id)
+
+    entry = session.exec(select(QueuedRun).where(QueuedRun.orchestration_run_id == orch_id)).one()
+    assert entry.status == QueuePosition.STARTED
