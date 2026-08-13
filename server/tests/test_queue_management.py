@@ -916,8 +916,8 @@ class TestOnRunCompleteFailureWiring:
         assert "static_qa" in queued.failure_reason
         assert queued.last_failed_at is not None
 
-    async def test_failed_run_visible_via_get_failed_runs(self, db_session: Session):
-        from loregarden.api.bulk_queue_operations import get_failed_runs
+    async def test_failed_run_visible_via_get_failed_entries(self, db_session: Session):
+        from loregarden.api.bulk_queue_operations import get_failed_entries
         from loregarden.services.parallel_queue import ParallelQueueService
 
         ws = Workspace(id="ws-fail-2", slug="ws-fail-2", name="Test Workspace Fail 2")
@@ -951,8 +951,11 @@ class TestOnRunCompleteFailureWiring:
         with p1, p2, p3, p4:
             await service.on_run_complete("run-fail-2")
 
-        failed = await get_failed_runs("ws-fail-2", db_session)
+        failed = await get_failed_entries("ws-fail-2", db_session)
         assert len(failed) == 1
+        # `entry_id` is the address now; `run_id` rides along for display and is
+        # null on every lane entry, which is why it could never be the key.
+        assert failed[0]["entry_id"] == queued.id
         assert failed[0]["run_id"] == "run-fail-2"
         assert failed[0]["failure_reason"] == "agent crashed"
 

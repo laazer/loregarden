@@ -25,11 +25,14 @@ from loregarden.models.domain import (
 )
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.queue_lanes import QueueLaneService
+from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
+from loregarden.services.ticket_state_service import choose
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from loregarden.services.worktree_lifecycle import release_ticket_worktree
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
 
 def _orch_code() -> str:
@@ -79,23 +82,8 @@ class OrchestrationCallbackService:
         raise ValueError("Ticket not found")
 
     def get_active_orchestration_run(self, ticket_id: str) -> OrchestrationRun | None:
-        """The run in flight for this ticket, claimed or executing.
-
-        QUEUED counts. A caller claims its run before handing the work to a
-        background thread (see `claim_orchestration_run`), and between those two
-        moments the ticket is already spoken for — treating only RUNNING as
-        active would let a second start slip into that window.
-        """
-        return self.session.exec(
-            select(OrchestrationRun)
-            .where(OrchestrationRun.ticket_id == ticket_id)
-            .where(
-                col(OrchestrationRun.status).in_(
-                    (OrchestrationRunStatus.QUEUED, OrchestrationRunStatus.RUNNING)
-                )
-            )
-            .order_by(OrchestrationRun.created_at.desc())
-        ).first()
+        """The run in flight for this ticket. Delegates to `run_concurrency`."""
+        return find_active_orchestration_run(self.session, ticket_id)
 
     def claim_orchestration_run(
         self,
@@ -154,6 +142,34 @@ class OrchestrationCallbackService:
         self.session.refresh(run)
         return run
 
+    def _finish_orchestration_run(
+        self,
+        run: OrchestrationRun,
+        *,
+        status: OrchestrationRunStatus,
+        message: str = "",
+    ) -> None:
+        """Put an orchestration run into a terminal status and give its lane back.
+
+        The single exit for every terminal status. A lane is held for the life of
+        an orchestration, so reaching a terminal status and releasing the lane are
+        one transition, not two things a caller is trusted to remember — and the
+        one caller that forgot (`block_ticket`) left the lane entry reading ACTIVE
+        for as long as the row existed. Nothing selects a terminal orchestration
+        again, so that residue is permanent, and `ticket_activity` reports the
+        ticket as running from then on however finished it is.
+
+        Callers mutate the ticket first and let the commit here carry it; the
+        run's own terminal fields are set here so no caller can set a status
+        without the release.
+        """
+        run.status = status
+        run.error_message = message[:2000]
+        run.finished_at = datetime.now(timezone.utc)
+        self.session.add(run)
+        self.session.commit()
+        self._release_execution_lane(run)
+
     def abandon_claim(self, run: OrchestrationRun, *, message: str) -> None:
         """Fail a claim nothing will adopt, so it stops looking live.
 
@@ -161,11 +177,7 @@ class OrchestrationCallbackService:
         it was made for refuses, leaving it QUEUED would block every later start
         of this ticket on an orchestration that never began.
         """
-        run.status = OrchestrationRunStatus.FAILED
-        run.error_message = message
-        run.finished_at = datetime.now(timezone.utc)
-        self.session.add(run)
-        self.session.commit()
+        self._finish_orchestration_run(run, status=OrchestrationRunStatus.FAILED, message=message)
 
     def start_orchestration_run(
         self,
@@ -433,7 +445,8 @@ class OrchestrationCallbackService:
         if instance and stages and key:
             set_stage_status(ticket, instance, stages, key, StageStatus.BLOCKED)
             self.session.add(instance)
-        ticket.state = TicketState.BLOCKED
+        # Chosen, not derived: something decided this ticket cannot proceed.
+        choose(self.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
         ticket.blocking_issues = record_blocking_issue(
             self.session,
             ticket,
@@ -442,16 +455,12 @@ class OrchestrationCallbackService:
             message=message,
         )
         ticket.next_status = "Blocked"
-        ticket.revision += 1
-        ticket.last_updated_by = "orchestrator"
-        orch_run.status = OrchestrationRunStatus.BLOCKED
-        orch_run.error_message = message[:2000]
-        orch_run.finished_at = datetime.now(timezone.utc)
         if key:
             orch_run.current_stage_key = key
         self.session.add(ticket)
-        self.session.add(orch_run)
-        self.session.commit()
+        self._finish_orchestration_run(
+            orch_run, status=OrchestrationRunStatus.BLOCKED, message=message
+        )
         return ticket
 
     def attach_artifact(
@@ -533,9 +542,6 @@ class OrchestrationCallbackService:
         status: OrchestrationRunStatus,
         message: str = "",
     ) -> OrchestrationRun:
-        orch_run.status = status
-        orch_run.error_message = message[:2000]
-        orch_run.finished_at = datetime.now(timezone.utc)
         if status == OrchestrationRunStatus.SUCCEEDED and ticket.state not in (
             TicketState.DONE,
             TicketState.WONT_DO,
@@ -544,10 +550,8 @@ class OrchestrationCallbackService:
             if instance and stages:
                 self.orch.reconcile_ticket(ticket)
                 self.session.refresh(ticket)
-        self.session.add(orch_run)
         self.session.add(ticket)
-        self.session.commit()
-        self._release_execution_lane(orch_run)
+        self._finish_orchestration_run(orch_run, status=status, message=message)
         # A finished ticket's tree has nothing left to run in it, and leaving
         # it costs a directory and a branch checkout that blocks the next one.
         release_ticket_worktree(self.session, ticket)
@@ -574,8 +578,6 @@ def _release_execution_lane_impl(session, orch_run) -> None:
     Best-effort: the orchestration's terminal status is already committed, and
     a lane that fails to release is recoverable — a lost completion is not.
     """
-    from loregarden.services.queue_lanes import QueueLaneService
-
     try:
         QueueLaneService(session).on_orchestration_complete(orch_run.id)
     except Exception:

@@ -35,9 +35,13 @@ from loregarden.services.run_completion import (
     release_execution_slot,
     settle_stage_after_failed_completion,
 )
+from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.run_log_stream import bootstrap_run_log
+from loregarden.services.scheduling import schedule_orchestration
 from loregarden.services.stage_retry_budget import clear_stage_dispatches
 from loregarden.services.studio_routing import find_terminal_stage, is_terminal_stage
+from loregarden.services.ticket_rollup import reconcile_ancestors
+from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_tags import serialize_tags
 from loregarden.services.triage_question_log import (
     record_home_chat_question_exchange,
@@ -263,6 +267,12 @@ class OrchestrationService:
             self.session.add(ticket)
             self.session.add(instance)
             self.session.commit()
+            if before[0] != after[0]:
+                # This ticket's state moved, so every parent above it is now a
+                # summary of something that changed. Hooked here because this is
+                # the widest point an orchestrated state change passes through;
+                # the startup sweep covers whatever still slips past it.
+                reconcile_ancestors(self.session, ticket)
         return ticket
 
     def build_stage_views(self, ticket: Ticket) -> list[WorkflowStageView]:
@@ -277,20 +287,10 @@ class OrchestrationService:
         return views
 
     def start_ticket(self, ticket: Ticket) -> Ticket:
-        result = StateMachine.can_transition_ticket(ticket.state, TicketState.IN_PROGRESS)
-        if not result.ok:
-            raise ValueError(result.message)
-        ticket.state = TicketState.IN_PROGRESS
+        choose(self.session, ticket, TicketState.IN_PROGRESS, actor="human")
         ticket.updated_at = datetime.now(timezone.utc)
         self.session.add(ticket)
         self.session.commit()
-        event_bus.publish(
-            self.session,
-            EventType.TICKET_STATE_CHANGED,
-            workspace_id=ticket.workspace_id,
-            ticket_id=ticket.id,
-            payload={"state": ticket.state.value},
-        )
         return ticket
 
     def update_ticket_manual(self, ticket: Ticket, body: UpdateTicketRequest) -> Ticket:
@@ -313,9 +313,9 @@ class OrchestrationService:
             ticket.state_locked = True
 
         if body.state is not None:
-            ticket.state = body.state
-            ticket.revision += 1
-            ticket.last_updated_by = "human"
+            # The one writer that took any value from the API and wrote it
+            # unchecked. `choose` validates it as a move somebody decided on.
+            choose(self.session, ticket, body.state, actor="human", emit=False)
             if body.state == TicketState.WONT_DO:
                 ticket.state_locked = True
 
@@ -370,6 +370,9 @@ class OrchestrationService:
         # Abandoning or finishing a ticket retires its tree too; otherwise the
         # directory and its branch checkout outlive every reason they existed.
         release_ticket_worktree(self.session, ticket)
+        # Closing the last open child finishes its parent, and a human closing
+        # it by hand is no different from an agent doing so.
+        reconcile_ancestors(self.session, ticket)
         event_bus.publish(
             self.session,
             EventType.TICKET_STATE_CHANGED,
@@ -391,7 +394,7 @@ class OrchestrationService:
         if "retry budget" in (ticket.blocking_issues or "").lower():
             ticket.blocking_issues = ""
         if ticket.state == TicketState.BLOCKED and not ticket.state_locked:
-            ticket.state = TicketState.IN_PROGRESS
+            choose(self.session, ticket, TicketState.IN_PROGRESS, actor="human", emit=False)
             ticket.next_status = ""
 
     def _apply_manual_stage_updates(
@@ -1161,11 +1164,7 @@ class ApprovalService:
         Resuming without it would silently downgrade an unattended run into one
         that stops at the next tool prompt.
         """
-        from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-        from loregarden.services.run_service import schedule_orchestration
-
-        callbacks = OrchestrationCallbackService(self.session)
-        if callbacks.get_active_orchestration_run(ticket.id):
+        if find_active_orchestration_run(self.session, ticket.id):
             return
 
         previous = self.session.exec(

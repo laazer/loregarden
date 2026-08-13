@@ -65,7 +65,9 @@ def test_lane_dispatch_passes_timeout_into_orchestration(db_session):
     db_session.add(slot)
     db_session.commit()
 
-    with patch("loregarden.services.run_service.schedule_orchestration") as schedule:
+    # Patched where it is used: lane dispatch lives in `queue_dispatch` now and
+    # binds this name at import, so patching run_service leaves it untouched.
+    with patch("loregarden.services.queue_dispatch.schedule_orchestration") as schedule:
         lanes.start_lane_head(1)
 
     assert schedule.called

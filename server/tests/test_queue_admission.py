@@ -7,7 +7,7 @@ that: capacity free means start now, capacity full means wait your turn — and
 the caller is told which.
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from loregarden.models.domain import AgentSlot, QueuedRun, Ticket, Workspace
@@ -183,13 +183,14 @@ def test_a_queued_entry_starts_when_the_lane_drains(session, workspace, endpoint
     session.add(slot)
     session.commit()
 
-    with (
-        patch.object(admission.lanes, "_dispatch_orchestration") as dispatch_orch,
-        patch.object(admission.lanes, "_dispatch_stage") as dispatch_stage,
-    ):
-        dispatch_orch.return_value = type("O", (), {"id": "orch-1", "run_code": "orch_1"})()
-        dispatch_stage.return_value = type("R", (), {"id": "run-1"})()
-        admission.lanes.start_lane_head(1)
+    dispatcher = MagicMock()
+    dispatch_orch = dispatcher.dispatch_orchestration
+    dispatch_stage = dispatcher.dispatch_stage
+    dispatch_orch.return_value = type("O", (), {"id": "orch-1", "run_code": "orch_1"})()
+    dispatch_stage.return_value = type("R", (), {"id": "run-1"})()
+    admission.lanes.dispatcher = dispatcher
+
+    admission.lanes.start_lane_head(1)
 
     if endpoint_kind == "orchestration":
         dispatch_orch.assert_called_once()
@@ -246,6 +247,46 @@ def test_a_refused_start_gives_the_slot_back(client, db_session):
 
     held = db_session.exec(select(AgentSlot).where(AgentSlot.is_available == False)).all()  # noqa: E712
     assert not held
+
+
+def test_releasing_does_not_take_a_lane_someone_else_now_holds(session, workspace):
+    """A failed start releases its own slot, not whatever moved into it.
+
+    The lane drains as part of giving the failed run up, so by the time the
+    caller releases its reservation the slot can already hold the next entry's
+    orchestration. Freeing it blindly reports an occupied lane as available and
+    lets the pool admit past `max_concurrent`.
+    """
+    admission = QueueAdmissionService(session, max_concurrent=3)
+    reservation = admission.reserve_orchestration(_ticket(session, workspace.id, "T-first"))
+    reservation.bind(orchestration_run_id="orch-first")
+
+    slot = session.exec(
+        select(AgentSlot).where(AgentSlot.slot_number == reservation.slot_number)
+    ).one()
+    slot.current_orchestration_run_id = "orch-next"
+    session.add(slot)
+    session.commit()
+
+    reservation.release()
+
+    session.refresh(slot)
+    assert slot.is_available is False
+    assert slot.current_orchestration_run_id == "orch-next"
+
+
+def test_releasing_gives_back_a_slot_that_is_still_ours(session, workspace):
+    admission = QueueAdmissionService(session, max_concurrent=3)
+    reservation = admission.reserve_orchestration(_ticket(session, workspace.id, "T-first"))
+    reservation.bind(orchestration_run_id="orch-first")
+
+    reservation.release()
+
+    slot = session.exec(
+        select(AgentSlot).where(AgentSlot.slot_number == reservation.slot_number)
+    ).one()
+    assert slot.is_available is True
+    assert slot.current_orchestration_run_id is None
 
 
 def test_a_named_lane_is_honoured(session, workspace):
@@ -320,9 +361,53 @@ def test_the_lane_starts_a_parked_request_with_its_own_options(session, workspac
     session.add(slot)
     session.commit()
 
-    with patch("loregarden.services.run_service.schedule_orchestration") as dispatch:
+    # Patched where it is used, not where it is defined: `queue_dispatch` binds
+    # the name at import now that dispatch lives above the lane, so patching
+    # run_service would leave that binding untouched.
+    with patch("loregarden.services.queue_dispatch.schedule_orchestration") as dispatch:
         lanes.start_lane_head(1)
 
     kwargs = dispatch.call_args.kwargs
     assert kwargs["max_stages"] == 2
     assert kwargs["driver"] is not None
+
+
+def test_a_fresh_reservation_is_not_reclaimed_as_residue(session, workspace):
+    """Reserve claims a slot naming nothing so nobody else can take it.
+
+    A slot with both ids null is normally dead residue, and `reconcile_slots`
+    runs on every status read — the queue websocket polls every few seconds.
+    Landing in the window between reserve and bind, it would free a slot that is
+    about to be bound and let a second orchestration into the same lane.
+    """
+    admission = QueueAdmissionService(session, max_concurrent=3)
+    reservation = admission.reserve_orchestration(_ticket(session, workspace.id, "T-fresh"))
+    assert reservation.admitted
+
+    freed = admission.lanes.slots.reconcile_slots()
+
+    assert freed == []
+    slot = session.exec(
+        select(AgentSlot).where(AgentSlot.slot_number == reservation.slot_number)
+    ).one()
+    assert slot.is_available is False
+
+
+def test_a_reservation_that_never_binds_is_collected_after_the_grace(session, workspace):
+    """The grace defers the sweep; it must not disable it."""
+    from datetime import timedelta
+
+    from loregarden.services.parallel_queue import RESERVATION_GRACE
+
+    admission = QueueAdmissionService(session, max_concurrent=3)
+    reservation = admission.reserve_orchestration(_ticket(session, workspace.id, "T-stale"))
+    slot = session.exec(
+        select(AgentSlot).where(AgentSlot.slot_number == reservation.slot_number)
+    ).one()
+    slot.assigned_at = slot.assigned_at - RESERVATION_GRACE - timedelta(seconds=1)
+    session.add(slot)
+    session.commit()
+
+    assert admission.lanes.slots.reconcile_slots() == [reservation.slot_number]
+    session.refresh(slot)
+    assert slot.is_available is True

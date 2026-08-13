@@ -14,6 +14,7 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     WorkflowStageView,
 )
+from loregarden.services.ticket_state_service import derive
 
 
 def initial_stages_json(stages: list[WorkflowStageDef]) -> str:
@@ -142,11 +143,11 @@ def reconcile_workflow_state(
 
     ticket.workflow_stage_key = current_key
     ticket.workflow_stage_status = current_status
-    if not ticket.state_locked and ticket.state != TicketState.WONT_DO:
-        if ticket.state == TicketState.DONE and ticket_state != TicketState.DONE:
-            pass
-        else:
-            ticket.state = ticket_state
+    # Sticky done: a workflow that no longer derives DONE (a reopened stage, a
+    # template change) must not silently un-finish a ticket. `derive` owns the
+    # state_locked / wont_do guards and the revision bookkeeping.
+    if not (ticket.state == TicketState.DONE and ticket_state != TicketState.DONE):
+        derive(ticket, ticket_state, actor="workflow")
     ticket.updated_at = datetime.now(timezone.utc)
 
     instance.current_stage_key = current_key

@@ -26,6 +26,7 @@ from loregarden.services.run_interruption import (
     INTERRUPTED_RUN_MESSAGE,
     STRANDED_STAGE_MESSAGE,
 )
+from loregarden.services.scheduling import set_orchestration_scheduler
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workflow_state import set_stage_status
@@ -531,3 +532,20 @@ class RunService:
 
     def get_run(self, run_id: str) -> AgentRun | None:
         return self.session.get(AgentRun, run_id)
+
+
+def _scheduled_orchestration(ticket_id: str, **kwargs) -> None:
+    """Adapter installed into the `scheduling` seam.
+
+    A wrapper rather than the function itself, so the name is resolved in this
+    module's globals at *call* time. Handing the seam the function object froze
+    it at import: patching `run_service.schedule_orchestration` — which the
+    approval-resume tests do — rebound the module attribute while the seam went
+    on calling the original.
+    """
+    schedule_orchestration(ticket_id, **kwargs)
+
+
+# Installed here so lower modules can start a pipeline without importing this
+# one, which imports the builtin driver and therefore most of the orchestrator.
+set_orchestration_scheduler(_scheduled_orchestration)
