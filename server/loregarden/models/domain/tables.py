@@ -10,6 +10,7 @@ from loregarden.models.domain.enums import (
     ApprovalKind,
     ApprovalStatus,
     AutoFixStatus,
+    BoundaryVerdict,
     BtwStatus,
     CIStatus,
     CycleStatus,
@@ -257,6 +258,14 @@ class AgentRun(SQLModel, table=True):
     start_branch: str = ""
     start_head_sha: str = ""
     start_dirty_paths_json: str = "[]"
+    # How that boundary compared to the one the last handoff attested against.
+    # Written for every dispatch, matching verdicts included, so the mismatch
+    # rate is queryable — it is what decides when enforcement can move from
+    # record-only to blocking.
+    start_boundary_verdict: BoundaryVerdict = Field(
+        default=BoundaryVerdict.UNKNOWN,
+        sa_column=_str_enum_column(BoundaryVerdict, BoundaryVerdict.UNKNOWN),
+    )
     stdout: str = ""
     stderr: str = ""
     auto_approve: bool = Field(default=False)

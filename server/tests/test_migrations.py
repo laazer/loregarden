@@ -1,4 +1,5 @@
 from loregarden.db.migrations import MIGRATIONS, apply_migrations
+from loregarden.models.domain import BoundaryVerdict
 from sqlalchemy import text
 from sqlmodel import SQLModel, create_engine
 
@@ -1297,3 +1298,36 @@ def test_agent_runs_gain_the_git_boundary_columns_with_safe_defaults(tmp_path):
             )
         ).one()
     assert row == ("", "", "", "[]")
+
+
+def test_agent_runs_gain_the_boundary_verdict_defaulting_to_unknown(tmp_path):
+    """0079 records how each run's tree compared to its predecessor's.
+
+    Rows that predate the check compared nothing, which is exactly what UNKNOWN
+    means — so that is the default rather than an empty string, which would give
+    every reader a second not-checked case to handle.
+    """
+    engine = create_engine(f"sqlite:///{tmp_path / 'verdict.db'}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE agent_runs ("
+                "id TEXT PRIMARY KEY, run_code TEXT NOT NULL, workspace_id TEXT NOT NULL, "
+                "agent_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO agent_runs (id, run_code, workspace_id, agent_id) "
+                "VALUES ('r1', 'LG-1-implement', 'ws1', 'backend_implementer')"
+            )
+        )
+
+    apply_migrations(engine)
+
+    assert "start_boundary_verdict" in _columns(engine, "agent_runs")
+    with engine.connect() as conn:
+        verdict = conn.execute(
+            text("SELECT start_boundary_verdict FROM agent_runs WHERE id = 'r1'")
+        ).scalar_one()
+    assert verdict == BoundaryVerdict.UNKNOWN.value

@@ -166,6 +166,34 @@ class RunStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class BoundaryVerdict(str, Enum):
+    """How the tree a stage is about to run on compares to the one its
+    predecessor attested against. See `services.handoff_boundary`.
+
+    Three of these proceed and three do not, but none of them mean "broken" on
+    their own — a mismatch is far more often a human working in the same
+    checkout than a damaged ticket.
+    """
+
+    #: Same checkout, same branch, same commit.
+    MATCH = "match"
+    #: One side recorded no boundary: a handoff written before boundaries
+    #: existed, or a repo that could not be read. Not the same claim as a
+    #: mismatch, and the reason enforcement can be switched on at all.
+    UNKNOWN = "unknown"
+    #: Same checkout and branch, receiver's HEAD descends from the sender's.
+    #: The ordinary case between stages, since the orchestrator commits.
+    ADVANCED = "advanced"
+    #: Same branch, receiver's HEAD is not a descendant — a force-push, a reset,
+    #: or a squash-merge that landed underneath the ticket.
+    DIVERGED = "diverged"
+    #: A different branch than the sender attested against.
+    BRANCH_CHANGED = "branch_changed"
+    #: A different checkout entirely, or one that no longer contains the
+    #: sender's commit — the worktree case, in both directions.
+    REPO_CHANGED = "repo_changed"
+
+
 class StageFanoutGroupStatus(str, Enum):
     OPEN = "open"
     SETTLING = "settling"

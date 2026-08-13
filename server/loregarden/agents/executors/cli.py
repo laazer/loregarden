@@ -45,6 +45,12 @@ from loregarden.services.evidence import FULL_SUITE_EVIDENCE_KIND
 from loregarden.services.git_boundary import read_boundary, stamp_run_boundary
 from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_commit_push_service import working_tree_paths
+from loregarden.services.handoff_boundary import (
+    boundary_enforced,
+    park_for_boundary,
+    verdict_proceeds,
+    verify_run_boundary,
+)
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_cancellation import cancel_requested
 from loregarden.services.run_errors import TIMEOUT_HARD_CAP_MULTIPLIER, agent_timeout_message
@@ -146,19 +152,15 @@ class CliAgentExecutor:
         repo_root = resolve_execution_root(self.session, run, ticket, workspace)
         in_worktree = repo_root != workspace_root
 
-        # A worktree is already on its own branch, created with it. Running
-        # `checkout -B` there would be a no-op at best and, if two runs share a
-        # ticket branch, a fight at worst.
-        if not skip_git_branch and not in_worktree:
-            try:
-                ensure_ticket_branch(repo_root, ticket)
-            except (ValueError, subprocess.CalledProcessError) as exc:
-                return self.orchestration.complete_run(
-                    run,
-                    status=RunStatus.FAILED,
-                    stderr=f"Failed to checkout branch: {exc}",
-                    advance_workflow=advance_workflow,
-                )
+        failed_checkout = self._ensure_branch_or_fail(
+            run,
+            ticket,
+            repo_root=repo_root,
+            skip=skip_git_branch or in_worktree,
+            advance_workflow=advance_workflow,
+        )
+        if failed_checkout is not None:
+            return failed_checkout
 
         stage_def = self._resolve_stage_def(ticket, run)
         ticket_runtime = get_ticket_orchestration_runtime(ticket)
@@ -168,10 +170,11 @@ class CliAgentExecutor:
         # and must not be attributed to this ticket.
         paths_before = working_tree_paths(repo_root)
 
-        # Record the tree this run inherited, now that the execution root and
-        # branch are both settled. Stamping any earlier would name the shared
-        # checkout for a run that goes on to execute in a worktree.
-        stamp_run_boundary(self.session, run, read_boundary(repo_root, dirty_paths=paths_before))
+        parked = self._record_and_check_boundary(
+            run, ticket, workspace, repo_root=repo_root, dirty_paths=paths_before
+        )
+        if parked is not None:
+            return parked
 
         try:
             prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace, stage_def)
@@ -583,6 +586,67 @@ class CliAgentExecutor:
         from loregarden.core.workflow_loader import get_template_stages
 
         return list(get_template_stages(template))
+
+    def _ensure_branch_or_fail(
+        self,
+        run: AgentRun,
+        ticket: Ticket,
+        *,
+        repo_root: Path,
+        skip: bool,
+        advance_workflow: bool,
+    ) -> AgentRun | None:
+        """Put the shared checkout on the ticket's branch. Returns the failed run
+        when the checkout could not be made, or None to carry on.
+
+        Skipped for a worktree, which is already on its own branch, created with
+        it: running `checkout -B` there would be a no-op at best and, if two runs
+        share a ticket branch, a fight at worst.
+        """
+        if skip:
+            return None
+        try:
+            ensure_ticket_branch(repo_root, ticket)
+        except (ValueError, subprocess.CalledProcessError) as exc:
+            return self.orchestration.complete_run(
+                run,
+                status=RunStatus.FAILED,
+                stderr=f"Failed to checkout branch: {exc}",
+                advance_workflow=advance_workflow,
+            )
+        return None
+
+    def _record_and_check_boundary(
+        self,
+        run: AgentRun,
+        ticket: Ticket,
+        workspace: Workspace,
+        *,
+        repo_root: Path,
+        dirty_paths: set[str],
+    ) -> AgentRun | None:
+        """Record the tree this run inherited, then ask whether it is still the
+        one the last handoff described. Returns the parked run when the stage
+        must not proceed, or None to carry on.
+
+        Called once the execution root and branch are settled — stamping any
+        earlier would name the shared checkout for a run that goes on to execute
+        in a worktree. Every dispatch path in the app converges on `execute`,
+        which is why this lives in the executor rather than beside any one caller.
+        """
+        stamp_run_boundary(self.session, run, read_boundary(repo_root, dirty_paths=dirty_paths))
+
+        verdict = verify_run_boundary(self.session, run, ticket)
+        if verdict_proceeds(verdict) or not boundary_enforced(workspace):
+            return None
+
+        park_for_boundary(self.session, run=run, ticket=ticket, verdict=verdict)
+        return self.orchestration.complete_run(
+            run,
+            status=RunStatus.CANCELLED,
+            stderr=f"Boundary check {verdict.value}: awaiting human confirmation.",
+            advance_workflow=False,
+        )
 
     def _resolve_stage_def(self, ticket: Ticket, run: AgentRun) -> WorkflowStageDef | None:
         return next(

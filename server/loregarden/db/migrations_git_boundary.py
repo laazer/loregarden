@@ -15,6 +15,29 @@ from loregarden.db.migration_utils import add_columns_if_missing
 from sqlalchemy.engine import Connection
 
 
+def m_agent_run_boundary_verdict(conn: Connection) -> None:
+    """Record how the tree a run started on compared to its predecessor's.
+
+    Written for every dispatch, matching verdicts included, so the mismatch rate
+    is a query rather than a guess — the number that decides when enforcement can
+    safely move from record-only to blocking.
+
+    Defaults to `unknown` rather than empty: a run that predates the check did
+    not compare anything, which is precisely what UNKNOWN means, and inventing a
+    second not-checked value would give every reader two empty cases to handle.
+    """
+    add_columns_if_missing(
+        conn,
+        "agent_runs",
+        {
+            "start_boundary_verdict": (
+                "ALTER TABLE agent_runs ADD COLUMN start_boundary_verdict TEXT NOT NULL "
+                "DEFAULT 'unknown'"
+            ),
+        },
+    )
+
+
 def m_agent_run_git_boundary(conn: Connection) -> None:
     """Record the checkout, branch, commit, and inherited dirty paths a run
     started from.
