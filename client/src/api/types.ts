@@ -100,6 +100,17 @@ export interface WorkflowTransition {
 }
 
 
+/** A coding harness outside loregarden that an operator can hand a ticket to. */
+export type ExternalHarness = "claude_code" | "codex" | "cursor" | "other";
+
+export interface ExternalHarnessPrompt {
+  harness: ExternalHarness;
+  ticket_id: string;
+  external_id: string;
+  workspace_slug: string;
+  prompt: string;
+}
+
 export interface TicketDetail extends TicketSummary {
   /**
    * Present only on responses that start work. The slot pool is shared with the

@@ -55,6 +55,7 @@ from loregarden.services.run_service import (
     settle_stranded_stages,
 )
 from loregarden.services.seed import seed_database
+from loregarden.services.ticket_rollup import reconcile_all_parents
 from loregarden.services.ticket_studio_run_service import fail_interrupted_studio_turns
 from loregarden.services.triage_run_service import fail_interrupted_triage_turns
 from loregarden.services.worktree_lifecycle import reconcile_worktrees
@@ -95,6 +96,10 @@ async def lifespan(app: FastAPI):
         # ticket the crash left mid-stage counts as unfinished and keeps its
         # worktree for the resume below.
         reconcile_worktrees(session)
+        # After the reaps and stage settling, so every child ticket has reached
+        # the state it will actually be in before its parents are summarised
+        # from it. Catches whatever the push-on-change hooks missed.
+        reconcile_all_parents(session)
         # Resume only after every orphan row and stranded stage has been made
         # durable. Recovery adds a fresh run; the failed rows remain the audit trail.
         resume_interrupted_orchestrations(session)

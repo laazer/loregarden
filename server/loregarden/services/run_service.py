@@ -26,6 +26,7 @@ from loregarden.services.run_interruption import (
     INTERRUPTED_RUN_MESSAGE,
     STRANDED_STAGE_MESSAGE,
 )
+from loregarden.services.scheduling import set_orchestration_scheduler
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workflow_state import set_stage_status
@@ -171,6 +172,12 @@ def fail_interrupted_runs(
     )
     if ticket_id:
         query = query.where(AgentRun.ticket_id == ticket_id)
+    else:
+        # Same reasoning as fail_interrupted_orchestration_runs: a stage checked
+        # out to an outside harness is not orphaned by this process restarting.
+        # A ticket-scoped reap still claims it — that call is a deliberate
+        # "start this stage again", which does supersede whoever held it.
+        query = query.where(col(AgentRun.external_harness).is_(None))
     if stage_key:
         query = query.where(AgentRun.stage_key == stage_key)
     if exclude_run_id:
@@ -265,7 +272,12 @@ def fail_interrupted_orchestration_runs(
     already fails the orphaned AgentRun beneath it; this does the same for the parent.
     """
     query = select(OrchestrationRun).where(
-        OrchestrationRun.status == OrchestrationRunStatus.RUNNING
+        OrchestrationRun.status == OrchestrationRunStatus.RUNNING,
+        # An external-harness run has no process here to be orphaned by a reload:
+        # it lives in someone's own terminal, which is the reason to use one.
+        # Failing it on startup would end the run mid-ticket every time this
+        # server restarted. Abandoned ones are cancelled by the operator.
+        col(OrchestrationRun.external_harness).is_(None),
     )
     if ticket_id:
         query = query.where(OrchestrationRun.ticket_id == ticket_id)
@@ -520,3 +532,20 @@ class RunService:
 
     def get_run(self, run_id: str) -> AgentRun | None:
         return self.session.get(AgentRun, run_id)
+
+
+def _scheduled_orchestration(ticket_id: str, **kwargs) -> None:
+    """Adapter installed into the `scheduling` seam.
+
+    A wrapper rather than the function itself, so the name is resolved in this
+    module's globals at *call* time. Handing the seam the function object froze
+    it at import: patching `run_service.schedule_orchestration` — which the
+    approval-resume tests do — rebound the module attribute while the seam went
+    on calling the original.
+    """
+    schedule_orchestration(ticket_id, **kwargs)
+
+
+# Installed here so lower modules can start a pipeline without importing this
+# one, which imports the builtin driver and therefore most of the orchestrator.
+set_orchestration_scheduler(_scheduled_orchestration)

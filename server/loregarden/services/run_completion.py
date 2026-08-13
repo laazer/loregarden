@@ -43,6 +43,7 @@ from loregarden.services.stage_report import (
     parse_stage_report,
     stage_report_artifact_content,
 )
+from loregarden.services.ticket_state_service import choose
 from loregarden.services.usage_limits import (
     UsageLimit,
     detect_usage_limit,
@@ -124,7 +125,7 @@ def _reroute_or_block_for_rework(
             f"before re-running.",
         )
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
-        ticket.state = TicketState.BLOCKED
+        choose(orch.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
         return
 
     try:
@@ -296,7 +297,7 @@ def _block_for_usage_limit(
     )
     set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
     if status == RunStatus.SUCCEEDED:
-        ticket.state = TicketState.BLOCKED
+        choose(orch.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
 
 
 def _advance_clean_exit(
@@ -316,7 +317,7 @@ def _advance_clean_exit(
         # report before any agent stage can leave RUNNING.
         ticket.blocking_issues = _blocking_issue(orch.session, ticket, run, _MISSING_STAGE_REPORT)
         set_stage_status(ticket, instance, stages, run.stage_key, StageStatus.BLOCKED)
-        ticket.state = TicketState.BLOCKED
+        choose(orch.session, ticket, TicketState.BLOCKED, actor="orchestrator", emit=False)
         return None
 
     gate_approval: Approval | None = None

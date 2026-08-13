@@ -14,6 +14,10 @@ from loregarden.mcp.admission import (
     start_orchestration_admitted,
 )
 from loregarden.mcp.doctor_tool import TOOL_DEFINITION as DOCTOR_TOOL_DEFINITION
+from loregarden.mcp.external_harness_tools import (
+    EXTERNAL_HARNESS_TOOL_DEFINITIONS,
+    normalize_external_harness_args,
+)
 from loregarden.mcp.organization_tool import TOOL_DEFINITION as ORGANIZATION_TOOL_DEFINITION
 from loregarden.mcp.ticket_edit_tools import (
     execute_ticket_edit_tool,
@@ -32,6 +36,7 @@ from loregarden.mcp.tool_schemas import integer_prop as _integer_prop
 from loregarden.mcp.tool_schemas import string_prop as _string_prop
 from loregarden.mcp.tool_schemas import tool_schema as _tool_schema
 from loregarden.models.domain import (
+    ExternalHarness,
     OrchestrationRunStatus,
     WorkItemType,
 )
@@ -45,6 +50,7 @@ from loregarden.services.evidence import (
     EVIDENCE_KINDS,
     resolve_head_sha,
 )
+from loregarden.services.external_harness import start_external_orchestration
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.ticket_discovery import list_tickets_mcp
@@ -344,6 +350,18 @@ def _normalize_ticket_ops_args(name: str, args: dict[str, Any]) -> dict[str, Any
     )
 
 
+def _normalize_start_orchestration(args: dict[str, Any]) -> dict[str, Any]:
+    """Only ticket_id is required; the rest narrow how (and by whom) it runs."""
+    payload = {"ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id")}
+    for field in ("driver", "external_harness"):
+        if args.get(field) is not None:
+            payload[field] = _coerce_string(args.get(field), field=field)
+    max_stages = _coerce_optional_int(args.get("max_stages"))
+    if max_stages is not None:
+        payload["max_stages"] = max_stages
+    return payload
+
+
 def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
     """Coerce Claude MCP bridge quirks (aliases, stringified JSON, camelCase)."""
     args = _coerce_mapping(arguments)
@@ -378,15 +396,16 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
         }
 
     if name == "loregarden_start_orchestration":
-        payload = {
-            "ticket_id": _coerce_string(args.get("ticket_id"), field="ticket_id"),
-        }
-        if args.get("driver") is not None:
-            payload["driver"] = _coerce_string(args.get("driver"), field="driver")
-        max_stages = _coerce_optional_int(args.get("max_stages"))
-        if max_stages is not None:
-            payload["max_stages"] = max_stages
-        return payload
+        return _normalize_start_orchestration(args)
+
+    external_harness_args = normalize_external_harness_args(
+        name,
+        args,
+        coerce_string=_coerce_string,
+        coerce_optional_string=_coerce_optional_string,
+    )
+    if external_harness_args is not None:
+        return external_harness_args
 
     if name in _STAGE_SCOPED_TOOLS:
         return _normalize_stage_scoped(name, args)
@@ -495,8 +514,11 @@ def _run_view(run) -> dict[str, Any]:
         "driver": run.driver.value,
         "profile_slug": run.profile_slug,
         "status": run.status.value,
+        "external_harness": run.external_harness.value if run.external_harness else "",
         "current_stage_key": run.current_stage_key,
         "error_message": run.error_message,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
     }
 
 
@@ -565,6 +587,13 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "driver": _enum_string_prop(
                     "Orchestration driver.",
                     ["builtin_autopilot", "external_mcp"],
+                ),
+                "external_harness": _enum_string_prop(
+                    "Set when a coding harness outside this control plane is driving the "
+                    "ticket. Stamps the run and every stage under it with that harness so "
+                    "its results are comparable, and takes the run out of the queue — it "
+                    "spawns nothing here, so it waits for no lane.",
+                    [h.value for h in ExternalHarness],
                 ),
                 "max_stages": _integer_prop("Optional cap on stages for builtin autopilot."),
             },
@@ -1029,6 +1058,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 TOOL_DEFINITIONS.append(ORGANIZATION_TOOL_DEFINITION)
 TOOL_DEFINITIONS.append(DOCTOR_TOOL_DEFINITION)
 TOOL_DEFINITIONS.extend(TICKET_OPS_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(EXTERNAL_HARNESS_TOOL_DEFINITIONS)
 
 
 def _get_run(session: Session, run_id: str):
@@ -1149,7 +1179,18 @@ def _create_ticket(
 
 
 def _start_orchestration(session: Session, svc, arguments: dict[str, Any]) -> str:
-    """Start a run on whichever driver the workspace profile selects."""
+    """Start a run on whichever driver the workspace profile selects.
+
+    An external harness skips admission entirely: the lane pool bounds agents
+    this machine spawns, and this one spawns none here. Reserving for it would
+    idle a slot and make the operator queue behind capacity they never use.
+    """
+    harness = arguments.get("external_harness")
+    if harness:
+        ticket = svc.resolve_ticket(ticket_id=arguments["ticket_id"])
+        run = start_external_orchestration(session, ticket, harness=ExternalHarness(harness))
+        return json.dumps(_run_view(run), indent=2)
+
     reservation, run = start_orchestration_admitted(session, svc, arguments)
     if not reservation.admitted:
         return queued_response(reservation, ticket_id=arguments["ticket_id"])

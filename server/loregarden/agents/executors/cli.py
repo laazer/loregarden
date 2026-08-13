@@ -342,6 +342,40 @@ class CliAgentExecutor:
             advance_workflow=advance_workflow,
         )
 
+    def render_stage_prompt(self, run: AgentRun, ticket: Ticket) -> tuple[str, Path]:
+        """The exact prompt a supervised run of this stage would receive, plus its tree.
+
+        Shared by every path that hands a stage to something this process does not
+        spawn — a human's terminal, or an external harness driving the ticket over
+        MCP. They get the prompt the built-in executor would have used, so their
+        results are comparable against a supervised run rather than a different
+        experiment.
+        """
+        agent = get_agent(run.agent_id)
+        if not agent:
+            raise ValueError(f"Unknown agent: {run.agent_id}")
+
+        workspace = self.session.get(Workspace, ticket.workspace_id)
+        if not workspace:
+            raise ValueError(f"Unknown workspace for ticket: {ticket.id}")
+
+        workspace_root = resolve_workspace_root(workspace)
+        agent_context_dir = resolve_agent_context_dir(workspace)
+        if not workspace_root.is_dir():
+            raise ValueError(f"Workspace repo path does not exist: {workspace_root}")
+
+        # The handed-off tree is the same one the supervised run would use: the
+        # ticket's worktree, already on its branch. Checking the branch out in
+        # the shared tree instead is what left it half-applied when the handoff
+        # was abandoned.
+        repo_root = resolve_execution_root(self.session, run, ticket, workspace)
+        if repo_root == workspace_root:
+            ensure_ticket_branch(repo_root, ticket)
+
+        stage_def = self._resolve_stage_def(ticket, run)
+        prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace, stage_def)
+        return prompt, repo_root
+
     def prepare_terminal_handoff(
         self, run: AgentRun, ticket: Ticket
     ) -> tuple[CliInvocation, Path | None]:
@@ -362,25 +396,12 @@ class CliAgentExecutor:
         if not workspace:
             raise ValueError(f"Unknown workspace for ticket: {ticket.id}")
 
-        workspace_root = resolve_workspace_root(workspace)
-        agent_context_dir = resolve_agent_context_dir(workspace)
-        if not workspace_root.is_dir():
-            raise ValueError(f"Workspace repo path does not exist: {workspace_root}")
-
-        # The handed-off terminal gets the same tree the supervised run would:
-        # the ticket's worktree, already on its branch. Checking the branch out
-        # in the shared tree instead is what left it half-applied when the
-        # handoff was abandoned.
-        repo_root = resolve_execution_root(self.session, run, ticket, workspace)
-        if repo_root == workspace_root:
-            ensure_ticket_branch(repo_root, ticket)
+        prompt, repo_root = self.render_stage_prompt(run, ticket)
 
         # A handed-off run is still a run against a tree, and the terminal it is
         # pasted into is the surface most likely to be on a stale branch.
         stamp_run_boundary(self.session, run, read_boundary(repo_root))
 
-        stage_def = self._resolve_stage_def(ticket, run)
-        prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace, stage_def)
         prompt_dir = Path(tempfile.mkdtemp(prefix="loregarden-handoff-"))
         prompt_file = prompt_dir / "prompt.md"
         invocation = resolve_terminal_handoff_invocation(

@@ -25,34 +25,88 @@ workspace's (see `parallel_queue`).
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
+from typing import Protocol
 from uuid import uuid4
 
 from loregarden.models.domain import (
     AgentRun,
     AgentSlot,
-    OrchestrationDriver,
     OrchestrationRun,
     QueuedRun,
     QueuePosition,
     Ticket,
 )
-from loregarden.services.parallel_queue import WAITING_STATUSES, ParallelQueueService
+from loregarden.services.parallel_queue import (
+    LIVE_ORCHESTRATION_STATUSES,
+    LIVE_RUN_STATUSES,
+    WAITING_STATUSES,
+    ParallelQueueService,
+)
 from loregarden.websocket_events import emit_execution_update
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["WAITING_STATUSES", "QueueLaneService"]
+__all__ = [
+    "WAITING_STATUSES",
+    "LaneDispatcher",
+    "QueueLaneService",
+    "set_lane_dispatcher_factory",
+]
+
+
+class LaneDispatcher(Protocol):
+    """Starts the work a lane has reached.
+
+    Declared here and implemented above (`queue_dispatch`), because starting a
+    ticket needs the orchestrator and the orchestrator needs the queue. A lane
+    that imported its own dispatcher would close that loop; one that calls
+    through this protocol does not know what starts the work, only that
+    something does.
+    """
+
+    def dispatch_stage(self, ticket: Ticket, entry: QueuedRun) -> AgentRun | None: ...
+
+    def dispatch_orchestration(
+        self,
+        ticket: Ticket,
+        *,
+        auto_approve: bool,
+        stop_at_stage_key: str | None,
+        driver: str = "",
+        max_stages: int | None = None,
+        timeout_seconds: int | None = None,
+    ) -> OrchestrationRun | None: ...
+
+
+#: Set by `queue_dispatch` on import. Resolved when a service is built rather
+#: than when this module is, which is the whole reason the cycle is gone.
+_dispatcher_factory: Callable[[Session], LaneDispatcher] | None = None
+
+
+def set_lane_dispatcher_factory(factory: Callable[[Session], LaneDispatcher] | None) -> None:
+    """Install what lanes use to start work. Called by the composition root."""
+    global _dispatcher_factory  # noqa: PLW0603 — one process-wide wiring point
+    _dispatcher_factory = factory
 
 
 class QueueLaneService:
     """Add, order and drain the per-slot pipelines."""
 
-    def __init__(self, session: Session, max_concurrent: int = 3) -> None:
+    def __init__(
+        self,
+        session: Session,
+        max_concurrent: int = 3,
+        dispatcher: LaneDispatcher | None = None,
+    ) -> None:
         self.session = session
         self.max_concurrent = max_concurrent
         self.slots = ParallelQueueService(session, max_concurrent=max_concurrent)
+        if dispatcher is None and _dispatcher_factory is not None:
+            dispatcher = _dispatcher_factory(session)
+        self.dispatcher = dispatcher
 
     # ---- reading -------------------------------------------------------
 
@@ -161,6 +215,17 @@ class QueueLaneService:
         if not head:
             return None
 
+        if self.dispatcher is None:
+            # Loud, because the failure it replaces is the worst kind this queue
+            # has: a lane that looks healthy and silently starts nothing. Only
+            # reachable in a process that never installed a dispatcher.
+            logger.error(
+                "Lane %d has work waiting but no dispatcher is installed; "
+                "import loregarden.services.queue_dispatch in this entry point",
+                slot_number,
+            )
+            return None
+
         ticket = self.session.get(Ticket, head.ticket_id)
         if not ticket:
             # The ticket went away while it waited. Drop the entry rather than
@@ -172,7 +237,7 @@ class QueueLaneService:
             return self.start_lane_head(slot_number)
 
         if head.entry_kind == "stage":
-            agent_run = self._dispatch_stage(ticket, head)
+            agent_run = self.dispatcher.dispatch_stage(ticket, head)
             if agent_run is None:
                 return None
             slot.is_available = False
@@ -180,7 +245,7 @@ class QueueLaneService:
             head.run_id = agent_run.id
             orch_run = None
         else:
-            orch_run = self._dispatch_orchestration(
+            orch_run = self.dispatcher.dispatch_orchestration(
                 ticket,
                 auto_approve=head.auto_approve,
                 stop_at_stage_key=head.stop_at_stage_key or None,
@@ -254,19 +319,28 @@ class QueueLaneService:
         The lane is identified by the orchestration rather than by any single
         agent run: a ticket's pipeline spans many, and releasing on the first to
         finish would hand the lane away mid-ticket.
+
+        The entry is settled whether or not a slot still names this orchestration.
+        Those are two records of one release, and `reconcile_slots` reclaims a slot
+        the moment its occupant goes terminal — so on any path where it ran first
+        (a restart, a status read racing this call) the slot lookup finds nothing,
+        and gating the entry on it left the entry ACTIVE forever with no later pass
+        able to find it.
         """
+        entry = self.session.exec(
+            select(QueuedRun).where(QueuedRun.orchestration_run_id == orchestration_run_id)
+        ).first()
+        if entry and entry.status != QueuePosition.STARTED:
+            entry.status = QueuePosition.STARTED
+            self.session.add(entry)
+            self.session.commit()
+
         slot = self.session.exec(
             select(AgentSlot).where(AgentSlot.current_orchestration_run_id == orchestration_run_id)
         ).first()
         if not slot:
+            emit_execution_update()
             return
-
-        entry = self.session.exec(
-            select(QueuedRun).where(QueuedRun.orchestration_run_id == orchestration_run_id)
-        ).first()
-        if entry:
-            entry.status = QueuePosition.STARTED
-            self.session.add(entry)
 
         slot_number = slot.slot_number
         slot.is_available = True
@@ -289,6 +363,7 @@ class QueueLaneService:
         every status read rather than waiting for a hand-reset.
         """
         self._requeue_stranded_entries()
+        settled = self._settle_finished_entries()
         freed = self.slots.reconcile_slots()
         # Nested child execute shares the parent's lane. Orphan-heal used to
         # bind free capacity to those children and empty the pool — undo that
@@ -303,7 +378,7 @@ class QueueLaneService:
         # Nested children of a slotted ancestor are not orphans — they share
         # that ancestor's lane for the life of the tree.
         claimed = self._claim_orphaned_orchestrations()
-        if freed or claimed:
+        if freed or claimed or settled:
             emit_execution_update()
         return freed
 
@@ -316,8 +391,6 @@ class QueueLaneService:
         opens a fresh OrchestrationRun per child. Those runs are intentional
         work under the parent's slot, not separate admissions.
         """
-        from loregarden.services.parallel_queue import LIVE_ORCHESTRATION_STATUSES
-
         ticket = self.session.get(Ticket, ticket_id)
         seen: set[str] = set()
         while ticket and ticket.parent_ticket_id:
@@ -378,8 +451,6 @@ class QueueLaneService:
         Nested child orchestrations under a slotted ancestor are skipped — they
         share the ancestor's lane and must not consume the rest of the pool.
         """
-        from loregarden.services.parallel_queue import LIVE_ORCHESTRATION_STATUSES
-
         self.slots.initialize_slots()
         held = {
             slot.current_orchestration_run_id
@@ -463,6 +534,66 @@ class QueueLaneService:
         for slot_number in {entry.slot_number for entry in stranded}:
             self._renumber(slot_number)
 
+    def _entry_work_is_over(self, entry: QueuedRun) -> bool:
+        """Whether the thing this entry started has reached a terminal status.
+
+        `queued_runs` holds two regimes and this has to answer for both: a lane
+        entry names an orchestration, a shared-queue or stage entry names an
+        agent run. A row that has gone missing counts as over — nothing will
+        ever complete it.
+        """
+        if entry.orchestration_run_id:
+            orch = self.session.get(OrchestrationRun, entry.orchestration_run_id)
+            return not orch or orch.status not in LIVE_ORCHESTRATION_STATUSES
+        if entry.run_id:
+            run = self.session.get(AgentRun, entry.run_id)
+            return not run or run.status not in LIVE_RUN_STATUSES
+        # Names nothing — `_requeue_stranded_entries` owns that shape.
+        return False
+
+    def _settle_finished_entries(self) -> list[str]:
+        """Retire entries whose work finished but whose release stopped short.
+
+        The happy paths (`on_orchestration_complete`, `on_run_complete_sync`)
+        settle an entry as part of giving its lane back. Neither runs to
+        completion on every route out: a restart between the two writes, or a
+        success on the run side, which frees the slot but only ever writes the
+        entry's status when the run *failed*.
+
+        The residue is an entry reading ACTIVE with nothing behind it, and it is
+        permanent without this — the slot is reclaimed independently by
+        `reconcile_slots`, and once it no longer names the work there is nothing
+        left tying the entry to what finished. `ticket_activity` counts ACTIVE
+        and PROMOTED as running, so the ticket reports an agent on it forever,
+        and `queue_history` counts them as live, so the lane never shows the
+        blocked/failed card that would have made it visible.
+
+        Returns the entry ids settled, so a caller can tell a quiet sweep from
+        one that changed the board.
+        """
+        candidates = self.session.exec(
+            select(QueuedRun).where(
+                col(QueuedRun.status).in_((QueuePosition.ACTIVE, QueuePosition.PROMOTED))
+            )
+        ).all()
+        settled: list[str] = []
+        for entry in candidates:
+            if not self._entry_work_is_over(entry):
+                continue
+            entry.status = QueuePosition.STARTED
+            self.session.add(entry)
+            settled.append(entry.id)
+            logger.warning(
+                "Settling lane entry %s (ticket %s, lane %d): its work finished without "
+                "releasing the entry",
+                entry.id,
+                entry.ticket_id,
+                entry.slot_number,
+            )
+        if settled:
+            self.session.commit()
+        return settled
+
     def remove_entry(self, entry_id: str) -> bool:
         """Take a waiting entry out of its lane. Running entries are untouched."""
         entry = self.session.get(QueuedRun, entry_id)
@@ -524,95 +655,3 @@ class QueueLaneService:
             entry.position = index
             self.session.add(entry)
         self.session.commit()
-
-    def _dispatch_stage(self, ticket: Ticket, entry: QueuedRun) -> AgentRun | None:
-        """Start one stage and return the run that now owns the lane.
-
-        The single-stage twin of `_dispatch_orchestration`, for entries parked
-        by admission control on behalf of the Dashboard or MCP. A lane holding
-        one of these is released by `complete_run_tail` (which frees whatever
-        slot names the finished run) rather than by `complete_orchestration`.
-        """
-        from loregarden.services.orchestration import OrchestrationService
-        from loregarden.services.run_service import schedule_agent_run
-
-        try:
-            run = OrchestrationService(self.session).start_run(
-                ticket,
-                stage_key=entry.stage_key or None,
-                auto_approve=entry.auto_approve,
-                timeout_override_seconds=entry.timeout_seconds,
-            )
-        except ValueError as exc:
-            logger.warning("Lane stage dispatch failed for ticket %s: %s", ticket.id, exc)
-            return None
-
-        schedule_agent_run(run.id)
-        return run
-
-    def _dispatch_orchestration(
-        self,
-        ticket: Ticket,
-        *,
-        auto_approve: bool,
-        stop_at_stage_key: str | None,
-        driver: str = "",
-        max_stages: int | None = None,
-        timeout_seconds: int | None = None,
-    ) -> OrchestrationRun | None:
-        """Start the ticket's pipeline and return the run that now owns the lane.
-
-        The run is *claimed* before the work is handed off, not read back after.
-        `schedule_orchestration` executes on a background thread, so a lane that
-        dispatched and then looked up the ticket's active run raced that thread
-        and usually read nothing — it concluded the dispatch had been refused,
-        left its entry queued, and the orchestration ran in no lane at all.
-
-        Imported at call time: run_service reaches orchestration, which reaches
-        this module, so a module-level import would close the cycle.
-        """
-        from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-        from loregarden.services.run_service import schedule_orchestration
-
-        callbacks = OrchestrationCallbackService(self.session)
-        active = callbacks.get_active_orchestration_run(ticket.id)
-        if active:
-            logger.info(
-                "Lane dispatch skipped for ticket %s: %s is already orchestrating",
-                ticket.id,
-                active.run_code,
-            )
-            return active
-
-        # An unrecognised driver is the caller's error, not grounds to start
-        # this ticket on one nobody asked for.
-        try:
-            chosen_driver = OrchestrationDriver(driver) if driver else None
-        except ValueError:
-            logger.warning(
-                "Lane dispatch failed for ticket %s: unknown driver %r", ticket.id, driver
-            )
-            return None
-
-        claim = callbacks.claim_orchestration_run(
-            ticket,
-            driver=chosen_driver,
-            auto_approve=auto_approve,
-            stop_at_stage_key=stop_at_stage_key or "",
-            timeout_override_seconds=timeout_seconds,
-        )
-        try:
-            schedule_orchestration(
-                ticket.id,
-                auto_approve=auto_approve,
-                stop_at_stage_key=stop_at_stage_key or None,
-                driver=chosen_driver,
-                max_stages=max_stages,
-                timeout_seconds=timeout_seconds,
-            )
-        except ValueError as exc:
-            logger.warning("Lane dispatch failed for ticket %s: %s", ticket.id, exc)
-            callbacks.abandon_claim(claim, message=str(exc))
-            return None
-
-        return claim

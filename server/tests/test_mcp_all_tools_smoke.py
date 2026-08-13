@@ -38,6 +38,12 @@ SPAWNS_AGENTS_WITH_BUILTIN_DRIVER = "loregarden_start_orchestration"
 #   workspace, so there is no well-formed call to make here; test_mcp_ticket_ops
 #   builds the destination and covers it.
 NEEDS_A_SECOND_WORKSPACE = "loregarden_move_ticket_workspace"
+#   loregarden_begin_external_stage / _finish_external_stage -> only meaningful on an
+#   orchestration run opened with external_harness set, and they check a real stage out
+#   to a caller outside this process. test_external_harness.py drives both over MCP.
+NEEDS_AN_EXTERNAL_HARNESS_RUN = frozenset(
+    {"loregarden_begin_external_stage", "loregarden_finish_external_stage"}
+)
 
 
 def _rpc(client: TestClient, method: str, params: dict | None = None, rpc_id: int = 1) -> dict:
@@ -320,7 +326,11 @@ def test_every_advertised_tool_is_callable(client: TestClient):
         "loregarden_complete_orchestration",
     ]
     advertised = _advertised(client)
-    exempt = {SPAWNS_AGENTS_WITH_BUILTIN_DRIVER, NEEDS_A_SECOND_WORKSPACE}
+    exempt = {
+        SPAWNS_AGENTS_WITH_BUILTIN_DRIVER,
+        NEEDS_A_SECOND_WORKSPACE,
+        *NEEDS_AN_EXTERNAL_HARNESS_RUN,
+    }
     assert set(ordered) | exempt >= advertised, (
         f"tool advertised but not covered here: {sorted(advertised - (set(ordered) | exempt))}"
     )

@@ -1,4 +1,7 @@
 export const API_BASE = "http://127.0.0.1:8000";
+// The real class: `describeError` narrows on it, and a mock module without it
+// turns every error path under test into "instanceof is not an object".
+export { ApiError } from "../api/http";
 
 export const api = {
   reloadStatus: jest.fn().mockResolvedValue({
@@ -57,6 +60,7 @@ export const api = {
   memoryConfig: jest.fn().mockResolvedValue({}),
   setMemoryConfig: jest.fn(),
   orchestrate: jest.fn(),
+  buildExternalHarnessPrompt: jest.fn(),
   openPr: jest.fn(),
   startRun: jest.fn(),
   advance: jest.fn(),

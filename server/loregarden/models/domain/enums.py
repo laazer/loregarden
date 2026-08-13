@@ -8,7 +8,11 @@ from sqlalchemy import Enum as SAEnum
 
 
 def _str_enum_column(
-    enum_cls: type[Enum], default: Enum | None = None, *, index: bool = False
+    enum_cls: type[Enum],
+    default: Enum | None = None,
+    *,
+    index: bool = False,
+    nullable: bool = False,
 ) -> Column:
     """Store the enum's *value*, not its member name.
 
@@ -17,11 +21,13 @@ def _str_enum_column(
     through this helper so the convention is uniform — a mixed schema is what let a
     single hand-written row take down every endpoint that listed tickets.
 
-    ``default`` is omitted for columns the caller must always supply.
+    ``default`` is omitted for columns the caller must always supply. ``nullable``
+    is for a column whose absence is itself the fact — a run with no external
+    harness ran on the control plane's own agents.
     """
     return Column(
         SAEnum(enum_cls, values_callable=lambda choices: [c.value for c in choices]),
-        nullable=False,
+        nullable=nullable,
         default=default.value if default is not None else None,
         index=index,
     )
@@ -308,6 +314,21 @@ class OrchestrationDriver(str, Enum):
     BUILTIN_AUTOPILOT = "builtin_autopilot"
     EXTERNAL_MCP = "external_mcp"
     MANUAL_STAGE = "manual_stage"
+
+
+class ExternalHarness(str, Enum):
+    """A coding harness outside this control plane that drove a run.
+
+    Stamped on the orchestration run and on every agent run it opens, so a
+    ticket executed by a pasted prompt in someone's own Claude Code or Codex
+    session is comparable against the same ticket run by loregarden's agents
+    rather than indistinguishable from one.
+    """
+
+    CLAUDE_CODE = "claude_code"
+    CODEX = "codex"
+    CURSOR = "cursor"
+    OTHER = "other"
 
 
 class OrchestrationRunStatus(str, Enum):

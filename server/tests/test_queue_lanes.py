@@ -6,7 +6,8 @@ waits, and a lane drains itself when its orchestration finishes rather than
 waiting to be poked.
 """
 
-from unittest.mock import patch
+import subprocess
+import sys
 
 import pytest
 from loregarden.models.domain import (
@@ -57,13 +58,17 @@ def _orch(session: Session, ticket: Ticket, code: str) -> OrchestrationRun:
 
 
 class _Dispatcher:
-    """Stands in for the orchestrator, recording what each lane launched."""
+    """Stands in for the orchestrator, recording what each lane launched.
+
+    Injected rather than patched: dispatch lives above the lane now (see
+    `queue_dispatch`), and `LaneDispatcher` is the seam it calls through.
+    """
 
     def __init__(self, session: Session):
         self.session = session
         self.launched: list[str] = []
 
-    def __call__(
+    def dispatch_orchestration(
         self,
         ticket,
         *,
@@ -76,14 +81,62 @@ class _Dispatcher:
         self.launched.append(ticket.id)
         return _orch(self.session, ticket, f"orch_{len(self.launched)}")
 
+    def dispatch_stage(self, ticket, entry):
+        raise AssertionError("these lanes only run orchestrations")
+
 
 @pytest.fixture(name="lanes")
 def lanes_fixture(session):
-    service = QueueLaneService(session, max_concurrent=3)
     dispatcher = _Dispatcher(session)
-    with patch.object(service, "_dispatch_orchestration", dispatcher):
-        service.dispatcher = dispatcher
-        yield service
+    service = QueueLaneService(session, max_concurrent=3, dispatcher=dispatcher)
+    service.dispatcher = dispatcher
+    yield service
+
+
+@pytest.mark.parametrize(
+    "entry_point",
+    ["loregarden.main", "loregarden.cli.mcp_server", "loregarden.cli.main", "loregarden.mcp.tools"],
+)
+def test_every_entry_point_installs_a_lane_dispatcher(entry_point):
+    """The wiring dispatch-above-the-lane depends on.
+
+    `queue_lanes` resolves its dispatcher at runtime so it does not have to
+    import the orchestrator, which is what broke the cycle. The cost is that a
+    process which never imports `queue_dispatch` has lanes that start nothing —
+    so every process that can start work is pinned here rather than trusted.
+    """
+    # A fresh interpreter, because `import_module` on an already-imported entry
+    # point is a no-op — the assertion would pass on wiring some earlier test
+    # did, which is exactly the regression this is meant to catch.
+    probe = (
+        f"import {entry_point};"
+        "from loregarden.services import queue_lanes;"
+        "import sys; sys.exit(0 if queue_lanes._dispatcher_factory else 1)"
+    )
+    result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
+
+    assert result.returncode == 0, (
+        f"{entry_point} can start work but installs no lane dispatcher\n{result.stderr}"
+    )
+
+
+def test_a_lane_with_no_dispatcher_refuses_rather_than_silently_idling(session, workspace, caplog):
+    """The failure mode the registry introduces must be loud.
+
+    A lane that quietly starts nothing is the bug this whole audit was about;
+    an unwired process says so in the log instead.
+    """
+    service = QueueLaneService(session, max_concurrent=3, dispatcher=None)
+    service.dispatcher = None
+    ticket = _ticket(session, workspace.id, "LG-1")
+    service.add_to_lane(ticket_id=ticket.id, slot_number=1)
+
+    with caplog.at_level("ERROR"):
+        assert service.start_lane_head(1) is None
+
+    assert "no dispatcher is installed" in caplog.text
+    # The entry keeps its place rather than being consumed by a failed start.
+    assert [e.ticket_id for e in service.waiting_in_lane(1)] == [ticket.id]
 
 
 def test_adding_to_an_idle_lane_starts_it(lanes, session, workspace):
@@ -260,12 +313,11 @@ def test_completion_releases_the_lane_through_the_orchestrator(session, workspac
     """
     from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 
-    service = QueueLaneService(session, max_concurrent=3)
     dispatcher = _Dispatcher(session)
+    service = QueueLaneService(session, max_concurrent=3, dispatcher=dispatcher)
     ticket = _ticket(session, workspace.id, "LG-1")
 
-    with patch.object(service, "_dispatch_orchestration", dispatcher):
-        service.add_to_lane(ticket_id=ticket.id, slot_number=1)
+    service.add_to_lane(ticket_id=ticket.id, slot_number=1)
 
     slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
     orch_run = session.get(OrchestrationRun, slot.current_orchestration_run_id)
@@ -276,3 +328,144 @@ def test_completion_releases_the_lane_through_the_orchestrator(session, workspac
 
     session.refresh(slot)
     assert slot.is_available is True
+
+
+def test_blocking_a_ticket_releases_the_lane(session, workspace):
+    """`block_ticket` is a terminal status too, and used to skip the release.
+
+    It set BLOCKED and finished_at directly instead of going through the exit
+    every other terminal path uses, so the lane entry stayed ACTIVE and
+    `ticket_activity` reported the ticket as running for as long as the row
+    existed.
+    """
+    from loregarden.models.domain import QueuedRun
+    from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+
+    dispatcher = _Dispatcher(session)
+    service = QueueLaneService(session, max_concurrent=3, dispatcher=dispatcher)
+    blocked = _ticket(session, workspace.id, "LG-1")
+
+    service.add_to_lane(ticket_id=blocked.id, slot_number=1)
+
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    orch_run = session.get(OrchestrationRun, slot.current_orchestration_run_id)
+
+    OrchestrationCallbackService(session).block_ticket(
+        orch_run, blocked, message="Tests failed after 3 attempts"
+    )
+
+    entry = session.exec(
+        select(QueuedRun).where(QueuedRun.orchestration_run_id == orch_run.id)
+    ).one()
+    assert entry.status == QueuePosition.STARTED
+    session.refresh(slot)
+    assert slot.is_available is True
+
+
+def test_reconcile_settles_an_entry_whose_orchestration_already_finished(lanes, session, workspace):
+    """The sweep for residue neither release path got to.
+
+    A restart between "the run went terminal" and "the entry was retired" leaves
+    an ACTIVE entry that no later pass can find by itself: `reconcile_slots`
+    reclaims the slot independently, and once it stops naming the orchestration
+    nothing ties the two together. `ticket_activity` reads ACTIVE as running, so
+    the ticket claims an agent forever.
+    """
+    from loregarden.models.domain import QueuedRun
+
+    ticket = _ticket(session, workspace.id, "LG-1")
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1)
+
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    orch = session.get(OrchestrationRun, slot.current_orchestration_run_id)
+    orch.status = OrchestrationRunStatus.BLOCKED
+    session.add(orch)
+    # The slot was reclaimed already; only the entry is left behind.
+    slot.is_available = True
+    slot.current_orchestration_run_id = None
+    session.add(slot)
+    session.commit()
+
+    lanes.reconcile_lanes()
+
+    entry = session.exec(select(QueuedRun).where(QueuedRun.orchestration_run_id == orch.id)).one()
+    assert entry.status == QueuePosition.STARTED
+
+
+def test_reconcile_settles_a_stage_entry_whose_run_succeeded(lanes, session, workspace):
+    """The run-side half: success never wrote the entry's status at all.
+
+    `on_run_complete_sync` frees the slot and marks the entry FAILED only when
+    the run failed, so a stage entry that *succeeded* stayed ACTIVE — the same
+    permanent ghost, reached through the other regime in `queued_runs`.
+    """
+    from loregarden.models.domain import AgentRun, QueuedRun, RunStatus
+
+    ticket = _ticket(session, workspace.id, "LG-1")
+    run = AgentRun(
+        run_code="run_1",
+        ticket_id=ticket.id,
+        workspace_id=workspace.id,
+        agent_id="implementer",
+        status=RunStatus.SUCCEEDED,
+    )
+    session.add(run)
+    entry = QueuedRun(
+        workspace_id=workspace.id,
+        ticket_id=ticket.id,
+        run_id=run.id,
+        slot_number=1,
+        status=QueuePosition.ACTIVE,
+        entry_kind="stage",
+        stage_key="implement",
+    )
+    session.add(entry)
+    session.commit()
+
+    lanes.reconcile_lanes()
+
+    session.refresh(entry)
+    assert entry.status == QueuePosition.STARTED
+
+
+def test_reconcile_leaves_a_live_entry_alone(lanes, session, workspace):
+    """The sweep must not retire a lane that is genuinely working."""
+    from loregarden.models.domain import QueuedRun
+
+    ticket = _ticket(session, workspace.id, "LG-1")
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1)
+
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    orch_id = slot.current_orchestration_run_id
+
+    lanes.reconcile_lanes()
+
+    entry = session.exec(select(QueuedRun).where(QueuedRun.orchestration_run_id == orch_id)).one()
+    assert entry.status == QueuePosition.ACTIVE
+
+
+def test_the_entry_settles_even_when_the_slot_is_already_gone(lanes, session, workspace):
+    """`reconcile_slots` reclaims a terminal occupant's slot on any status read.
+
+    When it wins that race the slot no longer names the orchestration, and
+    gating the entry update on that lookup left the entry ACTIVE with nothing
+    able to find it again — a finished ticket reading "running" forever.
+    """
+    from loregarden.models.domain import QueuedRun
+
+    ticket = _ticket(session, workspace.id, "LG-1")
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1)
+
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    orch_id = slot.current_orchestration_run_id
+
+    # Whoever got there first: the slot is back in the pool, pointing at nothing.
+    slot.is_available = True
+    slot.current_orchestration_run_id = None
+    session.add(slot)
+    session.commit()
+
+    lanes.on_orchestration_complete(orch_id)
+
+    entry = session.exec(select(QueuedRun).where(QueuedRun.orchestration_run_id == orch_id)).one()
+    assert entry.status == QueuePosition.STARTED
