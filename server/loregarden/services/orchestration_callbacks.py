@@ -25,11 +25,12 @@ from loregarden.models.domain import (
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.queue_lanes import QueueLaneService
+from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from loregarden.services.worktree_lifecycle import release_ticket_worktree
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
 
 def _orch_code() -> str:
@@ -79,23 +80,8 @@ class OrchestrationCallbackService:
         raise ValueError("Ticket not found")
 
     def get_active_orchestration_run(self, ticket_id: str) -> OrchestrationRun | None:
-        """The run in flight for this ticket, claimed or executing.
-
-        QUEUED counts. A caller claims its run before handing the work to a
-        background thread (see `claim_orchestration_run`), and between those two
-        moments the ticket is already spoken for — treating only RUNNING as
-        active would let a second start slip into that window.
-        """
-        return self.session.exec(
-            select(OrchestrationRun)
-            .where(OrchestrationRun.ticket_id == ticket_id)
-            .where(
-                col(OrchestrationRun.status).in_(
-                    (OrchestrationRunStatus.QUEUED, OrchestrationRunStatus.RUNNING)
-                )
-            )
-            .order_by(OrchestrationRun.created_at.desc())
-        ).first()
+        """The run in flight for this ticket. Delegates to `run_concurrency`."""
+        return find_active_orchestration_run(self.session, ticket_id)
 
     def claim_orchestration_run(
         self,

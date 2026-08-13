@@ -35,7 +35,9 @@ from loregarden.services.run_completion import (
     release_execution_slot,
     settle_stage_after_failed_completion,
 )
+from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.run_log_stream import bootstrap_run_log
+from loregarden.services.scheduling import schedule_orchestration
 from loregarden.services.stage_retry_budget import clear_stage_dispatches
 from loregarden.services.studio_routing import find_terminal_stage, is_terminal_stage
 from loregarden.services.ticket_rollup import reconcile_ancestors
@@ -1171,11 +1173,7 @@ class ApprovalService:
         Resuming without it would silently downgrade an unattended run into one
         that stops at the next tool prompt.
         """
-        from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-        from loregarden.services.run_service import schedule_orchestration
-
-        callbacks = OrchestrationCallbackService(self.session)
-        if callbacks.get_active_orchestration_run(ticket.id):
+        if find_active_orchestration_run(self.session, ticket.id):
             return
 
         previous = self.session.exec(

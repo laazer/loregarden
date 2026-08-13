@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import secrets
 
-from loregarden.models.domain import AgentRun, RunStatus
+from loregarden.models.domain import AgentRun, OrchestrationRun, OrchestrationRunStatus, RunStatus
 from sqlmodel import Session, col, select
 
 IN_FLIGHT_STATUSES = [RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION]
@@ -52,3 +52,27 @@ def find_active_run(
     if only_agent_id is not None:
         query = query.where(AgentRun.agent_id == only_agent_id)
     return session.exec(query).first()
+
+
+def find_active_orchestration_run(session: Session, ticket_id: str) -> OrchestrationRun | None:
+    """The orchestration in flight for this ticket, claimed or executing.
+
+    QUEUED counts. A caller claims its run before handing the work to a
+    background thread (see `claim_orchestration_run`), and between those two
+    moments the ticket is already spoken for — treating only RUNNING as active
+    would let a second start slip into that window.
+
+    Lives here rather than on `OrchestrationCallbackService` because it is a
+    plain query, and needing it was the only reason lower modules reached up to
+    that service — which is one half of the orchestration/callbacks cycle.
+    """
+    return session.exec(
+        select(OrchestrationRun)
+        .where(OrchestrationRun.ticket_id == ticket_id)
+        .where(
+            col(OrchestrationRun.status).in_(
+                (OrchestrationRunStatus.QUEUED, OrchestrationRunStatus.RUNNING)
+            )
+        )
+        .order_by(col(OrchestrationRun.created_at).desc())
+    ).first()
