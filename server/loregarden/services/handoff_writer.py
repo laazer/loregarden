@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from loregarden.models.domain import Workspace
+from loregarden.services.git_boundary import read_boundary
 from loregarden.services.handoff_store import (
     HANDOFF_SCRATCH_SUBDIR,
     build_handoff_doc,
@@ -32,6 +33,7 @@ from loregarden.services.handoff_store import (
     store_handoff,
 )
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -222,6 +224,11 @@ def write_handoff(
 
     external_id = ticket.external_id
     met, total = _counters(normalized)
+    # Read here rather than accepted from the caller: an agent reporting the tree
+    # it worked in is the claim, not the evidence for it. The ticket's worktree,
+    # not `repo_root` above — that is the shared checkout the gate export is
+    # written under, while the agent's edits are in the tree the stages ran in.
+    boundary = read_boundary(resolve_ticket_root(session, ticket, workspace))
     doc = build_handoff_doc(
         external_id=external_id,
         from_agent=from_agent,
@@ -229,6 +236,7 @@ def write_handoff(
         checklist=normalized,
         required_items_met=met,
         total_required_items=total,
+        boundary=boundary,
     )
 
     # Store first, then export: the gate validates what was actually persisted, and a
