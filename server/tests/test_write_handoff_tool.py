@@ -100,7 +100,10 @@ def test_write_handoff_pass(isolated_db, tmp_path):
             checklist=_good_checklist(),
         )
     assert result["status"] == "PASS"
-    assert result["required_items_met"] == 2
+    # Both items are required and complete, but neither claims more than
+    # `inferred` — prose in `evidence` used to satisfy the met-counter and no
+    # longer does. See test_verified_items_count_toward_the_met_counter.
+    assert result["required_items_met"] == 0
     assert result["total_required_items"] == 2
     assert result["artifact_id"]
     with Session(isolated_db) as session:

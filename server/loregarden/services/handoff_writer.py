@@ -24,8 +24,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from loregarden.models.domain import Workspace
+from loregarden.models.domain import ClaimCertainty, Ticket, Workspace
+from loregarden.services.evidence import resolve_head_sha
 from loregarden.services.git_boundary import read_boundary
+from loregarden.services.handoff_certainty import standing_of, unresolvable_evidence
 from loregarden.services.handoff_store import (
     HANDOFF_SCRATCH_SUBDIR,
     build_handoff_doc,
@@ -105,6 +107,8 @@ def _normalize_checklist(raw: Any) -> list[dict[str, Any]]:
             "required": required,
             "status": status,
             "evidence": evidence,
+            "certainty": _certainty(entry, index=i),
+            "evidence_artifact_id": str(entry.get("evidence_artifact_id", "")).strip(),
         }
         evidence_type = str(entry.get("evidence_type", "")).strip()
         if evidence_type:
@@ -113,16 +117,47 @@ def _normalize_checklist(raw: Any) -> list[dict[str, Any]]:
     return items
 
 
-def _counters(checklist: list[dict[str, Any]]) -> tuple[int, int]:
+def _certainty(entry: dict[str, Any], *, index: int) -> str:
+    """The claim level for one entry, defaulting to the weak one.
+
+    An omitted certainty is INFERRED rather than an error: the field is new, and
+    failing every handoff that predates it would take the write path down. What
+    is an error is naming a level that does not exist — including `stale`, which
+    is derived from the evidence artifact's commit and is not a claim an agent
+    may make about its own work.
+    """
+    raw = str(entry.get("certainty", "")).strip()
+    if not raw:
+        return ClaimCertainty.INFERRED.value
+    try:
+        return ClaimCertainty(raw).value
+    except ValueError as exc:
+        allowed = ", ".join(sorted(c.value for c in ClaimCertainty))
+        raise HandoffWriteError(
+            f"checklist[{index}].certainty must be one of {allowed}, got {raw!r}"
+        ) from exc
+
+
+def _counters(session: Session, ticket: Ticket, checklist: list[dict[str, Any]]) -> tuple[int, int]:
     """Derive (required_items_met, total_required_items) from the checklist so the
     agent never hand-counts. The gate compares these against its catalog; they match
     when the supplied checklist covers exactly the pair's required catalog items
-    (which the frozen-catalog docs instruct agents to do)."""
+    (which the frozen-catalog docs instruct agents to do).
+
+    "Met" used to mean the item's `evidence` string was non-empty, which any
+    sentence satisfies. It now means the claim still stands: VERIFIED or
+    USER_CONFIRMED, and not stale against the current commit. Handoffs whose
+    agents wrote prose where an artifact belonged will count lower than they did,
+    which is the correction, not a regression.
+    """
+    head_sha = resolve_head_sha(session, ticket)
     total = sum(1 for it in checklist if it["required"])
     met = sum(
         1
         for it in checklist
-        if it["required"] and it["status"] == "complete" and it["evidence"].strip()
+        if it["required"]
+        and it["status"] == "complete"
+        and standing_of(session, ticket, it, head_sha=head_sha).proves
     )
     return met, total
 
@@ -222,8 +257,40 @@ def write_handoff(
     if not repo_root.is_dir():
         raise HandoffWriteError(f"Workspace repo path does not exist: {repo_root}")
 
+    dangling = unresolvable_evidence(session, ticket, normalized)
+    if dangling:
+        # Reported in the gate's own shape so an agent fixes it the same way it
+        # fixes a catalog violation — and reported all at once, since one
+        # exception per bad item would burn a turn apiece.
+        return {
+            "artifact_id": "",
+            "from_agent": from_agent,
+            "to_agent": to_agent,
+            "required_items_met": 0,
+            "total_required_items": 0,
+            "status": "FAIL",
+            "message": "Handoff not stored: a VERIFIED claim names no evidence artifact.",
+            "violations": [
+                {
+                    "rule": "handoff_evidence_unresolvable",
+                    "message": (
+                        f"certainty=verified on {key!r} needs an evidence_artifact_id "
+                        f"attached to this ticket"
+                    ),
+                }
+                for key in dangling
+            ],
+            "remediation_hints": [
+                "Attach proof with loregarden_attach_evidence, then use the returned "
+                "artifact id as evidence_artifact_id.",
+                "Or claim certainty=inferred, which needs no artifact.",
+            ],
+            "gaps": [],
+            "rolled_back": True,
+        }
+
     external_id = ticket.external_id
-    met, total = _counters(normalized)
+    met, total = _counters(session, ticket, normalized)
     # Read here rather than accepted from the caller: an agent reporting the tree
     # it worked in is the claim, not the evidence for it. The ticket's worktree,
     # not `repo_root` above — that is the shared checkout the gate export is

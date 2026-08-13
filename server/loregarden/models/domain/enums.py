@@ -166,6 +166,30 @@ class RunStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class ClaimCertainty(str, Enum):
+    """How much weight a handoff checklist item's claim carries.
+
+    Items used to carry a free-text `evidence` string, and the met-counter
+    treated any non-empty string as proof. "ran the suite, all green" satisfied
+    it exactly as well as an attached test artifact did, which is how a stage
+    claims a suite nobody ran.
+
+    Three levels, not AHP+'s six. STALE is missing on purpose: it is not a claim
+    anyone makes, it is something that happens to a claim when the code moves
+    underneath it, and it is derived at read time (see
+    `services.handoff_certainty.ClaimStanding`). CONFLICTED needs two claims to
+    compare and nothing here writes a second one yet.
+    """
+
+    #: An evidence artifact on this ticket backs it.
+    VERIFIED = "verified"
+    #: A human approved it. Not artifact-backed, but not the agent's own word.
+    USER_CONFIRMED = "user_confirmed"
+    #: The agent believes it and has no artifact. The default, and deliberately
+    #: the weak claim — an omitted certainty must never read as proof.
+    INFERRED = "inferred"
+
+
 class BoundaryVerdict(str, Enum):
     """How the tree a stage is about to run on compares to the one its
     predecessor attested against. See `services.handoff_boundary`.

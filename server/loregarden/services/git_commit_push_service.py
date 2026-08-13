@@ -56,13 +56,22 @@ def head_commit_sha(repo_root: Path) -> str:
     Evidence is stamped with this server-side rather than taken from the agent:
     an agent that picks its own sha can claim proof against a commit its work
     predates.
+
+    "Not a repo" includes "not a directory". A workspace whose repo_path does not
+    exist on this machine made `subprocess` raise on the missing cwd rather than
+    returning the empty string this promises — so a caller doing nothing more
+    than asking which commit is current inherited an exception from a path it
+    never touched.
     """
-    proc = run_git(
-        ["rev-parse", "HEAD"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        proc = run_git(
+            ["rev-parse", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return ""
     return proc.stdout.strip() if proc.returncode == 0 else ""
 
 
