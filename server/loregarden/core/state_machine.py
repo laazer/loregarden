@@ -1,13 +1,8 @@
 import json
 from dataclasses import dataclass
+from typing import cast
 
 from loregarden.models.domain import StageStatus, TicketState, WorkflowStageDef
-
-
-@dataclass(frozen=True)
-class TransitionResult:
-    ok: bool
-    message: str = ""
 
 
 @dataclass(frozen=True)
@@ -22,30 +17,16 @@ class StageRoutePlan:
 
 
 class StateMachine:
-    TICKET_TRANSITIONS: dict[TicketState, set[TicketState]] = {
-        TicketState.BACKLOG: {TicketState.IN_PROGRESS, TicketState.WONT_DO},
-        TicketState.IN_PROGRESS: {
-            TicketState.BLOCKED,
-            TicketState.DONE,
-            TicketState.BACKLOG,
-            TicketState.WONT_DO,
-        },
-        TicketState.BLOCKED: {TicketState.IN_PROGRESS, TicketState.BACKLOG, TicketState.WONT_DO},
-        TicketState.DONE: {TicketState.BACKLOG, TicketState.WONT_DO},
-        TicketState.WONT_DO: {TicketState.BACKLOG, TicketState.IN_PROGRESS},
-    }
+    """Workflow stage routing. Ticket *state* is `services.ticket_state_service`.
+
+    This class once carried a ticket transition table too. It described moves
+    the system does not make and forbade several it does, and it was consulted
+    at one of the eight places that wrote `tickets.state` — so it constrained
+    nothing. What replaced it splits a chosen move from a state recomputed out
+    of stages or children, which is the distinction the table could not express.
+    """
 
     TERMINAL_TICKET_STATES = frozenset({TicketState.DONE, TicketState.WONT_DO})
-
-    @classmethod
-    def can_transition_ticket(cls, current: TicketState, target: TicketState) -> TransitionResult:
-        allowed = cls.TICKET_TRANSITIONS.get(current, set())
-        if target in allowed:
-            return TransitionResult(ok=True)
-        return TransitionResult(
-            ok=False,
-            message=f"Invalid ticket transition {current.value} -> {target.value}",
-        )
 
     @staticmethod
     def parse_stages(stages_json: str) -> list[WorkflowStageDef]:
@@ -86,11 +67,18 @@ class StateMachine:
         when = item.get("when", "")
         if when:
             return when
-        # YAML 1.1 parses bare `on` as boolean True — accept that legacy quirk.
-        legacy = item.get(True, "")
-        if isinstance(legacy, str):
-            return legacy
-        return item.get("on", "") if isinstance(item.get("on"), str) else ""
+        # YAML 1.1 parses bare `on` as boolean True, so a transition written
+        # `on: pass` reaches us keyed by True rather than "on". The annotation
+        # says str keys and the runtime disagrees; casting states that rather
+        # than silencing the checker, which had been flagging this all along.
+        #
+        # This returns the True-keyed value or "", and never consults a literal
+        # "on" key — the previous form guarded with `isinstance(legacy, str)`,
+        # which "" also satisfies, so the "on" fallback below it was
+        # unreachable. Kept unreachable on purpose: making it live would change
+        # how templates route, which is not this change's business.
+        loose = cast("dict[object, str]", item)
+        return loose.get(True, "")
 
     @staticmethod
     def resolve_transition_target(
@@ -234,11 +222,3 @@ class StateMachine:
         if idx + 1 < len(keys):
             return keys[idx + 1]
         return None
-
-    @staticmethod
-    def stage_status_for_ticket_state(state: TicketState) -> StageStatus:
-        if state == TicketState.BLOCKED:
-            return StageStatus.BLOCKED
-        if state in (TicketState.DONE, TicketState.WONT_DO):
-            return StageStatus.WONT_DO if state == TicketState.WONT_DO else StageStatus.DONE
-        return StageStatus.PENDING
