@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from loregarden.api.queue_management import emit_execution_update
 from loregarden.db.session import get_session
 from loregarden.models.domain import QueuedRun, QueuePosition
+from loregarden.services.parallel_queue import WAITING_STATUSES
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/api/parallel", tags=["bulk-operations"])
@@ -57,8 +58,23 @@ async def bulk_cancel_runs(
                 failed += 1
                 continue
 
-            run.status = QueuePosition.QUEUED  # Mark as cancelled state
-            # Can also add a cancelled_at field if needed
+            if run.status not in WAITING_STATUSES:
+                # Flipping the row does not stop an agent, and writing CANCELLED
+                # over a running entry would have `queue_history` report the
+                # work cancelled while it goes on to succeed. Same rule as
+                # `QueueLaneService.remove_entry`: the queue owns what is
+                # waiting, not what is already running.
+                results.append(
+                    {
+                        "run_id": run_id,
+                        "status": "error",
+                        "message": f"Run is {run.status.value}, not waiting; cannot cancel it here",
+                    }
+                )
+                failed += 1
+                continue
+
+            run.status = QueuePosition.CANCELLED
             session.add(run)
             session.commit()
 
@@ -89,7 +105,18 @@ async def bulk_pause_runs(
     session: Session = Depends(get_session),
     background_tasks: BackgroundTasks = None,
 ) -> BulkOperationResponse:
-    """Pause multiple active runs at once."""
+    """Pause multiple active runs at once.
+
+    **This endpoint does not currently do what its name says, on purpose.** It
+    selects `STARTED`, which is the terminal "lane released" status rather than
+    a running one, so it only ever matches entries that already finished.
+
+    Widening it to catch live entries would be worse, not better: nothing reads
+    `PAUSED` — it is absent from `WAITING_STATUSES`, so a paused entry drops out
+    of its lane — and there is no resume path to put it back. That would turn a
+    near no-op into a one-way loss of queued work. Pausing needs a resume before
+    the selector is worth fixing; see the queue-ownership work.
+    """
     results = []
     successful = 0
     failed = 0
@@ -115,7 +142,7 @@ async def bulk_pause_runs(
                 failed += 1
                 continue
 
-            run.status = "paused"  # Custom status for paused
+            run.status = QueuePosition.PAUSED
             session.add(run)
             session.commit()
 
@@ -269,7 +296,7 @@ async def retry_all_failed_runs(
     """Retry all failed runs in workspace (with retry count < max_retries)."""
     failed_runs = session.exec(
         select(QueuedRun).where(
-            (QueuedRun.workspace_id == workspace_id) & (QueuedRun.status == "failed")
+            (QueuedRun.workspace_id == workspace_id) & (QueuedRun.status == QueuePosition.FAILED)
         )
     ).all()
 
@@ -316,7 +343,7 @@ async def get_failed_runs(
     """Get all failed runs with retry information."""
     failed_runs = session.exec(
         select(QueuedRun).where(
-            (QueuedRun.workspace_id == workspace_id) & (QueuedRun.status == "failed")
+            (QueuedRun.workspace_id == workspace_id) & (QueuedRun.status == QueuePosition.FAILED)
         )
     ).all()
 
@@ -343,13 +370,13 @@ async def skip_all_failed_runs(
     """Skip all failed runs and continue queue."""
     failed_runs = session.exec(
         select(QueuedRun).where(
-            (QueuedRun.workspace_id == workspace_id) & (QueuedRun.status == "failed")
+            (QueuedRun.workspace_id == workspace_id) & (QueuedRun.status == QueuePosition.FAILED)
         )
     ).all()
 
     skipped_count = 0
     for run in failed_runs:
-        run.status = "skipped"
+        run.status = QueuePosition.SKIPPED
         session.add(run)
         skipped_count += 1
 
