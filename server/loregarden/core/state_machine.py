@@ -70,15 +70,15 @@ class StateMachine:
         # YAML 1.1 parses bare `on` as boolean True, so a transition written
         # `on: pass` reaches us keyed by True rather than "on". The annotation
         # says str keys and the runtime disagrees; casting states that rather
-        # than silencing the checker, which had been flagging this all along.
+        # than silencing the checker.
         #
-        # This returns the True-keyed value or "", and never consults a literal
-        # "on" key — the previous form guarded with `isinstance(legacy, str)`,
-        # which "" also satisfies, so the "on" fallback below it was
-        # unreachable. Kept unreachable on purpose: making it live would change
-        # how templates route, which is not this change's business.
+        # Both spellings are accepted. The quoted one used to be dead code: the
+        # guard was `isinstance(legacy, str)` and `.get(True, "")` yields "" when
+        # the boolean key is absent, which satisfies it — so the function always
+        # returned on the True branch and a template written `"on": "pass"` was
+        # silently ignored, falling through to linear stage order.
         loose = cast("dict[object, str]", item)
-        return loose.get(True, "")
+        return loose.get(True, "") or loose.get("on", "")
 
     @staticmethod
     def resolve_transition_target(
