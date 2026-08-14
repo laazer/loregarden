@@ -134,6 +134,8 @@
 .queue-slot-picker {
   position: relative;
   margin-top: 10px;
+  /* Last in a capped lane body: the lists give up space, not the add button. */
+  flex: none;
 }
 
 .queue-slot-picker-btn {
@@ -166,6 +168,8 @@
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--bd2);
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .queue-lane-queue-label {
@@ -471,6 +475,28 @@
   justify-content: flex-start;
   gap: 6px;
   min-width: 0;
+  /* A lane's lists have no ceiling — one lane with a dozen stopped entries used
+     to set the height of the whole row and push the queue below the fold. Cap
+     the body and let the lists inside it scroll, so every lane is the same
+     comparable height and the running summary, the list headings and the add
+     button all stay put while you read down a long lane. */
+  min-height: 0;
+  max-height: 320px;
+  overflow: hidden;
+}
+
+/* The scrolling part of a lane list: its heading is a sibling above it, so the
+   count stays readable while the rows move. */
+.queue-lane-scroller {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* Even split of what the lane has left, so a lane holding both a stopped
+     list and a queued one does not starve one of them to nothing. */
+  flex: 1 1 auto;
+  min-height: 56px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .queue-slot-title {
@@ -747,6 +773,10 @@
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--bd2);
+  /* Sized by its content, then shrunk by the lane's cap — the scroller inside
+     absorbs the difference, so the lane never grows past it. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .queue-lane-attention-label {
