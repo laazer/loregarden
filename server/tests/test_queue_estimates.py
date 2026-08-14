@@ -104,7 +104,28 @@ def _history(session: Session, workspace: Workspace, seconds: float, count: int 
     session.commit()
 
 
+def _occupy(session: Session, slot_number: int) -> None:
+    """Make a lane busy, which is the only reason an entry waits in it.
+
+    `reconcile_lanes` starts the head of any idle lane that has work queued —
+    a refused dispatch used to leave exactly that state and nothing retried it.
+    An entry parked in an *available* lane is therefore a state the system now
+    heals, so a fixture that wants a waiting entry has to occupy its lane the
+    way real waiting does.
+    """
+    ParallelQueueService(session).initialize_slots()
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == slot_number)).one()
+    slot.is_available = False
+    # Stamped, because a slot held by nothing is residue: `reconcile_slots`
+    # reclaims it once it falls outside the reservation grace, frees the lane,
+    # and then drains the very entry this fixture is trying to keep waiting.
+    slot.assigned_at = datetime.now(timezone.utc)
+    session.add(slot)
+    session.commit()
+
+
 def _lane_entry(session: Session, ticket: Ticket, slot_number: int, position: int) -> QueuedRun:
+    _occupy(session, slot_number)
     entry = QueuedRun(
         workspace_id=ticket.workspace_id,
         ticket_id=ticket.id,
