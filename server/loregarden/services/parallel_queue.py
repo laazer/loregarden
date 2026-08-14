@@ -81,65 +81,83 @@ def run_notify_fields(session: Session, run: AgentRun | None) -> dict[str, str |
     }
 
 
+#: How many times a claimant re-reads the pool before giving up. A loser only
+#: needs one more look — the winner has committed by then — but contention
+#: between more claimants than slots can cost a couple of passes.
+_CLAIM_ATTEMPTS = 4
+
+
 def claim_free_slot(session: Session, *, preferred: int | None = None) -> AgentSlot | None:
-    """Take a slot atomically, or return None because someone else took it.
+    """Take a slot atomically, or return None because the pool is full.
 
     Every claim in this file used to be select-then-mutate: read the slots where
     `is_available`, pick one, set it False, commit. Two claimants arriving
     together both read the same row as free and both wrote it, and the second
     write simply won — one slot, two occupants, and a pool that had silently
     admitted past `max_concurrent`. The comment at the admission site asserted
-    the opposite ("two requests arriving together cannot both read the slot as
-    free"), which is the intent the code did not implement.
+    the opposite, which is the intent the code did not implement.
 
-    The claim is a conditional UPDATE — `SET is_available = 0 WHERE id = ? AND
-    is_available = 1` — so the database decides the winner in one statement and
-    the loser sees `rowcount == 0` and moves to the next candidate. No lock, no
-    retry loop, and correct under SQLite's writer serialisation.
+    The claim itself is a conditional UPDATE — `SET is_available = 0 WHERE id = ?
+    AND is_available = 1` — so the database decides the winner in one statement
+    and the loser sees `rowcount == 0`.
+
+    The retry around it matters as much as the update. A candidate list is read
+    once and goes stale the moment anyone else claims, and after a failed UPDATE
+    this session holds a write transaction whose snapshot predates the winner's
+    commit — so re-reading inside it returns the same stale list. Rolling back
+    and re-reading is what lets a loser find the slot that is actually free.
+    Without it a claimant could exhaust a stale list and report a full pool while
+    capacity sat idle, which is how CI caught two concurrent tickets where one
+    was refused against a pool of three.
 
     `preferred` is tried first and is a preference, not a demand: a lane that
     filled between opening a dialog and confirming should still run the ticket.
     """
-    candidates: list[int] = []
-    if preferred is not None:
-        candidates.append(preferred)
-    candidates.extend(
-        number
-        for number in session.exec(
-            select(AgentSlot.slot_number)
-            .where(AgentSlot.is_available == True)  # noqa: E712
-            .order_by(AgentSlot.slot_number)
-        ).all()
-        if number != preferred
-    )
-
-    for slot_number in candidates:
-        result = session.exec(
-            update(AgentSlot)
-            .where(AgentSlot.slot_number == slot_number)
-            .where(AgentSlot.is_available == True)  # noqa: E712
-            .values(
-                is_available=False,
-                assigned_at=datetime.now(timezone.utc),
-                current_run_id=None,
-                current_orchestration_run_id=None,
-            )
+    for _ in range(_CLAIM_ATTEMPTS):
+        available = list(
+            session.exec(
+                select(AgentSlot.slot_number)
+                .where(AgentSlot.is_available == True)  # noqa: E712
+                .order_by(AgentSlot.slot_number)
+            ).all()
         )
-        if result.rowcount != 1:
-            # Someone else won this one between the read above and now, which is
-            # the whole reason this is a conditional update.
-            continue
-        session.commit()
-        claimed = session.exec(
-            select(AgentSlot).where(AgentSlot.slot_number == slot_number)
-        ).first()
-        if claimed is not None:
-            # The UPDATE went round the identity map; refresh so the caller does
-            # not read a stale `is_available` off a cached instance.
-            session.refresh(claimed)
-        return claimed
+        if not available:
+            return None
 
-    session.commit()
+        candidates = [preferred] if preferred in available else []
+        candidates.extend(number for number in available if number != preferred)
+
+        for slot_number in candidates:
+            result = session.exec(
+                update(AgentSlot)
+                .where(AgentSlot.slot_number == slot_number)
+                .where(AgentSlot.is_available == True)  # noqa: E712
+                .values(
+                    is_available=False,
+                    assigned_at=datetime.now(timezone.utc),
+                    current_run_id=None,
+                    current_orchestration_run_id=None,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if result.rowcount != 1:
+                # Lost this one between the read and the write, which is exactly
+                # what the conditional update exists to detect.
+                continue
+            session.commit()
+            claimed = session.exec(
+                select(AgentSlot).where(AgentSlot.slot_number == slot_number)
+            ).first()
+            if claimed is not None:
+                # The UPDATE went round the identity map; refresh so the caller
+                # does not read a stale `is_available` off a cached instance.
+                session.refresh(claimed)
+            return claimed
+
+        # Every candidate was taken. Drop the stale snapshot before looking
+        # again, or the next read returns the same list that just failed.
+        session.rollback()
+
     return None
 
 

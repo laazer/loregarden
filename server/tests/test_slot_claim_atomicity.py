@@ -175,3 +175,40 @@ def test_promotion_does_not_strand_a_slot_when_there_is_nothing_to_run(session):
     session.expire_all()
     slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
     assert slot.is_available is True
+
+
+def test_two_claimants_with_spare_capacity_both_win(isolated_db, session):
+    """Three slots, two claimants — nobody should be refused.
+
+    The concurrency test above asserts a pool of three never hands out more
+    than three, which a `claim_free_slot` that always failed would also satisfy.
+    This asserts the other direction: with capacity to spare, a claimant that
+    loses a race for one slot must go on to take another. CI caught exactly this
+    — two tickets orchestrating concurrently, one refused — where a single-run
+    local suite did not.
+    """
+    for slot in session.exec(select(AgentSlot)).all():
+        session.delete(slot)
+    for number in (1, 2, 3):
+        session.add(AgentSlot(slot_number=number, is_available=True))
+    session.commit()
+
+    won: list[int | None] = []
+    lock = threading.Lock()
+    start = threading.Barrier(2)
+
+    def claim() -> None:
+        start.wait()
+        with Session(isolated_db) as own:
+            slot = claim_free_slot(own)
+        with lock:
+            won.append(slot.slot_number if slot else None)
+
+    threads = [threading.Thread(target=claim) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert None not in won, "a claimant was refused while the pool had spare slots"
+    assert len(set(won)) == 2, f"both claimants took the same slot: {won}"
