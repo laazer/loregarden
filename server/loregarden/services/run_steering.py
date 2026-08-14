@@ -44,6 +44,13 @@ def steer_refusal(run: AgentRun | None) -> str:
         return "Run not found."
     if run.status != RunStatus.RUNNING:
         return f"Run is {run.status.value.lower()}, so there is nothing to steer."
+    if run.cancel_requested_at is not None:
+        # A stop already in flight outranks anything queued behind it. The
+        # bridge polls the cancel before it drains messages, so a steer accepted
+        # now would either be dropped unread or — if it landed in the same
+        # iteration — be the last thing an agent was told before being killed.
+        # Neither is what the operator who pressed stop asked for.
+        return "Run is stopping, so it cannot be steered."
     if not run.ticket_id:
         return "Workspace-scoped chat runs are steered by replying in the chat, not here."
     adapter = (get_agent(run.agent_id) or {}).get("adapter", "")
