@@ -201,9 +201,15 @@ describe('TicketDetailsModal - Adversarial Test Suite', () => {
         <TicketDetailsModal ticket={ticket} isOpen={true} onClose={() => {}} />
       );
       const duration = performance.now() - start;
+      console.log(`Rendered large ticket in ${duration.toFixed(2)}ms`);
 
       expect(screen.getByRole('dialog')).toBeInTheDocument();
-      expect(duration).toBeLessThan(5000); // Should render within 5 seconds
+      // No wall-clock assertion. The pre-push hook runs the client and server
+      // suites in parallel (lefthook.yml `parallel: true`), so a render timed
+      // here is competing with ~2600 backend tests and measures the machine,
+      // not the component. The duration is still logged for a human reading
+      // the output; what this test actually guarantees is that the render
+      // completes and does not throw.
     });
 
     it('should handle extremely large arrays', () => {
