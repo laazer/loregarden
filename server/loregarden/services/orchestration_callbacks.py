@@ -357,7 +357,7 @@ class OrchestrationCallbackService:
         short_blocking_issues = record_blocking_issue(
             self.session,
             ticket,
-            run_id=orch_run.id,
+            run_id=None,
             stage_key=stage_key,
             message=blocking_issues,
         )
@@ -450,7 +450,7 @@ class OrchestrationCallbackService:
         ticket.blocking_issues = record_blocking_issue(
             self.session,
             ticket,
-            run_id=orch_run.id,
+            run_id=None,
             stage_key=key or "",
             message=message,
         )

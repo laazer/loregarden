@@ -84,13 +84,14 @@ def record_gate_evaluation(
     """
     outcome = result.outcome or ("passed" if result.ok else "failed")
     message = result.message or (result.stderr if not result.ok else "")
-    run_id = orch_run.id if orch_run else None
     event_bus.publish(
         session,
         EventType.GATE_EVALUATED,
         workspace_id=ticket.workspace_id,
         ticket_id=ticket.id,
-        run_id=run_id,
+        # Not run_id: that column references agent_runs, and a gate is evaluated
+        # by the orchestrator between stages, not by an agent. Carrying the
+        # orchestration run in the payload matches STAGE_STARTED.
         payload={
             "outcome": outcome,
             "message": message,
@@ -98,6 +99,7 @@ def record_gate_evaluation(
             "to_stage": to_stage,
             "stage_key": from_stage,
             "command": result.command,
+            "orchestration_run_id": orch_run.id if orch_run else None,
         },
     )
     title = gate_evaluation_title(outcome, from_stage, to_stage)
@@ -113,5 +115,6 @@ def record_gate_evaluation(
                 {"k": "Detail", "v": message},
             ],
         },
-        run_id=run_id,
+        # Same reason as the event above: `Artifact.run_id` references
+        # agent_runs, and no agent ran this gate.
     )

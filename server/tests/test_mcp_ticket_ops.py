@@ -164,7 +164,9 @@ def test_move_detaches_when_told_to(db_session, other_workspace):
 
     db_session.refresh(child)
     assert child.workspace_id == other_workspace.id
-    assert not child.parent_ticket_id
+    # None, not "": the column references tickets.id, so a detached ticket has
+    # no parent rather than a parent whose id is the empty string.
+    assert child.parent_ticket_id is None
 
 
 def test_move_rejects_an_unknown_workspace(db_session):

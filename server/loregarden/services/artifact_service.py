@@ -940,6 +940,10 @@ def record_blocking_issue(
     renders verbatim — raw agent/gate output over the inline limit is filed
     as an error artifact for the Errors tab instead, leaving a short pointer
     here so the pane stays readable.
+
+    ``run_id`` is an ``agent_runs`` id or None. An orchestration run is not an
+    agent run: passing one here files an artifact no run-scoped query can find,
+    and leaves a reference to a row that does not exist.
     """
     message = message or ""
     if len(message) <= BLOCKING_ISSUE_INLINE_LIMIT:

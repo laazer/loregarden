@@ -16,6 +16,7 @@ from loregarden.models.domain import (
     Artifact,
     DomainEvent,
     EventType,
+    OrchestrationRun,
     RunStatus,
     StageStatus,
     Ticket,
@@ -282,3 +283,27 @@ def test_failing_gate_emits_failed_event_with_preserved_message(
     payload = json.loads(events[0].payload_json)
     assert payload["outcome"] == "failed"
     assert "GATE_FAIL_MARKER_88" in payload["message"]
+
+
+def test_gate_evaluation_does_not_claim_an_agent_run(db_session: Session, monkeypatch, tmp_path):
+    """`run_id` on an event or artifact references `agent_runs`. A transition
+    gate is evaluated by the orchestrator between stages, so there is no agent
+    run to name — writing the orchestration run's id there points at a row that
+    does not exist in the table the column references. The orchestration run
+    still has to be recoverable, so it rides in the payload, as STAGE_STARTED
+    already does.
+    """
+    ticket, profile = _setup_ticket_at_test_break(db_session, tmp_path, "gate-event-run-id")
+    profile.gates.commands = ["true"]
+
+    _run_stage(db_session, monkeypatch, ticket, profile)
+
+    events = _gate_events(db_session, ticket)
+    assert len(events) == 1
+    assert events[0].run_id is None
+    orchestration_run_id = json.loads(events[0].payload_json)["orchestration_run_id"]
+    assert db_session.get(OrchestrationRun, orchestration_run_id) is not None
+
+    gate_artifacts = [a for a in _context_artifacts(db_session, ticket) if "Gate" in a.title]
+    assert gate_artifacts
+    assert all(a.run_id is None for a in gate_artifacts)

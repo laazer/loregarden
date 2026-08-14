@@ -13,16 +13,22 @@ from loregarden.models.domain import (
     Approval,
     Artifact,
     AutoFixAttempt,
+    BtwExchange,
     CIRunResult,
     ConflictReport,
     DomainEvent,
     EventType,
     OrchestrationRun,
     QueuedRun,
+    RunMessage,
     RunOutputReview,
+    StageFanoutAttempt,
+    StageFanoutGroup,
     StageStatus,
     Ticket,
+    TicketDependency,
     TicketDiffComment,
+    TicketRelation,
     TicketState,
     TicketStudioSession,
     TriageMessage,
@@ -37,7 +43,11 @@ from loregarden.services.workflow_service import resolve_workspace_stages
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, col, select
 
-# Tables owning a direct `ticket_id` column, deleted (in this order) when a ticket is removed.
+# Tables owning a direct `ticket_id` column, deleted (in this order) when a
+# ticket is removed. The order is a dependency order — a table that references
+# another in this tuple comes first — and `delete_ticket` flushes between them
+# so the emitted DELETEs keep it. Anything referencing a ticket and missing here
+# outlives the ticket as an orphan row.
 _TICKET_OWNED_TABLES = (
     QueuedRun,
     ConflictReport,
@@ -45,11 +55,24 @@ _TICKET_OWNED_TABLES = (
     DomainEvent,
     TriageMessage,
     Approval,
+    RunMessage,
+    BtwExchange,
+    TicketDependency,
+    TicketRelation,
+    StageFanoutGroup,
     Artifact,
     AgentRun,
     OrchestrationRun,
     CIRunResult,
     WorkflowInstance,
+)
+
+# Edges pointing at a ticket from a column that is not named `ticket_id`. The
+# `_TICKET_OWNED_TABLES` sweep matches on `ticket_id` alone, so an inbound edge
+# — another ticket depending on this one — is invisible to it.
+_TICKET_INBOUND_EDGES = (
+    (TicketDependency, TicketDependency.depends_on_ticket_id),
+    (TicketRelation, TicketRelation.related_ticket_id),
 )
 
 
@@ -217,6 +240,60 @@ class TicketService:
         self.session.commit()
         return self.session.get(Ticket, ticket_id) or ticket
 
+    def _delete_grandchildren(self, ticket_id: str) -> None:
+        """Rows reaching the ticket through one of its children, not directly.
+
+        They carry no `ticket_id` of their own, so the `_TICKET_OWNED_TABLES`
+        sweep cannot see them — and each would outlive the child it hangs off.
+        """
+        agent_run_ids = self.session.exec(
+            select(AgentRun.id).where(AgentRun.ticket_id == ticket_id)
+        ).all()
+        for review in self.session.exec(
+            select(RunOutputReview).where(col(RunOutputReview.run_id).in_(agent_run_ids))
+        ).all():
+            self.session.delete(review)
+
+        ci_run_result_ids = self.session.exec(
+            select(CIRunResult.id).where(CIRunResult.ticket_id == ticket_id)
+        ).all()
+        for attempt in self.session.exec(
+            select(AutoFixAttempt).where(
+                col(AutoFixAttempt.ci_run_result_id).in_(ci_run_result_ids)
+            )
+        ).all():
+            self.session.delete(attempt)
+
+        fanout_group_ids = self.session.exec(
+            select(StageFanoutGroup.id).where(StageFanoutGroup.ticket_id == ticket_id)
+        ).all()
+        for attempt in self.session.exec(
+            select(StageFanoutAttempt).where(col(StageFanoutAttempt.group_id).in_(fanout_group_ids))
+        ).all():
+            self.session.delete(attempt)
+
+    def _delete_owned_rows(self, ticket_id: str) -> None:
+        """Every row that names this ticket, in an order SQLite would accept."""
+        for studio_session in self.session.exec(
+            select(TicketStudioSession).where(TicketStudioSession.parent_ticket_id == ticket_id)
+        ).all():
+            # Kept, not deleted: a studio session outlives the ticket it drafted.
+            studio_session.parent_ticket_id = None
+            self.session.add(studio_session)
+
+        for model, column in _TICKET_INBOUND_EDGES:
+            for row in self.session.exec(select(model).where(column == ticket_id)).all():
+                self.session.delete(row)
+
+        # Flush per table rather than once at the end: within a single flush the
+        # unit of work orders statements by mapper dependency, and these tables
+        # are joined by raw foreign keys with no ORM relationship to derive that
+        # order from — it emitted `DELETE FROM tickets` ahead of the child rows.
+        for model in _TICKET_OWNED_TABLES:
+            for row in self.session.exec(select(model).where(model.ticket_id == ticket_id)).all():
+                self.session.delete(row)
+            self.session.flush()
+
     def delete_ticket(self, ticket_id: str) -> None:
         ticket = self.session.get(Ticket, ticket_id)
         if not ticket:
@@ -224,35 +301,7 @@ class TicketService:
         if child_count(self.session, ticket_id) > 0:
             raise ValueError("Delete or reassign child work items before deleting this ticket")
 
-        agent_run_ids = self.session.exec(
-            select(AgentRun.id).where(AgentRun.ticket_id == ticket_id)
-        ).all()
-        if agent_run_ids:
-            for review in self.session.exec(
-                select(RunOutputReview).where(col(RunOutputReview.run_id).in_(agent_run_ids))
-            ).all():
-                self.session.delete(review)
-
-        ci_run_result_ids = self.session.exec(
-            select(CIRunResult.id).where(CIRunResult.ticket_id == ticket_id)
-        ).all()
-        if ci_run_result_ids:
-            for attempt in self.session.exec(
-                select(AutoFixAttempt).where(
-                    col(AutoFixAttempt.ci_run_result_id).in_(ci_run_result_ids)
-                )
-            ).all():
-                self.session.delete(attempt)
-
-        for studio_session in self.session.exec(
-            select(TicketStudioSession).where(TicketStudioSession.parent_ticket_id == ticket_id)
-        ).all():
-            studio_session.parent_ticket_id = None
-            self.session.add(studio_session)
-
-        for model in _TICKET_OWNED_TABLES:
-            for row in self.session.exec(select(model).where(model.ticket_id == ticket_id)).all():
-                self.session.delete(row)
-
+        self._delete_grandchildren(ticket_id)
+        self._delete_owned_rows(ticket_id)
         self.session.delete(ticket)
         self.session.commit()
