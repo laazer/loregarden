@@ -142,6 +142,19 @@ class OrchestrationCallbackService:
         self.session.refresh(run)
         return run
 
+    def touch_lease(self, run: OrchestrationRun) -> None:
+        """Renew a run's lease. Called by every write that names it.
+
+        The lease is what lets `_occupant_is_live` stop trusting `status`, which
+        only the run's own owner ever moves — so a harness that walked away held
+        its lane permanently rather than until restart. Renewing it here means
+        the work itself vouches for the run: a slow-but-live session keeps its
+        lane with no human in the loop, and an abandoned one stops being
+        indistinguishable from a busy one.
+        """
+        run.last_seen_at = datetime.now(timezone.utc)
+        self.session.add(run)
+
     def _finish_orchestration_run(
         self,
         run: OrchestrationRun,
@@ -304,6 +317,7 @@ class OrchestrationCallbackService:
         stage_key: str,
         agent_id: str = "",
     ) -> Ticket:
+        self.touch_lease(orch_run)
         instance, stages = self.orch._resolve_stages(ticket)
         if not instance or not stages:
             raise ValueError("Ticket has no workflow instance")
@@ -347,6 +361,7 @@ class OrchestrationCallbackService:
         blocking_issues: str = "",
         advance: bool = True,
     ) -> Ticket:
+        self.touch_lease(orch_run)
         instance, stages = self.orch._resolve_stages(ticket)
         if not instance or not stages:
             raise ValueError("Ticket has no workflow instance")
@@ -416,6 +431,7 @@ class OrchestrationCallbackService:
         stage_key: str,
         reason: str = "",
     ) -> Ticket:
+        self.touch_lease(orch_run)
         instance, stages = self.orch._resolve_stages(ticket)
         if not instance or not stages:
             raise ValueError("Ticket has no workflow instance")
@@ -440,6 +456,7 @@ class OrchestrationCallbackService:
         stage_key: str = "",
         message: str,
     ) -> Ticket:
+        self.touch_lease(orch_run)
         instance, stages = self.orch._resolve_stages(ticket)
         key = stage_key or ticket.workflow_stage_key
         if instance and stages and key:

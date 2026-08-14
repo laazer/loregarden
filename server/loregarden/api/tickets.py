@@ -998,7 +998,21 @@ def stop_ticket(ticket_id: str, session: Session = Depends(get_session)) -> Tick
             ),
         )
     ).all()
+    callbacks = OrchestrationCallbackService(session)
     for orch_run in orch_runs:
+        if orch_run.external_harness:
+            # `cancel_requested_at` is polled by BuiltinOrchestrator, which does
+            # not drive this run — there is no process here to notice the flag.
+            # Setting it and reporting success left the run RUNNING with its
+            # lane held, so stop was a silent no-op on exactly the runs whose
+            # lane nothing else could release. Settle it here instead.
+            callbacks.complete_orchestration(
+                orch_run,
+                ticket,
+                status=OrchestrationRunStatus.CANCELLED,
+                message="Stopped by the operator; the external harness owns no process here.",
+            )
+            continue
         try:
             request_orchestration_cancel(session, orch_run)
         except ValueError:

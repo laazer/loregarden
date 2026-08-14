@@ -25,6 +25,7 @@ from loregarden.models.domain import (
     RunStatus,
     Ticket,
 )
+from loregarden.services.run_concurrency import orchestration_lease_expired
 from loregarden.websocket_events import (
     QUEUE_TOPIC,
     emit_error,
@@ -368,7 +369,14 @@ class ParallelQueueService:
         """
         if slot.current_orchestration_run_id:
             orch_run = self.session.get(OrchestrationRun, slot.current_orchestration_run_id)
-            return bool(orch_run) and orch_run.status in LIVE_ORCHESTRATION_STATUSES
+            if not orch_run or orch_run.status not in LIVE_ORCHESTRATION_STATUSES:
+                return False
+            # Status alone is a promise only the run's own owner can keep. An
+            # external harness that walked away left RUNNING behind and held its
+            # lane permanently — not until restart, permanently. The lease is
+            # renewed by the work itself, so this asks whether anything has
+            # happened rather than whether anyone remembered to say goodbye.
+            return not orchestration_lease_expired(orch_run)
         if slot.current_run_id:
             run = self.session.get(AgentRun, slot.current_run_id)
             return bool(run) and run.status in LIVE_RUN_STATUSES
