@@ -141,3 +141,39 @@ def test_two_tickets_get_two_worktrees(session, workspace, ticket, repo):
     assert one is not None and two is not None
     assert one.worktree_path != two.worktree_path
     assert head_branch(two.worktree_path) == "loregarden/lg-2-other-thing"
+
+
+def test_a_ticket_worktree_gets_the_parent_checkout_s_node_modules(
+    session, repo, workspace, ticket
+):
+    """A gate needs a toolchain git will never put in a worktree.
+
+    node_modules is gitignored, so `git worktree add` never creates one. The
+    client gate then ran `npx oxlint` against a tree with no oxlint, npx went to
+    the network on every gate and blew the 300s budget — which reached the
+    orchestrator as a code failure and was handed to the stage's own agent,
+    re-running a stage that had already passed. No agent can install a toolchain
+    it cannot see, so every ticket looped on every transition.
+    """
+    modules = Path(repo) / "client" / "node_modules"
+    modules.mkdir(parents=True)
+    (modules / "marker.txt").write_text("installed", encoding="utf-8")
+
+    service = WorktreeService(session, repo_path=str(repo))
+    worktree = service.get_or_create_for_ticket(ticket, _run(session, workspace, ticket, "r1").id)
+
+    assert worktree is not None
+    linked = Path(worktree.worktree_path) / "client" / "node_modules" / "marker.txt"
+    assert linked.exists(), "the gate's toolchain never reached the worktree"
+
+
+def test_linking_is_best_effort_when_the_parent_has_nothing_installed(
+    session, repo, workspace, ticket
+):
+    """A checkout with no node_modules must still get a worktree."""
+    service = WorktreeService(session, repo_path=str(repo))
+
+    worktree = service.get_or_create_for_ticket(ticket, _run(session, workspace, ticket, "r1").id)
+
+    assert worktree is not None
+    assert not (Path(worktree.worktree_path) / "client" / "node_modules").exists()

@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from loregarden.config import settings
-from loregarden.models.domain import Ticket, WorkflowStageDef, Workspace
+from loregarden.models.domain import GateOutcome, Ticket, WorkflowStageDef, Workspace
 from loregarden.services.handoff_store import HANDOFF_SCRATCH_SUBDIR, export_for_gate
 from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile
 from loregarden.services.ticket_worktree import resolve_ticket_root
@@ -43,7 +43,7 @@ class GateRunResult:
     #   skipped  — gates on, but nothing was configured that actually runs
     #   disabled — gates turned off for this workspace entirely
     #   failed   — a gate ran and failed, or the evaluation could not proceed
-    outcome: str = ""
+    outcome: GateOutcome | None = None
     message: str = ""
     command: str = ""
     stdout: str = ""
@@ -122,9 +122,19 @@ def _run_command(command: str, cwd: Path) -> GateRunResult:
     try:
         argv = shlex.split(command)
     except ValueError as exc:
-        return GateRunResult(ok=False, message=f"malformed gate command: {exc}", command=command)
+        return GateRunResult(
+            ok=False,
+            outcome=GateOutcome.UNAVAILABLE,
+            message=f"malformed gate command: {exc}",
+            command=command,
+        )
     if not argv:
-        return GateRunResult(ok=False, message="empty gate command", command=command)
+        return GateRunResult(
+            ok=False,
+            outcome=GateOutcome.UNAVAILABLE,
+            message="empty gate command",
+            command=command,
+        )
     try:
         completed = subprocess.run(
             argv,
@@ -137,10 +147,13 @@ def _run_command(command: str, cwd: Path) -> GateRunResult:
     except OSError as exc:
         # FileNotFoundError (command not on PATH), PermissionError (file exists
         # but not executable), and other OS-level exec failures all land here.
-        return GateRunResult(ok=False, message=str(exc), command=command)
+        return GateRunResult(
+            ok=False, outcome=GateOutcome.UNAVAILABLE, message=str(exc), command=command
+        )
     except subprocess.TimeoutExpired:
         return GateRunResult(
             ok=False,
+            outcome=GateOutcome.UNAVAILABLE,
             message=f"Gate command timed out after {GATE_TIMEOUT_SECONDS}s",
             command=command,
         )
@@ -151,12 +164,15 @@ def _run_command(command: str, cwd: Path) -> GateRunResult:
         detail = stderr or stdout or f"exit code {completed.returncode}"
         return GateRunResult(
             ok=False,
+            outcome=GateOutcome.FAILED,
             message=detail,
             command=command,
             stdout=stdout,
             stderr=stderr,
         )
-    return GateRunResult(ok=True, command=command, stdout=stdout, stderr=stderr)
+    return GateRunResult(
+        ok=True, outcome=GateOutcome.PASSED, command=command, stdout=stdout, stderr=stderr
+    )
 
 
 def _is_undefined_transition(result: GateRunResult) -> bool:
@@ -209,6 +225,19 @@ def gates_can_run(profile: OrchestrationProfile, workspace: Workspace) -> bool:
     return _resolve_transition_script(profile.gates, repo_root) is not None
 
 
+def _blocking(result: GateRunResult) -> GateRunResult:
+    """Stamp a failed command with the outcome that decides who handles it.
+
+    A command that could not run keeps UNAVAILABLE; anything else that failed is
+    a real gate failure. Collapsing the two — which `replace(result,
+    outcome="failed")` did unconditionally — is what sent a hung `npx` to an
+    agent to "fix".
+    """
+    if result.outcome is GateOutcome.UNAVAILABLE:
+        return result
+    return replace(result, outcome=GateOutcome.FAILED)
+
+
 def run_transition_gates(
     session: Session,
     profile: OrchestrationProfile,
@@ -221,7 +250,7 @@ def run_transition_gates(
 ) -> GateRunResult:
     """Run configured gate commands after *from_stage* completes and before *to_stage*."""
     if not profile.gates.enabled:
-        return GateRunResult(ok=True, outcome="disabled", message="gates disabled")
+        return GateRunResult(ok=True, outcome=GateOutcome.DISABLED, message="gates disabled")
 
     # The tree the stage just wrote in. Running gates in the shared checkout
     # would lint a copy of the repo that has none of the ticket's changes —
@@ -230,7 +259,7 @@ def run_transition_gates(
     if not repo_root.is_dir():
         return GateRunResult(
             ok=False,
-            outcome="failed",
+            outcome=GateOutcome.FAILED,
             message=f"Workspace repo path does not exist: {repo_root}",
         )
 
@@ -273,7 +302,7 @@ def run_transition_gates(
                 context["transition"],
             )
         else:
-            return replace(result, outcome="failed")
+            return _blocking(result)
 
     # Profile- and stage-configured gate commands (lint, static analysis, etc.)
     # are objective checks with no such notion of an "unmodeled" transition, so
@@ -292,13 +321,17 @@ def run_transition_gates(
         command = format_gate_command(template, context)
         result = _run_command(command, repo_root)
         if not result.ok:
-            return replace(result, outcome="failed")
+            return _blocking(result)
         ran += 1
 
     if ran == 0:
-        return GateRunResult(ok=True, outcome="skipped", message="no gate commands configured")
+        return GateRunResult(
+            ok=True, outcome=GateOutcome.SKIPPED, message="no gate commands configured"
+        )
 
-    return GateRunResult(ok=True, outcome="passed", message=f"passed {ran} gate command(s)")
+    return GateRunResult(
+        ok=True, outcome=GateOutcome.PASSED, message=f"passed {ran} gate command(s)"
+    )
 
 
 def run_gate_autofix(

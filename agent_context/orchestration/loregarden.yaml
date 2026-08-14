@@ -11,10 +11,17 @@ gates:
   # autofix_commands below, so a failure the fixer can resolve never reaches a
   # human. Commands run from the workspace root via `bash -c` so they find the
   # per-subproject tooling (uv-managed venv for server/, node_modules for client/).
+  #
+  # `npx --no-install` on the client checks, deliberately. A ticket runs in a
+  # git worktree and node_modules is gitignored, so no worktree has one — plain
+  # `npx` then tries to fetch oxlint over the network on every gate and blows
+  # the 300s budget. --no-install turns that into an immediate "not installed",
+  # which the runner classifies UNAVAILABLE and routes to a human instead of
+  # spending an agent attempt on a toolchain no agent can install.
   commands:
     - bash -c "cd server && uv run ruff check ."
     - bash -c "cd server && uv run ruff format --check ."
-    - bash -c "cd client && npx oxlint ."
+    - bash -c "cd client && npx --no-install oxlint ."
     # Organization guardrails. Same checks the pre-commit hook runs, scoped to
     # the working tree because an agent's edits are uncommitted when this fires.
     # No fixer pairs with these: naming a vocabulary or modelling a payload is a
@@ -24,7 +31,7 @@ gates:
   autofix_commands:
     - bash -c "cd server && uv run ruff check --fix ."
     - bash -c "cd server && uv run ruff format ."
-    - bash -c "cd client && npx oxlint --fix ."
+    - bash -c "cd client && npx --no-install oxlint --fix ."
   autofix_agent_fallback: true
   # Every gate here is static analysis whose mechanical fixer (ruff --fix /
   # oxlint --fix) already ran best-effort before an agent is ever spawned. What
