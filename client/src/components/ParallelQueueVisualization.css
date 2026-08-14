@@ -10,6 +10,16 @@
   border: 1px solid var(--bd);
   border-radius: 16px;
   padding: 22px 24px;
+  /* Squares off with the rail beside it. A definite height is what lets the
+     lanes below size themselves against the panel rather than the other way
+     round; `min-height: min-content` is the escape hatch for a window too short
+     to hold them, where the column scrolls a taller card instead of the card
+     ending mid-content. */
+  flex: none;
+  height: 100%;
+  min-height: min-content;
+  display: flex;
+  flex-direction: column;
 }
 
 .queue-panel-head {
@@ -168,7 +178,7 @@
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--bd2);
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
 }
 
@@ -357,6 +367,17 @@
   /* minmax(0, 1fr): long hierarchy titles must not stretch one column wider. */
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+  /* Takes whatever height the panel has spare, so the lanes reach the bottom of
+     the card instead of leaving it blank on a tall window. A lane never drops
+     below the floor — the height that fits a running summary, both list
+     headings, the add button and a row's worth of list — and takes an even
+     share of whatever the panel has above that. */
+  flex: 1;
+  /* The floor goes on the grid, not the row: a `1fr` row with a floor makes the
+     panel's own minimum depend on the lanes' full content, and the two size
+     each other in a circle. */
+  min-height: 389px;
+  grid-auto-rows: minmax(0, 1fr);
 }
 
 .queue-slot {
@@ -476,12 +497,14 @@
   gap: 6px;
   min-width: 0;
   /* A lane's lists have no ceiling — one lane with a dozen stopped entries used
-     to set the height of the whole row and push the queue below the fold. Cap
+     to set the height of the whole row and push the queue below the fold. Bound
      the body and let the lists inside it scroll, so every lane is the same
      comparable height and the running summary, the list headings and the add
-     button all stay put while you read down a long lane. */
+     button all stay put while you read down a long lane.
+
+     The bound is whatever height the lane's row in the grid gives it, so a tall
+     window spends its space on more rows per lane. */
   min-height: 0;
-  max-height: 320px;
   overflow: hidden;
 }
 
@@ -493,7 +516,7 @@
   gap: 4px;
   /* Even split of what the lane has left, so a lane holding both a stopped
      list and a queued one does not starve one of them to nothing. */
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 56px;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -773,9 +796,9 @@
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--bd2);
-  /* Sized by its content, then shrunk by the lane's cap — the scroller inside
-     absorbs the difference, so the lane never grows past it. */
-  flex: 1 1 auto;
+  /* Basis 0, so a long list does not inflate the lane's intrinsic height and,
+     through it, the panel's — the panel sizes the lanes, not the reverse. */
+  flex: 1 1 0;
   min-height: 0;
 }
 
