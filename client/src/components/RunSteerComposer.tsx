@@ -18,6 +18,7 @@ import { api } from "../api/client";
 export function RunSteerComposer({ runId, isActive }: { runId: string; isActive: boolean }) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState("");
+  const [confirming, setConfirming] = useState(false);
 
   const state = useQuery({
     queryKey: ["run-messages", runId],
@@ -36,6 +37,51 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
     },
   });
 
+  const stop = useMutation({
+    meta: { errorTitle: "Stop this run" },
+    mutationFn: () => api.cancelRun(runId),
+    onSuccess: () => {
+      setConfirming(false);
+      // The refusal this run reports changes the moment the stop lands, so the
+      // composer re-reads rather than leaving an input the server will refuse.
+      qc.invalidateQueries({ queryKey: ["run-messages", runId] });
+      qc.invalidateQueries({ queryKey: ["ticket"] });
+    },
+  });
+
+  // Ending a turn is not undoable and the button sits beside a text input, so
+  // it asks once. A run minutes deep should not be lost to a misclick meant
+  // for the message box.
+  const stopControl = isActive ? (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+      {confirming ? (
+        <>
+          <button
+            type="button"
+            className="btn-primary"
+            style={{ background: "var(--rd)" }}
+            disabled={stop.isPending}
+            onClick={() => stop.mutate()}
+          >
+            {stop.isPending ? "Stopping…" : "Confirm stop"}
+          </button>
+          <button type="button" className="btn-secondary" onClick={() => setConfirming(false)}>
+            Keep going
+          </button>
+        </>
+      ) : (
+        <button type="button" className="btn-secondary" onClick={() => setConfirming(true)}>
+          Stop this run
+        </button>
+      )}
+      {stop.isError && (
+        <span className="modal-subtitle" style={{ color: "var(--rdl)" }}>
+          {(stop.error as Error).message}
+        </span>
+      )}
+    </div>
+  ) : null;
+
   // Render nothing until the server has said whether this run can be steered.
   // Defaulting to "yes" while loading flashed an input onto runs that cannot
   // take one, inviting a message that would have been refused.
@@ -44,13 +90,17 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
   const { refusal, messages } = state.data;
   const canSend = !refusal && draft.trim().length > 0 && !send.isPending;
 
-  // Nothing to say and nothing sendable: stay out of the way entirely.
+  // Nothing to say and nothing sendable. A live run is still stoppable though:
+  // a cursor-adapter run cannot take a message and must not therefore be
+  // unstoppable, which is why the stop is not nested inside the steer UI.
   if (refusal && messages.length === 0) {
-    return isActive ? (
-      <p className="modal-subtitle" style={{ marginTop: 12 }}>
-        {refusal}
-      </p>
-    ) : null;
+    if (!isActive) return null;
+    return (
+      <div style={{ marginTop: 12 }}>
+        <p className="modal-subtitle">{refusal}</p>
+        {stopControl}
+      </div>
+    );
   }
 
   return (
@@ -105,6 +155,8 @@ export function RunSteerComposer({ runId, isActive }: { runId: string; isActive:
           {(send.error as Error).message}
         </p>
       )}
+
+      {stopControl}
     </div>
   );
 }
