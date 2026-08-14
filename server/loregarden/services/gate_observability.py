@@ -16,6 +16,7 @@ from __future__ import annotations
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import (
     EventType,
+    GateOutcome,
     OrchestrationRun,
     Ticket,
     WorkflowStageDef,
@@ -82,7 +83,8 @@ def record_gate_evaluation(
     bounded autofix retries stay individually visible — "failed once and got
     fixed" must not read the same as "has failed on every retry and still does".
     """
-    outcome = result.outcome or ("passed" if result.ok else "failed")
+    resolved = result.outcome or (GateOutcome.PASSED if result.ok else GateOutcome.FAILED)
+    outcome = resolved.value
     message = result.message or (result.stderr if not result.ok else "")
     run_id = orch_run.id if orch_run else None
     event_bus.publish(
