@@ -32,7 +32,7 @@ from loregarden.websocket_events import (
     emit_queue_promoted,
     emit_run_completed,
 )
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, select, update
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,68 @@ def run_notify_fields(session: Session, run: AgentRun | None) -> dict[str, str |
         "stage_key": run.stage_key or None,
         "agent_id": run.agent_id or None,
     }
+
+
+def claim_free_slot(session: Session, *, preferred: int | None = None) -> AgentSlot | None:
+    """Take a slot atomically, or return None because someone else took it.
+
+    Every claim in this file used to be select-then-mutate: read the slots where
+    `is_available`, pick one, set it False, commit. Two claimants arriving
+    together both read the same row as free and both wrote it, and the second
+    write simply won — one slot, two occupants, and a pool that had silently
+    admitted past `max_concurrent`. The comment at the admission site asserted
+    the opposite ("two requests arriving together cannot both read the slot as
+    free"), which is the intent the code did not implement.
+
+    The claim is a conditional UPDATE — `SET is_available = 0 WHERE id = ? AND
+    is_available = 1` — so the database decides the winner in one statement and
+    the loser sees `rowcount == 0` and moves to the next candidate. No lock, no
+    retry loop, and correct under SQLite's writer serialisation.
+
+    `preferred` is tried first and is a preference, not a demand: a lane that
+    filled between opening a dialog and confirming should still run the ticket.
+    """
+    candidates: list[int] = []
+    if preferred is not None:
+        candidates.append(preferred)
+    candidates.extend(
+        number
+        for number in session.exec(
+            select(AgentSlot.slot_number)
+            .where(AgentSlot.is_available == True)  # noqa: E712
+            .order_by(AgentSlot.slot_number)
+        ).all()
+        if number != preferred
+    )
+
+    for slot_number in candidates:
+        result = session.exec(
+            update(AgentSlot)
+            .where(AgentSlot.slot_number == slot_number)
+            .where(AgentSlot.is_available == True)  # noqa: E712
+            .values(
+                is_available=False,
+                assigned_at=datetime.now(timezone.utc),
+                current_run_id=None,
+                current_orchestration_run_id=None,
+            )
+        )
+        if result.rowcount != 1:
+            # Someone else won this one between the read above and now, which is
+            # the whole reason this is a conditional update.
+            continue
+        session.commit()
+        claimed = session.exec(
+            select(AgentSlot).where(AgentSlot.slot_number == slot_number)
+        ).first()
+        if claimed is not None:
+            # The UPDATE went round the identity map; refresh so the caller does
+            # not read a stale `is_available` off a cached instance.
+            session.refresh(claimed)
+        return claimed
+
+    session.commit()
+    return None
 
 
 def owned_by_shared_queue():
@@ -213,30 +275,13 @@ class ParallelQueueService:
             # Initialize slots if needed
             self.initialize_slots()
 
-            # Check available slots. Ordered so that "no preference" means the
-            # lowest free slot every time, rather than whatever the row order
-            # happened to be.
-            slot_stmt = (
-                select(AgentSlot)
-                .where(AgentSlot.is_available == True)
-                .order_by(AgentSlot.slot_number)
-            )
-            available_slots = self.session.exec(slot_stmt).all()
-
-            available_slot = None
-            if preferred_slot is not None:
-                available_slot = next(
-                    (slot for slot in available_slots if slot.slot_number == preferred_slot),
-                    None,
-                )
-            if available_slot is None:
-                available_slot = available_slots[0] if available_slots else None
+            # One conditional UPDATE decides the winner. "No preference" still
+            # means the lowest free slot; the ordering lives in claim_free_slot.
+            available_slot = claim_free_slot(self.session, preferred=preferred_slot)
 
             if available_slot:
-                # Start immediately
-                available_slot.is_available = False
+                # Start immediately. The slot is already ours; name what is in it.
                 available_slot.current_run_id = run_id
-                available_slot.assigned_at = datetime.now(timezone.utc)
                 self.session.add(available_slot)
                 self.session.commit()
 
@@ -614,20 +659,9 @@ class ParallelQueueService:
             } or None if no promotion needed
         """
         try:
-            # Find available slot
-            slot_stmt = (
-                select(AgentSlot)
-                .where(AgentSlot.is_available == True)
-                .order_by(AgentSlot.slot_number)
-            )
-            available_slot = self.session.exec(slot_stmt).first()
-
-            if not available_slot:
-                logger.info("No available execution slots")
-                return None
-
-            # Find the requested queued run, or the first one if unspecified.
-            # Lane entries wait in `queued_runs` too and are not ours to start.
+            # Read what there is to promote before taking a slot for it. The
+            # claim is atomic and therefore committed, so claiming first and
+            # finding nothing to run would strand a lane nobody is using.
             conditions = [QueuedRun.status == QueuePosition.QUEUED, owned_by_shared_queue()]
             if run_id is not None:
                 conditions.append(QueuedRun.run_id == run_id)
@@ -640,10 +674,16 @@ class ParallelQueueService:
                 logger.info("No queued runs to promote")
                 return None
 
-            # Promote run to slot
-            available_slot.is_available = False
+            # Claimed atomically: a promotion racing an admission both read the
+            # same free slot and both wrote it.
+            available_slot = claim_free_slot(self.session)
+
+            if not available_slot:
+                logger.info("No available execution slots")
+                return None
+
+            # The slot is already ours; name what is in it.
             available_slot.current_run_id = queued_run.run_id
-            available_slot.assigned_at = datetime.now(timezone.utc)
 
             queued_run.status = QueuePosition.PROMOTED
             queued_run.promoted_at = datetime.now(timezone.utc)
