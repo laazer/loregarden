@@ -100,8 +100,9 @@
   animation: baxter-thinking 1.6s steps(1) infinite;
 }
 
-.baxter-avatar--full.baxter-avatar--typing {
-  animation: baxter-typing 0.65s steps(1) infinite;
+.baxter-avatar--full.baxter-avatar--typing,
+.baxter-avatar--full.baxter-avatar--walking {
+  animation: baxter-walk 0.65s steps(1) infinite;
 }
 
 .baxter-avatar--full.baxter-avatar--responding {
@@ -139,7 +140,7 @@
 }
 
 /* Row 1: walk cycle */
-@keyframes baxter-typing {
+@keyframes baxter-walk {
   0%,
   100% {
     background-position:
@@ -220,6 +221,7 @@
   .baxter-avatar--head.baxter-avatar--responding::before,
   .baxter-avatar--full.baxter-avatar--thinking,
   .baxter-avatar--full.baxter-avatar--typing,
+  .baxter-avatar--full.baxter-avatar--walking,
   .baxter-avatar--full.baxter-avatar--responding,
   .baxter-avatar--full.baxter-avatar--idle:hover,
   .baxter-avatar--full.baxter-avatar--idle:focus-visible {
@@ -232,7 +234,8 @@
       center;
   }
 
-  .baxter-avatar--full.baxter-avatar--typing {
+  .baxter-avatar--full.baxter-avatar--typing,
+  .baxter-avatar--full.baxter-avatar--walking {
     background-position:
       calc(var(--baxter-w) * -1) 0,
       center;

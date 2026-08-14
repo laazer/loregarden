@@ -4,7 +4,12 @@ import baxterHead from "../../assets/chat/baxter-head.png";
 import baxterSheet from "../../assets/chat/baxter.png";
 import "./BaxterAvatar.css";
 
-export type BaxterAvatarState = "idle" | "thinking" | "typing" | "responding";
+/**
+ * `walking` is not a chat state like the others — it is the sprite the pacing
+ * track needs. The track moves the avatar across it, so the body must be
+ * mid-stride whatever the turn is actually doing.
+ */
+export type BaxterAvatarState = "idle" | "thinking" | "typing" | "responding" | "walking";
 export type BaxterAvatarVariant = "full" | "head";
 
 export function BaxterAvatar({

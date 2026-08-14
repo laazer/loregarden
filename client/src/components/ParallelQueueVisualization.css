@@ -465,7 +465,10 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  /* Lane cards are all as tall as the tallest one in the row. Centring here
+     pushed a short lane's content into the middle of that height, which reads
+     as arbitrary top padding next to the lane that set the height. */
+  justify-content: flex-start;
   gap: 6px;
   min-width: 0;
 }
