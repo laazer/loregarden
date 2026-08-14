@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.db.session import engine
@@ -19,6 +19,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+from loregarden.services.hierarchy_service import collect_ticket_scope_ids
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
@@ -30,6 +31,7 @@ from loregarden.services.scheduling import set_orchestration_scheduler
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workflow_state import set_stage_status
+from sqlalchemy import func
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -293,6 +295,132 @@ def fail_interrupted_orchestration_runs(
         )
         failed.append(run)
     return failed
+
+
+#: How long a ticket tree may show no live agent run and no new activity before
+#: an orchestration over it is treated as stalled. Generous on purpose: the
+#: only thing this window has to cover is the gap *between* stages, since a
+#: running agent keeps its own row live for as long as it works.
+STALLED_ORCHESTRATION_GRACE = timedelta(minutes=15)
+
+STALLED_ORCHESTRATION_MESSAGE = (
+    "Orchestration stalled: nothing in this ticket tree has a live agent run and "
+    "nothing has progressed recently. Its driver is gone; the lane has been released."
+)
+
+
+def _tree_ticket_ids(session: Session, ticket_id: str) -> list[str]:
+    """Every ticket in the tree this one belongs to — root included.
+
+    The *whole* tree, not the subtree below this ticket, and that is the point.
+    A parent orchestration runs no stages of its own: the work lives in its
+    children's separate orchestration runs, so a check scoped to one run's own
+    ticket would read an actively working parent as idle and kill the tree from
+    the top. Walking up first and then down makes any live agent anywhere in the
+    tree protect every orchestration in it.
+    """
+    root_id = ticket_id
+    seen: set[str] = {ticket_id}
+    while True:
+        parent_id = session.exec(
+            select(Ticket.parent_ticket_id).where(Ticket.id == root_id)
+        ).first()
+        if not parent_id or parent_id in seen:
+            break
+        seen.add(parent_id)
+        root_id = parent_id
+    return collect_ticket_scope_ids(session, root_id)
+
+
+def _tree_last_activity(session: Session, ticket_ids: list[str]) -> datetime | None:
+    """The most recent sign of life anywhere in a ticket tree."""
+    stamps = [
+        session.exec(select(func.max(column)).where(col(owner).in_(ticket_ids))).first()
+        for column, owner in (
+            (AgentRun.created_at, AgentRun.ticket_id),
+            (AgentRun.finished_at, AgentRun.ticket_id),
+            # `created_at`, not `started_at`: a claim is written before anything
+            # runs and leaves `started_at` null until a driver adopts it, so
+            # reading that alone dates every fresh claim to the beginning of
+            # time and settles it on the very next status read.
+            (OrchestrationRun.created_at, OrchestrationRun.ticket_id),
+            (OrchestrationRun.started_at, OrchestrationRun.ticket_id),
+        )
+    ]
+    # SQLite hands these back naive; comparing one to an aware `cutoff` raises.
+    aware = [
+        stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc) for stamp in stamps if stamp
+    ]
+    return max(aware) if aware else None
+
+
+def settle_stalled_orchestrations(
+    session: Session,
+    *,
+    grace: timedelta = STALLED_ORCHESTRATION_GRACE,
+    message: str = STALLED_ORCHESTRATION_MESSAGE,
+) -> list[OrchestrationRun]:
+    """Fail orchestrations whose driver is gone, so their lane comes back.
+
+    `fail_interrupted_orchestration_runs` is the sibling of this, and it only
+    ever runs at startup — it reaps what a restart orphaned. Nothing reaped an
+    orchestration whose thread died *while the server stayed up*, and nothing
+    could: `reconcile_slots` frees a slot whose occupant is terminal, and a run
+    stuck at RUNNING is live by that test. So the lane was held until the next
+    boot, the board reported it busy, and whatever queued behind it never
+    started. Two of three lanes were in that state when this was written.
+
+    Liveness is judged over the whole ticket tree (see `_tree_ticket_ids`) and
+    needs both halves to be false: no agent run in flight anywhere in the tree,
+    *and* no new activity within `grace`. A run that is genuinely working keeps
+    an AgentRun row live for its whole duration, however long that is, so the
+    first condition alone protects it — a 51-minute agent run was in flight
+    while this was being written and must survive untouched.
+    """
+    live_runs = select(AgentRun.ticket_id).where(
+        col(AgentRun.status).in_(
+            [RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION]
+        )
+    )
+    busy_ticket_ids = {row for row in session.exec(live_runs).all() if row}
+
+    candidates = session.exec(
+        select(OrchestrationRun).where(
+            col(OrchestrationRun.status).in_(
+                [OrchestrationRunStatus.QUEUED, OrchestrationRunStatus.RUNNING]
+            )
+        )
+    ).all()
+
+    callbacks = OrchestrationCallbackService(session)
+    cutoff = datetime.now(timezone.utc) - grace
+    settled: list[OrchestrationRun] = []
+    for run in candidates:
+        ticket = session.get(Ticket, run.ticket_id)
+        if not ticket:
+            continue
+        tree = _tree_ticket_ids(session, ticket.id)
+        if busy_ticket_ids.intersection(tree):
+            continue
+        last_activity = _tree_last_activity(session, tree)
+        if last_activity is None or last_activity > cutoff:
+            # No timestamp anywhere in the tree is not evidence of a stall, it
+            # is an absence of evidence — and the cost of being wrong here is
+            # killing live work, so it spares.
+            continue
+
+        logger.warning(
+            "Settling stalled orchestration %s (ticket %s): no live agent run in its "
+            "tree and no activity since %s",
+            run.run_code,
+            ticket.external_id or ticket.id,
+            last_activity,
+        )
+        callbacks.complete_orchestration(
+            run, ticket, status=OrchestrationRunStatus.FAILED, message=message
+        )
+        settled.append(run)
+    return settled
 
 
 def execute_agent_run_background(run_id: str) -> None:

@@ -52,6 +52,7 @@ from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.run_service import (
     fail_interrupted_orchestration_runs,
     fail_interrupted_runs,
+    settle_stalled_orchestrations,
     settle_stranded_stages,
 )
 from loregarden.services.seed import seed_database
@@ -76,6 +77,10 @@ async def lifespan(app: FastAPI):
         seed_database(session)
         fail_interrupted_runs(session)
         fail_interrupted_orchestration_runs(session)
+        # Its live-server twin: a driver that died without a restart leaves a
+        # RUNNING row no reap here would select, since this one only looks for
+        # what a restart orphaned.
+        settle_stalled_orchestrations(session)
         fail_interrupted_triage_turns(session)
         fail_interrupted_branch_triage_turns(session)
         fail_interrupted_baxter_chat_turns(session)

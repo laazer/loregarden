@@ -30,6 +30,7 @@ from loregarden.services.run_duration_stats import (
     project_clear_time,
     project_lane_waits,
 )
+from loregarden.services.run_service import settle_stalled_orchestrations
 from loregarden.services.ticket_activity import classify_ticket_activity
 from loregarden.services.ticket_tree_estimate import TicketTreeEstimator
 from sqlmodel import Session, col, select
@@ -316,9 +317,18 @@ async def build_queue_status(session: Session) -> dict[str, Any]:
 
     queue_service = ParallelQueueService(session, max_concurrent=DEFAULT_MAX_CONCURRENT)
 
-    # First, so the snapshot cannot report a lane as running a run that already
-    # finished. A slot whose occupant is terminal is free, and the board is
-    # where anyone would notice it was not.
+    # Before the lane reconcile, because that one can only act on an occupant
+    # which is already terminal — a run stuck at RUNNING is live by its test, so
+    # a stalled orchestration held its lane until the next server boot. This is
+    # what makes it terminal; reconcile_lanes then reclaims the slot.
+    #
+    # On the status read for the same reason reconcile_lanes is: there is no
+    # periodic tick in this server, and the board is exactly where a lane that
+    # is busy with nothing gets noticed.
+    settle_stalled_orchestrations(session)
+
+    # Then the slot itself. A slot whose occupant is terminal is free, and the
+    # board is where anyone would notice it was not.
     QueueLaneService(session, max_concurrent=DEFAULT_MAX_CONCURRENT).reconcile_lanes()
 
     active_runs = await queue_service.get_active_runs()
