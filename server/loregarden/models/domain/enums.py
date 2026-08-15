@@ -443,3 +443,36 @@ class QueuePosition(str, Enum):
     CANCELLED = "cancelled"
     FAILED = "failed"
     SKIPPED = "skipped"
+
+
+class ViewKind(str, Enum):
+    """Which arrangement a view's layout carries.
+
+    The tag is what selects the layout body — a flex grid has a recursive split
+    tree, a canvas a flat positioned list — so it is a closed vocabulary, not a
+    label.
+    """
+
+    FLEX_GRID = "flex_grid"
+    CANVAS = "canvas"
+
+
+class ContainerKind(str, Enum):
+    """What a container hosts. The panel's *primitive* is a further vocabulary,
+    owned by the frontend registry, and is not this enum."""
+
+    TERMINAL = "terminal"
+    PANEL = "panel"
+    WEB_EMBED = "web_embed"
+
+
+class SplitOrientation(str, Enum):
+    HORIZONTAL = "horizontal"
+    VERTICAL = "vertical"
+
+
+class SidebarEntryKind(str, Enum):
+    """The two things that share the sidebar's one ordered list."""
+
+    VIEW = "view"
+    PAGE = "page"
