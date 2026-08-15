@@ -8,10 +8,13 @@ import {
   studioAgentPath,
   studioPath,
   studioResourceFromPath,
+  ticketIdFromPath,
   studioSectionFromPath,
   studioTicketSessionPath,
   studioWorkflowPath,
   ticketPath,
+  viewIdFromPath,
+  viewPath,
 } from "../appNavigation";
 
 describe("appNavigation", () => {
@@ -81,5 +84,19 @@ describe("appNavigation", () => {
     expect(studioPath("gates")).toBe("/studio/gates");
     expect(studioSectionFromPath("/studio/gates")).toBe("gates");
     expect(studioSectionFromPath("/studio/gates/anything")).toBe("gates");
+  });
+
+  it("reads a view id off its route, decoded", () => {
+    expect(viewIdFromPath(viewPath("v grid"))).toBe("v grid");
+    expect(viewIdFromPath("/console")).toBeNull();
+  });
+
+  it("hands back a malformed view segment rather than throwing on it", () => {
+    // A URL segment is whatever the address bar holds, and a bare `%` is not
+    // valid percent-encoding. This runs during render, above the error
+    // boundaries, so a throw here blanks the whole shell instead of missing.
+    expect(viewIdFromPath("/view/%")).toBe("%");
+    expect(viewIdFromPath("/view/%E0%A4%A")).toBe("%E0%A4%A");
+    expect(ticketIdFromPath("/tickets/%/diff")).toBe("%");
   });
 });

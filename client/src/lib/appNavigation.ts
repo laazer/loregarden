@@ -64,7 +64,22 @@ const PAGE_PATHS: Record<AppPage, string> = {
 };
 
 const TICKET_PATH_RE = /^\/tickets\/([^/]+)(?:\/([^/]+))?/;
+const VIEW_PATH_RE = /^\/view\/([^/]+)/;
 const STUDIO_RESOURCE_PATH_RE = /^\/studio\/(agents|workflows|tickets|gates)(?:\/([^/]+))?/;
+
+/**
+ * A URL segment is whatever the address bar holds, and a bare `%` is not valid
+ * percent-encoding: `decodeURIComponent` throws on it. These readers run during
+ * render, so an unroutable id has to come back as a miss — `/view/%` blanking
+ * the whole shell is not a 404.
+ */
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
 
 export function isStudioNewResource(resourceId: string | null | undefined): boolean {
   return resourceId === STUDIO_NEW_RESOURCE;
@@ -101,7 +116,7 @@ export function studioTicketSessionNewPath(): string {
 export function studioResourceFromPath(pathname: string): string | null {
   const match = pathname.match(STUDIO_RESOURCE_PATH_RE);
   if (!match?.[2]) return null;
-  return decodeURIComponent(match[2]);
+  return decodeSegment(match[2]);
 }
 
 export function isArtifactTab(value: string | undefined | null): value is ArtifactTab {
@@ -123,13 +138,13 @@ export function ticketPath(ticketId: string, tab: ArtifactTab = "diff"): string 
 
 export function ticketIdFromPath(pathname: string): string | null {
   const match = pathname.match(TICKET_PATH_RE);
-  return match ? decodeURIComponent(match[1]) : null;
+  return match ? decodeSegment(match[1]) : null;
 }
 
 export function artifactTabFromPath(pathname: string): ArtifactTab | null {
   const match = pathname.match(TICKET_PATH_RE);
   if (!match?.[2]) return null;
-  const tab = decodeURIComponent(match[2]);
+  const tab = decodeSegment(match[2]);
   return isArtifactTab(tab) ? tab : null;
 }
 
@@ -148,6 +163,22 @@ export function studioSectionFromPath(pathname: string): StudioSection {
     return "gates";
   }
   return "agents";
+}
+
+export function viewPath(viewId: string): string {
+  return `/view/${encodeURIComponent(viewId)}`;
+}
+
+/**
+ * The view a route is showing, or null on every other route.
+ *
+ * `pageFromPath` answers `home` for anything it does not recognise, so a view
+ * route would otherwise light up the Home tab. Callers highlighting a tab ask
+ * this first.
+ */
+export function viewIdFromPath(pathname: string): string | null {
+  const match = pathname.match(VIEW_PATH_RE);
+  return match ? decodeSegment(match[1]) : null;
 }
 
 export function pageFromPath(pathname: string): AppPage {

@@ -4,7 +4,7 @@ import { type ReactNode, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useAppPage } from "../lib/useAppNavigation";
 import { useUiStore } from "../state/uiStore";
-import { AppIconRail } from "./AppIconRail";
+import { AppSidebar } from "./AppSidebar";
 import { AppTopbar } from "./AppTopbar";
 import { AppUtilityDock } from "./AppUtilityDock";
 import { SettingsModal } from "./SettingsModal";
@@ -52,23 +52,52 @@ export function AppLayout({ children }: { children: ReactNode }) {
     },
   });
 
-  const defaultSettingsSlug = useMemo(() => {
+  /**
+   * The concrete workspace the *settings modal* opens on. `uiStore.workspace` is
+   * `"all"` until one is chosen, so this falls through to whichever slug the
+   * current page is scoped to, and finally to the first workspace.
+   *
+   * Route-dependent by design, and therefore not what the sidebar uses — see
+   * `sidebarWorkspaceSlug` below.
+   */
+  const resolvedWorkspaceSlug = useMemo(() => {
     if (workspace && workspace !== "all") return workspace;
     if (appPage === "editor" && editorWorkspace) return editorWorkspace;
     if (appPage === "queue" && queueWorkspaceSlug) return queueWorkspaceSlug;
     if (appPage === "branch-triage" && branchTriageWorkspaceSlug) return branchTriageWorkspaceSlug;
-    return workspaces.data?.[0]?.slug ?? "loregarden";
+    return workspaces.data?.[0]?.slug ?? "";
   }, [workspace, appPage, editorWorkspace, queueWorkspaceSlug, branchTriageWorkspaceSlug, workspaces.data]);
 
+  /**
+   * The workspace the *sidebar* shows, which deliberately does not follow the
+   * route. `resolvedWorkspaceSlug` falls through to per-page slugs, so walking
+   * `/queue` → `/console` would swap the entire tab set underneath the user —
+   * chrome does not re-arrange itself because a page changed. Only an explicit
+   * choice moves it; otherwise it shows the first workspace.
+   *
+   * Seeding follows the resolved slug, not the choice. `uiStore.workspace` stays
+   * `"all"` until the Dashboard picker moves it, and "All workspaces" is a place
+   * a user may legitimately sit forever — gating the seed on an explicit choice
+   * leaves a fresh install with no navigation links at all. The first workspace
+   * is stable across navigation and one the user demonstrably has, so its
+   * default pins belong there.
+   */
+  const workspaceChosen = Boolean(workspace) && workspace !== "all";
+  const sidebarWorkspaceSlug = workspaceChosen ? workspace : workspaces.data?.[0]?.slug ?? "";
+
   const openSettings = () => {
-    setSettingsWorkspaceSlug(defaultSettingsSlug);
+    setSettingsWorkspaceSlug(resolvedWorkspaceSlug || "loregarden");
     setSettingsOpen(true);
   };
 
   return (
     <div className="app-frame">
       <div className="app-ambient" aria-hidden />
-      <AppIconRail onOpenSettings={openSettings} />
+      <AppSidebar
+        workspaceSlug={sidebarWorkspaceSlug}
+        seedDefaults={Boolean(sidebarWorkspaceSlug)}
+        onOpenSettings={openSettings}
+      />
       <TopbarPageSlotProvider>
         <div className="app-main">
           <AppTopbar />
