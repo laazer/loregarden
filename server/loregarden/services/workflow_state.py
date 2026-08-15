@@ -129,8 +129,20 @@ def reconcile_workflow_state(
     stages: list[WorkflowStageDef],
     *,
     persist: bool = True,
+    owns_state: bool = True,
 ) -> dict[str, StageStatus]:
-    """Align stages_json, ticket workflow fields, and ticket.state."""
+    """Align stages_json, ticket workflow fields, and ticket.state.
+
+    ``owns_state=False`` keeps the stage bookkeeping and skips the one write
+    that a parent must not receive. A ticket with children carries no work of
+    its own — nothing ever runs its stages, so they sit at ``triage/pending``
+    and derive ``backlog`` forever. With both writers live, whichever ran last
+    won: the rollup would summarise a finished subtree as `done`, and the next
+    plain `GET /api/tickets/{id}` would derive `backlog` from those untouched
+    stages and write it straight back. Callers holding a session pass
+    ``owns_state=not has_children(...)``; the default suits a leaf, which is
+    what this module was written for.
+    """
     stage_map = parse_stage_map(instance, stages)
     current_key, current_status = _cursor_stage(ticket, stage_map, stages)
     ticket_state = _derive_ticket_state(
@@ -146,7 +158,8 @@ def reconcile_workflow_state(
     # Sticky done: a workflow that no longer derives DONE (a reopened stage, a
     # template change) must not silently un-finish a ticket. `derive` owns the
     # state_locked / wont_do guards and the revision bookkeeping.
-    if not (ticket.state == TicketState.DONE and ticket_state != TicketState.DONE):
+    sticky_done = ticket.state == TicketState.DONE and ticket_state != TicketState.DONE
+    if owns_state and not sticky_done:
         derive(ticket, ticket_state, actor="workflow")
     ticket.updated_at = datetime.now(timezone.utc)
 
@@ -190,8 +203,10 @@ def build_stage_views(
     ticket: Ticket,
     instance: WorkflowInstance,
     stages: list[WorkflowStageDef],
+    *,
+    owns_state: bool = True,
 ) -> list[WorkflowStageView]:
-    reconcile_workflow_state(ticket, instance, stages, persist=False)
+    reconcile_workflow_state(ticket, instance, stages, persist=False, owns_state=owns_state)
     stage_map = parse_stage_map(instance, stages)
     raw = json.loads(instance.stages_json or "[]")
     note_by_key = {item["key"]: item.get("note", "") for item in raw}

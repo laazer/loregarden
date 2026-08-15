@@ -62,6 +62,19 @@ def derive_parent_state(child_states: list[TicketState]) -> TicketState | None:
     return TicketState.BACKLOG
 
 
+def has_children(session: Session, ticket_id: str) -> bool:
+    """Whether this ticket is a parent, and so does not own its own state.
+
+    The predicate the workflow side asks before deriving a state from stages: a
+    parent's stages are never run, so deriving from them answers `backlog`
+    forever and overwrites whatever the rollup just worked out.
+    """
+    return (
+        session.exec(select(Ticket.id).where(Ticket.parent_ticket_id == ticket_id).limit(1)).first()
+        is not None
+    )
+
+
 def _child_states(session: Session, parent_id: str) -> list[TicketState]:
     return list(
         session.exec(select(Ticket.state).where(Ticket.parent_ticket_id == parent_id)).all()

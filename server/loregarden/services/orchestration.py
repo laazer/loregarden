@@ -40,7 +40,7 @@ from loregarden.services.run_log_stream import bootstrap_run_log
 from loregarden.services.scheduling import schedule_orchestration
 from loregarden.services.stage_retry_budget import clear_stage_dispatches
 from loregarden.services.studio_routing import find_terminal_stage, is_terminal_stage
-from loregarden.services.ticket_rollup import reconcile_ancestors
+from loregarden.services.ticket_rollup import has_children, reconcile_ancestors, reconcile_parent
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_tags import serialize_tags
 from loregarden.services.triage_question_log import (
@@ -236,12 +236,38 @@ class OrchestrationService:
             changed = True
 
         if changed:
-            reconcile_workflow_state(ticket, instance, stages, persist=False)
+            self._reconcile_workflow(ticket, instance, stages)
             self.session.add(ticket)
             self.session.add(instance)
             if commit:
                 self.session.commit()
         return instance, changed
+
+    def _owns_state(self, ticket: Ticket) -> bool:
+        """Whether this ticket's own workflow may write its state.
+
+        A parent's state belongs to `ticket_rollup`, which reads its children.
+        The workflow answer for a parent is `backlog` in perpetuity — nothing
+        runs a parent's stages, so they never leave `triage/pending` — and it
+        used to overwrite the rollup on any read.
+        """
+        return not has_children(self.session, ticket.id)
+
+    def _reconcile_workflow(
+        self,
+        ticket: Ticket,
+        instance: WorkflowInstance,
+        stages: list[WorkflowStageDef],
+    ) -> dict[str, StageStatus]:
+        """Every workflow reconcile in this service, with the owner decided once.
+
+        A seam rather than a keyword at each call site: the rule is easy to
+        state and was previously enforced nowhere, so a new call site should
+        inherit it instead of remembering it.
+        """
+        return reconcile_workflow_state(
+            ticket, instance, stages, persist=False, owns_state=self._owns_state(ticket)
+        )
 
     def reconcile_ticket(self, ticket: Ticket, *, commit: bool = True) -> Ticket:
         instance, ensured = self.ensure_workflow_instance(ticket, commit=False)
@@ -256,7 +282,13 @@ class OrchestrationService:
             ticket.workflow_stage_status,
             instance.stages_json,
         )
-        reconcile_workflow_state(ticket, instance, stages)
+        self._reconcile_workflow(ticket, instance, stages)
+        # A read repairs a parent rather than merely declining to corrupt it.
+        # The push-on-child-change hook and the startup sweep both leave windows
+        # — a child created rather than moved, a server that has not restarted —
+        # and this is the call every ticket read already passes through.
+        if not self._owns_state(ticket):
+            reconcile_parent(self.session, ticket)
         after = (
             ticket.state,
             ticket.workflow_stage_key,
@@ -280,7 +312,7 @@ class OrchestrationService:
         _, stages = self._resolve_stages(ticket)
         if not instance or not stages:
             return []
-        views = build_stage_views(ticket, instance, stages)
+        views = build_stage_views(ticket, instance, stages, owns_state=self._owns_state(ticket))
         self.session.add(ticket)
         self.session.add(instance)
         self.session.commit()
@@ -351,9 +383,9 @@ class OrchestrationService:
                     instance.stages_json = serialize_stage_map(stage_map, stages)
                 instance.current_stage_key = ticket.workflow_stage_key
             if body.auto_state is True or not ticket.state_locked:
-                reconcile_workflow_state(ticket, instance, stages, persist=False)
+                self._reconcile_workflow(ticket, instance, stages)
         elif body.auto_state is True and instance and stages:
-            reconcile_workflow_state(ticket, instance, stages, persist=False)
+            self._reconcile_workflow(ticket, instance, stages)
 
         ticket.updated_at = datetime.now(timezone.utc)
         if instance:
@@ -415,7 +447,7 @@ class OrchestrationService:
                 self.refresh_stage_retry_budget(ticket, key)
         instance.stages_json = serialize_stage_map(stage_map, stages)
         if auto_state:
-            reconcile_workflow_state(ticket, instance, stages, persist=False)
+            self._reconcile_workflow(ticket, instance, stages)
 
     def _prepare_stage_start(
         self,
@@ -463,7 +495,7 @@ class OrchestrationService:
         transitions = self._resolve_transitions(ticket)
         route = StateMachine.resolve_next_stage_key(stages, transitions, current, outcome="pass")
         if not route:
-            reconcile_workflow_state(ticket, instance, stages)
+            self._reconcile_workflow(ticket, instance, stages)
             self.session.add(ticket)
             self.session.add(instance)
             self.session.commit()
@@ -579,7 +611,7 @@ class OrchestrationService:
         ticket.workflow_stage_key = done_def.key
         set_stage_status(ticket, instance, stages, done_def.key, StageStatus.DONE)
         ticket.blocking_issues = ""
-        reconcile_workflow_state(ticket, instance, stages)
+        self._reconcile_workflow(ticket, instance, stages)
         self.session.add(ticket)
         self.session.add(instance)
         self.session.commit()
