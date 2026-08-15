@@ -4492,6 +4492,68 @@ button {
   font-family: var(--mono);
 }
 
+/* A long approval clamps in the rail; the fade says there is more below. */
+.approval-card-body--clamped {
+  position: relative;
+  overflow: hidden;
+}
+
+.approval-card-body--clamped::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 56px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0), var(--bg2));
+}
+
+.approval-card-expand {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  border-top: 1px solid var(--bd);
+  background: transparent;
+  color: var(--ac2);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+
+.approval-card-expand:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.approvals-view-criteria {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--txl);
+}
+
+.approvals-view-scope-hint {
+  font-size: 10.5px;
+  color: var(--txm);
+  margin-bottom: 4px;
+  font-family: var(--mono);
+}
+
+.approvals-view-error {
+  font-size: 11.5px;
+  color: var(--rdl);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(240, 96, 63, 0.08);
+  border: 1px solid rgba(240, 96, 63, 0.25);
+}
+
 .inbox-notification-link {
   margin-top: 8px;
   font-size: 11.5px;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { AgentQuestion, Approval } from "../api/client";
 import { BringInChangesButton } from "./BringInChangesButton";
@@ -38,6 +38,13 @@ function answersComplete(
   });
 }
 
+/**
+ * How tall an approval body may grow in a narrow rail before it is clamped.
+ * Past this, the card stops being a summary you can scan and starts pushing
+ * everything else out of the drawer.
+ */
+const COLLAPSED_BODY_MAX_HEIGHT = 320;
+
 export function ApprovalCard({
   approval,
   onApprove,
@@ -45,6 +52,9 @@ export function ApprovalCard({
   onInspect,
   isSubmitting,
   compact = false,
+  collapsible = false,
+  inspectLabel = "Inspect",
+  onExpand,
 }: {
   approval: Approval;
   onApprove: (payload?: ApprovalResolvePayload) => void;
@@ -52,6 +62,10 @@ export function ApprovalCard({
   onInspect?: () => void;
   isSubmitting?: boolean;
   compact?: boolean;
+  /** Clamp an over-tall body and offer `onExpand` instead of scrolling the rail. */
+  collapsible?: boolean;
+  inspectLabel?: string;
+  onExpand?: () => void;
 }) {
   const isQuestion = approval.kind === "cli_question";
   const isPermission = approval.kind === "cli_permission";
@@ -70,6 +84,29 @@ export function ApprovalCard({
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
 
   const routeOptions = isGate ? approval.route_options ?? [] : [];
+
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [bodyOverflows, setBodyOverflows] = useState(false);
+
+  // Markdown and checklists settle after the first paint, so the height is
+  // observed rather than measured once — otherwise a long impact renders
+  // unclamped until the next unrelated re-render.
+  useEffect(() => {
+    if (!collapsible) {
+      setBodyOverflows(false);
+      return;
+    }
+    const node = bodyRef.current;
+    if (!node) return;
+    const measure = () => setBodyOverflows(node.scrollHeight > COLLAPSED_BODY_MAX_HEIGHT);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [collapsible, approval.id]);
+
+  const clamped = collapsible && bodyOverflows;
 
   useEffect(() => {
     setAnswers({});
@@ -125,7 +162,11 @@ export function ApprovalCard({
         overflow: "hidden",
       }}
     >
-      <div style={{ padding: 12 }}>
+      <div
+        className={clamped ? "approval-card-body approval-card-body--clamped" : "approval-card-body"}
+        style={clamped ? { maxHeight: COLLAPSED_BODY_MAX_HEIGHT } : undefined}
+      >
+      <div ref={bodyRef} style={{ padding: 12 }}>
         <div style={{ fontWeight: 600, marginBottom: 8 }}>{approval.title}</div>
         <div style={{ fontSize: 11, color: "var(--txl)", marginBottom: 8 }}>
           {approval.stage_name}
@@ -399,18 +440,43 @@ export function ApprovalCard({
           </>
         )}
       </div>
+      </div>
+      {clamped && onExpand && (
+        <button
+          type="button"
+          className="approval-card-expand"
+          onClick={onExpand}
+          aria-label={`Show the full approval “${approval.title}”`}
+        >
+          Show full details
+        </button>
+      )}
       {isGate && <BringInChangesButton workspaceSlug={approval.workspace_slug} />}
       <div style={{ display: "flex", borderTop: "1px solid var(--bd)" }}>
         {isQuestion ? (
-          <button
-            type="button"
-            className="btn-secondary"
-            style={{ flex: 1, borderRadius: 0, color: "var(--grl)" }}
-            disabled={!canSubmit || isSubmitting}
-            onClick={submitAnswers}
-          >
-            Submit answers
-          </button>
+          // A clamped card hides the options, so answering has to happen where
+          // they are visible rather than behind a permanently disabled button.
+          clamped && onExpand ? (
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ flex: 1, borderRadius: 0 }}
+              disabled={isSubmitting}
+              onClick={onExpand}
+            >
+              Answer in full view
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ flex: 1, borderRadius: 0, color: "var(--grl)" }}
+              disabled={!canSubmit || isSubmitting}
+              onClick={submitAnswers}
+            >
+              Submit answers
+            </button>
+          )
         ) : (
           <button
             type="button"
@@ -433,7 +499,7 @@ export function ApprovalCard({
         </button>
         {!compact && onInspect && (
           <button type="button" className="btn-secondary" style={{ flex: 1, borderRadius: 0 }} onClick={onInspect}>
-            Inspect
+            {inspectLabel}
           </button>
         )}
       </div>
