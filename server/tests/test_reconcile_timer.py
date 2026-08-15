@@ -16,6 +16,7 @@ of it until 435 gives `agent_runs` a heartbeat that can disprove RUNNING.
 from __future__ import annotations
 
 import asyncio
+import threading
 from unittest.mock import patch
 
 import pytest
@@ -170,41 +171,65 @@ def test_the_pass_never_raises(db_session):
 
 
 def test_the_loop_sweeps_repeatedly(db_session):
-    """The whole point: repair happens again without anyone doing anything."""
+    """The whole point: repair happens again without anyone doing anything.
+
+    Waits for the second sweep rather than sleeping long enough to expect one.
+    The original slept 0.05s against a 0.01s interval and asserted two had
+    happened — which is a wall-clock race, and it failed on a loaded machine
+    where the whole suite took 22 minutes. The generous ceiling below is a
+    liveness bound, not a timing assertion.
+    """
+    seen = threading.Event()
     calls: list[int] = []
 
+    def _count() -> list[str]:
+        calls.append(1)
+        if len(calls) >= 2:
+            seen.set()
+        return []
+
     async def _drive():
-        with patch("loregarden.services.reconcile_timer._sweep", lambda: calls.append(1) or []):
+        with patch("loregarden.services.reconcile_timer._sweep", _count):
             task = asyncio.create_task(run_reconcile_loop(0.01))
-            await asyncio.sleep(0.05)
+            for _ in range(1000):
+                if seen.is_set():
+                    break
+                await asyncio.sleep(0.01)
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
 
     asyncio.run(_drive())
 
-    assert len(calls) >= 2, f"expected repeated sweeps, got {len(calls)}"
+    assert seen.is_set(), f"expected repeated sweeps, got {len(calls)}"
 
 
 def test_the_loop_survives_a_failing_sweep(db_session):
     """A bad pass must not end the cadence and quietly restore the old one."""
     calls: list[int] = []
 
+    seen = threading.Event()
+
     def _explode():
         calls.append(1)
+        if len(calls) >= 2:
+            seen.set()
         raise RuntimeError("whole sweep exploded")
 
     async def _drive():
         with patch("loregarden.services.reconcile_timer._sweep", _explode):
             task = asyncio.create_task(run_reconcile_loop(0.01))
-            await asyncio.sleep(0.05)
+            for _ in range(1000):
+                if seen.is_set():
+                    break
+                await asyncio.sleep(0.01)
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
 
     asyncio.run(_drive())
 
-    assert len(calls) >= 2, "the loop died on the first failing sweep"
+    assert seen.is_set(), "the loop died on the first failing sweep"
 
 
 def test_a_non_positive_interval_disables_the_timer():
