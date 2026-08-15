@@ -3,6 +3,7 @@ import { type ReactNode, useMemo, useState } from "react";
 
 import { api } from "../api/client";
 import { useAppPage } from "../lib/useAppNavigation";
+import { SidebarWorkspaceProvider } from "../state/SidebarWorkspaceContext";
 import { useUiStore } from "../state/uiStore";
 import { AppSidebar } from "./AppSidebar";
 import { AppTopbar } from "./AppTopbar";
@@ -60,13 +61,29 @@ export function AppLayout({ children }: { children: ReactNode }) {
    * Route-dependent by design, and therefore not what the sidebar uses — see
    * `sidebarWorkspaceSlug` below.
    */
+  /**
+   * Whether the user has actually chosen a workspace. `uiStore.workspace` holds
+   * `"all"` until the Dashboard picker moves it, and both resolutions below turn
+   * on that one question — spelled twice, it is two places to fix the day the
+   * sentinel changes.
+   */
+  const workspaceChosen = Boolean(workspace) && workspace !== "all";
+
   const resolvedWorkspaceSlug = useMemo(() => {
-    if (workspace && workspace !== "all") return workspace;
+    if (workspaceChosen) return workspace;
     if (appPage === "editor" && editorWorkspace) return editorWorkspace;
     if (appPage === "queue" && queueWorkspaceSlug) return queueWorkspaceSlug;
     if (appPage === "branch-triage" && branchTriageWorkspaceSlug) return branchTriageWorkspaceSlug;
     return workspaces.data?.[0]?.slug ?? "";
-  }, [workspace, appPage, editorWorkspace, queueWorkspaceSlug, branchTriageWorkspaceSlug, workspaces.data]);
+  }, [
+    workspace,
+    workspaceChosen,
+    appPage,
+    editorWorkspace,
+    queueWorkspaceSlug,
+    branchTriageWorkspaceSlug,
+    workspaces.data,
+  ]);
 
   /**
    * The workspace the *sidebar* shows, which deliberately does not follow the
@@ -82,8 +99,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
    * is stable across navigation and one the user demonstrably has, so its
    * default pins belong there.
    */
-  const workspaceChosen = Boolean(workspace) && workspace !== "all";
   const sidebarWorkspaceSlug = workspaceChosen ? workspace : workspaces.data?.[0]?.slug ?? "";
+  /**
+   * Whether that slug is this chrome's answer or just its state so far. Until
+   * the workspace list lands, an empty slug means "still asking" — and a route
+   * that renders "pick a workspace" on it says so on a page with no picker.
+   */
+  const sidebarWorkspaceResolved = workspaceChosen || !workspaces.isPending;
 
   const openSettings = () => {
     setSettingsWorkspaceSlug(resolvedWorkspaceSlug || "loregarden");
@@ -91,42 +113,44 @@ export function AppLayout({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="app-frame">
-      <div className="app-ambient" aria-hidden />
-      <AppSidebar
-        workspaceSlug={sidebarWorkspaceSlug}
-        seedDefaults={Boolean(sidebarWorkspaceSlug)}
-        onOpenSettings={openSettings}
-      />
-      <TopbarPageSlotProvider>
-        <div className="app-main">
-          <AppTopbar />
-          <div className={`app-body app-body--dock-${utilityDockEdge}`}>
-            <div className="screen-area">{children}</div>
-            {/* Every screen, chat included: the bar carries the shell and the
-                dock control, which are screen-level tools rather than chat
-                ones. The bar itself drops its composer where the page has one
-                (see `composedOnScreen` in useActiveChatSession). */}
-            <AppUtilityDock />
+    <SidebarWorkspaceProvider slug={sidebarWorkspaceSlug} isResolved={sidebarWorkspaceResolved}>
+      <div className="app-frame">
+        <div className="app-ambient" aria-hidden />
+        <AppSidebar
+          workspaceSlug={sidebarWorkspaceSlug}
+          seedDefaults={Boolean(sidebarWorkspaceSlug)}
+          onOpenSettings={openSettings}
+        />
+        <TopbarPageSlotProvider>
+          <div className="app-main">
+            <AppTopbar />
+            <div className={`app-body app-body--dock-${utilityDockEdge}`}>
+              <div className="screen-area">{children}</div>
+              {/* Every screen, chat included: the bar carries the shell and the
+                  dock control, which are screen-level tools rather than chat
+                  ones. The bar itself drops its composer where the page has one
+                  (see `composedOnScreen` in useActiveChatSession). */}
+              <AppUtilityDock />
+            </div>
           </div>
-        </div>
-      </TopbarPageSlotProvider>
+        </TopbarPageSlotProvider>
 
-      <SettingsModal
-        open={settingsOpen}
-        workspaceSlug={settingsWorkspaceSlug}
-        workspaces={workspaces.data ?? []}
-        runtimeOptions={runtimeOptions.data}
-        isSaving={setRuntime.isPending}
-        onClose={() => setSettingsOpen(false)}
-        onWorkspaceChange={setSettingsWorkspaceSlug}
-        onSave={async (slug, runtime) => {
-          await setRuntime.mutateAsync({ slug, runtime });
-        }}
-      />
+        <SettingsModal
+          open={settingsOpen}
+          workspaceSlug={settingsWorkspaceSlug}
+          workspaces={workspaces.data ?? []}
+          runtimeOptions={runtimeOptions.data}
+          isSaving={setRuntime.isPending}
+          onClose={() => setSettingsOpen(false)}
+          onWorkspaceChange={setSettingsWorkspaceSlug}
+          onSave={async (slug, runtime) => {
+            await setRuntime.mutateAsync({ slug, runtime });
+          }}
+        />
 
-      <ToastHost />
-      <QueueNotificationsHost />
-    </div>
+        <ToastHost />
+        <QueueNotificationsHost />
+      </div>
+    </SidebarWorkspaceProvider>
   );
 }

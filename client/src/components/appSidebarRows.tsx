@@ -200,6 +200,8 @@ export function ViewRow({
   onStartRename,
   onRename,
   onCancelRename,
+  onDuplicate,
+  duplicateDisabled = false,
   onClose,
 }: {
   view: ViewSummary;
@@ -210,6 +212,9 @@ export function ViewRow({
   onStartRename: () => void;
   onRename: (title: string) => void;
   onCancelRename: () => void;
+  onDuplicate: () => void;
+  /** A duplicate is already in flight — the second click would make a second view. */
+  duplicateDisabled?: boolean;
   onClose: () => void;
 }) {
   return (
@@ -249,8 +254,19 @@ export function ViewRow({
         <RowControl label={`Rename ${view.title}`} onClick={onStartRename}>
           <path d="M4 20h4L19 9l-4-4L4 16z" />
         </RowControl>
+        {/* There is no copy endpoint: a duplicate is this view's layout,
+            deep-copied under fresh container ids and re-POSTed as a new view. */}
+        <RowControl
+          label={`Duplicate ${view.title}`}
+          disabled={duplicateDisabled}
+          onClick={onDuplicate}
+        >
+          <rect x="9" y="9" width="11" height="11" rx="2" />
+          <path d="M5 15V5a2 2 0 0 1 2-2h8" />
+        </RowControl>
         {/* Closing a view tab deletes the view: its sidebar entry is not
-            separately deletable, and the server refuses that with a 400. */}
+            separately deletable, and the server refuses that with a 400. It goes
+            through a confirmation, because it cannot be undone. */}
         <RowControl label={`Delete ${view.title}`} onClick={onClose}>
           <path d="M6 6l12 12M18 6 6 18" />
         </RowControl>

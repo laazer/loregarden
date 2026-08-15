@@ -66,6 +66,10 @@ import {
 } from "../../lib/viewsApi";
 
 jest.mock("../../lib/viewsApi", () => ({
+  // The module also exports the query-key factory the sidebar hook reads its
+  // cache keys from; mocking it away leaves the hook without any keys at all.
+  ...jest.requireActual("../../lib/viewsApi"),
+  createView: jest.fn(),
   fetchViews: jest.fn(),
   fetchSidebarEntries: jest.fn(),
   pinPage: jest.fn(),
@@ -770,6 +774,9 @@ test("closing a view tab deletes the view, never its sidebar entry", async () =>
 
   await user.hover(nav);
   await user.click(within(entryRow("Sketch Surface")).getByRole("button", { name: /delete/i }));
+  // Deleting a view cannot be undone, so it goes through a confirmation (438).
+  const confirm = await screen.findByRole("dialog");
+  await user.click(within(confirm).getByRole("button", { name: /^delete/i }));
 
   await waitFor(() => expect(mockDeleteView).toHaveBeenCalledWith(SLUG, "v-canvas"));
   expect(mockUnpinEntry).not.toHaveBeenCalled();
