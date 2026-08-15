@@ -10,28 +10,55 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
-import { ApiError } from "../api/http";
+import { duplicateLayout, emptyLayoutFor } from "../lib/viewLayouts";
 import {
+  createView,
   deleteView,
   fetchSidebarEntries,
   fetchViews,
+  isContention,
   pinPage,
   reorderSidebarEntries,
   unpinEntry,
   updateView,
+  viewsKeys,
   type SidebarEntry,
+  type ViewCreate,
+  type ViewKind,
   type ViewSummary,
 } from "../lib/viewsApi";
-import { toastActionFailed } from "../state/toastStore";
+import { describeError, toastActionFailed } from "../state/toastStore";
 
 /** A lost race is worth re-issuing; a losing streak is not worth spinning on. */
 const REORDER_RETRY_LIMIT = 3;
 
+/** Same reasoning as the reorder's, for the entry a create appends. */
+const CREATE_RETRY_LIMIT = 3;
+
 /** One resume for a seed that died part-way; a workspace that keeps refusing is not seedable. */
 const SEED_ATTEMPT_LIMIT = 2;
 
-function isContention(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 409;
+/**
+ * Re-POST a create that lost a race for its sidebar position.
+ *
+ * Unlike the reorder there is nothing to rebuild — the body does not depend on
+ * the ranking it lost to — so the same request goes back out. A 400 or 422 is
+ * the caller's mistake and is thrown on the first attempt.
+ */
+async function createViewContending(slug: string, body: ViewCreate): Promise<ViewSummary> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await createView(slug, body);
+    } catch (error) {
+      if (!isContention(error) || attempt + 1 >= CREATE_RETRY_LIMIT) throw error;
+    }
+  }
+}
+
+/** What the New View form collects: the name, and which layout to seed. */
+export interface NewViewInput {
+  title: string;
+  kind: ViewKind;
 }
 
 /**
@@ -74,15 +101,41 @@ export interface SidebarTabs {
   /** Drop one entry onto another's place, sections included. */
   dropEntry: (draggedId: string, targetId: string) => void;
   renameView: (viewId: string, title: string) => void;
-  closeView: (viewId: string) => void;
+  /**
+   * Create a view and report the server's record.
+   *
+   * Not optimistic, and the callback is why: the id is server-assigned, an entry
+   * whose view is missing from `viewsById` draws nothing, and an optimistic
+   * navigation lands on a URL with no view behind it — the not-found state
+   * arriving on the happy path.
+   */
+  createView: (input: NewViewInput, onCreated?: (view: ViewSummary) => void) => void;
+  /**
+   * Re-POST a copy of `view`'s layout under fresh container ids.
+   *
+   * One at a time: a duplicate takes a round trip and gives no feedback of its
+   * own, so a second click before the first lands is a realistic thing for a
+   * user to do — and it creates a second view and navigates to it, leaving a
+   * stray copy behind on the tab the user cannot see.
+   */
+  duplicateView: (view: ViewSummary, onCreated?: (view: ViewSummary) => void) => void;
+  /** A duplicate is in flight — the row control disables itself on it. */
+  isDuplicatingView: boolean;
+  /** In flight, and the reason the last attempt failed — the form renders both. */
+  isCreatingView: boolean;
+  createViewError: string;
+  /** Drop a failure the user has walked away from, so a fresh form opens clean. */
+  resetCreateView: () => void;
+  closeView: (viewId: string, onClosed?: () => void) => void;
+  isClosingView: boolean;
 }
 
 export function useSidebarTabs(workspaceSlug: string, seedPageKeys: string[]): SidebarTabs {
   const qc = useQueryClient();
   const enabled = Boolean(workspaceSlug);
 
-  const entriesKey = useMemo(() => ["sidebar-entries", workspaceSlug], [workspaceSlug]);
-  const viewsKey = useMemo(() => ["views", workspaceSlug], [workspaceSlug]);
+  const entriesKey = useMemo(() => viewsKeys.sidebarEntries(workspaceSlug), [workspaceSlug]);
+  const viewsKey = useMemo(() => viewsKeys.views(workspaceSlug), [workspaceSlug]);
 
   const entriesQuery = useQuery({
     queryKey: entriesKey,
@@ -180,6 +233,43 @@ export function useSidebarTabs(workspaceSlug: string, seedPageKeys: string[]): S
     },
   });
 
+  /**
+   * The view and its sidebar entry land in one server transaction and are read
+   * back as two queries, so both are invalidated — refreshing only the views
+   * leaves the sidebar without the tab it just made.
+   */
+  const invalidateAfterCreate = useCallback(() => {
+    qc.invalidateQueries({ queryKey: viewsKey });
+    qc.invalidateQueries({ queryKey: entriesKey });
+  }, [qc, viewsKey, entriesKey]);
+
+  const create = useMutation({
+    // The New View form shows the reason in place — a 422 explained twice, once
+    // in the modal and once in a toast over it, is one alarm too many.
+    meta: { suppressErrorToast: true },
+    mutationFn: (input: NewViewInput) =>
+      createViewContending(workspaceSlug, {
+        title: input.title,
+        icon: "",
+        layout: emptyLayoutFor(input.kind),
+      }),
+    onSuccess: invalidateAfterCreate,
+  });
+
+  const duplicate = useMutation({
+    // No form to show a failure in, so this one reports itself.
+    meta: { errorTitle: "Duplicate view" },
+    mutationFn: (view: ViewSummary) =>
+      createViewContending(workspaceSlug, {
+        title: `${view.title} copy`,
+        icon: view.icon,
+        // Fresh container ids: reusing the source's is accepted by the server
+        // and aliases the two views in every cache keyed by container id.
+        layout: duplicateLayout(view.layout),
+      }),
+    onSuccess: invalidateAfterCreate,
+  });
+
   const close = useMutation({
     meta: { errorTitle: "Close tab" },
     // Deleting a view's sidebar entry is refused server-side: the view would be
@@ -274,10 +364,15 @@ export function useSidebarTabs(workspaceSlug: string, seedPageKeys: string[]): S
     [entries, reorder],
   );
 
+  /** Held across renders, so the guard survives the click that outruns a render. */
+  const duplicateInFlight = useRef(false);
+
   const pinMutate = pin.mutate;
   const unpinMutate = unpin.mutate;
   const renameMutate = rename.mutate;
   const closeMutate = close.mutate;
+  const createMutate = create.mutate;
+  const duplicateMutate = duplicate.mutate;
 
   return {
     entries,
@@ -291,6 +386,36 @@ export function useSidebarTabs(workspaceSlug: string, seedPageKeys: string[]): S
       (viewId: string, title: string) => renameMutate({ viewId, title }),
       [renameMutate],
     ),
-    closeView: useCallback((viewId: string) => closeMutate(viewId), [closeMutate]),
+    createView: useCallback(
+      (input: NewViewInput, onCreated?: (view: ViewSummary) => void) =>
+        createMutate(input, onCreated ? { onSuccess: onCreated } : undefined),
+      [createMutate],
+    ),
+    duplicateView: useCallback(
+      (view: ViewSummary, onCreated?: (view: ViewSummary) => void) => {
+        // A ref rather than the mutation's `isPending`: the second click of a
+        // double-click arrives before React has re-rendered the disabled
+        // control, so the disabled attribute alone still lets two POSTs out.
+        if (duplicateInFlight.current) return;
+        duplicateInFlight.current = true;
+        duplicateMutate(view, {
+          onSuccess: onCreated,
+          onSettled: () => {
+            duplicateInFlight.current = false;
+          },
+        });
+      },
+      [duplicateMutate],
+    ),
+    isDuplicatingView: duplicate.isPending,
+    isCreatingView: create.isPending,
+    createViewError: create.error ? describeError(create.error, "Could not create the view") : "",
+    resetCreateView: create.reset,
+    closeView: useCallback(
+      (viewId: string, onClosed?: () => void) =>
+        closeMutate(viewId, onClosed ? { onSuccess: onClosed } : undefined),
+      [closeMutate],
+    ),
+    isClosingView: close.isPending,
   };
 }

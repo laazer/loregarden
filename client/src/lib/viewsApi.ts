@@ -11,7 +11,7 @@
  *     drops the entry with it.
  */
 
-import { request } from "../api/http";
+import { ApiError, request } from "../api/http";
 
 /** The wire vocabulary; `Grid`/`Canvas` are display strings, not these. */
 export type ViewKind = "flex_grid" | "canvas";
@@ -52,6 +52,19 @@ export interface ViewPatch {
   layout?: ViewLayout;
 }
 
+/**
+ * The create body, which carries **no** top-level `kind`.
+ *
+ * The view's kind is the layout's discriminator tag, and `ViewCreate` is
+ * `extra="forbid"` server-side — sending the kind the user just picked, next to
+ * the layout it seeded, is a 422 with nothing on screen to explain it.
+ */
+export interface ViewCreate {
+  title: string;
+  icon: string;
+  layout: ViewLayout;
+}
+
 export interface DeletedRef {
   deleted: string;
 }
@@ -60,9 +73,51 @@ function workspacePath(slug: string, suffix: string): string {
   return `/api/workspaces/${encodeURIComponent(slug)}${suffix}`;
 }
 
+/**
+ * The query keys the view store's caches live under, spelled once.
+ *
+ * Creating a view writes the view and its sidebar entry in one server-side
+ * transaction, which the client reads as two queries — so the create path has to
+ * invalidate both, under exactly the keys the sidebar reads them under. Two
+ * spellings of one key is a cache that silently stops refreshing the day one of
+ * them is edited.
+ */
+export const viewsKeys = {
+  views: (slug: string) => ["views", slug] as const,
+  sidebarEntries: (slug: string) => ["sidebar-entries", slug] as const,
+  view: (slug: string, viewId: string) => ["view", slug, viewId] as const,
+};
+
+/**
+ * A write that lost a race and is worth re-issuing.
+ *
+ * Realistic with two tabs open on one workspace. A 400 or 422 is "fix the
+ * request" and re-sending it changes nothing, so only the 409 is retried.
+ */
+export function isContention(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409;
+}
+
 /** Every view in the workspace, in sidebar order. */
 export function fetchViews(slug: string): Promise<ViewSummary[]> {
   return request<ViewSummary[]>(workspacePath(slug, "/views"));
+}
+
+/** One view by id. A deleted or unknown id is a 404, which the route renders. */
+export function fetchView(slug: string, viewId: string): Promise<ViewSummary> {
+  return request<ViewSummary>(workspacePath(slug, `/views/${encodeURIComponent(viewId)}`));
+}
+
+/**
+ * Create a view, and with it the sidebar entry the server appends in the same
+ * transaction. The body is built field by field rather than spread, because
+ * `extra="forbid"` turns one stray key into a 422.
+ */
+export function createView(slug: string, body: ViewCreate): Promise<ViewSummary> {
+  return request<ViewSummary>(workspacePath(slug, "/views"), {
+    method: "POST",
+    body: JSON.stringify({ title: body.title, icon: body.icon, layout: body.layout }),
+  });
 }
 
 /** The sidebar's ranked entries — pinned pages and view tabs in one list. */

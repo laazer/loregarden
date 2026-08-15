@@ -27,12 +27,14 @@ import {
   type FocusEvent,
   type KeyboardEvent,
 } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { useSidebarTabs } from "../hooks/useSidebarTabs";
-import { pageFromPath, viewIdFromPath } from "../lib/appNavigation";
-import type { SidebarEntry } from "../lib/viewsApi";
+import { pageFromPath, viewIdFromPath, viewPath } from "../lib/appNavigation";
+import type { SidebarEntry, ViewSummary } from "../lib/viewsApi";
 import { BrandMark } from "./BrandMark";
+import { DeleteViewConfirmModal } from "./DeleteViewConfirmModal";
+import { NewViewModal } from "./NewViewModal";
 import { BaxterAvatar } from "./chat/BaxterAvatar";
 import {
   DEFAULT_PINNED_PAGE_KEYS,
@@ -167,6 +169,7 @@ export function AppSidebar({
   onOpenSettings: () => void;
 }) {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const activeViewId = viewIdFromPath(pathname);
   const activePage = pageFromPath(pathname);
   const tabs = useSidebarTabs(
@@ -178,6 +181,8 @@ export function AppSidebar({
   const [focusWithin, setFocusWithin] = useState(false);
   const [editingViewId, setEditingViewId] = useState("");
   const [draggingId, setDraggingId] = useState("");
+  const [newViewOpen, setNewViewOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<ViewSummary | null>(null);
   const expanded = hovered || focusWithin;
 
   const pinnedHeadingId = useId();
@@ -245,6 +250,37 @@ export function AppSidebar({
     [draggingId, dropEntry],
   );
 
+  const { createView, duplicateView, closeView, resetCreateView } = tabs;
+
+  const openNewView = useCallback(() => {
+    // A refusal the user walked away from is not this form's news.
+    resetCreateView();
+    setNewViewOpen(true);
+  }, [resetCreateView]);
+
+  /**
+   * Land on the created view — never before. The id is the server's, and an
+   * optimistic hop goes to a URL with no view behind it.
+   */
+  const onCreated = useCallback(
+    (view: ViewSummary) => {
+      setNewViewOpen(false);
+      navigate(viewPath(view.id));
+    },
+    [navigate],
+  );
+
+  const confirmDelete = useCallback(() => {
+    const view = pendingDelete;
+    if (!view) return;
+    closeView(view.id, () => {
+      setPendingDelete(null);
+      // Only when it is the view on screen: a blanket redirect kicks the user
+      // off a view they were reading because a different tab was closed.
+      if (activeViewId === view.id) navigate("/");
+    });
+  }, [pendingDelete, closeView, activeViewId, navigate]);
+
   const handleBlur = (event: FocusEvent<HTMLElement>) => {
     // Focus moving between rows is not focus leaving the rail.
     if (event.currentTarget.contains(event.relatedTarget)) return;
@@ -254,107 +290,144 @@ export function AppSidebar({
   const rows = isReady ? entries : [];
 
   return (
-    <nav
-      className="app-sidebar"
-      aria-label="Main navigation"
-      data-expanded={expanded ? "true" : "false"}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onFocus={() => setFocusWithin(true)}
-      onBlur={handleBlur}
-    >
-      <div className="app-sidebar-panel">
-        <div className="app-sidebar-brand">
-          <BrandMark />
-        </div>
-
-        <div className="app-sidebar-section">
-          <div className="app-sidebar-section-head">
-            <span className="app-sidebar-section-title app-sidebar-reveal" id={pinnedHeadingId}>
-              Pinned Tabs
-            </span>
+    <>
+      <nav
+        className="app-sidebar"
+        aria-label="Main navigation"
+        data-expanded={expanded ? "true" : "false"}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => setFocusWithin(true)}
+        onBlur={handleBlur}
+      >
+        <div className="app-sidebar-panel">
+          <div className="app-sidebar-brand">
+            <BrandMark />
           </div>
-          <ul className="app-sidebar-list" aria-labelledby={pinnedHeadingId}>
-            {rows.map((entry) => {
-              if (entry.entry_kind !== "page") return null;
-              // An unknown key keeps its rank and is not routed on blind.
-              const page = sidebarPageForKey(entry.page_key);
-              if (!page) return null;
-              return (
-                <PageRow
-                  key={entry.id}
-                  page={page}
-                  active={activeViewId === null && page.ownsPage(activePage)}
-                  move={moveHandlers(entry)}
-                  drag={dragHandlers(entry.id)}
-                  onUnpin={() => tabs.unpinPageEntry(entry.id)}
-                />
-              );
-            })}
-          </ul>
-        </div>
 
-        <div className="app-sidebar-section">
-          <div className="app-sidebar-section-head">
-            <span className="app-sidebar-section-title app-sidebar-reveal" id={tabsHeadingId}>
-              Tabs
-            </span>
+          <div className="app-sidebar-section">
+            <div className="app-sidebar-section-head">
+              <span className="app-sidebar-section-title app-sidebar-reveal" id={pinnedHeadingId}>
+                Pinned Tabs
+              </span>
+            </div>
+            <ul className="app-sidebar-list" aria-labelledby={pinnedHeadingId}>
+              {rows.map((entry) => {
+                if (entry.entry_kind !== "page") return null;
+                // An unknown key keeps its rank and is not routed on blind.
+                const page = sidebarPageForKey(entry.page_key);
+                if (!page) return null;
+                return (
+                  <PageRow
+                    key={entry.id}
+                    page={page}
+                    active={activeViewId === null && page.ownsPage(activePage)}
+                    move={moveHandlers(entry)}
+                    drag={dragHandlers(entry.id)}
+                    onUnpin={() => tabs.unpinPageEntry(entry.id)}
+                  />
+                );
+              })}
+            </ul>
           </div>
-          <ul className="app-sidebar-list" aria-labelledby={tabsHeadingId}>
-            {rows.map((entry) => {
-              if (entry.entry_kind !== "view") return null;
-              const view = viewsById.get(entry.view_id);
-              if (!view) return null;
-              return (
-                <ViewRow
-                  key={entry.id}
-                  view={view}
-                  active={activeViewId === view.id}
-                  editing={editingViewId === view.id}
-                  move={moveHandlers(entry)}
-                  drag={dragHandlers(entry.id)}
-                  onStartRename={() => setEditingViewId(view.id)}
-                  onCancelRename={() => setEditingViewId("")}
-                  onRename={(title) => {
-                    setEditingViewId("");
-                    if (title && title !== view.title) tabs.renameView(view.id, title);
-                  }}
-                  onClose={() => tabs.closeView(view.id)}
-                />
-              );
-            })}
-          </ul>
+
+          <div className="app-sidebar-section">
+            <div className="app-sidebar-section-head">
+              <span className="app-sidebar-section-title app-sidebar-reveal" id={tabsHeadingId}>
+                Tabs
+              </span>
+              {/* Gated on the workspace for the same reason the rows are: with
+                  no slug the create POSTs to `/api/workspaces//views`, which is
+                  a 404 the user asked for by pressing a control the chrome
+                  offered them. */}
+              {workspaceSlug === "" ? null : (
+                <button
+                  type="button"
+                  className="app-sidebar-control"
+                  aria-label="New view"
+                  onClick={openNewView}
+                >
+                  <ControlIcon>
+                    <path d="M12 5v14M5 12h14" />
+                  </ControlIcon>
+                </button>
+              )}
+            </div>
+            <ul className="app-sidebar-list" aria-labelledby={tabsHeadingId}>
+              {rows.map((entry) => {
+                if (entry.entry_kind !== "view") return null;
+                const view = viewsById.get(entry.view_id);
+                if (!view) return null;
+                return (
+                  <ViewRow
+                    key={entry.id}
+                    view={view}
+                    active={activeViewId === view.id}
+                    editing={editingViewId === view.id}
+                    move={moveHandlers(entry)}
+                    drag={dragHandlers(entry.id)}
+                    onStartRename={() => setEditingViewId(view.id)}
+                    onCancelRename={() => setEditingViewId("")}
+                    onRename={(title) => {
+                      setEditingViewId("");
+                      if (title && title !== view.title) tabs.renameView(view.id, title);
+                    }}
+                    onDuplicate={() => duplicateView(view, onCreated)}
+                    duplicateDisabled={tabs.isDuplicatingView}
+                    onClose={() => setPendingDelete(view)}
+                  />
+                );
+              })}
+            </ul>
+          </div>
+
+          <div className="app-sidebar-spacer" />
+
+          <PinPageMenu pinnedKeys={pinnedKeys} expanded={expanded} onPin={tabs.pinPageKey} />
+
+          <button type="button" className="app-sidebar-footer-btn" onClick={onOpenSettings}>
+            <span className="app-sidebar-icon">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                aria-hidden
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </span>
+            <span className="app-sidebar-name app-sidebar-reveal">Settings</span>
+          </button>
+
+          <div className="app-sidebar-footer-row">
+            <span className="app-sidebar-avatar">
+              <BaxterAvatar variant="head" state="idle" size={32} label="Baxter" />
+            </span>
+            <span className="app-sidebar-name app-sidebar-reveal">Baxter</span>
+          </div>
         </div>
+      </nav>
 
-        <div className="app-sidebar-spacer" />
-
-        <PinPageMenu pinnedKeys={pinnedKeys} expanded={expanded} onPin={tabs.pinPageKey} />
-
-        <button type="button" className="app-sidebar-footer-btn" onClick={onOpenSettings}>
-          <span className="app-sidebar-icon">
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              aria-hidden
-            >
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </span>
-          <span className="app-sidebar-name app-sidebar-reveal">Settings</span>
-        </button>
-
-        <div className="app-sidebar-footer-row">
-          <span className="app-sidebar-avatar">
-            <BaxterAvatar variant="head" state="idle" size={32} label="Baxter" />
-          </span>
-          <span className="app-sidebar-name app-sidebar-reveal">Baxter</span>
-        </div>
-      </div>
-    </nav>
+      {/* Outside the rail: the panel clips its own overflow, and a dialog is not
+          part of the navigation landmark. */}
+      {newViewOpen ? (
+        <NewViewModal
+          isCreating={tabs.isCreatingView}
+          error={tabs.createViewError}
+          onClose={() => setNewViewOpen(false)}
+          onCreate={(input) => createView(input, onCreated)}
+        />
+      ) : null}
+      <DeleteViewConfirmModal
+        view={pendingDelete}
+        isDeleting={tabs.isClosingView}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={confirmDelete}
+      />
+    </>
   );
 }

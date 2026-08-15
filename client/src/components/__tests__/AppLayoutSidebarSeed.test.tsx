@@ -47,6 +47,10 @@ jest.mock("../../api/client", () => ({
 }));
 
 jest.mock("../../lib/viewsApi", () => ({
+  // The module also exports the query-key factory the sidebar hook reads its
+  // cache keys from; mocking it away leaves the hook without any keys at all.
+  ...jest.requireActual("../../lib/viewsApi"),
+  createView: jest.fn(),
   fetchViews: jest.fn(),
   fetchSidebarEntries: jest.fn(),
   pinPage: jest.fn(),

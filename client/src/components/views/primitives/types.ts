@@ -13,8 +13,23 @@
 
 import type { ComponentType } from "react";
 
-/** The three container kinds the server's `ContainerKind` enum names. */
-export type ContainerKind = "terminal" | "panel" | "web_embed";
+/**
+ * The three container kinds the server's `ContainerKind` enum names.
+ *
+ * The values come first and the type is derived from them, so a reader that has
+ * to *check* a stored string against the vocabulary tests membership of this
+ * list rather than re-spelling the literals — three inline `===` comparisons is
+ * a fourth copy of the enum that no compiler keeps in step with it.
+ */
+export const CONTAINER_KINDS = ["terminal", "panel", "web_embed"] as const;
+
+export type ContainerKind = (typeof CONTAINER_KINDS)[number];
+
+/** A stored `kind`, when it is one of the vocabulary's — otherwise `undefined`. */
+export function containerKindOf(value: unknown): ContainerKind | undefined {
+  if (typeof value !== "string") return undefined;
+  return CONTAINER_KINDS.find((kind) => kind === value);
+}
 
 /** The input kinds a settings editor knows how to render. */
 export type SettingsFieldKind = "string" | "number" | "boolean";
