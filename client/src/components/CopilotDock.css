@@ -37,6 +37,13 @@
   gap: 8px;
 }
 
+/* A shell on its own gets the whole dock: the side padding is there to keep the
+   chat pane off the dock's edges, and with no chat to inset it only makes the
+   terminal narrower than the space it was given. */
+.copilot-dock-body--bleed {
+  padding-inline: 0;
+}
+
 .copilot-dock-chat,
 .copilot-dock-terminal {
   /* Basis 0, not 380px: the panes divide the axis rather than each demanding
