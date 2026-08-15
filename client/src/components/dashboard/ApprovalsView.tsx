@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, type Approval, type TicketDetail } from "../../api/client";
-import { hasHumanCriteria } from "../../utils/approvalCriteria";
+import { hasHumanCriteria, impactWithoutCriteria } from "../../utils/approvalCriteria";
 import { formatApprovalResolveError } from "../../utils/approvalErrors";
 import { ApprovalCard, type ApprovalResolvePayload } from "../ApprovalCard";
 
@@ -88,6 +88,7 @@ export function ApprovalsView({ ticket }: { ticket?: TicketDetail }) {
               key={approval.id}
               approval={approval}
               ticketId={ticket.id}
+              dropRestatedCriteria={criteria.length > 0}
               isSubmitting={
                 resolveApproval.isPending && resolveApproval.variables?.id === approval.id
               }
@@ -115,6 +116,7 @@ export function ApprovalsView({ ticket }: { ticket?: TicketDetail }) {
               key={approval.id}
               approval={approval}
               ticketId={ticket.id}
+              dropRestatedCriteria={criteria.length > 0}
               isSubmitting={
                 resolveApproval.isPending && resolveApproval.variables?.id === approval.id
               }
@@ -136,11 +138,14 @@ export function ApprovalsView({ ticket }: { ticket?: TicketDetail }) {
 function ApprovalRow({
   approval,
   ticketId,
+  dropRestatedCriteria,
   isSubmitting,
   onResolve,
 }: {
   approval: Approval;
   ticketId: string;
+  /** The criteria section above already shows them; trim the brief's copy. */
+  dropRestatedCriteria: boolean;
   isSubmitting: boolean;
   onResolve: (action: "approve" | "reject", payload?: ApprovalResolvePayload) => void;
 }) {
@@ -153,6 +158,7 @@ function ApprovalRow({
       )}
       <ApprovalCard
         approval={approval}
+        impactText={dropRestatedCriteria ? impactWithoutCriteria(approval.impact) : undefined}
         isSubmitting={isSubmitting}
         onApprove={(payload) => onResolve("approve", payload)}
         onReject={(payload) => onResolve("reject", payload)}

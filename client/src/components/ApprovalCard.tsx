@@ -55,6 +55,7 @@ export function ApprovalCard({
   collapsible = false,
   inspectLabel = "Inspect",
   onExpand,
+  impactText,
 }: {
   approval: Approval;
   onApprove: (payload?: ApprovalResolvePayload) => void;
@@ -66,6 +67,8 @@ export function ApprovalCard({
   collapsible?: boolean;
   inspectLabel?: string;
   onExpand?: () => void;
+  /** Replaces the approval's own impact — for surfaces that show part of it themselves. */
+  impactText?: string;
 }) {
   const isQuestion = approval.kind === "cli_question";
   const isPermission = approval.kind === "cli_permission";
@@ -177,7 +180,7 @@ export function ApprovalCard({
           {isQuestion && approval.cli_adapter && <span> · {approval.cli_adapter} question</span>}
           {!compact && approval.workspace_slug && <span> · {approval.workspace_slug}</span>}
         </div>
-        <MarkdownContent content={approval.impact} className="approval-impact" />
+        <MarkdownContent content={impactText ?? approval.impact} className="approval-impact" />
 
         {!!approval.checklist?.length && (
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>

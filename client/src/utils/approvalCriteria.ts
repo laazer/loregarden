@@ -11,3 +11,22 @@ import type { Approval } from "../api/client";
 export function hasHumanCriteria(approval: Approval): boolean {
   return approval.kind === "workflow_gate" || Boolean(approval.checklist?.length);
 }
+
+/** The gate brief's own heading for the criteria it restates from the ticket. */
+const CRITERIA_HEADING = /^\s*#{0,6}\s*\**acceptance criteria\**\s*:?\s*$/im;
+
+/**
+ * A gate's impact ends by restating the ticket's acceptance criteria, which is
+ * right in the inbox — the card is all the reader has — and redundant in the
+ * Approvals tab, which lists those criteria above the card. Drops that trailing
+ * section so the tab shows them once.
+ *
+ * Returns the impact unchanged when the heading is absent: the brief is written
+ * by an agent, so its shape is a convention, not a guarantee, and dropping the
+ * only copy would be worse than showing two.
+ */
+export function impactWithoutCriteria(impact: string): string {
+  const match = CRITERIA_HEADING.exec(impact);
+  if (!match) return impact;
+  return impact.slice(0, match.index).trimEnd();
+}

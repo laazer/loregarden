@@ -57,6 +57,35 @@ describe("ApprovalsView", () => {
     expect(screen.getByText("Dash cancels on wall contact")).toBeInTheDocument();
   });
 
+  it("shows each criterion once when the gate brief restates them", async () => {
+    mockApi.approvals.mockResolvedValue([
+      approval({
+        // The checklist repeats a criterion too — this test is about the brief.
+        checklist: [],
+        impact: [
+          "Stage 'Playtest' requires human sign-off before completion.",
+          "Acceptance criteria:",
+          "- Dash has a cooldown",
+          "- Dash cancels on wall contact",
+        ].join("\n"),
+      }),
+    ]);
+    renderView();
+
+    expect(await screen.findByText("Dash has a cooldown")).toBeInTheDocument();
+    expect(screen.getAllByText(/Dash has a cooldown/)).toHaveLength(1);
+    expect(screen.getAllByText(/Dash cancels on wall contact/)).toHaveLength(1);
+  });
+
+  it("keeps the brief's criteria when the ticket records none", async () => {
+    mockApi.approvals.mockResolvedValue([
+      approval({ impact: "Sign-off needed.\nAcceptance criteria:\n- Dash has a cooldown" }),
+    ]);
+    renderView({ ...TICKET, acceptance_criteria: [] } as TicketDetail);
+
+    expect(await screen.findByText(/Dash has a cooldown/)).toBeInTheDocument();
+  });
+
   it("separates human sign-offs from tool permissions", async () => {
     mockApi.approvals.mockResolvedValue([
       approval(),
