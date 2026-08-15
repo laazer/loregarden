@@ -27,6 +27,7 @@ from loregarden.db.migration_utils import (
 )
 from loregarden.db.migrations_composer import m_composer_commands
 from loregarden.db.migrations_doctor import (
+    m_agent_run_lease,
     m_agent_run_preflight,
     m_agent_slot_number_unique,
     m_orchestration_run_lease,
@@ -1444,6 +1445,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0082_orchestration_run_lease", m_orchestration_run_lease),
     ("0083_agent_slot_number_unique", m_agent_slot_number_unique),
     ("0084_repair_dangling_references", m_repair_dangling_references),
+    ("0086_agent_run_lease", m_agent_run_lease),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
