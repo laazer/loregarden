@@ -1348,7 +1348,12 @@ def execute_tool(
         )
         if not reservation.admitted:
             return queued_response(reservation, stage_key=arguments["stage_key"])
-        reservation.bind(run_id=run.id)
+        # `_get_run` resolves an OrchestrationRun, so it binds to the slot's
+        # orchestration column. `run_id` is the agent-run column, and writing
+        # this id there names a row that does not exist in the table it
+        # references (`run_admitted` leaves the choice to the caller precisely
+        # because only the caller knows which kind of run it produced).
+        reservation.bind(orchestration_run_id=run.id)
         return json.dumps({"ok": True, "stage_key": arguments["stage_key"]}, indent=2)
 
     if name == "loregarden_complete_stage":

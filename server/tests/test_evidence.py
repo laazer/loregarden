@@ -13,7 +13,11 @@ def session_and_ticket(tmp_path, git_repo):
     engine = create_engine(f"sqlite:///{tmp_path / 'db.sqlite'}")
     SQLModel.metadata.create_all(engine)
     session = Session(engine)
+    # Committed before the ticket that names it: a flush orders statements by
+    # mapper relationship, and these are joined by a bare foreign key column, so
+    # one flush can emit the ticket first.
     session.add(Workspace(id="ws", slug="ws", name="WS", repo_path=str(git_repo)))
+    session.commit()
     ticket = Ticket(
         id="t1",
         external_id="42-evidence",
@@ -285,6 +289,7 @@ def test_missing_proof_blocks_even_when_transition_gates_are_off(session_and_tic
         StageStatus,
         WorkflowInstance,
         WorkflowStageDef,
+        WorkflowTemplate,
     )
     from loregarden.services.builtin_orchestrator import _GateDecision
     from loregarden.services.orchestration_profile import resolve_orchestration_profile
@@ -301,9 +306,12 @@ def test_missing_proof_blocks_even_when_transition_gates_are_off(session_and_tic
         ),
         WorkflowStageDef(key="review", name="Review", agent_id="reviewer", order=2),
     ]
+    template = WorkflowTemplate(id="tpl", slug="tpl", name="tpl", stages_json="[]")
+    session.add(template)
+    session.commit()
     instance = WorkflowInstance(
         ticket_id=ticket.id,
-        template_id="tpl",
+        template_id=template.id,
         current_stage_key="implement",
         stages_json=initial_stages_json(stages),
     )

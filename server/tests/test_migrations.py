@@ -539,7 +539,7 @@ def test_ticket_enum_columns_move_from_names_to_values(tmp_path):
     produced a row the ORM could not load — and one such row raised LookupError on
     every SELECT over tickets, not just its own.
     """
-    from loregarden.models.domain import Ticket
+    from loregarden.models.domain import Ticket, Workspace
     from loregarden.models.domain.enums import StageStatus, TicketState
     from sqlmodel import Session, select
 
@@ -547,6 +547,8 @@ def test_ticket_enum_columns_move_from_names_to_values(tmp_path):
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as session:
+        session.add(Workspace(id="ws1", slug="ws1", name="WS1"))
+        session.commit()
         session.add(Ticket(id="t1", external_id="ext-1", workspace_id="ws1", title="Legacy row"))
         session.commit()
     # Rewind that row to how the old model persisted it: enum names, not values.
@@ -575,7 +577,7 @@ def test_ticket_enum_columns_move_from_names_to_values(tmp_path):
 
 def test_ticket_enum_migration_leaves_value_form_rows_alone(tmp_path):
     """Re-running against an already-migrated row is a no-op, not a double rewrite."""
-    from loregarden.models.domain import Ticket
+    from loregarden.models.domain import Ticket, Workspace
     from loregarden.models.domain.enums import StageStatus, TicketState
     from sqlmodel import Session
 
@@ -583,6 +585,8 @@ def test_ticket_enum_migration_leaves_value_form_rows_alone(tmp_path):
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as session:
+        session.add(Workspace(id="ws1", slug="ws1", name="WS1"))
+        session.commit()
         session.add(
             Ticket(
                 id="t2",
@@ -606,7 +610,7 @@ def test_ticket_enum_migration_leaves_value_form_rows_alone(tmp_path):
 
 def test_run_approval_event_enums_move_from_names_to_values(tmp_path):
     """0043 converts the last three name-form columns, across three tables."""
-    from loregarden.models.domain import AgentRun, Approval, DomainEvent
+    from loregarden.models.domain import AgentRun, Approval, DomainEvent, Ticket, Workspace
     from loregarden.models.domain.enums import ApprovalStatus, EventType, RunStatus
     from sqlmodel import Session, select
 
@@ -614,6 +618,10 @@ def test_run_approval_event_enums_move_from_names_to_values(tmp_path):
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as session:
+        session.add(Workspace(id="ws1", slug="ws1", name="WS1"))
+        session.commit()
+        session.add(Ticket(id="t1", external_id="ext-1", workspace_id="ws1", title="Row"))
+        session.commit()
         session.add(
             AgentRun(id="r1", run_code="run_x", ticket_id="t1", workspace_id="ws1", agent_id="a1")
         )
@@ -754,7 +762,12 @@ def test_verify_stage_is_wired_between_implement_and_review(tmp_path):
     """0026 inserts verify without stranding or rewinding live tickets."""
     import json
 
-    from loregarden.models.domain import WorkflowInstance, WorkflowTemplate
+    from loregarden.models.domain import (
+        Ticket,
+        WorkflowInstance,
+        WorkflowTemplate,
+        Workspace,
+    )
     from sqlmodel import Session
 
     stages = [
@@ -792,10 +805,23 @@ def test_verify_stage_is_wired_between_implement_and_review(tmp_path):
             )
         )
         # One ticket still upstream, one already past the insertion point.
+        # Both rows name a real ticket: workflow_instances references them.
+        session.commit()
+        workspace = Workspace(slug="wf", name="wf")
+        session.add(workspace)
+        session.commit()
+        early_ticket = Ticket(
+            id="t-early", external_id="t-early", workspace_id=workspace.id, title="early"
+        )
+        late_ticket = Ticket(
+            id="t-late", external_id="t-late", workspace_id=workspace.id, title="late"
+        )
+        session.add_all([early_ticket, late_ticket])
+        session.commit()
         session.add(
             WorkflowInstance(
                 id="wi-early",
-                ticket_id="t-early",
+                ticket_id=early_ticket.id,
                 template_id="tpl-v3",
                 current_stage_key="implement",
                 stages_json=json.dumps([{"key": "implement", "status": "running"}]),
@@ -804,7 +830,7 @@ def test_verify_stage_is_wired_between_implement_and_review(tmp_path):
         session.add(
             WorkflowInstance(
                 id="wi-late",
-                ticket_id="t-late",
+                ticket_id=late_ticket.id,
                 template_id="tpl-v3",
                 current_stage_key="gate",
                 stages_json=json.dumps([{"key": "implement", "status": "pending"}]),
@@ -1066,7 +1092,7 @@ def test_a_database_migrated_by_newer_code_is_called_out(tmp_path, caplog):
     """Reverting past a value-rewriting migration is otherwise a mystery LookupError."""
     import logging
 
-    from loregarden.db.migrations import _warn_if_database_is_ahead
+    from loregarden.db.migration_runner import warn_if_database_is_ahead
 
     engine = create_engine(f"sqlite:///{tmp_path / 'ahead.db'}")
     SQLModel.metadata.create_all(engine)
@@ -1078,14 +1104,14 @@ def test_a_database_migrated_by_newer_code_is_called_out(tmp_path, caplog):
         applied = {r[0] for r in conn.execute(text("SELECT id FROM schema_migrations"))}
 
     with caplog.at_level(logging.ERROR):
-        unknown = _warn_if_database_is_ahead(applied)
+        unknown = warn_if_database_is_ahead(applied, MIGRATIONS)
 
     assert unknown == ["9999_from_the_future"]
     assert "9999_from_the_future" in caplog.text
 
 
 def test_a_current_database_is_not_flagged_as_ahead(tmp_path):
-    from loregarden.db.migrations import _warn_if_database_is_ahead
+    from loregarden.db.migration_runner import warn_if_database_is_ahead
 
     engine = create_engine(f"sqlite:///{tmp_path / 'current.db'}")
     SQLModel.metadata.create_all(engine)
@@ -1093,7 +1119,7 @@ def test_a_current_database_is_not_flagged_as_ahead(tmp_path):
     with engine.connect() as conn:
         applied = {r[0] for r in conn.execute(text("SELECT id FROM schema_migrations"))}
 
-    assert _warn_if_database_is_ahead(applied) == []
+    assert warn_if_database_is_ahead(applied, MIGRATIONS) == []
 
 
 def test_workspace_scoped_runs_and_approvals_relax_ticket_id(tmp_path):

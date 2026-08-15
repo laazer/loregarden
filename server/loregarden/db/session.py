@@ -11,6 +11,7 @@ from loregarden.services.path_resolve import (
     sqlite_url_for_path,
 )
 from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine
 
 
@@ -30,6 +31,28 @@ engine = create_engine(
     _sqlite_url(settings.database_url),
     connect_args={"check_same_thread": False, "timeout": 30.0},
 )
+
+
+@event.listens_for(Engine, "connect")
+def _enforce_foreign_keys(dbapi_connection, _connection_record) -> None:
+    """Honour the foreign keys the schema declares.
+
+    SQLite defaults this off, per connection — so every reference in the schema
+    was documentation rather than a guarantee, and a delete path that missed a
+    child table left rows pointing at nothing instead of failing.
+
+    Registered on ``Engine`` rather than on this module's engine so that every
+    SQLite connection in the process gets it, including the per-test engines the
+    suite builds and any engine opened by a script. A pragma that only some
+    connections set is worse than none: it makes enforcement depend on which
+    code path opened the connection.
+
+    ``apply_migrations`` turns it back off for the length of a migration run,
+    where rebuilding a table means dropping one every dependant references.
+    """
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 @event.listens_for(engine, "connect")

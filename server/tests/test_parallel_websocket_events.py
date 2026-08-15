@@ -8,6 +8,7 @@ from loregarden.models.domain import AgentRun, Ticket, Workspace, Worktree
 from loregarden.services.event_hub import event_hub
 from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.websocket_events import QUEUE_TOPIC
+from tests.factories import make_agent_run, make_workspace
 
 
 @pytest.mark.asyncio
@@ -24,14 +25,24 @@ class TestParallelQueueEventEmissions:
         # every other test in this suite that expects a run to show up in a
         # queue/active list (see test_queue_management.py) — the AgentRun rows
         # must actually exist, not just the QueuedRun/AgentSlot pointers to them.
-        agent_run_0 = AgentRun(
-            id="run-0", run_code="run-0", ticket_id="ticket-0", workspace_id="ws-1", agent_id="dev"
+        # ...and the tickets those runs name, which agent_runs.ticket_id
+        # references.
+        make_agent_run(
+            db_session,
+            run_id="run-0",
+            run_code="run-0",
+            ticket_id="ticket-0",
+            workspace_id="ws-1",
+            agent_id="dev",
         )
-        agent_run_1 = AgentRun(
-            id="run-1", run_code="run-1", ticket_id="ticket-1", workspace_id="ws-1", agent_id="dev"
+        make_agent_run(
+            db_session,
+            run_id="run-1",
+            run_code="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-1",
+            agent_id="dev",
         )
-        db_session.add_all([agent_run_0, agent_run_1])
-        db_session.commit()
 
         service = ParallelQueueService(db_session, max_concurrent=1)
 
@@ -59,10 +70,14 @@ class TestParallelQueueEventEmissions:
 
         # get_active_runs() joins back to AgentRun, so it needs to actually exist
         # (see comment in test_queue_run_emits_execution_update_when_queued above).
-        agent_run = AgentRun(
-            id="run-1", run_code="run-1", ticket_id="ticket-1", workspace_id="ws-1", agent_id="dev"
+        make_agent_run(
+            db_session,
+            run_id="run-1",
+            run_code="run-1",
+            ticket_id="ticket-1",
+            workspace_id="ws-1",
+            agent_id="dev",
         )
-        db_session.add(agent_run)
         db_session.commit()
 
         with patch("loregarden.services.parallel_queue.emit_execution_update") as mock_emit:
@@ -101,17 +116,20 @@ class TestParallelQueueEventEmissions:
 
         ws = Workspace(id="ws-1", slug="ws-1", name="Test")
         db_session.add(ws)
+        db_session.commit()
         db_session.add_all(
             [
-                AgentRun(
-                    id="run-1",
+                make_agent_run(
+                    db_session,
+                    run_id="run-1",
                     run_code="run-1",
                     ticket_id="ticket-1",
                     workspace_id="ws-1",
                     agent_id="dev",
                 ),
-                AgentRun(
-                    id="run-2",
+                make_agent_run(
+                    db_session,
+                    run_id="run-2",
                     run_code="run-2",
                     ticket_id="ticket-2",
                     workspace_id="ws-1",
@@ -155,6 +173,16 @@ class TestParallelQueueEventEmissions:
             patch("loregarden.services.parallel_queue.emit_execution_update"),
             patch("loregarden.services.parallel_queue.emit_queue_promoted"),
         ):
+            # queued_runs names a workspace, ticket and run; all three have to
+            # exist for the entry to be written at all.
+            make_agent_run(
+                db_session,
+                run_id="run-1",
+                run_code="run-1",
+                ticket_id="ticket-1",
+                workspace_id=make_workspace(db_session, workspace_id="ws-1", slug="ws-1").id,
+                agent_id="dev",
+            )
             service = ParallelQueueService(db_session, max_concurrent=2)
 
             # Setup: create run in database
@@ -175,6 +203,16 @@ class TestParallelQueueEventEmissions:
             patch("loregarden.services.parallel_queue.emit_run_completed"),
             patch("loregarden.services.parallel_queue.emit_queue_promoted"),
         ):
+            # queued_runs names a workspace, ticket and run; all three have to
+            # exist for the entry to be written at all.
+            make_agent_run(
+                db_session,
+                run_id="run-1",
+                run_code="run-1",
+                ticket_id="ticket-1",
+                workspace_id=make_workspace(db_session, workspace_id="ws-1", slug="ws-1").id,
+                agent_id="dev",
+            )
             service = ParallelQueueService(db_session, max_concurrent=2)
 
             service.initialize_slots()
@@ -200,6 +238,16 @@ class TestParallelQueueEventEmissions:
             patch.object(hub, "_loop", loop),
             patch.object(hub, "_topics", {QUEUE_TOPIC: {asyncio.Queue()}}),
         ):
+            # queued_runs names a workspace, ticket and run; all three have to
+            # exist for the entry to be written at all.
+            make_agent_run(
+                db_session,
+                run_id="run-1",
+                run_code="run-1",
+                ticket_id="ticket-1",
+                workspace_id=make_workspace(db_session, workspace_id="ws-1", slug="ws-1").id,
+                agent_id="dev",
+            )
             service = ParallelQueueService(db_session, max_concurrent=2)
             service.initialize_slots()
 

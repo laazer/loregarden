@@ -5,6 +5,7 @@ from loregarden.services.run_log_stream import RunLogStreamer, format_stream_pay
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
+from tests.factories import make_agent_run
 
 
 def test_format_stream_payload_assistant_text():
@@ -69,6 +70,13 @@ def test_run_log_streamer_updates_cmd_after_bootstrap():
             ticket = session.exec(select(Ticket).limit(1)).first()
             assert ticket
 
+            make_agent_run(
+                session,
+                run_id="run_cmd",
+                run_code="run_cmd",
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+            )
             bootstrap = RunLogStreamer(
                 run_id="run_cmd",
                 ticket_id=ticket.id,
@@ -78,6 +86,13 @@ def test_run_log_streamer_updates_cmd_after_bootstrap():
             )
             bootstrap.start("Queuing agent…")
 
+            make_agent_run(
+                session,
+                run_id="run_cmd",
+                run_code="run_cmd",
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+            )
             executor = RunLogStreamer(
                 run_id="run_cmd",
                 ticket_id=ticket.id,
@@ -117,6 +132,13 @@ def test_run_log_streamer_accumulates_stream_deltas():
             ticket = session.exec(select(Ticket).limit(1)).first()
             assert ticket
 
+            make_agent_run(
+                session,
+                run_id="run_stream",
+                run_code="run_stream",
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+            )
             streamer = RunLogStreamer(
                 run_id="run_stream",
                 ticket_id=ticket.id,
@@ -176,6 +198,13 @@ def test_run_log_streamer_coalesces_cursor_partial_assistant_tokens():
             )
             remainder = " Then I will inspect the tests."
             complete = first + remainder
+            make_agent_run(
+                session,
+                run_id="run_cursor_partial",
+                run_code="run_cursor_partial",
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+            )
             streamer = RunLogStreamer(
                 run_id="run_cursor_partial",
                 ticket_id=ticket.id,
@@ -241,6 +270,13 @@ def test_run_log_streamer_coalesces_cursor_thinking_deltas():
 
             title_chunk = "**Organizing ticket processes**\n\nI"
             body = "need to start with the MCP ticket. Is there a workflow module already embedded?"
+            make_agent_run(
+                session,
+                run_id="run_cursor_thinking",
+                run_code="run_cursor_thinking",
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+            )
             streamer = RunLogStreamer(
                 run_id="run_cursor_thinking",
                 ticket_id=ticket.id,
@@ -325,6 +361,13 @@ def test_run_log_streamer_drops_repeated_cursor_message_snapshot():
             assert ticket
 
             message = "Plan attached as artifact abc123. No files changed."
+            make_agent_run(
+                session,
+                run_id="run_snapshot",
+                run_code="run_snapshot",
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+            )
             streamer = RunLogStreamer(
                 run_id="run_snapshot",
                 ticket_id=ticket.id,
@@ -379,6 +422,13 @@ def test_run_log_streamer_finalize_is_idempotent():
             ticket = session.exec(select(Ticket).limit(1)).first()
             assert ticket
 
+            make_agent_run(
+                session,
+                run_id="run_finalize",
+                run_code="run_finalize",
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+            )
             streamer = RunLogStreamer(
                 run_id="run_finalize",
                 ticket_id=ticket.id,
@@ -389,6 +439,13 @@ def test_run_log_streamer_finalize_is_idempotent():
             streamer.start("cursor-agent agent -p")
             streamer.finalize(status=RunStatus.FAILED, stderr="boom")
 
+            make_agent_run(
+                session,
+                run_id="run_finalize",
+                run_code="run_finalize",
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+            )
             second = RunLogStreamer(
                 run_id="run_finalize",
                 ticket_id=ticket.id,
@@ -429,6 +486,13 @@ def test_run_log_streamer_persists_live_log():
             ticket = session.exec(select(Ticket).limit(1)).first()
             assert ticket
 
+            make_agent_run(
+                session,
+                run_id="run_test",
+                run_code="run_test",
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+            )
             streamer = RunLogStreamer(
                 run_id="run_test",
                 ticket_id=ticket.id,
@@ -469,6 +533,13 @@ def test_run_log_streamer_keeps_buffer_on_non_json_line():
             ticket = session.exec(select(Ticket).limit(1)).first()
             assert ticket
 
+            make_agent_run(
+                session,
+                run_id="run_mixed",
+                run_code="run_mixed",
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+            )
             streamer = RunLogStreamer(
                 run_id="run_mixed",
                 ticket_id=ticket.id,
@@ -513,6 +584,13 @@ def test_run_log_streamer_assistant_does_not_truncate_delta_buffer():
             assert ticket
 
             long_text = "### Verified\n- item one\n- item two\n- item three"
+            make_agent_run(
+                session,
+                run_id="run_assistant",
+                run_code="run_assistant",
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+            )
             streamer = RunLogStreamer(
                 run_id="run_assistant",
                 ticket_id=ticket.id,
@@ -564,6 +642,13 @@ def test_run_log_streamer_persists_long_output():
             assert ticket
 
             long_text = "x" * 5000
+            make_agent_run(
+                session,
+                run_id="run_long",
+                run_code="run_long",
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+            )
             streamer = RunLogStreamer(
                 run_id="run_long",
                 ticket_id=ticket.id,

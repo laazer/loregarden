@@ -27,7 +27,8 @@ from loregarden.models.domain import (
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.workflow_state import initial_stages_json
-from sqlmodel import Session, select
+from sqlmodel import Session
+from tests.factories import make_agent_run, select
 
 
 def _setup_implementation(db_session: Session) -> tuple[Ticket, OrchestrationRun]:
@@ -315,7 +316,9 @@ def test_scope_reroute_budget_exhaustion_blocks(tmp_path):
                 ctx=ctx,
                 scope=ApprovalScope.for_ticket(ticket),
                 tool_input=tool_input,
-                run_id="r",
+                run_id=make_agent_run(
+                    session, workspace_id=ticket.workspace_id, ticket_id=ticket.id
+                ).id,
                 message="denied",
             )
             for _ in range(MAX_REWORK_REROUTES + 1)

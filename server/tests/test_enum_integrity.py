@@ -3,7 +3,7 @@ from loregarden.db.enum_integrity import (
     find_unreadable_enum_values,
     report_unreadable_enum_values,
 )
-from loregarden.models.domain import Ticket
+from loregarden.models.domain import Ticket, Workspace
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -12,6 +12,10 @@ def _engine_with_a_ticket(tmp_path, name: str):
     engine = create_engine(f"sqlite:///{tmp_path / name}")
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
+        # Committed first: the ticket references it, and one flush can emit the
+        # ticket ahead of the workspace.
+        session.add(Workspace(id="ws1", slug="ws1", name="WS1"))
+        session.commit()
         session.add(Ticket(id="t1", external_id="ext-1", workspace_id="ws1", title="A ticket"))
         session.commit()
     return engine

@@ -62,6 +62,7 @@ def test_reroute_hands_the_stage_to_the_debugger(db_session):
         TicketState,
         WorkflowInstance,
         WorkflowStageDef,
+        WorkflowTemplate,
         WorkItemType,
         Workspace,
     )
@@ -88,9 +89,12 @@ def test_reroute_hands_the_stage_to_the_debugger(db_session):
     db_session.add(ticket)
     db_session.commit()
     db_session.refresh(ticket)
+    template = WorkflowTemplate(id="tpl", slug="tpl", name="tpl", stages_json="[]")
+    db_session.add(template)
+    db_session.commit()
     instance = WorkflowInstance(
         ticket_id=ticket.id,
-        template_id="tpl",
+        template_id=template.id,
         current_stage_key="implement",
         stages_json=initial_stages_json(stages),
     )

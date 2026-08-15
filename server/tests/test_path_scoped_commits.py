@@ -26,7 +26,11 @@ def session_and_ticket(tmp_path, git_repo):
         title="Scoped",
         work_item_type=WorkItemType.TASK,
     )
+    # The workspace commits first: a flush orders by mapper relationship, and
+    # these are joined by a bare foreign key column, so one flush can emit the
+    # ticket ahead of the workspace it names.
     session.add(workspace)
+    session.commit()
     session.add(ticket)
     session.commit()
     return session, ticket

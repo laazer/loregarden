@@ -8,7 +8,7 @@ projection schedules rather than sums.
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from loregarden.models.domain import AgentRun, RunStatus
+from loregarden.models.domain import RunStatus
 from loregarden.services.run_duration_stats import (
     FALLBACK_KEY,
     estimate_for,
@@ -16,13 +16,18 @@ from loregarden.services.run_duration_stats import (
     project_clear_time,
 )
 from sqlmodel import Session
+from tests.factories import make_agent_run, make_workspace
 
 WORKSPACE = "ws-1"
 
 
 def _finished_run(session: Session, agent_id: str, seconds: float, status=RunStatus.SUCCEEDED):
     started = datetime.now(timezone.utc) - timedelta(days=1)
-    run = AgentRun(
+    # The run's workspace and ticket have to exist; these tests are about the
+    # duration medians, so the rows themselves carry nothing.
+    make_workspace(session, workspace_id=WORKSPACE, slug=WORKSPACE)
+    return make_agent_run(
+        session,
         run_code=f"r-{agent_id}-{seconds}-{status.value}",
         ticket_id="t-1",
         workspace_id=WORKSPACE,
@@ -31,9 +36,6 @@ def _finished_run(session: Session, agent_id: str, seconds: float, status=RunSta
         started_at=started,
         finished_at=started + timedelta(seconds=seconds),
     )
-    session.add(run)
-    session.commit()
-    return run
 
 
 @pytest.fixture(name="session")

@@ -27,8 +27,9 @@ from loregarden.services.skill_service import parse_skill_markdown
 from loregarden.services.workspace_paths import resolve_agent_context_dir
 from loregarden.skills.registry import SKILL_PROMPT_CAP, get_skill, list_skills
 from sqlalchemy import text
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
+from tests.factories import make_orchestration_run, select
 
 _LANES = ("plan-simplest", "plan-risk", "plan-seams")
 
@@ -50,6 +51,14 @@ def _engine():
 
 
 def _lane_run(session: Session, ticket: Ticket, skill: str, orch_id: str) -> AgentRun:
+    # `agent_runs.orchestration_run_id` references orchestration_runs; these
+    # tests generate the id themselves to tell lane rounds apart.
+    make_orchestration_run(
+        session,
+        workspace_id=ticket.workspace_id,
+        ticket_id=ticket.id,
+        orchestration_run_id=orch_id,
+    )
     run = AgentRun(
         run_code=f"run_{skill}",
         ticket_id=ticket.id,

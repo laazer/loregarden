@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from loregarden.db.migration_ids import assert_migration_ids_are_sound
+from loregarden.db.migration_runner import run_migrations
 from loregarden.db.migration_utils import (
     add_columns_if_missing,
     index_exists,
@@ -28,6 +29,7 @@ from loregarden.db.migration_utils import (
 from loregarden.db.migrations_composer import m_composer_commands
 from loregarden.db.migrations_doctor import m_agent_run_preflight
 from loregarden.db.migrations_external_harness import m_external_harness_columns
+from loregarden.db.migrations_fk_repair import m_repair_dangling_references
 from loregarden.db.migrations_git_boundary import (
     m_agent_run_boundary_verdict,
     m_agent_run_git_boundary,
@@ -1436,65 +1438,12 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0079_agent_run_git_boundary", m_agent_run_git_boundary),
     ("0080_agent_run_boundary_verdict", m_agent_run_boundary_verdict),
     ("0081_agent_run_preflight", m_agent_run_preflight),
+    ("0082_repair_dangling_references", m_repair_dangling_references),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
 
 
-def _ensure_migrations_table(conn: Connection) -> None:
-    conn.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS schema_migrations (
-                id TEXT PRIMARY KEY,
-                applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-            """
-        )
-    )
-
-
-def _applied_ids(conn: Connection) -> set[str]:
-    rows = conn.execute(text("SELECT id FROM schema_migrations")).fetchall()
-    return {row[0] for row in rows}
-
-
-def _warn_if_database_is_ahead(applied_ids: set[str]) -> list[str]:
-    """Flag migrations this build has never heard of.
-
-    A migration that rewrites stored values leaves a database only newer code can
-    read — check out an older commit, or revert one, and every query over the
-    rewritten table fails with a LookupError that says nothing about the real cause.
-    The recorded ids say so directly, so name it at startup instead.
-    """
-    unknown = sorted(applied_ids - {migration_id for migration_id, _ in MIGRATIONS})
-    if unknown:
-        logger.error(
-            "Database has migrations this build does not know about: %s. It was "
-            "migrated by newer code, and data those migrations rewrote may not be "
-            "readable here. Check out the matching revision rather than running "
-            "against it.",
-            ", ".join(unknown),
-        )
-    return unknown
-
-
 def apply_migrations(engine: Engine) -> list[str]:
-    """Apply pending migrations in order. Returns the ids that ran this call."""
-    if not str(engine.url).startswith("sqlite"):
-        return []
-    applied: list[str] = []
-    with engine.begin() as conn:
-        _ensure_migrations_table(conn)
-        already = _applied_ids(conn)
-        _warn_if_database_is_ahead(already)
-        for migration_id, migrate in MIGRATIONS:
-            if migration_id in already:
-                continue
-            migrate(conn)
-            conn.execute(
-                text("INSERT INTO schema_migrations (id) VALUES (:id)"),
-                {"id": migration_id},
-            )
-            applied.append(migration_id)
-    return applied
+    """Apply this module's ledger. See ``migration_runner.run_migrations``."""
+    return run_migrations(engine, MIGRATIONS)
