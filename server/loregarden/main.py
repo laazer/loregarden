@@ -48,14 +48,14 @@ from loregarden.services.branch_triage_run_service import fail_interrupted_branc
 from loregarden.services.btw_run_service import fail_interrupted_asides
 from loregarden.services.chat_thinking import clear_orphaned_chat_turn_thinking
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
-from loregarden.services.queue_lanes import QueueLaneService
+from loregarden.services.reconcile_timer import start_reconcile_loop
+from loregarden.services.reconciliation import reconcile_once
 from loregarden.services.run_service import (
     fail_interrupted_orchestration_runs,
     fail_interrupted_runs,
     settle_stranded_stages,
 )
 from loregarden.services.seed import seed_database
-from loregarden.services.ticket_rollup import reconcile_all_parents
 from loregarden.services.ticket_studio_run_service import fail_interrupted_studio_turns
 from loregarden.services.triage_run_service import fail_interrupted_triage_turns
 from loregarden.services.worktree_lifecycle import reconcile_worktrees
@@ -88,22 +88,29 @@ async def lifespan(app: FastAPI):
         # Last: the reaps above settle stages as they complete their runs, so this
         # only sees stages no run will ever account for.
         settle_stranded_stages(session)
-        # After the reaps, so the runs they just failed count as finished and
-        # the slots they were holding come back rather than staying claimed by
-        # a run this process will never hear from again.
-        QueueLaneService(session).reconcile_lanes()
         # The trees those dead runs were working in. After the reaps, so a
         # ticket the crash left mid-stage counts as unfinished and keeps its
-        # worktree for the resume below.
+        # worktree for the resume below. Startup only: it is the one sweep that
+        # deletes, and boot is the only moment nothing is in flight.
         reconcile_worktrees(session)
-        # After the reaps and stage settling, so every child ticket has reached
-        # the state it will actually be in before its parents are summarised
-        # from it. Catches whatever the push-on-change hooks missed.
-        reconcile_all_parents(session)
+        # Lanes and parents, from the same pass the timer runs. After the reaps,
+        # so the runs they just failed count as finished and the slots they held
+        # come back rather than staying claimed by a run this process will never
+        # hear from again — and so every child has reached the state it will
+        # actually be in before its parents are summarised from it.
+        reconcile_once(session)
         # Resume only after every orphan row and stranded stage has been made
         # durable. Recovery adds a fresh run; the failed rows remain the audit trail.
         resume_interrupted_orchestrations(session)
-    yield
+
+    # Repair on a clock from here, not only at the next boot and not only while
+    # someone has the dashboard open.
+    reconcile_task = start_reconcile_loop()
+    try:
+        yield
+    finally:
+        if reconcile_task is not None:
+            reconcile_task.cancel()
 
 
 app = FastAPI(title="Loregarden Control Plane", version="0.1.0", lifespan=lifespan)

@@ -27,6 +27,11 @@ class Settings(BaseSettings):
 
     repo_root: Path = _find_repo_root()
     database_url: str = "sqlite:///data/loregarden.db"
+    #: Seconds between reconciliation passes. Short enough that a wedged lane or
+    #: a stranded stage clears itself well inside the time it takes an operator
+    #: to notice; 0 or less turns the timer off and leaves repair to startup,
+    #: which is the cadence this replaced.
+    reconcile_interval_seconds: float = 30.0
     agent_context_dir: Path = Path("agent_context")
     workflow_templates_dir: Path = Path("agent_context/workflows")
     cli_adapter: str = "local"

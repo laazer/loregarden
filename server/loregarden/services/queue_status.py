@@ -30,7 +30,6 @@ from loregarden.services.run_duration_stats import (
     project_clear_time,
     project_lane_waits,
 )
-from loregarden.services.run_service import settle_expired_orchestration_leases
 from loregarden.services.ticket_activity import classify_ticket_activity
 from loregarden.services.ticket_tree_estimate import TicketTreeEstimator
 from sqlmodel import Session, col, select
@@ -312,21 +311,16 @@ def _attach_estimates(
 
 
 async def build_queue_status(session: Session) -> dict[str, Any]:
-    """Active runs, queued runs and slot statistics for the shared queue."""
-    from loregarden.services.queue_lanes import QueueLaneService
+    """Active runs, queued runs and slot statistics for the shared queue.
 
+    A read, and only a read. This used to repair as well — settling expired
+    leases and reconciling lanes before building the snapshot — which tied the
+    repair cadence to whether anyone had the dashboard open. The board polls
+    every few seconds, so lanes healed continuously under observation and never
+    otherwise, and the failure could only survive while nobody was looking.
+    Both sweeps moved to the reconciliation timer, which runs regardless.
+    """
     queue_service = ParallelQueueService(session, max_concurrent=DEFAULT_MAX_CONCURRENT)
-
-    # First, so the snapshot cannot report a lane as running a run that already
-    # finished. A slot whose occupant is terminal is free, and the board is
-    # where anyone would notice it was not.
-    # Before the lane reconcile: that one hands the *slot* back when a lease
-    # expires, and this is what makes the *run* terminal. Left RUNNING with its
-    # lane already returned, a dead run still blocks its ticket from ever being
-    # orchestrated again and still reports the ticket as busy.
-    settle_expired_orchestration_leases(session)
-
-    QueueLaneService(session, max_concurrent=DEFAULT_MAX_CONCURRENT).reconcile_lanes()
 
     active_runs = await queue_service.get_active_runs()
     queued_runs = await queue_service.get_queued_runs()
