@@ -525,7 +525,11 @@ def _run_view(run) -> dict[str, Any]:
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": McpTool.GET_TICKET,
-        "description": "Read ticket workflow state, stage map, hierarchy neighbors, and active orchestration run.",
+        "description": (
+            "Read what a ticket asks for — title, description, acceptance_criteria — "
+            "along with its workflow state, stage map, hierarchy neighbors, and active "
+            "orchestration run. Read this before inferring a requirement from the code."
+        ),
         "inputSchema": _tool_schema(
             properties={
                 "ticket_id": _string_prop(
@@ -567,7 +571,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": McpTool.GET_TICKET_BY_EXTERNAL,
-        "description": "Read ticket state by workspace slug and external_id.",
+        "description": (
+            "Read a ticket's requirement and workflow state by workspace slug and "
+            "external_id. Same payload as loregarden_get_ticket."
+        ),
         "inputSchema": _tool_schema(
             properties={
                 "workspace_slug": _string_prop("Workspace slug, e.g. loregarden."),
