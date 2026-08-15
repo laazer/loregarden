@@ -89,6 +89,68 @@ def run_notify_fields(session: Session, run: AgentRun | None) -> dict[str, str |
 _CLAIM_ATTEMPTS = 4
 
 
+def _claim_slot_row(session: Session, slot_id: str) -> AgentSlot | None:
+    """Take one specific slot, or None because someone else already has it.
+
+    The conditional UPDATE both claim sites are built on: `SET is_available = 0
+    WHERE id = ? AND is_available = 1`, so the database decides the winner in a
+    single statement and the loser sees `rowcount == 0`.
+
+    Keyed on `id`, never on `slot_number`. A pool initialised concurrently could
+    hold two rows numbering themselves 1, at which point an UPDATE keyed on the
+    number matched both, `rowcount` was 2, and every candidate was rejected
+    while slots sat free.
+    """
+    result = session.exec(
+        update(AgentSlot)
+        .where(AgentSlot.id == slot_id)
+        .where(AgentSlot.is_available == True)  # noqa: E712
+        .values(
+            is_available=False,
+            assigned_at=datetime.now(timezone.utc),
+            current_run_id=None,
+            current_orchestration_run_id=None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        return None
+    session.commit()
+    claimed = session.exec(select(AgentSlot).where(AgentSlot.id == slot_id)).first()
+    if claimed is not None:
+        # The UPDATE went round the identity map; refresh so the caller does not
+        # read a stale `is_available` off a cached instance.
+        session.refresh(claimed)
+    return claimed
+
+
+def claim_lane_slot(session: Session, slot_number: int) -> AgentSlot | None:
+    """Take one named lane, or nothing. No substitution.
+
+    `claim_free_slot`'s `preferred` is a fallback — an operator whose chosen
+    lane filled still wants the ticket to run. A lane dispatch cannot use that:
+    a lane *is* a slot, one to one, and its queue belongs to that number. Handed
+    a different slot it would start lane 2's head while holding lane 3, and both
+    lanes would then be wrong about what they contain.
+
+    Callers must release when the work they claimed it for does not start.
+    """
+    row = session.exec(select(AgentSlot.id).where(AgentSlot.slot_number == slot_number)).first()
+    if row is None:
+        return None
+    return _claim_slot_row(session, row)
+
+
+def release_slot(session: Session, slot: AgentSlot) -> None:
+    """Give a claimed slot back, for a claim whose work never started."""
+    slot.is_available = True
+    slot.current_run_id = None
+    slot.current_orchestration_run_id = None
+    slot.released_at = datetime.now(timezone.utc)
+    session.add(slot)
+    session.commit()
+
+
 def claim_free_slot(session: Session, *, preferred: int | None = None) -> AgentSlot | None:
     """Take a slot atomically, or return None because the pool is full.
 
@@ -134,28 +196,11 @@ def claim_free_slot(session: Session, *, preferred: int | None = None) -> AgentS
         ordered = sorted(available, key=lambda row: (row[1] != preferred, row[1]))
 
         for slot_id, _number in ordered:
-            result = session.exec(
-                update(AgentSlot)
-                .where(AgentSlot.id == slot_id)
-                .where(AgentSlot.is_available == True)  # noqa: E712
-                .values(
-                    is_available=False,
-                    assigned_at=datetime.now(timezone.utc),
-                    current_run_id=None,
-                    current_orchestration_run_id=None,
-                )
-                .execution_options(synchronize_session=False)
-            )
-            if result.rowcount != 1:
+            claimed = _claim_slot_row(session, slot_id)
+            if claimed is None:
                 # Lost this one between the read and the write, which is exactly
                 # what the conditional update exists to detect.
                 continue
-            session.commit()
-            claimed = session.exec(select(AgentSlot).where(AgentSlot.id == slot_id)).first()
-            if claimed is not None:
-                # The UPDATE went round the identity map; refresh so the caller
-                # does not read a stale `is_available` off a cached instance.
-                session.refresh(claimed)
             return claimed
 
         # Every candidate was taken. Drop the stale snapshot before looking
