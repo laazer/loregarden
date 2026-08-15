@@ -88,6 +88,21 @@
   max-width: min(620px, 100%);
 }
 
+/* With an avatar the reply sits one gutter in from the column edge. Everything else the
+   assistant said — reasoning, primitive cards — takes the same indent, so one left edge
+   runs down the whole turn instead of the cards hanging out under the avatar. */
+.lg-chat-assistant-col--avatar {
+  --lg-chat-avatar-gutter: 58px; /* avatar 48px + .lg-chat-assistant-row gap */
+}
+
+.lg-chat-assistant-col--avatar > * {
+  padding-left: var(--lg-chat-avatar-gutter);
+}
+
+.lg-chat-assistant-col--avatar > .lg-chat-assistant-row {
+  padding-left: 0;
+}
+
 /* A turn carrying breakout primitives keeps its own left edge on the reading column — the
    prose must not shift relative to neighbouring turns — but spans the full column so the
    breakout slots inside it can centre on the thread. See PrimitiveCard.css. */
