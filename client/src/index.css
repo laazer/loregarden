@@ -3953,7 +3953,7 @@ button {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(520px, 94vw);
+  width: min(640px, 94vw);
   max-height: 88vh;
   z-index: 41;
   background: var(--bg1);
