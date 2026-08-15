@@ -785,3 +785,136 @@ def m_clear_phantom_skill_names(conn: Connection) -> None:
                 text("UPDATE studio_workflows SET stages_json=:st WHERE id=:id"),
                 {"st": json.dumps(stages), "id": row["id"]},
             )
+
+
+#: The two playtest items this migration retires, matched on their exact text so
+#: a checklist an operator has since edited is left alone.
+_RETIRED_PLAYTEST_ITEMS = (
+    "Create or update the test level scene(s) needed to exercise this change",
+    "Load the affected scene(s) in the Godot editor and run them",
+)
+
+_PLAYTEST_SCENES_PLACEHOLDER = "{{playtest_scenes}}"
+
+
+def _rewrite_playtest_checklist(stages: list[dict]) -> bool:
+    """Swap the two static scene items for the `{{playtest_scenes}}` placeholder.
+
+    The first item asked a human to author the test scene at a sign-off gate,
+    where nothing is built — that is now briefed to the last authoring stage
+    ahead of the gate. The second told them to "load the affected scene(s)"
+    without saying which; the placeholder expands to the scenes the ticket's
+    branch actually changes.
+    """
+    changed = False
+    for stage in stages:
+        checklist = stage.get("checklist") or []
+        if not any(item in _RETIRED_PLAYTEST_ITEMS for item in checklist):
+            continue
+        rewritten: list[str] = []
+        for item in checklist:
+            if item not in _RETIRED_PLAYTEST_ITEMS:
+                rewritten.append(item)
+            elif _PLAYTEST_SCENES_PLACEHOLDER not in rewritten:
+                rewritten.append(_PLAYTEST_SCENES_PLACEHOLDER)
+        stage["checklist"] = rewritten
+        changed = True
+    return changed
+
+
+def m_playtest_scene_placeholder(conn: Connection) -> None:
+    """Retire the two hand-written playtest scene items across live templates."""
+    if not table_exists(conn, "workflow_templates"):
+        return
+    rows = (
+        conn.execute(text("SELECT id, stages_json, version FROM workflow_templates"))
+        .mappings()
+        .all()
+    )
+    for row in rows:
+        stages = json.loads(row["stages_json"] or "[]")
+        if not _rewrite_playtest_checklist(stages):
+            continue
+        new_version = int(row["version"] or 1) + 1
+        conn.execute(
+            text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
+            {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
+        )
+        _snapshot_template_version(conn, row["id"], new_version, "Playtest scene placeholder")
+
+
+#: Playtest items an agent stage already covers. The AC placeholder duplicates
+#: `ac_gate`, which evidences every criterion one stage earlier; the regression
+#: sweep is what the review stage exists to do; console output is observable
+#: from the implementer's own run. All three asked a human to redo work that
+#: had already been signed off, or to do work nobody had been assigned.
+_AGENT_OWNED_PLAYTEST_ITEMS = (
+    "{{acceptance_criteria}}",
+    "Check for regressions in adjacent systems the change touches",
+    "Confirm no console errors/warnings appear during play",
+)
+
+_TICKET_INTENT_PLACEHOLDER = "{{ticket_intent}}"
+
+#: Where each retired duty lands. Keyed by stage key, since the two stages that
+#: inherit them are the ones that should have owned them all along.
+_STAGE_BRIEFS = {
+    "implementation": (
+        "Your run must end with no console errors or warnings, and you must say so with "
+        "the evidence that shows it. The playtest gate no longer asks a human to watch "
+        "the output for you."
+    ),
+    "script_review": (
+        "Hunt regressions in the adjacent systems this change touches, not just defects "
+        "in the lines it changed. That sweep used to be a bullet on the playtest "
+        "checklist, where a human was asked to do it by eye after the fact; it is yours "
+        "now."
+    ),
+}
+
+
+def _retire_agent_owned_playtest_items(stages: list[dict]) -> bool:
+    """Strip the agent-owned items from human gates and brief the owning stages.
+
+    What survives on the gate is what no agent can sign off: which scenes to
+    open, and whether the change delivers what the ticket asked for.
+    """
+    changed = False
+    for stage in stages:
+        checklist = stage.get("checklist") or []
+        if not any(item in _AGENT_OWNED_PLAYTEST_ITEMS for item in checklist):
+            continue
+        kept = [item for item in checklist if item not in _AGENT_OWNED_PLAYTEST_ITEMS]
+        if _TICKET_INTENT_PLACEHOLDER not in kept:
+            kept.append(_TICKET_INTENT_PLACEHOLDER)
+        stage["checklist"] = kept
+        changed = True
+
+    if not changed:
+        return False
+    for stage in stages:
+        brief = _STAGE_BRIEFS.get(stage.get("key") or "")
+        if brief and not (stage.get("stage_brief") or "").strip():
+            stage["stage_brief"] = brief
+    return True
+
+
+def m_retire_agent_owned_gate_items(conn: Connection) -> None:
+    """Move every mechanically-checkable playtest item onto the stage that owns it."""
+    if not table_exists(conn, "workflow_templates"):
+        return
+    rows = (
+        conn.execute(text("SELECT id, stages_json, version FROM workflow_templates"))
+        .mappings()
+        .all()
+    )
+    for row in rows:
+        stages = json.loads(row["stages_json"] or "[]")
+        if not _retire_agent_owned_playtest_items(stages):
+            continue
+        new_version = int(row["version"] or 1) + 1
+        conn.execute(
+            text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
+            {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
+        )
+        _snapshot_template_version(conn, row["id"], new_version, "Retire agent-owned gate items")

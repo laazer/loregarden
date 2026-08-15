@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 
 from loregarden.agents.mcp_context import build_mcp_triage_context
 from loregarden.agents.registry import get_agent
-from loregarden.core.workflow_loader import expand_gate_checklist
 from loregarden.models.domain import (
     AgentRun,
     Approval,
@@ -40,6 +39,7 @@ from loregarden.services.cli_settings import (
     parse_runtime_settings,
     resolve_chat_adapter,
 )
+from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
 from loregarden.services.hierarchy_service import collect_ticket_scope_ids
 from sqlmodel import Session, col, select
 
@@ -312,7 +312,7 @@ def build_gate_triage_sections(session: Session, ticket: Ticket) -> list[str]:
         "that verification: reproduce what they see, diagnose issues, and fix what you can.",
         _gate_focus_guidance(stage),
     ]
-    checklist = expand_gate_checklist(ticket, list(stage.checklist or []))
+    checklist = expand_gate_checklist_for_ticket(session, ticket, list(stage.checklist or []))
     if checklist:
         sections.append("Verification checklist for this gate:")
         sections.extend(f"- {item}" for item in checklist)

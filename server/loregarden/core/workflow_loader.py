@@ -45,16 +45,47 @@ def write_template_version(
 
 
 AC_CHECKLIST_PLACEHOLDER = "{{acceptance_criteria}}"
+PLAYTEST_SCENES_PLACEHOLDER = "{{playtest_scenes}}"
+TICKET_INTENT_PLACEHOLDER = "{{ticket_intent}}"
+
+#: What a human gate asks for when the ticket carries no description to judge
+#: against. Deliberately about feel rather than pass/fail: everything with a
+#: yes/no answer has already been evidenced by an agent upstream.
+GENERIC_INTENT_ITEM = (
+    "Play it and judge what no agent can — whether it feels, reads, and behaves "
+    "the way this change was meant to"
+)
+
+#: What the operator is told when the scenes this change touches could not be
+#: read off the branch — a missing repo, an unknown branch, a git failure. The
+#: step still has to happen, so it is stated generically rather than dropped.
+UNRESOLVED_SCENES_ITEM = (
+    "Open the scene(s) this change touches in the editor and run them — "
+    "the branch diff could not be read, so identify them from the ticket's changes"
+)
 
 
-def expand_gate_checklist(ticket: Ticket, checklist: list[str]) -> list[str]:
+def expand_gate_checklist(
+    ticket: Ticket, checklist: list[str], *, scenes: list[str] | None = None
+) -> list[str]:
     """Expand a stage's static checklist into ticket-specific items.
 
     An ``{{acceptance_criteria}}`` entry is replaced by one concrete play-test
     item per acceptance criterion, so each gate lists what actually needs
     exercising for this change instead of the same generic bullet every time.
-    Every other entry passes through unchanged, and a ticket with no acceptance
-    criteria simply drops the placeholder.
+    A ``{{playtest_scenes}}`` entry is replaced by one item per scene file the
+    ticket's branch touches, so "run the affected scenes" names the files to
+    open instead of leaving the operator to work them out.
+    A ``{{ticket_intent}}`` entry is replaced by what this change set out to do,
+    which is the part of a gate no agent can sign off. Anything with a yes/no
+    answer belongs to a stage upstream, not here.
+
+    ``scenes`` distinguishes *resolved and empty* (``[]`` — the branch changes no
+    scene, so there is nothing to open and the placeholder drops) from
+    *unresolved* (``None`` — the diff could not be read, so the step is kept in
+    generic form rather than silently disappearing).
+
+    Every other entry passes through unchanged.
 
     Idempotent: an already-expanded checklist contains no placeholder and is
     returned as-is. Callers apply this on both the write and read path so a raw
@@ -67,10 +98,27 @@ def expand_gate_checklist(ticket: Ticket, checklist: list[str]) -> list[str]:
         criteria = []
     expanded: list[str] = []
     for item in checklist:
-        if item.strip() == AC_CHECKLIST_PLACEHOLDER:
+        token = item.strip()
+        if token == AC_CHECKLIST_PLACEHOLDER:
             expanded.extend(
                 f"Play-test by hand — {str(c).strip()}" for c in criteria if str(c).strip()
             )
+        elif token == TICKET_INTENT_PLACEHOLDER:
+            intent = (ticket.description or "").strip()
+            expanded.append(
+                f"Play it and judge whether it delivers what the ticket asked for — {intent}"
+                if intent
+                else GENERIC_INTENT_ITEM
+            )
+        elif token == PLAYTEST_SCENES_PLACEHOLDER:
+            if scenes is None:
+                expanded.append(UNRESOLVED_SCENES_ITEM)
+            else:
+                expanded.extend(
+                    f"Open `{scene}` in the editor, run it, and play through this change — "
+                    "it must reach a playable state with no errors"
+                    for scene in scenes
+                )
         else:
             expanded.append(item)
     return expanded

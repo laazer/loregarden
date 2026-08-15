@@ -71,9 +71,11 @@ from loregarden.db.migrations_templates import (
     m_light_heavy_rigor_triage,
     m_parallel_review_in_v3,
     m_plan_skill_on_plan_stage,
+    m_playtest_scene_placeholder,
     m_refactor_skill_routes,
     m_require_implement_real_surface,
     m_require_verify_evidence,
+    m_retire_agent_owned_gate_items,
     m_verify_stage_in_v3,
 )
 from loregarden.db.migrations_ticket_studio import (
@@ -1311,6 +1313,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0084_repair_dangling_references", m_repair_dangling_references),
     ("0086_agent_run_lease", m_agent_run_lease),
     ("0087_view_store", m_view_store),
+    ("0088_playtest_scene_placeholder", m_playtest_scene_placeholder),
+    ("0089_retire_agent_owned_gate_items", m_retire_agent_owned_gate_items),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

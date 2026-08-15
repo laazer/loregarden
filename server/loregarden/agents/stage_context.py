@@ -5,7 +5,12 @@ from __future__ import annotations
 from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef
 from loregarden.services.compatibility_posture import ResolvedPosture
 from loregarden.services.rework_feedback import render_rework_feedback
+from loregarden.services.studio_routing import is_agentless_stage
 from sqlmodel import Session
+
+#: Stage types whose agent authors the code — the ones that can still build
+#: whatever a downstream human gate will need to run.
+AUTHORING_STAGE_TYPES = frozenset({"agent", "classify"})
 
 # Legacy ticket / workflow-enforcement stage names agents recognize.
 LEGACY_STAGE_ALIASES: dict[str, str] = {
@@ -20,6 +25,32 @@ LEGACY_STAGE_ALIASES: dict[str, str] = {
     "approval": "AWAITING_APPROVAL",
     "done": "COMPLETE",
 }
+
+
+def gate_prep_target(
+    stages: list[WorkflowStageDef] | None, stage_key: str
+) -> WorkflowStageDef | None:
+    """The human gate this stage is the last chance to prepare for, if any.
+
+    A human gate is a sign-off, not a build step: whatever it needs in order to
+    be run — a test scene, a level, a harness, a fixture — has to exist before
+    the operator gets there. That work belongs to the last stage that authors
+    code ahead of the gate, so the brief goes to that stage and to no other.
+    Reviews and gates sitting between the two are not authoring stages and are
+    skipped over.
+    """
+    ordered = sorted(stages or [], key=lambda s: s.order)
+    authoring: WorkflowStageDef | None = None
+    for stage in ordered:
+        if is_agentless_stage(stage) and stage.checklist:
+            if authoring is not None and authoring.key == stage_key:
+                return stage
+            # A later gate is prepared by a later authoring stage, not this one.
+            authoring = None
+            continue
+        if stage.stage_type in AUTHORING_STAGE_TYPES and stage.agent_id:
+            authoring = stage
+    return None
 
 
 def build_orchestration_context(
@@ -69,6 +100,29 @@ def build_orchestration_context(
             "to the immediately preceding stage instead. Use `null` if none applies.",
             "",
             ", ".join(f"`{key}`" for key in upstream),
+        ]
+
+    brief = (stage_def.stage_brief if stage_def else "").strip()
+    if brief:
+        lines += [
+            "",
+            "### What this workflow wants from this stage",
+            "Set by the workflow template, on top of your role. It is here because the work is "
+            "this stage's to do — not a later reviewer's, and not a human's at a sign-off gate.",
+            "",
+            brief,
+        ]
+
+    gate = gate_prep_target(stages, stage_key)
+    if gate is not None:
+        lines += [
+            "",
+            f"### You are the last stage before the `{gate.key}` human gate",
+            f"When this work passes review it parks at '{gate.name}', where a person runs it by "
+            "hand. That gate is a sign-off, not a build step — nothing gets authored there. Any "
+            "scene, level, harness, fixture, or entry point needed to exercise this change must "
+            "exist and be committed when you finish, and your stage report must name the files "
+            "the operator should open and run.",
         ]
 
     if posture is not None:

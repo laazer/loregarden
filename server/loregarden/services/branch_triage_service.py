@@ -15,10 +15,10 @@ from typing import Any, TypeVar
 
 from loregarden.models.domain import Ticket, Workspace
 from loregarden.services.artifact_service import (
-    _git_base_ref,
     _resolve_upstream_ref,
     branch_diff_manifest,
     capture_branch_file_diff,
+    git_base_ref,
 )
 from loregarden.services.file_editor import _current_branch, _list_branches, _parse_worktrees
 from loregarden.services.git_branch import resolve_ticket_branch, validate_branch_name
@@ -526,7 +526,7 @@ def branch_triage_snapshot(session: Session, workspace: Workspace) -> dict[str, 
             "issue_count": 0,
         }
 
-    base = _git_base_ref(repo_root) or "main"
+    base = git_base_ref(repo_root) or "main"
     current = _current_branch(repo_root)
     branch_names = _list_branches(repo_root)
     worktrees = _parse_worktrees(repo_root)
@@ -873,7 +873,7 @@ def delete_branch(
                 )
             _remove_git_worktree(repo_root, path)
 
-    base = _git_base_ref(repo_root)
+    base = git_base_ref(repo_root)
     if base and branch == base:
         raise ValueError("Cannot delete the base branch")
 
