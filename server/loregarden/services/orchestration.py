@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from loregarden.core.event_bus import event_bus
 from loregarden.core.state_machine import StateMachine
-from loregarden.core.workflow_loader import expand_gate_checklist, stage_display_name
+from loregarden.core.workflow_loader import stage_display_name
 from loregarden.models.domain import (
     WORKFLOW_WORK_ITEM_TYPES,
     AgentRun,
@@ -29,6 +29,7 @@ from loregarden.models.domain import (
 from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.compatibility_posture import apply_compatibility_posture
+from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
 from loregarden.services.git_automation_config import serialize_override
 from loregarden.services.run_completion import (
     complete_run_tail,
@@ -916,7 +917,9 @@ class OrchestrationService:
         *,
         stage_def: WorkflowStageDef | None = None,
     ) -> Approval:
-        checklist = expand_gate_checklist(ticket, list(stage_def.checklist) if stage_def else [])
+        checklist = expand_gate_checklist_for_ticket(
+            self.session, ticket, list(stage_def.checklist) if stage_def else []
+        )
         approval = Approval(
             ticket_id=ticket.id,
             workspace_id=ticket.workspace_id,

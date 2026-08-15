@@ -1,5 +1,5 @@
 from loregarden.agents.executors.cli import CliAgentExecutor
-from loregarden.agents.stage_context import build_orchestration_context
+from loregarden.agents.stage_context import build_orchestration_context, gate_prep_target
 from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef, Workspace
 from loregarden.services.seed import seed_database
 from loregarden.services.workspace_paths import resolve_agent_context_dir
@@ -167,3 +167,69 @@ def test_inherited_context_section_reaches_the_stage_prompt(tmp_path, monkeypatc
     # Sits with the ticket's own context, ahead of the reference modules.
     assert prompt.index("Inherited context") < prompt.index("## Loregarden MCP module")
     assert prompt.index("## Acceptance Criteria") < prompt.index("Inherited context")
+
+
+def test_gate_prep_targets_the_last_authoring_stage_before_a_human_gate():
+    """Only the implementer is briefed — not planning, spec, or the reviews in between."""
+    stages = [
+        WorkflowStageDef(key="planning", name="Planning", agent_id="planner", order=1),
+        WorkflowStageDef(
+            key="implementation",
+            name="Implementation",
+            agent_id="core_simulation",
+            stage_type="classify",
+            order=6,
+        ),
+        WorkflowStageDef(key="script_review", name="Script Review", stage_type="parallel", order=7),
+        WorkflowStageDef(key="ac_gate", name="AC Gate", agent_id="ac", stage_type="gate", order=8),
+        WorkflowStageDef(
+            key="playtest", name="Playtest", order=9, checklist=["{{playtest_scenes}}"]
+        ),
+        WorkflowStageDef(key="done", name="Done", order=10, terminal=True),
+    ]
+
+    assert gate_prep_target(stages, "implementation").key == "playtest"
+    assert gate_prep_target(stages, "planning") is None
+    assert gate_prep_target(stages, "script_review") is None
+    assert gate_prep_target(stages, "playtest") is None
+    assert gate_prep_target(stages, "done") is None
+
+
+def test_gate_prep_brief_tells_the_implementer_to_build_what_the_gate_runs():
+    stages = [
+        WorkflowStageDef(
+            key="implementation", name="Implementation", agent_id="core_simulation", order=1
+        ),
+        WorkflowStageDef(
+            key="playtest", name="Playtest", order=2, checklist=["{{playtest_scenes}}"]
+        ),
+    ]
+    ticket = Ticket(
+        external_id="gate-prep",
+        workspace_id="ws",
+        title="Dash",
+        workflow_stage_key="implementation",
+    )
+    run = AgentRun(
+        ticket_id="t", workspace_id="ws", agent_id="core_simulation", stage_key="implementation"
+    )
+
+    text = build_orchestration_context(ticket=ticket, run=run, stage_def=stages[0], stages=stages)
+
+    assert "last stage before the `playtest` human gate" in text
+    assert "sign-off, not a build step" in text
+
+
+def test_gate_prep_brief_absent_without_a_downstream_human_gate():
+    stages = [
+        WorkflowStageDef(key="implementation", name="Implementation", agent_id="dev", order=1),
+        WorkflowStageDef(key="done", name="Done", order=2, terminal=True),
+    ]
+    ticket = Ticket(
+        external_id="no-gate", workspace_id="ws", title="t", workflow_stage_key="implementation"
+    )
+    run = AgentRun(ticket_id="t", workspace_id="ws", agent_id="dev", stage_key="implementation")
+
+    text = build_orchestration_context(ticket=ticket, run=run, stage_def=stages[0], stages=stages)
+
+    assert "human gate" not in text

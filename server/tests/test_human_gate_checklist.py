@@ -3,6 +3,7 @@
 import json
 
 from fastapi.testclient import TestClient
+from loregarden.core.workflow_loader import UNRESOLVED_SCENES_ITEM
 from loregarden.models.domain import Approval, StageStatus, Ticket, WorkflowInstance, Workspace
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.workflow_service import resolve_workspace_stages
@@ -112,9 +113,11 @@ def test_playtest_human_gate_includes_test_summary_and_checklist(
     # The generic "walk through the acceptance criteria" bullet is replaced by
     # one concrete play-test item per acceptance criterion, so each gate lists
     # what this specific change needs exercised.
+    # No scene-authoring item: building what the gate needs is the implementer's
+    # job, not the operator's. The scene step names files or, as here where the
+    # ticket has no branch to diff, states that they must be identified.
     assert approval["checklist"] == [
-        "Create or update the test level scene(s) needed to exercise this change",
-        "Load the affected scene(s) in the Godot editor and run them",
+        UNRESOLVED_SCENES_ITEM,
         "Play-test by hand — Dash moves the player",
         "Play-test by hand — Cooldown blocks re-triggering",
         "Check for regressions in adjacent systems the change touches",

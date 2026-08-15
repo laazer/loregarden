@@ -1359,3 +1359,75 @@ def test_agent_runs_gain_the_boundary_verdict_defaulting_to_unknown(tmp_path):
             text("SELECT start_boundary_verdict FROM agent_runs WHERE id = 'r1'")
         ).scalar_one()
     assert verdict == BoundaryVerdict.UNKNOWN.value
+
+
+def test_playtest_checklist_swaps_the_hand_written_scene_items(tmp_path):
+    """0088 retires the two static scene items from a live template.
+
+    Item one asked the operator to author the test scene at a sign-off gate;
+    item two told them to open "the affected scene(s)" without naming any. Both
+    collapse into the `{{playtest_scenes}}` placeholder, which expands to the
+    scenes the ticket's branch changes.
+    """
+    import json
+
+    from loregarden.models.domain import WorkflowTemplate
+    from sqlmodel import Session
+
+    stages = [
+        {"key": "implementation", "name": "Implementation", "agent_id": "dev", "order": 1},
+        {
+            "key": "playtest",
+            "name": "Playtest",
+            "agent_id": "",
+            "order": 2,
+            "checklist": [
+                "Create or update the test level scene(s) needed to exercise this change",
+                "Load the affected scene(s) in the Godot editor and run them",
+                "{{acceptance_criteria}}",
+                "Confirm no console errors/warnings appear during play",
+            ],
+        },
+    ]
+    engine = create_engine(f"sqlite:///{tmp_path / 'playtest.db'}")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            WorkflowTemplate(
+                id="tpl-blobert",
+                slug="blobert-tdd",
+                name="Blobert TDD",
+                stages_json=json.dumps(stages),
+                transitions_json="[]",
+                source_path="agent_context/workflows/blobert-tdd.yaml",
+            )
+        )
+        session.commit()
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        version, stages_json = conn.execute(
+            text("SELECT version, stages_json FROM workflow_templates WHERE id='tpl-blobert'")
+        ).fetchone()
+    playtest = next(s for s in json.loads(stages_json) if s["key"] == "playtest")
+
+    assert playtest["checklist"] == [
+        "{{playtest_scenes}}",
+        "{{acceptance_criteria}}",
+        "Confirm no console errors/warnings appear during play",
+    ]
+    assert version > 1
+
+    # Re-running must not append a second placeholder.
+    assert apply_migrations(engine) == []
+    with engine.connect() as conn:
+        again = json.loads(
+            conn.execute(
+                text("SELECT stages_json FROM workflow_templates WHERE id='tpl-blobert'")
+            ).scalar()
+        )
+    assert (
+        next(s for s in again if s["key"] == "playtest")["checklist"].count("{{playtest_scenes}}")
+        == 1
+    )

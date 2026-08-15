@@ -785,3 +785,59 @@ def m_clear_phantom_skill_names(conn: Connection) -> None:
                 text("UPDATE studio_workflows SET stages_json=:st WHERE id=:id"),
                 {"st": json.dumps(stages), "id": row["id"]},
             )
+
+
+#: The two playtest items this migration retires, matched on their exact text so
+#: a checklist an operator has since edited is left alone.
+_RETIRED_PLAYTEST_ITEMS = (
+    "Create or update the test level scene(s) needed to exercise this change",
+    "Load the affected scene(s) in the Godot editor and run them",
+)
+
+_PLAYTEST_SCENES_PLACEHOLDER = "{{playtest_scenes}}"
+
+
+def _rewrite_playtest_checklist(stages: list[dict]) -> bool:
+    """Swap the two static scene items for the `{{playtest_scenes}}` placeholder.
+
+    The first item asked a human to author the test scene at a sign-off gate,
+    where nothing is built — that is now briefed to the last authoring stage
+    ahead of the gate. The second told them to "load the affected scene(s)"
+    without saying which; the placeholder expands to the scenes the ticket's
+    branch actually changes.
+    """
+    changed = False
+    for stage in stages:
+        checklist = stage.get("checklist") or []
+        if not any(item in _RETIRED_PLAYTEST_ITEMS for item in checklist):
+            continue
+        rewritten: list[str] = []
+        for item in checklist:
+            if item not in _RETIRED_PLAYTEST_ITEMS:
+                rewritten.append(item)
+            elif _PLAYTEST_SCENES_PLACEHOLDER not in rewritten:
+                rewritten.append(_PLAYTEST_SCENES_PLACEHOLDER)
+        stage["checklist"] = rewritten
+        changed = True
+    return changed
+
+
+def m_playtest_scene_placeholder(conn: Connection) -> None:
+    """Retire the two hand-written playtest scene items across live templates."""
+    if not table_exists(conn, "workflow_templates"):
+        return
+    rows = (
+        conn.execute(text("SELECT id, stages_json, version FROM workflow_templates"))
+        .mappings()
+        .all()
+    )
+    for row in rows:
+        stages = json.loads(row["stages_json"] or "[]")
+        if not _rewrite_playtest_checklist(stages):
+            continue
+        new_version = int(row["version"] or 1) + 1
+        conn.execute(
+            text("UPDATE workflow_templates SET stages_json=:st, version=:v WHERE id=:id"),
+            {"st": json.dumps(stages), "v": new_version, "id": row["id"]},
+        )
+        _snapshot_template_version(conn, row["id"], new_version, "Playtest scene placeholder")
