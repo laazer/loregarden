@@ -1,8 +1,11 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlmodel import Session
 
 from loregarden.api import (
@@ -37,6 +40,7 @@ from loregarden.api import (
     ticket_studio,
     tickets,
     usage,
+    views,
     workflows,
     workspaces,
 )
@@ -128,6 +132,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_response(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """FastAPI's 422, minus the case where building it is itself a 500.
+
+    Each reported error echoes the ``input`` that failed, and ``json.loads``
+    accepts the ``Infinity``/``NaN`` literals that ``json.dumps`` refuses to
+    write back: send one to any field that rejects it — a bounded float, or an
+    ``int`` — and the 422 body cannot be rendered, so the request that should
+    have been a 4xx becomes a 500.
+
+    The default body is built first and returned untouched whenever it encodes,
+    which is every request that does not carry a non-finite number, so no
+    existing endpoint's response changes by so much as a byte. Only the payload
+    that cannot be written back loses its ``input`` echo — the field path,
+    message and type, which are what a client acts on, all survive.
+    """
+    errors = jsonable_encoder(exc.errors())
+    try:
+        return JSONResponse(status_code=422, content={"detail": errors})
+    except ValueError:
+        stripped = [
+            {key: value for key, value in error.items() if key != "input"} for error in errors
+        ]
+        return JSONResponse(status_code=422, content={"detail": stripped})
+
+
 app.include_router(tickets.router, prefix="/api")
 app.include_router(diff_review.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
@@ -136,6 +167,7 @@ app.include_router(editor.router, prefix="/api")
 app.include_router(branch_triage.router, prefix="/api")
 app.include_router(baxter_chat.router, prefix="/api")
 app.include_router(composer_notes.router, prefix="/api")
+app.include_router(views.router, prefix="/api")
 app.include_router(system.router, prefix="/api")
 app.include_router(inbox.router, prefix="/api")
 app.include_router(events.router, prefix="/api")

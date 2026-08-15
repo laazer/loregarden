@@ -25,6 +25,13 @@ from loregarden.db.migration_utils import (
     table_columns,
     table_exists,
 )
+from loregarden.db.migrations_chat import (
+    m_baxter_chat_runtime,
+    m_baxter_chat_tables,
+    m_chat_message_parts,
+    m_chat_turn_answer,
+    m_chat_turn_thinking,
+)
 from loregarden.db.migrations_composer import m_composer_commands
 from loregarden.db.migrations_doctor import (
     m_agent_run_lease,
@@ -75,6 +82,7 @@ from loregarden.db.migrations_ticket_studio import (
     m_ticket_studio_tables,
     m_ticket_studio_turn_lifecycle,
 )
+from loregarden.db.migrations_views import m_view_store
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
@@ -1036,30 +1044,6 @@ def _m_ticket_relations_table(conn: Connection) -> None:
     )
 
 
-def _m_chat_message_parts(conn: Connection) -> None:
-    """Persist ordered ChatPart JSON on stored chat messages."""
-    add_columns_if_missing(
-        conn,
-        "branch_triage_messages",
-        {
-            "parts_json": (
-                "ALTER TABLE branch_triage_messages ADD COLUMN parts_json "
-                "TEXT NOT NULL DEFAULT '[]'"
-            ),
-        },
-    )
-    add_columns_if_missing(
-        conn,
-        "ticket_studio_messages",
-        {
-            "parts_json": (
-                "ALTER TABLE ticket_studio_messages ADD COLUMN parts_json "
-                "TEXT NOT NULL DEFAULT '[]'"
-            ),
-        },
-    )
-
-
 def _m_run_cancel_requested(conn: Connection) -> None:
     """Cooperative cancel flag for in-flight agent and orchestration runs.
 
@@ -1082,113 +1066,6 @@ def _m_run_cancel_requested(conn: Connection) -> None:
                 "ALTER TABLE orchestration_runs ADD COLUMN cancel_requested_at TEXT"
             ),
         },
-    )
-
-
-def _m_baxter_chat_tables(conn: Connection) -> None:
-    """Persist Home Baxter conversations as named sessions.
-
-    Home chat previously lived only in React state and replayed its history from
-    the client each turn, so a reload lost the thread and the archive had nothing
-    to list. ``triage_messages`` gains the ``parts_json`` its siblings got in
-    0048 so ticket triage primitives survive a reload too.
-    """
-    if not table_exists(conn, "baxter_chat_sessions"):
-        conn.execute(
-            text(
-                """
-                CREATE TABLE baxter_chat_sessions (
-                    id TEXT PRIMARY KEY,
-                    workspace_id TEXT NOT NULL,
-                    title TEXT NOT NULL DEFAULT '',
-                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-                    FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
-                )
-                """
-            )
-        )
-        conn.execute(
-            text(
-                "CREATE INDEX ix_baxter_chat_sessions_workspace_updated "
-                "ON baxter_chat_sessions (workspace_id, updated_at)"
-            )
-        )
-    if not table_exists(conn, "baxter_chat_messages"):
-        conn.execute(
-            text(
-                """
-                CREATE TABLE baxter_chat_messages (
-                    id TEXT PRIMARY KEY,
-                    session_id TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL DEFAULT '',
-                    status TEXT NOT NULL DEFAULT 'complete',
-                    parts_json TEXT NOT NULL DEFAULT '[]',
-                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                    FOREIGN KEY(session_id) REFERENCES baxter_chat_sessions(id)
-                )
-                """
-            )
-        )
-        conn.execute(
-            text(
-                "CREATE INDEX ix_baxter_chat_messages_session_created "
-                "ON baxter_chat_messages (session_id, created_at)"
-            )
-        )
-    add_columns_if_missing(
-        conn,
-        "triage_messages",
-        {
-            "parts_json": (
-                "ALTER TABLE triage_messages ADD COLUMN parts_json TEXT NOT NULL DEFAULT '[]'"
-            ),
-        },
-    )
-
-
-def _m_chat_turn_thinking(conn: Connection) -> None:
-    """A place to keep a chat turn's reasoning while the turn is still running.
-
-    Keyed by the ``active_turn_id`` every chat surface already publishes, so one
-    table covers Home chat, branch triage, ticket triage and the studio without
-    a column on each of their four message tables. Rows are deleted as their
-    turn settles — the transcript is folded into the message's ``parts_json``
-    then — so this table is empty whenever nothing is running.
-    """
-    if table_exists(conn, "chat_turn_thinking"):
-        return
-    conn.execute(
-        text(
-            """
-            CREATE TABLE chat_turn_thinking (
-                turn_id TEXT PRIMARY KEY,
-                content TEXT NOT NULL DEFAULT '',
-                activity TEXT NOT NULL DEFAULT '',
-                seq INTEGER NOT NULL DEFAULT 0,
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-            """
-        )
-    )
-    conn.execute(
-        text("CREATE INDEX ix_chat_turn_thinking_updated ON chat_turn_thinking (updated_at)")
-    )
-
-
-def _m_chat_turn_answer(conn: Connection) -> None:
-    """Stream the reply as well as the reasoning.
-
-    A read-only turn — the advisory chat fallbacks and every Ticket Studio
-    scoper turn — emits an empty thinking block: the reply text is the only
-    thing that actually streams. Without somewhere to put it those surfaces get
-    a live panel with nothing in it.
-    """
-    add_columns_if_missing(
-        conn,
-        "chat_turn_thinking",
-        {"answer": "ALTER TABLE chat_turn_thinking ADD COLUMN answer TEXT NOT NULL DEFAULT ''"},
     )
 
 
@@ -1329,19 +1206,6 @@ def _m_workspace_codex_model(conn: Connection) -> None:
     )
 
 
-def _m_baxter_chat_runtime(conn: Connection) -> None:
-    add_columns_if_missing(
-        conn,
-        "baxter_chat_sessions",
-        {
-            "runtime_json": (
-                "ALTER TABLE baxter_chat_sessions ADD COLUMN runtime_json "
-                "TEXT NOT NULL DEFAULT '{}'"
-            ),
-        },
-    )
-
-
 def _m_worktree_ticket_id(conn: Connection) -> None:
     """``worktrees.ticket_id`` — one worktree per ticket, reused by its stages.
 
@@ -1408,9 +1272,9 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0045_ensure_terminal_stage", m_ensure_terminal_stage),
     ("0046_ticket_integration_review", _m_ticket_integration_review),
     ("0047_ticket_dependencies_table", _m_ticket_dependencies_table),
-    ("0048_chat_message_parts", _m_chat_message_parts),
+    ("0048_chat_message_parts", m_chat_message_parts),
     ("0049_run_cancel_requested", _m_run_cancel_requested),
-    ("0050_baxter_chat_tables", _m_baxter_chat_tables),
+    ("0050_baxter_chat_tables", m_baxter_chat_tables),
     ("0051_ticket_studio_turn_lifecycle", m_ticket_studio_turn_lifecycle),
     ("0052_git_automation", _m_git_automation),
     ("0053_workspace_effort_columns", _m_workspace_effort_columns),
@@ -1420,13 +1284,13 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0057_mcp_server_tool_catalog", m_mcp_server_tool_catalog),
     ("0058_global_agent_slots", m_global_agent_slots),
     ("0059_per_slot_queues", m_per_slot_queues),
-    ("0060_chat_turn_thinking", _m_chat_turn_thinking),
-    ("0061_chat_turn_answer", _m_chat_turn_answer),
+    ("0060_chat_turn_thinking", m_chat_turn_thinking),
+    ("0061_chat_turn_answer", m_chat_turn_answer),
     ("0062_lane_entry_kind", m_lane_entry_kind),
     ("0063_btw_exchanges", _m_btw_exchanges),
     ("0064_lane_entry_run_options", m_lane_entry_run_options),
     ("0065_workspace_codex_model", _m_workspace_codex_model),
-    ("0066_baxter_chat_runtime", _m_baxter_chat_runtime),
+    ("0066_baxter_chat_runtime", m_baxter_chat_runtime),
     ("0067_orchestration_timeout_override", m_orchestration_timeout_override),
     ("0068_clear_phantom_skill_names", m_clear_phantom_skill_names),
     ("0069_skill_versioning", m_skill_versioning),
@@ -1446,6 +1310,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0083_agent_slot_number_unique", m_agent_slot_number_unique),
     ("0084_repair_dangling_references", m_repair_dangling_references),
     ("0086_agent_run_lease", m_agent_run_lease),
+    ("0087_view_store", m_view_store),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

@@ -21,12 +21,14 @@ from loregarden.models.domain.enums import (
     QueueOperationType,
     QueuePosition,
     RunStatus,
+    SidebarEntryKind,
     StageFanoutAttemptStatus,
     StageFanoutGroupStatus,
     StageFanoutOutcome,
     StageStatus,
     TicketState,
     TicketStudioSessionStatus,
+    ViewKind,
     WorkItemType,
     WorktreeState,
     _str_enum_column,
@@ -1221,3 +1223,81 @@ class QueueSnapshot(SQLModel, table=True):
     tags: str = ""
     created_by: str = ""
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class View(SQLModel, table=True):
+    """A user-composed workspace of containers — a flex grid or a canvas.
+
+    Carries no rank of its own: a view's place in the sidebar lives on
+    ``SidebarEntry``, which ranks views and pinned built-in pages in one list.
+    """
+
+    __tablename__ = "views"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    kind: ViewKind = Field(
+        default=ViewKind.FLEX_GRID,
+        sa_column=_str_enum_column(ViewKind, ViewKind.FLEX_GRID),
+    )
+    title: str = ""
+    icon: str = ""
+    #: A validated `view_layout.ViewLayout`, serialized. Never written unparsed:
+    #: a malformed layout is a view that cannot be opened to be repaired.
+    layout_json: str = "{}"
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class SidebarEntry(SQLModel, table=True):
+    """One row of the sidebar, holding either a view or a pinned built-in page.
+
+    One table rather than two so the two kinds share a single ranking — a pinned
+    page can sit between two views, and neither kind can drift out of the
+    other's ordering.
+    """
+
+    __tablename__ = "sidebar_entries"
+    __table_args__ = (
+        # Pinning a page twice is the same request twice. A select-then-insert
+        # cannot see a concurrent peer's uncommitted row, so the rule is the
+        # database's. It is expressible as a plain UNIQUE only because a view
+        # entry's `page_key` is NULL rather than '': SQLite counts NULLs as
+        # distinct, so view entries do not all collide on one blank key.
+        UniqueConstraint("workspace_id", "page_key", name="uq_sidebar_entries_page"),
+        # Two entries sharing one rank is corruption, not a tie to break at read
+        # time. The constraint's backing index is also the composite every query
+        # wants — they all filter by workspace first and then order by position.
+        UniqueConstraint("workspace_id", "position", name="uq_sidebar_entries_position"),
+        # And the same rule for the other half. A view is ranked by exactly one
+        # entry: a second one would list the view twice and give it two places in
+        # an ordering that is supposed to be total.
+        UniqueConstraint("workspace_id", "view_id", name="uq_sidebar_entries_view"),
+        # An entry holds a page or a view, never both and never neither. Without
+        # this an all-NULL row is legal and renders as nothing, and a both-set
+        # row is an entry whose kind the columns disagree about.
+        CheckConstraint(
+            "(page_key IS NULL) <> (view_id IS NULL)",
+            name="ck_sidebar_entries_one_half",
+        ),
+    )
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    position: int = Field(default=0)
+    entry_kind: SidebarEntryKind = Field(
+        default=SidebarEntryKind.VIEW,
+        sa_column=_str_enum_column(SidebarEntryKind, SidebarEntryKind.VIEW),
+    )
+    #: The built-in page this entry pins, from the frontend's `AppPage` union —
+    #: a vocabulary owned by the client, not by the control plane. NULL on a
+    #: view entry.  # py-org: allow-string
+    page_key: str | None = None
+    #: The view this entry ranks, or NULL on a pinned page. NULL rather than ''
+    #: because '' is not a view id, and because it is what lets
+    #: `uq_sidebar_entries_view` ignore pinned pages instead of colliding every
+    #: one of them on a blank. The declared foreign key documents the reference
+    #: but does not enforce it — `PRAGMA foreign_keys` is off app-wide, so
+    #: `view_service` is what keeps this pointing at a real view. The flat wire
+    #: shape is `entry_payload`'s job.
+    view_id: str | None = Field(default=None, foreign_key="views.id")
