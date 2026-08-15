@@ -16,9 +16,10 @@ import pytest
 from loregarden.db import migrations as M
 from loregarden.db.migration_ids import SHIPPED_MIGRATION_IDS
 from loregarden.db.migrations_views import m_view_store
+from loregarden.models.domain import Workspace
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import SQLModel
+from sqlmodel import Session, SQLModel
 
 MIGRATION_ID = "0087_view_store"
 
@@ -108,6 +109,50 @@ def _apply(engine, times: int = 1) -> None:
     for _ in range(times):
         with engine.begin() as conn:
             m_view_store(conn)
+
+
+def _seed_parents(engine, workspaces: tuple[str, ...] = ("ws1",), views: tuple[str, ...] = ()):
+    """The rows the entries under test point at, created for real.
+
+    Both tables declare foreign keys, and those are enforced now
+    (``db.session._enforce_foreign_keys`` sets ``PRAGMA foreign_keys=ON`` on
+    every SQLite connection in the process). A row naming a workspace or a view
+    that does not exist therefore fails on the reference — and against an engine
+    holding only these two tables it fails on ``workspaces`` not existing at all
+    — before the CHECK or the UNIQUE under test is ever evaluated. Seeding the
+    parents is what makes the constraint under test the reason a row is refused.
+
+    The workspace rows come from the mapped model rather than a stub table so the
+    reference points at the real parent, and the view rows go in through the
+    migration's own table.
+    """
+    # ``workflow_templates`` comes along because ``workspaces`` declares an
+    # optional reference to it, and SQLite refuses an INSERT into a table whose
+    # parent table is missing even when the referencing column is NULL.
+    SQLModel.metadata.create_all(
+        engine,
+        tables=[
+            SQLModel.metadata.tables["workflow_templates"],
+            SQLModel.metadata.tables["workspaces"],
+        ],
+    )
+    with Session(engine) as session:
+        for workspace_id in workspaces:
+            session.add(Workspace(id=workspace_id, slug=workspace_id, name=workspace_id))
+        session.commit()
+
+    owner = workspaces[0]
+    with engine.begin() as conn:
+        for view_id in views:
+            conn.execute(
+                text(
+                    "INSERT INTO views "
+                    "(id, workspace_id, kind, title, icon, layout_json, "
+                    "created_at, updated_at) "
+                    f"VALUES ('{view_id}', '{owner}', 'flex_grid', 'Board', '', '{{}}', "
+                    "'2026-01-01T00:00:00', '2026-01-01T00:00:00')"
+                )
+            )
 
 
 def test_migration_creates_the_views_table():
@@ -207,11 +252,17 @@ def test_an_entry_must_hold_exactly_one_half(page_key: str, view_id: str):
     An entry with neither half set renders as nothing and can never be resolved
     to anything; one with both set is a row whose two columns disagree about what
     kind of entry it is, and every reader picks a different winner.
+
+    Both rows name a workspace and a view that exist, so the only thing wrong
+    with either is the half it sets — asserted on the message, because a row
+    refused by a foreign key raises the same exception class and would pass this
+    test while proving the CHECK is gone.
     """
     engine = _fresh_engine()
     _apply(engine)
+    _seed_parents(engine, views=("v1",))
 
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="CHECK constraint failed"):
         with engine.begin() as conn:
             conn.execute(
                 text(
@@ -224,9 +275,15 @@ def test_an_entry_must_hold_exactly_one_half(page_key: str, view_id: str):
 
 def test_one_view_cannot_be_ranked_twice():
     """A second entry for one view would list it twice and give it two places in
-    an ordering that is supposed to be total."""
+    an ordering that is supposed to be total.
+
+    The second entry differs from the first only in id and rank, so the UNIQUE on
+    ``(workspace_id, view_id)`` is the one thing left to refuse it — matched on
+    the message, since a missing view would raise the same class.
+    """
     engine = _fresh_engine()
     _apply(engine)
+    _seed_parents(engine, views=("v1",))
     with engine.begin() as conn:
         conn.execute(
             text(
@@ -236,7 +293,7 @@ def test_one_view_cannot_be_ranked_twice():
             )
         )
 
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="UNIQUE constraint failed"):
         with engine.begin() as conn:
             conn.execute(
                 text(
@@ -249,9 +306,16 @@ def test_one_view_cannot_be_ranked_twice():
 
 def test_two_workspaces_may_each_rank_a_view():
     """The UNIQUE is per workspace, not global — and view ids being unique across
-    workspaces is what would hide a global constraint here as a passing test."""
+    workspaces is what would hide a global constraint here as a passing test.
+
+    One view id in two workspaces' entries is the only shape that can tell a
+    composite key from a global one, so the second workspace's entry names the
+    first workspace's view. The reference is real; what it crosses is the
+    workspace, which is exactly the column the constraint is keyed on.
+    """
     engine = _fresh_engine()
     _apply(engine)
+    _seed_parents(engine, workspaces=("ws1", "ws2"), views=("v1",))
 
     with engine.begin() as conn:
         for index, workspace in enumerate(("ws1", "ws2")):
@@ -281,15 +345,8 @@ def test_migration_does_not_discard_existing_rows():
     """The second run must guard, not recreate — a DROP would take the data."""
     engine = _fresh_engine()
     _apply(engine)
+    _seed_parents(engine, views=("v1",))
     with engine.begin() as conn:
-        conn.execute(
-            text(
-                "INSERT INTO views "
-                "(id, workspace_id, kind, title, icon, layout_json, created_at, updated_at) "
-                "VALUES ('v1', 'ws1', 'flex_grid', 'Board', '', '{}', "
-                "'2026-01-01T00:00:00', '2026-01-01T00:00:00')"
-            )
-        )
         conn.execute(
             text(
                 "INSERT INTO sidebar_entries "

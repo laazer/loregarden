@@ -1184,6 +1184,11 @@ def _deleting_between_the_load_and_the_write(peer: Session, view_id: str):
     and the UPDATE the ORM staged then matches no rows. Committing the delete
     from a second session pins the window open rather than hoping two threads
     interleave the one way that shows it.
+
+    The peer removes the view's sidebar entry with it, which is what
+    ``delete_view`` does — a view row dropped on its own leaves the entry
+    pointing at nothing, and foreign keys are enforced, so that peer would fail
+    on its own write instead of opening the window this test is about.
     """
     real_get_view = views_api.get_view
 
@@ -1191,6 +1196,10 @@ def _deleting_between_the_load_and_the_write(peer: Session, view_id: str):
         view = real_get_view(session, workspace_id, requested_id)
         gone = peer.get(View, view_id)
         if gone is not None:
+            for entry in peer.exec(
+                select(SidebarEntry).where(SidebarEntry.view_id == view_id)
+            ).all():
+                peer.delete(entry)
             peer.delete(gone)
             peer.commit()
         return view

@@ -9,10 +9,10 @@ Both halves of a sidebar entry are nullable, and the unused one is NULL. That is
 what lets ``UNIQUE (workspace_id, page_key)`` and ``UNIQUE (workspace_id,
 view_id)`` be plain constraints: SQLite counts NULLs as distinct, so entries of
 one kind do not all collide on the other kind's blank half. ``view_id`` also
-declares a foreign key, which documents the reference rather than enforcing it —
-``PRAGMA foreign_keys`` is off app-wide, so ``view_service`` is what keeps a
-``view_id`` pointing at a real view. The flat, never-null wire shape is the
-service's job, not the column's.
+declares a foreign key, and that is enforced — ``db.session`` sets ``PRAGMA
+foreign_keys=ON`` on every connection — so an entry can only ever name a view
+that exists. The flat, never-null wire shape is the service's job, not the
+column's.
 
 ``CHECK ((page_key IS NULL) <> (view_id IS NULL))`` is what makes "an entry is a
 page or a view" a fact about the table: without it a row with neither half set

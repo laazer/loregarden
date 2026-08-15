@@ -1296,8 +1296,9 @@ class SidebarEntry(SQLModel, table=True):
     #: The view this entry ranks, or NULL on a pinned page. NULL rather than ''
     #: because '' is not a view id, and because it is what lets
     #: `uq_sidebar_entries_view` ignore pinned pages instead of colliding every
-    #: one of them on a blank. The declared foreign key documents the reference
-    #: but does not enforce it — `PRAGMA foreign_keys` is off app-wide, so
-    #: `view_service` is what keeps this pointing at a real view. The flat wire
-    #: shape is `entry_payload`'s job.
+    #: one of them on a blank. The declared foreign key is enforced (`PRAGMA
+    #: foreign_keys=ON`, set on every connection in `db.session`), so this
+    #: column can only ever name a view that exists — which is also why a view
+    #: and its entry have to be written in that order. The flat wire shape is
+    #: `entry_payload`'s job.
     view_id: str | None = Field(default=None, foreign_key="views.id")

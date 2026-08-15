@@ -108,10 +108,10 @@ def entry_payload(entry: SidebarEntry) -> dict:
     The columns are nullable so that ``UNIQUE (workspace_id, page_key)`` and
     ``UNIQUE (workspace_id, view_id)`` ignore the half an entry does not use
     instead of colliding every entry of one kind on ``''``. A ``view_id`` that
-    really names a view is this service's guarantee: the column declares the
-    foreign key, but ``PRAGMA foreign_keys`` is off app-wide, so nothing in the
-    database enforces it today. The wire keeps the flat shape, so a reader still
-    never branches on which kind of entry it is holding.
+    really names a view is the database's guarantee rather than this service's:
+    the column declares a foreign key and ``PRAGMA foreign_keys`` is on. The wire
+    keeps the flat shape, so a reader still never branches on which kind of entry
+    it is holding.
     """
     return {
         "id": entry.id,
@@ -264,6 +264,11 @@ def create_view(
             layout_json=layout_json,
         )
         session.add(view)
+        # Flush the view before its entry exists to reference it. Foreign keys
+        # are enforced now (`PRAGMA foreign_keys=ON`), so an entry inserted
+        # ahead of the row it points at fails the constraint — and this loop
+        # would report that as sidebar contention, which it is not.
+        session.flush()
         session.add(
             SidebarEntry(
                 workspace_id=workspace_id,
