@@ -120,6 +120,15 @@ def begin_external_stage(
             "start one with loregarden_start_orchestration and external_harness set."
         )
 
+    # Checking a stage out is this harness saying it is alive, and it is one of
+    # only two things it ever says. Nothing else stamps `last_seen_at` on this
+    # path — the lease is renewed by the `start_stage` / `complete_stage`
+    # callbacks, which the external protocol does not use — so without this the
+    # run's newest liveness evidence is `started_at`, and a harness working
+    # steadily past the lease looks exactly like one whose operator closed the
+    # terminal an hour ago.
+    OrchestrationCallbackService(session).touch_lease(orch_run)
+
     run_svc = RunService(session)
     run = run_svc.start_stage_execution(ticket, stage_key=stage_key)
     session.refresh(ticket)
@@ -170,6 +179,18 @@ def finish_external_stage(
     """
     if run.external_harness is None:
         raise ValueError(f"Run {run.run_code} was not checked out to an external harness")
+
+    # The other half of the renewal. Settling the stage ends the agent run whose
+    # liveness was covering this orchestration, and the harness is about to ask
+    # for the next stage — so the gap between the two is precisely where a sweep
+    # would otherwise reclaim the lane from a harness that is still working.
+    orch_run = (
+        session.get(OrchestrationRun, run.orchestration_run_id)
+        if run.orchestration_run_id
+        else None
+    )
+    if orch_run is not None:
+        OrchestrationCallbackService(session).touch_lease(orch_run)
 
     started_at = _as_utc(run.started_at) or _as_utc(run.created_at)
     orch = OrchestrationService(session)
