@@ -43,6 +43,7 @@ from loregarden.models.domain import AgentSlot, Ticket
 # gate every externally-started run passes through, so installing the lane
 # dispatcher here covers the API, MCP and CLI processes in one place.
 from loregarden.services import queue_dispatch  # noqa: F401
+from loregarden.services.parallel_queue import claim_free_slot
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.websocket_events import emit_execution_update
 from sqlmodel import Session, select
@@ -208,28 +209,15 @@ class QueueAdmissionService:
     ) -> Reservation:
         self.lanes.slots.initialize_slots()
 
-        free_slots = self.session.exec(
-            select(AgentSlot).where(AgentSlot.is_available == True).order_by(AgentSlot.slot_number)
-        ).all()
-
-        # A named lane is a preference, not a demand: an operator who picked a
-        # lane that filled between opening the dialog and confirming wants the
-        # ticket to run, and the slot number is presentation.
-        free = None
-        if preferred_slot is not None:
-            free = next((s for s in free_slots if s.slot_number == preferred_slot), None)
-        if free is None:
-            free = free_slots[0] if free_slots else None
+        # Claimed before the caller starts anything, and claimed atomically: the
+        # select-then-mutate this replaced let two requests arriving together
+        # both read the same row as free and both write it. `preferred_slot` is
+        # a preference, not a demand — an operator whose chosen lane filled
+        # between opening the dialog and confirming wants the ticket to run, and
+        # the slot number is presentation.
+        free = claim_free_slot(self.session, preferred=preferred_slot)
 
         if free:
-            # Claimed before the caller starts anything, so two requests
-            # arriving together cannot both read the slot as free.
-            free.is_available = False
-            free.assigned_at = datetime.now(timezone.utc)
-            free.current_run_id = None
-            free.current_orchestration_run_id = None
-            self.session.add(free)
-            self.session.commit()
             return Reservation(
                 admitted=True,
                 slot_number=free.slot_number,
