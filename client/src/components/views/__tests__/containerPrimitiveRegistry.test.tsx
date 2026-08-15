@@ -35,7 +35,9 @@ import {
   CONTAINER_PRIMITIVES,
   ContainerPrimitiveHost,
   getPrimitive,
+  newContainerFor,
 } from "../primitives/registry";
+import type { ContainerKind } from "../primitives/types";
 
 /**
  * Any suite that mounts a *registered* primitive has to supply what a real view
@@ -66,11 +68,15 @@ beforeEach(() => {
 
 afterEach(() => jest.restoreAllMocks());
 
-function renderHost(containerId: string, settings: Record<string, unknown>) {
+function renderHost(
+  containerId: string,
+  settings: Record<string, unknown>,
+  kind?: ContainerKind,
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <ContainerPrimitiveHost containerId={containerId} settings={settings} />
+      <ContainerPrimitiveHost containerId={containerId} settings={settings} kind={kind} />
     </QueryClientProvider>,
   );
 }
@@ -204,7 +210,7 @@ describe("AC1 / bug 444 — parseSettings narrows, and a missing or nulled value
   it("falls back to the declared default for every individually nulled field", () => {
     for (const entry of CONTAINER_PRIMITIVES) {
       for (const field of entry.settingsFields) {
-        const parsed = entry.parseSettings({ [field.key]: null }) as Record<string, unknown>;
+        const parsed = entry.parseSettings({ [field.key]: null });
         for (const value of Object.values(parsed)) {
           expect(value).not.toBeNull();
         }
@@ -245,7 +251,7 @@ describe("AC1 / bug 444 — parseSettings narrows, and a missing or nulled value
       const parsed = entry.parseSettings({
         primitive_id: entry.id,
         unexpected_key: "smuggled",
-      }) as Record<string, unknown>;
+      });
       expect(Object.keys(parsed)).not.toContain("unexpected_key");
       expect(Object.keys(parsed)).not.toContain("primitive_id");
       expect(Object.values(parsed)).not.toContain("smuggled");
@@ -337,6 +343,116 @@ describe("AC5 — panels ruled out are recorded with a reason and absent from th
           new RegExp(`import[^;]*\\b${name}\\b[^;]*from`).test(source) ||
           new RegExp(`from\\s*["'][^"']*/${name}["']`).test(source);
         expect({ file, name, imported }).toEqual({ file, name, imported: false });
+      }
+    }
+  });
+});
+
+describe("newContainerFor turns a picked id into a storable container", () => {
+  /**
+   * Without this, every caller that acts on a picked id has to re-derive 433's
+   * wire contract by hand: a container is `{kind, settings}` with no id, the
+   * routing key lives *inside* `settings` as `primitive_id`, `kind` is the
+   * entry's `containerKind`, and the rest of `settings` starts at the schema's
+   * declared defaults. The picker, 438's settings editor, 440's grid and 442's
+   * canvas all need it; four hand-rolled copies is four ways to store a
+   * container the host then refuses to mount.
+   */
+  it("stamps the container kind the primitive declares", () => {
+    for (const entry of CONTAINER_PRIMITIVES) {
+      const container = newContainerFor(entry.id);
+      expect({ id: entry.id, kind: container?.kind }).toEqual({
+        id: entry.id,
+        kind: entry.containerKind,
+      });
+    }
+  });
+
+  it("puts primitive_id inside settings, not beside it", () => {
+    for (const entry of CONTAINER_PRIMITIVES) {
+      const container = newContainerFor(entry.id);
+      expect(container?.settings.primitive_id).toBe(entry.id);
+      expect(container).not.toHaveProperty("primitive_id");
+      // A container carries no id of its own: it is the value of a registry
+      // keyed by id, and a second copy could disagree with the key.
+      expect(container).not.toHaveProperty("id");
+    }
+  });
+
+  it("seeds every declared setting at its schema default, under its wire key", () => {
+    for (const entry of CONTAINER_PRIMITIVES) {
+      const settings = newContainerFor(entry.id)?.settings ?? {};
+      for (const field of entry.settingsFields) {
+        expect({ id: entry.id, key: field.key, value: settings[field.key] }).toEqual({
+          id: entry.id,
+          key: field.key,
+          value: field.default,
+        });
+      }
+    }
+  });
+
+  it("produces a container the host mounts as that primitive", () => {
+    // The round trip is the point: what the factory writes is what the
+    // dispatcher reads, including the kind check.
+    for (const entry of CONTAINER_PRIMITIVES) {
+      const created = newContainerFor(entry.id);
+      const { container } = renderHost("c1", created?.settings ?? {}, created?.kind);
+      const host = container.querySelector("[data-container-id='c1']");
+      expect({ id: entry.id, mounted: host?.getAttribute("data-primitive-id") }).toEqual({
+        id: entry.id,
+        mounted: entry.id,
+      });
+    }
+  });
+
+  it("returns undefined for an id the registry does not know", () => {
+    // Same reasoning as getPrimitive: the id can arrive from stored text.
+    expect(newContainerFor("not_a_primitive")).toBeUndefined();
+    expect(newContainerFor("__proto__")).toBeUndefined();
+    expect(newContainerFor("constructor")).toBeUndefined();
+  });
+});
+
+describe("a stored kind that disagrees with the primitive is refused", () => {
+  /**
+   * `kind` and `primitive_id` are two records of one decision. A container
+   * stored as `kind: "panel"` carrying `primitive_id: "terminal"` was written
+   * by something that got one of them wrong, and mounting the shell anyway
+   * silently picks a winner.
+   */
+  it("shows the placeholder instead of mounting the mismatched primitive", () => {
+    const { container } = renderHost("c1", { primitive_id: "terminal" }, "panel");
+    const host = container.querySelector("[data-container-id='c1']");
+    expect(host).toHaveAttribute("data-primitive-unknown", "kind-mismatch");
+    expect(host).not.toHaveAttribute("data-primitive-id", "terminal");
+  });
+
+  it("refuses every mismatched pairing, not just one", () => {
+    const KINDS: ContainerKind[] = ["terminal", "panel", "web_embed"];
+    for (const entry of CONTAINER_PRIMITIVES) {
+      for (const kind of KINDS.filter((k) => k !== entry.containerKind)) {
+        const { container } = renderHost("c1", { primitive_id: entry.id }, kind);
+        const host = container.querySelector("[data-container-id='c1']");
+        expect({ id: entry.id, kind, mismatch: host?.getAttribute("data-primitive-unknown") }).toEqual(
+          { id: entry.id, kind, mismatch: "kind-mismatch" },
+        );
+      }
+    }
+  });
+
+  it("mounts normally when the kind agrees, and when no kind is supplied", () => {
+    // A caller holding only a settings map is legitimate — the check is on the
+    // value when it is given, not a demand that it be given.
+    for (const entry of CONTAINER_PRIMITIVES) {
+      for (const kind of [entry.containerKind, undefined]) {
+        const { container } = renderHost("c1", { primitive_id: entry.id }, kind);
+        const host = container.querySelector("[data-container-id='c1']");
+        expect({ id: entry.id, kind, mounted: host?.getAttribute("data-primitive-id") }).toEqual({
+          id: entry.id,
+          kind,
+          mounted: entry.id,
+        });
       }
     }
   });

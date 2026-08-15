@@ -13,10 +13,11 @@
 
 import { definePrimitive } from "./definePrimitive";
 import { safeEmbedUrl } from "./embedUrl";
+import { Unconfigured } from "./Unconfigured";
 
-interface WebEmbedSettings {
+type WebEmbedSettings = {
   url: string;
-}
+};
 
 /** Everything this frame is allowed to do. Adding a token needs a reason. */
 const SANDBOX = "allow-scripts";
@@ -33,24 +34,29 @@ export const webEmbedPrimitive = definePrimitive<WebEmbedSettings>({
       kind: "string",
       label: "URL",
       default: "",
-      help: "An http or https page. Other schemes are refused.",
+      help: "An https page, or an http one on localhost. Anything else is refused.",
     },
   ],
   parseSettings: (raw) => ({ url: typeof raw.url === "string" ? raw.url : "" }),
   Component: ({ settings }) => {
     const src = safeEmbedUrl(settings.url);
 
+    // An empty URL is the same "not configured yet" state every other primitive
+    // has, and says so in the same words the others do.
+    if (settings.url.trim() === "") {
+      return <Unconfigured>Set an http or https URL for this embed.</Unconfigured>;
+    }
+
+    // A refusal is not that state: it echoes back the text that was refused, so
+    // the operator can see which URL the setting actually holds.
     if (src === null) {
       return (
         <div style={{ padding: 16, color: "var(--txl)", fontSize: 12.5 }}>
           <p style={{ margin: "0 0 6px" }}>
-            {settings.url.trim() === ""
-              ? "Set an http or https URL for this embed."
-              : "This URL cannot be embedded — only http and https are allowed."}
+            This URL cannot be embedded — https is allowed from any host, http only from
+            localhost.
           </p>
-          {settings.url.trim() !== "" && (
-            <code style={{ fontFamily: "var(--mono)", wordBreak: "break-all" }}>{settings.url}</code>
-          )}
+          <code style={{ fontFamily: "var(--mono)", wordBreak: "break-all" }}>{settings.url}</code>
         </div>
       );
     }

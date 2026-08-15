@@ -13,9 +13,10 @@
 
 import type { CSSProperties } from "react";
 
+import { PrimitiveErrorBoundary } from "./PrimitiveErrorBoundary";
 import { runLedgerPrimitive } from "./runLedgerPrimitive";
 import { terminalPrimitive } from "./terminalPrimitive";
-import type { RegisteredPrimitive } from "./types";
+import type { ContainerKind, RegisteredPrimitive, ViewContainer } from "./types";
 import { webEmbedPrimitive } from "./webEmbedPrimitive";
 
 export const CONTAINER_PRIMITIVES: RegisteredPrimitive[] = [
@@ -28,6 +29,29 @@ const BY_ID = new Map(CONTAINER_PRIMITIVES.map((primitive) => [primitive.id, pri
 
 export function getPrimitive(id: string): RegisteredPrimitive | undefined {
   return BY_ID.get(id);
+}
+
+/**
+ * The container a picked primitive id becomes.
+ *
+ * Turning an id into a container means knowing four things about 433's wire
+ * model — that a container is `{kind, settings}` with no id of its own, that
+ * `primitive_id` lives *inside* `settings`, that `kind` is the entry's
+ * `containerKind`, and that the rest of `settings` starts at the schema's
+ * declared defaults. The picker (this ticket), the settings editor (438), the
+ * grid (440) and the canvas (442) all need that, and four copies of it is four
+ * chances to store a container the host then refuses. It lives here instead.
+ *
+ * Returns `undefined` for an id the registry does not know, on the same
+ * reasoning as `getPrimitive`: the caller's id can come from stored text.
+ */
+export function newContainerFor(primitiveId: string): ViewContainer | undefined {
+  const entry = getPrimitive(primitiveId);
+  if (entry === undefined) return undefined;
+
+  const settings: Record<string, unknown> = { primitive_id: entry.id };
+  for (const field of entry.settingsFields) settings[field.key] = field.default;
+  return { kind: entry.containerKind, settings };
 }
 
 /**
@@ -51,9 +75,39 @@ export interface ContainerPrimitiveHostProps {
   containerId: string;
   /** The container's stored settings, verbatim: snake_case and unvalidated. */
   settings: Record<string, unknown>;
+  /**
+   * The `kind` the container is stored under, when the caller has it.
+   *
+   * Optional because a caller holding only a settings map is a legitimate
+   * caller, but when it is supplied it is *checked*: a container stored as
+   * `kind: "panel"` whose `primitive_id` is `terminal` is a disagreement
+   * between two records of the same decision, and mounting the shell anyway
+   * would let the wrong one win silently.
+   */
+  kind?: ContainerKind;
 }
 
-export function ContainerPrimitiveHost({ containerId, settings }: ContainerPrimitiveHostProps) {
+function Placeholder({
+  containerId,
+  reason,
+  children,
+}: {
+  containerId: string;
+  reason: string;
+  children: string;
+}) {
+  return (
+    <div data-container-id={containerId} data-primitive-unknown={reason} style={HOST_STYLE}>
+      <p style={{ margin: 0, padding: 16, color: "var(--txl)", fontSize: 12.5 }}>{children}</p>
+    </div>
+  );
+}
+
+export function ContainerPrimitiveHost({
+  containerId,
+  settings,
+  kind,
+}: ContainerPrimitiveHostProps) {
   const storedId = settings.primitive_id;
   const entry = typeof storedId === "string" ? getPrimitive(storedId) : undefined;
 
@@ -62,18 +116,28 @@ export function ContainerPrimitiveHost({ containerId, settings }: ContainerPrimi
     // written by a newer build. Say so in the pane rather than taking the whole
     // view down with an exception.
     return (
-      <div data-container-id={containerId} data-primitive-unknown="true" style={HOST_STYLE}>
-        <p style={{ margin: 0, padding: 16, color: "var(--txl)", fontSize: 12.5 }}>
-          This container asks for a primitive this build does not have.
-        </p>
-      </div>
+      <Placeholder containerId={containerId} reason="true">
+        This container asks for a primitive this build does not have.
+      </Placeholder>
+    );
+  }
+
+  if (kind !== undefined && kind !== entry.containerKind) {
+    return (
+      <Placeholder containerId={containerId} reason="kind-mismatch">
+        This container is stored as a kind its primitive does not belong to.
+      </Placeholder>
     );
   }
 
   const Primitive = entry.Component;
   return (
     <div data-container-id={containerId} data-primitive-id={entry.id} style={HOST_STYLE}>
-      <Primitive containerId={containerId} settings={settings} />
+      {/* One boundary here, rather than one per view kind: a primitive that
+          throws must lose its own pane and nothing else. */}
+      <PrimitiveErrorBoundary resetKey={`${containerId}:${entry.id}`}>
+        <Primitive containerId={containerId} settings={settings} />
+      </PrimitiveErrorBoundary>
     </div>
   );
 }

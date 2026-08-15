@@ -11,10 +11,10 @@ import { RunLedgerPanel } from "../../RunLedgerPanel";
 import { definePrimitive } from "./definePrimitive";
 import { Unconfigured } from "./Unconfigured";
 
-interface RunLedgerSettings {
+type RunLedgerSettings = {
   ticketId: string;
   live: boolean;
-}
+};
 
 export const runLedgerPrimitive = definePrimitive<RunLedgerSettings>({
   id: "run_ledger",

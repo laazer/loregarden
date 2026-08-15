@@ -149,6 +149,19 @@ describe("AC6 — a refused URL produces no frame at all", () => {
     }
   });
 
+  it("renders no frame for http on a host the packaged shell would block", () => {
+    // The CSP admits `http://127.0.0.1:*` and nothing else in cleartext, so a
+    // frame pointed at `http://192.168.1.50:3000/` loads in the dev build and
+    // is silently blanked in the shipped app. Refusing it here is what turns
+    // that into the echo-back message the operator can actually read.
+    const { container } = renderEmbed("http://192.168.1.50:3000/grafana");
+    expect(container.querySelector("iframe")).toBeNull();
+
+    const host = container.querySelector("[data-container-id='c1']");
+    expect(host).toHaveAttribute("data-primitive-id", "web_embed");
+    expect(host).not.toHaveAttribute("data-primitive-unknown", "true");
+  });
+
   it("still renders the container, so the operator can fix the setting", () => {
     // Refusing the URL must not blank the pane or throw — the container is
     // still there and still identifies itself.
@@ -166,6 +179,32 @@ describe("safeEmbedUrl is the single place the policy lives", () => {
     expect(safeEmbedUrl("blob:https://example.com/x")).toBeNull();
     expect(safeEmbedUrl("file:///etc/passwd")).toBeNull();
     expect(safeEmbedUrl("")).toBeNull();
+  });
+
+  it("admits http from loopback only, matching the shell's frame-src", () => {
+    // `embedUrl.ts` and `src-tauri/tauri.conf.json` are one decision written
+    // twice, and `frame-src` spends its http allowance on `127.0.0.1:*`. An
+    // http URL this function accepts and the CSP then blocks is a blank pane
+    // with a console violation behind it — a refusal with no explanation.
+    for (const url of ["http://127.0.0.1:8000/", "http://localhost:5173/", "http://[::1]:8000/"]) {
+      expect({ url, result: safeEmbedUrl(url) }).not.toEqual({ url, result: null });
+    }
+    for (const url of [
+      "http://internal.example/",
+      "http://192.168.1.50:3000/grafana",
+      "http://nas.local/ui",
+      "http://127.0.0.1.evil.example/",
+    ]) {
+      expect({ url, result: safeEmbedUrl(url) }).toEqual({ url, result: null });
+    }
+  });
+
+  it("leaves https open to any host", () => {
+    // Only the cleartext branch narrowed. https to an arbitrary host is the
+    // primitive's main use and `frame-src https:` admits it.
+    for (const url of ["https://internal.example/", "https://192.168.1.50:3000/grafana"]) {
+      expect({ url, result: safeEmbedUrl(url) }).not.toEqual({ url, result: null });
+    }
   });
 
   it("decides on the parsed scheme, not on a substring of the text", () => {
@@ -187,6 +226,29 @@ describe("safeEmbedUrl is the single place the policy lives", () => {
     // `as any`-shaped workaround later.
     expect(safeEmbedUrl("HTTPS://example.com/")).not.toBeNull();
     expect(safeEmbedUrl("Http://localhost:5173/")).not.toBeNull();
+  });
+
+  it("strips userinfo from the URL it returns", () => {
+    // `https://user:hunter2@example.com/` parses as an allowed scheme, so the
+    // policy accepts the page — but the credentials must not travel with it.
+    // The returned href is written into the frame's `src` *and* into its
+    // `title`, so a password left in it is on screen and in the accessibility
+    // tree, and the browser would send it as an Authorization header to a host
+    // the operator only meant to display.
+    expect(safeEmbedUrl("https://user:hunter2@example.com/app")).toBe("https://example.com/app");
+    expect(safeEmbedUrl("http://admin@127.0.0.1:8000/")).toBe("http://127.0.0.1:8000/");
+    expect(safeEmbedUrl("https://user:hunter2@example.com/")).not.toContain("hunter2");
+    expect(safeEmbedUrl("https://user:hunter2@example.com/")).not.toContain("user");
+  });
+
+  it("keeps userinfo out of the rendered frame and its accessible name", () => {
+    const { container } = renderEmbed("https://user:hunter2@example.com/app");
+    const frame = container.querySelector("iframe");
+    expect(frame).not.toBeNull();
+    expect(frame).toHaveAttribute("src", "https://example.com/app");
+    // The whole rendered subtree, not just `src`: the title attribute is the
+    // frame's accessible name and echoed the href verbatim.
+    expect(container.innerHTML).not.toContain("hunter2");
   });
 
   it("refuses a URL that smuggles a second scheme past the first", () => {

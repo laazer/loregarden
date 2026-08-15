@@ -12,9 +12,9 @@ import { TerminalPanel } from "../../TerminalPanel";
 import { definePrimitive } from "./definePrimitive";
 import { Unconfigured } from "./Unconfigured";
 
-interface TerminalSettings {
+type TerminalSettings = {
   workspaceSlug: string;
-}
+};
 
 export const terminalPrimitive = definePrimitive<TerminalSettings>({
   id: "terminal",

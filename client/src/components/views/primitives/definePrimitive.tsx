@@ -7,9 +7,16 @@
  * value type — and no entry has to be asserted into it.
  */
 
-import type { PrimitiveEntry, PrimitiveProps, RegisteredPrimitive } from "./types";
+import type {
+  ParsedSettings,
+  PrimitiveEntry,
+  PrimitiveProps,
+  RegisteredPrimitive,
+} from "./types";
 
-export function definePrimitive<TSettings>(entry: PrimitiveEntry<TSettings>): RegisteredPrimitive {
+export function definePrimitive<TSettings extends ParsedSettings>(
+  entry: PrimitiveEntry<TSettings>,
+): RegisteredPrimitive {
   const Inner = entry.Component;
 
   function PrimitiveHost({ containerId, settings }: PrimitiveProps<Record<string, unknown>>) {
