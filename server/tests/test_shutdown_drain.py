@@ -1,0 +1,237 @@
+"""Shutdown stops starting work, then waits a bounded time for what is running.
+
+There was no drain. A restart — and backend edits *require* one, so they are
+frequent by design — took every in-flight turn with it and left recovery to pick
+up the pieces. `ReloadBlockedError` looked like a drain and was not: it refused
+the self-improve sentinel reload while runs were in flight, which covers one
+restart trigger and says nothing about a crash, a `task dev` cycle, or SIGTERM.
+
+The rule these pin is the one that keeps a drain from making things worse:
+**drain improves the good case and must not change the bad one.** Work that
+misses the window is interrupted exactly as it is today, so recovery has one
+path rather than two.
+
+No test here sleeps against the real bound. The window is passed in, and the
+"window closed" case uses a bound of zero rather than a wait that races it.
+"""
+
+from __future__ import annotations
+
+from unittest.mock import patch
+
+import pytest
+from loregarden.models.domain import (
+    AgentRun,
+    QueuedRun,
+    QueuePosition,
+    RunStatus,
+    Ticket,
+    WorkItemType,
+)
+from loregarden.services.drain import (
+    DRAIN_REFUSED_REASON,
+    begin_drain,
+    end_drain,
+    in_flight_runs,
+    is_draining,
+    wait_for_quiescence,
+)
+from loregarden.services.queue_lanes import QueueLaneService
+from loregarden.services.ticket_service import TicketService
+from sqlmodel import select
+
+
+@pytest.fixture(autouse=True)
+def _never_leave_the_process_draining():
+    """A leaked flag would refuse work in every test after this module."""
+    yield
+    end_drain()
+
+
+@pytest.fixture(name="ticket")
+def ticket_fixture(db_session) -> Ticket:
+    return TicketService(db_session).create_ticket(
+        workspace_slug="loregarden",
+        title="shutdown drain",
+        work_item_type=WorkItemType.MILESTONE,
+    )
+
+
+def _running_run(db_session, ticket: Ticket, code: str = "run_live") -> AgentRun:
+    run = AgentRun(
+        run_code=code,
+        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id,
+        agent_id="backend_implementer",
+        status=RunStatus.RUNNING,
+    )
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+    return run
+
+
+# ---- nothing new starts -------------------------------------------------
+
+
+def test_dispatch_is_refused_while_draining(db_session, ticket):
+    """The first promise: a turn the process is about to abandon never starts."""
+    from loregarden.services import run_service
+
+    begin_drain()
+    with patch.object(run_service, "execute_agent_run_background") as spawn:
+        run_service.schedule_agent_run("any-run-id")
+
+    spawn.assert_not_called()
+
+
+def test_orchestration_is_refused_while_draining(db_session, ticket):
+    from loregarden.services import run_service
+
+    begin_drain()
+    with patch.object(run_service, "execute_orchestration_background") as spawn:
+        run_service.schedule_orchestration(ticket.id)
+
+    spawn.assert_not_called()
+
+
+def test_a_refused_lane_entry_keeps_its_place_and_says_why(db_session, ticket):
+    """Refusal is not failure.
+
+    The entry is still queued — the next process starts it — but an operator
+    reading the board sees why nothing is moving rather than an entry that looks
+    stuck for no reason.
+    """
+    lanes = QueueLaneService(db_session, max_concurrent=3)
+    lanes.slots.initialize_slots()
+
+    # Drained *before* the add, which is the real sequence: shutdown begins and
+    # requests keep arriving for a moment. `add_to_lane` starts the head itself
+    # when the lane is idle, so adding first would start the very run this is
+    # about.
+    begin_drain()
+    result = lanes.add_to_lane(ticket_id=ticket.id, slot_number=1, entry_kind="orchestration")
+
+    assert result["status"] == "queued"
+    db_session.expire_all()
+    entry = db_session.exec(select(QueuedRun).where(QueuedRun.ticket_id == ticket.id)).first()
+    assert entry.status in (QueuePosition.QUEUED, QueuePosition.SCHEDULED)
+    assert entry.failure_reason == DRAIN_REFUSED_REASON
+
+
+def test_a_drained_lane_does_not_hold_a_slot(db_session, ticket):
+    """Refusing before the claim, so shutdown does not strand a lane."""
+    from loregarden.models.domain import AgentSlot
+
+    lanes = QueueLaneService(db_session, max_concurrent=3)
+    lanes.slots.initialize_slots()
+
+    begin_drain()
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1, entry_kind="orchestration")
+
+    db_session.expire_all()
+    slot = db_session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    assert slot.is_available is True
+
+
+# ---- what is running gets a bounded chance ------------------------------
+
+
+def test_an_idle_process_exits_without_waiting(db_session):
+    """Nothing in flight is the common case; it must cost nothing."""
+    report = wait_for_quiescence(timeout_seconds=30)
+
+    assert report.clean is True
+    assert report.started_with == 0
+    assert report.waited_seconds == 0.0
+
+
+def test_the_window_is_bounded(db_session, ticket):
+    """A run that will not finish must not hold the process open.
+
+    Bound of zero rather than a short sleep: the point is that the wait ends,
+    and a test that raced a real bound would be the flake this ticket's own
+    description warns against.
+    """
+    _running_run(db_session, ticket)
+
+    report = wait_for_quiescence(timeout_seconds=0)
+
+    assert report.clean is False
+    assert report.remaining == 1
+    # The outcome alone does not pin boundedness: a wait that ignored the window
+    # entirely would still end up "not clean" with one run left. This is an
+    # upper bound with two orders of magnitude of margin, not a timing race.
+    assert report.waited_seconds < 2.0, (
+        f"a zero-second window waited {report.waited_seconds:.1f}s — the bound is not respected"
+    )
+
+
+def test_a_run_that_lands_inside_the_window_is_waited_for(db_session, ticket):
+    """The good case the drain exists for, made deterministic.
+
+    The run finishes on the first poll, so this measures that the wait *ends*
+    when the work lands rather than how long it happens to take.
+    """
+    run = _running_run(db_session, ticket)
+
+    def _finish_it(session):
+        stored = session.get(AgentRun, run.id)
+        if stored is not None and stored.status is RunStatus.RUNNING:
+            stored.status = RunStatus.SUCCEEDED
+            session.add(stored)
+            session.commit()
+        return []
+
+    with patch("loregarden.services.drain.in_flight_runs", side_effect=_finish_it):
+        report = wait_for_quiescence(timeout_seconds=30, poll_seconds=0.01)
+
+    assert report.clean is True
+
+
+def test_queued_runs_are_not_waited_for(db_session, ticket):
+    """Nothing started them, so there is nothing to land."""
+    run = _running_run(db_session, ticket)
+    run.status = RunStatus.QUEUED
+    db_session.add(run)
+    db_session.commit()
+
+    assert in_flight_runs(db_session) == []
+
+
+# ---- the flag must not outlive the app that set it ----------------------
+
+
+def test_a_torn_down_app_leaves_the_process_undrained(isolated_db):
+    """The bug this shipped with, and the reason it was invisible.
+
+    The lifespan sets the flag on the way out — right for a process that then
+    exits, wrong for one that keeps running. A test process builds and tears
+    down many apps in one interpreter, so a flag left set refused work in every
+    test that followed: 42 failures across the suite.
+
+    The client is built and exited *inside* the test rather than taken as a
+    fixture. A fixture tears down after the test body, so asserting on the
+    fixture would check the flag before the lifespan that sets it has run —
+    which is how the first version of this test passed against the bug.
+    """
+    from fastapi.testclient import TestClient
+    from loregarden.main import app
+
+    with TestClient(app):
+        pass
+
+    assert is_draining() is False, "the app left the whole process refusing new work"
+
+
+# ---- the flag itself ----------------------------------------------------
+
+
+def test_draining_is_idempotent_and_reversible(db_session):
+    """`end_drain` exists for the reload path, which drains and then stays up."""
+    assert is_draining() is False
+    begin_drain()
+    begin_drain()
+    assert is_draining() is True
+    end_drain()
+    assert is_draining() is False

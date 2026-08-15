@@ -19,6 +19,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
+from loregarden.services.drain import DRAIN_REFUSED_REASON, is_draining
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
@@ -415,7 +416,14 @@ def execute_agent_run_background(run_id: str) -> None:
 
 
 def schedule_agent_run(run_id: str) -> None:
-    """Queue CLI execution without blocking the API event loop."""
+    """Queue CLI execution without blocking the API event loop.
+
+    Refuses while draining: starting a turn the process is about to abandon
+    wastes an agent invocation and produces a run to interrupt seconds later.
+    """
+    if is_draining():
+        logger.info("Refusing to start run %s: %s", run_id, DRAIN_REFUSED_REASON)
+        return
     if os.environ.get("LOREGARDEN_SYNC_RUNS") == "1":
         execute_agent_run_background(run_id)
         return
@@ -464,7 +472,13 @@ def schedule_orchestration(
     auto_approve: bool = False,
     timeout_seconds: int | None = None,
 ) -> None:
-    """Queue orchestration without blocking the API event loop."""
+    """Queue orchestration without blocking the API event loop.
+
+    Refuses while draining, for the same reason as `schedule_agent_run`.
+    """
+    if is_draining():
+        logger.info("Refusing to orchestrate ticket %s: %s", ticket_id, DRAIN_REFUSED_REASON)
+        return
     if os.environ.get("LOREGARDEN_SYNC_ORCHESTRATION") == "1":
         execute_orchestration_background(
             ticket_id,

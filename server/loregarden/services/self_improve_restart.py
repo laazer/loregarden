@@ -15,6 +15,7 @@ from loregarden.models.domain import (
     Ticket,
     Workspace,
 )
+from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescence
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_service import fail_stale_handoff_runs
 from loregarden.services.studio_routing import is_agentless_stage
@@ -211,7 +212,26 @@ def trigger_reload(session: Session, *, workspace_slug: str = SELF_IMPROVE_WORKS
             f"(the server under test); got {workspace_slug!r}"
         )
     if readiness["blockers"]:
-        raise ReloadBlockedError(readiness["blockers"], readiness)
+        # Drain first, then decide. This used to refuse outright, which made the
+        # reload path a second mechanism sitting beside shutdown rather than a
+        # policy on top of it: a stage two seconds from finishing blocked a
+        # reload for as long as it ran. Now the same bounded wait every shutdown
+        # takes runs here too, and the refusal is what happens when that window
+        # closes with work still in flight.
+        begin_drain()
+        try:
+            report = wait_for_quiescence(timeout_seconds=settings.drain_timeout_seconds)
+            if not report.clean:
+                readiness = evaluate_reload_readiness(session, workspace_slug=workspace_slug)
+                raise ReloadBlockedError(readiness["blockers"], readiness)
+        except ReloadBlockedError:
+            # The process is staying up, so it must stop refusing new work.
+            end_drain()
+            raise
+        # Cleared: the sentinel write below restarts us, and the new process
+        # starts undrained. Leaving the flag set would be inherited by nothing,
+        # but a reload that fails to fire would leave this one refusing forever.
+        end_drain()
 
     sentinel = settings.repo_root / RELOAD_SENTINEL
     sentinel.parent.mkdir(parents=True, exist_ok=True)

@@ -38,6 +38,7 @@ from loregarden.models.domain import (
     QueuePosition,
     Ticket,
 )
+from loregarden.services.drain import is_draining, stamp_refusal
 from loregarden.services.parallel_queue import (
     LIVE_ORCHESTRATION_STATUSES,
     LIVE_RUN_STATUSES,
@@ -218,6 +219,14 @@ class QueueLaneService:
         property, that a refused dispatch must not strand a lane, so the release
         below is what makes claiming first safe.
         """
+        if is_draining():
+            # Before the claim: taking a lane for work that will not start is
+            # the strand this path was rewritten to avoid.
+            head = next(iter(self.waiting_in_lane(slot_number)), None)
+            if head is not None:
+                stamp_refusal(self.session, head)
+            return None
+
         slot = claim_lane_slot(self.session, slot_number)
         if slot is None:
             return None
