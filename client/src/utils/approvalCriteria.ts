@@ -30,3 +30,38 @@ export function impactWithoutCriteria(impact: string): string {
   if (!match) return impact;
   return impact.slice(0, match.index).trimEnd();
 }
+
+/** A criterion that opens with its own id — the short form a checklist can point at. */
+const CRITERION_ID = /^(AC\d+)\s*:/i;
+
+/**
+ * Shortens checklist items that restate a criterion in full.
+ *
+ * The server expands a gate's `{{acceptance_criteria}}` placeholder into one
+ * "Play-test by hand — <criterion>" item each, which is right where the card
+ * stands alone. In the Approvals tab the criteria are listed above, so the item
+ * only needs to name which one: "Play-test by hand — AC7".
+ *
+ * An item is shortened only when it ends with a criterion verbatim and that
+ * criterion opens with an id to point at. Everything else — a hand-written
+ * check, a criterion with no id — is left exactly as written.
+ */
+export function shortenRestatedChecklist(checklist: string[], criteria: string[]): string[] {
+  const shortFormByText = new Map<string, string>();
+  for (const criterion of criteria) {
+    const text = criterion.trim();
+    const id = CRITERION_ID.exec(text)?.[1];
+    if (text && id) shortFormByText.set(text, id);
+  }
+  if (shortFormByText.size === 0) return checklist;
+
+  return checklist.map((item) => {
+    const trimmed = item.trim();
+    for (const [text, id] of shortFormByText) {
+      if (trimmed.length > text.length && trimmed.endsWith(text)) {
+        return trimmed.slice(0, trimmed.length - text.length) + id;
+      }
+    }
+    return item;
+  });
+}

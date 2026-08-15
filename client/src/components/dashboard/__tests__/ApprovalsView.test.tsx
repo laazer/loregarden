@@ -77,6 +77,23 @@ describe("ApprovalsView", () => {
     expect(screen.getAllByText(/Dash cancels on wall contact/)).toHaveLength(1);
   });
 
+  it("shortens checklist items that restate a criterion", async () => {
+    mockApi.approvals.mockResolvedValue([
+      approval({
+        impact: "Sign-off needed.",
+        checklist: [
+          "Play-test by hand — AC1: Dash has a cooldown",
+          "Confirm no console errors appear during play",
+        ],
+      }),
+    ]);
+    renderView({ ...TICKET, acceptance_criteria: ["AC1: Dash has a cooldown"] } as TicketDetail);
+
+    expect(await screen.findByText("Play-test by hand — AC1")).toBeInTheDocument();
+    expect(screen.getAllByText(/Dash has a cooldown/)).toHaveLength(1);
+    expect(screen.getByText("Confirm no console errors appear during play")).toBeInTheDocument();
+  });
+
   it("keeps the brief's criteria when the ticket records none", async () => {
     mockApi.approvals.mockResolvedValue([
       approval({ impact: "Sign-off needed.\nAcceptance criteria:\n- Dash has a cooldown" }),

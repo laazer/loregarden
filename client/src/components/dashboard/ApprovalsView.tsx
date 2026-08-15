@@ -1,7 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, type Approval, type TicketDetail } from "../../api/client";
-import { hasHumanCriteria, impactWithoutCriteria } from "../../utils/approvalCriteria";
+import {
+  hasHumanCriteria,
+  impactWithoutCriteria,
+  shortenRestatedChecklist,
+} from "../../utils/approvalCriteria";
 import { formatApprovalResolveError } from "../../utils/approvalErrors";
 import { ApprovalCard, type ApprovalResolvePayload } from "../ApprovalCard";
 
@@ -88,7 +92,7 @@ export function ApprovalsView({ ticket }: { ticket?: TicketDetail }) {
               key={approval.id}
               approval={approval}
               ticketId={ticket.id}
-              dropRestatedCriteria={criteria.length > 0}
+              criteria={criteria}
               isSubmitting={
                 resolveApproval.isPending && resolveApproval.variables?.id === approval.id
               }
@@ -116,7 +120,7 @@ export function ApprovalsView({ ticket }: { ticket?: TicketDetail }) {
               key={approval.id}
               approval={approval}
               ticketId={ticket.id}
-              dropRestatedCriteria={criteria.length > 0}
+              criteria={criteria}
               isSubmitting={
                 resolveApproval.isPending && resolveApproval.variables?.id === approval.id
               }
@@ -138,17 +142,18 @@ export function ApprovalsView({ ticket }: { ticket?: TicketDetail }) {
 function ApprovalRow({
   approval,
   ticketId,
-  dropRestatedCriteria,
+  criteria,
   isSubmitting,
   onResolve,
 }: {
   approval: Approval;
   ticketId: string;
-  /** The criteria section above already shows them; trim the brief's copy. */
-  dropRestatedCriteria: boolean;
+  /** Listed above the cards — what the brief and the checklist need not restate. */
+  criteria: string[];
   isSubmitting: boolean;
   onResolve: (action: "approve" | "reject", payload?: ApprovalResolvePayload) => void;
 }) {
+  const deduped = criteria.length > 0;
   return (
     <div>
       {approval.ticket_id && approval.ticket_id !== ticketId && approval.ticket_external_id && (
@@ -158,7 +163,12 @@ function ApprovalRow({
       )}
       <ApprovalCard
         approval={approval}
-        impactText={dropRestatedCriteria ? impactWithoutCriteria(approval.impact) : undefined}
+        impactText={deduped ? impactWithoutCriteria(approval.impact) : undefined}
+        checklistItems={
+          deduped && approval.checklist?.length
+            ? shortenRestatedChecklist(approval.checklist, criteria)
+            : undefined
+        }
         isSubmitting={isSubmitting}
         onApprove={(payload) => onResolve("approve", payload)}
         onReject={(payload) => onResolve("reject", payload)}

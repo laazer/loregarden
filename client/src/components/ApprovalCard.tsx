@@ -56,6 +56,7 @@ export function ApprovalCard({
   inspectLabel = "Inspect",
   onExpand,
   impactText,
+  checklistItems,
 }: {
   approval: Approval;
   onApprove: (payload?: ApprovalResolvePayload) => void;
@@ -69,6 +70,8 @@ export function ApprovalCard({
   onExpand?: () => void;
   /** Replaces the approval's own impact — for surfaces that show part of it themselves. */
   impactText?: string;
+  /** Replaces the approval's own checklist, same reason. */
+  checklistItems?: string[];
 }) {
   const isQuestion = approval.kind === "cli_question";
   const isPermission = approval.kind === "cli_permission";
@@ -87,6 +90,7 @@ export function ApprovalCard({
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
 
   const routeOptions = isGate ? approval.route_options ?? [] : [];
+  const checklist = checklistItems ?? approval.checklist ?? [];
 
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [bodyOverflows, setBodyOverflows] = useState(false);
@@ -182,12 +186,12 @@ export function ApprovalCard({
         </div>
         <MarkdownContent content={impactText ?? approval.impact} className="approval-impact" />
 
-        {!!approval.checklist?.length && (
+        {!!checklist.length && (
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "var(--ac2)" }}>
               Testing checklist (notes only, not required to approve)
             </div>
-            {approval.checklist.map((item, idx) => (
+            {checklist.map((item, idx) => (
               <label
                 key={idx}
                 style={{
