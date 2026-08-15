@@ -44,6 +44,7 @@ from dataclasses import dataclass
 
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.run_service import (
+    settle_expired_agent_runs,
     settle_expired_orchestration_leases,
     settle_stranded_stages,
 )
@@ -70,10 +71,19 @@ def _reconcile_lanes(session: Session) -> object:
 
 
 #: Ordered, and the order is the same one the startup sequence established.
-#: Leases first, because settling a run is what makes its lane reclaimable;
-#: lanes next, so a freed lane can start what was waiting behind it; parents
-#: last, so every child has reached its final state before it is summarised.
+#: Agent runs first: a live agent run outranks the orchestration lease outright,
+#: so an orchestration cannot be judged until the runs beneath it have been.
+#: Then orchestration leases, because settling a run is what makes its lane
+#: reclaimable; lanes next, so a freed lane can start what was waiting behind it;
+#: parents last, so every child has reached its final state before it is
+#: summarised.
+#:
+#: `settle_expired_agent_runs` is here and `fail_interrupted_runs` is not. They
+#: look alike and are not: the first tests each run against a lease it has to
+#: renew, the second assumes every in-flight row is an orphan of a process that
+#: just died. Only the first can be told the truth by a run that is still working.
 PERIODIC_STEPS: tuple[SweepStep, ...] = (
+    SweepStep("settle_expired_agent_runs", settle_expired_agent_runs),
     SweepStep("settle_expired_orchestration_leases", _settle_leases),
     SweepStep("settle_stranded_stages", settle_stranded_stages),
     SweepStep("reconcile_lanes", _reconcile_lanes),

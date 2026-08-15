@@ -301,6 +301,9 @@ class AgentRun(SQLModel, table=True):
     # whose terminal died, can be reaped instead of blocking the ticket forever.
     handoff_accepted_at: datetime | None = None
     handoff_pid: int | None = None
+    #: Renewed by the thread supervising this run; see services/run_lease.
+    #: Null means never renewed, which reads as the run's start time.
+    last_seen_at: datetime | None = None
     # Cooperative stop: set by the API, observed by the permission bridge /
     # print-mode loop. Null means no cancel has been requested.
     cancel_requested_at: datetime | None = None

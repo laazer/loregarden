@@ -45,6 +45,7 @@ from loregarden.services.rework_feedback import (
 )
 from loregarden.services.run_cancellation import orchestration_cancel_requested
 from loregarden.services.run_interruption import blocked_by_interruption, interrupted_stage_key
+from loregarden.services.run_lease import lease_renewal
 from loregarden.services.stage_report import (
     StageReport,
     is_transient_failure,
@@ -489,7 +490,8 @@ class BuiltinOrchestrator:
             auto_approve=auto_approve,
             timeout_override_seconds=timeout_seconds,
         )
-        completed = self.executor.execute(agent_run, ticket)
+        with lease_renewal(agent_run.id):
+            completed = self.executor.execute(agent_run, ticket)
         self.session.refresh(ticket)
 
         if stop_at_stage_key and target_key == stop_at_stage_key:

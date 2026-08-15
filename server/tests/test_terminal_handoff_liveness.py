@@ -96,7 +96,7 @@ def test_checked_in_handoff_with_dead_shell_is_reaped(isolated_db):
         session.add(run)
         session.commit()
 
-        with patch("loregarden.services.run_service._pid_alive", return_value=False):
+        with patch("loregarden.services.run_service.pid_alive", return_value=False):
             reaped = fail_stale_handoff_runs(session, ticket_id=ticket.id)
 
         assert [r.id for r in reaped] == [run.id]
@@ -157,7 +157,7 @@ def test_dead_shell_after_stage_progressed_settles_as_success(isolated_db):
         session.add(ticket)
         session.commit()
 
-        with patch("loregarden.services.run_service._pid_alive", return_value=False):
+        with patch("loregarden.services.run_service.pid_alive", return_value=False):
             reaped = fail_stale_handoff_runs(session, ticket_id=ticket.id)
 
         assert [r.id for r in reaped] == [run.id]

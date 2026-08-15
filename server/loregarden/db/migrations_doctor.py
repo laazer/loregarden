@@ -55,6 +55,28 @@ def m_orchestration_run_lease(conn: Connection) -> None:
     )
 
 
+def m_agent_run_lease(conn: Connection) -> None:
+    """A liveness signal for agent runs, mirroring `orchestration_runs`.
+
+    `RunStatus.RUNNING` is committed before a subprocess exists, so an in-flight
+    status alone proved nothing and `fail_interrupted_runs` never tried to test
+    it — it fails every in-flight run, which is sound only at startup. Stamped
+    by the thread supervising the run, so the lease measures the supervisor
+    rather than the agent's output.
+
+    Null on existing rows, read as "never renewed", which falls back to the
+    run's own start time — so a row written before this migration is judged
+    rather than exempt, and needs no backfill.
+    """
+    add_columns_if_missing(
+        conn,
+        "agent_runs",
+        {
+            "last_seen_at": "ALTER TABLE agent_runs ADD COLUMN last_seen_at TEXT",
+        },
+    )
+
+
 def m_agent_slot_number_unique(conn: Connection) -> None:
     """One row per slot number, enforced rather than assumed.
 

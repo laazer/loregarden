@@ -27,6 +27,12 @@ from loregarden.services.run_interruption import (
     INTERRUPTED_RUN_MESSAGE,
     STRANDED_STAGE_MESSAGE,
 )
+from loregarden.services.run_lease import (
+    SUPERVISED,
+    agent_run_lease_expired,
+    lease_renewal,
+    pid_alive,
+)
 from loregarden.services.scheduling import set_orchestration_scheduler
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
@@ -54,23 +60,6 @@ HANDOFF_EXITED_MESSAGE = (
 def _handoff_checkin_grace_seconds() -> int:
     raw = os.environ.get("LOREGARDEN_HANDOFF_CHECKIN_GRACE_SECONDS", "")
     return int(raw) if raw.isdigit() else 900
-
-
-def _pid_alive(pid: int) -> bool:
-    """Whether `pid` is a live process on this host.
-
-    Valid only because terminal handoffs are pasted into a shell on the same
-    machine as this control plane — there is no remote-execution path.
-    """
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    return True
 
 
 def settle_dead_handoff_run(
@@ -143,7 +132,7 @@ def fail_stale_handoff_runs(session: Session, *, ticket_id: str | None = None) -
             settle_dead_handoff_run(
                 session, run, message=STALE_HANDOFF_NEVER_STARTED_MESSAGE, session_ran=False
             )
-        elif run.handoff_pid is not None and not _pid_alive(run.handoff_pid):
+        elif run.handoff_pid is not None and not pid_alive(run.handoff_pid):
             settle_dead_handoff_run(session, run, message=STALE_HANDOFF_SHELL_DIED_MESSAGE)
         else:
             continue
@@ -355,6 +344,46 @@ def settle_expired_orchestration_leases(
     return settled
 
 
+AGENT_LEASE_EXPIRED_MESSAGE = (
+    "Agent run lease expired: nothing has renewed this run, so the thread that was "
+    "supervising it is gone. Failed by the reconciliation sweep rather than by a restart."
+)
+
+
+def settle_expired_agent_runs(
+    session: Session, *, message: str = AGENT_LEASE_EXPIRED_MESSAGE
+) -> list[AgentRun]:
+    """Fail in-flight runs whose lease says nobody is supervising them.
+
+    The predicate-based counterpart to `fail_interrupted_runs`, and deliberately
+    a separate function rather than a flag on it. That one carries restart
+    semantics — every in-flight row is an orphan of the process that just died —
+    and is correct exactly once, at boot. This one tests each run and is safe to
+    call while other runs are genuinely live, which is what lets it run on a
+    clock.
+
+    Fails closed twice over: `agent_run_lease_expired` spares any run kind with
+    no defined renewer, and this spares anything it cannot resolve a ticket for.
+    """
+    candidates = session.exec(
+        select(AgentRun).where(col(AgentRun.status).in_(list(SUPERVISED)))
+    ).all()
+
+    settled: list[AgentRun] = []
+    for run in candidates:
+        if not agent_run_lease_expired(session, run):
+            continue
+        logger.warning(
+            "Settling agent run %s (ticket %s): lease expired, last seen %s",
+            run.run_code,
+            run.ticket_id,
+            run.last_seen_at or run.started_at or run.created_at,
+        )
+        OrchestrationService(session).complete_run(run, status=RunStatus.FAILED, stderr=message)
+        settled.append(run)
+    return settled
+
+
 def execute_agent_run_background(run_id: str) -> None:
     """Run agent CLI with a fresh DB session."""
     try:
@@ -368,7 +397,8 @@ def execute_agent_run_background(run_id: str) -> None:
             if not ticket:
                 logger.error("Background run ticket not found: %s", run_id)
                 return
-            run_svc.executor.execute(run, ticket)
+            with lease_renewal(run.id):
+                run_svc.executor.execute(run, ticket)
     except Exception as exc:
         logger.exception("Background agent run failed: %s", run_id)
         try:
@@ -508,7 +538,8 @@ class RunService:
     ) -> tuple[AgentRun, Ticket]:
         run = self.orchestration.start_run(ticket, stage_key=stage_key)
         self.session.refresh(ticket)
-        completed_run = self.executor.execute(run, ticket)
+        with lease_renewal(run.id):
+            completed_run = self.executor.execute(run, ticket)
         self.session.refresh(ticket)
         return completed_run, ticket
 
