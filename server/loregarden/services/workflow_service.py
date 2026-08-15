@@ -17,6 +17,7 @@ from loregarden.models.domain import (
     WorkflowTemplate,
     Workspace,
 )
+from loregarden.services.ticket_rollup import has_children
 from loregarden.services.workflow_state import initial_stages_json, reconcile_workflow_state
 from sqlmodel import Session, select
 
@@ -212,7 +213,9 @@ class WorkflowService:
         ticket.workflow_stage_key = first_stage.key
         ticket.workflow_stage_status = StageStatus.PENDING
         ticket.next_agent = first_stage.agent_id
-        reconcile_workflow_state(ticket, instance, stages)
+        reconcile_workflow_state(
+            ticket, instance, stages, owns_state=not has_children(self.session, ticket.id)
+        )
         self.session.add(instance)
         self.session.add(ticket)
         self.session.commit()
@@ -250,7 +253,9 @@ class WorkflowService:
                 instance.template_id = template.id
                 instance.template_version = template.version
                 instance.stages_json = initial_stages_json(stages)
-            reconcile_workflow_state(ticket, instance, stages)
+            reconcile_workflow_state(
+                ticket, instance, stages, owns_state=not has_children(self.session, ticket.id)
+            )
             self.session.add(instance)
             self.session.add(ticket)
         self.session.commit()
