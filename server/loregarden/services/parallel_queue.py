@@ -544,6 +544,17 @@ class ParallelQueueService:
             now = datetime.now(timezone.utc)
 
             for slot in active_slots:
+                # The same predicate the reclaim sweep uses, asked here as a
+                # question rather than acted on. The board used to be correct
+                # only because the status read repaired the pool on its way
+                # past; that repair now belongs to the reconciliation timer, and
+                # a read must not depend on having written. Between a run
+                # finishing and the next sweep the row still says occupied, and
+                # drawing that as a running lane is the specific lie this
+                # avoids.
+                if not self._occupant_is_live(slot):
+                    continue
+
                 card = self._occupant_card(slot)
                 if not card:
                     continue

@@ -30,6 +30,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.parallel_queue import ParallelQueueService
+from loregarden.services.reconciliation import reconcile_once
 from loregarden.services.run_concurrency import (
     ORCHESTRATION_LEASE,
     orchestration_lease_expired,
@@ -315,20 +316,38 @@ def test_the_sweep_spares_a_run_with_a_live_agent(session, workspace):
     assert run.status is OrchestrationRunStatus.RUNNING
 
 
-def test_the_status_read_settles_expired_leases(session, workspace):
-    """No periodic tick exists; the board read is the cadence."""
-    import asyncio
+def test_the_reconciliation_pass_settles_expired_leases(session, workspace):
+    """A periodic tick exists now, and it is the cadence.
 
-    from loregarden.services.queue_status import build_queue_status
-
+    This used to assert the *board read* settled the lease, because at the time
+    the read was the only thing that ran often enough to count as a clock. That
+    made repair conditional on someone having the dashboard open — ticket 437 —
+    so the sweep moved to the reconciliation timer and the read went back to
+    being a read.
+    """
     run = _orch(session, _ticket(session, workspace), external=ExternalHarness.CODEX, age=EXPIRED)
     slot = AgentSlot(slot_number=1, is_available=False, current_orchestration_run_id=run.id)
     session.add(slot)
     session.commit()
 
-    asyncio.run(build_queue_status(session))
+    reconcile_once(session)
 
     session.refresh(run)
     assert run.status is OrchestrationRunStatus.FAILED
     session.refresh(slot)
     assert slot.is_available is True
+
+
+def test_a_board_read_does_not_draw_a_lane_whose_lease_expired(session, workspace):
+    """The read must be right between sweeps, without doing the repair itself."""
+    import asyncio
+
+    from loregarden.services.queue_status import build_queue_status
+
+    run = _orch(session, _ticket(session, workspace), external=ExternalHarness.CODEX, age=EXPIRED)
+    session.add(AgentSlot(slot_number=1, is_available=False, current_orchestration_run_id=run.id))
+    session.commit()
+
+    snapshot = asyncio.run(build_queue_status(session))
+
+    assert snapshot["active_runs"] == []

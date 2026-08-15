@@ -19,6 +19,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.services.queue_status import build_queue_status
+from loregarden.services.reconciliation import reconcile_once
 from sqlmodel import Session, select
 
 
@@ -111,14 +112,20 @@ async def test_a_lane_card_carries_ticket_ancestry_and_running_descendant(db_ses
 
 
 async def test_a_slot_held_by_a_finished_run_is_reclaimed(db_session):
-    """The slot leak, closed rather than described.
+    """The slot leak, closed rather than described — now in two places.
 
     This used to assert the card an operator saw while a slot sat pinned to a
     run that had already finished: occupied, status "succeeded", nothing
-    working. That state is now unreachable — building the snapshot reconciles
-    the pool first, and a slot whose only occupant is a terminal run is free by
-    definition — so the honest assertion is that there is no card at all and the
-    lane is back.
+    working. Both halves of the fix are pinned separately because they are now
+    owned by different things.
+
+    The *read* must never draw that lane as running. It answers from
+    `_occupant_is_live` rather than from the row, so it is right even between a
+    run finishing and the next sweep.
+
+    The *row* is reclaimed by the reconciliation pass. It used to be reclaimed
+    by this very read, which tied repair to whether anyone had the dashboard
+    open — see ticket 437.
 
     A lane between stages is not this: it holds an orchestration, which stays
     live across the agent runs it spans.
@@ -130,6 +137,10 @@ async def test_a_slot_held_by_a_finished_run_is_reclaimed(db_session):
     snapshot = await build_queue_status(db_session)
 
     assert not [run for run in snapshot["active_runs"] if run["ticket_id"] == ticket.id]
+
+    reconcile_once(db_session)
+
+    db_session.expire_all()
     slot = db_session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
     assert slot.is_available
     assert slot.current_run_id is None
