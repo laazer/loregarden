@@ -43,6 +43,8 @@ from loregarden.services.parallel_queue import (
     LIVE_RUN_STATUSES,
     WAITING_STATUSES,
     ParallelQueueService,
+    claim_lane_slot,
+    release_slot,
 )
 from loregarden.websocket_events import emit_execution_update
 from sqlmodel import Session, col, select
@@ -206,13 +208,23 @@ class QueueLaneService:
         }
 
     def start_lane_head(self, slot_number: int) -> QueuedRun | None:
-        """Dispatch the front of a lane, if the lane is free and has one."""
-        slot = self._slot(slot_number)
-        if not slot or not slot.is_available:
+        """Dispatch the front of a lane, if the lane is free and has one.
+
+        The lane is claimed *before* the dispatch, atomically, and given back on
+        every path that does not start work. It used to be the other way round —
+        check `is_available`, run the whole dispatch, then write — which left a
+        window a concurrent admission could claim the same slot inside, putting
+        two live occupants in one lane. The old ordering was protecting a real
+        property, that a refused dispatch must not strand a lane, so the release
+        below is what makes claiming first safe.
+        """
+        slot = claim_lane_slot(self.session, slot_number)
+        if slot is None:
             return None
 
         head = next(iter(self.waiting_in_lane(slot_number)), None)
         if not head:
+            release_slot(self.session, slot)
             return None
 
         if self.dispatcher is None:
@@ -224,23 +236,27 @@ class QueueLaneService:
                 "import loregarden.services.queue_dispatch in this entry point",
                 slot_number,
             )
+            release_slot(self.session, slot)
             return None
 
         ticket = self.session.get(Ticket, head.ticket_id)
         if not ticket:
             # The ticket went away while it waited. Drop the entry rather than
-            # wedging the lane on something that can never run.
+            # wedging the lane on something that can never run. The lane goes
+            # back first — the retry below claims it again from scratch, and a
+            # claim held across it would refuse itself.
             logger.warning("Dropping lane entry %s: ticket %s is gone", head.id, head.ticket_id)
             self.session.delete(head)
             self.session.commit()
             self._renumber(slot_number)
+            release_slot(self.session, slot)
             return self.start_lane_head(slot_number)
 
         if head.entry_kind == "stage":
             agent_run = self.dispatcher.dispatch_stage(ticket, head)
             if agent_run is None:
+                release_slot(self.session, slot)
                 return None
-            slot.is_available = False
             slot.current_run_id = agent_run.id
             head.run_id = agent_run.id
             orch_run = None
@@ -254,10 +270,11 @@ class QueueLaneService:
                 timeout_seconds=head.timeout_seconds,
             )
             if orch_run is None:
-                # Dispatch refused (already orchestrating, no workflow). Leave
-                # the entry in place rather than claiming the lane for nothing.
+                # Dispatch refused (already orchestrating, no workflow). Give the
+                # lane back and leave the entry in place, so 439's idle-lane
+                # retry picks it up rather than the lane sitting held by nothing.
+                release_slot(self.session, slot)
                 return None
-            slot.is_available = False
             slot.current_orchestration_run_id = orch_run.id
             head.orchestration_run_id = orch_run.id
         slot.assigned_at = datetime.now(timezone.utc)
