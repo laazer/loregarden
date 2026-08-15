@@ -199,12 +199,20 @@ def format_stream_payload(payload: dict[str, Any]) -> LogLine | None:
 class RunLogStreamer:
     """Write/update a single live log artifact for an agent run."""
 
+    #: Kept at 1000 deliberately. Reattachment resumes a run rather than
+    #: replaying it, so the tail is what a new process needs; raising this would
+    #: grow every log artifact for a post-mortem use case that `stdout` already
+    #: serves on completion. Revisit when something actually needs the head.
     MAX_LINES = 1000
     MAX_LINE_CHARS = 32000
     MAX_LIVE_CHARS = 64000
     CHUNK_FLUSH_CHARS = 16000
     PARTIAL_FLUSH_CHARS = 500
     PARTIAL_SENTENCE_MIN_CHARS = 80
+    #: The longest a line may sit in memory before it is written. Also the bound
+    #: on what a killed process loses, and on how stale a reader in another
+    #: process can be.
+    PERSIST_INTERVAL_SECONDS = 0.4
 
     def __init__(
         self,
@@ -261,11 +269,14 @@ class RunLogStreamer:
         if len(self._lines) > self.MAX_LINES:
             self._lines = self._lines[-self.MAX_LINES :]
         now = time.time()
-        if (
-            force
-            or now - self._last_persist >= 0.4
-            or tag in {"RUN", "CMD", "ERR", "OK", "FAIL", "TOOL"}
-        ):
+        # Time alone decides, plus an explicit force. The tag allow-list that used
+        # to sit here made durability depend on *what kind* of line arrived: a
+        # burst of ordinary OUT inside the throttle window stayed in memory, so a
+        # process that died lost it and a reader in another process could not see
+        # it at all. Every tag now shares one bound, which is what makes the
+        # unpersisted window a known quantity rather than a property of the
+        # output. The throttle itself stays — it is the write-rate control.
+        if force or now - self._last_persist >= self.PERSIST_INTERVAL_SECONDS:
             self._persist()
 
     def _prefer_stream_text(self, text: str) -> None:
@@ -474,6 +485,19 @@ class RunLogStreamer:
             return
         self._live = text
         self._persist()
+
+    def output_so_far(self) -> list[dict[str, str]]:
+        """This run's output as another process can see it.
+
+        The read side of the durable store, named rather than left as
+        `_hydrate`. A process reattaching to a run it did not spawn needs the
+        tail that has been written, and reaching into a private method for it
+        would make the store's shape part of the caller's contract.
+
+        Bounded by MAX_LINES, so this is the tail rather than the whole history.
+        """
+        self._hydrate()
+        return list(self._lines)
 
     def touch(self) -> None:
         """Re-persist the current log snapshot (heartbeat during long waits)."""
