@@ -84,7 +84,7 @@ export function CopilotDock() {
       style={edge === "bottom" && panelsVisible ? { height } : undefined}
       aria-hidden={!panelsVisible ? true : undefined}
     >
-      <div className="copilot-dock-body">
+      <div className={`copilot-dock-body${showTerminal && !showChat ? " copilot-dock-body--bleed" : ""}`}>
         {showChat && session && (
           <div className="copilot-dock-chat">
             <div className="copilot-dock-chat-main">

@@ -590,6 +590,15 @@ class PermissionBridgeRunner:
 
         try:
             with Session(engine) as session:
+                if cancel_requested(run_id):
+                    # A stop beats traffic that was already queued behind it.
+                    # `_check_cancel` runs first in the loop, but it polls on its
+                    # own interval and returns early inside it, so an iteration
+                    # can reach here with a cancel pending and no kill yet — and
+                    # then hand the agent instructions it is about to be killed
+                    # for. The messages stay undelivered, which is what the UI
+                    # already reports for anything the agent never received.
+                    return
                 messages = pending_messages(session, run_id)
                 for message in messages:
                     payload = build_user_message(

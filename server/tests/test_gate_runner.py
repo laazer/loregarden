@@ -1,8 +1,9 @@
 import stat
 import textwrap
+from unittest.mock import patch
 
 import pytest
-from loregarden.models.domain import Ticket, WorkflowStageDef, Workspace
+from loregarden.models.domain import GateOutcome, Ticket, WorkflowStageDef, Workspace
 from loregarden.services.gate_runner import (
     build_gate_context,
     format_gate_command,
@@ -455,13 +456,15 @@ def test_gates_can_run_false_when_only_blank_commands_configured(tmp_path):
 # well-meaning `outcome` implementation could still leave in place. ---
 
 
-def test_run_transition_gates_malformed_quoting_reports_failed_not_crash(session, tmp_path):
+def test_run_transition_gates_malformed_quoting_reports_unavailable_not_crash(session, tmp_path):
     # shlex.split raises ValueError on an unterminated quote. `_run_command`
     # today only catches FileNotFoundError/TimeoutExpired around
     # subprocess.run — the shlex.split call itself is unguarded, so one badly
     # quoted command entry (a typo'd Studio gate command) takes down the
     # entire evaluation with an unhandled exception instead of reporting a
-    # normal "failed" outcome.
+    # normal outcome. It reports UNAVAILABLE rather than FAILED: a command that
+    # cannot be parsed never ran, so there is nothing for the stage's agent to
+    # fix and the orchestrator must not spend an agent attempt on it.
     ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
     ticket = Ticket(id="tid", external_id="M88-10", workspace_id="ws", title="Test")
     profile = OrchestrationProfile(
@@ -473,17 +476,18 @@ def test_run_transition_gates_malformed_quoting_reports_failed_not_crash(session
     )
 
     assert not result.ok
-    assert result.outcome == "failed"
+    assert result.outcome is GateOutcome.UNAVAILABLE
     assert result.message
 
 
-def test_run_transition_gates_non_executable_script_reports_failed_not_crash(session, tmp_path):
+def test_run_transition_gates_non_executable_script_reports_unavailable(session, tmp_path):
     # A gate command pointing at a file that exists but lacks the execute bit
     # (e.g. checked in without chmod +x, or edited on a filesystem that
     # dropped permissions) raises PermissionError from subprocess.run.
     # `_run_command` only catches FileNotFoundError — PermissionError is a
     # distinct OSError subclass and today propagates uncaught, crashing the
-    # gate evaluation instead of yielding a "failed" outcome.
+    # gate evaluation. Reported UNAVAILABLE, not FAILED — a missing execute bit
+    # is a fact about the machine, not about the code under test.
     script = tmp_path / "noexec.sh"
     script.write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
     script.chmod(0o644)  # explicitly non-executable
@@ -499,7 +503,7 @@ def test_run_transition_gates_non_executable_script_reports_failed_not_crash(ses
     )
 
     assert not result.ok
-    assert result.outcome == "failed"
+    assert result.outcome is GateOutcome.UNAVAILABLE
     assert result.message
 
 
@@ -577,3 +581,42 @@ def test_run_transition_gates_disabled_outcome_still_carries_stage_context(sessi
     )
     assert context["from_stage"] == "implementation"
     assert context["to_stage"] == "review"
+
+
+def test_a_timed_out_gate_is_unavailable_not_failed(session, tmp_path):
+    """The distinction that stops an hour-long loop.
+
+    A gate reported FAILED is handed to the stage's own agent to fix, then the
+    stage re-runs. `cd client && npx oxlint .` in a ticket worktree has no
+    node_modules — node_modules is gitignored, so no worktree ever does — so npx
+    tries to fetch oxlint and blows the 300s budget. Each cycle cost the timeout
+    plus a full agent re-run of a stage that had already passed, and no agent
+    can install a toolchain it cannot see.
+    """
+    ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
+    ticket = Ticket(id="tid", external_id="G-1", workspace_id="ws", title="Test")
+    profile = OrchestrationProfile(
+        slug="demo", gates=GatesConfig(enabled=True, commands=["sleep 5"])
+    )
+
+    with patch("loregarden.services.gate_runner.GATE_TIMEOUT_SECONDS", 1):
+        result = run_transition_gates(session, profile, ws, ticket, from_stage="a", to_stage="b")
+
+    assert result.ok is False
+    assert result.outcome is GateOutcome.UNAVAILABLE
+    assert "timed out" in result.message
+
+
+def test_a_real_lint_failure_is_still_failed(session, tmp_path):
+    """The other side of it: a gate that ran and rejected the code is FAILED,
+    and must keep reaching the agent that can fix it."""
+    ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
+    ticket = Ticket(id="tid", external_id="G-2", workspace_id="ws", title="Test")
+    profile = OrchestrationProfile(
+        slug="demo", gates=GatesConfig(enabled=True, commands=["sh -c 'echo nope; exit 1'"])
+    )
+
+    result = run_transition_gates(session, profile, ws, ticket, from_stage="a", to_stage="b")
+
+    assert result.ok is False
+    assert result.outcome is GateOutcome.FAILED

@@ -210,6 +210,11 @@ class OrchestrationRun(SQLModel, table=True):
     # prompt (see services/external_harness.py). Null means loregarden's own
     # agents ran it. Indexed because comparing harnesses is the point of the
     # column — it is always read as a filter, never on its own.
+    #: Renewed by any control-plane write naming this run. The liveness signal
+    #: `status` could never be — only the owner moves a status, so an owner that
+    #: walked away left the run claiming to be alive forever. Null means never
+    #: renewed, which reads as the run's own start time.
+    last_seen_at: datetime | None = None
     external_harness: ExternalHarness | None = Field(
         default=None,
         sa_column=_str_enum_column(ExternalHarness, index=True, nullable=True),

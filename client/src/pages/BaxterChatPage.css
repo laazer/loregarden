@@ -89,6 +89,10 @@
   --lg-primitive-regular: var(--baxter-prose);
   --lg-primitive-wide: min(1100px, 100cqw);
   --lg-primitive-full: min(1400px, 100cqw);
+  /* Breakout cards start on the reading column's left edge and grow right, so their budget
+     is the room from that edge to the thread's right edge — half the overflow plus half the
+     column. Clamped to the thread, so a narrow window can never produce h-scroll. */
+  --lg-primitive-breakout-max: min(100cqw, calc(50cqw + var(--baxter-reading) / 2));
   max-width: var(--baxter-reading);
   margin: 0 auto;
   width: 100%;
@@ -99,8 +103,8 @@
   width: 100%;
 }
 
-/* Breakout slots centre on this column — it must match the reading measure, not prose,
-   or wide/full cards overhang the thread and get clipped by .baxter-chat { overflow:hidden }. */
+/* Breakout slots hang off this column's left edge — it must match the reading measure, not
+   prose, or every card sits inboard of the turn's own text. */
 .baxter-chat-thread .lg-chat-turn--wide .lg-chat-assistant-col,
 .baxter-chat-thread .lg-chat-turn--full .lg-chat-assistant-col {
   max-width: 100%;

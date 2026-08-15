@@ -68,6 +68,9 @@ class _Dispatcher:
     def __init__(self, session: Session):
         self.session = session
         self.launched: list[str] = []
+        #: Stand in for a refused dispatch — already orchestrating, no workflow,
+        #: unknown driver. The lane is left unclaimed and the entry queued.
+        self.refuse = False
 
     def dispatch_orchestration(
         self,
@@ -79,6 +82,8 @@ class _Dispatcher:
         max_stages=None,
         timeout_seconds=None,
     ):
+        if self.refuse:
+            return None
         self.launched.append(ticket.id)
         return _orch(self.session, ticket, f"orch_{len(self.launched)}")
 
@@ -472,3 +477,36 @@ def test_the_entry_settles_even_when_the_slot_is_already_gone(lanes, session, wo
 
     entry = session.exec(select(QueuedRun).where(QueuedRun.orchestration_run_id == orch_id)).one()
     assert entry.status == QueuePosition.STARTED
+
+
+def test_a_lane_whose_dispatch_was_refused_is_retried(lanes, session, workspace):
+    """A refusal is not an event on the lane, so nothing used to retry it.
+
+    `start_lane_head` leaves the entry queued and the lane unclaimed when a
+    dispatch is refused — the ticket is already orchestrating, its workflow is
+    gone, the driver name is unknown. That is right in the moment and wedges the
+    lane forever: `reconcile_lanes` only restarts lanes in `freed`, `freed` comes
+    from `reconcile_slots`, and that selects slots which were *taken*. A lane
+    never claimed is in no list. The other callers are an add, a move and a
+    completion, and a refusal is none of them.
+    """
+    ticket = _ticket(session, workspace.id, "LG-1")
+    lanes.dispatcher.refuse = True
+    lanes.add_to_lane(ticket_id=ticket.id, slot_number=1)
+
+    # Refused: the entry is still waiting and the lane was never claimed.
+    assert [e.ticket_id for e in lanes.waiting_in_lane(1)] == [ticket.id]
+    slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    assert slot.is_available is True
+
+    lanes.dispatcher.refuse = False
+    lanes.reconcile_lanes()
+
+    assert lanes.dispatcher.launched == [ticket.id]
+    assert lanes.waiting_in_lane(1) == []
+
+
+def test_reconcile_does_not_disturb_a_lane_that_is_genuinely_idle(lanes, session, workspace):
+    """An empty lane must not be poked into starting something."""
+    lanes.reconcile_lanes()
+    assert lanes.dispatcher.launched == []

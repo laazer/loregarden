@@ -369,7 +369,17 @@ class QueueLaneService:
         # bind free capacity to those children and empty the pool — undo that
         # before draining / claiming anything else.
         freed.extend(self._release_nested_slot_claims())
-        for slot_number in freed:
+        # Every idle lane, not only the ones freed on this pass. A dispatch can
+        # be refused — the ticket is already orchestrating, its workflow is
+        # gone, the driver name is unknown — and `start_lane_head` then leaves
+        # the entry queued and the lane unclaimed, deliberately, rather than
+        # holding a lane for nothing. But `freed` comes from `reconcile_slots`,
+        # which only selects slots that were *taken*, so a lane that was never
+        # claimed appears in no list here and nothing retries it. The other
+        # three callers are all events on that lane — an add, a move, a
+        # completion — and a refused dispatch is none of them, so the entry sat
+        # at position 1 of an idle lane until a human noticed.
+        for slot_number in sorted({*freed, *self._idle_lanes_with_work()}):
             # No-op unless something is actually waiting in that lane.
             self.start_lane_head(slot_number)
         # After draining: attach free capacity to live orchestrations that
@@ -494,6 +504,21 @@ class QueueLaneService:
         if claimed:
             self.session.commit()
         return claimed
+
+    def _idle_lanes_with_work(self) -> list[int]:
+        """Lanes sitting available with something already waiting in them.
+
+        A lane in this state is wedged, not idle: `start_lane_head` refused the
+        dispatch, correctly left the entry in place rather than claiming a lane
+        for nothing, and returned. Nothing retries a refusal, because every
+        other caller is an event on the lane — an add, a move, a completion —
+        and a refusal is none of them.
+        """
+        self.slots.initialize_slots()
+        available = self.session.exec(
+            select(AgentSlot).where(AgentSlot.is_available == True)  # noqa: E712
+        ).all()
+        return [slot.slot_number for slot in available if self.waiting_in_lane(slot.slot_number)]
 
     def _requeue_stranded_entries(self) -> None:
         """Return lane entries that were started by nothing to their lane.

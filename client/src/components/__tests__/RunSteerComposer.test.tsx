@@ -105,3 +105,55 @@ it("keeps showing what was sent after the run finishes", async () => {
   expect(await screen.findByText("check the migration")).toBeInTheDocument();
   expect(screen.queryByLabelText(/message to this run/i)).not.toBeInTheDocument();
 });
+
+it("stops a run after asking once", async () => {
+  mockApi.runMessages.mockResolvedValue({ messages: [], refusal: "" });
+  mockApi.cancelRun.mockResolvedValue({
+    id: "run-1",
+    status: "running",
+    cancel_requested_at: "2026-08-14T12:00:00",
+    refusal: "Cancel already requested.",
+  });
+
+  renderComposer();
+
+  // One click arms it, it does not fire. The button sits beside a text input
+  // and ending a turn cannot be undone.
+  fireEvent.click(await screen.findByRole("button", { name: /stop this run/i }));
+  expect(mockApi.cancelRun).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: /confirm stop/i }));
+  await waitFor(() => expect(mockApi.cancelRun).toHaveBeenCalledWith("run-1"));
+});
+
+it("lets an operator back out of a stop", async () => {
+  mockApi.runMessages.mockResolvedValue({ messages: [], refusal: "" });
+
+  renderComposer();
+  fireEvent.click(await screen.findByRole("button", { name: /stop this run/i }));
+  fireEvent.click(screen.getByRole("button", { name: /keep going/i }));
+
+  expect(screen.getByRole("button", { name: /stop this run/i })).toBeInTheDocument();
+  expect(mockApi.cancelRun).not.toHaveBeenCalled();
+});
+
+it("can stop a run that cannot be steered", async () => {
+  // A cursor-adapter run takes no input, and must not therefore be unstoppable.
+  mockApi.runMessages.mockResolvedValue({
+    messages: [],
+    refusal: "The reviewer agent runs on the cursor adapter, which cannot receive input once started.",
+  });
+
+  renderComposer();
+
+  expect(await screen.findByRole("button", { name: /stop this run/i })).toBeInTheDocument();
+});
+
+it("offers no stop for a run that is already finished", async () => {
+  mockApi.runMessages.mockResolvedValue({ messages: [message({ delivered_at: "x" })], refusal: "" });
+
+  renderComposer(false);
+
+  await screen.findByText(/use the existing helper/i);
+  expect(screen.queryByRole("button", { name: /stop this run/i })).not.toBeInTheDocument();
+});

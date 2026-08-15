@@ -22,6 +22,7 @@ from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
+from loregarden.services.run_concurrency import orchestration_lease_expired
 from loregarden.services.run_interruption import (
     INTERRUPTED_RUN_MESSAGE,
     STRANDED_STAGE_MESSAGE,
@@ -272,12 +273,7 @@ def fail_interrupted_orchestration_runs(
     already fails the orphaned AgentRun beneath it; this does the same for the parent.
     """
     query = select(OrchestrationRun).where(
-        OrchestrationRun.status == OrchestrationRunStatus.RUNNING,
-        # An external-harness run has no process here to be orphaned by a reload:
-        # it lives in someone's own terminal, which is the reason to use one.
-        # Failing it on startup would end the run mid-ticket every time this
-        # server restarted. Abandoned ones are cancelled by the operator.
-        col(OrchestrationRun.external_harness).is_(None),
+        OrchestrationRun.status == OrchestrationRunStatus.RUNNING
     )
     if ticket_id:
         query = query.where(OrchestrationRun.ticket_id == ticket_id)
@@ -285,6 +281,17 @@ def fail_interrupted_orchestration_runs(
     callbacks = OrchestrationCallbackService(session)
     failed: list[OrchestrationRun] = []
     for run in session.exec(query).all():
+        # An external-harness run has no process here to be orphaned by a
+        # reload: it lives in someone's own terminal, which is the reason to use
+        # one. Failing it on startup would end the run mid-ticket every time
+        # this server restarted, so it is exempt — but only while its lease
+        # holds. The exemption used to be unconditional and the cleanup was
+        # delegated to an operator surface that does not exist, which is how an
+        # abandoned session came to hold a lane permanently rather than until
+        # restart. "Not auto-resumed" and "never settled" were being conflated;
+        # only the first was ever decided.
+        if run.external_harness and not orchestration_lease_expired(run):
+            continue
         ticket = session.get(Ticket, run.ticket_id)
         if not ticket:
             continue

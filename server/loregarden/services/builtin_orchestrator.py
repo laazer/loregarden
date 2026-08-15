@@ -14,6 +14,7 @@ from loregarden.db.session import engine
 from loregarden.models.domain import (
     WORKFLOW_WORK_ITEM_TYPES,
     AgentRun,
+    GateOutcome,
     OrchestrationDriver,
     OrchestrationRun,
     OrchestrationRunStatus,
@@ -621,6 +622,16 @@ class BuiltinOrchestrator:
                 to_stage=to_stage,
             )
             if not result.ok:
+                if result.outcome is GateOutcome.UNAVAILABLE:
+                    # The gate could not run — a hung command, a binary not on
+                    # PATH. That is a fact about the machine, and handing it to
+                    # the stage's own agent buys a full CLI run that cannot
+                    # possibly fix it, then re-runs a stage that already passed.
+                    # Straight to a human.
+                    self._block_after_gate_failure(
+                        ticket, instance, stages, orch_run, from_stage, clean_gate_detail(result)
+                    )
+                    return _GateDecision.BLOCKED
                 detail = clean_gate_detail(result)
         if not detail:
             return _GateDecision.PASS

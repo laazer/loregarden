@@ -379,6 +379,25 @@ class TicketStudioSessionStatus(str, Enum):
     COMMITTED = "committed"
 
 
+class GateOutcome(str, Enum):
+    """How a transition-gate evaluation ended.
+
+    ``UNAVAILABLE`` is the one that earns its keep. A gate that timed out or
+    whose command is not on PATH used to be reported as ``FAILED``, which is
+    what the orchestrator hands to the stage's own agent to fix — so a hung
+    `npx` in a worktree with no node_modules cost 300s, then an autofix pass,
+    then a whole agent re-run of a stage that had already passed, and round
+    again. No agent can install a toolchain it cannot see. "Could not run" is a
+    fact about the machine and goes straight to a human.
+    """
+
+    PASSED = "passed"
+    SKIPPED = "skipped"
+    DISABLED = "disabled"
+    FAILED = "failed"
+    UNAVAILABLE = "unavailable"
+
+
 class CIStatus(str, Enum):
     PENDING = "pending"
     PASSING = "passing"

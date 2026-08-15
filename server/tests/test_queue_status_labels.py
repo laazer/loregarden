@@ -5,6 +5,8 @@ slot is still moving comes from the run tables, so the snapshot has to carry it
 — otherwise a card cannot tell a working lane from a stuck one.
 """
 
+from datetime import datetime, timezone
+
 from loregarden.models.domain import (
     AgentRun,
     AgentSlot,
@@ -15,6 +17,7 @@ from loregarden.models.domain import (
     TicketState,
     Workspace,
 )
+from loregarden.services.parallel_queue import ParallelQueueService
 from loregarden.services.queue_status import build_queue_status
 from sqlmodel import Session, select
 
@@ -135,6 +138,15 @@ async def test_a_slot_held_by_a_finished_run_is_reclaimed(db_session):
 async def test_a_waiting_entry_carries_its_own_state(db_session):
     ws = _workspace(db_session)
     waiting = _ticket(db_session, ws, "LANE-3", TicketState.BLOCKED)
+    # An entry only waits in a lane that is busy. `reconcile_lanes` starts the
+    # head of any idle lane with work queued, because a refused dispatch used to
+    # leave exactly that state with nothing to retry it.
+    ParallelQueueService(db_session).initialize_slots()
+    lane = db_session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
+    lane.is_available = False
+    lane.assigned_at = datetime.now(timezone.utc)
+    db_session.add(lane)
+    db_session.commit()
     db_session.add(
         QueuedRun(
             workspace_id=ws.id,

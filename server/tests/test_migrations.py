@@ -1092,7 +1092,8 @@ def test_a_database_migrated_by_newer_code_is_called_out(tmp_path, caplog):
     """Reverting past a value-rewriting migration is otherwise a mystery LookupError."""
     import logging
 
-    from loregarden.db.migration_runner import warn_if_database_is_ahead
+    from loregarden.db.migrations import MIGRATIONS
+    from loregarden.db.migrations_runner import _warn_if_database_is_ahead
 
     engine = create_engine(f"sqlite:///{tmp_path / 'ahead.db'}")
     SQLModel.metadata.create_all(engine)
@@ -1104,14 +1105,15 @@ def test_a_database_migrated_by_newer_code_is_called_out(tmp_path, caplog):
         applied = {r[0] for r in conn.execute(text("SELECT id FROM schema_migrations"))}
 
     with caplog.at_level(logging.ERROR):
-        unknown = warn_if_database_is_ahead(applied, MIGRATIONS)
+        unknown = _warn_if_database_is_ahead(applied, {mid for mid, _ in MIGRATIONS})
 
     assert unknown == ["9999_from_the_future"]
     assert "9999_from_the_future" in caplog.text
 
 
 def test_a_current_database_is_not_flagged_as_ahead(tmp_path):
-    from loregarden.db.migration_runner import warn_if_database_is_ahead
+    from loregarden.db.migrations import MIGRATIONS
+    from loregarden.db.migrations_runner import _warn_if_database_is_ahead
 
     engine = create_engine(f"sqlite:///{tmp_path / 'current.db'}")
     SQLModel.metadata.create_all(engine)
@@ -1119,7 +1121,7 @@ def test_a_current_database_is_not_flagged_as_ahead(tmp_path):
     with engine.connect() as conn:
         applied = {r[0] for r in conn.execute(text("SELECT id FROM schema_migrations"))}
 
-    assert warn_if_database_is_ahead(applied, MIGRATIONS) == []
+    assert _warn_if_database_is_ahead(applied, {mid for mid, _ in MIGRATIONS}) == []
 
 
 def test_workspace_scoped_runs_and_approvals_relax_ticket_id(tmp_path):

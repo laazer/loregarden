@@ -18,7 +18,6 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from loregarden.db.migration_ids import assert_migration_ids_are_sound
-from loregarden.db.migration_runner import run_migrations
 from loregarden.db.migration_utils import (
     add_columns_if_missing,
     index_exists,
@@ -27,7 +26,7 @@ from loregarden.db.migration_utils import (
     table_exists,
 )
 from loregarden.db.migrations_composer import m_composer_commands
-from loregarden.db.migrations_doctor import m_agent_run_preflight
+from loregarden.db.migrations_doctor import m_agent_run_preflight, m_orchestration_run_lease
 from loregarden.db.migrations_external_harness import m_external_harness_columns
 from loregarden.db.migrations_fk_repair import m_repair_dangling_references
 from loregarden.db.migrations_git_boundary import (
@@ -1438,12 +1437,18 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0079_agent_run_git_boundary", m_agent_run_git_boundary),
     ("0080_agent_run_boundary_verdict", m_agent_run_boundary_verdict),
     ("0081_agent_run_preflight", m_agent_run_preflight),
-    ("0082_repair_dangling_references", m_repair_dangling_references),
+    ("0082_orchestration_run_lease", m_orchestration_run_lease),
+    ("0083_repair_dangling_references", m_repair_dangling_references),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
 
+from loregarden.db.migrations_runner import apply_pending  # noqa: E402
+
 
 def apply_migrations(engine: Engine) -> list[str]:
-    """Apply this module's ledger. See ``migration_runner.run_migrations``."""
-    return run_migrations(engine, MIGRATIONS)
+    """Apply every pending migration in this registry, in order."""
+    return apply_pending(engine, MIGRATIONS)
+
+
+__all__ = ["MIGRATIONS", "apply_migrations"]

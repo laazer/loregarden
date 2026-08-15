@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+from datetime import datetime, timedelta, timezone
 
 from loregarden.models.domain import AgentRun, OrchestrationRun, OrchestrationRunStatus, RunStatus
 from sqlmodel import Session, col, select
@@ -76,3 +77,28 @@ def find_active_orchestration_run(session: Session, ticket_id: str) -> Orchestra
         )
         .order_by(col(OrchestrationRun.created_at).desc())
     ).first()
+
+
+#: How long an orchestration may go without a single control-plane write before
+#: its lane is reclaimable. Renewed by `OrchestrationCallbackService.touch_lease`
+#: on every stage start, completion, skip and block, so a session doing real work
+#: renews many times over; only one that has stopped talking to us expires.
+ORCHESTRATION_LEASE = timedelta(minutes=30)
+
+
+def orchestration_lease_expired(
+    run: OrchestrationRun, *, lease: timedelta = ORCHESTRATION_LEASE
+) -> bool:
+    """Whether a run has gone quiet for longer than the lease allows.
+
+    A run that has never been renewed falls back to when it started, so a row
+    written before the lease existed — or a claim whose driver died before it
+    did anything — is reclaimable on the first sweep rather than needing a
+    backfill.
+    """
+    stamp = run.last_seen_at or run.started_at or run.created_at
+    if stamp is None:
+        return False
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - stamp > lease
