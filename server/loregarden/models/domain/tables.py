@@ -303,6 +303,11 @@ class AgentRun(SQLModel, table=True):
     # whose terminal died, can be reaped instead of blocking the ticket forever.
     handoff_accepted_at: datetime | None = None
     handoff_pid: int | None = None
+    #: The detached agent process, and a fingerprint that survives pid reuse.
+    #: Separate from handoff_pid: that one names a terminal a human pasted into,
+    #: this one names a process this server spawned. See services/process_identity.
+    agent_pid: int | None = None
+    agent_pid_identity: str = ""
     #: Renewed by the thread supervising this run; see services/run_lease.
     #: Null means never renewed, which reads as the run's start time.
     last_seen_at: datetime | None = None
