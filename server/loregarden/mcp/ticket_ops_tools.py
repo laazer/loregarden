@@ -93,7 +93,9 @@ def _move_ticket_workspace(session: Session, svc, arguments: dict[str, Any]) -> 
                 "new_parent_ticket_id to re-parent it in the destination, or "
                 "detach_parent=true to move it to the top level."
             )
-        ticket.parent_ticket_id = ""
+        # None, not "": the column references tickets.id, and no ticket has an
+        # empty id. Every other detach path in the codebase writes None.
+        ticket.parent_ticket_id = None
 
     moved = [ticket, *_descendants(session, ticket.id)]
     for item in moved:

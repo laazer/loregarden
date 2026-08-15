@@ -27,13 +27,29 @@ Contract exercised here (see server/loregarden/services/stage_retry_budget.py):
   dispatch: "" when disabled or still within budget, else the block message.
 """
 
+import pytest
+from loregarden.models.domain import Workspace
 from loregarden.services.stage_retry_budget import (
     count_stage_dispatches,
     exceeds_stage_retry_budget,
     record_stage_dispatch,
     stage_retry_block_message,
 )
-from sqlmodel import Session
+from sqlmodel import Session, select
+from tests.factories import make_ticket
+
+
+@pytest.fixture(autouse=True)
+def _tickets(db_session: Session):
+    """The counter is a row in `artifacts`, which references a ticket.
+
+    These tests are about the count, not the ticket, so they read for whichever
+    literal id names the pair under test — the rows just have to exist.
+    """
+    workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
+    for ticket_id in ("t1", "ticket-a", "ticket-b"):
+        make_ticket(db_session, workspace_id=workspace.id, ticket_id=ticket_id)
+
 
 # -- record_stage_dispatch / count_stage_dispatches ---------------------------
 

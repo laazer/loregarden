@@ -72,8 +72,11 @@ def relax_not_null(conn: Connection, table: str, column: str) -> None:
     SQLite has no ``ALTER COLUMN``, so the table is rebuilt: the schema is read
     back from ``PRAGMA`` rather than restated here, which keeps the rebuild
     correct no matter which earlier migrations added columns to this table.
-    Foreign-key enforcement is off on this connection (see ``db.session``), so
-    the drop-and-rename does not have to be sequenced around dependants.
+
+    The drop-and-rename is only safe with foreign-key enforcement off — every
+    dependant's reference would otherwise break the moment the original table is
+    dropped. ``apply_migrations`` turns it off for the duration of the run; this
+    helper must not be called on a connection outside that scope.
     """
     if not table_exists(conn, table) or column_is_nullable(conn, table, column):
         return

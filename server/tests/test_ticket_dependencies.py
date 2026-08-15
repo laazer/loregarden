@@ -4,13 +4,14 @@ test_auto_mode_subtree.py and test_studio_workflow_assignment.py.
 """
 
 import pytest
-from loregarden.models.domain import Ticket, WorkItemType
+from loregarden.models.domain import Ticket, WorkItemType, Workspace
 from loregarden.services.subtree_auto_run import order_children_for_subtree
 from loregarden.services.ticket_dependencies import (
     DependencyCycleError,
     TicketDependencyService,
 )
-from sqlmodel import Session
+from sqlmodel import Session, select
+from tests.factories import make_ticket
 
 
 def _ticket(
@@ -32,6 +33,13 @@ def _ticket(
 
 
 # --- order_children_for_subtree (pure) -------------------------------------
+
+
+def _rows(session: Session, *ticket_ids: str) -> None:
+    """`ticket_dependencies` names a ticket at both ends of every edge."""
+    workspace = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
+    for ticket_id in ticket_ids:
+        make_ticket(session, workspace_id=workspace.id, ticket_id=ticket_id)
 
 
 def test_order_puts_prerequisite_before_dependent():
@@ -74,6 +82,7 @@ def test_order_degrades_gracefully_on_a_cycle():
 
 
 def test_add_dependency_is_idempotent_and_rejects_self(db_session: Session):
+    _rows(db_session, "t1", "t2")
     svc = TicketDependencyService(db_session)
     first = svc.add_dependency("t1", "t2")
     again = svc.add_dependency("t1", "t2")
@@ -83,6 +92,7 @@ def test_add_dependency_is_idempotent_and_rejects_self(db_session: Session):
 
 
 def test_add_dependency_rejects_a_cycle(db_session: Session):
+    _rows(db_session, "a", "b", "c")
     svc = TicketDependencyService(db_session)
     svc.add_dependency("a", "b")  # a waits for b
     svc.add_dependency("b", "c")  # b waits for c
@@ -91,6 +101,7 @@ def test_add_dependency_rejects_a_cycle(db_session: Session):
 
 
 def test_prerequisites_map_scopes_to_requested_ids(db_session: Session):
+    _rows(db_session, "a", "b", "c")
     svc = TicketDependencyService(db_session)
     svc.add_dependency("a", "b")
     svc.add_dependency("a", "c")
@@ -100,6 +111,7 @@ def test_prerequisites_map_scopes_to_requested_ids(db_session: Session):
 
 
 def test_remove_dependency(db_session: Session):
+    _rows(db_session, "a", "b")
     svc = TicketDependencyService(db_session)
     svc.add_dependency("a", "b")
     assert svc.remove_dependency("a", "b") is True

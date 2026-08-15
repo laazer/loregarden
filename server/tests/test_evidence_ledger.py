@@ -18,7 +18,11 @@ def session_and_ticket(tmp_path, git_repo):
     engine = create_engine(f"sqlite:///{tmp_path / 'db.sqlite'}")
     SQLModel.metadata.create_all(engine)
     session = Session(engine)
+    # Committed before the ticket that names it: a flush orders statements by
+    # mapper relationship, and these are joined by a bare foreign key column, so
+    # one flush can emit the ticket first.
     session.add(Workspace(id="ws", slug="ws", name="WS", repo_path=str(git_repo)))
+    session.commit()
     ticket = Ticket(
         id="t1",
         external_id="42-ledger",

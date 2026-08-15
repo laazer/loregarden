@@ -33,6 +33,9 @@ def test_execute_marks_run_failed_when_declared_skill_is_missing(db_session, tmp
         workspace_id=workspace.id,
         acceptance_criteria_json="[]",
     )
+    # Committed before the run that names it: one flush can emit the run first.
+    db_session.add(ticket)
+    db_session.commit()
     run = AgentRun(
         run_code="run_missing_skill",
         ticket_id=ticket.id,
@@ -42,7 +45,6 @@ def test_execute_marks_run_failed_when_declared_skill_is_missing(db_session, tmp
         skill_name="missing-skill",
         status=RunStatus.RUNNING,
     )
-    db_session.add(ticket)
     db_session.add(run)
     db_session.commit()
 
@@ -69,6 +71,9 @@ def test_prepare_terminal_handoff_propagates_skill_not_found(db_session):
         workspace_id=workspace.id,
         acceptance_criteria_json="[]",
     )
+    # Committed before the run that names it: one flush can emit the run first.
+    db_session.add(ticket)
+    db_session.commit()
     run = AgentRun(
         run_code="run_terminal_missing_skill",
         ticket_id=ticket.id,
@@ -78,7 +83,6 @@ def test_prepare_terminal_handoff_propagates_skill_not_found(db_session):
         skill_name="missing-terminal-skill",
         status=RunStatus.RUNNING,
     )
-    db_session.add(ticket)
     db_session.add(run)
     db_session.commit()
 

@@ -19,6 +19,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.queue_lanes import QueueLaneService
+from loregarden.services.ticket_service import TicketService
 from sqlmodel import Session, select
 
 
@@ -300,8 +301,10 @@ def test_a_vanished_ticket_does_not_wedge_the_lane(lanes, session, workspace):
     lanes.add_to_lane(ticket_id=doomed.id, slot_number=1)
     lanes.add_to_lane(ticket_id=good.id, slot_number=1)
 
-    session.delete(session.get(Ticket, doomed.id))
-    session.commit()
+    # Deleted the way the app deletes a ticket. A raw `session.delete` leaves
+    # the lane entry pointing at nothing, which foreign-key enforcement now
+    # rejects outright — the state this used to simulate is unreachable.
+    TicketService(session).delete_ticket(doomed.id)
 
     slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
     lanes.on_orchestration_complete(slot.current_orchestration_run_id)

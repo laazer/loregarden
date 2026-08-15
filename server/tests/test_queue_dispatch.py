@@ -13,6 +13,7 @@ from loregarden.models.domain import AgentRun, AgentSlot, QueuedRun, Workspace
 from loregarden.models.domain.enums import QueuePosition
 from loregarden.services.parallel_queue import ParallelQueueService
 from sqlmodel import Session, select
+from tests.factories import make_agent_run, make_ticket
 
 
 @pytest.fixture(name="session")
@@ -31,16 +32,10 @@ def workspace_fixture(session):
 
 
 def _run(session: Session, workspace_id: str, code: str) -> AgentRun:
-    run = AgentRun(
-        run_code=code,
-        ticket_id="ticket-1",
-        workspace_id=workspace_id,
-        agent_id="backend_implementer",
-    )
-    session.add(run)
-    session.commit()
-    session.refresh(run)
-    return run
+    # The ticket has to exist: `agent_runs.ticket_id` references it, and these
+    # tests read for the literal "ticket-1".
+    make_ticket(session, workspace_id=workspace_id, ticket_id="ticket-1")
+    return make_agent_run(session, workspace_id=workspace_id, ticket_id="ticket-1", run_code=code)
 
 
 @pytest.mark.asyncio

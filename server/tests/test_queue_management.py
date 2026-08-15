@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from loregarden.api.queue_management import _reorder_queue_internal
 from loregarden.models.domain import (
-    AgentRun,
     AgentSlot,
     QueuedRun,
     QueuePosition,
@@ -15,6 +14,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.event_hub import event_hub
 from sqlmodel import Session, select
+from tests.factories import make_agent_run, queued_run
 
 
 @pytest.mark.asyncio
@@ -29,21 +29,24 @@ class TestQueueReordering:
         db_session.commit()
 
         # Create queued runs: run-1 pos 1, run-2 pos 2, run-3 pos 3
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-1",
             position=1,
             status=QueuePosition.QUEUED,
         )
-        run2 = QueuedRun(
+        run2 = queued_run(
+            db_session,
             run_id="run-2",
             ticket_id="ticket-2",
             workspace_id="ws-1",
             position=2,
             status=QueuePosition.QUEUED,
         )
-        run3 = QueuedRun(
+        run3 = queued_run(
+            db_session,
             run_id="run-3",
             ticket_id="ticket-3",
             workspace_id="ws-1",
@@ -72,21 +75,24 @@ class TestQueueReordering:
         db_session.commit()
 
         # Create queued runs: run-1 pos 1, run-2 pos 2, run-3 pos 3
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-2",
             position=1,
             status=QueuePosition.QUEUED,
         )
-        run2 = QueuedRun(
+        run2 = queued_run(
+            db_session,
             run_id="run-2",
             ticket_id="ticket-2",
             workspace_id="ws-2",
             position=2,
             status=QueuePosition.QUEUED,
         )
-        run3 = QueuedRun(
+        run3 = queued_run(
+            db_session,
             run_id="run-3",
             ticket_id="ticket-3",
             workspace_id="ws-2",
@@ -116,7 +122,8 @@ class TestQueueReordering:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-3",
@@ -143,7 +150,8 @@ class TestQueueReordering:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-4",
@@ -180,7 +188,8 @@ class TestQueueReordering:
         db_session.commit()
 
         # Create a run that has already been promoted out of the queue
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-5",
@@ -206,7 +215,8 @@ class TestQueueReordering:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-6",
@@ -229,14 +239,16 @@ class TestQueueReordering:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-7",
             position=1,
             status=QueuePosition.QUEUED,
         )
-        run2 = QueuedRun(
+        run2 = queued_run(
+            db_session,
             run_id="run-2",
             ticket_id="ticket-2",
             workspace_id="ws-7",
@@ -280,7 +292,8 @@ class TestQueueReordering:
             start=1,
         ):
             db_session.add(
-                QueuedRun(
+                queued_run(
+                    db_session,
                     run_id=run_id,
                     ticket_id=f"ticket-{position}",
                     workspace_id=ws_id,
@@ -320,15 +333,17 @@ class TestQueueInfo:
         db_session.add(ws)
         db_session.commit()
 
-        agent_run1 = AgentRun(
-            id="run-1",
+        agent_run1 = make_agent_run(
+            db_session,
+            run_id="run-1",
             run_code="run_1",
             ticket_id="ticket-1",
             workspace_id="ws-10",
             agent_id="dev",
         )
-        agent_run2 = AgentRun(
-            id="run-2",
+        agent_run2 = make_agent_run(
+            db_session,
+            run_id="run-2",
             run_code="run_2",
             ticket_id="ticket-2",
             workspace_id="ws-10",
@@ -337,14 +352,16 @@ class TestQueueInfo:
         db_session.add_all([agent_run1, agent_run2])
         db_session.commit()
 
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-10",
             position=1,
             status=QueuePosition.QUEUED,
         )
-        run2 = QueuedRun(
+        run2 = queued_run(
+            db_session,
             run_id="run-2",
             ticket_id="ticket-2",
             workspace_id="ws-10",
@@ -385,8 +402,9 @@ class TestQueueInfo:
 
         # Create 3 queued runs (300s each = 900s)
         for i in range(1, 4):
-            agent_run = AgentRun(
-                id=f"run-{i}",
+            agent_run = make_agent_run(
+                db_session,
+                run_id=f"run-{i}",
                 run_code=f"run_{i}",
                 ticket_id=f"ticket-{i}",
                 workspace_id="ws-12",
@@ -396,7 +414,8 @@ class TestQueueInfo:
         db_session.commit()
 
         for i in range(1, 4):
-            run = QueuedRun(
+            run = queued_run(
+                db_session,
                 run_id=f"run-{i}",
                 ticket_id=f"ticket-{i}",
                 workspace_id="ws-12",
@@ -424,7 +443,8 @@ class TestQueuePromotion:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-13",
@@ -454,7 +474,8 @@ class TestQueuePromotion:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-14",
@@ -493,7 +514,8 @@ class TestQueuePromotion:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-15",
@@ -524,20 +546,31 @@ class TestQueuePromotion:
 
         # Lifespan reconcile seeds the shared global pool. Occupy every free
         # slot so this test's promote claim is the only capacity left.
+        # The runs first: `agent_slots.current_run_id` references agent_runs, and
+        # each factory call commits — which would expire the slots mid-iteration.
+        slots = db_session.exec(select(AgentSlot)).all()
+        busy_runs = {
+            existing.slot_number: make_agent_run(
+                db_session, workspace_id=ws.id, run_code=f"busy_{existing.slot_number}"
+            ).id
+            for existing in slots
+        }
         for existing in db_session.exec(select(AgentSlot)).all():
             existing.is_available = False
-            existing.current_run_id = f"busy-{existing.slot_number}"
+            existing.current_run_id = busy_runs[existing.slot_number]
             db_session.add(existing)
 
         slot = AgentSlot(workspace_id="ws-promote-target", slot_number=99, is_available=True)
-        head = QueuedRun(
+        head = queued_run(
+            db_session,
             run_id="run-head",
             ticket_id="ticket-head",
             workspace_id="ws-promote-target",
             position=1,
             status=QueuePosition.QUEUED,
         )
-        target = QueuedRun(
+        target = queued_run(
+            db_session,
             run_id="run-target",
             ticket_id="ticket-target",
             workspace_id="ws-promote-target",
@@ -547,7 +580,11 @@ class TestQueuePromotion:
         db_session.add_all([slot, head, target])
         db_session.commit()
 
-        result = await promote_run("run-target", db_session)
+        # Promotion dispatches for real once its ticket resolves — which it now
+        # does, since `queued_runs.ticket_id` has to name a row. Left unpatched
+        # this checks a branch out in whatever repo the workspace points at.
+        with patch("loregarden.services.run_service.schedule_agent_run"):
+            result = await promote_run("run-target", db_session)
 
         assert result["status"] == "promoted"
         assert result["promoted_run"]["run_id"] == "run-target"
@@ -578,9 +615,18 @@ class TestQueuePromotion:
         db_session.commit()
 
         # Occupy the lifespan-seeded pool plus an explicit busy row.
+        # The runs first: `agent_slots.current_run_id` references agent_runs, and
+        # each factory call commits — which would expire the slots mid-iteration.
+        slots = db_session.exec(select(AgentSlot)).all()
+        busy_runs = {
+            existing.slot_number: make_agent_run(
+                db_session, workspace_id=ws.id, run_code=f"busy_{existing.slot_number}"
+            ).id
+            for existing in slots
+        }
         for existing in db_session.exec(select(AgentSlot)).all():
             existing.is_available = False
-            existing.current_run_id = f"busy-{existing.slot_number}"
+            existing.current_run_id = busy_runs[existing.slot_number]
             db_session.add(existing)
         slot = AgentSlot(
             workspace_id="ws-promote-full",
@@ -588,7 +634,8 @@ class TestQueuePromotion:
             is_available=False,
             current_run_id=None,
         )
-        queued = QueuedRun(
+        queued = queued_run(
+            db_session,
             run_id="run-waiting",
             ticket_id="ticket-waiting",
             workspace_id="ws-promote-full",
@@ -621,14 +668,16 @@ class TestQueueErrorHandling:
         db_session.add(ws)
         db_session.commit()
 
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-16",
             position=1,
             status=QueuePosition.QUEUED,
         )
-        run2 = QueuedRun(
+        run2 = queued_run(
+            db_session,
             run_id="run-2",
             ticket_id="ticket-2",
             workspace_id="ws-16",
@@ -663,7 +712,8 @@ class TestQueueErrorHandling:
         db_session.commit()
 
         # Create runs then delete one mid-operation (simulated by returning gracefully)
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-17",
@@ -693,7 +743,8 @@ class TestQueueConcurrency:
 
         # Create queue
         for i in range(1, 4):
-            run = QueuedRun(
+            run = queued_run(
+                db_session,
                 run_id=f"run-{i}",
                 ticket_id=f"ticket-{i}",
                 workspace_id="ws-18",
@@ -738,7 +789,8 @@ class TestQueueConcurrency:
             start=1,
         ):
             db_session.add(
-                QueuedRun(
+                queued_run(
+                    db_session,
                     run_id=run_id,
                     ticket_id=f"ticket-{position}",
                     workspace_id=ws_id,
@@ -774,21 +826,24 @@ class TestQueueIntegration:
         db_session.commit()
 
         # Create queue: run-1 active, run-2 queued, run-3 queued
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-21",
             position=None,
             status=QueuePosition.ACTIVE,
         )
-        run2 = QueuedRun(
+        run2 = queued_run(
+            db_session,
             run_id="run-2",
             ticket_id="ticket-2",
             workspace_id="ws-21",
             position=1,
             status=QueuePosition.QUEUED,
         )
-        run3 = QueuedRun(
+        run3 = queued_run(
+            db_session,
             run_id="run-3",
             ticket_id="ticket-3",
             workspace_id="ws-21",
@@ -816,15 +871,17 @@ class TestQueueIntegration:
         db_session.add(ws)
         db_session.commit()
 
-        agent_run1 = AgentRun(
-            id="run-1",
+        agent_run1 = make_agent_run(
+            db_session,
+            run_id="run-1",
             run_code="run_1",
             ticket_id="ticket-1",
             workspace_id="ws-22",
             agent_id="dev",
         )
-        agent_run2 = AgentRun(
-            id="run-2",
+        agent_run2 = make_agent_run(
+            db_session,
+            run_id="run-2",
             run_code="run_2",
             ticket_id="ticket-2",
             workspace_id="ws-22",
@@ -833,14 +890,16 @@ class TestQueueIntegration:
         db_session.add_all([agent_run1, agent_run2])
         db_session.commit()
 
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-22",
             position=1,
             status=QueuePosition.QUEUED,
         )
-        run2 = QueuedRun(
+        run2 = queued_run(
+            db_session,
             run_id="run-2",
             ticket_id="ticket-2",
             workspace_id="ws-22",
@@ -884,8 +943,9 @@ class TestOnRunCompleteFailureWiring:
         db_session.add(ws)
         db_session.commit()
 
-        agent_run = AgentRun(
-            id="run-fail-1",
+        agent_run = make_agent_run(
+            db_session,
+            run_id="run-fail-1",
             run_code="run_fail_1",
             ticket_id="ticket-fail-1",
             workspace_id="ws-fail-1",
@@ -896,7 +956,8 @@ class TestOnRunCompleteFailureWiring:
         db_session.add(agent_run)
         db_session.commit()
 
-        queued = QueuedRun(
+        queued = queued_run(
+            db_session,
             run_id="run-fail-1",
             ticket_id="ticket-fail-1",
             workspace_id="ws-fail-1",
@@ -924,8 +985,9 @@ class TestOnRunCompleteFailureWiring:
         db_session.add(ws)
         db_session.commit()
 
-        agent_run = AgentRun(
-            id="run-fail-2",
+        agent_run = make_agent_run(
+            db_session,
+            run_id="run-fail-2",
             run_code="run_fail_2",
             ticket_id="ticket-fail-2",
             workspace_id="ws-fail-2",
@@ -936,7 +998,8 @@ class TestOnRunCompleteFailureWiring:
         db_session.add(agent_run)
         db_session.commit()
 
-        queued = QueuedRun(
+        queued = queued_run(
+            db_session,
             run_id="run-fail-2",
             ticket_id="ticket-fail-2",
             workspace_id="ws-fail-2",
@@ -966,8 +1029,9 @@ class TestOnRunCompleteFailureWiring:
         db_session.add(ws)
         db_session.commit()
 
-        agent_run = AgentRun(
-            id="run-ok-1",
+        agent_run = make_agent_run(
+            db_session,
+            run_id="run-ok-1",
             run_code="run_ok_1",
             ticket_id="ticket-ok-1",
             workspace_id="ws-ok-1",
@@ -977,7 +1041,8 @@ class TestOnRunCompleteFailureWiring:
         db_session.add(agent_run)
         db_session.commit()
 
-        queued = QueuedRun(
+        queued = queued_run(
+            db_session,
             run_id="run-ok-1",
             ticket_id="ticket-ok-1",
             workspace_id="ws-ok-1",

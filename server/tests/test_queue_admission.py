@@ -13,6 +13,7 @@ import pytest
 from loregarden.models.domain import AgentSlot, QueuedRun, Ticket, Workspace
 from loregarden.services.queue_admission import QueueAdmissionService
 from sqlmodel import Session, select
+from tests.factories import make_agent_run, make_orchestration_run
 
 
 @pytest.fixture(name="session")
@@ -44,7 +45,14 @@ def _fill_pool(session: Session, admission: QueueAdmissionService, workspace, co
         ticket = _ticket(session, workspace.id, f"FILL-{index}")
         reservation = admission.reserve_orchestration(ticket)
         assert reservation.admitted
-        reservation.bind(run_id=f"run-fill-{index}")
+        # A real run row: `agent_slots.current_run_id` references agent_runs.
+        run = make_agent_run(
+            session,
+            workspace_id=workspace.id,
+            ticket_id=ticket.id,
+            run_code=f"run-fill-{index}",
+        )
+        reservation.bind(run_id=run.id)
 
 
 def test_capacity_free_admits_and_claims_a_slot(session, workspace):
@@ -119,12 +127,16 @@ def test_a_queued_orchestration_is_marked_as_one(session, workspace):
 
 def test_binding_names_what_the_caller_started(session, workspace):
     admission = QueueAdmissionService(session, max_concurrent=3)
-    reservation = admission.reserve_orchestration(_ticket(session, workspace.id, "LG-1"))
+    ticket = _ticket(session, workspace.id, "LG-1")
+    reservation = admission.reserve_orchestration(ticket)
+    run = make_agent_run(
+        session, workspace_id=workspace.id, ticket_id=ticket.id, run_code="run-abc"
+    )
 
-    reservation.bind(run_id="run-abc")
+    reservation.bind(run_id=run.id)
 
     slot = session.exec(select(AgentSlot).where(AgentSlot.slot_number == 1)).one()
-    assert slot.current_run_id == "run-abc"
+    assert slot.current_run_id == run.id
     assert slot.is_available is False
 
 
@@ -186,8 +198,14 @@ def test_a_queued_entry_starts_when_the_lane_drains(session, workspace, endpoint
     dispatcher = MagicMock()
     dispatch_orch = dispatcher.dispatch_orchestration
     dispatch_stage = dispatcher.dispatch_stage
-    dispatch_orch.return_value = type("O", (), {"id": "orch-1", "run_code": "orch_1"})()
-    dispatch_stage.return_value = type("R", (), {"id": "run-1"})()
+    # Real rows, not stand-ins: what the dispatcher returns is written straight
+    # into `agent_slots`, whose columns reference these tables.
+    dispatch_orch.return_value = make_orchestration_run(
+        session, workspace_id=workspace.id, ticket_id=ticket.id, run_code="orch_1"
+    )
+    dispatch_stage.return_value = make_agent_run(
+        session, workspace_id=workspace.id, ticket_id=ticket.id, run_code="run_1"
+    )
     admission.lanes.dispatcher = dispatcher
 
     admission.lanes.start_lane_head(1)
@@ -258,13 +276,16 @@ def test_releasing_does_not_take_a_lane_someone_else_now_holds(session, workspac
     lets the pool admit past `max_concurrent`.
     """
     admission = QueueAdmissionService(session, max_concurrent=3)
-    reservation = admission.reserve_orchestration(_ticket(session, workspace.id, "T-first"))
-    reservation.bind(orchestration_run_id="orch-first")
+    ticket = _ticket(session, workspace.id, "T-first")
+    reservation = admission.reserve_orchestration(ticket)
+    first = make_orchestration_run(session, workspace_id=workspace.id, ticket_id=ticket.id)
+    reservation.bind(orchestration_run_id=first.id)
 
     slot = session.exec(
         select(AgentSlot).where(AgentSlot.slot_number == reservation.slot_number)
     ).one()
-    slot.current_orchestration_run_id = "orch-next"
+    nxt = make_orchestration_run(session, workspace_id=workspace.id, ticket_id=ticket.id)
+    slot.current_orchestration_run_id = nxt.id
     session.add(slot)
     session.commit()
 
@@ -272,13 +293,15 @@ def test_releasing_does_not_take_a_lane_someone_else_now_holds(session, workspac
 
     session.refresh(slot)
     assert slot.is_available is False
-    assert slot.current_orchestration_run_id == "orch-next"
+    assert slot.current_orchestration_run_id == nxt.id
 
 
 def test_releasing_gives_back_a_slot_that_is_still_ours(session, workspace):
     admission = QueueAdmissionService(session, max_concurrent=3)
-    reservation = admission.reserve_orchestration(_ticket(session, workspace.id, "T-first"))
-    reservation.bind(orchestration_run_id="orch-first")
+    ticket = _ticket(session, workspace.id, "T-first")
+    reservation = admission.reserve_orchestration(ticket)
+    orch = make_orchestration_run(session, workspace_id=workspace.id, ticket_id=ticket.id)
+    reservation.bind(orchestration_run_id=orch.id)
 
     reservation.release()
 
@@ -305,7 +328,10 @@ def test_a_named_lane_that_filled_still_runs_the_ticket(session, workspace):
     and confirming, and the ask was to run the ticket."""
     admission = QueueAdmissionService(session, max_concurrent=3)
     taken = _ticket(session, workspace.id, "T-taken")
-    admission.reserve_orchestration(taken, preferred_slot=2).bind(run_id="run-taken")
+    taken_run = make_agent_run(
+        session, workspace_id=workspace.id, ticket_id=taken.id, run_code="run-taken"
+    )
+    admission.reserve_orchestration(taken, preferred_slot=2).bind(run_id=taken_run.id)
 
     reservation = admission.reserve_orchestration(
         _ticket(session, workspace.id, "T-second"), preferred_slot=2

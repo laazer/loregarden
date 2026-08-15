@@ -32,6 +32,7 @@ from loregarden.db.migrations_doctor import (
     m_orchestration_run_lease,
 )
 from loregarden.db.migrations_external_harness import m_external_harness_columns
+from loregarden.db.migrations_fk_repair import m_repair_dangling_references
 from loregarden.db.migrations_git_boundary import (
     m_agent_run_boundary_verdict,
     m_agent_run_git_boundary,
@@ -1442,6 +1443,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0081_agent_run_preflight", m_agent_run_preflight),
     ("0082_orchestration_run_lease", m_orchestration_run_lease),
     ("0083_agent_slot_number_unique", m_agent_slot_number_unique),
+    ("0084_repair_dangling_references", m_repair_dangling_references),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

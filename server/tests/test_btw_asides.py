@@ -17,7 +17,8 @@ from loregarden.services.btw_run_service import (
     fail_interrupted_asides,
 )
 from loregarden.services.run_steering import pending_messages
-from sqlmodel import Session, select
+from sqlmodel import Session
+from tests.factories import make_ticket, select
 
 
 def _run(
@@ -255,7 +256,8 @@ def test_escalating_a_refused_run_over_the_api_is_a_conflict(client, db_session:
 
 def test_an_aside_belonging_to_another_ticket_is_not_found(client, db_session: Session):
     ticket = _ticket(db_session)
-    exchange = BtwExchange(ticket_id="some-other-ticket", question="why?")
+    other = make_ticket(db_session, workspace_id=ticket.workspace_id, ticket_id="some-other-ticket")
+    exchange = BtwExchange(ticket_id=other.id, question="why?")
     db_session.add(exchange)
     db_session.commit()
 

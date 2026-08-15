@@ -6,6 +6,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from sqlmodel import Session
+from tests.factories import make_agent_run
 
 
 @pytest.fixture
@@ -15,6 +16,9 @@ def workspace(db_session: Session):
     db_session.add(ws)
     db_session.commit()
     db_session.refresh(ws)
+    # The reviews these tests post are filed against run "run1", and
+    # `run_output_reviews.run_id` references it.
+    make_agent_run(db_session, run_id="run1", run_code="run1", workspace_id=ws.id)
     return ws
 
 

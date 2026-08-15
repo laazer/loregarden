@@ -58,21 +58,38 @@ def apply_pending(engine: Engine, migrations: list[tuple[str, object]]) -> list[
 
     Takes the list rather than importing it: the registry imports this module,
     so reaching back for `MIGRATIONS` would close the cycle.
+
+    Runs with foreign-key enforcement off (`db.session` turns it on for every
+    connection). SQLite has no ``ALTER COLUMN``, so changing one means
+    rebuilding the table — see ``relax_not_null`` — and the rebuild drops the
+    original out from under every row referencing it. The pragma is a no-op
+    inside a transaction, so it is set before the transaction opens and
+    restored before the connection returns to the pool.
     """
     if not str(engine.url).startswith("sqlite"):
         return []
     applied: list[str] = []
-    with engine.begin() as conn:
-        _ensure_migrations_table(conn)
-        already = _applied_ids(conn)
-        _warn_if_database_is_ahead(already, {mid for mid, _ in migrations})
-        for migration_id, migrate in migrations:
-            if migration_id in already:
-                continue
-            migrate(conn)
-            conn.execute(
-                text("INSERT INTO schema_migrations (id) VALUES (:id)"),
-                {"id": migration_id},
-            )
-            applied.append(migration_id)
+    with engine.connect() as conn:
+        conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        # The pragma autobegins a transaction it does not need; end it, or the
+        # `conn.begin()` below raises. Pragma state is per connection and
+        # survives the rollback.
+        conn.rollback()
+        try:
+            with conn.begin():
+                _ensure_migrations_table(conn)
+                already = _applied_ids(conn)
+                _warn_if_database_is_ahead(already, {mid for mid, _ in migrations})
+                for migration_id, migrate in migrations:
+                    if migration_id in already:
+                        continue
+                    migrate(conn)
+                    conn.execute(
+                        text("INSERT INTO schema_migrations (id) VALUES (:id)"),
+                        {"id": migration_id},
+                    )
+                    applied.append(migration_id)
+        finally:
+            conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+            conn.rollback()
     return applied

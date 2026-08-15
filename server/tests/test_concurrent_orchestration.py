@@ -148,7 +148,9 @@ def test_two_tickets_orchestrate_concurrently_in_their_own_worktrees(isolated_db
             run = BuiltinOrchestrator(session).execute(
                 ticket, OrchestrationProfile(slug="concurrent-test"), max_stages=2
             )
-            reservation.bind(run_id=run.id)
+            # An orchestration run, not an agent run: `execute` returns the
+            # former, and the two bind to different slot columns.
+            reservation.bind(orchestration_run_id=run.id)
             return run.status
 
     with patch.object(CliAgentExecutor, "execute", fake_execute):

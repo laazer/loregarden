@@ -59,9 +59,15 @@ from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration_profile import OrchestrationProfile, RetryBudgetConfig
 from loregarden.services.stage_retry_budget import count_stage_dispatches, record_stage_dispatch
 from loregarden.services.workflow_state import initial_stages_json
-from sqlmodel import Session, select
+from sqlmodel import Session
+from tests.factories import make_workspace, select
 
 SCRIPT_REVIEW_MEMBERS = ("gdscript_reviewer", "static_qa", "architecture_reviewer")
+
+
+def _prior_workspace(session):
+    """The workspace those historical runs belong to; `agent_runs` names it."""
+    return make_workspace(session, slug="ws-prior")
 
 
 def _stage_report(status: str, confidence: float = 0.9, reroute_to_stage: str = "") -> str:
@@ -157,6 +163,7 @@ def _seed_prior_budget_attempts(
     unset."""
     agent_ids = member_agent_ids or ("static_qa",)
     base = datetime.now(timezone.utc) - timedelta(days=1)
+    _prior_workspace(db_session)
     for i in range(count):
         record_stage_dispatch(db_session, ticket_id, stage_key)
         for m, agent_id in enumerate(agent_ids):
@@ -164,7 +171,7 @@ def _seed_prior_budget_attempts(
                 AgentRun(
                     run_code=f"prior_{stage_key}_{i}_{m}",
                     ticket_id=ticket_id,
-                    workspace_id="ws-prior",
+                    workspace_id=_prior_workspace(db_session).id,
                     agent_id=agent_id,
                     stage_key=stage_key,
                     status=RunStatus.FAILED,
@@ -323,7 +330,7 @@ def test_a_stage_that_kept_passing_without_advancing_still_trips_the_breaker(
             AgentRun(
                 run_code=f"prior_pass_{i}",
                 ticket_id=ticket.id,
-                workspace_id="ws-prior",
+                workspace_id=_prior_workspace(db_session).id,
                 agent_id="gdscript_reviewer",
                 stage_key="script_review",
                 status=RunStatus.SUCCEEDED,

@@ -228,7 +228,15 @@ def test_skill_migration_preserves_existing_non_skill_data(tmp_path, monkeypatch
             title="Keep Artifact",
             content_json='{"keep": true}',
         )
-        session.add_all([workspace, template, agent, agent_version, ticket, run, artifact])
+        # Committed in dependency order: one flush orders by mapper relationship,
+        # and these are joined by bare foreign key columns.
+        session.add_all([workspace, template, agent])
+        session.commit()
+        session.add_all([agent_version, ticket])
+        session.commit()
+        session.add(run)
+        session.commit()
+        session.add(artifact)
         session.commit()
 
     applied = apply_migrations(engine)
@@ -578,7 +586,9 @@ def test_prompt_truncates_skill_at_render_time_with_explicit_notice(client, db_s
         stage_key="verify",
         skill_name="long-render-skill",
     )
+    # The ticket commits first: one flush can emit the run that names it first.
     db_session.add(ticket)
+    db_session.commit()
     db_session.add(run)
     db_session.commit()
 

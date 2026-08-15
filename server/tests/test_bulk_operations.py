@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from loregarden.models.domain import QueuedRun, QueuePosition, Workspace
 from sqlmodel import Session, select
+from tests.factories import queued_run
 
 
 @pytest.mark.asyncio
@@ -19,7 +20,8 @@ class TestBulkCancelRuns:
 
         # Create multiple runs
         runs = [
-            QueuedRun(
+            queued_run(
+                db_session,
                 run_id=f"run-{i}",
                 ticket_id=f"ticket-{i}",
                 workspace_id="ws-1",
@@ -63,7 +65,8 @@ class TestBulkCancelRuns:
         db_session.commit()
 
         # Create one run
-        run = QueuedRun(
+        run = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-3",
@@ -105,7 +108,8 @@ class TestBulkPauseRuns:
 
         # Create active runs
         runs = [
-            QueuedRun(
+            queued_run(
+                db_session,
                 run_id=f"run-{i}",
                 ticket_id=f"ticket-{i}",
                 workspace_id="ws-4",
@@ -136,14 +140,16 @@ class TestBulkPauseRuns:
         db_session.add(ws)
         db_session.commit()
 
-        active = QueuedRun(
+        active = queued_run(
+            db_session,
             run_id="run-active",
             ticket_id="ticket-1",
             workspace_id="ws-5",
             position=1,
             status=QueuePosition.STARTED,
         )
-        queued = QueuedRun(
+        queued = queued_run(
+            db_session,
             run_id="run-queued",
             ticket_id="ticket-2",
             workspace_id="ws-5",
@@ -186,7 +192,8 @@ class TestBulkReorderRuns:
 
         # Create queued runs
         runs = [
-            QueuedRun(
+            queued_run(
+                db_session,
                 run_id=f"run-{i}",
                 ticket_id=f"ticket-{i}",
                 workspace_id="ws-6",
@@ -220,7 +227,8 @@ class TestBulkReorderRuns:
 
         # Create 5 queued runs
         runs = [
-            QueuedRun(
+            queued_run(
+                db_session,
                 run_id=f"run-{i}",
                 ticket_id=f"ticket-{i}",
                 workspace_id="ws-7",
@@ -259,7 +267,8 @@ class TestRetryLogic:
         db_session.add(ws)
         db_session.commit()
 
-        run = QueuedRun(
+        run = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-8",
@@ -288,7 +297,8 @@ class TestRetryLogic:
         db_session.add(ws)
         db_session.commit()
 
-        run = QueuedRun(
+        run = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-9",
@@ -320,7 +330,8 @@ class TestRetryLogic:
         db_session.add(ws)
         db_session.commit()
 
-        run = QueuedRun(
+        run = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-10",
@@ -342,7 +353,8 @@ class TestRetryLogic:
         db_session.add(ws)
         db_session.commit()
 
-        run = QueuedRun(
+        run = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-11",
@@ -376,7 +388,8 @@ class TestRetryLogic:
         db_session.commit()
 
         now = datetime.now(timezone.utc)
-        run = QueuedRun(
+        run = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-12",
@@ -414,7 +427,8 @@ class TestRetryAllFailed:
 
         # Create multiple failed runs
         failed_runs = [
-            QueuedRun(
+            queued_run(
+                db_session,
                 run_id=f"run-{i}",
                 ticket_id=f"ticket-{i}",
                 workspace_id="ws-13",
@@ -455,7 +469,8 @@ class TestRetryAllFailed:
         db_session.commit()
 
         # Mix of failed runs
-        run1 = QueuedRun(
+        run1 = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-14",
@@ -464,7 +479,8 @@ class TestRetryAllFailed:
             retry_count=0,
             max_retries=3,
         )
-        run2 = QueuedRun(
+        run2 = queued_run(
+            db_session,
             run_id="run-2",
             ticket_id="ticket-2",
             workspace_id="ws-14",
@@ -513,7 +529,8 @@ class TestSkipFailedRuns:
 
         # Create failed runs
         failed_runs = [
-            QueuedRun(
+            queued_run(
+                db_session,
                 run_id=f"run-{i}",
                 ticket_id=f"ticket-{i}",
                 workspace_id="ws-15",
@@ -568,7 +585,8 @@ class TestBulkOperationErrors:
         db_session.add(ws)
         db_session.commit()
 
-        run = QueuedRun(
+        run = queued_run(
+            db_session,
             run_id="run-1",
             ticket_id="ticket-1",
             workspace_id="ws-17",
