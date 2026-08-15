@@ -212,3 +212,85 @@ def test_two_claimants_with_spare_capacity_both_win(isolated_db, session):
 
     assert None not in won, "a claimant was refused while the pool had spare slots"
     assert len(set(won)) == 2, f"both claimants took the same slot: {won}"
+
+
+# ---- an empty pool, initialised by two claimants at once ---------------
+
+
+def _fresh_engine(tmp_path, name: str):
+    from sqlmodel import SQLModel, create_engine
+
+    engine = create_engine(f"sqlite:///{tmp_path / name}")
+    SQLModel.metadata.create_all(engine)
+    return engine
+
+
+def test_two_claimants_racing_an_empty_pool_are_both_admitted(tmp_path):
+    """The case every other test here skipped by pre-creating slots.
+
+    Production starts with no slots: `initialize_slots` builds them on first
+    use. Two callers racing that both saw an empty pool and both inserted a
+    full set, so the pool held two rows numbering themselves 1 — and a claim
+    keyed on `slot_number` then matched both, saw rowcount 2, rejected every
+    candidate and reported a full pool. Both claimants were refused with four
+    slots free. 31 of 40 trials before the fix.
+    """
+    import threading
+
+    from loregarden.db.migrations import apply_migrations
+    from loregarden.services.queue_admission import QueueAdmissionService
+
+    engine = _fresh_engine(tmp_path, "race.db")
+    apply_migrations(engine)
+    with Session(engine) as setup:
+        ws = Workspace(slug="w", name="w", repo_path=".")
+        setup.add(ws)
+        setup.commit()
+        setup.refresh(ws)
+        ids = []
+        for n in (1, 2):
+            ticket = Ticket(external_id=f"T-{n}", workspace_id=ws.id, title=f"T-{n}")
+            setup.add(ticket)
+            setup.commit()
+            setup.refresh(ticket)
+            ids.append(ticket.id)
+
+    admitted: list[bool] = []
+    lock = threading.Lock()
+    start = threading.Barrier(2)
+
+    def reserve(ticket_id: str) -> None:
+        start.wait()
+        with Session(engine) as own:
+            ticket = own.get(Ticket, ticket_id)
+            result = QueueAdmissionService(own, max_concurrent=3).reserve_orchestration(ticket)
+            with lock:
+                admitted.append(result.admitted)
+
+    threads = [threading.Thread(target=reserve, args=(i,)) for i in ids]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert all(admitted), f"a claimant was refused against a pool of three: {admitted}"
+
+    with Session(engine) as check:
+        slots = check.exec(select(AgentSlot)).all()
+    assert len(slots) == 3, f"the pool built itself twice: {[s.slot_number for s in slots]}"
+
+
+def test_the_pool_cannot_hold_two_slots_with_the_same_number(tmp_path):
+    """Enforced by the schema as of 0083, not by whoever inserts next."""
+    import pytest
+    from loregarden.db.migrations import apply_migrations
+    from sqlalchemy.exc import IntegrityError
+
+    engine = _fresh_engine(tmp_path, "unique.db")
+    apply_migrations(engine)
+    with Session(engine) as session:
+        session.add(AgentSlot(slot_number=1))
+        session.commit()
+        session.add(AgentSlot(slot_number=1))
+        with pytest.raises(IntegrityError):
+            session.commit()

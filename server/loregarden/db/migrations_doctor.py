@@ -7,7 +7,8 @@ the same reasoning applied to the boundary columns.
 
 from __future__ import annotations
 
-from loregarden.db.migration_utils import add_columns_if_missing
+from loregarden.db.migration_utils import add_columns_if_missing, table_exists
+from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 
@@ -51,4 +52,46 @@ def m_orchestration_run_lease(conn: Connection) -> None:
         {
             "last_seen_at": "ALTER TABLE orchestration_runs ADD COLUMN last_seen_at TEXT",
         },
+    )
+
+
+def m_agent_slot_number_unique(conn: Connection) -> None:
+    """One row per slot number, enforced rather than assumed.
+
+    `initialize_slots` reads the pool, works out which numbers are missing and
+    inserts them. Two callers doing that against an empty pool both see nothing
+    and both insert a full set, so a limit of three becomes six slots and the
+    admission gate stops bounding anything. Nothing in the schema said otherwise.
+
+    Existing duplicates are collapsed before the index goes on, keeping the row
+    that is occupied — dropping a slot with a live orchestration in it would
+    strand that run's lane with no record of what held it.
+    """
+    if not table_exists(conn, "agent_slots"):
+        # A database built from a partial schema has no pool yet; the model
+        # carries the constraint, so a later create_all makes it for free.
+        return
+
+    conn.execute(
+        text(
+            """
+            DELETE FROM agent_slots
+            WHERE id NOT IN (
+                SELECT id FROM (
+                    SELECT id,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY slot_number
+                               ORDER BY is_available ASC, assigned_at DESC, id ASC
+                           ) AS rank
+                    FROM agent_slots
+                ) ranked
+                WHERE rank = 1
+            )
+            """
+        )
+    )
+    conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_agent_slots_slot_number ON agent_slots(slot_number)"
+        )
     )
