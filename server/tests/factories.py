@@ -27,13 +27,21 @@ from loregarden.models.domain import (
 )
 from sqlmodel import Session, select
 
+# Where a workspace points when the test never said. Absolute and deliberately
+# nonexistent, because `resolve_workspace_root` resolves a *relative* path
+# against `settings.repo_root` — so "." and "" both name the checkout the suite
+# is running in. A test that reaches git through one of these workspaces would
+# then check branches out in the developer's own tree, which has happened. This
+# path fails loudly instead, and names itself in the error.
+NO_REPO = "/loregarden-test-workspace-with-no-repo"
+
 
 def make_workspace(
     session: Session,
     *,
     workspace_id: str | None = None,
     slug: str = "proj",
-    repo_path: str = ".",
+    repo_path: str = NO_REPO,
 ) -> Workspace:
     if workspace_id:
         existing_by_id = session.get(Workspace, workspace_id)
