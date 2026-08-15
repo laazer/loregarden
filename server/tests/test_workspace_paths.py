@@ -191,3 +191,30 @@ def test_init_db_empty_skips_seed(tmp_path, monkeypatch):
     engine = create_engine(f"sqlite:///{db_path}")
     with Session(engine) as session:
         assert session.exec(select(Ticket)).first() is None
+
+
+def test_a_workspace_no_test_placed_cannot_reach_the_real_checkout(db_session):
+    """The factory's default `repo_path` must not resolve into this checkout.
+
+    `resolve_workspace_root` resolves a relative path against
+    `settings.repo_root`, so "." and "" both name the tree the suite is running
+    in. A test that reaches git through such a workspace operates on the
+    developer's own repository — `test_promote_targets_the_requested_run_not_
+    the_head` did exactly that once its fixture became valid enough to dispatch,
+    and checked a branch out mid-run.
+    """
+    from loregarden.services.workspace_paths import (
+        resolve_workspace_root,
+        settings,
+        workspace_repo_exists,
+    )
+    from tests.factories import make_workspace
+
+    workspace = make_workspace(db_session, slug="unplaced")
+    root = resolve_workspace_root(workspace)
+
+    assert root != settings.repo_root
+    assert settings.repo_root not in root.parents
+    # And it is not a repository at all, so a git call fails saying so rather
+    # than succeeding somewhere unintended.
+    assert not workspace_repo_exists(workspace)
