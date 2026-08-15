@@ -439,7 +439,7 @@ class ParallelQueueService:
             # lane permanently — not until restart, permanently. The lease is
             # renewed by the work itself, so this asks whether anything has
             # happened rather than whether anyone remembered to say goodbye.
-            return not orchestration_lease_expired(orch_run)
+            return not orchestration_lease_expired(self.session, orch_run)
         if slot.current_run_id:
             run = self.session.get(AgentRun, slot.current_run_id)
             return bool(run) and run.status in LIVE_RUN_STATUSES

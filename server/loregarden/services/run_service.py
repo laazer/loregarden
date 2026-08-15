@@ -290,7 +290,7 @@ def fail_interrupted_orchestration_runs(
         # abandoned session came to hold a lane permanently rather than until
         # restart. "Not auto-resumed" and "never settled" were being conflated;
         # only the first was ever decided.
-        if run.external_harness and not orchestration_lease_expired(run):
+        if run.external_harness and not orchestration_lease_expired(session, run):
             continue
         ticket = session.get(Ticket, run.ticket_id)
         if not ticket:
@@ -300,6 +300,59 @@ def fail_interrupted_orchestration_runs(
         )
         failed.append(run)
     return failed
+
+
+EXPIRED_LEASE_MESSAGE = (
+    "Orchestration lease expired: nothing has renewed this run and no agent run is in "
+    "flight beneath it. Its driver is gone; the lane has been released."
+)
+
+
+def settle_expired_orchestration_leases(
+    session: Session, *, message: str = EXPIRED_LEASE_MESSAGE
+) -> list[OrchestrationRun]:
+    """Make a run whose lease expired terminal, without waiting for a restart.
+
+    The lease alone frees the *slot* — `_occupant_is_live` consults it on every
+    status read — but it does not settle the *run*, and only
+    `fail_interrupted_orchestration_runs` does that, from the startup lifespan.
+    A run left RUNNING with its lane already returned is worse than untidy:
+    `claim_orchestration_run` adopts any active run for a ticket, so that ticket
+    could not be orchestrated again until a reboot, and `ticket_activity` counts
+    a RUNNING orchestration as running, so the ticket kept reporting an agent on
+    it — the original symptom, arriving by a second route.
+
+    Runs on the same cadence as the lane reconcile and for the same reason:
+    there is no periodic tick in this server, and the board is where a lane busy
+    with nothing gets noticed.
+    """
+    candidates = session.exec(
+        select(OrchestrationRun).where(
+            col(OrchestrationRun.status).in_(
+                [OrchestrationRunStatus.QUEUED, OrchestrationRunStatus.RUNNING]
+            )
+        )
+    ).all()
+
+    callbacks = OrchestrationCallbackService(session)
+    settled: list[OrchestrationRun] = []
+    for run in candidates:
+        if not orchestration_lease_expired(session, run):
+            continue
+        ticket = session.get(Ticket, run.ticket_id)
+        if not ticket:
+            continue
+        logger.warning(
+            "Settling orchestration %s (ticket %s): lease expired, last seen %s",
+            run.run_code,
+            ticket.external_id or ticket.id,
+            run.last_seen_at or run.started_at or run.created_at,
+        )
+        callbacks.complete_orchestration(
+            run, ticket, status=OrchestrationRunStatus.FAILED, message=message
+        )
+        settled.append(run)
+    return settled
 
 
 def execute_agent_run_background(run_id: str) -> None:
