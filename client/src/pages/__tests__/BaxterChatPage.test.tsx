@@ -465,7 +465,7 @@ describe("BaxterChatPage", () => {
       expect(screen.getByText("Baxter is looking…")).toBeInTheDocument();
       expect(screen.getByText(/workspace model/i)).toBeInTheDocument();
       expect(document.querySelector(".lg-chat-loading-walker")).toBeTruthy();
-      expect(document.querySelector(".baxter-avatar--full.baxter-avatar--typing")).toBeTruthy();
+      expect(document.querySelector(".baxter-avatar--full.baxter-avatar--walking")).toBeTruthy();
     });
     const settled: BaxterChatSnapshot = {
       id: "s1",

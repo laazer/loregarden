@@ -284,9 +284,13 @@ export const StudioChatMessages = memo(function StudioChatMessages({
               <>
                 <div className="lg-chat-loading-track" aria-hidden>
                   <div className="lg-chat-loading-walker">
+                    {/* Always the walk cycle: the track paces this avatar from
+                        end to end, and `thinking` is the sleep row — which read
+                        as a bug on the surfaces that pass it (triage). The
+                        turn's own state stays on the head avatar above. */}
                     <BaxterAvatar
                       variant="full"
-                      state={busyState}
+                      state="walking"
                       size={56}
                       label={assistantLabel}
                     />

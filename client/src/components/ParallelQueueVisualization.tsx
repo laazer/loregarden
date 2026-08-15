@@ -545,6 +545,9 @@ export function ParallelQueueVisualization() {
                   <div className="queue-lane-attention-label">
                     Stopped in this lane ({lane.attention_total ?? lane.attention.length})
                   </div>
+                  {/* The rows scroll; the count above them does not, so a lane
+                      you have scrolled into still says what you are reading. */}
+                  <div className="queue-lane-scroller">
                   {lane.attention.map((entry) => (
                     <div
                       key={entry.entry_id}
@@ -613,6 +616,7 @@ export function ParallelQueueVisualization() {
                       {(lane.attention_total ?? 0) - lane.attention.length} older not shown
                     </div>
                   ) : null}
+                  </div>
                 </div>
               ) : null}
 
@@ -621,6 +625,7 @@ export function ParallelQueueVisualization() {
                   <div className="queue-lane-queue-label">
                     Next in this lane ({lane.waiting.length})
                   </div>
+                  <div className="queue-lane-scroller">
                   {lane.waiting.map((entry) => {
                     const runningChild = runningChildFromLabels(
                       entry.running_descendant,
@@ -688,6 +693,7 @@ export function ParallelQueueVisualization() {
                       </div>
                     );
                   })}
+                  </div>
                 </div>
               ) : null}
 
