@@ -4,6 +4,7 @@ that verification instead of generic ticket Q&A.
 """
 
 from loregarden.core.workflow_loader import (
+    GENERIC_INTENT_ITEM,
     UNRESOLVED_SCENES_ITEM,
     expand_gate_checklist,
     get_template_stages,
@@ -179,3 +180,39 @@ def test_expand_gate_checklist_keeps_scene_item_when_diff_unreadable():
     assert expand_gate_checklist(ticket, ["{{playtest_scenes}}"], scenes=None) == [
         UNRESOLVED_SCENES_ITEM,
     ]
+
+
+def test_expand_gate_checklist_asks_the_operator_to_judge_the_ticket_intent():
+    """The one thing no upstream agent can sign off: did it deliver what was asked."""
+    ticket = Ticket(
+        external_id="expand-intent",
+        workspace_id="ws",
+        title="Dash",
+        description="Add a dash ability with a cooldown timer.",
+    )
+
+    assert expand_gate_checklist(ticket, ["{{ticket_intent}}"]) == [
+        "Play it and judge whether it delivers what the ticket asked for — "
+        "Add a dash ability with a cooldown timer."
+    ]
+
+
+def test_expand_gate_checklist_falls_back_when_the_ticket_has_no_description():
+    ticket = Ticket(external_id="expand-no-desc", workspace_id="ws", title="Dash")
+
+    assert expand_gate_checklist(ticket, ["{{ticket_intent}}"]) == [GENERIC_INTENT_ITEM]
+
+
+def test_the_seeded_playtest_gate_asks_for_nothing_an_agent_could_sign_off(db_session: Session):
+    """Regression guard on the template itself, not just the expansion code."""
+    sync_workflow_templates(db_session)
+    template = db_session.exec(
+        select(WorkflowTemplate).where(WorkflowTemplate.slug == "blobert-tdd")
+    ).first()
+    assert template is not None
+    stages = {s.key: s for s in get_template_stages(template)}
+
+    assert stages["playtest"].checklist == ["{{playtest_scenes}}", "{{ticket_intent}}"]
+    # The retired duties are now owned by the stages that can actually do them.
+    assert "console errors" in stages["implementation"].stage_brief
+    assert "regressions" in stages["script_review"].stage_brief

@@ -46,6 +46,15 @@ def write_template_version(
 
 AC_CHECKLIST_PLACEHOLDER = "{{acceptance_criteria}}"
 PLAYTEST_SCENES_PLACEHOLDER = "{{playtest_scenes}}"
+TICKET_INTENT_PLACEHOLDER = "{{ticket_intent}}"
+
+#: What a human gate asks for when the ticket carries no description to judge
+#: against. Deliberately about feel rather than pass/fail: everything with a
+#: yes/no answer has already been evidenced by an agent upstream.
+GENERIC_INTENT_ITEM = (
+    "Play it and judge what no agent can — whether it feels, reads, and behaves "
+    "the way this change was meant to"
+)
 
 #: What the operator is told when the scenes this change touches could not be
 #: read off the branch — a missing repo, an unknown branch, a git failure. The
@@ -67,6 +76,9 @@ def expand_gate_checklist(
     A ``{{playtest_scenes}}`` entry is replaced by one item per scene file the
     ticket's branch touches, so "run the affected scenes" names the files to
     open instead of leaving the operator to work them out.
+    A ``{{ticket_intent}}`` entry is replaced by what this change set out to do,
+    which is the part of a gate no agent can sign off. Anything with a yes/no
+    answer belongs to a stage upstream, not here.
 
     ``scenes`` distinguishes *resolved and empty* (``[]`` — the branch changes no
     scene, so there is nothing to open and the placeholder drops) from
@@ -90,6 +102,13 @@ def expand_gate_checklist(
         if token == AC_CHECKLIST_PLACEHOLDER:
             expanded.extend(
                 f"Play-test by hand — {str(c).strip()}" for c in criteria if str(c).strip()
+            )
+        elif token == TICKET_INTENT_PLACEHOLDER:
+            intent = (ticket.description or "").strip()
+            expanded.append(
+                f"Play it and judge whether it delivers what the ticket asked for — {intent}"
+                if intent
+                else GENERIC_INTENT_ITEM
             )
         elif token == PLAYTEST_SCENES_PLACEHOLDER:
             if scenes is None:

@@ -102,6 +102,17 @@ def build_orchestration_context(
             ", ".join(f"`{key}`" for key in upstream),
         ]
 
+    brief = (stage_def.stage_brief if stage_def else "").strip()
+    if brief:
+        lines += [
+            "",
+            "### What this workflow wants from this stage",
+            "Set by the workflow template, on top of your role. It is here because the work is "
+            "this stage's to do — not a later reviewer's, and not a human's at a sign-off gate.",
+            "",
+            brief,
+        ]
+
     gate = gate_prep_target(stages, stage_key)
     if gate is not None:
         lines += [

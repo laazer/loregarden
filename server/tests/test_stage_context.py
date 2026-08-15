@@ -233,3 +233,35 @@ def test_gate_prep_brief_absent_without_a_downstream_human_gate():
     text = build_orchestration_context(ticket=ticket, run=run, stage_def=stages[0], stages=stages)
 
     assert "human gate" not in text
+
+
+def test_stage_brief_reaches_the_stage_it_was_written_for():
+    stage = WorkflowStageDef(
+        key="script_review",
+        name="Script Review",
+        agent_id="static_qa",
+        stage_brief="Hunt regressions in the adjacent systems this change touches.",
+    )
+    ticket = Ticket(
+        external_id="brief", workspace_id="ws", title="t", workflow_stage_key="script_review"
+    )
+    run = AgentRun(
+        ticket_id="t", workspace_id="ws", agent_id="static_qa", stage_key="script_review"
+    )
+
+    text = build_orchestration_context(ticket=ticket, run=run, stage_def=stage, stages=[stage])
+
+    assert "What this workflow wants from this stage" in text
+    assert "Hunt regressions in the adjacent systems this change touches." in text
+
+
+def test_no_brief_section_when_the_template_wrote_none():
+    stage = WorkflowStageDef(key="implementation", name="Implementation", agent_id="dev")
+    ticket = Ticket(
+        external_id="no-brief", workspace_id="ws", title="t", workflow_stage_key="implementation"
+    )
+    run = AgentRun(ticket_id="t", workspace_id="ws", agent_id="dev", stage_key="implementation")
+
+    text = build_orchestration_context(ticket=ticket, run=run, stage_def=stage, stages=[stage])
+
+    assert "What this workflow wants from this stage" not in text

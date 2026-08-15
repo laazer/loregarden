@@ -110,16 +110,13 @@ def test_playtest_human_gate_includes_test_summary_and_checklist(
     assert "Add a dash ability with a cooldown timer." in approval["impact"]
     assert "Dash moves the player" in approval["impact"]
 
-    # The generic "walk through the acceptance criteria" bullet is replaced by
-    # one concrete play-test item per acceptance criterion, so each gate lists
-    # what this specific change needs exercised.
-    # No scene-authoring item: building what the gate needs is the implementer's
-    # job, not the operator's. The scene step names files or, as here where the
-    # ticket has no branch to diff, states that they must be identified.
+    # Everything an agent can sign off is gone: the per-AC bullets (ac_gate
+    # evidences them one stage earlier), the regression sweep (the review
+    # stage's job), and the console-output check (visible in the implementer's
+    # own run). What is left is what no agent can do — open the right thing, and
+    # judge whether it delivers what was asked.
     assert approval["checklist"] == [
         UNRESOLVED_SCENES_ITEM,
-        "Play-test by hand — Dash moves the player",
-        "Play-test by hand — Cooldown blocks re-triggering",
-        "Check for regressions in adjacent systems the change touches",
-        "Confirm no console errors/warnings appear during play",
+        "Play it and judge whether it delivers what the ticket asked for — "
+        "Add a dash ability with a cooldown timer.",
     ]

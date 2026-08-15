@@ -1412,10 +1412,14 @@ def test_playtest_checklist_swaps_the_hand_written_scene_items(tmp_path):
         ).fetchone()
     playtest = next(s for s in json.loads(stages_json) if s["key"] == "playtest")
 
-    assert playtest["checklist"] == [
-        "{{playtest_scenes}}",
-        "{{acceptance_criteria}}",
-        "Confirm no console errors/warnings appear during play",
+    # Asserted as facts about the two retired items rather than as the whole
+    # list: this runs the full migration chain, and 0089 legitimately strips
+    # more off the same checklist.
+    assert playtest["checklist"].count("{{playtest_scenes}}") == 1
+    assert not [
+        item
+        for item in playtest["checklist"]
+        if "test level scene" in item or "Godot editor" in item
     ]
     assert version > 1
 
@@ -1431,3 +1435,75 @@ def test_playtest_checklist_swaps_the_hand_written_scene_items(tmp_path):
         next(s for s in again if s["key"] == "playtest")["checklist"].count("{{playtest_scenes}}")
         == 1
     )
+
+
+def test_agent_owned_playtest_items_move_to_the_stages_that_own_them(tmp_path):
+    """0089 strips the gate down to what only a human can do.
+
+    The per-AC bullets duplicate `ac_gate`, which evidences every criterion one
+    stage earlier; the regression sweep is the review stage's job; console
+    output is visible in the implementer's own run. Each leaves the checklist
+    and, where it had no owner, lands on one as a stage brief.
+    """
+    import json
+
+    from loregarden.models.domain import WorkflowTemplate
+    from sqlmodel import Session
+
+    stages = [
+        {"key": "implementation", "name": "Implementation", "agent_id": "dev", "order": 1},
+        {
+            "key": "script_review",
+            "name": "Script Review",
+            "stage_type": "parallel",
+            "order": 2,
+        },
+        {
+            "key": "playtest",
+            "name": "Playtest",
+            "agent_id": "",
+            "order": 3,
+            "checklist": [
+                "{{playtest_scenes}}",
+                "{{acceptance_criteria}}",
+                "Check for regressions in adjacent systems the change touches",
+                "Confirm no console errors/warnings appear during play",
+            ],
+        },
+    ]
+    engine = create_engine(f"sqlite:///{tmp_path / 'retire.db'}")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(
+            WorkflowTemplate(
+                id="tpl-retire",
+                slug="blobert-tdd",
+                name="Blobert TDD",
+                stages_json=json.dumps(stages),
+                transitions_json="[]",
+                source_path="agent_context/workflows/blobert-tdd.yaml",
+            )
+        )
+        session.commit()
+
+    apply_migrations(engine)
+
+    with engine.connect() as conn:
+        stages_json = conn.execute(
+            text("SELECT stages_json FROM workflow_templates WHERE id='tpl-retire'")
+        ).scalar()
+    by_key = {s["key"]: s for s in json.loads(stages_json)}
+
+    assert by_key["playtest"]["checklist"] == ["{{playtest_scenes}}", "{{ticket_intent}}"]
+    assert "console errors" in by_key["implementation"]["stage_brief"]
+    assert "regressions" in by_key["script_review"]["stage_brief"]
+
+    # Re-running must not append a second intent placeholder or restate a brief.
+    assert apply_migrations(engine) == []
+    with engine.connect() as conn:
+        again = json.loads(
+            conn.execute(
+                text("SELECT stages_json FROM workflow_templates WHERE id='tpl-retire'")
+            ).scalar()
+        )
+    assert {s["key"]: s for s in again}["playtest"]["checklist"].count("{{ticket_intent}}") == 1
