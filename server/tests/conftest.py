@@ -23,6 +23,7 @@ _ENGINE_BINDINGS = (
     "loregarden.api.chat_turn_events.engine",
     "loregarden.services.builtin_orchestrator.engine",
     "loregarden.services.stage_fanout_service.engine",
+    "loregarden.services.drain.engine",
     "loregarden.services.run_cancellation.engine",
     "loregarden.services.run_lease.engine",
     "loregarden.agents.executors.permission_bridge.engine",
