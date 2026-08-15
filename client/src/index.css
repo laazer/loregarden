@@ -4527,6 +4527,16 @@ button {
   background: rgba(255, 255, 255, 0.04);
 }
 
+/*
+ * The approval card rounds its own corners with overflow: hidden, so in a flex
+ * column it would rather be clipped than overflow — the modal body then has
+ * nothing to scroll and the criteria below the fold are simply gone. Let the
+ * card keep its full height and give the scroll back to the body.
+ */
+.approval-detail-body > * {
+  flex-shrink: 0;
+}
+
 .approvals-view-criteria {
   margin: 0;
   padding-left: 18px;

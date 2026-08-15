@@ -57,7 +57,7 @@ export function ApprovalDetailModal({
           </div>
           <IconCloseButton onClick={onClose} />
         </div>
-        <div className="modal-body">
+        <div className="modal-body approval-detail-body">
           <ApprovalCard
             approval={approval}
             isSubmitting={isSubmitting}
