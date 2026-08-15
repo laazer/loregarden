@@ -214,7 +214,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
               .join(" ")}
           >
             {showAssistantAvatar ? (
-              <div className="lg-chat-assistant-col">
+              <div className="lg-chat-assistant-col lg-chat-assistant-col--avatar">
                 {leadingReasoning}
                 <div className="lg-chat-assistant-row ticket-studio-msg-row">
                   <BaxterAvatar variant="head" state={state} label={assistantLabel} />
@@ -239,7 +239,9 @@ export const StudioChatMessages = memo(function StudioChatMessages({
       })}
       {hasTrailingAsk ? (
         <div className="lg-chat-turn lg-chat-turn--assistant lg-chat-turn--ask">
-          <div className="lg-chat-assistant-col">
+          <div
+            className={`lg-chat-assistant-col${showAssistantAvatar ? " lg-chat-assistant-col--avatar" : ""}`}
+          >
             {showAssistantAvatar ? (
               <div className="lg-chat-assistant-row ticket-studio-msg-row">
                 <BaxterAvatar variant="head" state="idle" label={assistantLabel} />

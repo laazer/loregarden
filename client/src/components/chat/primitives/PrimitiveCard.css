@@ -259,22 +259,23 @@
 
 .lg-primitive-slot--regular {
   max-width: var(--lg-primitive-regular, min(620px, 100%));
-  margin-inline: auto;
+  margin-inline: 0;
 }
 
-/* Breakout tiers grow symmetrically about the reading column's centre, which is also the
-   thread's centre, so a wider card stays centred without moving the prose above it. The
-   budget is clamped to the surface, so the negative margin can never create h-scroll. */
+/* Every tier hangs off the sender's own left edge and grows rightwards, so a card's border
+   lines up with the prose above it whatever width it claimed. The breakout budget is clamped
+   to the room left of the surface's right edge (--lg-primitive-breakout-max), so growing
+   rightwards can never create h-scroll. */
 .lg-primitive-slot--wide {
   width: var(--lg-primitive-wide, 100%);
-  max-width: none;
-  margin-left: calc(50% - var(--lg-primitive-wide, 100%) / 2);
+  max-width: var(--lg-primitive-breakout-max, 100%);
+  margin-left: 0;
 }
 
 .lg-primitive-slot--full {
   width: var(--lg-primitive-full, 100%);
-  max-width: none;
-  margin-left: calc(50% - var(--lg-primitive-full, 100%) / 2);
+  max-width: var(--lg-primitive-breakout-max, 100%);
+  margin-left: 0;
 }
 
 .lg-primitive-slot > .lg-primitive-card {
