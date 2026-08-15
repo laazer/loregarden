@@ -1140,7 +1140,11 @@ class AgentSlot(SQLModel, table=True):
     #: not to a workspace — the column survives only for rows written before
     #: migration 0058 collapsed the per-workspace pools.
     workspace_id: str | None = Field(default=None, foreign_key="workspaces.id", index=True)
-    slot_number: int = 1
+    #: Unique, because the claim keys on it conceptually and the pool's size is
+    #: the machine's concurrency limit. Two threads initialising an empty pool
+    #: both inserted a full set, giving six slots for a limit of three — the
+    #: admission gate's whole purpose, doubled silently.
+    slot_number: int = Field(default=1, unique=True)
     is_available: bool = True
     current_run_id: str | None = Field(default=None, foreign_key="agent_runs.id")
     #: The orchestration occupying this lane. A lane runs a whole ticket, which

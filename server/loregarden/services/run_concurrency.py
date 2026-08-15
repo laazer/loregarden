@@ -87,15 +87,36 @@ ORCHESTRATION_LEASE = timedelta(minutes=30)
 
 
 def orchestration_lease_expired(
-    run: OrchestrationRun, *, lease: timedelta = ORCHESTRATION_LEASE
+    session: Session, run: OrchestrationRun, *, lease: timedelta = ORCHESTRATION_LEASE
 ) -> bool:
     """Whether a run has gone quiet for longer than the lease allows.
+
+    An agent run in flight beneath this orchestration is work in flight, and
+    outranks the lease outright. The lease is only renewed at stage boundaries —
+    start, completion, skip, block — so a single stage that runs longer than the
+    lease has no renewal to give. Two agent runs on the day this was written took
+    51 and 38 minutes against a 30-minute lease, so judging on the lease alone
+    would have freed a lane out from under an agent that was working, and the
+    pool would then have admitted past its own limit.
+
+    That is not the activity-inference this lease exists to replace. For a run
+    this server drives, a live agent run *is* its liveness; the lease is what
+    covers the case with no agent runs at all — an external harness in someone
+    else's terminal, which renews by talking to the control plane.
 
     A run that has never been renewed falls back to when it started, so a row
     written before the lease existed — or a claim whose driver died before it
     did anything — is reclaimable on the first sweep rather than needing a
     backfill.
     """
+    live_agent_run = session.exec(
+        select(AgentRun.id)
+        .where(AgentRun.orchestration_run_id == run.id)
+        .where(col(AgentRun.status).in_(IN_FLIGHT_STATUSES + [RunStatus.QUEUED]))
+    ).first()
+    if live_agent_run:
+        return False
+
     stamp = run.last_seen_at or run.started_at or run.created_at
     if stamp is None:
         return False
