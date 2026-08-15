@@ -33,6 +33,7 @@ from loregarden.websocket_events import (
     emit_queue_promoted,
     emit_run_completed,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select, update
 
 logger = logging.getLogger(__name__)
@@ -115,9 +116,14 @@ def claim_free_slot(session: Session, *, preferred: int | None = None) -> AgentS
     filled between opening a dialog and confirming should still run the ticket.
     """
     for _ in range(_CLAIM_ATTEMPTS):
+        # id, not slot_number. `slot_number` carries no unique constraint, and a
+        # pool initialised concurrently can hold two rows numbering themselves 1
+        # — at which point an UPDATE keyed on the number matches both, rowcount
+        # is 2, and this rejected every candidate and reported a full pool while
+        # slots sat free. Both claimants refused, with four slots available.
         available = list(
             session.exec(
-                select(AgentSlot.slot_number)
+                select(AgentSlot.id, AgentSlot.slot_number)
                 .where(AgentSlot.is_available == True)  # noqa: E712
                 .order_by(AgentSlot.slot_number)
             ).all()
@@ -125,13 +131,12 @@ def claim_free_slot(session: Session, *, preferred: int | None = None) -> AgentS
         if not available:
             return None
 
-        candidates = [preferred] if preferred in available else []
-        candidates.extend(number for number in available if number != preferred)
+        ordered = sorted(available, key=lambda row: (row[1] != preferred, row[1]))
 
-        for slot_number in candidates:
+        for slot_id, _number in ordered:
             result = session.exec(
                 update(AgentSlot)
-                .where(AgentSlot.slot_number == slot_number)
+                .where(AgentSlot.id == slot_id)
                 .where(AgentSlot.is_available == True)  # noqa: E712
                 .values(
                     is_available=False,
@@ -146,9 +151,7 @@ def claim_free_slot(session: Session, *, preferred: int | None = None) -> AgentS
                 # what the conditional update exists to detect.
                 continue
             session.commit()
-            claimed = session.exec(
-                select(AgentSlot).where(AgentSlot.slot_number == slot_number)
-            ).first()
+            claimed = session.exec(select(AgentSlot).where(AgentSlot.id == slot_id)).first()
             if claimed is not None:
                 # The UPDATE went round the identity map; refresh so the caller
                 # does not read a stale `is_available` off a cached instance.
@@ -237,28 +240,42 @@ class ParallelQueueService:
         0058 can leave behind when several workspaces had runs in flight —
         drains back down through `on_run_complete` rather than by deleting a
         slot with a live agent in it.
-        """
-        try:
-            existing_slots = self.session.exec(select(AgentSlot)).all()
 
-            if len(existing_slots) >= self.max_concurrent:
+        Read-then-insert is a race, and it was losing: two callers against an
+        empty pool both saw nothing and both inserted a full set, so a limit of
+        three became six slots and the admission gate stopped bounding anything.
+        `slot_number` is unique as of migration 0083, so the loser's insert now
+        fails instead of doubling the pool — it rolls back and re-reads, because
+        the winner has by then created exactly what this was going to create.
+        """
+        for _ in range(2):
+            try:
+                existing = self.session.exec(select(AgentSlot.slot_number)).all()
+                taken = set(existing)
+                missing = [n for n in range(1, self.max_concurrent + 1) if n not in taken]
+                if not missing:
+                    return
+
+                for slot_num in missing:
+                    self.session.add(
+                        AgentSlot(id=str(uuid4()), slot_number=slot_num, is_available=True)
+                    )
+                self.session.commit()
+                logger.info("Initialized %d shared execution slots", len(missing))
                 return
 
-            taken = {slot.slot_number for slot in existing_slots}
-            created = 0
-            for slot_num in range(1, self.max_concurrent + 1):
-                if slot_num in taken:
-                    continue
-                self.session.add(
-                    AgentSlot(id=str(uuid4()), slot_number=slot_num, is_available=True)
-                )
-                created += 1
-
-            self.session.commit()
-            logger.info("Initialized %d shared execution slots", created)
-
-        except Exception as e:
-            logger.error(f"Error initializing slots: {e}", exc_info=True)
+            except IntegrityError:
+                # Someone else created these between the read and the write. The
+                # pool they built is the one this was going to build, so rolling
+                # back and looking again is the whole recovery.
+                self.session.rollback()
+            except Exception:
+                # Rolled back rather than left open: a failed commit poisons the
+                # session, and every later query on it raises instead of
+                # answering — which turned one lost race into a dead caller.
+                self.session.rollback()
+                logger.error("Error initializing slots", exc_info=True)
+                return
 
     async def queue_run(
         self,
@@ -439,7 +456,7 @@ class ParallelQueueService:
             # lane permanently — not until restart, permanently. The lease is
             # renewed by the work itself, so this asks whether anything has
             # happened rather than whether anyone remembered to say goodbye.
-            return not orchestration_lease_expired(orch_run)
+            return not orchestration_lease_expired(self.session, orch_run)
         if slot.current_run_id:
             run = self.session.get(AgentRun, slot.current_run_id)
             return bool(run) and run.status in LIVE_RUN_STATUSES
