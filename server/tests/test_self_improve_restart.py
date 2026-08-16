@@ -29,7 +29,7 @@ from sqlmodel import Session, select
 
 def _ticket_id_by_external_id(client: TestClient, external_id: str) -> str:
     for ticket in client.get("/api/tickets").json():
-        if ticket["external_id"] == external_id:
+        if external_id in (ticket["external_id"], ticket["legacy_external_id"]):
             return ticket["id"]
     raise AssertionError(f"ticket not found: {external_id}")
 

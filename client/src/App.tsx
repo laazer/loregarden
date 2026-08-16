@@ -5,6 +5,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-route
 import { AppLayout } from "./components/AppLayout";
 import { RouterBridgeSync } from "./components/RouterBridgeSync";
 import { StudioSectionRedirect } from "./components/StudioSectionRedirect";
+import { TicketRouteResolver } from "./components/TicketRouteResolver";
 import { TicketTabRedirect } from "./components/TicketTabRedirect";
 import { McpGatewayPage } from "./pages/McpGatewayPage";
 import { BaxterChatPage } from "./pages/BaxterChatPage";
@@ -88,7 +89,14 @@ export function AppShell() {
             <Route path="/chat" element={<BaxterChatPage />} />
             <Route path="/console" element={<Dashboard />} />
             <Route path="/tickets/:ticketId" element={<TicketTabRedirect />} />
-            <Route path="/tickets/:ticketId/:artifactTab" element={<Dashboard />} />
+            <Route
+              path="/tickets/:ticketId/:artifactTab"
+              element={
+                <TicketRouteResolver>
+                  <Dashboard />
+                </TicketRouteResolver>
+              }
+            />
             <Route path="/studio" element={<StudioSectionRedirect />} />
             <Route path="/studio/:studioSection/:resourceId/*" element={<StudioPage />} />
             <Route path="/studio/:studioSection/*" element={<StudioPage />} />

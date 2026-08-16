@@ -75,7 +75,7 @@ def test_cli_prompt_includes_orchestration_context():
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         assert ticket
         run = AgentRun(
@@ -130,7 +130,7 @@ def test_inherited_context_section_reaches_the_stage_prompt(tmp_path, monkeypatc
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         workspace = session.get(Workspace, ticket.workspace_id)
         memory.append_checkpoint(

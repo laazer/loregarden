@@ -72,7 +72,7 @@ def test_permission_bridge_denies_git_commit_hook_bypass_even_with_auto_approve(
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         run = AgentRun(
             run_code="run_git_no_verify_perm",

@@ -13,7 +13,7 @@ def test_orchestration_profile_loaded(client: TestClient):
 def test_external_mcp_start_orchestration(client: TestClient):
     ticket_id = None
     for t in client.get("/api/tickets").json():
-        if t["external_id"] == "02-bootstrap-react-ide-shell":
+        if t["legacy_external_id"] == "02-bootstrap-react-ide-shell":
             ticket_id = t["id"]
             break
     res = client.post(
@@ -33,7 +33,7 @@ def test_external_mcp_start_claims_a_slot(client: TestClient, db_session):
 
     ticket_id = None
     for t in client.get("/api/tickets").json():
-        if t["external_id"] == "02-bootstrap-react-ide-shell":
+        if t["legacy_external_id"] == "02-bootstrap-react-ide-shell":
             ticket_id = t["id"]
             break
     res = client.post(
@@ -52,7 +52,7 @@ def test_external_mcp_start_claims_a_slot(client: TestClient, db_session):
 def test_orchestrate_ticket_one_stage(client: TestClient):
     ticket_id = None
     for t in client.get("/api/tickets").json():
-        if t["external_id"] == "04-workflow-template-overrides":
+        if t["legacy_external_id"] == "04-workflow-template-overrides":
             ticket_id = t["id"]
             break
     res = client.post(
@@ -67,7 +67,7 @@ def test_orchestrate_ticket_one_stage(client: TestClient):
 def test_orchestration_callbacks(client: TestClient):
     ticket_id = None
     for t in client.get("/api/tickets").json():
-        if t["external_id"] == "03-wire-cli-agent-runner":
+        if t["legacy_external_id"] == "03-wire-cli-agent-runner":
             ticket_id = t["id"]
             break
     started = client.post(
@@ -94,8 +94,12 @@ def test_orchestration_callbacks(client: TestClient):
 
 
 def test_get_ticket_by_external_id(client: TestClient):
+    """The by-external route still answers to a pre-restructure id, and reports
+    the ticket under the id it now reads as."""
     res = client.get(
         "/api/orchestration/tickets/by-external/loregarden/01-bootstrap-fastapi-control-plane/state"
     )
     assert res.status_code == 200
-    assert res.json()["external_id"] == "01-bootstrap-fastapi-control-plane"
+    body = res.json()
+    assert body["legacy_external_id"] == "01-bootstrap-fastapi-control-plane"
+    assert body["external_id"].startswith("lg-")

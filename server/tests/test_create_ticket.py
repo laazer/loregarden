@@ -40,7 +40,7 @@ def test_feature_ticket_backfills_workflow_on_load(client: TestClient):
     feature = next(
         t
         for t in client.get("/api/tickets?workspace=loregarden").json()
-        if t["external_id"] == "m01-backend-platform"
+        if t["legacy_external_id"] == "m01-backend-platform"
     )
     detail = client.get(f"/api/tickets/{feature['id']}").json()
     assert len(detail["stages"]) >= 5

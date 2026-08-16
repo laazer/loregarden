@@ -28,6 +28,7 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
+from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
@@ -65,17 +66,13 @@ class OrchestrationCallbackService:
                     select(Workspace).where(Workspace.slug == workspace_slug)
                 ).first()
                 if ws:
-                    ticket = self.session.exec(
-                        select(Ticket).where(
-                            Ticket.workspace_id == ws.id,
-                            Ticket.external_id == external_id,
-                        )
-                    ).first()
+                    ticket = resolve_external_id(self.session, external_id, workspace_id=ws.id)
                     if ticket:
                         return ticket
-            ticket = self.session.exec(
-                select(Ticket).where(Ticket.external_id == external_id)
-            ).first()
+            # Unscoped: the workspace prefix in a structured id names the workspace,
+            # so this is only ambiguous for the pre-restructure ids, which is what
+            # it was before.
+            ticket = resolve_external_id(self.session, external_id)
             if ticket:
                 return ticket
 

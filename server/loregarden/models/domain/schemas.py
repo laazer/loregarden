@@ -123,6 +123,10 @@ class WorkspaceRuntimeSettings(SQLModel):
 class TicketSummary(SQLModel):
     id: str
     external_id: str
+    # The id this ticket was known by before the restructure. Carried so a
+    # surface can still show, or be searched by, the id someone wrote down —
+    # blank for anything created since.
+    legacy_external_id: str = ""
     title: str
     state: TicketState
     priority: int

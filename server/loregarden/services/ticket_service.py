@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import threading
 from datetime import datetime, timezone
 
@@ -39,6 +38,7 @@ from loregarden.models.domain import (
 from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.hierarchy_service import child_count, validate_parent_child
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.ticket_ids import assign_external_id
 from loregarden.services.workflow_service import resolve_workspace_stages
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, col, select
@@ -76,29 +76,7 @@ _TICKET_INBOUND_EDGES = (
 )
 
 
-def _slugify(text: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-    return slug[:48] or "work-item"
-
-
-_external_id_lock = threading.Lock()
 _create_ticket_lock = threading.Lock()
-
-
-def _next_external_id(session: Session, workspace_id: str, title: str) -> str:
-    with _external_id_lock:
-        existing = {
-            t.external_id
-            for t in session.exec(select(Ticket).where(Ticket.workspace_id == workspace_id)).all()
-        }
-        count = len(existing) + 1
-        base = f"{count:02d}-{_slugify(title)}"
-        candidate = base
-        suffix = 2
-        while candidate in existing:
-            candidate = f"{base}-{suffix}"
-            suffix += 1
-        return candidate
 
 
 class TicketService:
@@ -133,6 +111,55 @@ class TicketService:
                 is_integration_review=is_integration_review,
             )
 
+    def _validated_parent(
+        self,
+        *,
+        workspace_id: str,
+        work_item_type: WorkItemType,
+        parent_ticket_id: str | None,
+    ) -> Ticket | None:
+        """The parent this work item may hang off, or None for a milestone."""
+        if work_item_type == WorkItemType.MILESTONE:
+            if parent_ticket_id:
+                raise ValueError("Milestones cannot have a parent")
+            return None
+
+        if not parent_ticket_id:
+            raise ValueError(f"{work_item_type.value} requires a parent work item")
+
+        parent = self.session.get(Ticket, parent_ticket_id)
+        if not parent or parent.workspace_id != workspace_id:
+            raise ValueError("Parent work item not found in workspace")
+        validate_parent_child(parent.work_item_type, work_item_type)
+        return parent
+
+    def _reject_taken_supplied_id(
+        self, *, workspace_id: str, ticket: Ticket, supplied_id: str
+    ) -> None:
+        """Refuse a caller-supplied id that some other ticket already answers to.
+
+        Checked against both spellings. A supplied id that shadows another
+        ticket's own id is worse than a plain duplicate: resolution matches
+        `external_id` first, so the new ticket would never answer to the id it was
+        created under, and nothing would say why.
+
+        Excluding this ticket is not belt-and-braces: deriving a milestone's code
+        adds it to the session, so the query below autoflushes it and would
+        otherwise find the new ticket as its own duplicate.
+        """
+        if not supplied_id:
+            return
+        dup = self.session.exec(
+            select(Ticket).where(
+                Ticket.workspace_id == workspace_id,
+                (col(Ticket.external_id) == supplied_id)
+                | (col(Ticket.legacy_external_id) == supplied_id),
+                Ticket.id != ticket.id,
+            )
+        ).first()
+        if dup:
+            raise ValueError(f"external_id already exists: {supplied_id}")
+
     def _create_ticket_impl(
         self,
         *,
@@ -158,33 +185,16 @@ class TicketService:
         if priority < 1 or priority > 3:
             raise ValueError("Priority must be between 1 and 3")
 
-        parent: Ticket | None = None
-
-        if work_item_type == WorkItemType.MILESTONE:
-            if parent_ticket_id:
-                raise ValueError("Milestones cannot have a parent")
-        elif not parent_ticket_id:
-            raise ValueError(f"{work_item_type.value} requires a parent work item")
-        else:
-            parent = self.session.get(Ticket, parent_ticket_id)
-            if not parent or parent.workspace_id != ws.id:
-                raise ValueError("Parent work item not found in workspace")
-            validate_parent_child(parent.work_item_type, work_item_type)
-
-        ext_id = external_id.strip() or _next_external_id(self.session, ws.id, title)
-        dup = self.session.exec(
-            select(Ticket).where(
-                Ticket.workspace_id == ws.id,
-                Ticket.external_id == ext_id,
-            )
-        ).first()
-        if dup:
-            raise ValueError(f"external_id already exists: {ext_id}")
+        parent = self._validated_parent(
+            workspace_id=ws.id,
+            work_item_type=work_item_type,
+            parent_ticket_id=parent_ticket_id,
+        )
 
         inherited_milestone = milestone.strip() or (parent.milestone if parent else "")
 
         ticket = Ticket(
-            external_id=ext_id,
+            external_id="",
             workspace_id=ws.id,
             title=title,
             description=description.strip(),
@@ -197,6 +207,10 @@ class TicketService:
             is_integration_review=is_integration_review,
             last_updated_by="user",
         )
+
+        supplied_id = external_id.strip().lower()
+        self._reject_taken_supplied_id(workspace_id=ws.id, ticket=ticket, supplied_id=supplied_id)
+        assign_external_id(self.session, ticket, ws, supplied_id=supplied_id)
 
         template, stages = resolve_workspace_stages(self.session, ws)
         if work_item_type in WORKFLOW_WORK_ITEM_TYPES:

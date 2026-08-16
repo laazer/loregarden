@@ -30,7 +30,7 @@ from sqlmodel import Session, select
 
 def _ticket(session: Session) -> Ticket:
     ticket = session.exec(
-        select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
     ).first()
     assert ticket is not None
     return ticket

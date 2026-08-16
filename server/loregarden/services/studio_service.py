@@ -125,7 +125,7 @@ MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
         name="loregarden_get_ticket",
         description="Read ticket workflow state, stage map, hierarchy neighbors, and active orchestration run.",
         when_to_use="At stage start and before any workflow decision — never trust stale project_board WORKFLOW STATE alone.",
-        example='tools/call loregarden_get_ticket {"ticket_id": "<uuid or external_id slug>", "workspace_slug": "loregarden"}',
+        example='tools/call loregarden_get_ticket {"ticket_id": "<uuid or external id>", "workspace_slug": "loregarden"}',
         stage_agent=True,
     ),
     StudioMcpToolGuide(
@@ -138,8 +138,8 @@ MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
     StudioMcpToolGuide(
         name="loregarden_get_ticket_by_external",
         description="Read ticket state by workspace slug and external_id.",
-        when_to_use="When you know the ticket slug (e.g. 03-wire-cli-agent-runner) but not the UUID.",
-        example='tools/call loregarden_get_ticket_by_external {"workspace_slug": "loregarden", "external_id": "03-wire-cli-agent-runner"}',
+        when_to_use="When you know the ticket id (e.g. lor-mcp-gateway-142) but not the UUID.",
+        example='tools/call loregarden_get_ticket_by_external {"workspace_slug": "loregarden", "external_id": "lor-mcp-gateway-142"}',
         stage_agent=True,
     ),
     StudioMcpToolGuide(

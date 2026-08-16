@@ -95,8 +95,10 @@ def test_concurrent_creates_with_the_same_explicit_external_id_never_duplicate(c
     assert "external_id already exists" in loser_message, loser_message
 
     with Session(isolated_db) as verify_session:
+        # A supplied id lands in legacy_external_id (services.ticket_ids spells the
+        # ticket's own), so that is where a duplicate would show up.
         rows = verify_session.exec(
-            select(Ticket).where(Ticket.external_id == "racer-shared-slug")
+            select(Ticket).where(Ticket.legacy_external_id == "racer-shared-slug")
         ).all()
         assert len(rows) == 1, f"duplicate external_id rows were persisted: {rows}"
 
@@ -178,9 +180,8 @@ def test_explicit_empty_string_parent_is_treated_as_no_parent(client, db_session
 
 
 def test_whitespace_only_explicit_external_id_falls_back_to_auto_slug(client, db_session):
-    """TicketService computes `external_id.strip() or _next_external_id(...)` — a
-    caller sending external_id="   " must land on auto-slugging, not on a ticket
-    literally titled with a blank external_id."""
+    """A caller sending external_id="   " must land on a spelled id, not on a
+    ticket carrying a blank one."""
     milestone = _milestone(db_session)
     result = _create(
         db_session,

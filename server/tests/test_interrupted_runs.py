@@ -36,7 +36,7 @@ def test_fail_interrupted_runs_marks_orphans_failed(isolated_db):
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         orch = OrchestrationService(session)
         stuck = orch.start_run(ticket, stage_key="testing")
@@ -64,7 +64,7 @@ def test_interrupted_triage_turn_replies_instead_of_blocking_the_ticket(isolated
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         stage_before = ticket.workflow_stage_status
 
@@ -135,7 +135,7 @@ def test_start_run_async_fails_prior_running_run(isolated_db):
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         run_svc = RunService(session)
         first = run_svc.start_run_async(ticket, stage_key="testing")
@@ -162,7 +162,7 @@ def test_fail_interrupted_orchestration_runs_marks_orphans_failed(isolated_db):
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         stuck = OrchestrationCallbackService(session).start_orchestration_run(
             ticket,
@@ -184,7 +184,7 @@ def test_orchestrate_ticket_recovers_after_orphaned_orchestration_run(isolated_d
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         callbacks = OrchestrationCallbackService(session)
         stuck = callbacks.start_orchestration_run(
@@ -205,7 +205,7 @@ def test_recover_interrupted_stage_clears_stale_block(isolated_db):
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         orch = OrchestrationService(session)
         stuck = orch.start_run(ticket, stage_key="testing")
@@ -231,7 +231,7 @@ def test_recover_interrupted_stage_clears_stranded_block(isolated_db):
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         orch = OrchestrationService(session)
         run = orch.start_run(ticket, stage_key="testing")
@@ -255,7 +255,7 @@ def test_execute_reaches_recovery_for_a_reload_blocked_ticket(isolated_db):
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         run = OrchestrationService(session).start_run(ticket, stage_key="testing")
         run.status = RunStatus.RUNNING
@@ -293,7 +293,7 @@ def test_recovery_targets_the_interrupted_stage_not_an_earlier_block(isolated_db
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         builtin = BuiltinOrchestrator(session)
         instance, stages = builtin.orch._resolve_stages(ticket)
@@ -331,7 +331,7 @@ def test_recover_interrupted_stage_ignores_genuine_block(isolated_db):
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         callbacks = OrchestrationCallbackService(session)
         orch_run = callbacks.start_orchestration_run(
@@ -365,7 +365,7 @@ def test_settle_stranded_stages_recovers_a_stage_no_run_will_account_for(isolate
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         orch = OrchestrationService(session)
         run = orch.start_run(ticket, stage_key="testing")
@@ -395,7 +395,7 @@ def test_settle_stranded_stages_leaves_a_queued_run_alone(isolated_db):
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         orch = OrchestrationService(session)
         run = orch.start_run(ticket, stage_key="testing")
@@ -418,7 +418,7 @@ def test_complete_run_records_the_run_even_when_the_stage_cannot_settle(isolated
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         orch = OrchestrationService(session)
         run = orch.start_run(ticket, stage_key="testing")
@@ -445,7 +445,7 @@ def test_a_failure_in_the_tail_blocks_the_stage_when_the_ticket_is_readable(isol
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         orch = OrchestrationService(session)
         run = orch.start_run(ticket, stage_key="testing")

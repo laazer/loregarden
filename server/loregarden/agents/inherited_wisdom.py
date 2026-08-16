@@ -34,7 +34,14 @@ def _checkpoint_entries(
     base = store.checkpoints_dir(workspace_slug)
     # append_checkpoint slugs whatever identifier the caller passed, and the MCP
     # tool accepts either form, so look under both.
-    candidates = {slugify(ticket.id), slugify(ticket.external_id or "")} - {""}
+    # The legacy id is in the set because checkpoints written before the id
+    # restructure live under a directory named for the id of that day, and the
+    # vault is outside anything a migration could rename.
+    candidates = {
+        slugify(ticket.id),
+        slugify(ticket.external_id or ""),
+        slugify(ticket.legacy_external_id or ""),
+    } - {""}
     entries: list[str] = []
     for slug in candidates:
         directory = base / slug

@@ -29,7 +29,7 @@ STALE_AGE = timedelta(minutes=30)  # comfortably past the 15-minute check-in gra
 
 def _ticket(session: Session) -> Ticket:
     return session.exec(
-        select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
     ).first()
 
 

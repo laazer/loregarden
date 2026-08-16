@@ -79,6 +79,7 @@ from loregarden.db.migrations_templates import (
     m_retire_agent_owned_gate_items,
     m_verify_stage_in_v3,
 )
+from loregarden.db.migrations_ticket_ids import m_structured_ticket_ids
 from loregarden.db.migrations_ticket_studio import (
     m_reference_repos,
     m_ticket_studio_preview_state,
@@ -1318,6 +1319,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0089_retire_agent_owned_gate_items", m_retire_agent_owned_gate_items),
     ("0090_agent_run_process_identity", m_agent_run_process_identity),
     ("0091_sidebar_entry_pinned", m_sidebar_entry_pinned),
+    ("0092_structured_ticket_ids", m_structured_ticket_ids),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
