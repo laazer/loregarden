@@ -13,7 +13,7 @@
  *     frame reaches the app's own storage and its Tauri IPC surface.
  */
 
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 
 import { safeEmbedUrl } from "../primitives/embedUrl";
 import { ContainerPrimitiveHost } from "../primitives/registry";
@@ -266,5 +266,44 @@ describe("safeEmbedUrl is the single place the policy lives", () => {
         expect({ url, result }).toEqual({ url, result: expect.stringMatching(/^https?:\/\//i) });
       }
     }
+  });
+});
+
+describe("the frame covers itself until it paints", () => {
+  // An iframe that has not loaded is a white rectangle in a dark app, which
+  // reads as a page that loaded blank. The placeholder covers it until the
+  // browser says it is done — and must never delay the frame's own load, so it
+  // sits over a mounted frame rather than replacing one that is not there yet.
+  it("shows a placeholder over a frame that has not loaded", () => {
+    const { container } = renderEmbed("https://example.com/app");
+    expect(container.querySelector("iframe")).not.toBeNull();
+    expect(container.querySelector(".pane-skeleton")).not.toBeNull();
+  });
+
+  it("drops the placeholder once the frame loads", () => {
+    const { container } = renderEmbed("https://example.com/app");
+    fireEvent.load(container.querySelector("iframe")!);
+    expect(container.querySelector(".pane-skeleton")).toBeNull();
+  });
+
+  it("brings the placeholder back when the URL changes", () => {
+    // Otherwise the previous page's "loaded" state uncovers a frame that is
+    // fetching, and the operator watches a stale page sit there.
+    const { container, rerender } = render(
+      <ContainerPrimitiveHost
+        containerId="c1"
+        settings={{ primitive_id: "web_embed", url: "https://example.com/one" }}
+      />,
+    );
+    fireEvent.load(container.querySelector("iframe")!);
+    expect(container.querySelector(".pane-skeleton")).toBeNull();
+
+    rerender(
+      <ContainerPrimitiveHost
+        containerId="c1"
+        settings={{ primitive_id: "web_embed", url: "https://example.com/two" }}
+      />,
+    );
+    expect(container.querySelector(".pane-skeleton")).not.toBeNull();
   });
 });

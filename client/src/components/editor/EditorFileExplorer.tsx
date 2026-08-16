@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo } from "react";
 import { api } from "../../api/client";
 import { usePathBrowse } from "../../hooks/usePathBrowse";
 import { PathExplorerToolbar } from "../PathExplorerToolbar";
+import { PaneSkeleton } from "../ui/PaneSkeleton";
 
 interface EditorFileExplorerProps {
   workspaceSlug: string;
@@ -67,7 +68,7 @@ export function EditorFileExplorer({
 
       <div className="editor-explorer-list" aria-label="Repository files">
         {loading ? (
-          <div className="repo-path-explorer-empty">Loading…</div>
+          <PaneSkeleton variant="list" label={`Opening ${displayPath}…`} />
         ) : (
           <>
             {directories.map((entry) => (

@@ -1,0 +1,87 @@
+/* Placeholder bars for a pane whose content is still loading. See PaneSkeleton.tsx. */
+
+.pane-skeleton {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 12px;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* The label is for assistive tech only — the bars carry the message visually. */
+.pane-skeleton-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.pane-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pane-skeleton-bar {
+  display: block;
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--bg2) 0%, var(--bg3) 40%, var(--bg2) 80%);
+  background-size: 300% 100%;
+  animation: pane-skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+.pane-skeleton-line {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.pane-skeleton-gutter {
+  flex: none;
+  width: 18px;
+  opacity: 0.55;
+}
+
+.pane-skeleton-block {
+  flex: 1 1 auto;
+  width: 100%;
+  height: auto;
+  min-height: 80px;
+  border-radius: 8px;
+}
+
+.pane-skeleton--code {
+  font-family: var(--mono);
+  gap: 10px;
+}
+
+.pane-skeleton--list .pane-skeleton-bar {
+  height: 11px;
+}
+
+@keyframes pane-skeleton-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+/* A sweeping gradient is the thing motion sensitivity reacts to. Hold the bars
+   still; their shape already says the pane is filling in. */
+@media (prefers-reduced-motion: reduce) {
+  .pane-skeleton-bar {
+    animation: none;
+    background: var(--bg3);
+  }
+}

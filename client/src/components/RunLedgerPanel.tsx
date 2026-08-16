@@ -5,6 +5,7 @@ import type { LedgerVisit } from "../api/types";
 import { duration } from "../lib/duration";
 import { ACTIVE_LEDGER_STATUSES } from "../lib/ledgerStatus";
 import { formatLocalTimestamp } from "../lib/timestamps";
+import { PaneSkeleton } from "./ui/PaneSkeleton";
 
 function VisitRow({
   visit,
@@ -103,7 +104,7 @@ export function RunLedgerPanel({
   });
 
   if (ledger.isPending) {
-    return <div style={{ padding: 16, color: "var(--txl)" }}>Loading ledger…</div>;
+    return <PaneSkeleton variant="list" rows={5} label="Loading ledger…" />;
   }
   if (ledger.isError) {
     return <div style={{ padding: 16, color: "var(--txl)" }}>Could not load this ticket&rsquo;s ledger.</div>;
