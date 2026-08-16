@@ -51,8 +51,8 @@ import {
 } from "../../lib/gridLayout";
 import { useSidebarWorkspaceSlug } from "../../state/SidebarWorkspaceContext";
 import { ContainerPane } from "./ContainerPane";
-import { ICON_BUTTON, paneTitle } from "./paneChrome";
-import { PrimitivePicker } from "./PrimitivePicker";
+import { ICON_BUTTON } from "./paneChrome";
+import { PaneHeader } from "./PaneHeader";
 
 type Json = Record<string, unknown>;
 
@@ -361,7 +361,6 @@ function GridLeafView({
   containers: Json;
   actions: GridActions;
 }) {
-  const [picking, setPicking] = useState(false);
   const container = containers[leaf.container_id];
 
   return (
@@ -371,77 +370,43 @@ function GridLeafView({
     >
       {/* The split and close controls live on the container, not in a global
           toolbar: one pair for two panes cannot say which pane it splits. */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-          padding: "4px 6px",
-          borderBottom: "1px solid var(--bd)",
-          minWidth: 0,
-        }}
-      >
-        <span
-          style={{
-            flex: "1 1 0",
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            color: "var(--txl)",
-            fontSize: 11.5,
-          }}
-        >
-          {paneTitle(container)}
-        </span>
-        <button
-          type="button"
-          className={ICON_BUTTON}
-          data-grid-action="pick-primitive"
-          aria-label="Change contents"
-          aria-expanded={picking}
-          onClick={() => setPicking((open) => !open)}
-        >
-          <span aria-hidden="true">⇄</span>
-        </button>
-        <button
-          type="button"
-          className={ICON_BUTTON}
-          data-grid-action="split-horizontal"
-          aria-label="Split horizontally"
-          onClick={() => actions.split(leaf.id, "horizontal")}
-        >
-          <span aria-hidden="true">▥</span>
-        </button>
-        <button
-          type="button"
-          className={ICON_BUTTON}
-          data-grid-action="split-vertical"
-          aria-label="Split vertically"
-          onClick={() => actions.split(leaf.id, "vertical")}
-        >
-          <span aria-hidden="true">▤</span>
-        </button>
-        <button
-          type="button"
-          className={ICON_BUTTON}
-          data-grid-action="close"
-          aria-label="Close this pane"
-          onClick={() => actions.close(leaf.id)}
-        >
-          <span aria-hidden="true">✕</span>
-        </button>
-      </div>
-      {picking ? (
-        <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--bd)" }}>
-          <PrimitivePicker
-            onPick={(primitiveId) => {
-              setPicking(false);
-              actions.pickPrimitive(leaf.container_id, primitiveId);
-            }}
-          />
-        </div>
-      ) : null}
+      <PaneHeader
+        container={container}
+        actionAttribute="data-grid-action"
+        containerId={leaf.container_id}
+        onPickPrimitive={actions.pickPrimitive}
+        buttons={
+          <>
+            <button
+              type="button"
+              className={ICON_BUTTON}
+              data-grid-action="split-horizontal"
+              aria-label="Split horizontally"
+              onClick={() => actions.split(leaf.id, "horizontal")}
+            >
+              <span aria-hidden="true">▥</span>
+            </button>
+            <button
+              type="button"
+              className={ICON_BUTTON}
+              data-grid-action="split-vertical"
+              aria-label="Split vertically"
+              onClick={() => actions.split(leaf.id, "vertical")}
+            >
+              <span aria-hidden="true">▤</span>
+            </button>
+            <button
+              type="button"
+              className={ICON_BUTTON}
+              data-grid-action="close"
+              aria-label="Close this pane"
+              onClick={() => actions.close(leaf.id)}
+            >
+              <span aria-hidden="true">✕</span>
+            </button>
+          </>
+        }
+      />
       <div style={{ display: "flex", flex: "1 1 0", minHeight: 0, minWidth: 0 }}>
         <ContainerPane containerId={leaf.container_id} container={container} />
       </div>

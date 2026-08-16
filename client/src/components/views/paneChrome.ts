@@ -6,6 +6,11 @@
  * what this pane is called, and what an icon button in its header looks like. Two
  * copies of `getPrimitive(id)?.displayName ?? …` is two places to forget that the
  * registry, not the header, owns the name.
+ *
+ * The header itself is `PaneHeader`, next door. It lives in its own file rather
+ * than here because a module that exports both a component and the constants
+ * around it loses fast refresh for the component — so this one stays what its
+ * name says: the pieces a header is assembled from.
  */
 
 import { asJson } from "../../lib/viewLayouts";

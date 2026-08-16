@@ -45,7 +45,7 @@ import {
 } from "../../lib/canvasLayout";
 import { ContainerPane } from "./ContainerPane";
 import { ICON_BUTTON, paneTitle } from "./paneChrome";
-import { PrimitivePicker } from "./PrimitivePicker";
+import { PaneHeader } from "./PaneHeader";
 
 /** How far one arrow-key press moves or resizes an item, in surface pixels. */
 const KEY_STEP_PX = 8;
@@ -176,7 +176,6 @@ export function CanvasItemView({
   /** Adjusted but not yet committed — for keyup, blur and cancel. */
   const pending = useRef<Adjustment | undefined>(undefined);
   const [draft, setDraft] = useState<ItemGeometry | undefined>(undefined);
-  const [picking, setPicking] = useState(false);
 
   // The draft is what the user is looking at while a gesture is open and while
   // the PATCH it produced is in flight; the record takes over the moment that
@@ -375,90 +374,56 @@ export function CanvasItemView({
         minHeight: 0,
       }}
     >
-      <div
-        data-canvas-drag={item.id}
-        onPointerDown={(event) => {
-          // The header's own buttons are not a drag handle; a press that starts
-          // on one must still be able to become a click.
-          if ((event.target as HTMLElement).closest("button") !== null) return;
-          beginGesture(event, undefined);
+      <PaneHeader
+        container={container}
+        actionAttribute="data-canvas-action"
+        containerId={item.container_id}
+        onPickPrimitive={actions.pickPrimitive}
+        drag={{
+          attribute: "data-canvas-drag",
+          id: item.id,
+          onPointerDown: (event) => {
+            // The header's own buttons are not a drag handle; a press that starts
+            // on one must still be able to become a click.
+            if ((event.target as HTMLElement).closest("button") !== null) return;
+            beginGesture(event, undefined);
+          },
+          onPointerMove,
+          onPointerUp,
+          onPointerCancel,
         }}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerCancel}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-          padding: "4px 6px",
-          borderBottom: "1px solid var(--bd)",
-          cursor: "move",
-          userSelect: "none",
-          touchAction: "none",
-          minWidth: 0,
-        }}
-      >
-        <span
-          style={{
-            flex: "1 1 0",
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            color: "var(--txl)",
-            fontSize: 11.5,
-          }}
-        >
-          {paneTitle(container)}
-        </span>
-        <button
-          type="button"
-          className={ICON_BUTTON}
-          data-canvas-action="pick-primitive"
-          aria-label="Change contents"
-          aria-expanded={picking}
-          onClick={() => setPicking((open) => !open)}
-        >
-          <span aria-hidden="true">⇄</span>
-        </button>
-        <button
-          type="button"
-          className={ICON_BUTTON}
-          data-canvas-action="bring-to-front"
-          aria-label="Bring to front"
-          onClick={() => actions.restack(item.id, true)}
-        >
-          <span aria-hidden="true">▲</span>
-        </button>
-        <button
-          type="button"
-          className={ICON_BUTTON}
-          data-canvas-action="send-to-back"
-          aria-label="Send to back"
-          onClick={() => actions.restack(item.id, false)}
-        >
-          <span aria-hidden="true">▼</span>
-        </button>
-        <button
-          type="button"
-          className={ICON_BUTTON}
-          data-canvas-action="close"
-          aria-label="Remove this container"
-          onClick={() => actions.remove(item.id)}
-        >
-          <span aria-hidden="true">✕</span>
-        </button>
-      </div>
-      {picking ? (
-        <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--bd)" }}>
-          <PrimitivePicker
-            onPick={(primitiveId) => {
-              setPicking(false);
-              actions.pickPrimitive(item.container_id, primitiveId);
-            }}
-          />
-        </div>
-      ) : null}
+        buttons={
+          <>
+            <button
+              type="button"
+              className={ICON_BUTTON}
+              data-canvas-action="bring-to-front"
+              aria-label="Bring to front"
+              onClick={() => actions.restack(item.id, true)}
+            >
+              <span aria-hidden="true">▲</span>
+            </button>
+            <button
+              type="button"
+              className={ICON_BUTTON}
+              data-canvas-action="send-to-back"
+              aria-label="Send to back"
+              onClick={() => actions.restack(item.id, false)}
+            >
+              <span aria-hidden="true">▼</span>
+            </button>
+            <button
+              type="button"
+              className={ICON_BUTTON}
+              data-canvas-action="close"
+              aria-label="Remove this container"
+              onClick={() => actions.remove(item.id)}
+            >
+              <span aria-hidden="true">✕</span>
+            </button>
+          </>
+        }
+      />
       <div style={{ display: "flex", flex: "1 1 0", minHeight: 0, minWidth: 0 }}>
         <ContainerPane containerId={item.container_id} container={container} />
       </div>
