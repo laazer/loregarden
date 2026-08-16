@@ -25,6 +25,32 @@ import type { ViewKind, ViewLayout } from "./viewsApi";
 type Json = Record<string, unknown>;
 
 /**
+ * The ceilings `parse_view_layout` enforces on every layout, whichever
+ * arrangement it holds.
+ *
+ * Here rather than in `gridLayout`/`canvasLayout` because neither owns them:
+ * `MAX_CONTAINERS` is `ContainerRegistry`'s `max_length` and `MAX_LAYOUT_NODES`
+ * is `_StructureWalk.claim_node`'s ceiling, and both count the same things
+ * whether the arrangement is a tree or a list. Declared twice, they are two
+ * places to update when the server's number moves — and one of them will be
+ * missed. `MAX_SPLIT_DEPTH` is *not* here: nothing but a tree has a depth.
+ */
+export const MAX_CONTAINERS = 256;
+export const MAX_LAYOUT_NODES = 512;
+
+/**
+ * The container a freshly opened pane or freshly placed item holds.
+ *
+ * No `primitive_id` at all — not an empty string, which the primitive host reads
+ * as a stored id it cannot resolve. The absence is what makes the pane render its
+ * picker prompt. A fresh object every call, because a shared literal handed to
+ * two layouts is one object two views then edit.
+ */
+export function emptyContainer(): Json {
+  return { kind: "panel", settings: {} };
+}
+
+/**
  * A fresh id, unique within a session.
  *
  * The counter carries the uniqueness; the random suffix keeps two browser tabs
@@ -69,10 +95,7 @@ export function emptyLayoutFor(kind: ViewKind): ViewLayout {
   const containerId = freshId("c");
   return {
     kind: "flex_grid",
-    // No `primitive_id` at all — not an empty string, which the primitive host
-    // reads as a stored id it cannot resolve. The absence is what makes the pane
-    // render its picker prompt.
-    containers: { [containerId]: { kind: "panel", settings: {} } },
+    containers: { [containerId]: emptyContainer() },
     root: { node: "leaf", id: freshId("n"), size: 1, container_id: containerId },
   };
 }
