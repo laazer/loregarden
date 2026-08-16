@@ -33,7 +33,7 @@
  * record quietly disagree until the next reload.
  */
 
-import { asJson, freshId } from "./viewLayouts";
+import { MAX_CONTAINERS, MAX_LAYOUT_NODES, asJson, emptyContainer, freshId } from "./viewLayouts";
 import type { ViewLayout } from "./viewsApi";
 
 type Json = Record<string, unknown>;
@@ -44,11 +44,12 @@ export const MAX_CANVAS_EXTENT = 1_000_000;
 /** `CanvasItem.x`/`y`: `ge=-MAX_CANVAS_COORDINATE, le=MAX_CANVAS_COORDINATE`. */
 export const MAX_CANVAS_COORDINATE = 10_000_000;
 
-/** `ContainerRegistry`'s `max_length`. One container per item, so: items. */
-export const MAX_CONTAINERS = 256;
-
-/** `_StructureWalk.claim_node`'s ceiling. A canvas item is one node. */
-export const MAX_LAYOUT_NODES = 512;
+/**
+ * The layout-wide ceilings, re-exported from `viewLayouts` where both
+ * arrangements read them: one container per item, so `MAX_CONTAINERS` is items,
+ * and a canvas item is one node.
+ */
+export { MAX_CONTAINERS, MAX_LAYOUT_NODES };
 
 /**
  * The smallest item this renderer will produce, in CSS pixels.
@@ -133,6 +134,26 @@ export function clampCoordinate(value: number, extent: number): number {
   return clamp(value, 0, Math.max(0, REACHABLE_EXTENT - extent));
 }
 
+/**
+ * A geometry the *server* accepts — nothing narrower.
+ *
+ * The clamp a stored item is read through, and deliberately not the one an edit
+ * is written through. `storeItems` writes every item back on every edit, so a
+ * read that also applied this renderer's `REACHABLE_EXTENT` would silently
+ * relocate a container the user never touched, on a gesture aimed at a different
+ * one — and the server permits ±1e7, so such an item is not malformed, merely
+ * somewhere this UI would not have put it. Only values the server would *refuse*
+ * are repaired here; the rest are carried through untouched.
+ */
+function clampStorable(geometry: ItemGeometry): ItemGeometry {
+  return {
+    width: clamp(geometry.width, MIN_ITEM_PX, MAX_CANVAS_EXTENT),
+    height: clamp(geometry.height, MIN_ITEM_PX, MAX_CANVAS_EXTENT),
+    x: clamp(geometry.x, -MAX_CANVAS_COORDINATE, MAX_CANVAS_COORDINATE),
+    y: clamp(geometry.y, -MAX_CANVAS_COORDINATE, MAX_CANVAS_COORDINATE),
+  };
+}
+
 /** A geometry the server accepts and the viewport can reach. */
 export function clampGeometry(geometry: ItemGeometry): ItemGeometry {
   const width = clampExtent(geometry.width);
@@ -157,6 +178,49 @@ export function withGeometry(item: CanvasItemModel, geometry: ItemGeometry): Can
   return { ...item, ...clampGeometry(geometry) };
 }
 
+/**
+ * Which edges a resize gesture is dragging.
+ *
+ * Here rather than in the renderer because the arithmetic below is what a
+ * renderer draws *and* what it commits, and only here can it be exercised
+ * against `assertServerAcceptableLayout` without going through a pointer event.
+ */
+export interface ResizeEdges {
+  readonly north: boolean;
+  readonly south: boolean;
+  readonly west: boolean;
+  readonly east: boolean;
+}
+
+/**
+ * `item`'s geometry after dragging `edges` by `dx`, `dy` surface pixels.
+ *
+ * `MIN_ITEM_PX` is applied to the *size* and the moving edge is then placed from
+ * it, which is what stops a north-west drag past the floor from carrying the
+ * top-left corner on while the box inverts. `clampGeometry` runs afterwards for a
+ * different reason — it holds the result inside the reachable surface — so the
+ * two are not a floor applied twice.
+ */
+export function resizedGeometry(
+  item: CanvasItemModel,
+  edges: ResizeEdges,
+  dx: number,
+  dy: number,
+): ItemGeometry {
+  let { x, y, width, height } = item;
+  if (edges.east) width = Math.max(MIN_ITEM_PX, item.width + dx);
+  if (edges.west) {
+    width = Math.max(MIN_ITEM_PX, item.width - dx);
+    x = item.x + (item.width - width);
+  }
+  if (edges.south) height = Math.max(MIN_ITEM_PX, item.height + dy);
+  if (edges.north) {
+    height = Math.max(MIN_ITEM_PX, item.height - dy);
+    y = item.y + (item.height - height);
+  }
+  return clampGeometry({ x, y, width, height });
+}
+
 function parseItem(value: unknown): CanvasItemModel | undefined {
   const data = asJson(value);
   if (data === undefined) return undefined;
@@ -167,19 +231,19 @@ function parseItem(value: unknown): CanvasItemModel | undefined {
   // Sizes fall back to the default rather than to zero: a stored width the
   // client cannot read is a bug in the record, and an item drawn 0px wide is one
   // the user has no way to grab and repair.
-  const width = clampExtent(finite(data.width, DEFAULT_ITEM_WIDTH));
-  const height = clampExtent(finite(data.height, DEFAULT_ITEM_HEIGHT));
-  const zRaw = finite(data.z_index, 0);
+  const geometry = clampStorable({
+    x: finite(data.x, 0),
+    y: finite(data.y, 0),
+    width: finite(data.width, DEFAULT_ITEM_WIDTH),
+    height: finite(data.height, DEFAULT_ITEM_HEIGHT),
+  });
   return {
     id,
     container_id: containerId,
-    x: clampCoordinate(finite(data.x, 0), width),
-    y: clampCoordinate(finite(data.y, 0), height),
-    width,
-    height,
+    ...geometry,
     // `z_index: int` server-side, so a stored float is rounded rather than
     // carried into a body the server refuses.
-    z_index: Math.round(zRaw),
+    z_index: Math.round(finite(data.z_index, 0)),
   };
 }
 
@@ -230,10 +294,22 @@ function storeItems(layout: ViewLayout, items: CanvasItemModel[], containers: Js
   return { ...layout, containers, items: items.map(itemToJson) };
 }
 
-function requireItem(items: CanvasItemModel[], itemId: string): CanvasItemModel {
+/**
+ * The item, or a refusal naming what the user was doing.
+ *
+ * Every edit reaches this when the container it names was removed in another tab
+ * while the gesture was open. `doing` is passed rather than baked in because one
+ * message for all of them tells a user who pressed *close* that the container
+ * "was moved".
+ */
+function requireItem(
+  items: CanvasItemModel[],
+  itemId: string,
+  doing: string,
+): CanvasItemModel {
   const found = items.find((item) => item.id === itemId);
   if (found === undefined) {
-    throw new Error("The container that was moved is no longer on this canvas.");
+    throw new Error(`The container that was ${doing} is no longer on this canvas.`);
   }
   return found;
 }
@@ -242,11 +318,6 @@ function requireItem(items: CanvasItemModel[], itemId: string): CanvasItemModel 
 function topZ(items: CanvasItemModel[]): number {
   if (items.length === 0) return 0;
   return Math.max(...items.map((item) => item.z_index)) + 1;
-}
-
-/** The container a freshly placed item holds: no `primitive_id`, so it prompts. */
-function emptyContainer(): Json {
-  return { kind: "panel", settings: {} };
 }
 
 /**
@@ -280,7 +351,7 @@ export function addItem(layout: ViewLayout, x: number, y: number): ViewLayout {
 /** Move `itemId` so its top-left corner sits at `x`, `y`. */
 export function moveItem(layout: ViewLayout, itemId: string, x: number, y: number): ViewLayout {
   const items = readCanvasItems(layout);
-  const item = requireItem(items, itemId);
+  const item = requireItem(items, itemId, "moved");
   const moved = withGeometry(item, { ...item, x, y });
   return storeItems(
     layout,
@@ -302,7 +373,7 @@ export function resizeItem(
   geometry: ItemGeometry,
 ): ViewLayout {
   const items = readCanvasItems(layout);
-  const item = requireItem(items, itemId);
+  const item = requireItem(items, itemId, "resized");
   const resized = withGeometry(item, geometry);
   return storeItems(
     layout,
@@ -327,7 +398,7 @@ export function resizeItem(
  */
 export function restackItem(layout: ViewLayout, itemId: string, toFront: boolean): ViewLayout {
   const items = readCanvasItems(layout);
-  requireItem(items, itemId);
+  requireItem(items, itemId, "restacked");
   // `readCanvasItems` already sorted back to front, so position in this array is
   // the stacking order and the moved item's target is one end of it.
   const alreadyThere = toFront
@@ -336,7 +407,7 @@ export function restackItem(layout: ViewLayout, itemId: string, toFront: boolean
   if (alreadyThere) return layout;
 
   const rest = items.filter((item) => item.id !== itemId);
-  const moved = requireItem(items, itemId);
+  const moved = requireItem(items, itemId, "restacked");
   const ordered = toFront ? [...rest, moved] : [moved, ...rest];
   return storeItems(
     layout,
@@ -354,7 +425,7 @@ export function restackItem(layout: ViewLayout, itemId: string, toFront: boolean
  */
 export function removeItem(layout: ViewLayout, itemId: string): ViewLayout {
   const items = readCanvasItems(layout);
-  const item = requireItem(items, itemId);
+  const item = requireItem(items, itemId, "removed");
   const containers = { ...containersOf(layout) };
   delete containers[item.container_id];
   return storeItems(

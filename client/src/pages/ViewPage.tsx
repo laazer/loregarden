@@ -153,6 +153,12 @@ function ViewSurface({ kind, layout }: { kind: string; layout: Json | undefined 
   if (layout === undefined) {
     return <ViewUndrawable reason="Its stored layout is missing or is not a layout." />;
   }
+  // The canvas takes the layout unparsed, and deliberately has no undrawable
+  // state of its own: an empty canvas is a legitimate stored layout, and a single
+  // item the client cannot read is dropped rather than allowed to blank a surface
+  // full of good ones. The grid below is the opposite case — a tree it cannot
+  // read leaves it with nothing at all to draw — which is why only that one is
+  // parsed here.
   if (kind === "canvas") return <CanvasSurface layout={layout} />;
   if (kind === "flex_grid") {
     // Parsed here rather than inside the renderer, because "this grid has no

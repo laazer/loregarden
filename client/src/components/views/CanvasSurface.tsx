@@ -45,28 +45,23 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useParams } from "react-router-dom";
 
-import { useViewLayoutEdit, useViewLayoutWrite } from "../../hooks/useViewLayoutEdit";
+import {
+  useViewLayoutEdit,
+  useViewLayoutWrite,
+} from "../../hooks/useViewLayoutEdit";
 import {
   DEFAULT_ITEM_HEIGHT,
   DEFAULT_ITEM_WIDTH,
-  MIN_ITEM_PX,
   addItem,
-  clampGeometry,
   contentBounds,
   moveItem,
   readCanvasItems,
   removeItem,
   resizeItem,
   restackItem,
-  withGeometry,
-  type CanvasItemModel,
-  type ItemGeometry,
 } from "../../lib/canvasLayout";
 import {
   HOME_VIEWPORT,
@@ -81,12 +76,8 @@ import {
 import { asJson } from "../../lib/viewLayouts";
 import type { ViewLayout } from "../../lib/viewsApi";
 import { useSidebarWorkspaceSlug } from "../../state/SidebarWorkspaceContext";
-import { ContainerPane } from "./ContainerPane";
-import { HEADER_BUTTON, paneTitle } from "./paneChrome";
-import { PrimitivePicker } from "./PrimitivePicker";
-
-/** How far one arrow-key press moves or resizes an item, in surface pixels. */
-const KEY_STEP_PX = 8;
+import { CanvasItemView, type CanvasActions } from "./CanvasItemView";
+import { ICON_BUTTON } from "./paneChrome";
 
 /** How long the viewport sits still before it is written down. */
 const VIEWPORT_SETTLE_MS = 250;
@@ -96,422 +87,6 @@ const WORKING_MARGIN_PX = 600;
 
 /** The surface is never smaller than this, so an empty canvas is still a surface. */
 const MIN_SURFACE_PX = 1200;
-
-/** Which edges a resize handle drags. */
-interface ResizeDirection {
-  readonly key: string;
-  readonly north: boolean;
-  readonly south: boolean;
-  readonly west: boolean;
-  readonly east: boolean;
-  readonly cursor: string;
-  readonly label: string;
-}
-
-/**
- * The eight handles, edges and corners alike — AC1 names both.
- *
- * One table rather than eight elements written out: the geometry each produces is
- * the same arithmetic with different flags, and a hand-written south-east handle
- * is where a sign error hides.
- */
-const RESIZE_DIRECTIONS: ResizeDirection[] = [
-  { key: "n", north: true, south: false, west: false, east: false, cursor: "ns-resize", label: "Resize from the top edge" },
-  { key: "s", north: false, south: true, west: false, east: false, cursor: "ns-resize", label: "Resize from the bottom edge" },
-  { key: "w", north: false, south: false, west: true, east: false, cursor: "ew-resize", label: "Resize from the left edge" },
-  { key: "e", north: false, south: false, west: false, east: true, cursor: "ew-resize", label: "Resize from the right edge" },
-  { key: "nw", north: true, south: false, west: true, east: false, cursor: "nwse-resize", label: "Resize from the top-left corner" },
-  { key: "ne", north: true, south: false, west: false, east: true, cursor: "nesw-resize", label: "Resize from the top-right corner" },
-  { key: "sw", north: false, south: true, west: true, east: false, cursor: "nesw-resize", label: "Resize from the bottom-left corner" },
-  { key: "se", north: false, south: true, west: false, east: true, cursor: "nwse-resize", label: "Resize from the bottom-right corner" },
-];
-
-/** The thickness of a handle's hit area, in screen pixels. */
-const HANDLE_PX = 8;
-
-function handleStyle(direction: ResizeDirection): CSSProperties {
-  const style: CSSProperties = {
-    position: "absolute",
-    cursor: direction.cursor,
-    // The handle is never text to select, and never a touch scroll.
-    userSelect: "none",
-    touchAction: "none",
-    zIndex: 1,
-  };
-  const inset = -HANDLE_PX / 2;
-  if (direction.north) style.top = inset;
-  if (direction.south) style.bottom = inset;
-  if (direction.west) style.left = inset;
-  if (direction.east) style.right = inset;
-  if (!direction.north && !direction.south) {
-    style.top = HANDLE_PX / 2;
-    style.bottom = HANDLE_PX / 2;
-    style.width = HANDLE_PX;
-  } else {
-    style.height = HANDLE_PX;
-  }
-  if (!direction.west && !direction.east) {
-    style.left = HANDLE_PX / 2;
-    style.right = HANDLE_PX / 2;
-  } else if (direction.north || direction.south) {
-    style.width = HANDLE_PX;
-  }
-  return style;
-}
-
-/**
- * `item`'s geometry after dragging `direction` by `dx`, `dy` surface pixels.
- *
- * The minimum is applied to the *size* and the moving edge follows it, so a
- * north-west drag past the floor stops the top-left corner rather than letting it
- * carry on while the box inverts. `clampGeometry` then applies the surface bounds
- * — the two floors are not the same one, and applying only the second is how an
- * item becomes a sliver that cannot be grabbed again.
- */
-function draggedGeometry(
-  item: CanvasItemModel,
-  direction: ResizeDirection,
-  dx: number,
-  dy: number,
-): ItemGeometry {
-  let { x, y, width, height } = item;
-  if (direction.east) width = Math.max(MIN_ITEM_PX, item.width + dx);
-  if (direction.west) {
-    width = Math.max(MIN_ITEM_PX, item.width - dx);
-    x = item.x + (item.width - width);
-  }
-  if (direction.south) height = Math.max(MIN_ITEM_PX, item.height + dy);
-  if (direction.north) {
-    height = Math.max(MIN_ITEM_PX, item.height - dy);
-    y = item.y + (item.height - height);
-  }
-  return clampGeometry({ x, y, width, height });
-}
-
-interface CanvasActions {
-  move: (itemId: string, x: number, y: number) => void;
-  resize: (itemId: string, geometry: ItemGeometry) => void;
-  restack: (itemId: string, toFront: boolean) => void;
-  remove: (itemId: string) => void;
-  pickPrimitive: (containerId: string, primitiveId: string) => void;
-  /** Raised while a gesture is open, so the surface can shield its embeds. */
-  setGesturing: (open: boolean) => void;
-}
-
-/**
- * One item's open gesture: which pointer owns it, where it started, and what it
- * started from.
- *
- * Stored per item rather than per surface for the same reason the grid stores one
- * per gap: a touchscreen can hold two of them, and one shared slot lets the
- * second press overwrite the first's origin so the first finger's moves then move
- * the *other* item from the wrong starting point.
- *
- * `pointerId` is stored for the same gesture: capture routes every later event to
- * the element that took it, so a second pointer crossing that element delivers
- * moves and ups against a drag it is no part of.
- */
-interface Gesture {
-  pointerId: number;
-  originX: number;
-  originY: number;
-  /** `undefined` for a move; the edges being dragged for a resize. */
-  direction: ResizeDirection | undefined;
-  base: CanvasItemModel;
-}
-
-function CanvasItemView({
-  item,
-  container,
-  actions,
-  zoom,
-}: {
-  item: CanvasItemModel;
-  container: unknown;
-  actions: CanvasActions;
-  /**
-   * Screen pixels per surface pixel. A pointer moves in screen pixels and the
-   * stored geometry is in surface pixels, so every delta is divided by it —
-   * without which a drag at 50% zoom moves an item twice as far as the cursor.
-   */
-  zoom: number;
-}) {
-  const gesture = useRef<Gesture | undefined>(undefined);
-  /** Adjusted but not yet committed — for keyup, blur and cancel. */
-  const pending = useRef<ItemGeometry | undefined>(undefined);
-  const [draft, setDraft] = useState<{ id: string; geometry: ItemGeometry } | undefined>(undefined);
-  const [picking, setPicking] = useState(false);
-
-  // The draft survives both the in-flight PATCH and a rejected one, and is
-  // dropped only when it belongs to an item this element is no longer drawing.
-  const drawn = draft !== undefined && draft.id === item.id ? draft.geometry : item;
-
-  const apply = useCallback(
-    (geometry: ItemGeometry) => {
-      pending.current = geometry;
-      setDraft({ id: item.id, geometry });
-    },
-    [item.id],
-  );
-
-  function commit(geometry: ItemGeometry, direction: ResizeDirection | undefined) {
-    pending.current = undefined;
-    if (direction === undefined) actions.move(item.id, geometry.x, geometry.y);
-    else actions.resize(item.id, geometry);
-  }
-
-  function gestureFor(event: ReactPointerEvent<HTMLElement>): Gesture | undefined {
-    const open = gesture.current;
-    if (open === undefined || open.pointerId !== event.pointerId) return undefined;
-    return open;
-  }
-
-  function geometryAt(open: Gesture, event: ReactPointerEvent<HTMLElement>): ItemGeometry {
-    const dx = (event.clientX - open.originX) / zoom;
-    const dy = (event.clientY - open.originY) / zoom;
-    if (open.direction !== undefined) return draggedGeometry(open.base, open.direction, dx, dy);
-    return withGeometry(open.base, { ...open.base, x: open.base.x + dx, y: open.base.y + dy });
-  }
-
-  function beginGesture(
-    event: ReactPointerEvent<HTMLElement>,
-    direction: ResizeDirection | undefined,
-  ) {
-    // Without this the browser starts a native text selection (or an image drag)
-    // that runs for the whole gesture.
-    event.preventDefault();
-    // A second pointer landing on an element already being dragged is not a new
-    // gesture: the first still owns the capture, and adopting the second would
-    // move the origin out from under the moves still arriving for it.
-    if (gesture.current !== undefined) return;
-    // Capture is what keeps a move over a terminal from reaching the terminal.
-    event.currentTarget.setPointerCapture(event.pointerId);
-    gesture.current = {
-      pointerId: event.pointerId,
-      originX: event.clientX,
-      originY: event.clientY,
-      direction,
-      // The item as drawn, so a second drag started before the first's PATCH
-      // landed continues from where the user sees the item.
-      base: { ...item, ...drawn },
-    };
-    actions.setGesturing(true);
-  }
-
-  function onPointerMove(event: ReactPointerEvent<HTMLElement>) {
-    const open = gestureFor(event);
-    // Drawn, not written: persistence is on gesture end, never per pointer move.
-    if (open !== undefined) apply(geometryAt(open, event));
-  }
-
-  function endGesture(
-    event: ReactPointerEvent<HTMLElement>,
-    geometry: ItemGeometry | undefined,
-    direction: ResizeDirection | undefined,
-  ) {
-    gesture.current = undefined;
-    actions.setGesturing(false);
-    if (geometry !== undefined) {
-      apply(geometry);
-      commit(geometry, direction);
-    }
-    // Last, because releasing capture is cleanup and storing the gesture is the
-    // point: `releasePointerCapture` throws on a pointer the element no longer
-    // holds, and a throw ahead of the commit drops the user's drag in silence.
-    event.currentTarget.releasePointerCapture(event.pointerId);
-  }
-
-  function onPointerUp(event: ReactPointerEvent<HTMLElement>) {
-    const open = gestureFor(event);
-    if (open === undefined) return;
-    endGesture(event, geometryAt(open, event), open.direction);
-  }
-
-  function onPointerCancel(event: ReactPointerEvent<HTMLElement>) {
-    const open = gestureFor(event);
-    // The gesture was interrupted, but what is on screen is still where the user
-    // dragged to; storing it is kinder than reverting it without a word.
-    if (open === undefined) return;
-    endGesture(event, pending.current, open.direction);
-  }
-
-  /**
-   * AC10's keyboard half: arrows move, `shift`+arrows resize from the bottom
-   * right — the corner that changes the size without moving the item.
-   */
-  function onKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
-    const dx = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-    const dy = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
-    if (dx === 0 && dy === 0) return;
-    event.preventDefault();
-    // The arrow must not also scroll the surface underneath the item.
-    event.stopPropagation();
-    const base = { ...item, ...(pending.current ?? drawn) };
-    const step = KEY_STEP_PX;
-    if (event.shiftKey) {
-      apply(
-        clampGeometry({
-          ...base,
-          width: Math.max(MIN_ITEM_PX, base.width + dx * step),
-          height: Math.max(MIN_ITEM_PX, base.height + dy * step),
-        }),
-      );
-      return;
-    }
-    apply(clampGeometry({ ...base, x: base.x + dx * step, y: base.y + dy * step }));
-  }
-
-  /**
-   * One adjustment, one PATCH. A held arrow key repeats its keydown and the draft
-   * follows every repeat; the write waits for the key to come up, or for the item
-   * to lose focus with an adjustment still unsaved.
-   */
-  function onSettle(resizing: boolean) {
-    const adjusted = pending.current;
-    if (adjusted === undefined) return;
-    pending.current = undefined;
-    if (resizing) actions.resize(item.id, adjusted);
-    else actions.move(item.id, adjusted.x, adjusted.y);
-  }
-
-  return (
-    <div
-      data-canvas-item={item.id}
-      data-z-index={item.z_index}
-      tabIndex={0}
-      role="group"
-      aria-label={`${paneTitle(container)} container`}
-      // AC2's second half. `PointerDownCapture` rather than `onFocus` alone: a
-      // click inside a terminal or an iframe never focuses this element, and the
-      // container the user just clicked into is exactly the one to raise.
-      onPointerDownCapture={() => actions.restack(item.id, true)}
-      onFocus={() => actions.restack(item.id, true)}
-      onKeyDown={onKeyDown}
-      onKeyUp={(event) => onSettle(event.shiftKey)}
-      onBlur={() => onSettle(false)}
-      style={{
-        position: "absolute",
-        left: drawn.x,
-        top: drawn.y,
-        width: drawn.width,
-        height: drawn.height,
-        zIndex: item.z_index,
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-        background: "var(--bg)",
-        border: "1px solid var(--bd)",
-        borderRadius: 6,
-        // Overlap is the point of a canvas, so an item must occlude what is under
-        // it rather than letting it show through.
-        boxShadow: "0 2px 10px rgba(0,0,0,0.25)",
-        minWidth: 0,
-        minHeight: 0,
-      }}
-    >
-      <div
-        data-canvas-drag={item.id}
-        onPointerDown={(event) => {
-          // The header's own buttons are not a drag handle; a press that starts
-          // on one must still be able to become a click.
-          if ((event.target as HTMLElement).closest("button") !== null) return;
-          beginGesture(event, undefined);
-        }}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerCancel}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-          padding: "4px 6px",
-          borderBottom: "1px solid var(--bd)",
-          cursor: "move",
-          userSelect: "none",
-          touchAction: "none",
-          minWidth: 0,
-        }}
-      >
-        <span
-          style={{
-            flex: "1 1 0",
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            color: "var(--txl)",
-            fontSize: 11.5,
-          }}
-        >
-          {paneTitle(container)}
-        </span>
-        <button
-          type="button"
-          className={HEADER_BUTTON}
-          data-canvas-action="pick-primitive"
-          aria-label="Change contents"
-          aria-expanded={picking}
-          onClick={() => setPicking((open) => !open)}
-        >
-          <span aria-hidden="true">⇄</span>
-        </button>
-        <button
-          type="button"
-          className={HEADER_BUTTON}
-          data-canvas-action="bring-to-front"
-          aria-label="Bring to front"
-          onClick={() => actions.restack(item.id, true)}
-        >
-          <span aria-hidden="true">▲</span>
-        </button>
-        <button
-          type="button"
-          className={HEADER_BUTTON}
-          data-canvas-action="send-to-back"
-          aria-label="Send to back"
-          onClick={() => actions.restack(item.id, false)}
-        >
-          <span aria-hidden="true">▼</span>
-        </button>
-        <button
-          type="button"
-          className={HEADER_BUTTON}
-          data-canvas-action="close"
-          aria-label="Remove this container"
-          onClick={() => actions.remove(item.id)}
-        >
-          <span aria-hidden="true">✕</span>
-        </button>
-      </div>
-      {picking ? (
-        <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--bd)" }}>
-          <PrimitivePicker
-            onPick={(primitiveId) => {
-              setPicking(false);
-              actions.pickPrimitive(item.container_id, primitiveId);
-            }}
-          />
-        </div>
-      ) : null}
-      <div style={{ display: "flex", flex: "1 1 0", minHeight: 0, minWidth: 0 }}>
-        <ContainerPane containerId={item.container_id} container={container} />
-      </div>
-      {RESIZE_DIRECTIONS.map((direction) => (
-        <div
-          key={direction.key}
-          data-canvas-resize={`${item.id}:${direction.key}`}
-          role="separator"
-          aria-label={direction.label}
-          onPointerDown={(event) => beginGesture(event, direction)}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerCancel}
-          style={handleStyle(direction)}
-        />
-      ))}
-    </div>
-  );
-}
 
 const TOOLBAR_BUTTON = "btn-secondary btn-compact";
 
@@ -531,6 +106,17 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
 
   const viewport = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(() => readViewport(slug, viewId).zoom);
+  /**
+   * The zoom a handler outside the render should read.
+   *
+   * Not an optimisation and not a duplicate source of truth: the scroll
+   * adjustment a zoom makes is a *side effect*, and under `StrictMode` React
+   * invokes a `setState` updater twice — so an adjustment computed inside one
+   * would read a `scrollLeft` it had already moved and land somewhere else
+   * entirely the second time. The ref is what lets `zoomAround` read the current
+   * zoom without doing its work inside an updater.
+   */
+  const zoomRef = useRef(zoom);
   const [gesturing, setGesturing] = useState(false);
 
   const items = useMemo(() => readCanvasItems(layout), [layout]);
@@ -559,7 +145,10 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
   const remember = useCallback(
     (next: CanvasViewport) => {
       if (settle.current !== undefined) clearTimeout(settle.current);
-      settle.current = setTimeout(() => writeViewport(slug, viewId, next), VIEWPORT_SETTLE_MS);
+      settle.current = setTimeout(
+        () => writeViewport(slug, viewId, next),
+        VIEWPORT_SETTLE_MS,
+      );
     },
     [slug, viewId],
   );
@@ -573,6 +162,10 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
   // AC8: the stored viewport is applied once the surface exists to scroll. A
   // layout effect rather than an effect, so the restored position is in place
   // before the first paint and the canvas does not visibly jump from the origin.
+  // Once per mount, and once per mount is once per view *because the page keys
+  // this renderer by view id* (`ViewPage`'s `<ViewSurface key={loaded.id} …>`).
+  // Without that key a second view would never restore, and `rememberNow` would
+  // write the first view's scroll under the second view's storage key.
   const restored = useRef(false);
   useLayoutEffect(() => {
     if (restored.current) return;
@@ -596,24 +189,58 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
    * Without the anchor a zoom walks the content out from under the cursor, and
    * the user chases it with the scrollbars.
    */
+  /**
+   * A scroll position that must wait for the surface to be re-laid out.
+   *
+   * A browser clamps an assignment to `scrollLeft` against the element's
+   * *current* `scrollWidth`. The sizer's width is `surface.width * zoom` and
+   * `setZoom` is asynchronous, so scrolling in the same statement that changes
+   * the zoom scrolls against the old, smaller extent — and every zoom that grows
+   * the surface has its scroll silently truncated. The layout effect below
+   * applies it after the new size is in the DOM and before the frame is painted.
+   */
+  const pendingScroll = useRef<{ x: number; y: number } | undefined>(undefined);
+
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    const target = pendingScroll.current;
+    if (element === null || target === undefined) return;
+    pendingScroll.current = undefined;
+    element.scrollLeft = target.x;
+    element.scrollTop = target.y;
+    remember({ panX: element.scrollLeft, panY: element.scrollTop, zoom });
+  }, [remember, zoom]);
+
   const zoomAround = useCallback(
-    (next: number, clientX: number | undefined, clientY: number | undefined) => {
-      const element = viewport.current;
+    (
+      next: number,
+      clientX: number | undefined,
+      clientY: number | undefined,
+    ) => {
+      const current = zoomRef.current;
       const target = clampZoom(next);
-      setZoom((current) => {
-        if (element === null || current === target) return target;
+      if (current === target) return;
+
+      const element = viewport.current;
+      if (element !== null) {
+        // Measured *before* the zoom changes: this is where the user is looking
+        // now, and keeping that point still is the whole job.
         const rect = element.getBoundingClientRect();
-        const anchorX = clientX === undefined ? rect.width / 2 : clientX - rect.left;
-        const anchorY = clientY === undefined ? rect.height / 2 : clientY - rect.top;
+        const anchorX =
+          clientX === undefined ? rect.width / 2 : clientX - rect.left;
+        const anchorY =
+          clientY === undefined ? rect.height / 2 : clientY - rect.top;
         const surfaceX = (element.scrollLeft + anchorX) / current;
         const surfaceY = (element.scrollTop + anchorY) / current;
-        element.scrollLeft = Math.max(0, surfaceX * target - anchorX);
-        element.scrollTop = Math.max(0, surfaceY * target - anchorY);
-        remember({ panX: element.scrollLeft, panY: element.scrollTop, zoom: target });
-        return target;
-      });
+        pendingScroll.current = {
+          x: Math.max(0, surfaceX * target - anchorX),
+          y: Math.max(0, surfaceY * target - anchorY),
+        };
+      }
+      zoomRef.current = target;
+      setZoom(target);
     },
-    [remember],
+    [],
   );
 
   /**
@@ -632,15 +259,17 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
     function onWheel(event: WheelEvent) {
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
+      // Read through the ref, so this listener is registered once rather than
+      // torn down and rebuilt on every step of a continuous pinch.
       zoomAround(
-        zoom * (event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP),
+        zoomRef.current * (event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP),
         event.clientX,
         event.clientY,
       );
     }
     element.addEventListener("wheel", onWheel, { passive: false });
     return () => element.removeEventListener("wheel", onWheel);
-  }, [zoom, zoomAround]);
+  }, [zoomAround]);
 
   /** Where the middle of the viewport is, in surface pixels. */
   const viewportCentre = useCallback((): { x: number; y: number } => {
@@ -648,8 +277,8 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
     if (element === null) return { x: 0, y: 0 };
     const rect = element.getBoundingClientRect();
     return {
-      x: (element.scrollLeft + rect.width / 2) / zoom - DEFAULT_ITEM_WIDTH / 2,
-      y: (element.scrollTop + rect.height / 2) / zoom - DEFAULT_ITEM_HEIGHT / 2,
+      x: (element.scrollLeft + rect.width / 2) / zoom,
+      y: (element.scrollTop + rect.height / 2) / zoom,
     };
   }, [zoom]);
 
@@ -678,9 +307,12 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
       // Each edit is composed at the front of the view's write queue, from the
       // newest layout this client holds — never from the items that were on
       // screen when the gesture started, which a still-open PATCH would revert.
-      move: (itemId, x, y) => edit((current) => moveItem(current, itemId, x, y)),
-      resize: (itemId, geometry) => edit((current) => resizeItem(current, itemId, geometry)),
-      restack: (itemId, toFront) => edit((current) => restackItem(current, itemId, toFront)),
+      move: (itemId, x, y, onSettled) =>
+        edit((current) => moveItem(current, itemId, x, y), onSettled),
+      resize: (itemId, geometry, onSettled) =>
+        edit((current) => resizeItem(current, itemId, geometry), onSettled),
+      restack: (itemId, toFront) =>
+        edit((current) => restackItem(current, itemId, toFront)),
       remove: (itemId) => edit((current) => removeItem(current, itemId)),
       pickPrimitive,
       setGesturing,
@@ -706,9 +338,9 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
     if (element === null) return;
     const bounds = contentBounds(items);
     if (bounds === undefined) {
-      element.scrollLeft = 0;
-      element.scrollTop = 0;
-      zoomAround(1, undefined, undefined);
+      pendingScroll.current = { x: 0, y: 0 };
+      zoomRef.current = 1;
+      setZoom(1);
       remember({ ...HOME_VIEWPORT });
       return;
     }
@@ -718,18 +350,33 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
     // server has no opinion about but the surface cannot draw.
     const next =
       rect.width > 0 && rect.height > 0
-        ? clampZoom(Math.min(rect.width / bounds.width, rect.height / bounds.height))
+        ? clampZoom(
+            Math.min(rect.width / bounds.width, rect.height / bounds.height),
+          )
         : 1;
+    // The ref moves with the state: every handler outside the render reads the
+    // zoom from it, and a `setZoom` that left it behind would have the next
+    // pinch compute its anchor from the zoom before this one.
+    zoomRef.current = next;
+    // Queued, not assigned: at any zoom that grows the surface the sizer is still
+    // the old size on this line, and the browser would clamp the scroll to it.
+    pendingScroll.current = {
+      x: Math.max(0, bounds.x * next),
+      y: Math.max(0, bounds.y * next),
+    };
     setZoom(next);
-    element.scrollLeft = Math.max(0, bounds.x * next);
-    element.scrollTop = Math.max(0, bounds.y * next);
-    remember({ panX: element.scrollLeft, panY: element.scrollTop, zoom: next });
-  }, [items, remember, zoomAround]);
+  }, [items, remember]);
 
   return (
     <div
       data-testid="view-canvas"
-      style={{ position: "relative", display: "flex", flexDirection: "column", flex: "1 1 0", minHeight: 0 }}
+      style={{
+        position: "relative",
+        display: "flex",
+        flexDirection: "column",
+        flex: "1 1 0",
+        minHeight: 0,
+      }}
     >
       <div
         style={{
@@ -745,8 +392,14 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
           className={TOOLBAR_BUTTON}
           data-canvas-action="add-container"
           onClick={() => {
+            // Centred on the point, like the double-click below: `place` takes a
+            // top-left corner, and an item hung from the centre point sits low
+            // and to the right of where the user was looking.
             const centre = viewportCentre();
-            place(centre.x, centre.y);
+            place(
+              centre.x - DEFAULT_ITEM_WIDTH / 2,
+              centre.y - DEFAULT_ITEM_HEIGHT / 2,
+            );
           }}
         >
           Add container
@@ -762,7 +415,7 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
         <span style={{ flex: "1 1 0" }} />
         <button
           type="button"
-          className={HEADER_BUTTON}
+          className={ICON_BUTTON}
           data-canvas-action="zoom-out"
           aria-label="Zoom out"
           disabled={zoom <= MIN_ZOOM}
@@ -774,14 +427,14 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
           type="button"
           className={TOOLBAR_BUTTON}
           data-canvas-action="zoom-reset"
-          aria-label="Reset zoom to 100%"
+          aria-label={`Zoom ${Math.round(zoom * 100)}%. Reset to 100%`}
           onClick={() => zoomAround(1, undefined, undefined)}
         >
           {`${Math.round(zoom * 100)}%`}
         </button>
         <button
           type="button"
-          className={HEADER_BUTTON}
+          className={ICON_BUTTON}
           data-canvas-action="zoom-in"
           aria-label="Zoom in"
           disabled={zoom >= MAX_ZOOM}
@@ -791,80 +444,82 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
         </button>
       </div>
 
-      <div
-        ref={viewport}
-        data-canvas-viewport={viewId}
-        onScroll={rememberNow}
-        style={{
-          position: "relative",
-          flex: "1 1 0",
-          minHeight: 0,
-          // Panning *is* this: the wheel, the trackpad and the scrollbars all
-          // drive it, and a scrollable container inside gets the wheel first.
-          overflow: "auto",
-          // A drag that crosses a text run must not start selecting it.
-          userSelect: gesturing ? "none" : undefined,
-        }}
-      >
-        {/* The scrollable extent, which is the surface *after* zoom — a
-            transformed child does not enlarge its parent's scroll area. */}
+      {/* The viewport's own frame. The scroller is taken out of flow inside it
+          so the empty state can be laid over the viewport rather than placed
+          after a surface that is 1200 pixels tall — where it renders below the
+          fold and the user is shown a blank scroll area instead of the message
+          that tells a new canvas from a broken one. */}
+      <div style={{ position: "relative", flex: "1 1 0", minHeight: 0 }}>
         <div
-          data-canvas-sizer=""
+          ref={viewport}
+          data-canvas-viewport={viewId}
+          onScroll={rememberNow}
           style={{
-            position: "relative",
-            width: surface.width * zoom,
-            height: surface.height * zoom,
-            // A stacking context, so every item's `z-index` competes only with
-            // its siblings. Without it they compete with the shield below, whose
-            // job is to be above all of them — and an item's z-index comes from
-            // the stored layout, which the server bounds only to `int`.
-            zIndex: 0,
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            // Panning *is* this: the wheel, the trackpad and the scrollbars all
+            // drive it, and a scrollable container inside gets the wheel first.
+            overflow: "auto",
+            // A drag that crosses a text run must not start selecting it.
+            userSelect: gesturing ? "none" : undefined,
           }}
         >
+          {/* The scrollable extent, which is the surface *after* zoom — a
+            transformed child does not enlarge its parent's scroll area. */}
           <div
-            data-canvas-surface=""
-            data-zoom={zoom}
-            onDoubleClick={(event) => {
-              // Only the bare surface places something: a double-click inside a
-              // container belongs to the container.
-              if (event.target !== event.currentTarget) return;
-              const point = surfacePointOf(event.clientX, event.clientY);
-              place(point.x - DEFAULT_ITEM_WIDTH / 2, point.y - DEFAULT_ITEM_HEIGHT / 2);
-            }}
+            data-canvas-sizer=""
             style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: surface.width,
-              height: surface.height,
-              transformOrigin: "0 0",
-              // At 100% there is deliberately no transform at all — see the note
-              // at the top of this file. This `undefined` is AC5.
-              transform: zoom === 1 ? undefined : `scale(${zoom})`,
+              position: "relative",
+              width: surface.width * zoom,
+              height: surface.height * zoom,
+              // A stacking context, so every item's `z-index` competes only with
+              // its siblings. Without it they compete with the shield below, whose
+              // job is to be above all of them — and an item's z-index comes from
+              // the stored layout, which the server bounds only to `int`.
+              zIndex: 0,
             }}
           >
-            {items.map((item) => (
-              <CanvasItemView
-                key={item.id}
-                item={item}
-                container={containers[item.container_id]}
-                actions={actions}
-                zoom={zoom}
-              />
-            ))}
+            <div
+              data-canvas-surface=""
+              data-zoom={zoom}
+              onDoubleClick={(event) => {
+                // Only the bare surface places something: a double-click inside a
+                // container belongs to the container.
+                if (event.target !== event.currentTarget) return;
+                const point = surfacePointOf(event.clientX, event.clientY);
+                place(
+                  point.x - DEFAULT_ITEM_WIDTH / 2,
+                  point.y - DEFAULT_ITEM_HEIGHT / 2,
+                );
+              }}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: surface.width,
+                height: surface.height,
+                transformOrigin: "0 0",
+                // At 100% there is deliberately no transform at all — see the note
+                // at the top of this file. This `undefined` is AC5.
+                transform: zoom === 1 ? undefined : `scale(${zoom})`,
+              }}
+            >
+              {items.map((item) => (
+                <CanvasItemView
+                  key={item.id}
+                  item={item}
+                  container={containers[item.container_id]}
+                  actions={actions}
+                  zoom={zoom}
+                />
+              ))}
+            </div>
           </div>
-        </div>
 
-        {items.length === 0 ? (
-          <div className="queue-page-empty" data-testid="view-canvas-empty">
-            <p style={{ maxWidth: 520 }}>
-              This canvas is empty. Add a container, or double-click anywhere on the surface to
-              place one.
-            </p>
-          </div>
-        ) : null}
-
-        {/* An `<iframe>` is a separate document and will happily swallow a
+          {/* An `<iframe>` is a separate document and will happily swallow a
             pointer move that crosses it, capture or no capture. The shield is
             what makes a drag over a web embed survive.
 
@@ -873,19 +528,42 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
             a fixed overlay would cover the app's own chrome for the duration of
             every drag. Sized to the sizer, so it covers every item rather than
             only the ones currently scrolled into sight. */}
-        {gesturing ? (
+          {gesturing ? (
+            <div
+              data-canvas-shield=""
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: surface.width * zoom,
+                height: surface.height * zoom,
+                zIndex: 1,
+                cursor: "grabbing",
+              }}
+            />
+          ) : null}
+        </div>
+
+        {/* Over the viewport, not after it, and transparent to the pointer so a
+          double-click still places a container through it. */}
+        {items.length === 0 ? (
           <div
-            data-canvas-shield=""
+            className="queue-page-empty"
+            data-testid="view-canvas-empty"
             style={{
               position: "absolute",
               top: 0,
               left: 0,
-              width: surface.width * zoom,
-              height: surface.height * zoom,
-              zIndex: 1,
-              cursor: "grabbing",
+              right: 0,
+              bottom: 0,
+              pointerEvents: "none",
             }}
-          />
+          >
+            <p style={{ maxWidth: 520 }}>
+              This canvas is empty. Add a container, or double-click anywhere on
+              the surface to place one.
+            </p>
+          </div>
         ) : null}
       </div>
     </div>

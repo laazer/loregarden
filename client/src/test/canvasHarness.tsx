@@ -156,19 +156,6 @@ export const threeItemCanvas = (): Json => ({
   ],
 });
 
-/** `count` placed containers — for the ceilings the server enforces. */
-export function fullCanvas(count: number): Json {
-  const containers: Json = {};
-  const items: Json[] = [];
-  for (let index = 0; index < count; index += 1) {
-    containers[`c-${index}`] = panelContainer();
-    items.push(
-      canvasItem({ id: `i-${index}`, container_id: `c-${index}`, x: index, y: 0, z_index: index }),
-    );
-  }
-  return { kind: "canvas", containers, items };
-}
-
 export function viewOf(layout: Json): ViewSummary {
   return {
     id: VIEW_ID,
@@ -183,22 +170,6 @@ export function viewOf(layout: Json): ViewSummary {
 
 /** The record the fake server holds; PATCHes land in it, so a reload sees them. */
 let stored: ViewSummary;
-
-/**
- * What a read issued now would resolve with.
- *
- * A getter rather than the binding itself, because the fake server *replaces* the
- * record on every PATCH — a test holding the old object is holding the layout
- * from before that write.
- */
-export function storedView(): ViewSummary {
-  return stored;
-}
-
-export function storePatch(patch: unknown): ViewSummary {
-  stored = { ...stored, ...(patch as Partial<ViewSummary>) };
-  return stored;
-}
 
 export function testClient(): QueryClient {
   return new QueryClient({
@@ -234,11 +205,6 @@ export async function settle() {
 
 let rectSpy: jest.SpyInstance;
 
-/** What every element measures from here on — the viewport, effectively. */
-export function setMeasuredRect(rect: DOMRect): void {
-  rectSpy.mockReturnValue(rect);
-}
-
 /**
  * The fake server, the stubbed rect and the fake `PointerEvent`, installed for a
  * whole spec file.
@@ -250,10 +216,33 @@ export function setMeasuredRect(rect: DOMRect): void {
 export function installCanvasHarness(): void {
   beforeAll(() => {
     (globalThis as unknown as { PointerEvent: unknown }).PointerEvent = FakePointerEvent;
-    // jsdom has neither; a renderer that captures the pointer would otherwise die
-    // on `undefined is not a function` rather than fail the assertion that wants it.
-    Element.prototype.setPointerCapture = function setPointerCapture() {};
-    Element.prototype.releasePointerCapture = function releasePointerCapture() {};
+    // jsdom implements none of the capture API; a renderer that captures the
+    // pointer would otherwise die on `undefined is not a function` rather than
+    // fail the assertion that wants it.
+    //
+    // These are not no-ops, unlike the grid harness's: the renderer *asks*
+    // whether it still holds a pointer before releasing it (the release throws
+    // `NotFoundError` otherwise), so a stub that always answered `true` would
+    // hide the guard and a stub that always answered `false` would hide the
+    // release. `captured` is the smallest thing that answers honestly.
+    const captured = new WeakMap<Element, Set<number>>();
+    Element.prototype.setPointerCapture = function setPointerCapture(pointerId: number) {
+      const held = captured.get(this) ?? new Set<number>();
+      held.add(pointerId);
+      captured.set(this, held);
+    };
+    Element.prototype.hasPointerCapture = function hasPointerCapture(pointerId: number) {
+      return captured.get(this)?.has(pointerId) ?? false;
+    };
+    Element.prototype.releasePointerCapture = function releasePointerCapture(pointerId: number) {
+      const held = captured.get(this);
+      // The real one throws rather than shrugging, and a test that never sees the
+      // throw cannot tell a guarded release from an unguarded one.
+      if (held === undefined || !held.has(pointerId)) {
+        throw new DOMException("No active pointer with the given id", "NotFoundError");
+      }
+      held.delete(pointerId);
+    };
   });
 
   beforeEach(() => {
@@ -268,7 +257,13 @@ export function installCanvasHarness(): void {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // An item drops its drag draft when the write *settles*, and a test that
+    // asserted on the request and returned leaves that write one microtask from
+    // finishing — so the `setDraft` lands after the test body, outside `act`, and
+    // React says so. Flushing here rather than making every drag test end with a
+    // wait it does not otherwise need.
+    await settle();
     rectSpy.mockRestore();
   });
 }

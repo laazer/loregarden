@@ -51,7 +51,7 @@ import {
 } from "../../lib/gridLayout";
 import { useSidebarWorkspaceSlug } from "../../state/SidebarWorkspaceContext";
 import { ContainerPane } from "./ContainerPane";
-import { HEADER_BUTTON, paneTitle } from "./paneChrome";
+import { ICON_BUTTON, paneTitle } from "./paneChrome";
 import { PrimitivePicker } from "./PrimitivePicker";
 
 type Json = Record<string, unknown>;
@@ -396,7 +396,7 @@ function GridLeafView({
         </span>
         <button
           type="button"
-          className={HEADER_BUTTON}
+          className={ICON_BUTTON}
           data-grid-action="pick-primitive"
           aria-label="Change contents"
           aria-expanded={picking}
@@ -406,7 +406,7 @@ function GridLeafView({
         </button>
         <button
           type="button"
-          className={HEADER_BUTTON}
+          className={ICON_BUTTON}
           data-grid-action="split-horizontal"
           aria-label="Split horizontally"
           onClick={() => actions.split(leaf.id, "horizontal")}
@@ -415,7 +415,7 @@ function GridLeafView({
         </button>
         <button
           type="button"
-          className={HEADER_BUTTON}
+          className={ICON_BUTTON}
           data-grid-action="split-vertical"
           aria-label="Split vertically"
           onClick={() => actions.split(leaf.id, "vertical")}
@@ -424,7 +424,7 @@ function GridLeafView({
         </button>
         <button
           type="button"
-          className={HEADER_BUTTON}
+          className={ICON_BUTTON}
           data-grid-action="close"
           aria-label="Close this pane"
           onClick={() => actions.close(leaf.id)}

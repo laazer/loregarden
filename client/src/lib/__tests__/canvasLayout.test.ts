@@ -23,8 +23,10 @@ import {
   readCanvasItems,
   removeItem,
   resizeItem,
+  resizedGeometry,
   restackItem,
   withGeometry,
+  type ResizeEdges,
 } from "../canvasLayout";
 import type { ViewLayout } from "../viewsApi";
 import { assertServerAcceptableLayout } from "../../test/viewLayoutContract";
@@ -160,6 +162,58 @@ describe("clamping", () => {
   });
 });
 
+describe("the arithmetic a resize handle produces", () => {
+  const item = () => readCanvasItems(twoItems())[0];
+  const edges = (spec: Partial<ResizeEdges>): ResizeEdges => ({
+    north: false,
+    south: false,
+    west: false,
+    east: false,
+    ...spec,
+  });
+
+  it("grows from the south-east corner without moving the origin", () => {
+    expect(resizedGeometry(item(), edges({ south: true, east: true }), 60, 50)).toEqual({
+      x: 100,
+      y: 80,
+      width: 460,
+      height: 350,
+    });
+  });
+
+  it("moves the origin with the size when the north-west corner is dragged", () => {
+    // The far corner must stay exactly where it was: 100 + 400 and 80 + 300.
+    const next = resizedGeometry(item(), edges({ north: true, west: true }), 40, 30);
+    expect(next).toEqual({ x: 140, y: 110, width: 360, height: 270 });
+    expect(next.x + next.width).toBe(500);
+    expect(next.y + next.height).toBe(380);
+  });
+
+  it("changes only the axis an edge handle owns", () => {
+    // A vertical travel of 200px on the east handle must not reach the height.
+    expect(resizedGeometry(item(), edges({ east: true }), 60, 200)).toMatchObject({
+      width: 460,
+      height: 300,
+      y: 80,
+    });
+  });
+
+  it("stops the moving corner when a north-west drag passes the minimum", () => {
+    // Past the floor the size stops. If the origin kept going, the box inverts —
+    // which the server accepts as two positive numbers and no user can undo.
+    const next = resizedGeometry(item(), edges({ north: true, west: true }), 5000, 5000);
+    expect(next.width).toBe(MIN_ITEM_PX);
+    expect(next.height).toBe(MIN_ITEM_PX);
+    expect(next.x + next.width).toBe(500);
+    expect(next.y + next.height).toBe(380);
+  });
+
+  it("keeps a resize inside the reachable surface", () => {
+    const wide = resizedGeometry(item(), edges({ east: true }), 1e9, 0);
+    expect(wide.x + wide.width).toBeLessThanOrEqual(REACHABLE_EXTENT);
+  });
+});
+
 describe("placing a container", () => {
   it("adds one item and one container, on top of the stack", () => {
     // AC1's "added at a point", and AC2's "a new container is on top".
@@ -246,8 +300,39 @@ describe("moving and resizing", () => {
 
   it("throws when the item a gesture ends on is no longer in the layout", () => {
     // It was closed in another tab while the drag was open. The write path turns
-    // this into the standard failure toast with no request sent.
-    expect(() => moveItem(twoItems(), "i-gone", 0, 0)).toThrow(/no longer/);
+    // this into the standard failure toast with no request sent. That it throws
+    // is the contract; the wording is not, and no criterion picks it.
+    expect(() => moveItem(twoItems(), "i-gone", 0, 0)).toThrow();
+    expect(() => resizeItem(twoItems(), "i-gone", { x: 0, y: 0, width: 200, height: 200 })).toThrow();
+    expect(() => removeItem(twoItems(), "i-gone")).toThrow();
+    expect(() => restackItem(twoItems(), "i-gone", true)).toThrow();
+  });
+
+  it("leaves an item the user did not touch exactly as it was stored", () => {
+    // Every edit writes the whole list back, so a read that also applied this
+    // renderer's own reachable-surface clamp would relocate a container the user
+    // never touched, on a gesture aimed at a different one. The server permits
+    // ±1e7; an item out there is not malformed, only somewhere this UI would not
+    // have put it.
+    const layout = canvas(
+      [
+        { id: "i-1", container_id: "c-1", x: 0, y: 0, width: 400, height: 300, z_index: 0 },
+        {
+          id: "i-far",
+          container_id: "c-2",
+          x: -5_000_000,
+          y: 900_000,
+          width: 400,
+          height: 300,
+          z_index: 1,
+        },
+      ],
+      { "c-1": panel(), "c-2": panel() },
+    );
+
+    const next = moveItem(layout, "i-1", 50, 50);
+    assertServerAcceptableLayout(next);
+    expect(itemById(next, "i-far")).toMatchObject({ x: -5_000_000, y: 900_000 });
   });
 });
 

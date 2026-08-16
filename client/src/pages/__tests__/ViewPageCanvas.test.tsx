@@ -21,6 +21,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+import { ApiError } from "../../api/http";
 import { MIN_ITEM_PX, REACHABLE_EXTENT } from "../../lib/canvasLayout";
 import { MAX_ZOOM, readViewport } from "../../lib/canvasViewport";
 import {
@@ -76,6 +77,16 @@ jest.mock("../../components/TerminalPanel", () => ({
 
 installCanvasHarness();
 
+/**
+ * The keyboard step, spelled here rather than imported from the renderer.
+ *
+ * No acceptance criterion names a number — "move and resize are operable by
+ * keyboard" is the whole of it — so this is the step the tests expect and the
+ * renderer is free to choose. Importing the constant would make every assertion
+ * below agree with the implementation by construction.
+ */
+const KEY_STEP_PX = 8;
+
 async function shown(layout: Json) {
   const rendered = renderCanvas(layout);
   await screen.findByTestId("view-host");
@@ -99,6 +110,7 @@ describe("AC1 — containers are placed at a point, and may overlap", () => {
     await user.click(toolbarAction(container, "add-container"));
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     const [slug, viewId, patch] = mockUpdateView.mock.calls[0];
     expect(slug).toBe(SLUG);
     expect(viewId).toBe(VIEW_ID);
@@ -120,6 +132,7 @@ describe("AC1 — containers are placed at a point, and may overlap", () => {
     fireEvent.doubleClick(surfaceEl(container), { clientX: 500, clientY: 400 });
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     const layout = lastLayout();
     assertServerAcceptableLayout(layout);
     const placed = itemsOf(layout)[0];
@@ -145,6 +158,7 @@ describe("AC1 — dragging moves a container, and the write lands on gesture end
     drag(dragHandle(container, "i-1"), [300, 300], [420, 360]);
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     // "Committed on gesture end rather than per pointer move" is the criterion,
     // and two intermediate moves is what makes the count meaningful.
     expect(mockUpdateView).toHaveBeenCalledTimes(1);
@@ -167,6 +181,7 @@ describe("AC1 — dragging moves a container, and the write lands on gesture end
 
     pointerUp(handle, 350, 330);
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
   });
 
   it("covers the surface while the gesture is open, so an embed cannot swallow it", async () => {
@@ -187,6 +202,7 @@ describe("AC1 — dragging moves a container, and the write lands on gesture end
 
     pointerUp(handle, 300, 300);
     expect(container.querySelector("[data-canvas-shield]")).toBeNull();
+    await settle();
   });
 
   it("prevents the browser's own text selection when the gesture starts", async () => {
@@ -229,6 +245,7 @@ describe("AC1 — dragging moves a container, and the write lands on gesture end
     fireEvent.pointerCancel(handle, { pointerId: 7, clientX: 380, clientY: 300 });
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     expect(itemById(lastLayout(), "i-1")).toMatchObject({ x: 180 });
   });
 });
@@ -250,6 +267,7 @@ describe("AC1 — resizing from edges and corners", () => {
     drag(resizeHandle(container, "i-1", "se"), [500, 380], [560, 430]);
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     const layout = lastLayout();
     assertServerAcceptableLayout(layout);
     expect(itemById(layout, "i-1")).toMatchObject({ x: 100, y: 80, width: 460, height: 350 });
@@ -263,6 +281,7 @@ describe("AC1 — resizing from edges and corners", () => {
     drag(resizeHandle(container, "i-1", "nw"), [100, 80], [140, 110]);
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     const layout = lastLayout();
     assertServerAcceptableLayout(layout);
     expect(itemById(layout, "i-1")).toMatchObject({ x: 140, y: 110, width: 360, height: 270 });
@@ -274,6 +293,7 @@ describe("AC1 — resizing from edges and corners", () => {
     drag(resizeHandle(container, "i-1", "e"), [500, 200], [560, 400]);
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     // The vertical travel is 200px and the height must not have followed it.
     expect(itemById(lastLayout(), "i-1")).toMatchObject({ width: 460, height: 300, y: 80 });
   });
@@ -285,6 +305,7 @@ describe("AC1 — resizing from edges and corners", () => {
     drag(resizeHandle(container, "i-1", "se"), [500, 380], [-2000, -2000]);
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     const layout = lastLayout();
     assertServerAcceptableLayout(layout);
     expect(itemById(layout, "i-1")).toMatchObject({ width: MIN_ITEM_PX, height: MIN_ITEM_PX });
@@ -297,6 +318,7 @@ describe("AC1 — resizing from edges and corners", () => {
     drag(resizeHandle(container, "i-1", "nw"), [100, 80], [3000, 3000]);
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     const stored = itemById(lastLayout(), "i-1");
     expect(stored).toMatchObject({ width: MIN_ITEM_PX, height: MIN_ITEM_PX });
     // The far corner stays put: origin + size is where the box's other side was.
@@ -322,6 +344,7 @@ describe("AC2 — z-order is user-controllable, and focus raises", () => {
     fireEvent.pointerDown(canvasItemEl(container, "i-1"), { pointerId: 3, clientX: 10, clientY: 10 });
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     const layout = lastLayout();
     assertServerAcceptableLayout(layout);
     expect(Number(itemById(layout, "i-1").z_index)).toBeGreaterThan(
@@ -346,6 +369,7 @@ describe("AC2 — z-order is user-controllable, and focus raises", () => {
     await user.click(itemAction(container, "i-3", "send-to-back"));
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalled());
+    await settle();
     const layout = lastLayout();
     assertServerAcceptableLayout(layout);
     expect(Number(itemById(layout, "i-3").z_index)).toBeLessThan(
@@ -355,25 +379,31 @@ describe("AC2 — z-order is user-controllable, and focus raises", () => {
 });
 
 describe("AC3 — the surface pans, and a container's own scrolling wins", () => {
-  it("pans by scrolling the viewport, so an inner scrollable gets the wheel first", async () => {
-    // The whole of AC3, expressed structurally: the viewport is `overflow: auto`
-    // and a plain wheel has no handler on it at all, so the browser's own scroll
-    // chaining gives the event to the innermost scrollable element under the
-    // pointer — a terminal's scrollback — before the surface ever sees it. jsdom
-    // neither lays out nor chains, so this is the cause and not the effect.
+  it("leaves a plain wheel over a container's own content entirely alone", async () => {
+    // AC3's substance, expressed as its structural cause. The wheel is dispatched
+    // on the *terminal inside the container* — the element the criterion is about
+    // — and it bubbles all the way to the viewport, which is the only place a
+    // canvas handler could sit. Nothing consumes it and the zoom does not move,
+    // so the browser's own scroll chaining is free to give it to the terminal's
+    // scrollback before the surface ever sees it. jsdom neither lays out nor
+    // chains, so what is verified here is that the canvas does not *take* the
+    // event; that the browser then routes it to the terminal is the browser's job.
     const { container } = await shown(oneItemCanvas(terminalContainer()));
     const viewport = viewportEl(container);
-
     expect(viewport.style.overflow).toBe("auto");
 
-    const wheel = new WheelEvent("wheel", {
-      deltaY: 120,
-      bubbles: true,
-      cancelable: true,
+    const terminal = container.querySelector<HTMLElement>('[data-testid="fake-terminal"]');
+    expect(terminal).not.toBeNull();
+
+    const before = surfaceEl(container).dataset.zoom;
+    const wheel = new WheelEvent("wheel", { deltaY: 120, bubbles: true, cancelable: true });
+    await act(async () => {
+      terminal?.dispatchEvent(wheel);
     });
-    viewport.dispatchEvent(wheel);
-    // Not consumed: nothing preventDefaulted it, so it is still the browser's.
+
     expect(wheel.defaultPrevented).toBe(false);
+    // And the canvas did not pan or zoom behind the terminal's back.
+    expect(surfaceEl(container).dataset.zoom).toBe(before);
   });
 
   it("zooms on ctrl+wheel, which is the one wheel the surface does claim", async () => {
@@ -446,6 +476,7 @@ describe("AC5 — 100% zoom carries no transform at all", () => {
     drag(dragHandle(container, "i-1"), [300, 300], [400, 300]);
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     expect(Number(itemById(lastLayout(), "i-1").x)).toBeCloseTo(100 + 100 / zoom, 6);
   });
 });
@@ -475,6 +506,7 @@ describe("AC4 — containers come from the shared registry", () => {
     await user.click(await screen.findByRole("button", { name: /terminal/i }));
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalled());
+    await settle();
     const layout = lastLayout();
     assertServerAcceptableLayout(layout);
     expect(containersOf(layout)["c-1"].kind).not.toBe("panel");
@@ -487,6 +519,7 @@ describe("AC7 — geometry survives a reload", () => {
 
     drag(dragHandle(container, "i-1"), [300, 300], [420, 360]);
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     unmount();
 
     // A cold mount against the fake server's record, which the PATCH updated —
@@ -496,6 +529,37 @@ describe("AC7 — geometry survives a reload", () => {
     const reloaded = render(canvasRoute(testClient()));
     await reloaded.findByTestId("view-host");
     expect(drawnBox(reloaded.container, "i-1")).toMatchObject({ x: 220, y: 140 });
+  });
+});
+
+describe("AC7 — a refused write does not leave the screen lying", () => {
+  it("draws the item from the record again once a rejected PATCH settles", async () => {
+    // The draft covers the gap between letting go and the write landing. Kept
+    // past a *refused* write it becomes a lie the user cannot see: the item sits
+    // where they dropped it while the record holds the old position, and the next
+    // edit composes from that record and quietly re-stores the old one. Dropping
+    // it on settled — not on success — is what makes the screen agree again.
+    const { container } = await shown(oneItemCanvas());
+    mockUpdateView.mockRejectedValue(new ApiError(400, "Layout too large"));
+
+    drag(dragHandle(container, "i-1"), [300, 300], [420, 360]);
+
+    await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(drawnBox(container, "i-1")).toMatchObject({ x: 100, y: 80 });
+  });
+
+  it("keeps drawing the committed geometry when the PATCH succeeds", async () => {
+    // The same drop, on the path where the record now agrees — so it changes
+    // nothing on screen. Asserted because a reconciliation that snapped back on
+    // success too would be the reverse bug.
+    const { container } = await shown(oneItemCanvas());
+
+    drag(dragHandle(container, "i-1"), [300, 300], [420, 360]);
+
+    await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(drawnBox(container, "i-1")).toMatchObject({ x: 220, y: 140 });
   });
 });
 
@@ -510,6 +574,46 @@ describe("AC8 — the viewport is restored", () => {
 
     expect(Number(surfaceEl(container).dataset.zoom)).toBe(2);
     expect(surfaceEl(container).style.transform).toBe("scale(2)");
+  });
+
+  it("applies a stored pan to the viewport on a cold mount", async () => {
+    // jsdom never scrolls — nothing overflows because nothing is laid out — so
+    // `scrollLeft` reads 0 no matter what is assigned to it. Watching the setter
+    // is what makes the assignment observable at all; whether the browser then
+    // scrolls that far is the browser's business, and this asserts only that the
+    // canvas asked it to.
+    window.localStorage.setItem(
+      `loregarden.canvas-viewport.${SLUG}.${VIEW_ID}`,
+      '{"panX":640,"panY":320,"zoom":1}',
+    );
+    const scrolledTo: { left: number[]; top: number[] } = { left: [], top: [] };
+    const original = Object.getOwnPropertyDescriptor(Element.prototype, "scrollLeft");
+    Object.defineProperty(Element.prototype, "scrollLeft", {
+      configurable: true,
+      get: () => 0,
+      set(value: number) {
+        scrolledTo.left.push(value);
+      },
+    });
+    const originalTop = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop");
+    Object.defineProperty(Element.prototype, "scrollTop", {
+      configurable: true,
+      get: () => 0,
+      set(value: number) {
+        scrolledTo.top.push(value);
+      },
+    });
+
+    try {
+      await shown(oneItemCanvas());
+      expect(scrolledTo.left).toContain(640);
+      expect(scrolledTo.top).toContain(320);
+    } finally {
+      if (original !== undefined) Object.defineProperty(Element.prototype, "scrollLeft", original);
+      if (originalTop !== undefined) {
+        Object.defineProperty(Element.prototype, "scrollTop", originalTop);
+      }
+    }
   });
 
   it("remembers a zoom change once the viewport stops moving", async () => {
@@ -538,6 +642,7 @@ describe("AC9 — a container cannot be lost off-surface", () => {
     drag(dragHandle(container, "i-1"), [300, 300], [-5000, -5000]);
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     const layout = lastLayout();
     assertServerAcceptableLayout(layout);
     // The origin is 0,0 and the viewport scrolls from there, so a negative
@@ -551,12 +656,32 @@ describe("AC9 — a container cannot be lost off-surface", () => {
     drag(dragHandle(container, "i-1"), [300, 300], [5_000_000, 5_000_000]);
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     const layout = lastLayout();
     assertServerAcceptableLayout(layout);
     const stored = itemById(layout, "i-1");
     // The *far* corner is what must stay reachable — an item pinned by its
     // origin at the extent extends past it.
     expect(Number(stored.x) + Number(stored.width)).toBeLessThanOrEqual(REACHABLE_EXTENT);
+  });
+
+  it("fits the content, and the next zoom step continues from the fitted zoom", async () => {
+    // The second clause is the assertion that matters: the zoom a handler
+    // outside the render reads is held in a ref beside the state (side effects
+    // cannot live in a `setState` updater — `StrictMode` runs those twice), and
+    // a fit that moved one without the other would have this step compute its
+    // anchor from the zoom before the fit.
+    const user = userEvent.setup();
+    const { container } = await shown(oneItemCanvas());
+
+    await user.click(toolbarAction(container, "fit-to-content"));
+    // The stubbed viewport is 1000x800 and the item's box is 400x300, so the
+    // fit is the tighter of the two ratios: 1000/400 = 2.5, not 800/300.
+    const fitted = Number(surfaceEl(container).dataset.zoom);
+    expect(fitted).toBeCloseTo(2.5, 6);
+
+    await user.click(toolbarAction(container, "zoom-in"));
+    expect(Number(surfaceEl(container).dataset.zoom)).toBeGreaterThan(fitted);
   });
 
   it("offers a way back that does not depend on finding anything first", async () => {
@@ -581,10 +706,18 @@ describe("AC10 — move and resize are operable by keyboard", () => {
     fireEvent.keyUp(item, { key: "ArrowRight" });
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     const layout = lastLayout();
     assertServerAcceptableLayout(layout);
-    expect(Number(itemById(layout, "i-1").x)).toBeGreaterThan(100);
-    expect(itemById(layout, "i-1")).toMatchObject({ y: 80, width: 400, height: 300 });
+    // Both presses, not one: `> 100` would pass on a handler that applied a
+    // single step, or one whose repeat overwrote the previous draft.
+    expect(itemById(layout, "i-1")).toMatchObject({
+      x: 100 + 2 * KEY_STEP_PX,
+      y: 80,
+      width: 400,
+      height: 300,
+    });
+    await settle();
   });
 
   it("resizes with shift and the arrow keys", async () => {
@@ -597,6 +730,7 @@ describe("AC10 — move and resize are operable by keyboard", () => {
     fireEvent.keyUp(item, { key: "ArrowRight", shiftKey: true });
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     const layout = lastLayout();
     assertServerAcceptableLayout(layout);
     // The size grew and the origin did not: shift+arrow resizes from the corner
@@ -615,7 +749,73 @@ describe("AC10 — move and resize are operable by keyboard", () => {
     fireEvent.blur(item);
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
     expect(Number(itemById(lastLayout(), "i-1").y)).toBeGreaterThan(80);
+  });
+
+  it("commits a shift-resize as a resize even when Shift comes up first", async () => {
+    // The keyup of the *Shift key itself* reports `shiftKey: false`. Deriving the
+    // write from the modifier state at settle time therefore sent an entirely
+    // ordinary key ordering — release Shift, then the arrow — through the move
+    // path, which stores x and y only and reverted the size the user had just
+    // set, while the draft carried on showing the resized box.
+    const { container } = await shown(oneItemCanvas());
+    const item = canvasItemEl(container, "i-1");
+    item.focus();
+    mockUpdateView.mockClear();
+
+    fireEvent.keyDown(item, { key: "ArrowRight", shiftKey: true });
+    fireEvent.keyUp(item, { key: "Shift", shiftKey: false });
+
+    await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
+    const layout = lastLayout();
+    assertServerAcceptableLayout(layout);
+    expect(itemById(layout, "i-1")).toMatchObject({ width: 400 + KEY_STEP_PX, x: 100, y: 80 });
+    await settle();
+  });
+
+  it("commits a shift-resize as a resize when the container is blurred instead", async () => {
+    const { container } = await shown(oneItemCanvas());
+    const item = canvasItemEl(container, "i-1");
+    item.focus();
+    mockUpdateView.mockClear();
+
+    fireEvent.keyDown(item, { key: "ArrowDown", shiftKey: true });
+    fireEvent.blur(item);
+
+    await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(itemById(lastLayout(), "i-1")).toMatchObject({ height: 300 + KEY_STEP_PX });
+    await settle();
+  });
+
+  it("leaves an arrow key pressed inside a container to the container", async () => {
+    // The handler sits on the item's frame and keyboard events bubble, so without
+    // a target guard a Left in a terminal's prompt would lose the caret move to
+    // `preventDefault` and slide the terminal sideways instead. This is AC5's
+    // "hit-testing lands on the correct element" in its keyboard form.
+    const { container } = await shown(oneItemCanvas(terminalContainer()));
+    const terminal = container.querySelector<HTMLElement>('[data-testid="fake-terminal"]');
+    expect(terminal).not.toBeNull();
+    mockUpdateView.mockClear();
+
+    const arrow = new KeyboardEvent("keydown", {
+      key: "ArrowLeft",
+      bubbles: true,
+      cancelable: true,
+    });
+    await act(async () => {
+      terminal?.dispatchEvent(arrow);
+    });
+    fireEvent.keyUp(canvasItemEl(container, "i-1"), { key: "ArrowLeft" });
+
+    // Neither swallowed nor acted on: the container did not move, and the key is
+    // still the terminal's to handle.
+    expect(arrow.defaultPrevented).toBe(false);
+    expect(drawnBox(container, "i-1")).toMatchObject({ x: 100, y: 80 });
+    await settle();
+    expect(mockUpdateView).not.toHaveBeenCalled();
   });
 
   it("reaches every container's controls with the keyboard", async () => {

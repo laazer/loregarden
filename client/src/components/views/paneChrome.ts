@@ -11,8 +11,14 @@
 import { asJson } from "../../lib/viewLayouts";
 import { getPrimitive } from "./primitives/registry";
 
-/** The class every header icon button carries. */
-export const HEADER_BUTTON = "btn-secondary btn-compact btn-icon-only";
+/**
+ * The class a compact icon-only button carries.
+ *
+ * Named for what it is rather than where it sits: a pane header uses it, and so
+ * does the canvas toolbar's zoom pair, which is an icon-only control that is not
+ * in a header.
+ */
+export const ICON_BUTTON = "btn-secondary btn-compact btn-icon-only";
 
 /**
  * What a header calls this pane: the registry's name for what it holds.
