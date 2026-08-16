@@ -101,7 +101,16 @@ export function useViewLayoutEdit(slug: string, viewId: string): (edit: LayoutEd
       }
       // The edit reads the cache's layout and returns a new one; nothing here
       // mutates the record react-query is holding and the panes are drawn from.
-      return updateView(vars.slug, vars.viewId, { layout: vars.edit(current.layout) });
+      const next = vars.edit(current.layout);
+      // An edit that hands its input straight back asked for nothing. The canvas
+      // reaches this constantly — AC2 raises a container to the front on every
+      // click, and the front-most container is the one clicked most — and without
+      // this each of those clicks is a PATCH that stores the layout it already
+      // has. Identity, not deep equality: an edit that rebuilt an equal layout
+      // still decided to write, and only the caller that returned `layout`
+      // untouched is saying it did not.
+      if (next === current.layout) return current;
+      return updateView(vars.slug, vars.viewId, { layout: next });
     },
     onSuccess: (updated, vars) => {
       const key = viewsKeys.view(vars.slug, vars.viewId);

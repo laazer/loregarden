@@ -49,11 +49,10 @@ import {
   type GridSplit,
   type SplitOrientation,
 } from "../../lib/gridLayout";
-import { asJson } from "../../lib/viewLayouts";
 import { useSidebarWorkspaceSlug } from "../../state/SidebarWorkspaceContext";
 import { ContainerPane } from "./ContainerPane";
+import { HEADER_BUTTON, paneTitle } from "./paneChrome";
 import { PrimitivePicker } from "./PrimitivePicker";
-import { getPrimitive } from "./primitives/registry";
 
 type Json = Record<string, unknown>;
 
@@ -352,18 +351,6 @@ function GridSplitView({
     </div>
   );
 }
-
-/** What the header calls this pane: the registry's name for what it holds. */
-function paneTitle(container: unknown): string {
-  const settings = asJson(asJson(container)?.settings) ?? {};
-  const primitiveId = typeof settings.primitive_id === "string" ? settings.primitive_id : "";
-  if (primitiveId === "") return "Empty pane";
-  // Named by the registry, never spelled here — a header holding its own copy of
-  // "Terminal" goes stale the moment the entry is renamed.
-  return getPrimitive(primitiveId)?.displayName ?? "Unknown contents";
-}
-
-const HEADER_BUTTON = "btn-secondary btn-compact btn-icon-only";
 
 function GridLeafView({
   leaf,
