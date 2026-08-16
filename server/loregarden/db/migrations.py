@@ -36,6 +36,7 @@ from loregarden.db.migrations_composer import m_composer_commands
 from loregarden.db.migrations_doctor import (
     m_agent_run_lease,
     m_agent_run_preflight,
+    m_agent_run_process_identity,
     m_agent_slot_number_unique,
     m_orchestration_run_lease,
 )
@@ -1315,6 +1316,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0087_view_store", m_view_store),
     ("0088_playtest_scene_placeholder", m_playtest_scene_placeholder),
     ("0089_retire_agent_owned_gate_items", m_retire_agent_owned_gate_items),
+    ("0090_agent_run_process_identity", m_agent_run_process_identity),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

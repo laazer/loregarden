@@ -77,6 +77,31 @@ def m_agent_run_lease(conn: Connection) -> None:
     )
 
 
+def m_agent_run_process_identity(conn: Connection) -> None:
+    """The detached agent's pid, and a fingerprint pid reuse cannot fake.
+
+    317 lets a run outlive the process that spawned it, at which point "is this
+    pid alive?" stops being a useful question — the number may since have been
+    handed to something else. `agent_pid_identity` holds the process start time
+    so a later reattach can tell "still mine" from "same number, different
+    process".
+
+    Null / empty on existing rows and read as "no identity", which
+    `process_identity.still_running` treats as not-running rather than falling
+    back to a bare liveness check.
+    """
+    add_columns_if_missing(
+        conn,
+        "agent_runs",
+        {
+            "agent_pid": "ALTER TABLE agent_runs ADD COLUMN agent_pid INTEGER",
+            "agent_pid_identity": (
+                "ALTER TABLE agent_runs ADD COLUMN agent_pid_identity TEXT NOT NULL DEFAULT ''"
+            ),
+        },
+    )
+
+
 def m_agent_slot_number_unique(conn: Connection) -> None:
     """One row per slot number, enforced rather than assumed.
 
