@@ -1,10 +1,12 @@
 /**
- * The built-in pages the sidebar can pin, with the icons the fixed rail drew.
+ * The application's own pages, with the icons the fixed rail drew.
  *
- * `page_key` is opaque to the server — it stores whatever it is sent — so this
- * catalog is the only place a stored key becomes a route. A key with no entry
- * here is an unknown page: it keeps its place in the ranking and is not drawn,
- * rather than being routed on blind.
+ * This catalog *is* the sidebar's Tools section — the section is derived from
+ * it and stored nowhere. That is the point: a permanent section held as rows
+ * can be emptied by one bad write, and the user is then left with no navigation
+ * and no control that brings it back. Keys are typed against `AppPage` and
+ * every path comes from `pathForPage`, so Tools cannot drift from the routes
+ * the app actually has.
  */
 
 import type { ReactNode } from "react";
@@ -33,10 +35,7 @@ function ownsOnly(key: AppPage): (page: AppPage) => boolean {
   return (page) => page === key;
 }
 
-/**
- * Declaration order is the seed order: a workspace with no pins gets exactly
- * this sequence, which is the order the fixed rail drew.
- */
+/** Declaration order is render order: the order the fixed rail drew. */
 export const SIDEBAR_PAGES: SidebarPageDef[] = [
   {
     key: "home",
@@ -129,12 +128,3 @@ export const SIDEBAR_PAGES: SidebarPageDef[] = [
     ),
   },
 ];
-
-/** The seed a workspace with no stored pins gets, in the fixed rail's order. */
-export const DEFAULT_PINNED_PAGE_KEYS: string[] = SIDEBAR_PAGES.map((page) => page.key);
-
-const PAGES_BY_KEY = new Map(SIDEBAR_PAGES.map((page) => [page.key as string, page]));
-
-export function sidebarPageForKey(pageKey: string): SidebarPageDef | undefined {
-  return PAGES_BY_KEY.get(pageKey);
-}

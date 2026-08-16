@@ -15,7 +15,7 @@ import loregarden.models.domain  # noqa: F401  (registers the tables on SQLModel
 import pytest
 from loregarden.db import migrations as M
 from loregarden.db.migration_ids import SHIPPED_MIGRATION_IDS
-from loregarden.db.migrations_views import m_view_store
+from loregarden.db.migrations_views import m_sidebar_entry_pinned, m_view_store
 from loregarden.models.domain import Workspace
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
@@ -106,9 +106,17 @@ def _schema(engine, table: str) -> dict:
 
 
 def _apply(engine, times: int = 1) -> None:
+    """Every migration these two tables own, in ledger order.
+
+    ``m_sidebar_entry_pinned`` (472) is a separate id because ``m_view_store``
+    already shipped and is append-only, but the two describe one table — so the
+    ORM-parity check has to see both, or it compares the ORM against a schema
+    no deployment ever has.
+    """
     for _ in range(times):
         with engine.begin() as conn:
             m_view_store(conn)
+            m_sidebar_entry_pinned(conn)
 
 
 def _seed_parents(engine, workspaces: tuple[str, ...] = ("ws1",), views: tuple[str, ...] = ()):
@@ -400,3 +408,59 @@ def test_migration_is_registered_and_appended_to_the_ledger():
     assert SHIPPED_MIGRATION_IDS.index(MIGRATION_ID) > SHIPPED_MIGRATION_IDS.index(
         "0081_agent_run_preflight"
     )
+
+
+PINNED_MIGRATION_ID = "0091_sidebar_entry_pinned"
+
+
+def test_the_pinned_migration_is_registered_and_appended_to_the_ledger():
+    """The same two facts for 472's column, which ships as its own id.
+
+    ``m_view_store`` guards its own CREATE TABLE, so on a database that already
+    has ``sidebar_entries`` it does nothing at all — which is every database
+    that shipped 434. The column therefore cannot be folded into it.
+    """
+    ids = [migration_id for migration_id, _ in M.MIGRATIONS]
+
+    assert PINNED_MIGRATION_ID in ids
+    assert PINNED_MIGRATION_ID in SHIPPED_MIGRATION_IDS
+    assert dict(M.MIGRATIONS)[PINNED_MIGRATION_ID] is m_sidebar_entry_pinned
+    assert SHIPPED_MIGRATION_IDS.index(PINNED_MIGRATION_ID) > SHIPPED_MIGRATION_IDS.index(
+        MIGRATION_ID
+    )
+
+
+def test_an_existing_entry_is_unpinned_after_the_column_lands():
+    """The backfill every workspace 434 seeded depends on.
+
+    Those rows predate pinned views entirely, so the only defensible answer is
+    Tabs. A column added without a default would make them NULL, and a NULL
+    read as neither pinned nor unpinned draws the tab in no section at all.
+    """
+    engine = _fresh_engine()
+    with engine.begin() as conn:
+        m_view_store(conn)
+    _seed_parents(engine, views=("v1",))
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO sidebar_entries (id, workspace_id, position, entry_kind, view_id) "
+                "VALUES ('e1', 'ws1', 10, 'view', 'v1')"
+            )
+        )
+
+    with engine.begin() as conn:
+        m_sidebar_entry_pinned(conn)
+
+    with engine.begin() as conn:
+        pinned = conn.execute(text("SELECT pinned FROM sidebar_entries WHERE id = 'e1'")).scalar()
+    assert pinned == 0
+
+
+def test_the_pinned_migration_is_idempotent():
+    """It runs on every boot of every database, including ones already carrying
+    the column."""
+    engine = _fresh_engine()
+    _apply(engine, times=3)
+
+    assert "pinned" in _columns(engine, "sidebar_entries")

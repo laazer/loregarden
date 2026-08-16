@@ -26,7 +26,7 @@ composite the queries want: they filter by workspace, then order by position.
 
 from __future__ import annotations
 
-from loregarden.db.migration_utils import index_exists, table_exists
+from loregarden.db.migration_utils import add_columns_if_missing, index_exists, table_exists
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
@@ -83,3 +83,22 @@ def m_view_store(conn: Connection) -> None:
     for name, statement in _INDEXES.items():
         if not index_exists(conn, name):
             conn.execute(text(statement))
+
+
+def m_sidebar_entry_pinned(conn: Connection) -> None:
+    """Whether a view's tab sits in the sidebar's Pinned section.
+
+    A column rather than a third ``entry_kind``: pinning is a property of an
+    entry, not a different sort of entry, and folding it into the kind would put
+    "which half of the row is set" and "which section draws it" behind one value
+    that the CHECK constraint already speaks for.
+
+    ``DEFAULT 0`` is what makes the backfill a no-op worth stating: every entry
+    that exists today predates pinned views, so every one of them belongs in
+    Tabs.
+    """
+    add_columns_if_missing(
+        conn,
+        "sidebar_entries",
+        {"pinned": "ALTER TABLE sidebar_entries ADD COLUMN pinned BOOLEAN NOT NULL DEFAULT 0"},
+    )

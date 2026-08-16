@@ -24,6 +24,7 @@ from loregarden.services.view_service import (
     list_views,
     pin_page,
     reorder_entries,
+    set_entry_pinned,
     update_view,
     view_payload,
 )
@@ -75,6 +76,14 @@ class SidebarPin(BaseModel):
 
 class SidebarReorder(BaseModel):
     entry_ids: list[str]
+
+
+class SidebarEntryUpdate(BaseModel):
+    """Which section draws this tab. Extra keys are refused, as on the view routes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pinned: bool
 
 
 def _workspace(session: Session, slug: str) -> Workspace:
@@ -169,7 +178,14 @@ def get_sidebar_entries(slug: str, session: Session = Depends(get_session)) -> l
 def post_sidebar_entry(
     slug: str, body: SidebarPin, session: Session = Depends(get_session)
 ) -> dict:
-    """Pin a built-in page. Pinning one already pinned returns its entry."""
+    """Pin a built-in page. Pinning one already pinned returns its entry.
+
+    Nothing in the app calls this any more: the sidebar's Tools section is
+    derived from the client's page catalog rather than stored, so a `page` entry
+    is drawn nowhere. The route stays because databases seeded before that
+    change still hold those rows and still have to read and rank them, and
+    because pinning a deep link is the use it was always shaped for.
+    """
     workspace = _workspace(session, slug)
     try:
         entry = pin_page(session, workspace.id, body.page_key)
@@ -192,6 +208,27 @@ def patch_sidebar_order(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return [entry_payload(entry) for entry in entries]
+
+
+@router.patch("/{slug}/sidebar-entries/{entry_id}")
+def patch_sidebar_entry(
+    slug: str,
+    entry_id: str,
+    body: SidebarEntryUpdate,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Move a view's tab between the Pinned section and Tabs.
+
+    Separate from the collection PATCH, which ranks the whole sidebar: this
+    one changes a single entry and leaves the ranking alone.
+    """
+    workspace = _workspace(session, slug)
+    entry = _entry(session, workspace.id, entry_id)
+    try:
+        updated = set_entry_pinned(session, entry, body.pinned)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return entry_payload(updated)
 
 
 @router.delete("/{slug}/sidebar-entries/{entry_id}")

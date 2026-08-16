@@ -85,7 +85,7 @@ from loregarden.db.migrations_ticket_studio import (
     m_ticket_studio_tables,
     m_ticket_studio_turn_lifecycle,
 )
-from loregarden.db.migrations_views import m_view_store
+from loregarden.db.migrations_views import m_sidebar_entry_pinned, m_view_store
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
@@ -1317,6 +1317,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0088_playtest_scene_placeholder", m_playtest_scene_placeholder),
     ("0089_retire_agent_owned_gate_items", m_retire_agent_owned_gate_items),
     ("0090_agent_run_process_identity", m_agent_run_process_identity),
+    ("0091_sidebar_entry_pinned", m_sidebar_entry_pinned),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

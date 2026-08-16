@@ -10,9 +10,9 @@ import { useUiStore } from "../../state/uiStore";
 // The sidebar reads the view store; these tests are about the topbar and dock,
 // and their api mock knows nothing about views. Its props are recorded, because
 // which workspace the layout hands it is a decision made here.
-const mockSidebarProps: Array<{ workspaceSlug: string; seedDefaults: boolean }> = [];
+const mockSidebarProps: Array<{ workspaceSlug: string }> = [];
 jest.mock("../AppSidebar", () => ({
-  AppSidebar: (props: { workspaceSlug: string; seedDefaults: boolean }) => {
+  AppSidebar: (props: { workspaceSlug: string }) => {
     mockSidebarProps.push(props);
     return <div data-testid="app-sidebar" />;
   },
@@ -148,10 +148,8 @@ it("keeps the chat workspace picker off non-chat pages", () => {
 it("keeps the sidebar's workspace off the route, and off the page-scoped slugs", async () => {
   // The settings modal resolves a workspace through the current page; the
   // sidebar must not. Walking `/queue` → `/console` would otherwise swap the
-  // entire tab set, and each new slug would take a seven-pin seed with it.
-  // The seed itself follows the resolved slug: a concrete first workspace is
-  // stable across navigation, so seeding into it is safe and is what gives a
-  // fresh install any navigation at all.
+  // entire tab set out from under the user on a navigation that says nothing
+  // about workspaces.
   mockedApi.workspaces.mockResolvedValue([
     { slug: "loregarden", name: "Loregarden" },
     { slug: "blobert", name: "Blobert" },
@@ -160,9 +158,6 @@ it("keeps the sidebar's workspace off the route, and off the page-scoped slugs",
 
   const queue = wrap(<div>queue body</div>, "/queue");
   await waitFor(() => expect(mockSidebarProps.at(-1)?.workspaceSlug).toBe("loregarden"));
-  // No workspace was chosen, but the fallback slug is concrete and stable, so
-  // the sidebar still seeds — otherwise the default state draws no links.
-  expect(mockSidebarProps.at(-1)?.seedDefaults).toBe(true);
   queue.unmount();
 
   wrap(<div>console body</div>, "/console");
@@ -170,7 +165,6 @@ it("keeps the sidebar's workspace off the route, and off the page-scoped slugs",
 
   useUiStore.setState({ workspace: "blobert" });
   await waitFor(() => expect(mockSidebarProps.at(-1)?.workspaceSlug).toBe("blobert"));
-  expect(mockSidebarProps.at(-1)?.seedDefaults).toBe(true);
 });
 
 it("applies right dock body class when edge is right", () => {

@@ -1231,3 +1231,121 @@ def test_an_update_overlapping_a_delete_is_a_404_not_a_500(
 
     assert res.status_code == 404, res.text
     assert client.get(f"{VIEWS}/{view['id']}").status_code == 404
+
+
+# --- pinning a view's tab (472) ------------------------------------------
+#
+# The sidebar's Tools section is derived from the client's page catalog rather
+# than stored, so the built-in pages are no longer pinnable at all and `pinned`
+# only ever describes a view's tab. The endpoints for pinned pages stay, and
+# stay tested above, because databases seeded before 472 still carry those rows.
+
+
+def test_a_new_views_tab_is_not_pinned(client: TestClient):
+    """A new tab lands in Tabs. Pinning is a favourite, and nothing can decide
+    on the user's behalf that the thing they just made is one."""
+    _create_view(client, "Board")
+
+    assert _entries(client)[0]["pinned"] is False
+
+
+def test_a_views_tab_can_be_pinned_and_unpinned(client: TestClient):
+    _create_view(client, "Board")
+    entry = _entries(client)[0]
+
+    pinned = client.patch(f"{SIDEBAR}/{entry['id']}", json={"pinned": True})
+    assert pinned.status_code == 200
+    assert pinned.json()["pinned"] is True
+    assert _entries(client)[0]["pinned"] is True
+
+    unpinned = client.patch(f"{SIDEBAR}/{entry['id']}", json={"pinned": False})
+    assert unpinned.status_code == 200
+    assert _entries(client)[0]["pinned"] is False
+
+
+def test_pinning_a_tab_leaves_the_ranking_alone(client: TestClient):
+    """The two sections share one ordering. Pinning says which of them draws the
+    tab — moving it in the ranking as well would silently reorder the sidebar
+    behind a control that says nothing about order."""
+    first = _create_view(client, "First")
+    second = _create_view(client, "Second")
+    third = _create_view(client, "Third")
+    before = [(entry["id"], entry["position"]) for entry in _entries(client)]
+    middle = _entries(client)[1]
+
+    client.patch(f"{SIDEBAR}/{middle['id']}", json={"pinned": True})
+
+    assert [(entry["id"], entry["position"]) for entry in _entries(client)] == before
+    assert [view["id"] for view in client.get(VIEWS).json()] == [
+        first["id"],
+        second["id"],
+        third["id"],
+    ]
+
+
+def test_pinning_a_tab_twice_is_the_same_request_twice(client: TestClient):
+    _create_view(client, "Board")
+    entry = _entries(client)[0]
+
+    client.patch(f"{SIDEBAR}/{entry['id']}", json={"pinned": True})
+    again = client.patch(f"{SIDEBAR}/{entry['id']}", json={"pinned": True})
+
+    assert again.status_code == 200
+    assert again.json()["pinned"] is True
+    assert again.json()["position"] == entry["position"]
+
+
+def test_a_pinned_pages_entry_cannot_be_pinned(client: TestClient):
+    """Only a view's tab has a section to be moved between. A page entry is a
+    leftover from before Tools became static and is drawn nowhere, so the write
+    would have no effect the caller could ever see."""
+    pinned_page = _pin(client, "queue")
+
+    res = client.patch(f"{SIDEBAR}/{pinned_page['id']}", json={"pinned": True})
+
+    assert res.status_code == 400, res.text
+    assert _entries(client)[0]["pinned"] is False
+
+
+def test_pinning_an_unknown_entry_is_a_404(client: TestClient):
+    assert client.patch(f"{SIDEBAR}/no-such-entry", json={"pinned": True}).status_code == 404
+
+
+def test_pinning_another_workspaces_entry_is_a_404(client: TestClient, db_session: Session):
+    _create_view(client, "Ours")
+    other = Workspace(slug="other", name="Other", repo_path="/tmp/other")
+    db_session.add(other)
+    db_session.commit()
+    theirs = client.post(
+        "/api/workspaces/other/views",
+        json={"title": "Theirs", "icon": "", "layout": _grid_layout()},
+    )
+    assert theirs.status_code == 201
+    their_entry = client.get("/api/workspaces/other/sidebar-entries").json()[0]
+
+    res = client.patch(f"{SIDEBAR}/{their_entry['id']}", json={"pinned": True})
+
+    assert res.status_code == 404
+    assert client.get("/api/workspaces/other/sidebar-entries").json()[0]["pinned"] is False
+
+
+def test_an_extra_key_on_the_pin_body_is_refused(client: TestClient):
+    """`extra="forbid"`, as on the view routes: a field accepted on one and
+    silently ignored on the other reads as the field being supported."""
+    _create_view(client, "Board")
+    entry = _entries(client)[0]
+
+    res = client.patch(f"{SIDEBAR}/{entry['id']}", json={"pinned": True, "position": 7})
+
+    assert res.status_code == 422
+    assert _entries(client)[0]["pinned"] is False
+
+
+def test_deleting_a_pinned_views_tab_still_deletes_the_view(client: TestClient):
+    """Pinning must not become a second way to make a view undeletable."""
+    view = _create_view(client, "Board")
+    entry = _entries(client)[0]
+    client.patch(f"{SIDEBAR}/{entry['id']}", json={"pinned": True})
+
+    assert client.delete(f"{VIEWS}/{view['id']}").status_code == 200
+    assert _entries(client) == []

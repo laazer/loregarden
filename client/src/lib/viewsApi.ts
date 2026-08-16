@@ -3,12 +3,17 @@
  *
  * Two facts from the server shape everything a caller does here:
  *
- *   - **Ranking is relative, and shared.** Views and pinned pages sit in one
- *     ordering whose positions are not contiguous, so a reorder sends the
+ *   - **Ranking is relative, and shared.** The Pinned section and Tabs sit in
+ *     one ordering whose positions are not contiguous, so a reorder sends the
  *     complete permutation of both — never an index derived from a count.
- *   - **A view's sidebar entry is not deletable.** `deleteSidebarEntry` is the
- *     unpin path for built-in pages only; closing a view is `deleteView`, which
- *     drops the entry with it.
+ *   - **A view's sidebar entry is not deletable.** Closing a view is
+ *     `deleteView`, which drops the entry with it; `setEntryPinned` is what
+ *     moves a tab between the two sections.
+ *
+ * The built-in pages have no wrapper here on purpose. The server still serves
+ * `POST`/`DELETE /sidebar-entries` for pinned pages, but the sidebar's Tools
+ * section is derived from the client's page catalog rather than stored, so
+ * nothing in this app pins one.
  */
 
 import { ApiError, request } from "../api/http";
@@ -44,6 +49,8 @@ export interface SidebarEntry {
   entry_kind: SidebarEntryKind;
   page_key: string;
   view_id: string;
+  /** Which section draws this tab: the Pinned one, or Tabs. */
+  pinned: boolean;
 }
 
 export interface ViewPatch {
@@ -120,28 +127,33 @@ export function createView(slug: string, body: ViewCreate): Promise<ViewSummary>
   });
 }
 
-/** The sidebar's ranked entries — pinned pages and view tabs in one list. */
+/**
+ * The sidebar's ranked entries — every view tab in one list, pinned or not.
+ *
+ * The built-in pages are *not* here: the Tools section is derived from the
+ * client's own page catalog, so no stored row can leave the app without
+ * navigation. Entries of kind `page` are leftovers from before that, and the
+ * sidebar draws none of them.
+ */
 export function fetchSidebarEntries(slug: string): Promise<SidebarEntry[]> {
   return request<SidebarEntry[]>(workspacePath(slug, "/sidebar-entries"));
 }
 
 /**
- * Pin a built-in page. Idempotent and race-safe: pinning one already pinned
- * returns its existing entry, still with a 201, so the status code says nothing
- * about whether a row was created.
+ * Move a view's tab between the Pinned section and Tabs.
+ *
+ * The rank is untouched — the two sections share one ordering, and this says
+ * which of them draws the tab, not where it sits. Refused with a 400 for
+ * anything but a view entry.
  */
-export function pinPage(slug: string, pageKey: string): Promise<SidebarEntry> {
-  return request<SidebarEntry>(workspacePath(slug, "/sidebar-entries"), {
-    method: "POST",
-    body: JSON.stringify({ page_key: pageKey }),
-  });
-}
-
-/** Unpin a built-in page. A view's entry is refused with a 400 — delete the view. */
-export function unpinEntry(slug: string, entryId: string): Promise<DeletedRef> {
-  return request<DeletedRef>(
+export function setEntryPinned(
+  slug: string,
+  entryId: string,
+  pinned: boolean,
+): Promise<SidebarEntry> {
+  return request<SidebarEntry>(
     workspacePath(slug, `/sidebar-entries/${encodeURIComponent(entryId)}`),
-    { method: "DELETE" },
+    { method: "PATCH", body: JSON.stringify({ pinned }) },
   );
 }
 
