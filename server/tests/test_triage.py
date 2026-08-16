@@ -4,11 +4,21 @@ from sqlmodel import Session, select
 
 
 def _ticket_id(client: TestClient, *, external_id: str | None = None) -> str:
+    """A seeded ticket, by either spelling of its id.
+
+    The named lookup must not fall through to `tickets[0]`: the seed literals are
+    legacy ids now, and a miss silently handed back a different ticket — one that
+    carries the seeded approval, so a test asserting "no pending approvals" failed
+    against a ticket it never meant to ask about.
+    """
     tickets = client.get("/api/tickets").json()
     if external_id:
-        match = next((t for t in tickets if t["external_id"] == external_id), None)
-        if match:
-            return match["id"]
+        match = next(
+            (t for t in tickets if external_id in (t["external_id"], t["legacy_external_id"])),
+            None,
+        )
+        assert match is not None, f"no seeded ticket for {external_id}"
+        return match["id"]
     return tickets[0]["id"]
 
 

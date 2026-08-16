@@ -66,11 +66,11 @@ beforeEach(() => {
 
 it("binds to the ticket named in the path", () => {
   const { result } = renderHook(() => useActiveChatSession(), {
-    wrapper: wrapperFor("/tickets/abc-123/diff"),
+    wrapper: wrapperFor("/tickets/41aac2d7-26a6-4f0b-988a-fc220d8dfa6c/diff"),
   });
 
   expect(result.current.session?.kind).toBe("ticket-triage");
-  expect(result.current.session?.id).toBe("abc-123");
+  expect(result.current.session?.id).toBe("41aac2d7-26a6-4f0b-988a-fc220d8dfa6c");
   expect(result.current.label).toBe("Ticket triage");
 });
 
@@ -78,10 +78,21 @@ it("reads the ticket from the path, not from route params", () => {
   // useParams is empty above <Routes>; a params-based resolver would silently
   // bind to nothing here and the dock would never open on a ticket.
   const { result } = renderHook(() => useActiveChatSession(), {
-    wrapper: wrapperFor("/tickets/from-path/logs"),
+    wrapper: wrapperFor("/tickets/9f3d1c02-7b64-4a51-9d8e-2c5b7a10ef33/logs"),
   });
 
-  expect(result.current.session?.id).toBe("from-path");
+  expect(result.current.session?.id).toBe("9f3d1c02-7b64-4a51-9d8e-2c5b7a10ef33");
+});
+
+it("binds to nothing while a shareable id is still being resolved", () => {
+  // A ticket route also accepts `lor-mcp-gateway-142`, which TicketRouteResolver
+  // swaps for the UUID. Binding the dock to the ref in between would have it
+  // fetch triage and asides under an id no endpoint accepts.
+  const { result } = renderHook(() => useActiveChatSession(), {
+    wrapper: wrapperFor("/tickets/lor-mcp-gateway-142/diff"),
+  });
+
+  expect(result.current.session?.kind).not.toBe("ticket-triage");
 });
 
 it("binds to the branch conversation on the branch-triage screen", () => {
@@ -164,7 +175,7 @@ it("offers the archive on a screen bound to the Baxter thread", () => {
 
 it("keeps the archive off a ticket conversation, which has no other thread", () => {
   const { result } = renderHook(() => useActiveChatSession(), {
-    wrapper: wrapperFor("/tickets/abc-123/diff"),
+    wrapper: wrapperFor("/tickets/41aac2d7-26a6-4f0b-988a-fc220d8dfa6c/diff"),
   });
 
   expect(result.current.archive).toBeNull();

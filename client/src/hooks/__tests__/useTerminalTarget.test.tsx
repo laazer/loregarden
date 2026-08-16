@@ -48,7 +48,7 @@ it("opens the shell in the ticket's workspace, not the filter's", () => {
   } as never);
 
   const { result } = renderHook(() => useTerminalTarget(), {
-    wrapper: wrapperFor("/tickets/t-42"),
+    wrapper: wrapperFor("/tickets/41aac2d7-26a6-4f0b-988a-fc220d8dfa6c"),
   });
 
   return waitFor(() => {

@@ -14,6 +14,8 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.ticket_ids import assign_external_id
+from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.workflow_service import resolve_workspace_stages
 from loregarden.services.workflow_state import stages_up_to_done_json
 from sqlmodel import Session, select
@@ -166,7 +168,7 @@ def _add_ticket(
     **kwargs,
 ) -> Ticket:
     ticket = Ticket(
-        external_id=external_id,
+        external_id="",
         workspace_id=ws.id,
         title=title,
         description=description,
@@ -178,6 +180,10 @@ def _add_ticket(
         last_updated_by="seed",
         **kwargs,
     )
+    # A freshly seeded database has to look like a migrated one: the seed's own
+    # literal ("03-wire-cli-agent-runner") becomes the legacy id, and the ticket
+    # is spelled from workspace, milestone and number like every other.
+    assign_external_id(session, ticket, ws, supplied_id=external_id)
     session.add(ticket)
     session.commit()
     session.refresh(ticket)
@@ -251,12 +257,7 @@ def _ensure_hierarchy(session: Session, ws: Workspace) -> None:
     capability_ids = _seed_hierarchy(session, ws, loregarden_tpl)
 
     for item in BOOTSTRAP_TASKS:
-        ticket = session.exec(
-            select(Ticket).where(
-                Ticket.workspace_id == ws.id,
-                Ticket.external_id == item["external_id"],
-            )
-        ).first()
+        ticket = resolve_external_id(session, item["external_id"], workspace_id=ws.id)
         if not ticket:
             continue
         ticket.work_item_type = WorkItemType.TASK
@@ -302,6 +303,9 @@ def seed_database(session: Session) -> None:
             slug="loregarden",
             name="loregarden",
             repo_path=".",
+            # Set rather than derived, so a fresh install spells its ticket ids the
+            # same way a migrated one does (migration 0092 chose it there).
+            ticket_prefix="lg",
             workflow_template_id=loregarden_tpl.id if loregarden_tpl else None,
         )
         session.add(ws)
@@ -350,12 +354,7 @@ def seed_database(session: Session) -> None:
             session.commit()
             OrchestrationService(session).reconcile_ticket(ticket)
 
-    in_progress = session.exec(
-        select(Ticket).where(
-            Ticket.workspace_id == ws.id,
-            Ticket.external_id == "04-workflow-template-overrides",
-        )
-    ).first()
+    in_progress = resolve_external_id(session, "04-workflow-template-overrides", workspace_id=ws.id)
     if in_progress:
         from loregarden.models.domain import Approval, ApprovalStatus
 

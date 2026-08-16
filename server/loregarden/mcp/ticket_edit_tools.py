@@ -40,6 +40,9 @@ def ticket_state_payload(session: Session, ticket_id: str) -> dict[str, Any]:
     return {
         "ticket_id": ticket.id,
         "external_id": ticket.external_id,
+        # The id this ticket read as before the restructure, so an agent working
+        # from an older artifact or branch name can tell it is the same ticket.
+        "legacy_external_id": ticket.legacy_external_id,
         "state": ticket.state.value,
         "workflow_stage_key": ticket.workflow_stage_key,
         "workflow_stage_status": ticket.workflow_stage_status.value,

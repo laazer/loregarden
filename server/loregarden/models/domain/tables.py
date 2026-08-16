@@ -45,6 +45,15 @@ class Workspace(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     slug: str = Field(index=True, unique=True)
     name: str
+    # Leading segment of every ticket id in this workspace ("lor" → lor-mcp-gateway-142).
+    # Derived from the slug at creation and editable afterwards; see services.ticket_ids.
+    # Changing it re-spells future ids only — issued ids stay resolvable through
+    # Ticket.ticket_number, which is what a shared id actually resolves on.
+    ticket_prefix: str = Field(default="", index=True)
+    # Highest ticket number ever issued here. Held on the workspace rather than
+    # read off max(tickets.ticket_number) so deleting the newest ticket cannot
+    # hand its number — and every link anyone shared to it — to the next one.
+    last_ticket_number: int = Field(default=0)
     repo_path: str = ""
     workflow_template_id: str | None = Field(default=None, foreign_key="workflow_templates.id")
     workflow_override_json: str = "{}"
@@ -118,7 +127,23 @@ class Ticket(SQLModel, table=True):
     __tablename__ = "tickets"
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    # The shareable id: "<workspace prefix>-<milestone code>-<ticket_number>", e.g.
+    # lor-mcp-gateway-142. Spelled by services.ticket_ids from the three columns
+    # below; unique per workspace and, because the prefix is, unique overall.
     external_id: str = Field(index=True)
+    # The authoritative half of external_id. Monotonic per workspace, assigned once,
+    # never reused. The milestone segment is decorative: re-parenting a ticket
+    # re-spells external_id, and lor-anything-142 still resolves to ticket 142, so a
+    # link shared before the move keeps working.
+    ticket_number: int = Field(default=0, index=True)
+    # Set on milestone tickets only — the segment their whole subtree carries. Blank
+    # on every other work item, which inherits its nearest milestone ancestor's code.
+    milestone_code: str = Field(default="")
+    # The pre-restructure external_id (e.g. "456-one-dispatch-decision-instead-of").
+    # Kept because it is written into git branches, PR titles, handoff artifacts, and
+    # the learning vault, none of which this rename can reach; resolution accepts it
+    # forever. Blank for tickets created after the restructure.
+    legacy_external_id: str = Field(default="", index=True)
     workspace_id: str = Field(foreign_key="workspaces.id", index=True)
     title: str
     description: str = ""

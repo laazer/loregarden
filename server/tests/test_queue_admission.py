@@ -218,7 +218,7 @@ def test_a_queued_entry_starts_when_the_lane_drains(session, workspace, endpoint
 
 def _ticket_id_by_external_id(client, external_id: str) -> str:
     tickets = client.get("/api/tickets").json()
-    match = next(t for t in tickets if t["external_id"] == external_id)
+    match = next(t for t in tickets if external_id in (t["external_id"], t["legacy_external_id"]))
     return match["id"]
 
 

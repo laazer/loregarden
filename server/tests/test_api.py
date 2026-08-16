@@ -2,8 +2,14 @@ from fastapi.testclient import TestClient
 
 
 def _ticket_id_by_external_id(client: TestClient, external_id: str) -> str:
+    """Find a seeded ticket by either spelling of its id.
+
+    The seed's literals are the ids these tickets shipped under; they are now
+    carried as ``legacy_external_id`` while the ticket reads ``lor-…-3``. Both
+    identify the same row, which is the whole point of keeping the old one.
+    """
     for t in client.get("/api/tickets").json():
-        if t["external_id"] == external_id:
+        if external_id in (t["external_id"], t["legacy_external_id"]):
             return t["id"]
     raise AssertionError(f"ticket not found: {external_id}")
 
@@ -77,8 +83,13 @@ def test_list_tickets_seeded(client: TestClient):
     assert res.status_code == 200
     tickets = res.json()
     assert len(tickets) >= 5
-    ids = {t["external_id"] for t in tickets}
-    assert "01-bootstrap-fastapi-control-plane" in ids
+    legacy_ids = {t["legacy_external_id"] for t in tickets}
+    assert "01-bootstrap-fastapi-control-plane" in legacy_ids
+    # And it is reachable under the id it now reads as.
+    seeded = next(
+        t for t in tickets if t["legacy_external_id"] == "01-bootstrap-fastapi-control-plane"
+    )
+    assert client.get(f"/api/tickets/{seeded['external_id']}").json()["id"] == seeded["id"]
 
 
 def test_ticket_tree_hierarchy(client: TestClient):

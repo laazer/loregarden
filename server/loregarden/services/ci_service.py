@@ -13,6 +13,7 @@ from loregarden.models.domain import (
     CIStatus,
     Ticket,
 )
+from loregarden.services.ticket_ids import resolve as resolve_external_id
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -146,25 +147,26 @@ class CIService:
         """
         Extract ticket ID from git branch name.
 
-        Expected format: feature/ticket-123 or feature/auth-system
+        Expected format: milestone/lor-mcp-gateway-142, or feature/ticket-123.
         Falls back to searching by branch name if exact ticket not found.
         """
         if not branch:
             return None
 
-        # Try pattern: ticket-{id} or {id} as suffix
+        # The whole trailing segment first: a ticket id is hyphenated, and the
+        # `\w+` pattern below can only ever see its last part.
+        ticket = resolve_external_id(
+            self.session, branch.rsplit("/", 1)[-1], workspace_id=workspace_id
+        )
+        if ticket:
+            return ticket.id
+
         match = re.search(r"ticket-(\w+)|(\w+)$", branch)
         if not match:
             return None
 
         ticket_key = match.group(1) or match.group(2)
-
-        # Search for ticket with this external_id
-        stmt = select(Ticket).where(
-            (Ticket.workspace_id == workspace_id) & (Ticket.external_id == ticket_key)
-        )
-        ticket = self.session.exec(stmt).first()
-
+        ticket = resolve_external_id(self.session, ticket_key, workspace_id=workspace_id)
         return ticket.id if ticket else None
 
     async def get_latest_ci_status(self, ticket_id: str) -> CIRunResult | None:

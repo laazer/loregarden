@@ -73,6 +73,8 @@ from loregarden.services.ticket_dependencies import (
     DependencyCycleError,
     TicketDependencyService,
 )
+from loregarden.services.ticket_ids import assign_external_id
+from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.ticket_import_service import TicketImportService
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
@@ -112,6 +114,7 @@ def _ticket_summary(
     return TicketSummary(
         id=ticket.id,
         external_id=ticket.external_id,
+        legacy_external_id=ticket.legacy_external_id,
         title=ticket.title,
         state=ticket.state,
         priority=ticket.priority,
@@ -601,7 +604,10 @@ def patch_ticket_runtime(
 
 @router.get("/{ticket_id}", response_model=TicketDetail)
 def get_ticket(ticket_id: str, session: Session = Depends(get_session)) -> TicketDetail:
-    ticket = session.get(Ticket, ticket_id)
+    # The shareable id resolves here as well as the UUID: this is the endpoint a
+    # pasted `lor-mcp-gateway-142` reaches, and the response carries the UUID the
+    # rest of the API is keyed by.
+    ticket = session.get(Ticket, ticket_id) or resolve_external_id(session, ticket_id)
     if not ticket:
         raise HTTPException(404, "Ticket not found")
     orch = OrchestrationService(session)
@@ -1125,6 +1131,40 @@ def route_workflow_stage(
     return get_ticket(ticket_id, session)
 
 
+def _flatten_hierarchy(items: list) -> list:
+    """Every item in the proposal, parent before child."""
+    flattened = []
+    for item in items:
+        flattened.append(item)
+        if item.children:
+            flattened.extend(_flatten_hierarchy(item.children))
+    return flattened
+
+
+def _reject_conflicting_refs(session: Session, *, workspace_id: str, hierarchy: list) -> None:
+    """Refuse a proposal whose refs collide with each other or with the workspace.
+
+    Existing ids are collected under both spellings: a proposal's refs become
+    legacy ids, so a resubmission collides there rather than on `external_id`.
+    """
+    refs: set[str] = set()
+    for item in _flatten_hierarchy(hierarchy):
+        ref = item.external_id.strip()
+        if ref in refs:
+            raise ValueError(f"Duplicate external_id in hierarchy: {ref}")
+        refs.add(ref)
+
+    taken = {
+        spelling
+        for ticket in session.exec(select(Ticket).where(Ticket.workspace_id == workspace_id)).all()
+        for spelling in (ticket.external_id, ticket.legacy_external_id)
+        if spelling
+    }
+    for ref in refs:
+        if ref in taken:
+            raise ValueError(f"external_id already exists in workspace: {ref}")
+
+
 @router.post("/finalize-hierarchy", response_model=FinalizeHierarchyResponse, status_code=201)
 def finalize_hierarchy(
     body: FinalizeHierarchyRequest, session: Session = Depends(get_session)
@@ -1149,32 +1189,7 @@ def finalize_hierarchy(
         except ProposalValidationError as e:
             raise HTTPException(400, f"Proposal validation failed: {e}") from e
 
-        def collect_all_items(items: list) -> list:
-            """Collect all items in parent-first order."""
-            result = []
-            for item in items:
-                result.append(item)
-                if item.children:
-                    result.extend(collect_all_items(item.children))
-            return result
-
-        all_items = collect_all_items(validated_hierarchy)
-
-        external_ids_in_hierarchy = set()
-        for item in all_items:
-            ext_id = item.external_id.strip()
-            if ext_id in external_ids_in_hierarchy:
-                raise ValueError(f"Duplicate external_id in hierarchy: {ext_id}")
-            external_ids_in_hierarchy.add(ext_id)
-
-        existing_ids = {
-            t.external_id
-            for t in session.exec(select(Ticket).where(Ticket.workspace_id == ws.id)).all()
-        }
-
-        for ext_id in external_ids_in_hierarchy:
-            if ext_id in existing_ids:
-                raise ValueError(f"external_id already exists in workspace: {ext_id}")
+        _reject_conflicting_refs(session, workspace_id=ws.id, hierarchy=validated_hierarchy)
 
         id_mapping = {}
 
@@ -1209,7 +1224,7 @@ def finalize_hierarchy(
                 raise ValueError("external_id is required")
 
             new_ticket = Ticket(
-                external_id=ext_id,
+                external_id="",
                 workspace_id=ws.id,
                 title=title,
                 description=item.description.strip() if item.description else "",
@@ -1220,6 +1235,13 @@ def finalize_hierarchy(
                 acceptance_criteria_json=serialize_criteria(item.acceptance_criteria),
                 last_updated_by="system",
             )
+            # `ext_id` is the ref the proposal used to wire parents to children —
+            # invented by whoever drafted it ("auth-feature-001"), not an id anyone
+            # would share. It is kept as the legacy id so a re-import still
+            # recognises the ticket, while the ticket itself is spelled like every
+            # other one. Parents are created before children, so the milestone
+            # code a child inherits is already on the row above it.
+            assign_external_id(session, new_ticket, ws, supplied_id=ext_id)
             session.add(new_ticket)
             session.flush()
 

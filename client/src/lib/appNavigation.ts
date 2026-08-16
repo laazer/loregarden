@@ -1,3 +1,5 @@
+import { looksLikeTicketUuid } from "./ticketIds";
+
 export type AppPage = "home" | "chat" | "dashboard" | "studio" | "editor" | "queue" | "branch-triage" | "mcp";
 
 export type ArtifactTab =
@@ -136,9 +138,20 @@ export function ticketPath(ticketId: string, tab: ArtifactTab = "diff"): string 
   return `/tickets/${encodedId}/${tab}`;
 }
 
+/** The ticket id in the path, when it is one the API can be called with.
+ *
+ * A ticket route also accepts a shareable id (`/tickets/lor-mcp-gateway-142`),
+ * which `TicketRouteResolver` swaps for the UUID. App chrome reads the path
+ * directly rather than through that route, so during the swap it would see a
+ * ref that no ticket-scoped endpoint is keyed by and fetch 404s with it. Null is
+ * the honest answer for that moment — every caller already handles "no ticket
+ * here" — and the real id arrives with the rewritten URL a tick later.
+ */
 export function ticketIdFromPath(pathname: string): string | null {
   const match = pathname.match(TICKET_PATH_RE);
-  return match ? decodeSegment(match[1]) : null;
+  if (!match) return null;
+  const id = decodeSegment(match[1]);
+  return looksLikeTicketUuid(id) ? id : null;
 }
 
 export function artifactTabFromPath(pathname: string): ArtifactTab | null {

@@ -208,6 +208,9 @@ def get_ticket_orchestration_state(
     return {
         "ticket_id": ticket.id,
         "external_id": ticket.external_id,
+        # A caller that reached this route under a pre-restructure id gets to see
+        # that it is the same ticket, not a different one than it asked for.
+        "legacy_external_id": ticket.legacy_external_id,
         "state": ticket.state.value,
         "workflow_stage_key": ticket.workflow_stage_key,
         "workflow_stage_status": ticket.workflow_stage_status.value,

@@ -109,7 +109,7 @@ class TestStageExecutionSequencing:
     def _get_ticket_id(self, client: TestClient, external_id: str) -> str:
         """Helper to fetch ticket ID by external_id."""
         for t in client.get("/api/tickets").json():
-            if t["external_id"] == external_id:
+            if external_id in (t["external_id"], t["legacy_external_id"]):
                 return t["id"]
         pytest.fail(f"Ticket with external_id={external_id} not found")
 
@@ -174,7 +174,7 @@ class TestConcurrentOrchestration:
     def _get_ticket_id(self, client: TestClient, external_id: str) -> str:
         """Helper to fetch ticket ID by external_id."""
         for t in client.get("/api/tickets").json():
-            if t["external_id"] == external_id:
+            if external_id in (t["external_id"], t["legacy_external_id"]):
                 return t["id"]
         pytest.fail(f"Ticket with external_id={external_id} not found")
 
@@ -278,7 +278,7 @@ class TestOrchestrationResumption:
     def _get_ticket_id(self, client: TestClient, external_id: str) -> str:
         """Helper to fetch ticket ID by external_id."""
         for t in client.get("/api/tickets").json():
-            if t["external_id"] == external_id:
+            if external_id in (t["external_id"], t["legacy_external_id"]):
                 return t["id"]
         pytest.fail(f"Ticket with external_id={external_id} not found")
 
@@ -363,7 +363,7 @@ class TestAPIContractValidation:
     def _get_ticket_id(self, client: TestClient, external_id: str) -> str:
         """Helper to fetch ticket ID by external_id."""
         for t in client.get("/api/tickets").json():
-            if t["external_id"] == external_id:
+            if external_id in (t["external_id"], t["legacy_external_id"]):
                 return t["id"]
         pytest.fail(f"Ticket with external_id={external_id} not found")
 
@@ -430,7 +430,7 @@ class TestStageDataPersistence:
     def _get_ticket_id(self, client: TestClient, external_id: str) -> str:
         """Helper to fetch ticket ID by external_id."""
         for t in client.get("/api/tickets").json():
-            if t["external_id"] == external_id:
+            if external_id in (t["external_id"], t["legacy_external_id"]):
                 return t["id"]
         pytest.fail(f"Ticket with external_id={external_id} not found")
 
@@ -487,7 +487,7 @@ class TestErrorRecovery:
     def _get_ticket_id(self, client: TestClient, external_id: str) -> str:
         """Helper to fetch ticket ID by external_id."""
         for t in client.get("/api/tickets").json():
-            if t["external_id"] == external_id:
+            if external_id in (t["external_id"], t["legacy_external_id"]):
                 return t["id"]
         pytest.fail(f"Ticket with external_id={external_id} not found")
 
@@ -549,6 +549,6 @@ class TestBackendOrchestrationLogic:
     def _get_ticket_id(self, client: TestClient, external_id: str) -> str:
         """Helper to fetch ticket ID by external_id."""
         for t in client.get("/api/tickets").json():
-            if t["external_id"] == external_id:
+            if external_id in (t["external_id"], t["legacy_external_id"]):
                 return t["id"]
         pytest.fail(f"Ticket with external_id={external_id} not found")

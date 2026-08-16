@@ -533,11 +533,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "inputSchema": _tool_schema(
             properties={
                 "ticket_id": _string_prop(
-                    "Loregarden ticket UUID or external_id slug (e.g. 03-wire-cli-agent-runner)."
+                    "Loregarden ticket UUID or external id (e.g. lor-mcp-gateway-142)."
                 ),
                 "external_id": _string_prop("Explicit external_id when not using ticket_id."),
                 "workspace_slug": _string_prop(
-                    "Workspace slug — required when resolving by external_id slug via ticket_id."
+                    "Workspace slug — required when resolving by external id via ticket_id."
                 ),
             },
             required=[],
@@ -559,7 +559,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     ["milestone", "feature", "capability", "task", "bug"],
                 ),
                 "parent_ticket_id": _string_prop("Optional parent ticket UUID."),
-                "parent_external_id": _string_prop("Optional parent external_id slug."),
+                "parent_external_id": _string_prop("Optional parent external id."),
                 "roots_only": {
                     "type": "boolean",
                     "description": "Only top-level tickets (no parent).",
@@ -578,9 +578,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "inputSchema": _tool_schema(
             properties={
                 "workspace_slug": _string_prop("Workspace slug, e.g. loregarden."),
-                "external_id": _string_prop(
-                    "Ticket external id slug, e.g. 03-wire-cli-agent-runner."
-                ),
+                "external_id": _string_prop("Ticket external id, e.g. lor-mcp-gateway-142."),
             },
             required=["workspace_slug", "external_id"],
         ),
@@ -735,7 +733,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
         "inputSchema": _tool_schema(
             properties={
-                "ticket_id": _string_prop("Loregarden ticket UUID or external_id slug."),
+                "ticket_id": _string_prop("Loregarden ticket UUID or external id."),
                 "state": _enum_string_prop(
                     "New ticket state.",
                     ["backlog", "in_progress", "blocked", "done", "wont_do"],
@@ -774,7 +772,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "Link one ticket to wait for another: ticket_id depends on (runs after) "
             "depends_on. Best-effort ordering within a parent's subtree — it does not "
             "hard-block a standalone run. Idempotent; rejects self-links and cycles. "
-            "Both ids accept a UUID or external_id slug."
+            "Both ids accept a UUID or external id."
         ),
         "inputSchema": _tool_schema(
             properties={
@@ -806,7 +804,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "Relate two tickets for context: symmetric and non-blocking, so neither "
             "waits for the other and subtree run order is unchanged. Use link_dependency "
             "instead when one must run after the other. Idempotent in both directions; "
-            "rejects self-links. Both ids accept a UUID or external_id slug."
+            "rejects self-links. Both ids accept a UUID or external id."
         ),
         "inputSchema": _tool_schema(
             properties={
@@ -820,7 +818,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": McpTool.UNLINK_RELATION,
         "description": (
             "Remove a relation between two tickets. No-op if they are not related. "
-            "Both ids accept a UUID or external_id slug."
+            "Both ids accept a UUID or external id."
         ),
         "inputSchema": _tool_schema(
             properties={
@@ -854,10 +852,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 },
                 "priority": _integer_prop("Priority 1-3 (default 3)."),
                 "external_id": _string_prop(
-                    "Explicit external_id slug; auto-slugged from the title when empty."
+                    "Explicit external id; spelled from workspace, milestone and number when empty."
                 ),
                 "parent": _string_prop(
-                    "Parent ticket, as a UUID or external_id slug — resolved the same "
+                    "Parent ticket, as a UUID or external id — resolved the same "
                     "way loregarden_get_ticket resolves ticket_id."
                 ),
             },
@@ -1181,7 +1179,16 @@ def _create_ticket(
         external_id=arguments.get("external_id", ""),
     )
     return json.dumps(
-        {"id": ticket.id, "external_id": ticket.external_id, "title": ticket.title}, indent=2
+        {
+            "id": ticket.id,
+            "external_id": ticket.external_id,
+            # Echoed back so a caller that supplied an id of its own can see where
+            # it landed, rather than reading `external_id` and finding a different
+            # string than the one it sent.
+            "legacy_external_id": ticket.legacy_external_id,
+            "title": ticket.title,
+        },
+        indent=2,
     )
 
 

@@ -48,7 +48,7 @@ Did the work.
 
 
 def _ticket(session: Session) -> Ticket:
-    return session.exec(select(Ticket).where(Ticket.external_id == TICKET_SLUG)).first()
+    return session.exec(select(Ticket).where(Ticket.legacy_external_id == TICKET_SLUG)).first()
 
 
 def test_prompt_names_the_harness_and_the_calls_that_record_progress(db_session: Session):

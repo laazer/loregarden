@@ -46,7 +46,7 @@ def _session():
 
 def _seeded_ticket(session):
     return session.exec(
-        select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
     ).first()
 
 

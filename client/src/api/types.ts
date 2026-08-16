@@ -20,6 +20,10 @@ export type WorkItemType = "milestone" | "feature" | "capability" | "task" | "bu
 export interface TicketSummary {
   id: string;
   external_id: string;
+  /** The id this ticket read as before the id restructure; "" for newer tickets.
+   *  Optional like the other server-defaulted fields here, so a fixture does not
+   *  have to name it to build a ticket. */
+  legacy_external_id?: string;
   title: string;
   state: TicketState;
   priority: number;

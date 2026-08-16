@@ -23,7 +23,7 @@ from sqlmodel.pool import StaticPool
 
 def _ticket_id_by_external_id(client: TestClient, external_id: str) -> str:
     for t in client.get("/api/tickets").json():
-        if t["external_id"] == external_id:
+        if external_id in (t["external_id"], t["legacy_external_id"]):
             return t["id"]
     raise AssertionError(f"ticket not found: {external_id}")
 
@@ -316,7 +316,7 @@ def test_stale_blocking_issues_do_not_block_after_stage_done():
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         instance = session.exec(
             select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)
@@ -352,7 +352,7 @@ def test_reconcile_repairs_drifted_instance():
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "02-bootstrap-react-ide-shell")
+            select(Ticket).where(Ticket.legacy_external_id == "02-bootstrap-react-ide-shell")
         ).first()
         instance = session.exec(
             select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)

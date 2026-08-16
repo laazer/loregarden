@@ -257,7 +257,7 @@ def test_permission_bridge_creates_inbox_item_and_continues(tmp_path):
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         run = AgentRun(
             run_code="run_perm_test",
@@ -355,7 +355,7 @@ def test_permission_bridge_denies_out_of_scope_write_without_human_approval(tmp_
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
 
         repo_root = tmp_path / "repo"
@@ -451,7 +451,7 @@ def test_permission_bridge_bash_allow_passes_command(tmp_path):
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         run = AgentRun(
             run_code="run_bash_perm",
@@ -551,7 +551,7 @@ def test_permission_bridge_auto_approves_mcp_get_ticket(tmp_path):
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         run = AgentRun(
             run_code="run_mcp_auto",
@@ -640,7 +640,7 @@ def test_permission_bridge_auto_approves_via_agent_run_flag(tmp_path):
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         run = AgentRun(
             run_code="run_manual_auto",
@@ -731,7 +731,7 @@ def test_permission_bridge_finishes_on_result_when_process_stays_alive(tmp_path)
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         run = AgentRun(
             run_code="run_hung",
@@ -818,7 +818,7 @@ def test_permission_bridge_question_returns_answers(tmp_path):
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         run = AgentRun(
             run_code="run_question_test",
@@ -923,7 +923,7 @@ def test_permission_bridge_agent_timeout(tmp_path):
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         run = AgentRun(
             run_code="run_timeout_test",
@@ -1001,7 +1001,7 @@ def test_permission_bridge_streaming_output_extends_idle_timeout(tmp_path):
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         run = AgentRun(
             run_code="run_streaming_idle_test",
@@ -1065,7 +1065,7 @@ def test_permission_bridge_triage_question_does_not_mutate_stage(tmp_path):
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         stage_key_before = ticket.workflow_stage_key
         stage_status_before = ticket.workflow_stage_status
@@ -1171,7 +1171,7 @@ def test_permission_bridge_triage_read_only_mcp_tool_auto_approved(tmp_path):
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
 
         run = AgentRun(
@@ -1258,7 +1258,7 @@ def test_permission_bridge_orchestrated_agent_denied_create_ticket_end_to_end(tm
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
 
         run = AgentRun(
@@ -1360,7 +1360,7 @@ def test_permission_bridge_interactive_triage_create_ticket_is_not_auto_denied(t
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
 
         run = AgentRun(
