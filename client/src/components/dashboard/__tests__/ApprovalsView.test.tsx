@@ -77,21 +77,36 @@ describe("ApprovalsView", () => {
     expect(screen.getAllByText(/Dash cancels on wall contact/)).toHaveLength(1);
   });
 
-  it("shortens checklist items that restate a criterion", async () => {
+  it("drops the criteria list when the checklist already walks them, keeping the items whole", async () => {
     mockApi.approvals.mockResolvedValue([
       approval({
         impact: "Sign-off needed.",
         checklist: [
-          "Play-test by hand — AC1: Dash has a cooldown",
+          "Play-test by hand — Dash has a cooldown",
+          "Play-test by hand — Dash cancels on wall contact",
           "Confirm no console errors appear during play",
         ],
       }),
     ]);
-    renderView({ ...TICKET, acceptance_criteria: ["AC1: Dash has a cooldown"] } as TicketDetail);
+    renderView();
 
-    expect(await screen.findByText("Play-test by hand — AC1")).toBeInTheDocument();
+    // The checklist item keeps the criterion in full — it is what you test from.
+    expect(await screen.findByText("Play-test by hand — Dash has a cooldown")).toBeInTheDocument();
     expect(screen.getAllByText(/Dash has a cooldown/)).toHaveLength(1);
-    expect(screen.getByText("Confirm no console errors appear during play")).toBeInTheDocument();
+    expect(screen.queryByText("Acceptance criteria")).toBeNull();
+  });
+
+  it("keeps the criteria list when the checklist covers only some of them", async () => {
+    mockApi.approvals.mockResolvedValue([
+      approval({
+        impact: "Sign-off needed.",
+        checklist: ["Play-test by hand — Dash has a cooldown"],
+      }),
+    ]);
+    renderView();
+
+    expect(await screen.findByText("Acceptance criteria")).toBeInTheDocument();
+    expect(screen.getByText("Dash cancels on wall contact")).toBeInTheDocument();
   });
 
   it("keeps the brief's criteria when the ticket records none", async () => {

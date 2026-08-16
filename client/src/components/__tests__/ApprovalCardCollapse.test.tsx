@@ -120,3 +120,34 @@ describe("ApprovalCard collapsing in a narrow rail", () => {
     expect(onExpand).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("ApprovalCard route-back control", () => {
+  const withChecklist = {
+    ...GATE_APPROVAL,
+    checklist: ["Play-test by hand — AC1", "Confirm no console errors"],
+    route_options: [{ key: "implementation", name: "Implementation" }],
+  };
+
+  it("keeps the route-back toggle out of the notes-only checklist", () => {
+    const { container } = renderWithRouter(
+      <ApprovalCard approval={withChecklist} onApprove={() => {}} onReject={() => {}} />,
+    );
+
+    const checklist = container.querySelector(".approval-checklist");
+    expect(checklist?.querySelectorAll("input[type=checkbox]")).toHaveLength(2);
+    const rework = container.querySelector(".approval-rework");
+    expect(rework).toBeInTheDocument();
+    expect(checklist?.contains(rework!)).toBe(false);
+  });
+
+  it("marks the block as active once the route-back is armed", () => {
+    const { container } = renderWithRouter(
+      <ApprovalCard approval={withChecklist} onApprove={() => {}} onReject={() => {}} />,
+    );
+
+    const rework = container.querySelector(".approval-rework")!;
+    expect(rework.className).not.toContain("approval-rework--on");
+    fireEvent.click(rework.querySelector("input[type=checkbox]")!);
+    expect(container.querySelector(".approval-rework")!.className).toContain("approval-rework--on");
+  });
+});

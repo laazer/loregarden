@@ -1,4 +1,4 @@
-import { impactWithoutCriteria, shortenRestatedChecklist } from "../approvalCriteria";
+import { checklistCoversCriteria, impactWithoutCriteria } from "../approvalCriteria";
 
 describe("impactWithoutCriteria", () => {
   it("drops the restated criteria section and keeps the brief", () => {
@@ -30,41 +30,34 @@ describe("impactWithoutCriteria", () => {
   });
 });
 
-describe("shortenRestatedChecklist", () => {
-  const criteria = [
-    "AC1: CreaturePreview exposes a frontend-local API",
-    "AC2: Live updates are debounced by 100 ms or less",
-  ];
+describe("checklistCoversCriteria", () => {
+  const criteria = ["AC1: renders the scene", "AC2: falls back to cage mode"];
 
-  it("replaces a restated criterion with the id it points at", () => {
+  it("is true when every criterion has an expanded item", () => {
     expect(
-      shortenRestatedChecklist(
+      checklistCoversCriteria(
         [
-          "Play-test by hand — AC1: CreaturePreview exposes a frontend-local API",
-          "Play-test by hand — AC2: Live updates are debounced by 100 ms or less",
+          "Play-test by hand — AC1: renders the scene",
+          "Play-test by hand — AC2: falls back to cage mode",
+          "Confirm no console errors",
         ],
         criteria,
       ),
-    ).toEqual(["Play-test by hand — AC1", "Play-test by hand — AC2"]);
+    ).toBe(true);
   });
 
-  it("leaves hand-written checks alone", () => {
-    const items = ["Confirm no console errors appear during play"];
-    expect(shortenRestatedChecklist(items, criteria)).toEqual(items);
+  it("is false when a criterion has no item", () => {
+    expect(
+      checklistCoversCriteria(["Play-test by hand — AC1: renders the scene"], criteria),
+    ).toBe(false);
   });
 
-  it("leaves an item alone when the criterion has no id to point at", () => {
-    const items = ["Play-test by hand — Dash has a cooldown"];
-    expect(shortenRestatedChecklist(items, ["Dash has a cooldown"])).toEqual(items);
+  it("is false for an unrelated checklist", () => {
+    expect(checklistCoversCriteria(["Check the logs"], criteria)).toBe(false);
   });
 
-  it("keeps an item that is exactly the criterion, with no prefix to keep", () => {
-    const items = ["AC1: CreaturePreview exposes a frontend-local API"];
-    expect(shortenRestatedChecklist(items, criteria)).toEqual(items);
-  });
-
-  it("passes everything through when the ticket records no criteria", () => {
-    const items = ["Play-test by hand — AC1: CreaturePreview exposes a frontend-local API"];
-    expect(shortenRestatedChecklist(items, [])).toEqual(items);
+  it("is false when either side is empty", () => {
+    expect(checklistCoversCriteria([], criteria)).toBe(false);
+    expect(checklistCoversCriteria(["Play-test by hand — AC1: renders the scene"], [])).toBe(false);
   });
 });

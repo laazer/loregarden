@@ -2,9 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, type Approval, type TicketDetail } from "../../api/client";
 import {
+  checklistCoversCriteria,
   hasHumanCriteria,
   impactWithoutCriteria,
-  shortenRestatedChecklist,
 } from "../../utils/approvalCriteria";
 import { formatApprovalResolveError } from "../../utils/approvalErrors";
 import { ApprovalCard, type ApprovalResolvePayload } from "../ApprovalCard";
@@ -56,6 +56,11 @@ export function ApprovalsView({ ticket }: { ticket?: TicketDetail }) {
   const criteria = ticket.acceptance_criteria ?? [];
   const humanPending = pending.filter(hasHumanCriteria);
   const otherPending = pending.filter((a) => !hasHumanCriteria(a));
+  // A gate whose checklist walks the criteria one by one already shows them, in
+  // the form you can work through — listing them again above adds nothing.
+  const checklistShowsCriteria = humanPending.some((approval) =>
+    checklistCoversCriteria(approval.checklist ?? [], criteria),
+  );
 
   return (
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16, minHeight: 0 }}>
@@ -65,22 +70,24 @@ export function ApprovalsView({ ticket }: { ticket?: TicketDetail }) {
         </div>
       )}
 
-      <section>
-        <div className="state-label" style={{ marginBottom: 8 }}>
-          Acceptance criteria
-        </div>
-        {criteria.length ? (
-          <ul className="approvals-view-criteria">
-            {criteria.map((item, idx) => (
-              <li key={idx}>{item}</li>
-            ))}
-          </ul>
-        ) : (
-          <div style={{ fontSize: 12.5, color: "var(--txm)" }}>
-            No acceptance criteria recorded on this ticket.
+      {!checklistShowsCriteria && (
+        <section>
+          <div className="state-label" style={{ marginBottom: 8 }}>
+            Acceptance criteria
           </div>
-        )}
-      </section>
+          {criteria.length ? (
+            <ul className="approvals-view-criteria">
+              {criteria.map((item, idx) => (
+                <li key={idx}>{item}</li>
+              ))}
+            </ul>
+          ) : (
+            <div style={{ fontSize: 12.5, color: "var(--txm)" }}>
+              No acceptance criteria recorded on this ticket.
+            </div>
+          )}
+        </section>
+      )}
 
       <section>
         <div className="state-label" style={{ marginBottom: 8 }}>
@@ -164,11 +171,6 @@ function ApprovalRow({
       <ApprovalCard
         approval={approval}
         impactText={deduped ? impactWithoutCriteria(approval.impact) : undefined}
-        checklistItems={
-          deduped && approval.checklist?.length
-            ? shortenRestatedChecklist(approval.checklist, criteria)
-            : undefined
-        }
         isSubmitting={isSubmitting}
         onApprove={(payload) => onResolve("approve", payload)}
         onReject={(payload) => onResolve("reject", payload)}

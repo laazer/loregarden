@@ -4528,6 +4528,35 @@ button {
 }
 
 /*
+ * Approving with a route-back sends the ticket to an earlier stage, so the
+ * toggle cannot sit in the same column of checkboxes as the testing checklist
+ * — that list is headed "notes only", and this box is not a note.
+ */
+.approval-rework {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg3);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.approval-rework--on {
+  border-color: rgba(229, 167, 44, 0.45);
+  background: rgba(229, 167, 44, 0.07);
+}
+
+.approval-rework-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--aml);
+}
+
+/*
  * The approval card rounds its own corners with overflow: hidden, so in a flex
  * column it would rather be clipped than overflow — the modal body then has
  * nothing to scroll and the criteria below the fold are simply gone. Let the
