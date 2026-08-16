@@ -7,6 +7,8 @@ import { DashboardActiveTickets } from "../components/DashboardActiveTickets";
 import { DashboardTicketDetailsButton } from "../components/DashboardTicketDetailsButton";
 import { PrioBars } from "../components/PrioBars";
 import { TicketPaneFilters } from "../components/TicketPaneFilters";
+import { ApprovalsView } from "../components/dashboard/ApprovalsView";
+import { ArtifactTabBar } from "../components/dashboard/ArtifactTabBar";
 import { ArtifactView } from "../components/dashboard/ArtifactView";
 import { ArtifactsHub } from "../components/dashboard/ArtifactsHub";
 import { HiveSimulationPanel } from "../components/dashboard/HiveSimulationPanel";
@@ -34,12 +36,13 @@ import { DeleteTicketConfirmModal } from "../components/DeleteTicketConfirmModal
 import { RunLogModal } from "../components/RunLogModal";
 import { canHaveChildren } from "../lib/workItemHierarchy";
 import { errorDetail } from "../utils/errorDetail";
+import { hasHumanCriteria } from "../utils/approvalCriteria";
 import { WorkflowPaneTicketMeta } from "../components/WorkflowPaneTicketMeta";
 import { runtimeFromWorkspace, runtimeSettingsEqual, runtimeSummaryLabel } from "../components/WorkspaceRuntimeFields";
 import { TriageModelModal } from "../components/TriageModelModal";
 import { STATE_COLORS, STATE_LABELS, UpdateStateModal, type StateUpdateDraft } from "../components/UpdateStateModal";
 import { navigateToPage, navigateToStudioTicketSession, navigateToTicket, navigateToTicketTab, useArtifactTabFromRoute, useTicketIdFromRoute } from "../lib/useAppNavigation";
-import { isArtifactTab, isArtifactsSubTab, PRIMARY_ARTIFACT_TABS } from "../lib/appNavigation";
+import { isArtifactTab, isArtifactsSubTab } from "../lib/appNavigation";
 import { useUiStore, type PaneId } from "../state/uiStore";
 import { pushToast } from "../state/toastStore";
 import { agentsAssembleLabel } from "../lib/workflowHelpers";
@@ -152,15 +155,6 @@ export function Dashboard() {
 
   const hidePane = (pane: PaneId) => setPaneVisible(pane, false);
 
-  const artifactTabRefs = useRef<Partial<Record<string, HTMLButtonElement>>>({});
-
-  useEffect(() => {
-    artifactTabRefs.current[isArtifactsSubTab(artifactTab) ? "artifacts" : artifactTab]?.scrollIntoView?.({
-      block: "nearest",
-      inline: "center",
-    });
-  }, [artifactTab]);
-
   const wsParam = workspace === "all" ? undefined : workspace;
 
   const ticketTree = useQuery({
@@ -266,6 +260,15 @@ export function Dashboard() {
     refetchInterval: () =>
       hasActiveRun || detail.data?.workflow_stage_status === "running" ? 2000 : false,
   });
+
+  // Shares its key with the Approvals tab, so opening the tab reuses this fetch.
+  const ticketApprovals = useQuery({
+    queryKey: ["approvals", selectedId],
+    queryFn: () => api.approvals(selectedId!),
+    enabled: !!selectedId,
+    refetchInterval: 5000,
+  });
+  const humanApprovalCount = (ticketApprovals.data ?? []).filter(hasHumanCriteria).length;
 
   const orchestrate = useMutation({
     meta: { errorTitle: "Start orchestration" },
@@ -1548,59 +1551,14 @@ export function Dashboard() {
         {showArtifacts && (
         <section className={`artifacts-pane ${showWorkflow ? "" : "pane-fill"}`.trim()}>
           <div className="tab-bar">
-            <div className="tab-bar-scroll" role="tablist" aria-label="Artifact views">
-              {PRIMARY_ARTIFACT_TABS.map((t) => {
-                const selected = t === "artifacts" ? isArtifactsSubTab(artifactTab) : artifactTab === t;
-                return (
-                <button
-                  key={t}
-                  ref={(el) => {
-                    if (el) artifactTabRefs.current[t] = el;
-                  }}
-                  role="tab"
-                  aria-selected={selected}
-                  className={`tab-btn ${selected ? "active" : ""}`}
-                  onClick={() => selectedId && navigateToTicketTab(selectedId, t)}
-                  style={
-                    t === "artifacts" && hasRunErrors
-                      ? { color: "var(--rdl)" }
-                      : undefined
-                  }
-                >
-                  {t === "pr" ? "PR" : t.charAt(0).toUpperCase() + t.slice(1)}
-                  {t === "artifacts" && hasRunErrors && (
-                    <span
-                      style={{
-                        marginLeft: 6,
-                        minWidth: 8,
-                        height: 8,
-                        borderRadius: "50%",
-                        background: "var(--red)",
-                        display: "inline-block",
-                      }}
-                    />
-                  )}
-                  {t === "artifacts" && (artifactsFeed.data?.total ?? 0) > 0 && (
-                    <span className="count-pill" style={{ marginLeft: 6, fontSize: 9 }}>
-                      {artifactsFeed.data?.total}
-                    </span>
-                  )}
-                  {t === "pr" && sel?.artifacts?.pr && (
-                    <span
-                      style={{
-                        marginLeft: 6,
-                        minWidth: 8,
-                        height: 8,
-                        borderRadius: "50%",
-                        background: "var(--ac2)",
-                        display: "inline-block",
-                      }}
-                    />
-                  )}
-                </button>
-              );
-              })}
-            </div>
+            <ArtifactTabBar
+              artifactTab={artifactTab}
+              selectedId={selectedId}
+              hasRunErrors={hasRunErrors}
+              artifactCount={artifactsFeed.data?.total ?? 0}
+              approvalCount={humanApprovalCount}
+              hasPr={!!sel?.artifacts?.pr}
+            />
             <div className="tab-bar-actions">
               <PaneHideButton
                 pane="artifacts"
@@ -1623,6 +1581,8 @@ export function Dashboard() {
               />
             ) : artifactTab === "hive" && sel ? (
               <HiveSimulationPanel ticket={sel} />
+            ) : artifactTab === "approvals" ? (
+              <ApprovalsView ticket={sel} />
             ) : (
               <ArtifactView
                 tab={artifactTab}
