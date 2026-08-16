@@ -6,6 +6,8 @@ import { CodeEditor } from "../components/editor/CodeEditor";
 import { EditorFileExplorer } from "../components/editor/EditorFileExplorer";
 import { GitRefSwitcher } from "../components/editor/GitRefSwitcher";
 import { PageTopbar } from "../components/TopbarPageSlot";
+import { PaneSkeleton } from "../components/ui/PaneSkeleton";
+import { describeError } from "../state/toastStore";
 import { useUiStore } from "../state/uiStore";
 
 export function EditorPage() {
@@ -78,7 +80,7 @@ export function EditorPage() {
       window.setTimeout(() => setSaveMessage(null), 2000);
     },
     onError: (error) => {
-      setSaveMessage(error instanceof Error ? error.message : "Save failed");
+      setSaveMessage(describeError(error, "Save failed"));
     },
   });
 
@@ -145,10 +147,10 @@ export function EditorPage() {
         <main className="editor-main">
           {editorFilePath ? (
             fileQuery.isLoading ? (
-              <div className="editor-empty">Loading file…</div>
+              <PaneSkeleton variant="code" label={`Loading ${editorFilePath}…`} />
             ) : fileQuery.error ? (
               <div className="editor-empty editor-empty-error">
-                {fileQuery.error instanceof Error ? fileQuery.error.message : "Failed to load file"}
+                {describeError(fileQuery.error, "Failed to load file")}
               </div>
             ) : (
               <CodeEditor

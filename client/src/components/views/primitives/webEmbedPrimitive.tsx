@@ -9,18 +9,20 @@
  * A URL the policy refuses produces no frame at all. It is shown back as text,
  * which is how an operator fixes the setting, and is never written into an
  * attribute the browser would follow.
+ *
+ * What this file owns is the decision: configured, refused, or embeddable. The
+ * frame itself — and the placeholder covering it until it paints — is
+ * `WebEmbedFrame`.
  */
 
 import { definePrimitive } from "./definePrimitive";
 import { safeEmbedUrl } from "./embedUrl";
 import { Unconfigured } from "./Unconfigured";
+import { WebEmbedFrame } from "./WebEmbedFrame";
 
 type WebEmbedSettings = {
   url: string;
 };
-
-/** Everything this frame is allowed to do. Adding a token needs a reason. */
-const SANDBOX = "allow-scripts";
 
 export const webEmbedPrimitive = definePrimitive<WebEmbedSettings>({
   id: "web_embed",
@@ -61,15 +63,8 @@ export const webEmbedPrimitive = definePrimitive<WebEmbedSettings>({
       );
     }
 
-    return (
-      <iframe
-        title={`Embedded page: ${src}`}
-        src={src}
-        sandbox={SANDBOX}
-        allow=""
-        referrerPolicy="no-referrer"
-        style={{ width: "100%", height: "100%", minWidth: "0", minHeight: "0", border: "none" }}
-      />
-    );
+    // Keyed by the URL: a new src is a new load, and reusing the element would
+    // leave the previous page's "loaded" state covering a frame that is fetching.
+    return <WebEmbedFrame key={src} src={src} />;
   },
 });

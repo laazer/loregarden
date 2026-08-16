@@ -38,6 +38,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 
 import { ApiError } from "../api/http";
+import { PaneSkeleton } from "../components/ui/PaneSkeleton";
 import { ContainerPane } from "../components/views/ContainerPane";
 import { FlexGridSurface } from "../components/views/FlexGridSurface";
 import { readGridTree } from "../lib/gridLayout";
@@ -157,11 +158,9 @@ export function ViewPage() {
   }
 
   if (loaded === undefined) {
-    return (
-      <div className="queue-page-empty">
-        <p>Loading view…</p>
-      </div>
-    );
+    // Shaped like the surface that is coming, not a line of text in the middle
+    // of an otherwise empty screen: the wait for a view is the wait for panes.
+    return <PaneSkeleton variant="block" label="Loading view…" />;
   }
 
   const layout = asJson(loaded.layout);
