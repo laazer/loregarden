@@ -116,11 +116,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     <SidebarWorkspaceProvider slug={sidebarWorkspaceSlug} isResolved={sidebarWorkspaceResolved}>
       <div className="app-frame">
         <div className="app-ambient" aria-hidden />
-        <AppSidebar
-          workspaceSlug={sidebarWorkspaceSlug}
-          seedDefaults={Boolean(sidebarWorkspaceSlug)}
-          onOpenSettings={openSettings}
-        />
+        <AppSidebar workspaceSlug={sidebarWorkspaceSlug} onOpenSettings={openSettings} />
         <TopbarPageSlotProvider>
           <div className="app-main">
             <AppTopbar />

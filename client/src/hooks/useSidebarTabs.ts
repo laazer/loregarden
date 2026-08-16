@@ -8,7 +8,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 import { duplicateLayout, emptyLayoutFor } from "../lib/viewLayouts";
 import {
@@ -17,9 +17,8 @@ import {
   fetchSidebarEntries,
   fetchViews,
   isContention,
-  pinPage,
   reorderSidebarEntries,
-  unpinEntry,
+  setEntryPinned,
   updateView,
   viewsKeys,
   type SidebarEntry,
@@ -34,9 +33,6 @@ const REORDER_RETRY_LIMIT = 3;
 
 /** Same reasoning as the reorder's, for the entry a create appends. */
 const CREATE_RETRY_LIMIT = 3;
-
-/** One resume for a seed that died part-way; a workspace that keeps refusing is not seedable. */
-const SEED_ATTEMPT_LIMIT = 2;
 
 /**
  * Re-POST a create that lost a race for its sidebar position.
@@ -75,23 +71,14 @@ function rankAgainst(desired: string[], current: SidebarEntry[]): string[] {
   return [...kept, ...current.map((entry) => entry.id).filter((entryId) => !known.has(entryId))];
 }
 
-/** Per-workspace seeding state: latched at the first read, then run to completion. */
-interface SeedState {
-  /** The first successful read was empty — this workspace has never been set up. */
-  seedable: boolean;
-  attempts: number;
-  done: boolean;
-  inFlight: boolean;
-}
-
 export interface SidebarTabs {
   /** Every entry, in the server's order — including any this client cannot draw. */
   entries: SidebarEntry[];
   viewsById: Map<string, ViewSummary>;
   /** Both reads have landed, so a row can be drawn without guessing its title. */
   isReady: boolean;
-  pinPageKey: (pageKey: string) => void;
-  unpinPageEntry: (entryId: string) => void;
+  /** Move a view's tab between the Pinned section and Tabs. */
+  setEntryPinned: (entryId: string, pinned: boolean) => void;
   /**
    * Swap two entries and send the whole permutation. The caller picks the pair,
    * because which entry is a row's visible neighbour depends on the section it
@@ -130,7 +117,7 @@ export interface SidebarTabs {
   isClosingView: boolean;
 }
 
-export function useSidebarTabs(workspaceSlug: string, seedPageKeys: string[]): SidebarTabs {
+export function useSidebarTabs(workspaceSlug: string): SidebarTabs {
   const qc = useQueryClient();
   const enabled = Boolean(workspaceSlug);
 
@@ -158,27 +145,30 @@ export function useSidebarTabs(workspaceSlug: string, seedPageKeys: string[]): S
     qc.invalidateQueries({ queryKey: entriesKey });
   }, [qc, entriesKey]);
 
-  const pin = useMutation({
-    meta: { errorTitle: "Pin page" },
-    mutationFn: (pageKey: string) => pinPage(workspaceSlug, pageKey),
-    onSettled: invalidateEntries,
-  });
-
-  const unpin = useMutation({
-    meta: { errorTitle: "Unpin page" },
-    mutationFn: (entryId: string) => unpinEntry(workspaceSlug, entryId),
-    onMutate: async (entryId) => {
+  const repin = useMutation({
+    meta: { errorTitle: "Pin tab" },
+    mutationFn: (vars: { entryId: string; pinned: boolean }) =>
+      setEntryPinned(workspaceSlug, vars.entryId, vars.pinned),
+    onMutate: async (vars) => {
       await qc.cancelQueries({ queryKey: entriesKey });
-      const previous = qc.getQueryData<SidebarEntry[]>(entriesKey);
+      // Optimistic because the tab visibly jumps sections, and a round trip of
+      // nothing happening reads as the control being broken.
       qc.setQueryData<SidebarEntry[]>(entriesKey, (current) =>
-        (current ?? []).filter((entry) => entry.id !== entryId),
+        (current ?? []).map((entry) =>
+          entry.id === vars.entryId ? { ...entry, pinned: vars.pinned } : entry,
+        ),
       );
-      return { previous };
     },
-    onError: (_error, _entryId, context) => {
-      // The server still has the entry; leaving the optimistic removal on
-      // screen would report a deletion that did not happen.
-      if (context?.previous) qc.setQueryData(entriesKey, context.previous);
+    onError: (_error, vars) => {
+      // The server still has it where it was; leaving the tab in its new
+      // section would report a move that did not happen. Only this entry's flag
+      // is put back — restoring a snapshot of the whole list would throw away a
+      // reorder that landed optimistically while this was in flight.
+      qc.setQueryData<SidebarEntry[]>(entriesKey, (current) =>
+        (current ?? []).map((entry) =>
+          entry.id === vars.entryId ? { ...entry, pinned: !vars.pinned } : entry,
+        ),
+      );
     },
     onSettled: invalidateEntries,
   });
@@ -281,62 +271,6 @@ export function useSidebarTabs(workspaceSlug: string, seedPageKeys: string[]): S
     },
   });
 
-  const seed = useMutation({
-    meta: { errorTitle: "Set up sidebar" },
-    // Sequentially, because position is assigned when a pin lands: firing all
-    // seven at once ranks them in completion order, not the order asked for.
-    mutationFn: async (pageKeys: string[]) => {
-      for (const pageKey of pageKeys) {
-        await pinPage(workspaceSlug, pageKey);
-      }
-    },
-    onSettled: invalidateEntries,
-  });
-
-  /**
-   * Only the *first* successful read of a workspace can tell "never set up"
-   * from "the user emptied it", so the decision is latched there and never
-   * re-derived: every later empty list — the seed's own refetch, an unpin of the
-   * last entry, a deliberately bare sidebar on the next load — is a state the
-   * user arrived at, not an invitation to pin seven pages into it.
-   */
-  const seedStates = useRef(new Map<string, SeedState>());
-  const seedMutate = seed.mutate;
-  const seedStatus = seed.status;
-  useEffect(() => {
-    if (!enabled || !entriesQuery.isSuccess) return;
-    const states = seedStates.current;
-    let state = states.get(workspaceSlug);
-    if (!state) {
-      state = { seedable: entries.length === 0, attempts: 0, done: false, inFlight: false };
-      states.set(workspaceSlug, state);
-    }
-    if (!state.seedable || state.done || state.inFlight) return;
-    if (state.attempts >= SEED_ATTEMPT_LIMIT || seedPageKeys.length === 0) return;
-    // A pin that rejects part-way leaves the rest unpinned; `pinPage` is
-    // idempotent, so the resume re-walks the list from the top and the pins that
-    // already landed keep both their entry and their rank.
-    const attempted = state;
-    attempted.attempts += 1;
-    attempted.inFlight = true;
-    seedMutate(seedPageKeys, {
-      onSuccess: () => {
-        attempted.done = true;
-      },
-      onSettled: () => {
-        attempted.inFlight = false;
-      },
-    });
-  }, [
-    enabled,
-    entriesQuery.isSuccess,
-    entries,
-    workspaceSlug,
-    seedPageKeys,
-    seedMutate,
-    seedStatus,
-  ]);
-
   const swapEntries = useCallback(
     (entryId: string, otherId: string) => {
       const ids = entries.map((entry) => entry.id);
@@ -367,8 +301,7 @@ export function useSidebarTabs(workspaceSlug: string, seedPageKeys: string[]): S
   /** Held across renders, so the guard survives the click that outruns a render. */
   const duplicateInFlight = useRef(false);
 
-  const pinMutate = pin.mutate;
-  const unpinMutate = unpin.mutate;
+  const repinMutate = repin.mutate;
   const renameMutate = rename.mutate;
   const closeMutate = close.mutate;
   const createMutate = create.mutate;
@@ -378,8 +311,10 @@ export function useSidebarTabs(workspaceSlug: string, seedPageKeys: string[]): S
     entries,
     viewsById,
     isReady: entriesQuery.data !== undefined && viewsQuery.data !== undefined,
-    pinPageKey: useCallback((pageKey: string) => pinMutate(pageKey), [pinMutate]),
-    unpinPageEntry: useCallback((entryId: string) => unpinMutate(entryId), [unpinMutate]),
+    setEntryPinned: useCallback(
+      (entryId: string, pinned: boolean) => repinMutate({ entryId, pinned }),
+      [repinMutate],
+    ),
     swapEntries,
     dropEntry,
     renameView: useCallback(

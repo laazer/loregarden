@@ -1307,3 +1307,10 @@ class SidebarEntry(SQLModel, table=True):
     #: and its entry have to be written in that order. The flat wire shape is
     #: `entry_payload`'s job.
     view_id: str | None = Field(default=None, foreign_key="views.id")
+    #: Whether the sidebar draws this entry in its Pinned section rather than in
+    #: Tabs. A flag on the entry rather than a third `entry_kind`, because
+    #: pinning is a property of a tab, not a different sort of tab — the kind
+    #: already answers "which half of the row is set", and the CHECK constraint
+    #: enforces that answer. Every entry that predates pinned views is `False`,
+    #: which is where an existing tab belongs.
+    pinned: bool = Field(default=False)

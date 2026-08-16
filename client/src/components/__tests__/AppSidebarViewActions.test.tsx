@@ -38,9 +38,7 @@ import {
   deleteView,
   fetchSidebarEntries,
   fetchViews,
-  pinPage,
   reorderSidebarEntries,
-  unpinEntry,
   updateView,
   type SidebarEntry,
   type ViewSummary,
@@ -55,8 +53,7 @@ jest.mock("../../lib/viewsApi", () => ({
   fetchViews: jest.fn(),
   fetchView: jest.fn(),
   fetchSidebarEntries: jest.fn(),
-  pinPage: jest.fn(),
-  unpinEntry: jest.fn(),
+  setEntryPinned: jest.fn(),
   reorderSidebarEntries: jest.fn(),
   createView: jest.fn(),
   updateView: jest.fn(),
@@ -65,8 +62,6 @@ jest.mock("../../lib/viewsApi", () => ({
 
 const mockFetchViews = fetchViews as jest.MockedFunction<typeof fetchViews>;
 const mockFetchEntries = fetchSidebarEntries as jest.MockedFunction<typeof fetchSidebarEntries>;
-const mockPinPage = pinPage as jest.MockedFunction<typeof pinPage>;
-const mockUnpinEntry = unpinEntry as jest.MockedFunction<typeof unpinEntry>;
 const mockReorder = reorderSidebarEntries as jest.MockedFunction<typeof reorderSidebarEntries>;
 const mockCreateView = createView as jest.MockedFunction<typeof createView>;
 const mockUpdateView = updateView as jest.MockedFunction<typeof updateView>;
@@ -76,12 +71,18 @@ const SLUG = "loregarden";
 
 type Json = Record<string, unknown>;
 
+/**
+ * A leftover entry from before Tools became static. Nothing creates these any
+ * more and the sidebar draws none of them; they stay in the fixture because
+ * every workspace seeded by 434 still has seven of them, and a view-row query
+ * that accidentally matched one would find it here.
+ */
 function pageEntry(id: string, position: number, pageKey: string): SidebarEntry {
-  return { id, position, entry_kind: "page", page_key: pageKey, view_id: "" };
+  return { id, position, entry_kind: "page", page_key: pageKey, view_id: "", pinned: false };
 }
 
 function viewEntry(id: string, position: number, viewId: string): SidebarEntry {
-  return { id, position, entry_kind: "view", page_key: "", view_id: viewId };
+  return { id, position, entry_kind: "view", page_key: "", view_id: viewId, pinned: false };
 }
 
 const ENTRIES: SidebarEntry[] = [
@@ -261,8 +262,6 @@ beforeEach(() => {
   CREATED = created();
   mockFetchEntries.mockResolvedValue(ENTRIES);
   mockFetchViews.mockResolvedValue(VIEWS);
-  mockPinPage.mockImplementation(async (_slug, pageKey) => pageEntry(`e-${pageKey}`, 100, pageKey));
-  mockUnpinEntry.mockImplementation(async (_slug, entryId) => ({ deleted: entryId }));
   mockReorder.mockResolvedValue(ENTRIES);
   mockCreateView.mockResolvedValue(CREATED);
   mockUpdateView.mockImplementation(async (_slug, viewId, patch) => ({

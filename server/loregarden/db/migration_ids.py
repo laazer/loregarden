@@ -109,6 +109,7 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0088_playtest_scene_placeholder",
     "0089_retire_agent_owned_gate_items",
     "0090_agent_run_process_identity",
+    "0091_sidebar_entry_pinned",
 )
 
 

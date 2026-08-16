@@ -1,5 +1,11 @@
 /**
- * The hover-expanding sidebar: pinned built-in pages above, view tabs below.
+ * The hover-expanding sidebar: Tools, then pinned view tabs, then the rest.
+ *
+ * **Tools is not stored.** It is the static page catalog, rendered directly.
+ * The seven built-in pages are the application's own navigation, and reaching
+ * them must not depend on rows a bad write could empty — a sidebar that lost
+ * its pages offers no control that brings them back. Nothing seeds it, and it
+ * cannot drift from the app's routes.
  *
  * Three things about its shape are load-bearing rather than incidental:
  *
@@ -17,16 +23,7 @@
  * workspace is chosen, and every view route 404s on it.
  */
 
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type FocusEvent,
-  type KeyboardEvent,
-} from "react";
+import { useCallback, useId, useState, type FocusEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { useSidebarTabs } from "../hooks/useSidebarTabs";
@@ -36,146 +33,29 @@ import { BrandMark } from "./BrandMark";
 import { DeleteViewConfirmModal } from "./DeleteViewConfirmModal";
 import { NewViewModal } from "./NewViewModal";
 import { BaxterAvatar } from "./chat/BaxterAvatar";
-import {
-  DEFAULT_PINNED_PAGE_KEYS,
-  SIDEBAR_PAGES,
-  sidebarPageForKey,
-} from "./appSidebarPages";
+import { SIDEBAR_PAGES } from "./appSidebarPages";
 import {
   ControlIcon,
-  PageRow,
+  ToolRow,
   ViewRow,
   type DragHandlers,
   type MoveHandlers,
 } from "./appSidebarRows";
 import "./AppSidebar.css";
 
-/** A stable identity for "seed nothing", so the seeding effect keeps its deps. */
-const NO_SEED_PAGE_KEYS: string[] = [];
-
-/**
- * Re-pinning a page that was unpinned. Without it, unpinning removes a built-in
- * page's only entry point with no way back.
- *
- * It follows `OverflowMenu`'s dismissal contract — Escape, and a pointer press
- * outside it — because a menu that only its own trigger can close is one a
- * keyboard user cannot back out of.
- */
-function PinPageMenu({
-  pinnedKeys,
-  expanded,
-  onPin,
-}: {
-  pinnedKeys: Set<string>;
-  expanded: boolean;
-  onPin: (pageKey: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const available = SIDEBAR_PAGES.filter((page) => !pinnedKeys.has(page.key));
-  // A collapsed rail clips the menu; leaving it open would bring it back on the
-  // next hover without anyone having asked for it.
-  useEffect(() => {
-    if (!expanded) setOpen(false);
-  }, [expanded]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
-
-  // `role="menu"` promises arrow-key movement between its items; the roles are
-  // what assistive tech announces, so they come with the behaviour or not at all.
-  const onMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    const items = Array.from(
-      event.currentTarget.querySelectorAll<HTMLElement>("[role='menuitem']"),
-    );
-    const index = items.indexOf(event.target as HTMLElement);
-    if (index < 0) return;
-    const next = items[index + (event.key === "ArrowDown" ? 1 : -1)];
-    if (!next) return;
-    event.preventDefault();
-    next.focus();
-  };
-
-  return (
-    <div className="app-sidebar-pin" ref={rootRef}>
-      <button
-        type="button"
-        className="app-sidebar-footer-btn"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={available.length === 0}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span className="app-sidebar-icon">
-          <ControlIcon>
-            <path d="M12 5v14M5 12h14" />
-          </ControlIcon>
-        </span>
-        <span className="app-sidebar-name app-sidebar-reveal">Pin a page</span>
-      </button>
-      {open && available.length > 0 ? (
-        <div
-          className="app-sidebar-menu"
-          role="menu"
-          aria-label="Pages to pin"
-          onKeyDown={onMenuKeyDown}
-        >
-          {available.map((page) => (
-            <button
-              key={page.key}
-              type="button"
-              role="menuitem"
-              className="app-sidebar-menu-item"
-              onClick={() => {
-                setOpen(false);
-                onPin(page.key);
-              }}
-            >
-              {page.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export function AppSidebar({
   workspaceSlug,
-  seedDefaults = true,
   onOpenSettings,
 }: {
   /** A concrete slug — never `"all"`, which 404s against every view route. */
   workspaceSlug: string;
-  /**
-   * Whether an unset workspace may be set up. Seeding writes seven pins, so it
-   * needs a concrete, stable slug; the caller says whether it has one.
-   */
-  seedDefaults?: boolean;
   onOpenSettings: () => void;
 }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const activeViewId = viewIdFromPath(pathname);
   const activePage = pageFromPath(pathname);
-  const tabs = useSidebarTabs(
-    workspaceSlug,
-    seedDefaults ? DEFAULT_PINNED_PAGE_KEYS : NO_SEED_PAGE_KEYS,
-  );
+  const tabs = useSidebarTabs(workspaceSlug);
 
   const [hovered, setHovered] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
@@ -185,31 +65,34 @@ export function AppSidebar({
   const [pendingDelete, setPendingDelete] = useState<ViewSummary | null>(null);
   const expanded = hovered || focusWithin;
 
+  const toolsHeadingId = useId();
   const pinnedHeadingId = useId();
   const tabsHeadingId = useId();
 
   const { entries, viewsById, isReady, swapEntries, dropEntry } = tabs;
-  const pinnedKeys = useMemo(
-    () => new Set(entries.filter((e) => e.entry_kind === "page").map((e) => e.page_key)),
-    [entries],
-  );
 
   /**
    * The neighbour a move actually swaps with.
    *
-   * Ranking is one list across both sections, but the sections are *drawn*
-   * separately. The neighbour in the full list can therefore be an entry of the
-   * other kind, and swapping with it re-ranks a row the user is not looking at
-   * while leaving the section they are looking at byte-identical — a real PATCH
-   * that reads as a no-op. So the neighbour is the nearest entry of the same
-   * kind, and the permutation sent still spans both sections.
+   * Ranking is one list across both tab sections, but they are *drawn*
+   * separately. The neighbour in the full list can therefore belong to the
+   * other section, and swapping with it re-ranks a row the user is not looking
+   * at while leaving the section they are looking at byte-identical — a real
+   * PATCH that reads as a no-op. So the neighbour is the nearest entry drawn in
+   * the same section, and the permutation sent still spans both.
+   *
+   * `entry_kind` no longer separates the sections — both hold views — so the
+   * partition is `pinned`, and leftover `page` entries from before Tools became
+   * static are excluded rather than treated as unpinned tabs: they are drawn
+   * nowhere, and a move that swapped with one would look like nothing happened.
    */
   const sectionNeighbour = useCallback(
     (entry: SidebarEntry, offset: number): SidebarEntry | undefined => {
       const index = entries.indexOf(entry);
       if (index < 0) return undefined;
       for (let at = index + offset; at >= 0 && at < entries.length; at += offset) {
-        if (entries[at].entry_kind === entry.entry_kind) return entries[at];
+        const other = entries[at];
+        if (other.entry_kind === "view" && other.pinned === entry.pinned) return other;
       }
       return undefined;
     },
@@ -234,20 +117,42 @@ export function AppSidebar({
     [sectionNeighbour, swapEntries],
   );
 
+  /**
+   * Whether a drop of the dragged row onto this one is a move at all.
+   *
+   * The pointer path needs `sectionNeighbour`'s rule for the same reason the
+   * arrow buttons do: ranking spans both tab sections, so splicing across them
+   * re-ranks rows in a section the user is not pointing at and leaves the one
+   * they are pointing at unchanged — a real PATCH that reads as nothing having
+   * happened. Pinning is what moves a tab between sections, and it is a
+   * control of its own.
+   */
+  const sameSection = useCallback(
+    (entryId: string, otherId: string): boolean => {
+      const one = entries.find((entry) => entry.id === entryId);
+      const other = entries.find((entry) => entry.id === otherId);
+      if (!one || !other) return false;
+      return one.entry_kind === "view" && other.entry_kind === "view" && one.pinned === other.pinned;
+    },
+    [entries],
+  );
+
   const dragHandlers = useCallback(
     (entryId: string): DragHandlers => ({
       draggable: true,
       onDragStart: () => setDraggingId(entryId),
       onDragEnd: () => setDraggingId(""),
+      // Not offered rather than accepted and dropped: a cursor that says the
+      // drop will land is the part the user reads.
       onDragOver: (event) => {
-        if (draggingId) event.preventDefault();
+        if (draggingId && sameSection(draggingId, entryId)) event.preventDefault();
       },
       onDrop: () => {
-        if (draggingId) dropEntry(draggingId, entryId);
+        if (draggingId && sameSection(draggingId, entryId)) dropEntry(draggingId, entryId);
         setDraggingId("");
       },
     }),
-    [draggingId, dropEntry],
+    [draggingId, dropEntry, sameSection],
   );
 
   const { createView, duplicateView, closeView, resetCreateView } = tabs;
@@ -289,6 +194,47 @@ export function AppSidebar({
 
   const rows = isReady ? entries : [];
 
+  /**
+   * One section's rows, in the server's order.
+   *
+   * Both sections read the same ranked list and differ only by `pinned`, so
+   * they are drawn by one function — two near-identical loops is where the
+   * sections drift apart.
+   *
+   * The kind test is the one that says what a tab section holds. A leftover
+   * `page` entry would also fall out of the lookup below, since its `view_id`
+   * is `""` and no view is keyed on that — but that is a property of the wire
+   * shape rather than a rule anyone stated, and it is not what should be
+   * keeping the app's own pages out of a list of views.
+   */
+  const viewRows = (pinned: boolean) =>
+    rows.map((entry) => {
+      if (entry.entry_kind !== "view" || entry.pinned !== pinned) return null;
+      const view = viewsById.get(entry.view_id);
+      if (!view) return null;
+      return (
+        <ViewRow
+          key={entry.id}
+          view={view}
+          active={activeViewId === view.id}
+          editing={editingViewId === view.id}
+          pinned={entry.pinned}
+          move={moveHandlers(entry)}
+          drag={dragHandlers(entry.id)}
+          onStartRename={() => setEditingViewId(view.id)}
+          onCancelRename={() => setEditingViewId("")}
+          onRename={(title) => {
+            setEditingViewId("");
+            if (title && title !== view.title) tabs.renameView(view.id, title);
+          }}
+          onDuplicate={() => duplicateView(view, onCreated)}
+          duplicateDisabled={tabs.isDuplicatingView}
+          onTogglePin={() => tabs.setEntryPinned(entry.id, !entry.pinned)}
+          onClose={() => setPendingDelete(view)}
+        />
+      );
+    });
+
   return (
     <>
       <nav
@@ -307,27 +253,31 @@ export function AppSidebar({
 
           <div className="app-sidebar-section">
             <div className="app-sidebar-section-head">
+              <span className="app-sidebar-section-title app-sidebar-reveal" id={toolsHeadingId}>
+                Tools
+              </span>
+            </div>
+            {/* Straight from the catalog: no query, no readiness gate, nothing
+                a failed read or an empty table could shorten. */}
+            <ul className="app-sidebar-list" aria-labelledby={toolsHeadingId}>
+              {SIDEBAR_PAGES.map((page) => (
+                <ToolRow
+                  key={page.key}
+                  page={page}
+                  active={activeViewId === null && page.ownsPage(activePage)}
+                />
+              ))}
+            </ul>
+          </div>
+
+          <div className="app-sidebar-section">
+            <div className="app-sidebar-section-head">
               <span className="app-sidebar-section-title app-sidebar-reveal" id={pinnedHeadingId}>
                 Pinned Tabs
               </span>
             </div>
             <ul className="app-sidebar-list" aria-labelledby={pinnedHeadingId}>
-              {rows.map((entry) => {
-                if (entry.entry_kind !== "page") return null;
-                // An unknown key keeps its rank and is not routed on blind.
-                const page = sidebarPageForKey(entry.page_key);
-                if (!page) return null;
-                return (
-                  <PageRow
-                    key={entry.id}
-                    page={page}
-                    active={activeViewId === null && page.ownsPage(activePage)}
-                    move={moveHandlers(entry)}
-                    drag={dragHandlers(entry.id)}
-                    onUnpin={() => tabs.unpinPageEntry(entry.id)}
-                  />
-                );
-              })}
+              {viewRows(true)}
             </ul>
           </div>
 
@@ -354,36 +304,11 @@ export function AppSidebar({
               )}
             </div>
             <ul className="app-sidebar-list" aria-labelledby={tabsHeadingId}>
-              {rows.map((entry) => {
-                if (entry.entry_kind !== "view") return null;
-                const view = viewsById.get(entry.view_id);
-                if (!view) return null;
-                return (
-                  <ViewRow
-                    key={entry.id}
-                    view={view}
-                    active={activeViewId === view.id}
-                    editing={editingViewId === view.id}
-                    move={moveHandlers(entry)}
-                    drag={dragHandlers(entry.id)}
-                    onStartRename={() => setEditingViewId(view.id)}
-                    onCancelRename={() => setEditingViewId("")}
-                    onRename={(title) => {
-                      setEditingViewId("");
-                      if (title && title !== view.title) tabs.renameView(view.id, title);
-                    }}
-                    onDuplicate={() => duplicateView(view, onCreated)}
-                    duplicateDisabled={tabs.isDuplicatingView}
-                    onClose={() => setPendingDelete(view)}
-                  />
-                );
-              })}
+              {viewRows(false)}
             </ul>
           </div>
 
           <div className="app-sidebar-spacer" />
-
-          <PinPageMenu pinnedKeys={pinnedKeys} expanded={expanded} onPin={tabs.pinPageKey} />
 
           <button type="button" className="app-sidebar-footer-btn" onClick={onOpenSettings}>
             <span className="app-sidebar-icon">

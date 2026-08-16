@@ -1,15 +1,21 @@
 /**
- * The hover-expanding sidebar that replaces the fixed icon rail (ticket 434).
+ * The hover-expanding sidebar: Tools, Pinned Tabs, Tabs (tickets 434 and 472).
  *
- * Written before the component exists, so every failure here is currently a
- * missing module. The contract these tests pin:
+ * 434's contract still holds and most of it is retested here as regression,
+ * because 472 rebuilds the section structure underneath it and the first thing
+ * that breaks is the behaviour nobody re-checked.
  *
- *   - `client/src/components/AppSidebar.tsx` exports `AppSidebar`, taking an
- *     already-resolved concrete workspace slug (`uiStore.workspace` defaults to
- *     `"all"`, which 404s against every view route, so the resolution stays in
- *     the caller — see decision 1 on the ticket).
- *   - `client/src/lib/viewsApi.ts` wraps the 433 REST surface, following the
- *     `lib/branchTriageApi.ts` / `lib/queueLanesApi.ts` convention.
+ * What 472 changes, and what these tests are mainly about:
+ *
+ *   - **Tools is derived, not stored.** The seven built-in pages come from
+ *     `appSidebarPages.tsx`. No read can come back short, no write is needed to
+ *     populate it, and no control removes an entry from it. The tests that
+ *     matter most therefore assert what happens when the *store* is empty,
+ *     unhelpful, or failing outright, and find all seven pages anyway.
+ *   - **Pinned Tabs holds pinned views.** Both tab sections are `entry_kind:
+ *     "view"`; `pinned` is what separates them, and they share one ranking.
+ *   - **Nothing seeds.** The `SeedState` latch, its attempt limit and its
+ *     resume path are gone with the thing they populated.
  *
  * Two limits worth stating plainly rather than dressing up:
  *
@@ -29,23 +35,24 @@
  *      asserted on the accessible name (which must resolve in both states) and
  *      the expanded state on `data-expanded`.
  *
- *      An accessible name alone is *not* enough to pin this ticket, though: a
- *      bare `title` attribute resolves one in dom-accessibility-api, so the
- *      tooltip-only rail this ticket replaces satisfies every name-based query
- *      unchanged. The names therefore also have to exist as text nodes in the
- *      row, in both states — present for assistive tech while collapsed,
- *      legible once CSS reveals them. That is the assertion a tooltip cannot
- *      pass, and `{expanded && <span>{name}</span>}` cannot either.
- *
- * NOTE for the implement stage: `AppLayoutChrome.test.tsx:10-11` `jest.mock`s
- * `../AppIconRail` by path. When `AppLayout` swaps in `AppSidebar`, that mock
- * stops intercepting and the real sidebar renders inside those tests against an
- * api mock that knows nothing about views. Add the `../AppSidebar` mock there in
- * the same change.
+ *      An accessible name alone is *not* enough, though: a bare `title`
+ *      attribute resolves one in dom-accessibility-api, so the tooltip-only
+ *      rail 434 replaced satisfies every name-based query unchanged. The names
+ *      therefore also have to exist as text nodes in the row, in both states.
+ *      That is the assertion a tooltip cannot pass, and
+ *      `{expanded && <span>{name}</span>}` cannot either.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
@@ -57,9 +64,8 @@ import {
   deleteView,
   fetchSidebarEntries,
   fetchViews,
-  pinPage,
   reorderSidebarEntries,
-  unpinEntry,
+  setEntryPinned,
   updateView,
   type SidebarEntry,
   type ViewSummary,
@@ -72,8 +78,7 @@ jest.mock("../../lib/viewsApi", () => ({
   createView: jest.fn(),
   fetchViews: jest.fn(),
   fetchSidebarEntries: jest.fn(),
-  pinPage: jest.fn(),
-  unpinEntry: jest.fn(),
+  setEntryPinned: jest.fn(),
   reorderSidebarEntries: jest.fn(),
   updateView: jest.fn(),
   deleteView: jest.fn(),
@@ -81,53 +86,75 @@ jest.mock("../../lib/viewsApi", () => ({
 
 const mockFetchViews = fetchViews as jest.MockedFunction<typeof fetchViews>;
 const mockFetchEntries = fetchSidebarEntries as jest.MockedFunction<typeof fetchSidebarEntries>;
-const mockPinPage = pinPage as jest.MockedFunction<typeof pinPage>;
-const mockUnpinEntry = unpinEntry as jest.MockedFunction<typeof unpinEntry>;
+const mockSetPinned = setEntryPinned as jest.MockedFunction<typeof setEntryPinned>;
 const mockReorder = reorderSidebarEntries as jest.MockedFunction<typeof reorderSidebarEntries>;
 const mockUpdateView = updateView as jest.MockedFunction<typeof updateView>;
 const mockDeleteView = deleteView as jest.MockedFunction<typeof deleteView>;
 
 const SLUG = "loregarden";
 
+/** The seven built-in pages, in the order the fixed rail drew them. */
+const TOOL_LABELS = [
+  "Home",
+  "Chat",
+  "Console",
+  "Studios",
+  "Parallel Execution",
+  "MCP Gateway",
+  "Branch Triage",
+];
+
+/**
+ * An entry left over from before Tools became static.
+ *
+ * Every workspace 434 seeded still holds seven of these, so they are in the
+ * fixture rather than out of it: the sidebar has to draw none of them, and none
+ * of them may be mistaken for an unpinned tab by the section split or by a
+ * move.
+ */
+function pageEntry(id: string, position: number, pageKey: string): SidebarEntry {
+  return { id, position, entry_kind: "page", page_key: pageKey, view_id: "", pinned: false };
+}
+
 /**
  * Positions are deliberately non-contiguous: the server ranks relatively, and a
  * delete overlapping an append leaves gaps. Anything deriving an index from a
  * count breaks on this fixture.
  */
-function pageEntry(id: string, position: number, pageKey: string): SidebarEntry {
-  return { id, position, entry_kind: "page", page_key: pageKey, view_id: "" };
-}
-
-function viewEntry(id: string, position: number, viewId: string): SidebarEntry {
-  return { id, position, entry_kind: "view", page_key: "", view_id: viewId };
+function viewEntry(
+  id: string,
+  position: number,
+  viewId: string,
+  pinned: boolean,
+): SidebarEntry {
+  return { id, position, entry_kind: "view", page_key: "", view_id: viewId, pinned };
 }
 
 const ENTRIES: SidebarEntry[] = [
   pageEntry("e-home", 10, "home"),
-  pageEntry("e-queue", 30, "queue"),
-  viewEntry("e-grid", 45, "v-grid"),
-  viewEntry("e-canvas", 90, "v-canvas"),
+  viewEntry("e-grid", 30, "v-grid", true),
+  viewEntry("e-notes", 45, "v-notes", true),
+  viewEntry("e-canvas", 60, "v-canvas", false),
+  viewEntry("e-scratch", 90, "v-scratch", false),
 ];
 
+function view(id: string, title: string, kind: "flex_grid" | "canvas"): ViewSummary {
+  return {
+    id,
+    kind,
+    title,
+    icon: "",
+    layout: kind === "flex_grid" ? { kind, root: null } : { kind, containers: [] },
+    created_at: "2026-08-01T00:00:00",
+    updated_at: "2026-08-01T00:00:00",
+  };
+}
+
 const VIEWS: ViewSummary[] = [
-  {
-    id: "v-grid",
-    kind: "flex_grid",
-    title: "Build Board",
-    icon: "",
-    layout: { kind: "flex_grid", root: null },
-    created_at: "2026-08-01T00:00:00",
-    updated_at: "2026-08-01T00:00:00",
-  },
-  {
-    id: "v-canvas",
-    kind: "canvas",
-    title: "Sketch Surface",
-    icon: "",
-    layout: { kind: "canvas", containers: [] },
-    created_at: "2026-08-01T00:00:00",
-    updated_at: "2026-08-01T00:00:00",
-  },
+  view("v-grid", "Build Board", "flex_grid"),
+  view("v-notes", "Release Notes", "flex_grid"),
+  view("v-canvas", "Sketch Surface", "canvas"),
+  view("v-scratch", "Scratch Pad", "canvas"),
 ];
 
 /**
@@ -153,11 +180,13 @@ function renderSidebar(path = "/", client?: QueryClient) {
   return { ...utils, onOpenSettings };
 }
 
-/** The sidebar, once its first entry has arrived. */
+/** The sidebar, once its first *stored* entry has arrived. */
 async function renderLoadedSidebar(path = "/", client?: QueryClient) {
   const utils = renderSidebar(path, client);
   const nav = await screen.findByRole("navigation", { name: "Main navigation" });
-  await screen.findByRole("link", { name: "Home" });
+  // A Tools link is there before any read lands, so it cannot be the signal;
+  // wait on a row that only the store can produce.
+  await screen.findByRole("link", { name: "Build Board" });
   return { ...utils, nav };
 }
 
@@ -190,16 +219,26 @@ async function settle() {
   });
 }
 
+/** The app's client, minus react-query's ~1s retry backoff. */
+function appClient(): QueryClient {
+  const qc = createQueryClient();
+  const defaults = qc.getDefaultOptions();
+  qc.setDefaultOptions({
+    ...defaults,
+    queries: { ...defaults.queries, retry: false },
+    mutations: { ...defaults.mutations, retry: false, retryDelay: 0 },
+  });
+  return qc;
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   useToastStore.getState().clear();
   mockFetchEntries.mockResolvedValue(ENTRIES);
   mockFetchViews.mockResolvedValue(VIEWS);
-  mockPinPage.mockImplementation(async (_slug: string, pageKey: string) =>
-    pageEntry(`e-${pageKey}`, 100, pageKey),
-  );
-  mockUnpinEntry.mockImplementation(async (_slug: string, entryId: string) => ({
-    deleted: entryId,
+  mockSetPinned.mockImplementation(async (_slug: string, entryId: string, pinned: boolean) => ({
+    ...(ENTRIES.find((entry) => entry.id === entryId) ?? ENTRIES[1]),
+    pinned,
   }));
   mockReorder.mockResolvedValue(ENTRIES);
   mockUpdateView.mockImplementation(async (_slug: string, viewId: string) => ({
@@ -211,7 +250,8 @@ beforeEach(() => {
   }));
 });
 
-// AC1 — hover expands, leaving the screen area's width and layout unchanged.
+// 434 AC1 (regression) — hover expands, leaving the screen area's width and
+// layout unchanged.
 
 test("hovering expands the sidebar and leaving collapses it back", async () => {
   const user = userEvent.setup();
@@ -227,11 +267,11 @@ test("hovering expands the sidebar and leaving collapses it back", async () => {
 });
 
 test("expanding changes nothing about the rail's own layout box", async () => {
-  // The invariant behind "must not reflow the screen area": the element
-  // `AppLayout` lays out beside `.app-main` is sized by CSS from a class list
-  // that expansion does not touch, and expansion sets no inline width. jsdom
-  // cannot measure the result — see the file header — so this asserts the
-  // structural cause rather than the pixel effect.
+  // 472 AC8. The invariant behind "must not reflow the screen area": the
+  // element `AppLayout` lays out beside `.app-main` is sized by CSS from a
+  // class list that expansion does not touch, and expansion sets no inline
+  // width. jsdom cannot measure the result — see the file header — so this
+  // asserts the structural cause rather than the pixel effect.
   const user = userEvent.setup();
   const { nav } = await renderLoadedSidebar();
 
@@ -247,8 +287,9 @@ test("expanding changes nothing about the rail's own layout box", async () => {
 });
 
 test("the names revealed by expansion stay inside the rail's own subtree", async () => {
-  // Nothing is portaled next to the screen area, so no expanded content can
-  // ever occupy a box that pushes it.
+  // 472 AC8. Nothing is portaled next to the screen area, so no expanded
+  // content can ever occupy a box that pushes it. A third section does not
+  // change that, and this is where it would show if it did.
   const user = userEvent.setup();
   const { nav } = await renderLoadedSidebar();
 
@@ -264,12 +305,13 @@ test("the names revealed by expansion stay inside the rail's own subtree", async
   // exactly where an expanded panel would sit beside the screen area rather
   // than over the rail.
   expect(document.body.childElementCount).toBe(bodyChildrenBefore);
-  expect(screen.getByText("Pinned Tabs")).toBeInTheDocument();
-  expect(nav).toContainElement(screen.getByText("Pinned Tabs"));
-  expect(nav).toContainElement(screen.getByText("Tabs"));
+  for (const heading of ["Tools", "Pinned Tabs", "Tabs"]) {
+    expect(nav).toContainElement(screen.getByText(heading, { exact: true }));
+  }
 });
 
-// AC2 — keyboard focus expands the same way, and every entry is reachable.
+// 434 AC2 (regression) — keyboard focus expands the same way, and every entry
+// is reachable.
 
 test("keyboard focus into the sidebar expands it, and blurring away collapses it", async () => {
   const user = userEvent.setup();
@@ -291,17 +333,17 @@ test("every entry is reachable by tabbing, without a pointer", async () => {
 
   const expected = [
     screen.getByRole("link", { name: "Home" }),
-    screen.getByRole("link", { name: "Parallel Execution" }),
+    screen.getByRole("link", { name: "Branch Triage" }),
     screen.getByRole("link", { name: "Build Board" }),
     screen.getByRole("link", { name: "Sketch Surface" }),
     screen.getByRole("button", { name: "Settings" }),
   ];
 
   // The budget is a tab count, not a "have we collected N distinct elements"
-  // count: every row also carries its own controls, so stopping once the set
-  // reaches `expected.length` stops inside the first row.
+  // count: every view row also carries its own controls, so stopping once the
+  // set reaches `expected.length` stops inside the first row.
   const reached = new Set<Element>();
-  for (let i = 0; i < 60; i += 1) {
+  for (let i = 0; i < 80; i += 1) {
     await user.tab();
     const active = document.activeElement;
     if (!active || active === document.body) break;
@@ -316,29 +358,42 @@ test("every entry is reachable by tabbing, without a pointer", async () => {
   expect(nav).toHaveAttribute("data-expanded", "true");
 });
 
-test("a row costs one tab stop, and its controls are reached with the arrow keys", async () => {
-  // Every row carries move, unpin/rename and delete buttons. Leaving all of them
-  // in the tab sequence costs five stops per entry where the rail this replaces
-  // cost one, which is a regression in the thing this ticket is about.
+test("a view row costs one tab stop, and its controls are reached with the arrow keys", async () => {
+  // 472 AC8. Every view row carries move, pin, rename, duplicate and delete
+  // buttons. Leaving all of them in the tab sequence costs six stops per entry
+  // where the rail this replaces cost one.
+  const user = userEvent.setup();
+  await renderLoadedSidebar();
+
+  const board = screen.getByRole("link", { name: "Build Board" });
+  board.focus();
+  await user.tab();
+  expect(document.activeElement).toBe(screen.getByRole("link", { name: "Release Notes" }));
+
+  board.focus();
+  await user.keyboard("{ArrowRight}");
+  expect(document.activeElement).toBe(
+    within(entryRow("Build Board")).getByRole("button", { name: /move .*down/i }),
+  );
+  await user.keyboard("{ArrowLeft}");
+  expect(document.activeElement).toBe(board);
+});
+
+test("a Tools row is one tab stop and carries no controls at all", async () => {
+  // 472 AC3: there is no affordance to remove or reorder a built-in page. A row
+  // that kept its unpin or move buttons would still be a way to lose one.
   const user = userEvent.setup();
   await renderLoadedSidebar();
 
   const home = screen.getByRole("link", { name: "Home" });
-  await user.tab();
-  expect(document.activeElement).toBe(home);
-  await user.tab();
-  expect(document.activeElement).toBe(screen.getByRole("link", { name: "Parallel Execution" }));
+  expect(within(entryRow("Home")).queryAllByRole("button")).toHaveLength(0);
 
   home.focus();
-  await user.keyboard("{ArrowRight}");
-  expect(document.activeElement).toBe(
-    within(entryRow("Home")).getByRole("button", { name: /move .*down/i }),
-  );
-  await user.keyboard("{ArrowLeft}");
-  expect(document.activeElement).toBe(home);
+  await user.tab();
+  expect(document.activeElement).toBe(screen.getByRole("link", { name: "Chat" }));
 });
 
-// AC3 — names exposed to assistive technology in both states.
+// 434 AC3 (regression) — names exposed to assistive technology in both states.
 
 test("entry names resolve as accessible names while collapsed", async () => {
   const { nav } = await renderLoadedSidebar();
@@ -364,11 +419,11 @@ test("the same names are still exposed once expanded", async () => {
 });
 
 test("entry names are text in the row, not a tooltip, in both states", async () => {
-  // The rail this replaces already passes every name-based query above: a bare
-  // `title` resolves an accessible name. What it cannot do is put the name in
-  // the row as text for expansion to reveal — so that is asserted directly, and
-  // in the collapsed state too, since conditional rendering would drop the name
-  // out of the accessibility tree the moment the pointer leaves.
+  // 472 AC8. The rail 434 replaced already passes every name-based query above:
+  // a bare `title` resolves an accessible name. What it cannot do is put the
+  // name in the row as text for expansion to reveal — so that is asserted
+  // directly, and in the collapsed state too, since conditional rendering would
+  // drop the name out of the accessibility tree the moment the pointer leaves.
   const user = userEvent.setup();
   const { nav } = await renderLoadedSidebar();
   const names = ["Home", "Parallel Execution", "Build Board", "Sketch Surface"];
@@ -387,282 +442,106 @@ test("entry names are text in the row, not a tooltip, in both states", async () 
   expect(within(nav).getByText("Settings")).toBeInTheDocument();
 });
 
-// AC4 — two labelled sections, sourced from the API.
+// 472 AC1 — three labelled sections in order: Tools, Pinned Tabs, Tabs.
 
-test("renders Pinned Tabs and Tabs as distinct labelled lists", async () => {
+test("renders Tools, Pinned Tabs and Tabs as distinct labelled lists", async () => {
   await renderLoadedSidebar();
 
-  const pinned = await screen.findByRole("list", { name: "Pinned Tabs" });
+  const tools = await screen.findByRole("list", { name: "Tools" });
+  const pinned = screen.getByRole("list", { name: "Pinned Tabs" });
   const tabs = screen.getByRole("list", { name: "Tabs" });
 
-  expect(within(pinned).getByRole("link", { name: "Home" })).toBeInTheDocument();
-  expect(within(pinned).getByRole("link", { name: "Parallel Execution" })).toBeInTheDocument();
-  expect(within(tabs).getByRole("link", { name: "Build Board" })).toBeInTheDocument();
+  expect(within(tools).getByRole("link", { name: "Home" })).toBeInTheDocument();
+  expect(within(pinned).getByRole("link", { name: "Build Board" })).toBeInTheDocument();
+  expect(within(pinned).getByRole("link", { name: "Release Notes" })).toBeInTheDocument();
   expect(within(tabs).getByRole("link", { name: "Sketch Surface" })).toBeInTheDocument();
+  expect(within(tabs).getByRole("link", { name: "Scratch Pad" })).toBeInTheDocument();
 });
 
-test("the sections show what the API returned, not the old hardcoded set", async () => {
+test("the three sections appear top to bottom in that order", async () => {
+  // Document order, which is the structural cause: jsdom has no layout engine,
+  // so nothing here can measure that Tools is drawn above the two tab sections.
+  // The rail is a plain column — no `order:` and no `column-reverse` in
+  // `AppSidebar.css` — so DOM order is what decides what the user sees.
   await renderLoadedSidebar();
 
-  expect(mockFetchEntries).toHaveBeenCalledWith(SLUG);
-  // Two pages are pinned in the fixture; the other five built-ins are not, and
-  // a component still rendering its own array would show them anyway.
-  for (const absent of ["Chat", "Console", "Studios", "MCP Gateway", "Branch Triage"]) {
-    expect(screen.queryByRole("link", { name: absent })).not.toBeInTheDocument();
-  }
-});
-
-test("entries render in the server's order, not sorted by title or id", async () => {
-  // The server returns them ranked; positions are relative and non-contiguous,
-  // so any client-side re-sort is a bug that this fixture — reverse-alphabetical
-  // within each section, and reverse-position too — makes visible.
-  mockFetchEntries.mockResolvedValue([
-    pageEntry("e-queue", 30, "queue"),
-    pageEntry("e-home", 45, "home"),
-    viewEntry("e-canvas", 60, "v-canvas"),
-    viewEntry("e-grid", 90, "v-grid"),
-  ]);
-  await renderLoadedSidebar();
-
-  expect(inRenderedOrder(["Home", "Parallel Execution"])).toEqual([
-    "Parallel Execution",
+  expect(inRenderedOrder(["Build Board", "Home", "Sketch Surface"])).toEqual([
     "Home",
-  ]);
-  expect(inRenderedOrder(["Build Board", "Sketch Surface"])).toEqual([
-    "Sketch Surface",
     "Build Board",
+    "Sketch Surface",
   ]);
 });
 
-test("an unresolved workspace slug issues no request", async () => {
-  // `uiStore.workspace` is `"all"` until resolved, and every view route 404s on
-  // it. The caller resolves; the sidebar must not guess.
-  render(
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
-      <MemoryRouter initialEntries={["/"]}>
-        <AppSidebar workspaceSlug="" onOpenSettings={jest.fn()} />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+// 472 AC2 and AC5 — Tools comes from the static catalog, so it is complete on a
+// workspace with no stored entries and cannot drift from the app's routes.
 
-  await waitFor(() => expect(screen.getByRole("navigation")).toBeInTheDocument());
-  expect(mockFetchEntries).not.toHaveBeenCalled();
-  expect(mockFetchViews).not.toHaveBeenCalled();
-});
-
-// AC5 — pin, unpin and reorder persist through the API.
-
-test("pinning a built-in page posts that page key", async () => {
-  const user = userEvent.setup();
-  const { nav } = await renderLoadedSidebar();
-
-  await user.hover(nav);
-  await user.click(await screen.findByRole("button", { name: /pin a page/i }));
-  await user.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Chat" }));
-
-  await waitFor(() => expect(mockPinPage).toHaveBeenCalledWith(SLUG, "chat"));
-});
-
-test("Escape and a click outside dismiss the pin menu", async () => {
-  // It declares `role="menu"`, which promises a way out that is not its own
-  // trigger.
-  const user = userEvent.setup();
-  const { nav } = await renderLoadedSidebar();
-  const openMenu = async () => {
-    await user.click(await screen.findByRole("button", { name: /pin a page/i }));
-    return screen.getByRole("menu");
-  };
-
-  await user.hover(nav);
-  await openMenu();
-  await user.keyboard("{Escape}");
-  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-
-  await openMenu();
-  await user.click(document.body);
-  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-});
-
-test("a sidebar told not to seed writes nothing into the workspace it is reading", async () => {
-  // The chrome falls back to a workspace when the user has chosen none. Reading
-  // one is harmless; pinning seven pages into it is not.
+test("all seven built-in pages are in Tools when the store is empty", async () => {
   mockFetchEntries.mockResolvedValue([]);
   mockFetchViews.mockResolvedValue([]);
-  render(
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
-      <MemoryRouter initialEntries={["/"]}>
-        <AppSidebar workspaceSlug={SLUG} seedDefaults={false} onOpenSettings={jest.fn()} />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+  renderSidebar();
 
+  const tools = await screen.findByRole("list", { name: "Tools" });
+  for (const label of TOOL_LABELS) {
+    expect(within(tools).getByRole("link", { name: label })).toBeInTheDocument();
+  }
+  expect(tools.querySelectorAll("li")).toHaveLength(TOOL_LABELS.length);
+});
+
+test("Tools does not come from sidebar_entries", async () => {
+  // The fixture stores exactly one page entry, `home`. A Tools section read
+  // from the store would draw one row; a derived one draws seven regardless.
+  await renderLoadedSidebar();
+
+  const tools = screen.getByRole("list", { name: "Tools" });
+  expect(tools.querySelectorAll("li")).toHaveLength(TOOL_LABELS.length);
+});
+
+test("a leftover page entry is drawn in no section", async () => {
+  // 434 seeded seven of these into every workspace and this ticket does not
+  // migrate them away. A section split that treated a `page` entry as an
+  // unpinned tab would draw a row for it here.
+  await renderLoadedSidebar();
+
+  expect(screen.getByRole("list", { name: "Pinned Tabs" }).querySelectorAll("li")).toHaveLength(2);
+  expect(screen.getByRole("list", { name: "Tabs" }).querySelectorAll("li")).toHaveLength(2);
+});
+
+// 472 AC3 — no built-in page can be unpinned, removed or reordered out of Tools.
+
+test("no Tools row offers a way to remove or move it", async () => {
+  const user = userEvent.setup();
+  const { nav } = await renderLoadedSidebar();
+  await user.hover(nav);
+
+  const tools = screen.getByRole("list", { name: "Tools" });
+  // Both halves matter: that the section really drew its seven rows, and that
+  // none of them carries a control. "No buttons" alone would also pass on a
+  // section that rendered nothing.
+  expect(tools.querySelectorAll("li")).toHaveLength(TOOL_LABELS.length);
+  expect(within(tools).queryAllByRole("button")).toHaveLength(0);
+});
+
+test("no request is issued that could remove a built-in page", async () => {
+  // AC5's other half: Tools needs no seeding, and nothing writes it either.
+  mockFetchEntries.mockResolvedValue([]);
+  mockFetchViews.mockResolvedValue([]);
+  renderSidebar();
+
+  await screen.findByRole("list", { name: "Tools" });
   await waitFor(() => expect(mockFetchEntries).toHaveBeenCalledWith(SLUG));
   await settle();
-  expect(mockPinPage).not.toHaveBeenCalled();
+  expect(mockSetPinned).not.toHaveBeenCalled();
+  expect(mockReorder).not.toHaveBeenCalled();
 });
 
-test("only unpinned pages are offered for pinning", async () => {
-  const user = userEvent.setup();
-  const { nav } = await renderLoadedSidebar();
+// 472 AC6 — the client-side seven-pin seed is removed, with its latch, its
+// attempt limit and its resume path.
 
-  await user.hover(nav);
-  await user.click(await screen.findByRole("button", { name: /pin a page/i }));
-
-  const menu = screen.getByRole("menu");
-  expect(within(menu).getByRole("menuitem", { name: "Chat" })).toBeInTheDocument();
-  expect(within(menu).queryByRole("menuitem", { name: "Home" })).not.toBeInTheDocument();
-  expect(
-    within(menu).queryByRole("menuitem", { name: "Parallel Execution" }),
-  ).not.toBeInTheDocument();
-});
-
-test("unpinning a page deletes that entry and re-reads the order", async () => {
-  const user = userEvent.setup();
-  const { nav } = await renderLoadedSidebar();
-
-  await user.hover(nav);
-  const before = mockFetchEntries.mock.calls.length;
-  await user.click(within(entryRow("Home")).getByRole("button", { name: /unpin/i }));
-
-  await waitFor(() => expect(mockUnpinEntry).toHaveBeenCalledWith(SLUG, "e-home"));
-  // Positions are relative and the server closes the gap itself, so the client
-  // re-reads rather than mutating its own copy.
-  await waitFor(() => expect(mockFetchEntries.mock.calls.length).toBeGreaterThan(before));
-});
-
-test("reordering sends the complete permutation across both sections", async () => {
-  const user = userEvent.setup();
-  const { nav } = await renderLoadedSidebar();
-
-  await user.hover(nav);
-  await user.click(within(entryRow("Home")).getByRole("button", { name: /move .*down/i }));
-
-  await waitFor(() => expect(mockReorder).toHaveBeenCalled());
-  // A partial list, a repeat, or a missing id is a 400 with no partial write —
-  // views and pinned pages share one ranking, so both sections go in every time.
-  expect(mockReorder).toHaveBeenCalledWith(SLUG, ["e-queue", "e-home", "e-grid", "e-canvas"]);
-});
-
-test("a move swaps the neighbour in its own section, and still sends every id", async () => {
-  // The ranking interleaves the sections, so the entry above `Parallel
-  // Execution` in the full list is a *view*. Swapping with that one sends a real
-  // PATCH whose only visible effect is in the other section: the pinned list the
-  // user was looking at comes back byte-identical. The move has to swap with the
-  // neighbour the user can see — the previous entry of the same kind — while the
-  // body still names every entry, because the two sections share one ranking.
-  mockFetchEntries.mockResolvedValue([
-    pageEntry("e-home", 10, "home"),
-    viewEntry("e-grid", 20, "v-grid"),
-    pageEntry("e-queue", 30, "queue"),
-    viewEntry("e-canvas", 40, "v-canvas"),
-  ]);
-  const user = userEvent.setup();
-  const { nav } = await renderLoadedSidebar();
-
-  await user.hover(nav);
-  await user.click(
-    within(entryRow("Parallel Execution")).getByRole("button", { name: /move .*up/i }),
-  );
-
-  await waitFor(() => expect(mockReorder).toHaveBeenCalled());
-  const [, entryIds] = mockReorder.mock.calls[0];
-  expect([...entryIds].sort()).toEqual(["e-canvas", "e-grid", "e-home", "e-queue"]);
-  expect(entryIds).toEqual(["e-queue", "e-grid", "e-home", "e-canvas"]);
-});
-
-test("the first entry of a section cannot be moved up past the other section", async () => {
-  // `Build Board` is third in the full ranking and first in its section: a
-  // move-up derived from the global index would be offered, and would swap it
-  // with a pinned page.
-  mockFetchEntries.mockResolvedValue([
-    pageEntry("e-home", 10, "home"),
-    pageEntry("e-queue", 20, "queue"),
-    viewEntry("e-grid", 30, "v-grid"),
-    viewEntry("e-canvas", 40, "v-canvas"),
-  ]);
-  const user = userEvent.setup();
-  const { nav } = await renderLoadedSidebar();
-  await user.hover(nav);
-
-  expect(within(entryRow("Build Board")).getByRole("button", { name: /move .*up/i })).toBeDisabled();
-  expect(
-    within(entryRow("Parallel Execution")).getByRole("button", { name: /move .*down/i }),
-  ).toBeDisabled();
-  expect(
-    within(entryRow("Build Board")).getByRole("button", { name: /move .*down/i }),
-  ).toBeEnabled();
-});
-
-test("a reorder re-reads the server's ranking rather than trusting its own", async () => {
-  const user = userEvent.setup();
-  const { nav } = await renderLoadedSidebar();
-
-  await user.hover(nav);
-  const before = mockFetchEntries.mock.calls.length;
-  await user.click(within(entryRow("Home")).getByRole("button", { name: /move .*down/i }));
-
-  await waitFor(() => expect(mockFetchEntries.mock.calls.length).toBeGreaterThan(before));
-});
-
-// AC6 — an empty workspace seeds the previous hardcoded set, in its old order.
-
-const SEED_ORDER = ["home", "chat", "dashboard", "studio", "queue", "mcp", "branch-triage"];
-
-test("a workspace with no entries seeds the seven default pins in the old order", async () => {
-  mockFetchEntries.mockResolvedValue([]);
-  mockFetchViews.mockResolvedValue([]);
-  renderSidebar();
-
-  await waitFor(() => expect(mockPinPage).toHaveBeenCalledTimes(SEED_ORDER.length));
-  expect(mockPinPage.mock.calls.map((call) => call[1])).toEqual(SEED_ORDER);
-});
-
-test("the seed pins one at a time, because position is assigned when the pin lands", async () => {
-  // Firing all seven concurrently ranks them in completion order, which is not
-  // the order asked for. Pinning is idempotent and race-safe, so issuing them
-  // blind is fine — issuing them in parallel is not.
-  mockFetchEntries.mockResolvedValue([]);
-  mockFetchViews.mockResolvedValue([]);
-
-  let releaseFirst: (() => void) | undefined;
-  const firstLanded = new Promise<void>((resolve) => {
-    releaseFirst = resolve;
-  });
-  mockPinPage.mockImplementationOnce(async (_slug: string, pageKey: string) => {
-    await firstLanded;
-    return pageEntry(`e-${pageKey}`, 10, pageKey);
-  });
-
-  renderSidebar();
-
-  await waitFor(() => expect(mockPinPage).toHaveBeenCalledTimes(1));
-  await Promise.resolve();
-  expect(mockPinPage).toHaveBeenCalledTimes(1);
-
-  releaseFirst?.();
-  await waitFor(() => expect(mockPinPage).toHaveBeenCalledTimes(SEED_ORDER.length));
-  expect(mockPinPage.mock.calls.map((call) => call[1])).toEqual(SEED_ORDER);
-});
-
-test("the seed runs once, even though it refetches an empty list on the way", async () => {
-  // The seed's own refetch is the trap: pinning changes the entry list, and an
-  // effect keyed on "the list is empty" that has not recorded having run can
-  // fire again on the next render pass and pin all seven a second time.
-  //
-  // Two fixture details are what make that trap reachable at all, and without
-  // both this test passes with the once-per-workspace guard deleted:
-  //
-  //   - a *fresh* `[]` per call. `mockResolvedValue([])` hands back one array
-  //     object every time, so there is nothing for a refetch to change.
-  //   - `structuralSharing: false`. Given equal bodies react-query keeps the
-  //     previous `data` object, which pins `entries` to one identity for the
-  //     lifetime of the query — an effect keyed on the list then cannot re-run
-  //     no matter how many times the empty refetch lands, and the seeding
-  //     effect's own guard is never asked to do anything.
+test("an empty workspace is left empty, however many times its list is re-read", async () => {
+  // The seed's tell was a burst of writes against a workspace whose first read
+  // came back empty. A fresh `[]` per call and `structuralSharing: false` are
+  // what made the old seeding effect re-fire; keeping them here means a
+  // reintroduced seed cannot hide behind a stable `data` identity.
   mockFetchEntries.mockImplementation(async () => []);
   mockFetchViews.mockImplementation(async () => []);
   renderSidebar(
@@ -675,71 +554,315 @@ test("the seed runs once, even though it refetches an empty list on the way", as
     }),
   );
 
-  // Guard the guard: if the refetch stopped happening, an unguarded effect would
-  // have nothing to re-fire on and this test would go quiet again.
-  await waitFor(() => expect(mockFetchEntries.mock.calls.length).toBeGreaterThan(1));
-
-  await waitFor(() => expect(mockPinPage).toHaveBeenCalledTimes(SEED_ORDER.length));
+  await screen.findByRole("list", { name: "Tools" });
   await settle();
-  expect(mockPinPage).toHaveBeenCalledTimes(SEED_ORDER.length);
+  expect(mockSetPinned).not.toHaveBeenCalled();
+  expect(mockReorder).not.toHaveBeenCalled();
+  expect(screen.getByRole("list", { name: "Pinned Tabs" }).querySelectorAll("li")).toHaveLength(0);
+  expect(screen.getByRole("list", { name: "Tabs" }).querySelectorAll("li")).toHaveLength(0);
 });
 
-test("unpinning the last entry does not re-seed the defaults", async () => {
-  // "The list is empty" cannot tell "never set up" from "the user just emptied
-  // it", so a guard that re-reads emptiness answers the unpin of the last entry
-  // by pinning seven pages back — and does it again on every load of a sidebar
-  // somebody deliberately cleared. Only the first read of a workspace can decide
-  // this, and that decision has to be latched.
-  mockFetchEntries.mockResolvedValueOnce([pageEntry("e-home", 10, "home")]);
-  mockFetchEntries.mockResolvedValue([]);
-  mockFetchViews.mockResolvedValue([]);
+test("an entries request that fails leaves Tools intact and writes nothing", async () => {
+  // The seed's resume path existed to finish a run that a failure cut short.
+  // With nothing to seed there is nothing to resume, and a failed read must not
+  // provoke a write of any kind.
+  mockFetchEntries.mockRejectedValue(new ApiError(503, "sidebar unavailable"));
+  renderSidebar("/", appClient());
 
+  const tools = await screen.findByRole("list", { name: "Tools" });
+  await settle();
+  expect(tools.querySelectorAll("li")).toHaveLength(TOOL_LABELS.length);
+  expect(mockSetPinned).not.toHaveBeenCalled();
+});
+
+test("an unresolved workspace slug issues no request, and still draws Tools", async () => {
+  // `uiStore.workspace` is `"all"` until resolved, and every view route 404s on
+  // it. The caller resolves; the sidebar must not guess — but the app's own
+  // pages do not depend on a workspace at all, so they are drawn anyway.
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <MemoryRouter initialEntries={["/"]}>
+        <AppSidebar workspaceSlug="" onOpenSettings={jest.fn()} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  const tools = await screen.findByRole("list", { name: "Tools" });
+  expect(tools.querySelectorAll("li")).toHaveLength(TOOL_LABELS.length);
+  expect(mockFetchEntries).not.toHaveBeenCalled();
+  expect(mockFetchViews).not.toHaveBeenCalled();
+});
+
+// 472 AC7 — Pinned Tabs holds pinned views, and a view moves between it and Tabs.
+
+test("unpinning a view sends the write that moves it to Tabs", async () => {
   const user = userEvent.setup();
   const { nav } = await renderLoadedSidebar();
 
   await user.hover(nav);
-  await user.click(within(entryRow("Home")).getByRole("button", { name: /unpin/i }));
+  await user.click(within(entryRow("Build Board")).getByRole("button", { name: /^unpin/i }));
 
-  await waitFor(() => expect(mockUnpinEntry).toHaveBeenCalledWith(SLUG, "e-home"));
-  await waitFor(() => expect(screen.queryByRole("link", { name: "Home" })).not.toBeInTheDocument());
-  await settle();
-  expect(mockPinPage).not.toHaveBeenCalled();
+  await waitFor(() => expect(mockSetPinned).toHaveBeenCalledWith(SLUG, "e-grid", false));
 });
 
-test("a seed that a rejected pin cut short resumes rather than stalling half-done", async () => {
-  // The `for … await` loop stops at the first rejection, and the pins that did
-  // land make the list non-empty — so a guard that only asks "is it empty" can
-  // never finish the job, and the workspace is stuck with three of seven pins.
-  // `pinPage` is idempotent, so a resume can simply re-walk the list.
-  const landed: string[] = [];
-  let rejectedOnce = false;
-  mockFetchEntries.mockImplementation(async () =>
-    landed.map((pageKey, index) => pageEntry(`e-${pageKey}`, (index + 1) * 10, pageKey)),
-  );
-  mockFetchViews.mockImplementation(async () => []);
-  mockPinPage.mockImplementation(async (_slug: string, pageKey: string) => {
-    if (pageKey === "dashboard" && !rejectedOnce) {
-      rejectedOnce = true;
-      throw new ApiError(503, "pin rejected");
-    }
-    if (!landed.includes(pageKey)) landed.push(pageKey);
-    return pageEntry(`e-${pageKey}`, 10, pageKey);
+test("pinning a view sends the write that moves it to Pinned Tabs", async () => {
+  const user = userEvent.setup();
+  const { nav } = await renderLoadedSidebar();
+
+  await user.hover(nav);
+  await user.click(within(entryRow("Sketch Surface")).getByRole("button", { name: /^pin/i }));
+
+  await waitFor(() => expect(mockSetPinned).toHaveBeenCalledWith(SLUG, "e-canvas", true));
+});
+
+test("the control's label says which way it moves the tab", async () => {
+  // One toggle for both directions, so the label is the only thing telling a
+  // screen-reader user which section the row is currently in.
+  const user = userEvent.setup();
+  const { nav } = await renderLoadedSidebar();
+  await user.hover(nav);
+
+  expect(
+    within(entryRow("Build Board")).getByRole("button", { name: "Unpin Build Board" }),
+  ).toBeInTheDocument();
+  expect(
+    within(entryRow("Sketch Surface")).getByRole("button", { name: "Pin Sketch Surface" }),
+  ).toBeInTheDocument();
+});
+
+test("a pinned view moves section before the server answers", async () => {
+  // The tab visibly jumps sections, so the move is optimistic; a round trip of
+  // nothing happening reads as the control being broken.
+  let release: (() => void) | undefined;
+  const landed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  mockSetPinned.mockImplementation(async (_slug, entryId, pinned) => {
+    await landed;
+    return { ...(ENTRIES.find((entry) => entry.id === entryId) ?? ENTRIES[1]), pinned };
   });
 
-  renderSidebar("/", appClient());
+  const user = userEvent.setup();
+  const { nav } = await renderLoadedSidebar();
+  await user.hover(nav);
+  await user.click(within(entryRow("Sketch Surface")).getByRole("button", { name: /^pin/i }));
 
-  await waitFor(() => expect(rejectedOnce).toBe(true));
-  await waitFor(() => expect(landed).toEqual(SEED_ORDER));
+  await waitFor(() =>
+    expect(
+      within(screen.getByRole("list", { name: "Pinned Tabs" })).getByRole("link", {
+        name: "Sketch Surface",
+      }),
+    ).toBeInTheDocument(),
+  );
+  release?.();
 });
 
-test("a workspace that already has entries is not re-seeded", async () => {
-  await renderLoadedSidebar();
-  await waitFor(() => expect(mockFetchEntries).toHaveBeenCalled());
+test("a refused pin puts the tab back and reports the failure", async () => {
+  // The server still has it in Tabs; leaving it in Pinned Tabs would report a
+  // move that did not happen.
+  mockSetPinned.mockRejectedValue(new ApiError(400, "Only a view's tab can be pinned"));
+  const user = userEvent.setup();
+  const { nav } = await renderLoadedSidebar("/", appClient());
+
+  await user.hover(nav);
+  await user.click(within(entryRow("Sketch Surface")).getByRole("button", { name: /^pin/i }));
+
+  await waitFor(() => expect(mockSetPinned).toHaveBeenCalled());
   await settle();
-  expect(mockPinPage).not.toHaveBeenCalled();
+  expect(
+    within(screen.getByRole("list", { name: "Tabs" })).getByRole("link", {
+      name: "Sketch Surface",
+    }),
+  ).toBeInTheDocument();
+  expect(useToastStore.getState().toasts).toHaveLength(1);
 });
 
-// AC7 — view entries carry their kind, and offer rename and delete.
+test("a pin re-reads the server's ranking rather than trusting its own", async () => {
+  const user = userEvent.setup();
+  const { nav } = await renderLoadedSidebar();
+
+  await user.hover(nav);
+  const before = mockFetchEntries.mock.calls.length;
+  await user.click(within(entryRow("Sketch Surface")).getByRole("button", { name: /^pin/i }));
+
+  await waitFor(() => expect(mockFetchEntries.mock.calls.length).toBeGreaterThan(before));
+});
+
+// 434 AC5 (regression) — reordering persists as a whole permutation.
+
+test("entries render in the server's order, not sorted by title or id", async () => {
+  // The server returns them ranked; positions are relative and non-contiguous,
+  // so any client-side re-sort is a bug that this fixture — reverse-position
+  // within each section — makes visible.
+  mockFetchEntries.mockResolvedValue([
+    viewEntry("e-notes", 30, "v-notes", true),
+    viewEntry("e-grid", 45, "v-grid", true),
+    viewEntry("e-scratch", 60, "v-scratch", false),
+    viewEntry("e-canvas", 90, "v-canvas", false),
+  ]);
+  await renderLoadedSidebar();
+
+  expect(inRenderedOrder(["Build Board", "Release Notes"])).toEqual([
+    "Release Notes",
+    "Build Board",
+  ]);
+  expect(inRenderedOrder(["Sketch Surface", "Scratch Pad"])).toEqual([
+    "Scratch Pad",
+    "Sketch Surface",
+  ]);
+});
+
+test("reordering sends the complete permutation across both tab sections", async () => {
+  const user = userEvent.setup();
+  const { nav } = await renderLoadedSidebar();
+
+  await user.hover(nav);
+  await user.click(within(entryRow("Build Board")).getByRole("button", { name: /move .*down/i }));
+
+  await waitFor(() => expect(mockReorder).toHaveBeenCalled());
+  // A partial list, a repeat, or a missing id is a 400 with no partial write —
+  // both sections share one ranking, and the leftover page entry is ranked in
+  // it too, so every id goes every time.
+  expect(mockReorder).toHaveBeenCalledWith(SLUG, [
+    "e-home",
+    "e-notes",
+    "e-grid",
+    "e-canvas",
+    "e-scratch",
+  ]);
+});
+
+test("a move swaps the neighbour in its own section, and still sends every id", async () => {
+  // The ranking interleaves the sections, so the entry above `Scratch Pad` in
+  // the full list is a *pinned* tab. Swapping with that one sends a real PATCH
+  // whose only visible effect is in the other section: the list the user was
+  // looking at comes back byte-identical. The move has to swap with the
+  // neighbour the user can see — the previous entry drawn in the same section —
+  // while the body still names every entry.
+  mockFetchEntries.mockResolvedValue([
+    viewEntry("e-canvas", 10, "v-canvas", false),
+    viewEntry("e-grid", 20, "v-grid", true),
+    viewEntry("e-scratch", 30, "v-scratch", false),
+    viewEntry("e-notes", 40, "v-notes", true),
+  ]);
+  const user = userEvent.setup();
+  const { nav } = await renderLoadedSidebar();
+
+  await user.hover(nav);
+  await user.click(within(entryRow("Scratch Pad")).getByRole("button", { name: /move .*up/i }));
+
+  await waitFor(() => expect(mockReorder).toHaveBeenCalled());
+  const [, entryIds] = mockReorder.mock.calls[0];
+  expect([...entryIds].sort()).toEqual(["e-canvas", "e-grid", "e-notes", "e-scratch"]);
+  expect(entryIds).toEqual(["e-scratch", "e-grid", "e-canvas", "e-notes"]);
+});
+
+test("the first entry of a section cannot be moved up past the other section", async () => {
+  // `Sketch Surface` is fourth in the full ranking and first in its section: a
+  // move-up derived from the global index would be offered, and would swap it
+  // with a pinned tab.
+  const user = userEvent.setup();
+  const { nav } = await renderLoadedSidebar();
+  await user.hover(nav);
+
+  expect(
+    within(entryRow("Sketch Surface")).getByRole("button", { name: /move .*up/i }),
+  ).toBeDisabled();
+  expect(
+    within(entryRow("Release Notes")).getByRole("button", { name: /move .*down/i }),
+  ).toBeDisabled();
+  expect(
+    within(entryRow("Sketch Surface")).getByRole("button", { name: /move .*down/i }),
+  ).toBeEnabled();
+});
+
+// 472 AC7 — pinning is what moves a tab between the sections. A drag is a
+// reorder, and both sections now hold view rows, so the pointer path needs the
+// same-section rule the arrow buttons have.
+
+/**
+ * A drag from one row onto another.
+ *
+ * jsdom has no drag-and-drop implementation and `userEvent` has no drag API, so
+ * this fires the handlers the rows actually carry. What it can prove is the
+ * wiring — which handler runs, and what it calls — not the pointer gesture.
+ */
+function dragRowOnto(source: HTMLElement, target: HTMLElement): { offered: boolean } {
+  fireEvent.dragStart(source);
+  const over = createEvent.dragOver(target);
+  fireEvent(target, over);
+  fireEvent.drop(target);
+  fireEvent.dragEnd(source);
+  // `preventDefault` on dragover is what tells the browser this is a drop
+  // target at all; without it the drop is never offered to the user.
+  return { offered: over.defaultPrevented };
+}
+
+test("dragging a tab onto one in the same section reorders across the whole ranking", async () => {
+  await renderLoadedSidebar();
+
+  const { offered } = dragRowOnto(entryRow("Scratch Pad"), entryRow("Sketch Surface"));
+
+  expect(offered).toBe(true);
+  await waitFor(() => expect(mockReorder).toHaveBeenCalled());
+  expect(mockReorder).toHaveBeenCalledWith(SLUG, [
+    "e-home",
+    "e-grid",
+    "e-notes",
+    "e-scratch",
+    "e-canvas",
+  ]);
+});
+
+test("dragging a tab into the other section is refused rather than silently reordering", async () => {
+  // Splicing across the sections re-ranks rows in the section the user is not
+  // pointing at and leaves the one they are pointing at unchanged — a real
+  // PATCH whose only visible effect is somewhere else. The drop is not offered,
+  // and nothing is written if one arrives anyway.
+  await renderLoadedSidebar();
+
+  const { offered } = dragRowOnto(entryRow("Sketch Surface"), entryRow("Build Board"));
+
+  expect(offered).toBe(false);
+  await settle();
+  expect(mockReorder).not.toHaveBeenCalled();
+  // Nor is it quietly turned into a pin: that is a control of its own.
+  expect(mockSetPinned).not.toHaveBeenCalled();
+});
+
+test("a leftover page entry is never a move's neighbour", async () => {
+  // It is ranked between the two pinned tabs here and is drawn nowhere, so
+  // swapping with it would re-rank two rows and change nothing on screen.
+  mockFetchEntries.mockResolvedValue([
+    viewEntry("e-grid", 10, "v-grid", true),
+    pageEntry("e-home", 20, "home"),
+    viewEntry("e-notes", 30, "v-notes", true),
+  ]);
+  const user = userEvent.setup();
+  const { nav } = await renderLoadedSidebar();
+
+  await user.hover(nav);
+  await user.click(within(entryRow("Build Board")).getByRole("button", { name: /move .*down/i }));
+
+  await waitFor(() => expect(mockReorder).toHaveBeenCalled());
+  expect(mockReorder.mock.calls[0][1]).toEqual(["e-notes", "e-home", "e-grid"]);
+});
+
+test("a reorder re-reads the server's ranking rather than trusting its own", async () => {
+  const user = userEvent.setup();
+  const { nav } = await renderLoadedSidebar();
+
+  await user.hover(nav);
+  const before = mockFetchEntries.mock.calls.length;
+  await user.click(within(entryRow("Build Board")).getByRole("button", { name: /move .*down/i }));
+
+  await waitFor(() => expect(mockFetchEntries.mock.calls.length).toBeGreaterThan(before));
+});
+
+// 434 AC7 (regression) — view entries carry their kind, and offer rename and
+// delete.
 
 test("view entries show their kind as Grid or Canvas", async () => {
   await renderLoadedSidebar();
@@ -773,26 +896,18 @@ test("closing a view tab deletes the view, never its sidebar entry", async () =>
   const { nav } = await renderLoadedSidebar();
 
   await user.hover(nav);
-  await user.click(within(entryRow("Sketch Surface")).getByRole("button", { name: /delete/i }));
+  await user.click(within(entryRow("Sketch Surface")).getByRole("button", { name: /^delete/i }));
   // Deleting a view cannot be undone, so it goes through a confirmation (438).
   const confirm = await screen.findByRole("dialog");
   await user.click(within(confirm).getByRole("button", { name: /^delete/i }));
 
   await waitFor(() => expect(mockDeleteView).toHaveBeenCalledWith(SLUG, "v-canvas"));
-  expect(mockUnpinEntry).not.toHaveBeenCalled();
+  // The "never its sidebar entry" half: the entry has one write of its own now,
+  // and closing a tab is not it.
+  expect(mockSetPinned).not.toHaveBeenCalled();
 });
 
-test("view entries are not offered an unpin control", async () => {
-  const user = userEvent.setup();
-  const { nav } = await renderLoadedSidebar();
-
-  await user.hover(nav);
-  expect(
-    within(entryRow("Sketch Surface")).queryByRole("button", { name: /unpin/i }),
-  ).not.toBeInTheDocument();
-});
-
-// AC8 — active-route highlighting for built-in pages, extended to views.
+// 472 AC4 — the current route marks its Tools entry, and no entry elsewhere.
 
 test("the built-in page for the current route carries aria-current", async () => {
   await renderLoadedSidebar("/queue");
@@ -802,6 +917,9 @@ test("the built-in page for the current route carries aria-current", async () =>
     "page",
   );
   expect(screen.getByRole("link", { name: "Home" })).not.toHaveAttribute("aria-current");
+  for (const name of ["Build Board", "Release Notes", "Sketch Surface", "Scratch Pad"]) {
+    expect(screen.getByRole("link", { name })).not.toHaveAttribute("aria-current");
+  }
 });
 
 test("a view route marks its own tab, and no built-in page", async () => {
@@ -816,7 +934,9 @@ test("a view route marks its own tab, and no built-in page", async () => {
   expect(screen.getByRole("link", { name: "Sketch Surface" })).not.toHaveAttribute(
     "aria-current",
   );
-  expect(screen.getByRole("link", { name: "Home" })).not.toHaveAttribute("aria-current");
+  for (const label of TOOL_LABELS) {
+    expect(screen.getByRole("link", { name: label })).not.toHaveAttribute("aria-current");
+  }
 });
 
 test("a view route that is not valid percent-encoding still renders the rail", async () => {
@@ -838,41 +958,12 @@ test("view tabs link to their own route", async () => {
   expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
 });
 
-// AC5, failure half — a write that does not land must not look like one that did.
+// 434 AC5, failure half (regression) — a write that does not land must not look
+// like one that did.
 //
 // These render against the app's own `createQueryClient`, because
 // `MutationCache.onError` is where a failed mutation becomes visible; a bare
 // `QueryClient` swallows rejections and every assertion below would be vacuous.
-// Retry backoff is zeroed so a mutation that opts into retrying a 409 does not
-// spend a second per attempt.
-
-/** The app's client, minus react-query's ~1s retry backoff. */
-function appClient(): QueryClient {
-  const qc = createQueryClient();
-  const defaults = qc.getDefaultOptions();
-  qc.setDefaultOptions({
-    ...defaults,
-    queries: { ...defaults.queries, retry: false },
-    mutations: { ...defaults.mutations, retry: false, retryDelay: 0 },
-  });
-  return qc;
-}
-
-test("a failed unpin leaves the entry on screen and reports the failure", async () => {
-  mockUnpinEntry.mockRejectedValue(new ApiError(404, "entry is gone"));
-  const user = userEvent.setup();
-  const { nav } = await renderLoadedSidebar("/", appClient());
-
-  await user.hover(nav);
-  await user.click(within(entryRow("Home")).getByRole("button", { name: /unpin/i }));
-
-  await waitFor(() => expect(mockUnpinEntry).toHaveBeenCalled());
-  await settle();
-  // An optimistic removal with no rollback leaves the user staring at a rail
-  // that lost an entry the server still has.
-  expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
-  expect(useToastStore.getState().toasts).toHaveLength(1);
-});
 
 test("a reorder that loses a race is retried with the same permutation", async () => {
   // 409 means another window re-ranked first — the request was well formed and
@@ -884,7 +975,7 @@ test("a reorder that loses a race is retried with the same permutation", async (
   const { nav } = await renderLoadedSidebar("/", appClient());
 
   await user.hover(nav);
-  await user.click(within(entryRow("Home")).getByRole("button", { name: /move .*down/i }));
+  await user.click(within(entryRow("Build Board")).getByRole("button", { name: /move .*down/i }));
 
   await waitFor(() => expect(mockReorder).toHaveBeenCalledTimes(2));
   expect(mockReorder.mock.calls[1][1]).toEqual(mockReorder.mock.calls[0][1]);
@@ -917,7 +1008,9 @@ test("a reorder that keeps losing is reported once, not once per attempt", async
     const { nav } = await renderLoadedSidebar("/", appClient());
 
     await user.hover(nav);
-    await user.click(within(entryRow("Home")).getByRole("button", { name: /move .*down/i }));
+    await user.click(
+      within(entryRow("Build Board")).getByRole("button", { name: /move .*down/i }),
+    );
 
     await waitFor(() => expect(mockReorder.mock.calls.length).toBeGreaterThan(1));
     await settle();
@@ -930,7 +1023,7 @@ test("a reorder that keeps losing is reported once, not once per attempt", async
   }
 });
 
-test("a reorder that lost to a peer's pin re-reads before it retries", async () => {
+test("a reorder that lost to a peer's new tab re-reads before it retries", async () => {
   // The server checks membership before it ranks, and answers a *changed* id set
   // with the same 409. Re-sending the identical body then fails that check as a
   // 400 — a downgrade that reports the user's own request as malformed. So the
@@ -941,19 +1034,26 @@ test("a reorder that lost to a peer's pin re-reads before it retries", async () 
 
   const user = userEvent.setup();
   const { nav } = await renderLoadedSidebar("/", appClient());
-  mockFetchEntries.mockResolvedValue([...ENTRIES, pageEntry("e-chat", 120, "chat")]);
+  mockFetchEntries.mockResolvedValue([...ENTRIES, viewEntry("e-new", 120, "v-new", false)]);
 
   await user.hover(nav);
-  await user.click(within(entryRow("Home")).getByRole("button", { name: /move .*down/i }));
+  await user.click(within(entryRow("Build Board")).getByRole("button", { name: /move .*down/i }));
 
   await waitFor(() => expect(mockReorder).toHaveBeenCalledTimes(2));
-  expect(mockReorder.mock.calls[0][1]).toEqual(["e-queue", "e-home", "e-grid", "e-canvas"]);
-  expect(mockReorder.mock.calls[1][1]).toEqual([
-    "e-queue",
+  expect(mockReorder.mock.calls[0][1]).toEqual([
     "e-home",
+    "e-notes",
     "e-grid",
     "e-canvas",
-    "e-chat",
+    "e-scratch",
+  ]);
+  expect(mockReorder.mock.calls[1][1]).toEqual([
+    "e-home",
+    "e-notes",
+    "e-grid",
+    "e-canvas",
+    "e-scratch",
+    "e-new",
   ]);
   await settle();
   expect(useToastStore.getState().toasts).toEqual([]);
@@ -968,11 +1068,14 @@ test("a rejected reorder is not retried, and the server's order stays on screen"
   const { nav } = await renderLoadedSidebar("/", appClient());
 
   await user.hover(nav);
-  await user.click(within(entryRow("Home")).getByRole("button", { name: /move .*down/i }));
+  await user.click(within(entryRow("Build Board")).getByRole("button", { name: /move .*down/i }));
 
   await waitFor(() => expect(mockReorder).toHaveBeenCalledTimes(1));
   await settle();
   expect(mockReorder).toHaveBeenCalledTimes(1);
-  expect(inRenderedOrder(["Home", "Parallel Execution"])).toEqual(["Home", "Parallel Execution"]);
+  expect(inRenderedOrder(["Build Board", "Release Notes"])).toEqual([
+    "Build Board",
+    "Release Notes",
+  ]);
   expect(useToastStore.getState().toasts).toHaveLength(1);
 });

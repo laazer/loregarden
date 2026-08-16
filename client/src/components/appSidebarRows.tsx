@@ -1,16 +1,16 @@
 /**
- * The sidebar's row primitives: one row per pinned page, one per view tab, and
- * the controls both of them carry.
+ * The sidebar's row primitives: one row per built-in page, one per view tab.
  *
  * They live beside `AppSidebar` rather than inside it because the sidebar's own
  * job — expansion state, section slicing, the reorder wiring — is already the
  * whole of that file, and the create-view control lands in it next.
  *
- * **Tab reaches a row, arrows reach its controls.** Every row carries move,
- * unpin/rename and delete buttons; leaving all of them in the tab sequence costs
- * five stops per entry where the rail this replaces cost one. The controls are
- * therefore a roving group: the row's link is the tab stop, and Left/Right move
- * focus along the row from there.
+ * **Tab reaches a row, arrows reach its controls.** A view row carries move,
+ * pin, rename, duplicate and delete buttons; leaving all of them in the tab
+ * sequence costs six stops per entry where the rail this replaces cost one. The
+ * controls are therefore a roving group: the row's link is the tab stop, and
+ * Left/Right move focus along the row from there. A Tools row has no controls
+ * to rove between and is one stop on its own.
  */
 
 import type { DragEvent, KeyboardEvent, ReactNode } from "react";
@@ -130,21 +130,18 @@ function MoveControls({
   );
 }
 
-export function PageRow({
-  page,
-  active,
-  move,
-  drag,
-  onUnpin,
-}: {
-  page: SidebarPageDef;
-  active: boolean;
-  move: MoveHandlers;
-  drag: DragHandlers;
-  onUnpin: () => void;
-}) {
+/**
+ * A built-in page in the Tools section.
+ *
+ * It carries no controls at all, and that is the whole ticket: Tools is derived
+ * from the page catalog rather than stored, so there is nothing to remove, and
+ * nothing to reorder — the rank a move control would edit does not exist for
+ * these rows. A row with no controls is also, incidentally, exactly one tab
+ * stop without needing the roving group.
+ */
+export function ToolRow({ page, active }: { page: SidebarPageDef; active: boolean }) {
   return (
-    <li className="app-sidebar-row" onKeyDown={onRowKeyDown} {...drag}>
+    <li className="app-sidebar-row">
       {/* `NavLink` owns `aria-current`, matching on the route the way the fixed
           rail did; the active treatment also covers the pages that own more
           than their own path. */}
@@ -157,12 +154,6 @@ export function PageRow({
         <span className="app-sidebar-icon">{page.icon}</span>
         <span className="app-sidebar-name app-sidebar-reveal">{page.label}</span>
       </NavLink>
-      <span className="app-sidebar-controls app-sidebar-reveal">
-        <MoveControls name={page.label} {...move} />
-        <RowControl label={`Unpin ${page.label}`} onClick={onUnpin}>
-          <path d="M6 6h12M9 6V4h6v2M8 6l1 14h6l1-14" />
-        </RowControl>
-      </span>
     </li>
   );
 }
@@ -202,6 +193,8 @@ export function ViewRow({
   onCancelRename,
   onDuplicate,
   duplicateDisabled = false,
+  onTogglePin,
+  pinned,
   onClose,
 }: {
   view: ViewSummary;
@@ -215,6 +208,9 @@ export function ViewRow({
   onDuplicate: () => void;
   /** A duplicate is already in flight — the second click would make a second view. */
   duplicateDisabled?: boolean;
+  /** Which section this row is drawn in, and therefore which way the control moves it. */
+  pinned: boolean;
+  onTogglePin: () => void;
   onClose: () => void;
 }) {
   return (
@@ -263,6 +259,19 @@ export function ViewRow({
         >
           <rect x="9" y="9" width="11" height="11" rx="2" />
           <path d="M5 15V5a2 2 0 0 1 2-2h8" />
+        </RowControl>
+        {/* The two sections are one list under two headings, so this is a
+            toggle rather than a pair of controls: the row is in exactly one of
+            them, and the label says where the click sends it. */}
+        <RowControl
+          label={`${pinned ? "Unpin" : "Pin"} ${view.title}`}
+          onClick={onTogglePin}
+        >
+          {pinned ? (
+            <path d="M5 5l14 14M9.5 4h5l-.6 5.2 3.1 3.1H14v4l-2 3-2-3v-4H7l3.1-3.1z" />
+          ) : (
+            <path d="M9.5 4h5l-.6 5.2 3.1 3.1H14v4l-2 3-2-3v-4H7l3.1-3.1z" />
+          )}
         </RowControl>
         {/* Closing a view tab deletes the view: its sidebar entry is not
             separately deletable, and the server refuses that with a 400. It goes
