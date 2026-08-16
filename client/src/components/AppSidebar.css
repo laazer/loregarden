@@ -3,6 +3,13 @@
  * expanded or not: the panel that widens is positioned out of flow inside it,
  * so nothing beside it reflows when the pointer crosses the rail. Do not give
  * `.app-sidebar` itself a width that expansion changes.
+ *
+ * **The sections scroll, the panel does not.** Each of the three lists is its
+ * own scroll container, so a long Tabs list cannot push Pinned Tabs or Tools out
+ * of view, and none of them can push the footer off the bottom — the footer
+ * holds the controls a user would reach for to fix exactly that. Giving the
+ * panel `overflow-y: auto` instead puts all three lists *and* the footer in one
+ * scroll window, which is the arrangement this replaces.
  */
 
 .app-sidebar {
@@ -23,7 +30,10 @@
   align-items: stretch;
   gap: 4px;
   padding: 12px 8px;
+  /* Not `auto`: the lists inside scroll, and a second scroll window around
+     them is what carries the footer off the bottom. */
   overflow: hidden;
+  min-height: 0;
   border-right: 1px solid var(--bd);
   background: linear-gradient(180deg, var(--bg1), var(--bg0));
   transition: width 0.16s ease;
@@ -31,7 +41,6 @@
 
 .app-sidebar[data-expanded="true"] .app-sidebar-panel {
   width: 244px;
-  overflow-y: auto;
   box-shadow: 12px 0 32px rgba(0, 0, 0, 0.28);
 }
 
@@ -75,14 +84,24 @@
   height: 17px;
 }
 
+/*
+ * `0 1 auto` is what shares the height sensibly. A section is as tall as its own
+ * list until the three of them together do not fit, and then each gives up space
+ * in proportion to how much it was taking — so a short list reserves nothing it
+ * is not using, and the very long list gives up the most rather than squeezing
+ * its neighbours to nothing. A fixed height or an equal `1 1 0` would do the
+ * opposite on both counts.
+ */
 .app-sidebar-section {
-  flex: none;
+  flex: 0 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
 .app-sidebar-section-head {
+  flex: none;
   display: flex;
   align-items: center;
   min-height: 18px;
@@ -100,13 +119,52 @@
   color: var(--txl);
 }
 
+/*
+ * The scroll container, one per section.
+ *
+ * `min-height: 0` is load-bearing: a flex item's default minimum is its content,
+ * so without it the list refuses to shrink, the panel overflows, and the footer
+ * goes off the bottom of the rail — the exact failure this is here to prevent.
+ *
+ * The scrollbar is styled rather than left to the platform because macOS hides
+ * overlay scrollbars until something scrolls, and a 60px rail of icons offers no
+ * other clue that there is more below. Styling it opts the list out of overlay
+ * scrollbars, so the thumb is visible whenever the list overflows — with no
+ * hover, and no tooltip.
+ */
 .app-sidebar-list {
   list-style: none;
-  margin: 0;
-  padding: 0;
+  /*
+   * The panel's own 8px gutter, moved onto the list and pulled back out again,
+   * so the rows sit exactly where they did. It has to be inside the scroll
+   * container: `.app-sidebar-bar` — the active-route marker — is drawn at
+   * `left: -8px` of its row, in that gutter, and a container that clipped its
+   * overflow would clip the one mark saying which entry the app is on. It also
+   * pays for the scrollbar, so a row keeps the width it had before.
+   */
+  margin: 0 -8px;
+  padding: 0 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bd2) transparent;
+}
+
+.app-sidebar-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.app-sidebar-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-sidebar-list::-webkit-scrollbar-thumb {
+  background: var(--bd2);
+  border-radius: 3px;
 }
 
 .app-sidebar-row {
@@ -243,6 +301,16 @@
   min-width: 0;
   gap: 6px;
   padding: 0 4px;
+}
+
+/*
+ * Collapsed the two share 44px, so their padding is what decides whether they
+ * come out the same size: a button that cannot shrink past its padding keeps
+ * more than half and the pair looks lopsided. Measured in a browser at 16px and
+ * 24px before this, 20px and 20px after.
+ */
+.app-sidebar[data-expanded="false"] .app-sidebar-footer-controls .app-sidebar-footer-btn {
+  padding: 0;
 }
 
 /*

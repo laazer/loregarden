@@ -18,6 +18,11 @@
  *     still leave the name unreadable to a screen reader on a collapsed rail.
  *   - **Expansion answers focus as well as hover**, so the rail is usable
  *     without a pointer, and it never traps focus once expanded.
+ *   - **Each section scrolls, the panel does not.** The three lists are three
+ *     scroll containers, so no list can push another — or the footer, which
+ *     holds the controls for fixing a crowded rail — off the bottom. The
+ *     containers are the `ul`s themselves, which add no tab stop of their own:
+ *     a scroller holding focusable children is not made focusable.
  *
  * The workspace slug arrives resolved: `uiStore.workspace` is `"all"` until a
  * workspace is chosen, and every view route 404s on it.
@@ -51,6 +56,9 @@ import {
   type MoveHandlers,
 } from "./appSidebarRows";
 import "./AppSidebar.css";
+
+/** Drawn before either read lands: no rows, and the same array every render. */
+const NO_ROWS: SidebarEntry[] = [];
 
 /** A tab the pin menu can offer: the entry a pin writes to, named by its view. */
 interface PinCandidate {
@@ -313,13 +321,35 @@ export function AppSidebar({
     });
   }, [pendingDelete, closeView, activeViewId, navigate]);
 
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Bring the entry for the current route into its section's scroll window.
+   *
+   * Each section scrolls on its own, so an entry can sit below the fold of a
+   * list that is itself entirely on screen, and nothing about the rail says so —
+   * on load the user would simply see no marked entry anywhere. `block:
+   * "nearest"` scrolls only as far as it must, so an entry already in view does
+   * not jump.
+   *
+   * Focus needs no equivalent: focusing an element scrolls its scroll containers
+   * to reveal it, and every keyboard path into a row goes through `focus()`.
+   * jsdom implements neither, which is why this is a browser check.
+   */
+  useEffect(() => {
+    if (!isReady) return;
+    const current = panelRef.current?.querySelector<HTMLElement>("[aria-current]");
+    current?.scrollIntoView?.({ block: "nearest" });
+  }, [isReady, pathname]);
+
   const handleBlur = (event: FocusEvent<HTMLElement>) => {
     // Focus moving between rows is not focus leaving the rail.
     if (event.currentTarget.contains(event.relatedTarget)) return;
     setFocusWithin(false);
   };
 
-  const rows = isReady ? entries : [];
+  /** A stable identity for "nothing to draw yet", so the memo below can hold. */
+  const rows = useMemo(() => (isReady ? entries : NO_ROWS), [isReady, entries]);
 
   /**
    * The tabs the footer's Pin control can offer.
@@ -390,7 +420,7 @@ export function AppSidebar({
         onFocus={() => setFocusWithin(true)}
         onBlur={handleBlur}
       >
-        <div className="app-sidebar-panel">
+        <div className="app-sidebar-panel" ref={panelRef}>
           <div className="app-sidebar-brand">
             <BrandMark />
           </div>
