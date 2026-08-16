@@ -30,10 +30,14 @@ type Json = Record<string, unknown>;
  * The counter carries the uniqueness; the random suffix keeps two browser tabs
  * from minting the same container id for two different views, which the server
  * would accept and every container-keyed cache would then alias.
+ *
+ * Exported because every arrangement editor mints ids on the same terms — the
+ * grid's split (440) and the canvas's drop (442) both add a node and a container
+ * — and a second generator is a second uniqueness argument to keep in step.
  */
 let idCounter = 0;
 
-function freshId(prefix: string): string {
+export function freshId(prefix: string): string {
   idCounter += 1;
   return `${prefix}-${idCounter.toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }

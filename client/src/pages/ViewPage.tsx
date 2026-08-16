@@ -6,11 +6,12 @@
  * on what the path looked like. That is also what makes the route deep-linkable
  * — a cold mount derives everything from the id.
  *
- * The arrangement renderers are 440 (nested resizable splits) and 442 (a
- * pannable canvas). What lives here is the seam they hang off — the host element
- * carrying the view's identity, and a walk that puts each container where its
- * layout says. The pane itself, and the write a pick makes, are
- * `components/views/ContainerPane`: a grid leaf and a canvas item both draw one.
+ * The arrangement renderers are `components/views/FlexGridSurface` (440, nested
+ * resizable splits) and the canvas below (442, still a walk that puts each item
+ * where its layout says). What lives here is the seam they hang off — the host
+ * element carrying the view's identity, and the dispatch on the loaded kind. The
+ * pane itself, and the write a pick makes, are `components/views/ContainerPane`:
+ * a grid leaf and a canvas item both draw one.
  *
  * Three failure paths are load-bearing:
  *
@@ -26,8 +27,11 @@
  *     rather than replacing it — the alternative blanks a working view because
  *     the user tabbed away and back, and leaves it blanked.
  *   - **A record this page cannot draw is not a blank screen.** A layout that is
- *     not an object, or a kind with no renderer, would otherwise render an empty
- *     body — the same nothing AC4 rules out, reached through the success path.
+ *     not an object, a kind with no renderer, or a grid whose arrangement cannot
+ *     be read would otherwise render an empty body — the same nothing AC4 rules
+ *     out, reached through the success path. Which is why the grid's tree is
+ *     parsed *here*: the renderer has no way to say "undrawable" except by
+ *     rendering nothing, and this page is where nothing is not an option.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -35,50 +39,14 @@ import { Link, useParams } from "react-router-dom";
 
 import { ApiError } from "../api/http";
 import { ContainerPane } from "../components/views/ContainerPane";
+import { FlexGridSurface } from "../components/views/FlexGridSurface";
+import { readGridTree } from "../lib/gridLayout";
 import { asJson } from "../lib/viewLayouts";
 import { fetchView, viewsKeys } from "../lib/viewsApi";
 import { useSidebarWorkspace } from "../state/SidebarWorkspaceContext";
 import { describeError } from "../state/toastStore";
 
 type Json = Record<string, unknown>;
-
-const PANE_STYLE = { display: "flex", flex: "1 1 0", minHeight: 0, minWidth: 0 } as const;
-
-/**
- * One node of a flex grid. Sizes are honoured as flex grow factors; the drag
- * handles that *change* them are 440's.
- */
-function GridNode({ node, containers }: { node: unknown; containers: Json }) {
-  const data = asJson(node);
-  if (data === undefined) return null;
-
-  if (data.node === "split") {
-    const children = Array.isArray(data.children) ? data.children : [];
-    return (
-      <div
-        style={{
-          ...PANE_STYLE,
-          flexDirection: data.orientation === "vertical" ? "column" : "row",
-        }}
-      >
-        {children.map((child, index) => {
-          const childData = asJson(child);
-          const size = typeof childData?.size === "number" ? childData.size : 1 / children.length;
-          const key = typeof childData?.id === "string" ? childData.id : String(index);
-          return (
-            <div key={key} style={{ ...PANE_STYLE, flex: `${size} 1 0` }}>
-              <GridNode node={child} containers={containers} />
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  const containerId = typeof data.container_id === "string" ? data.container_id : "";
-  if (containerId === "") return null;
-  return <ContainerPane containerId={containerId} container={containers[containerId]} />;
-}
 
 function CanvasSurface({ layout }: { layout: Json }) {
   const containers = asJson(layout.containers) ?? {};
@@ -229,8 +197,16 @@ function ViewSurface({ kind, layout }: { kind: string; layout: Json | undefined 
     return <ViewUndrawable reason="Its stored layout is missing or is not a layout." />;
   }
   if (kind === "canvas") return <CanvasSurface layout={layout} />;
-  if (kind === "flex_grid" && layout.root !== undefined && layout.root !== null) {
-    return <GridNode node={layout.root} containers={asJson(layout.containers) ?? {}} />;
+  if (kind === "flex_grid") {
+    // Parsed here rather than inside the renderer, because "this grid has no
+    // readable arrangement" is one of the undrawable states this page owns — a
+    // renderer that discovered it and returned nothing would put the user on the
+    // blank screen the states above exist to rule out.
+    const tree = readGridTree(layout);
+    if (tree === undefined) {
+      return <ViewUndrawable reason="Its stored arrangement could not be read." />;
+    }
+    return <FlexGridSurface tree={tree} containers={asJson(layout.containers) ?? {}} />;
   }
   return (
     <ViewUndrawable reason="It is stored in a form this build has no renderer for." />

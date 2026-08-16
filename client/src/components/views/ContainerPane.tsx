@@ -17,7 +17,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 
-import { useViewLayoutWrite } from "../../hooks/useViewLayoutWrite";
+import { useViewLayoutWrite } from "../../hooks/useViewLayoutEdit";
 import { asJson } from "../../lib/viewLayouts";
 import { useSidebarWorkspaceSlug } from "../../state/SidebarWorkspaceContext";
 import { PrimitivePicker } from "./PrimitivePicker";
