@@ -226,7 +226,84 @@
   min-height: 8px;
 }
 
+/*
+ * Pin tab and New tab, side by side. They share the rail's width rather than
+ * stacking, so the pair costs the footer one row's height instead of two — the
+ * footer is the first thing a long list pushes out of reach.
+ */
+.app-sidebar-footer-controls {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.app-sidebar-footer-controls .app-sidebar-footer-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+/*
+ * Collapsed there is no label to leave room for, so the icon is the button. Two
+ * 30px icon boxes plus their padding do not fit the 44px of content a 60px rail
+ * has; sharing the width does.
+ */
+.app-sidebar[data-expanded="false"] .app-sidebar-footer-controls .app-sidebar-icon {
+  width: 100%;
+}
+
+.app-sidebar-pin {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/*
+ * Above the trigger, not beside it: the panel clips its own overflow, so a menu
+ * at `left: 100%` would be cut off at the rail's edge. It only ever opens
+ * expanded — pressing the trigger puts focus in the rail, and collapsing closes
+ * it — so 168px fits inside the 244px panel.
+ */
+.app-sidebar-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 4px);
+  z-index: 10;
+  min-width: 168px;
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg1);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.36);
+}
+
+.app-sidebar-menu-item {
+  padding: 7px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--txm);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.app-sidebar-menu-item:hover {
+  background: var(--bg2);
+  color: var(--tx);
+}
+
 .app-sidebar-footer-btn {
+  flex: none;
   width: 100%;
   display: flex;
   align-items: center;

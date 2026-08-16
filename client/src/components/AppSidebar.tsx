@@ -23,7 +23,16 @@
  * workspace is chosen, and every view route 404s on it.
  */
 
-import { useCallback, useId, useState, type FocusEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent,
+  type KeyboardEvent,
+} from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { useSidebarTabs } from "../hooks/useSidebarTabs";
@@ -42,6 +51,124 @@ import {
   type MoveHandlers,
 } from "./appSidebarRows";
 import "./AppSidebar.css";
+
+/** A tab the pin menu can offer: the entry a pin writes to, named by its view. */
+interface PinCandidate {
+  entryId: string;
+  title: string;
+}
+
+/**
+ * Pinning an existing tab, from the footer beside New tab.
+ *
+ * Creating and pinning are the two ways a tab reaches Pinned Tabs, so they are
+ * drawn as a pair rather than as a section control and a footer menu. Pinning
+ * is also still reachable from the row itself, where it is a toggle; this is
+ * the path for a user who wants to pin *something* and does not want to go
+ * looking for the row first.
+ *
+ * The dismissal contract is `OverflowMenu`'s — Escape, and a pointer press
+ * outside it — because a menu that only its own trigger can close is one a
+ * keyboard user cannot back out of. "Outside" is this menu's own subtree, so
+ * the New tab button beside it dismisses the menu rather than being mistaken
+ * for part of it.
+ */
+function PinTabMenu({
+  candidates,
+  expanded,
+  onPin,
+}: {
+  candidates: PinCandidate[];
+  expanded: boolean;
+  onPin: (entryId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // A collapsed rail is 60px wide and clips the menu; leaving it open would
+  // bring it back on the next hover without anyone having asked for it.
+  useEffect(() => {
+    if (!expanded) setOpen(false);
+  }, [expanded]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  // `role="menu"` promises arrow-key movement between its items; the roles are
+  // what assistive tech announces, so they come with the behaviour or not at all.
+  const onMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    const items = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>("[role='menuitem']"),
+    );
+    const index = items.indexOf(event.target as HTMLElement);
+    if (index < 0) return;
+    const next = items[index + (event.key === "ArrowDown" ? 1 : -1)];
+    if (!next) return;
+    event.preventDefault();
+    next.focus();
+  };
+
+  return (
+    <div className="app-sidebar-pin" ref={rootRef}>
+      <button
+        type="button"
+        className="app-sidebar-footer-btn"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={candidates.length === 0}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="app-sidebar-icon">
+          {/* A pin. The plus beside it is New tab; the icons are the only thing
+              telling the two apart at 60px. */}
+          <ControlIcon>
+            <path d="M9.5 4h5l-.6 5.2 3.1 3.1H14v4l-2 3-2-3v-4H7l3.1-3.1z" />
+          </ControlIcon>
+        </span>
+        {/* Real text, clipped by CSS while collapsed rather than dropped: a
+            `title`-only name is unreadable to a screen reader on this rail. */}
+        <span className="app-sidebar-name app-sidebar-reveal">Pin tab</span>
+      </button>
+      {open && candidates.length > 0 ? (
+        <div
+          className="app-sidebar-menu"
+          role="menu"
+          aria-label="Tabs to pin"
+          onKeyDown={onMenuKeyDown}
+        >
+          {candidates.map((candidate) => (
+            <button
+              key={candidate.entryId}
+              type="button"
+              role="menuitem"
+              className="app-sidebar-menu-item"
+              onClick={() => {
+                setOpen(false);
+                onPin(candidate.entryId);
+              }}
+            >
+              {candidate.title}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function AppSidebar({
   workspaceSlug,
@@ -195,6 +322,23 @@ export function AppSidebar({
   const rows = isReady ? entries : [];
 
   /**
+   * The tabs the footer's Pin control can offer.
+   *
+   * Exactly the rows Tabs draws: an unpinned view entry whose view resolves.
+   * An entry with no view behind it draws no row, and would be a menu item with
+   * no name — the same lookup that keeps it out of the list keeps it out of here.
+   */
+  const pinCandidates = useMemo(
+    () =>
+      rows.flatMap((entry) => {
+        if (entry.entry_kind !== "view" || entry.pinned) return [];
+        const view = viewsById.get(entry.view_id);
+        return view ? [{ entryId: entry.id, title: view.title }] : [];
+      }),
+    [rows, viewsById],
+  );
+
+  /**
    * One section's rows, in the server's order.
    *
    * Both sections read the same ranked list and differ only by `pinned`, so
@@ -286,22 +430,6 @@ export function AppSidebar({
               <span className="app-sidebar-section-title app-sidebar-reveal" id={tabsHeadingId}>
                 Tabs
               </span>
-              {/* Gated on the workspace for the same reason the rows are: with
-                  no slug the create POSTs to `/api/workspaces//views`, which is
-                  a 404 the user asked for by pressing a control the chrome
-                  offered them. */}
-              {workspaceSlug === "" ? null : (
-                <button
-                  type="button"
-                  className="app-sidebar-control"
-                  aria-label="New view"
-                  onClick={openNewView}
-                >
-                  <ControlIcon>
-                    <path d="M12 5v14M5 12h14" />
-                  </ControlIcon>
-                </button>
-              )}
             </div>
             <ul className="app-sidebar-list" aria-labelledby={tabsHeadingId}>
               {viewRows(false)}
@@ -309,6 +437,32 @@ export function AppSidebar({
           </div>
 
           <div className="app-sidebar-spacer" />
+
+          {/* Gated on the workspace for the same reason the rows are: with no
+              slug a create POSTs to `/api/workspaces//views`, which is a 404 the
+              user asked for by pressing a control the chrome offered them. Pin
+              writes to the same unresolved path. */}
+          {workspaceSlug === "" ? null : (
+            <div className="app-sidebar-footer-controls">
+              <PinTabMenu
+                candidates={pinCandidates}
+                expanded={expanded}
+                onPin={(entryId) => tabs.setEntryPinned(entryId, true)}
+              />
+              <button
+                type="button"
+                className="app-sidebar-footer-btn"
+                onClick={openNewView}
+              >
+                <span className="app-sidebar-icon">
+                  <ControlIcon>
+                    <path d="M12 5v14M5 12h14" />
+                  </ControlIcon>
+                </span>
+                <span className="app-sidebar-name app-sidebar-reveal">New tab</span>
+              </button>
+            </div>
+          )}
 
           <button type="button" className="app-sidebar-footer-btn" onClick={onOpenSettings}>
             <span className="app-sidebar-icon">
