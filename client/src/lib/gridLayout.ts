@@ -5,9 +5,16 @@
  * Pure and free of React, because every one of them is arithmetic the server
  * validates and the renderer only triggers — `parse_view_layout` refuses a
  * sibling set that does not sum to 1.0, a root whose size is not 1.0, a split
- * nested deeper than `MAX_SPLIT_DEPTH`, and a container nothing references. Each
- * function below therefore produces a layout that satisfies all four or throws,
- * rather than a layout the write path discovers is a 400.
+ * nested deeper than `MAX_SPLIT_DEPTH`, a layout holding more than
+ * `MAX_CONTAINERS` containers or `MAX_LAYOUT_NODES` nodes, and a container
+ * nothing references. Each function below therefore produces a layout that
+ * satisfies all of them or throws, rather than a layout the write path discovers
+ * is a 400. Only splitting can grow a layout, so only `splitLeaf` has the
+ * cardinality checks to make.
+ *
+ * `MAX_LAYOUT_BYTES` is deliberately not among them: a layout at maximum
+ * cardinality serializes to roughly a fifth of it, so no sequence of splits can
+ * reach the cap, and a local check for it would be dead code claiming coverage.
  *
  * Two shapes are load-bearing:
  *
@@ -30,6 +37,16 @@ type Json = Record<string, unknown>;
  * the root as depth 0 — so a leaf at depth 32 cannot become a split.
  */
 export const MAX_SPLIT_DEPTH = 32;
+
+/** `ContainerRegistry`'s `max_length`. One container per pane, so: panes. */
+export const MAX_CONTAINERS = 256;
+
+/**
+ * `_StructureWalk.claim_node`'s ceiling, counting leaves and splits alike — so a
+ * grid runs out of nodes before it runs out of containers only in a tree that is
+ * mostly interior splits.
+ */
+export const MAX_LAYOUT_NODES = 512;
 
 /** The server's `SplitOrientation`. Not `row`/`column`, which is a 422. */
 export type SplitOrientation = "horizontal" | "vertical";
@@ -141,6 +158,12 @@ function renormalized(nodes: GridNodeModel[]): GridNodeModel[] {
   return nodes.map((node) => withSize(node, node.size / total));
 }
 
+/** Every node in the subtree, splits included — what `claim_node` counts. */
+function countNodes(node: GridNodeModel): number {
+  if (node.node === "leaf") return 1;
+  return node.children.reduce((total, child) => total + countNodes(child), 1);
+}
+
 function findLeaf(node: GridNodeModel, nodeId: string): GridLeaf | undefined {
   if (node.node === "leaf") return node.id === nodeId ? node : undefined;
   for (const child of node.children) {
@@ -219,8 +242,10 @@ function mapSplit(
  * not chosen a primitive yet. Both halves are 0.5 *of that slot*, which is what
  * the sibling-sum rule measures.
  *
- * Throws when the result would nest deeper than the server accepts — a refusal
- * the user sees, rather than a PATCH that comes back 400 as a silent autosave.
+ * Throws when the result would nest deeper, hold more panes, or hold more nodes
+ * than the server accepts — a refusal the user sees, rather than a PATCH that
+ * comes back 400 as a silent autosave. One split adds one container and two
+ * nodes: the split that stands where the leaf stood, and the pane it opens.
  */
 export function splitLeaf(
   layout: ViewLayout,
@@ -229,10 +254,18 @@ export function splitLeaf(
 ): ViewLayout {
   const tree = requireTree(layout);
   const addedContainerId = freshId("c");
+  const containerCount = Object.keys(containersOf(layout)).length;
+  const nodeCount = countNodes(tree);
 
   const replaced = replaceLeaf(tree, nodeId, 0, (leaf, depth) => {
     if (depth >= MAX_SPLIT_DEPTH) {
       throw new Error(`A pane cannot be split more than ${MAX_SPLIT_DEPTH} levels deep.`);
+    }
+    if (containerCount + 1 > MAX_CONTAINERS) {
+      throw new Error(`A view cannot hold more than ${MAX_CONTAINERS} panes.`);
+    }
+    if (nodeCount + 2 > MAX_LAYOUT_NODES) {
+      throw new Error(`A view cannot hold more than ${MAX_LAYOUT_NODES} layout nodes.`);
     }
     return {
       node: "split",
@@ -258,8 +291,18 @@ export function splitLeaf(
  * the split entirely.
  *
  * A split left holding one child is not a split: the survivor is promoted into
- * the slot the split occupied, rather than keeping the fraction it held *inside*
- * it — which would leave its new siblings summing to more than 1.0.
+ * the slot the split occupied, and `withSize(rest[0], split.size)` is what
+ * "promoted into the slot" means here — the survivor stops carrying the fraction
+ * it held *inside* the split and carries the split's own instead.
+ *
+ * That is this function's local contract and not the guarantee that siblings sum
+ * to 1.0: whatever size a returned node carries is re-stamped downstream — by
+ * this function's own recursive branch below, which applies the child's slot
+ * size to whatever came back, and by `storeTree`, which stamps the root at
+ * exactly 1.0 for the one node no slot covers. Those are what the sum survives,
+ * and neither is this line. This line is what
+ * keeps the size *meaningful* while it is in flight, so a reader of the model
+ * mid-collapse is not looking at a fraction of a parent that no longer exists.
  */
 function withoutLeaf(split: GridSplit, nodeId: string): GridNodeModel | undefined {
   const index = split.children.findIndex((child) => findLeaf(child, nodeId) !== undefined);

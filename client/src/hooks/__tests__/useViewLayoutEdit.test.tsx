@@ -19,7 +19,7 @@ import userEvent from "@testing-library/user-event";
 
 import { newContainerFor } from "../../components/views/primitives/registry";
 import { updateView, viewsKeys, type ViewSummary } from "../../lib/viewsApi";
-import { useViewLayoutWrite } from "../useViewLayoutWrite";
+import { useViewLayoutWrite } from "../useViewLayoutEdit";
 
 jest.mock("../../lib/viewsApi", () => ({
   ...jest.requireActual("../../lib/viewsApi"),

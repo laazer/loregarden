@@ -27,8 +27,11 @@
  *     rather than replacing it — the alternative blanks a working view because
  *     the user tabbed away and back, and leaves it blanked.
  *   - **A record this page cannot draw is not a blank screen.** A layout that is
- *     not an object, or a kind with no renderer, would otherwise render an empty
- *     body — the same nothing AC4 rules out, reached through the success path.
+ *     not an object, a kind with no renderer, or a grid whose arrangement cannot
+ *     be read would otherwise render an empty body — the same nothing AC4 rules
+ *     out, reached through the success path. Which is why the grid's tree is
+ *     parsed *here*: the renderer has no way to say "undrawable" except by
+ *     rendering nothing, and this page is where nothing is not an option.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -37,6 +40,7 @@ import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../api/http";
 import { ContainerPane } from "../components/views/ContainerPane";
 import { FlexGridSurface } from "../components/views/FlexGridSurface";
+import { readGridTree } from "../lib/gridLayout";
 import { asJson } from "../lib/viewLayouts";
 import { fetchView, viewsKeys } from "../lib/viewsApi";
 import { useSidebarWorkspace } from "../state/SidebarWorkspaceContext";
@@ -193,8 +197,16 @@ function ViewSurface({ kind, layout }: { kind: string; layout: Json | undefined 
     return <ViewUndrawable reason="Its stored layout is missing or is not a layout." />;
   }
   if (kind === "canvas") return <CanvasSurface layout={layout} />;
-  if (kind === "flex_grid" && layout.root !== undefined && layout.root !== null) {
-    return <FlexGridSurface layout={layout} />;
+  if (kind === "flex_grid") {
+    // Parsed here rather than inside the renderer, because "this grid has no
+    // readable arrangement" is one of the undrawable states this page owns — a
+    // renderer that discovered it and returned nothing would put the user on the
+    // blank screen the states above exist to rule out.
+    const tree = readGridTree(layout);
+    if (tree === undefined) {
+      return <ViewUndrawable reason="Its stored arrangement could not be read." />;
+    }
+    return <FlexGridSurface tree={tree} containers={asJson(layout.containers) ?? {}} />;
   }
   return (
     <ViewUndrawable reason="It is stored in a form this build has no renderer for." />

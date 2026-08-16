@@ -38,10 +38,9 @@ import {
 } from "react";
 import { useParams } from "react-router-dom";
 
-import { useViewLayoutEdit, useViewLayoutWrite } from "../../hooks/useViewLayoutWrite";
+import { useViewLayoutEdit, useViewLayoutWrite } from "../../hooks/useViewLayoutEdit";
 import {
   closeLeaf,
-  readGridTree,
   resizeSplit,
   splitLeaf,
   withSize,
@@ -51,7 +50,6 @@ import {
   type SplitOrientation,
 } from "../../lib/gridLayout";
 import { asJson } from "../../lib/viewLayouts";
-import type { ViewLayout } from "../../lib/viewsApi";
 import { useSidebarWorkspaceSlug } from "../../state/SidebarWorkspaceContext";
 import { ContainerPane } from "./ContainerPane";
 import { PrimitivePicker } from "./PrimitivePicker";
@@ -132,8 +130,22 @@ function keyStep(key: string, vertical: boolean): number {
   return 0;
 }
 
+/**
+ * One divider's gesture: where it started, what it started from, and which
+ * pointer owns it.
+ *
+ * Per gap and not per split, because a split has as many handles as it has gaps
+ * and a touchscreen can hold two of them at once. One shared slot lets the
+ * second press overwrite the first's gap and origin, so the first finger's moves
+ * then resize the *other* pair from the wrong starting point — and the second
+ * finger's release finds nothing to commit and never gives the capture back.
+ *
+ * `pointerId` is stored for the same gesture: capture routes every later event
+ * to the handle that took it, so a second pointer crossing that handle delivers
+ * moves and ups against a drag it is no part of.
+ */
 interface DragState {
-  gap: number;
+  pointerId: number;
   origin: number;
   track: number;
   base: number[];
@@ -149,9 +161,16 @@ function GridSplitView({
   actions: GridActions;
 }) {
   const element = useRef<HTMLDivElement>(null);
-  const drag = useRef<DragState | undefined>(undefined);
-  /** Sizes the user has adjusted but not yet committed, for keyup and blur. */
-  const pending = useRef<number[] | undefined>(undefined);
+  /** The open gesture on each gap, by gap index. */
+  const drags = useRef(new Map<number, DragState>());
+  /**
+   * Sizes adjusted but not yet committed, by gap — for keyup, blur and cancel.
+   *
+   * Keyed like the drags and for the same reason: an arrow-key nudge left
+   * unsaved on one handle is not something a `pointercancel` on a different
+   * handle may commit on its behalf.
+   */
+  const pending = useRef(new Map<number, number[]>());
   const [draft, setDraft] = useState<{ ids: string; sizes: number[] } | undefined>(undefined);
 
   const vertical = split.orientation === "vertical";
@@ -160,16 +179,16 @@ function GridSplitView({
     draft !== undefined && draft.ids === ids ? draft.sizes : split.children.map((c) => c.size);
 
   const apply = useCallback(
-    (next: number[]) => {
-      pending.current = next;
+    (gap: number, next: number[]) => {
+      pending.current.set(gap, next);
       setDraft({ ids, sizes: next });
     },
     [ids],
   );
 
   const commit = useCallback(
-    (next: number[]) => {
-      pending.current = undefined;
+    (gap: number, next: number[]) => {
+      pending.current.delete(gap);
       actions.resize(split.id, next);
     },
     [actions, split.id],
@@ -182,57 +201,80 @@ function GridSplitView({
     return vertical ? rect.height : rect.width;
   }, [vertical]);
 
-  function draggedTo(active: DragState, event: ReactPointerEvent<HTMLDivElement>): number[] {
+  function draggedTo(
+    active: DragState,
+    gap: number,
+    event: ReactPointerEvent<HTMLDivElement>,
+  ): number[] {
     const position = vertical ? event.clientY : event.clientX;
     return resizedPair(
       active.base,
-      active.gap,
+      gap,
       (position - active.origin) / active.track,
       MIN_PANE_PX / active.track,
     );
+  }
+
+  /** The gesture this event belongs to, or `undefined` when it belongs to none. */
+  function dragFor(gap: number, event: ReactPointerEvent<HTMLDivElement>): DragState | undefined {
+    const active = drags.current.get(gap);
+    if (active === undefined || active.pointerId !== event.pointerId) return undefined;
+    return active;
   }
 
   function onPointerDown(gap: number, event: ReactPointerEvent<HTMLDivElement>) {
     // Without this the browser starts a native text selection (or an image
     // drag) that runs for the whole gesture.
     event.preventDefault();
+    // A second pointer landing on a handle that is already being dragged is not
+    // a new gesture: the first still owns the capture, and adopting the second
+    // would move the origin out from under the moves still arriving for it.
+    if (drags.current.has(gap)) return;
     const track = trackPx();
     if (track <= 0) return;
     // Capture is what keeps a move over a terminal from reaching the terminal.
     event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = {
-      gap,
+    drags.current.set(gap, {
+      pointerId: event.pointerId,
       origin: vertical ? event.clientY : event.clientX,
       track,
       base: sizes,
-    };
+    });
   }
 
-  function onPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
-    const active = drag.current;
+  function onPointerMove(gap: number, event: ReactPointerEvent<HTMLDivElement>) {
+    const active = dragFor(gap, event);
     // Drawn, not written: a PATCH per pointermove is the bug AC5 names outright.
-    if (active !== undefined) apply(draggedTo(active, event));
+    if (active !== undefined) apply(gap, draggedTo(active, gap, event));
   }
 
-  function endDrag(event: ReactPointerEvent<HTMLDivElement>, sizesAtEnd: number[] | undefined) {
-    drag.current = undefined;
+  function endDrag(
+    gap: number,
+    event: ReactPointerEvent<HTMLDivElement>,
+    sizesAtEnd: number[] | undefined,
+  ) {
+    drags.current.delete(gap);
+    if (sizesAtEnd !== undefined) {
+      apply(gap, sizesAtEnd);
+      commit(gap, sizesAtEnd);
+    }
+    // Last, because releasing capture is cleanup and storing the resize is the
+    // point: `releasePointerCapture` throws on a pointer the element no longer
+    // holds, and a throw ahead of the commit drops the user's drag in silence.
     event.currentTarget.releasePointerCapture(event.pointerId);
-    if (sizesAtEnd === undefined) return;
-    apply(sizesAtEnd);
-    commit(sizesAtEnd);
   }
 
-  function onPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
-    const active = drag.current;
+  function onPointerUp(gap: number, event: ReactPointerEvent<HTMLDivElement>) {
+    const active = dragFor(gap, event);
     if (active === undefined) return;
-    endDrag(event, draggedTo(active, event));
+    endDrag(gap, event, draggedTo(active, gap, event));
   }
 
-  function onPointerCancel(event: ReactPointerEvent<HTMLDivElement>) {
+  function onPointerCancel(gap: number, event: ReactPointerEvent<HTMLDivElement>) {
     // The gesture was interrupted, but what is on screen is still what the user
     // dragged to; storing it is kinder than reverting it without a word.
-    if (drag.current === undefined) return;
-    endDrag(event, pending.current);
+    if (dragFor(gap, event) === undefined) return;
+    endDrag(gap, event, pending.current.get(gap));
   }
 
   function onKeyDown(gap: number, event: ReactKeyboardEvent<HTMLDivElement>) {
@@ -241,11 +283,9 @@ function GridSplitView({
     event.preventDefault();
     const track = trackPx();
     if (track <= 0) return;
-    const base =
-      pending.current !== undefined && pending.current.length === sizes.length
-        ? pending.current
-        : sizes;
-    apply(resizedPair(base, gap, (step * KEY_STEP_PX) / track, MIN_PANE_PX / track));
+    const unsaved = pending.current.get(gap);
+    const base = unsaved !== undefined && unsaved.length === sizes.length ? unsaved : sizes;
+    apply(gap, resizedPair(base, gap, (step * KEY_STEP_PX) / track, MIN_PANE_PX / track));
   }
 
   /**
@@ -253,9 +293,9 @@ function GridSplitView({
    * draft follows every repeat; the write waits for the key to come up, or for
    * the handle to lose focus with an adjustment still unsaved.
    */
-  function onSettle() {
-    const adjusted = pending.current;
-    if (adjusted !== undefined) commit(adjusted);
+  function onSettle(gap: number) {
+    const adjusted = pending.current.get(gap);
+    if (adjusted !== undefined) commit(gap, adjusted);
   }
 
   const children: ReactNode[] = [];
@@ -283,12 +323,12 @@ function GridSplitView({
         aria-valuemax={100}
         tabIndex={0}
         onPointerDown={(event) => onPointerDown(index, event)}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerCancel}
+        onPointerMove={(event) => onPointerMove(index, event)}
+        onPointerUp={(event) => onPointerUp(index, event)}
+        onPointerCancel={(event) => onPointerCancel(index, event)}
         onKeyDown={(event) => onKeyDown(index, event)}
-        onKeyUp={onSettle}
-        onBlur={onSettle}
+        onKeyUp={() => onSettle(index)}
+        onBlur={() => onSettle(index)}
         style={{
           flex: "0 0 6px",
           alignSelf: "stretch",
@@ -437,7 +477,21 @@ function GridNodeView({
   return <GridLeafView leaf={node} containers={containers} actions={actions} />;
 }
 
-export function FlexGridSurface({ layout }: { layout: ViewLayout }) {
+/**
+ * The arrangement, already parsed.
+ *
+ * The tree arrives read rather than read here: a layout this renderer cannot
+ * parse is a state the *page* owns — it has a `ViewUndrawable` to say it with,
+ * and a renderer that discovered it could only return nothing, which is the one
+ * blank screen the page rules out.
+ */
+export function FlexGridSurface({
+  tree,
+  containers,
+}: {
+  tree: GridNodeModel;
+  containers: Json;
+}) {
   const slug = useSidebarWorkspaceSlug();
   // Outside the view route there is no id, and the write refuses to compose a
   // PATCH without one — a grid can only reach the screen underneath it.
@@ -458,9 +512,5 @@ export function FlexGridSurface({ layout }: { layout: ViewLayout }) {
     [edit, pickPrimitive],
   );
 
-  const tree = readGridTree(layout);
-  if (tree === undefined) return null;
-  return (
-    <GridNodeView node={tree} containers={asJson(layout.containers) ?? {}} actions={actions} />
-  );
+  return <GridNodeView node={tree} containers={containers} actions={actions} />;
 }

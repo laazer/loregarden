@@ -1,65 +1,65 @@
 /**
- * The flex-grid arrangement: splitting, resizing, closing, and the writes those
- * make.
+ * What the flex-grid renderer *does* once more than one pane can exist:
+ * splitting, resizing, closing, and the writes those make.
  *
  * `ViewPage.test.tsx` pins the host — the route, the not-found state, the seed
- * grid's first frame. This file pins what the grid renderer *does* once more
- * than one pane can exist. Everything here is written before that renderer
- * exists, so every failure is currently missing behaviour rather than a missing
- * module: `ViewPage` already renders a split tree as flexbox with
- * `flex: <size> 1 0`, and none of the controls below are on screen.
- *
- * ## The DOM contract these tests hold the renderer to
- *
- * The renderer is free in almost every respect; four seams are pinned because a
- * test cannot find a control it cannot name, and because pinning the *wording*
- * of a header button would pin copy no acceptance criterion chooses.
- *
- *   - `[data-grid-node="<node.id>"]` wraps every node of the tree, leaf and
- *     split alike, and is the element carrying that node's flex sizing. Sizes
- *     are read back as `style.flexGrow`, never as an attribute the renderer
- *     also writes: the grow factor is what actually lays the pane out, and a
- *     `data-size` that disagreed with it would be a passing test over a broken
- *     screen.
- *   - `[data-grid-action="split-horizontal" | "split-vertical" | "close" |
- *     "pick-primitive"]` are `<button>`s inside the leaf's own
- *     `[data-grid-node]`. Inside it, because AC1 puts the split control "on the
- *     container, not in a global toolbar"; `<button>`s, because AC9 wants close
- *     operable from the keyboard and a `<div onClick>` is not.
- *   - `[data-grid-divider="<split.id>:<gapIndex>"]` is the handle between
- *     children `gapIndex` and `gapIndex + 1` of that split.
- *   - Dividers speak **Pointer Events** (`pointerdown`/`pointermove`/
- *     `pointerup`). Not a stylistic choice: pointer capture is the platform's
- *     answer to AC7 ("does not send pointer events to the container beneath"),
- *     and it is a pointer-event API.
- *
- * ## What jsdom cannot be asked
- *
- * There is no layout engine here: every `getBoundingClientRect` is zero-sized
- * unless stubbed, and nothing reflows when a flex-grow changes. So no test
- * below measures a pane in pixels. `RECT` stubs one fixed 1000x800 box for
- * every element, which is what makes a drag's arithmetic exercisable at all —
- * the renderer must derive its new fractions from a measured rect, and with a
- * 1000px-wide split a pointer at clientX 700 is the 0.7 mark. What is asserted
- * is the *stored* consequence of a drag and what the tree renders from it; that
- * the browser then paints those fractions is flexbox's job, and `GridNode`
- * already delegates to it.
+ * grid's first frame. The fixtures, the fake server and the DOM contract these
+ * tests read the renderer back through are `test/gridHarness`, shared with
+ * `ViewPageGridRaces.test.tsx`, which drives the same page against the races
+ * its writes lose rather than against the criteria below.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect, useState } from "react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { ApiError } from "../../api/http";
 import { createQueryClient } from "../../api/queryClient";
 import { CONTAINER_PRIMITIVES, getPrimitive } from "../../components/views/primitives/registry";
-import { fetchView, updateView, type ViewSummary } from "../../lib/viewsApi";
-import { SidebarWorkspaceProvider } from "../../state/SidebarWorkspaceContext";
+import type { ViewSummary } from "../../lib/viewsApi";
 import { useToastStore } from "../../state/toastStore";
-import { MAX_SPLIT_DEPTH, assertServerAcceptableLayout } from "../../test/viewLayoutContract";
-import { ViewPage } from "../ViewPage";
+import {
+  MIN_PANE_PX,
+  SLUG,
+  POINTER_ID,
+  RECT,
+  chainLayout,
+  childrenOf,
+  containersOf,
+  control,
+  divider,
+  dragDivider,
+  gridNode,
+  gridRoute,
+  installGridHarness,
+  lastLayout,
+  leafLayout,
+  mockUpdateView,
+  nestedLayout,
+  pairLayout,
+  panelContainer,
+  pointerDown,
+  pointerMove,
+  pointerUp,
+  renderGrid,
+  setMeasuredRect,
+  settle,
+  sizeOf,
+  storePatch,
+  storedView,
+  tallLayout,
+  terminalContainer,
+  testClient,
+  tripleLayout,
+  wideLayout,
+  type Json,
+} from "../../test/gridHarness";
+import {
+  MAX_CONTAINERS,
+  MAX_LAYOUT_NODES,
+  MAX_SPLIT_DEPTH,
+  assertServerAcceptableLayout,
+} from "../../test/viewLayoutContract";
 
 jest.mock("../../lib/viewsApi", () => ({
   ...jest.requireActual("../../lib/viewsApi"),
@@ -103,312 +103,11 @@ jest.mock("../../components/TerminalPanel", () => ({
   ),
 }));
 
-const mockFetchView = fetchView as jest.MockedFunction<typeof fetchView>;
-const mockUpdateView = updateView as jest.MockedFunction<typeof updateView>;
-
-const SLUG = "loregarden";
-
-type Json = Record<string, unknown>;
-
-/** One fixed box for every element, so drag arithmetic has something to divide by. */
-const RECT: DOMRect = {
-  x: 0,
-  y: 0,
-  left: 0,
-  top: 0,
-  right: 1000,
-  bottom: 800,
-  width: 1000,
-  height: 800,
-  toJSON: () => ({}),
-} as DOMRect;
-
-/**
- * jsdom implements no `PointerEvent`, and RTL's `fireEvent.pointerDown` falls
- * back to a bare `Event` when the constructor is missing — which silently drops
- * `clientX`, making every drag below a drag to the origin. The subclass is the
- * smallest thing that carries coordinates and a pointer id.
- */
-class FakePointerEvent extends MouseEvent {
-  readonly pointerId: number;
-  constructor(type: string, init: PointerEventInit = {}) {
-    super(type, init);
-    this.pointerId = init.pointerId ?? 1;
-  }
-}
-
-const POINTER_ID = 7;
-
-/**
- * The thinnest pane AC9 is willing to call usable, in pixels of `RECT`'s track.
- *
- * No acceptance criterion names a number — "minimum container sizes prevent a
- * drag from producing an unusable sliver" is the whole of it — so this is a
- * floor the tests pick and the renderer is free to exceed. It is stated once,
- * here, rather than spelled into the assertion: the server's own rule is only
- * `size > 0`, and a renderer that stopped there would satisfy the schema with a
- * pane one pixel wide.
- */
-const MIN_PANE_PX = 24;
-
-// ---------------------------------------------------------------------------
-// Fixtures. Factories, never constants: the mocked `fetchView` hands the caller
-// whatever object it is given, so a shared literal would let one test's in-place
-// edit corrupt the next test's input.
-// ---------------------------------------------------------------------------
-
-const panelContainer = (): Json => ({ kind: "panel", settings: {} });
-
-/** A terminal that is actually configured — `newContainerFor` leaves the slug empty. */
-const terminalContainer = (): Json => ({
-  kind: "terminal",
-  settings: { primitive_id: "terminal", workspace_slug: SLUG },
-});
-
-const leafLayout = (container: Json = panelContainer()): Json => ({
-  kind: "flex_grid",
-  containers: { "c-seed": container },
-  root: { node: "leaf", id: "n-seed", size: 1, container_id: "c-seed" },
-});
-
-const pairLayout = (
-  sizes: [number, number] = [0.5, 0.5],
-  orientation: "horizontal" | "vertical" = "horizontal",
-  containers: [Json, Json] = [panelContainer(), panelContainer()],
-): Json => ({
-  kind: "flex_grid",
-  containers: { "c-1": containers[0], "c-2": containers[1] },
-  root: {
-    node: "split",
-    id: "n-root",
-    size: 1,
-    orientation,
-    children: [
-      { node: "leaf", id: "n-1", size: sizes[0], container_id: "c-1" },
-      { node: "leaf", id: "n-2", size: sizes[1], container_id: "c-2" },
-    ],
-  },
-});
-
-/** Three siblings, deliberately uneven, so "redistribute" is not "halve". */
-const tripleLayout = (
-  containers: [Json, Json, Json] = [panelContainer(), panelContainer(), panelContainer()],
-): Json => ({
-  kind: "flex_grid",
-  containers: { "c-1": containers[0], "c-2": containers[1], "c-3": containers[2] },
-  root: {
-    node: "split",
-    id: "n-root",
-    size: 1,
-    orientation: "horizontal",
-    children: [
-      { node: "leaf", id: "n-1", size: 0.5, container_id: "c-1" },
-      { node: "leaf", id: "n-2", size: 0.25, container_id: "c-2" },
-      { node: "leaf", id: "n-3", size: 0.25, container_id: "c-3" },
-    ],
-  },
-});
-
-/** A split inside a split, so a collapse has a real parent size to inherit. */
-const nestedLayout = (): Json => ({
-  kind: "flex_grid",
-  containers: { "c-1": panelContainer(), "c-2": panelContainer(), "c-3": panelContainer() },
-  root: {
-    node: "split",
-    id: "n-root",
-    size: 1,
-    orientation: "horizontal",
-    children: [
-      { node: "leaf", id: "n-1", size: 0.6, container_id: "c-1" },
-      {
-        node: "split",
-        id: "n-inner",
-        size: 0.4,
-        orientation: "vertical",
-        children: [
-          { node: "leaf", id: "n-2", size: 0.5, container_id: "c-2" },
-          { node: "leaf", id: "n-3", size: 0.5, container_id: "c-3" },
-        ],
-      },
-    ],
-  },
-});
-
-/**
- * `depth` nested splits, each holding a leaf and the next split — the deepest
- * tree the server accepts when `depth === MAX_SPLIT_DEPTH`.
- */
-function chainLayout(depth: number): Json {
-  const containers: Json = {};
-  let node: Json = { node: "leaf", id: "n-tail", size: 0.5, container_id: "c-tail" };
-  containers["c-tail"] = panelContainer();
-  for (let level = depth - 1; level >= 0; level -= 1) {
-    const containerId = `c-${level}`;
-    containers[containerId] = panelContainer();
-    node = {
-      node: "split",
-      id: `n-split-${level}`,
-      size: level === 0 ? 1 : 0.5,
-      orientation: "horizontal",
-      children: [
-        { node: "leaf", id: `n-leaf-${level}`, size: 0.5, container_id: containerId },
-        node,
-      ],
-    };
-  }
-  return { kind: "flex_grid", containers, root: node };
-}
-
-function view(layout: Json): ViewSummary {
-  return {
-    id: "v-grid",
-    kind: "flex_grid",
-    title: "Build Board",
-    icon: "",
-    layout,
-    created_at: "2026-08-01T00:00:00",
-    updated_at: "2026-08-01T00:00:00",
-  };
-}
-
-/** The record the fake server holds; PATCHes land in it, so a reload sees them. */
-let stored: ViewSummary;
-
-function testClient(): QueryClient {
-  return new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false, retryDelay: 0 } },
-  });
-}
-
-function renderGrid(layout: Json, client?: QueryClient) {
-  stored = view(layout);
-  return render(
-    <QueryClientProvider client={client ?? testClient()}>
-      <SidebarWorkspaceProvider slug={SLUG}>
-        <MemoryRouter initialEntries={["/view/v-grid"]}>
-          <Routes>
-            <Route path="/view/:viewId" element={<ViewPage />} />
-          </Routes>
-        </MemoryRouter>
-      </SidebarWorkspaceProvider>
-    </QueryClientProvider>,
-  );
-}
-
-async function settle() {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Reading the rendered tree
-// ---------------------------------------------------------------------------
-
-function gridNode(root: HTMLElement, nodeId: string): HTMLElement {
-  const found = root.querySelector<HTMLElement>(`[data-grid-node="${nodeId}"]`);
-  if (found === null) throw new Error(`No rendered node ${nodeId}`);
-  return found;
-}
-
-/** The grow factor the pane is actually laid out with. */
-function sizeOf(root: HTMLElement, nodeId: string): number {
-  return Number.parseFloat(gridNode(root, nodeId).style.flexGrow);
-}
-
-function control(root: HTMLElement, nodeId: string, action: string): HTMLElement {
-  const found = gridNode(root, nodeId).querySelector<HTMLElement>(
-    `button[data-grid-action="${action}"]`,
-  );
-  if (found === null) throw new Error(`No ${action} control on node ${nodeId}`);
-  return found;
-}
-
-function divider(root: HTMLElement, splitId: string, gap = 0): HTMLElement {
-  const found = root.querySelector<HTMLElement>(`[data-grid-divider="${splitId}:${gap}"]`);
-  if (found === null) throw new Error(`No divider ${splitId}:${gap}`);
-  return found;
-}
-
-/** The layout of the most recent PATCH. */
-function lastLayout(): Json {
-  const calls = mockUpdateView.mock.calls;
-  if (calls.length === 0) throw new Error("No layout was written");
-  return (calls[calls.length - 1][2] as { layout: Json }).layout;
-}
-
-function containersOf(layout: Json): Record<string, Json> {
-  return layout.containers as Record<string, Json>;
-}
-
-function childrenOf(node: Json): Json[] {
-  return node.children as Json[];
-}
-
-// ---------------------------------------------------------------------------
-// Driving a divider
-// ---------------------------------------------------------------------------
-
-type Axis = "x" | "y";
-
-function at(axis: Axis, value: number): { clientX: number; clientY: number } {
-  return axis === "x" ? { clientX: value, clientY: 400 } : { clientX: 500, clientY: value };
-}
-
-/** Returns false when the handler called `preventDefault` — AC7's text-selection half. */
-function pointerDown(el: HTMLElement, axis: Axis, value: number): boolean {
-  return fireEvent.pointerDown(el, {
-    pointerId: POINTER_ID,
-    button: 0,
-    buttons: 1,
-    ...at(axis, value),
-  });
-}
-
-function pointerMove(el: HTMLElement, axis: Axis, value: number) {
-  fireEvent.pointerMove(el, { pointerId: POINTER_ID, buttons: 1, ...at(axis, value) });
-}
-
-function pointerUp(el: HTMLElement, axis: Axis, value: number) {
-  fireEvent.pointerUp(el, { pointerId: POINTER_ID, buttons: 0, ...at(axis, value) });
-}
-
-/** A whole drag: press, two moves, release. */
-function dragDivider(el: HTMLElement, axis: Axis, from: number, to: number) {
-  pointerDown(el, axis, from);
-  pointerMove(el, axis, (from + to) / 2);
-  pointerMove(el, axis, to);
-  pointerUp(el, axis, to);
-}
-
-// ---------------------------------------------------------------------------
-
-let rectSpy: jest.SpyInstance;
-
-beforeAll(() => {
-  (globalThis as unknown as { PointerEvent: unknown }).PointerEvent = FakePointerEvent;
-  // jsdom has neither; a renderer that captures the pointer would otherwise die
-  // on `undefined is not a function` rather than fail the assertion that wants it.
-  Element.prototype.setPointerCapture = function setPointerCapture() {};
-  Element.prototype.releasePointerCapture = function releasePointerCapture() {};
-});
+installGridHarness();
 
 beforeEach(() => {
-  jest.clearAllMocks();
-  useToastStore.getState().clear();
   mockTerminalSessions.mounts = 0;
   mockTerminalSessions.unmounts = 0;
-  rectSpy = jest.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue(RECT);
-  mockFetchView.mockImplementation(async () => stored);
-  mockUpdateView.mockImplementation(async (_slug, _viewId, patch) => {
-    stored = { ...stored, ...(patch as Partial<ViewSummary>) };
-    return stored;
-  });
-});
-
-afterEach(() => {
-  rectSpy.mockRestore();
 });
 
 describe("AC1 — a container splits horizontally and vertically, arbitrarily deep", () => {
@@ -534,6 +233,42 @@ describe("AC1 — a container splits horizontally and vertically, arbitrarily de
     expect(mockUpdateView).not.toHaveBeenCalled();
     expect(useToastStore.getState().toasts.length).toBeGreaterThan(0);
   });
+
+  it("refuses to send a split that would mint a container past the registry's cap", async () => {
+    // Depth is not the only bound the server puts on a grid, and a split grows
+    // three of them at once. A renderer that checks only the depth sends the
+    // 257th container and takes the refusal as a 400 on a silent autosave.
+    const user = userEvent.setup();
+    const atCap = wideLayout(MAX_CONTAINERS);
+    assertServerAcceptableLayout(atCap);
+
+    const { container } = renderGrid(atCap, createQueryClient());
+    await screen.findByTestId("view-host");
+
+    await user.click(control(container, "n-0", "split-horizontal"));
+    await settle();
+
+    expect(mockUpdateView).not.toHaveBeenCalled();
+    expect(useToastStore.getState().toasts.length).toBeGreaterThan(0);
+  });
+
+  it("refuses to send a split that would push the layout past the node cap", async () => {
+    // The other cardinality bound, and it is reached first by a tree that is
+    // mostly interior splits: this one has a container to spare and no nodes.
+    const user = userEvent.setup();
+    // `1 + 2n` nodes for `n` panes, so `n` is the most that fits under the cap.
+    const atCap = tallLayout(Math.floor((MAX_LAYOUT_NODES - 1) / 2));
+    assertServerAcceptableLayout(atCap);
+
+    const { container } = renderGrid(atCap, createQueryClient());
+    await screen.findByTestId("view-host");
+
+    await user.click(control(container, "n-0", "split-horizontal"));
+    await settle();
+
+    expect(mockUpdateView).not.toHaveBeenCalled();
+    expect(useToastStore.getState().toasts.length).toBeGreaterThan(0);
+  });
 });
 
 describe("AC2 — dragging a divider resizes its neighbours, and proportions survive a resize", () => {
@@ -598,7 +333,7 @@ describe("AC2 — dragging a divider resizes its neighbours, and proportions sur
 
     // The viewport shrinks. Fractions are fractions: nothing is rewritten, and
     // nothing is re-measured into pixels that would then drift.
-    rectSpy.mockReturnValue({ ...RECT, width: 600, right: 600 } as DOMRect);
+    setMeasuredRect({ ...RECT, width: 600, right: 600 } as DOMRect);
     await act(async () => {
       fireEvent(window, new Event("resize"));
     });
@@ -826,7 +561,7 @@ describe("AC5 — layout edits persist, and a resize commits once, on drag end",
       (_slug, _viewId, patch) =>
         new Promise<ViewSummary>((resolve) => {
           land = (updated) => resolve(updated);
-          stored = { ...stored, ...(patch as Partial<ViewSummary>) };
+          storePatch(patch);
         }),
     );
 
@@ -841,7 +576,7 @@ describe("AC5 — layout edits persist, and a resize commits once, on drag end",
     expect(sizeOf(container, "n-2")).toBeCloseTo(0.3, 2);
 
     await act(async () => {
-      land(stored);
+      land(storedView());
     });
     // And the server's record agrees with what was on screen the whole time.
     expect(sizeOf(container, "n-1")).toBeCloseTo(0.7, 2);
@@ -858,17 +593,7 @@ describe("AC5 — layout edits persist, and a resize commits once, on drag end",
 
     // A cold mount, a cold cache, and the same id: the split came back from the
     // server rather than from a client-side memory of it.
-    const { container } = render(
-      <QueryClientProvider client={testClient()}>
-        <SidebarWorkspaceProvider slug={SLUG}>
-          <MemoryRouter initialEntries={["/view/v-grid"]}>
-            <Routes>
-              <Route path="/view/:viewId" element={<ViewPage />} />
-            </Routes>
-          </MemoryRouter>
-        </SidebarWorkspaceProvider>
-      </QueryClientProvider>,
-    );
+    const { container } = render(gridRoute(testClient()));
     await screen.findByTestId("view-host");
     await waitFor(() => expect(container.querySelectorAll("[data-container-id]")).toHaveLength(2));
     expect(container.querySelectorAll("[data-grid-divider]")).toHaveLength(1);

@@ -7,7 +7,7 @@
  * container pane on screen, and a pane that has to be *handed* its write means
  * every renderer re-deriving how the write is composed.
  *
- * Three properties are load-bearing, and each of them was a bug first:
+ * Four properties are load-bearing, and each of them was a bug first:
  *
  *   - **The write carries its own identity.** `useMutation` re-binds its options
  *     on every render, in-flight mutations included, so a handler that reads
@@ -26,6 +26,16 @@
  *     layout whole.
  *   - **The base layout is the cache's, not a captured one.** For the same
  *     reason: the record react-query holds is the newest one this client knows.
+ *   - **A read older than the write cannot land on top of it.** The view query
+ *     refetches on window focus, and react-query gives no ordering between a
+ *     fetch resolving and a `setQueryData`: a GET issued before the PATCH and
+ *     resolving after it puts the pre-edit layout back under the same key. The
+ *     revert is invisible — every layout involved is one the server accepts and
+ *     nothing fails — and it is the *next* edit that does the damage, because it
+ *     composes from that cache and PATCHes the reverted layout back, destroying
+ *     whatever the first edit added. So every read of this view still in flight
+ *     is cancelled at the moment the write's record lands; a GET issued after
+ *     that point can only see the PATCH the server already applied.
  */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -94,10 +104,21 @@ export function useViewLayoutEdit(slug: string, viewId: string): (edit: LayoutEd
       return updateView(vars.slug, vars.viewId, { layout: vars.edit(current.layout) });
     },
     onSuccess: (updated, vars) => {
+      const key = viewsKeys.view(vars.slug, vars.viewId);
+      // Every read of this view still in flight is discarded first, because all
+      // of them were issued before the server applied this PATCH and any of them
+      // may resolve after this line — react-query orders a landing fetch against
+      // a `setQueryData` not at all. Here rather than at the start of the write,
+      // because this is the moment that divides the reads that cannot be trusted
+      // from the ones that can: a GET issued after the PATCH has come back is
+      // asking a server that has already applied it. Not awaited — the
+      // cancellation is synchronous, and awaiting would hand a read that never
+      // settles the power to hold the record out of the cache.
+      void qc.cancelQueries({ queryKey: key });
       // The server's record, not a refetch: the write already returned it. Under
       // the key this write's own variables name — not the one the page happens
       // to be showing now.
-      qc.setQueryData(viewsKeys.view(vars.slug, vars.viewId), updated);
+      qc.setQueryData(key, updated);
       qc.invalidateQueries({ queryKey: viewsKeys.views(vars.slug) });
     },
   });

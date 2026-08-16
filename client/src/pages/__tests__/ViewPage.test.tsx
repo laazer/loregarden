@@ -709,6 +709,23 @@ describe("a record that loaded is still drawn as something", () => {
     expect((region.textContent ?? "").trim().length).toBeGreaterThan(0);
   });
 
+  it("explains a grid whose arrangement cannot be read", async () => {
+    // A `flex_grid` with a root that is not a node: the kind has a renderer and
+    // the layout is an object, so both branches above pass it through. If the
+    // renderer is the one that discovers the tree is unreadable, the only thing
+    // it can do about it is render nothing — which is the blank screen this
+    // page exists to rule out, reached through the success path.
+    mockFetchView.mockResolvedValue({
+      ...gridView(),
+      layout: { kind: "flex_grid", containers: {}, root: { node: "leaf", size: 1 } },
+    } as unknown as ViewSummary);
+
+    renderRoute("/view/v-grid");
+
+    const region = await screen.findByTestId("view-undrawable");
+    expect((region.textContent ?? "").trim().length).toBeGreaterThan(0);
+  });
+
   it("explains a record whose kind has no renderer", async () => {
     mockFetchView.mockResolvedValue({
       ...gridView(),
