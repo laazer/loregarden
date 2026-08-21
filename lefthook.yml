@@ -9,7 +9,7 @@
 #
 # pre-commit — format first (priority 100), then parallel checks (priority 1):
 #   - format-staged: ruff format/fix (Python); oxlint --fix (client)
-#   - py-review / py-pylint / py-complexity / py-organization / …
+#   - py-review / py-pylint / py-complexity / py-organization / py-silent-except / …
 #   - py-mypy: mypy on staged server Python (skips tests + migrations)
 #   - client-lint / client-dup (jscpd) / ts-organization
 #
@@ -59,6 +59,11 @@ pre-commit:
       priority: 1
       glob: "server/**/*.py"
       run: bash .lefthook/scripts/detect-defensive-normalization.sh {staged_files}
+    py-silent-except:
+      name: Python silently-caught exceptions
+      priority: 1
+      glob: "server/**/*.py"
+      run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_silent_except_check.py {staged_files}
     py-git-subprocess:
       name: Python git subprocess routing (GIT_DIR safety)
       priority: 1
