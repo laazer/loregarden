@@ -349,6 +349,26 @@ class AgentRun(SQLModel, table=True):
     # a table cycle it cannot order ("unresolvable cycles between tables
     # agent_runs, worktrees"). The worktree side owns the constraint.
     worktree_id: str | None = Field(default=None, index=True)
+    # What this run cost, and what it was charged against. See
+    # `schemas.RunUsage`, which is how these six are read and written, and
+    # `agents.run_usage` for each CLI's dialect.
+    #
+    # All nullable with no default on purpose: NULL means *nobody measured it*,
+    # which is not zero. Every row written before 0095 has no usage data and
+    # never will, a local adapter reports none, and a run killed mid-flight may
+    # never print its usage block. SUM skips NULL and COUNT(col) counts only the
+    # measured rows, so an unmeasured run drops out of a cost aggregate instead
+    # of quietly deflating it — see `services.run_token_usage`.
+    input_tokens: int | None = Field(default=None)
+    output_tokens: int | None = Field(default=None)
+    cache_read_tokens: int | None = Field(default=None)
+    cache_write_tokens: int | None = Field(default=None)
+    # The model and reasoning effort actually *applied*, not the pin that was
+    # configured. Effort resolves per adapter (see `services.cli_settings`) and
+    # a CLI picks its own default when nothing is pinned, so the configured
+    # value answers a different question than this one.
+    model: str | None = Field(default=None)
+    effort: str | None = Field(default=None)
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)

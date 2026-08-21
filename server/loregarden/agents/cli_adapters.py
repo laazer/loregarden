@@ -3,7 +3,7 @@ import shlex
 import shutil
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from loregarden.agents.mcp_context import (
@@ -60,6 +60,13 @@ class CliInvocation:
     # Only opencode populates this: it has no MCP flag, so its per-run config
     # travels as OPENCODE_CONFIG_CONTENT (see ``mcp_context.mcp_cli_env``).
     env: dict[str, str] = field(default_factory=dict)
+    # What this invocation actually pinned, after the workspace/ticket/stage/agent
+    # tiers were resolved — recorded on the run so a token count can be turned
+    # into a cost. Empty means nothing was pinned and the CLI chose for itself,
+    # which is unknown rather than a default anyone here can name; the stream's
+    # own report wins over these when it carries one (see ``agents.run_usage``).
+    model: str = ""
+    effort: str = ""
 
 
 def invocation_env(invocation: CliInvocation) -> dict[str, str] | None:
@@ -693,14 +700,13 @@ def resolve_cli_invocation(
     )
 
     if selected == CliAdapter.LOCAL:
-        return _local_invocation(
+        invocation = _local_invocation(
             agent_id=agent_id,
             skill_name=skill_name,
             prompt_file=prompt_file,
         )
-
-    if selected == CliAdapter.CLAUDE and not permission_bypass_enabled():
-        return build_interactive_invocation(
+    elif selected == CliAdapter.CLAUDE and not permission_bypass_enabled():
+        invocation = build_interactive_invocation(
             adapter=selected,
             db_session=db_session,
             prompt_file=prompt_file,
@@ -709,33 +715,29 @@ def resolve_cli_invocation(
             claude_model=model,
             claude_effort=effort,
         )
-
-    if selected == CliAdapter.CLAUDE:
-        return _claude_print_invocation(
+    elif selected == CliAdapter.CLAUDE:
+        invocation = _claude_print_invocation(
             prompt_file=prompt_file,
             workspace_root=workspace_root,
             claude_model=model,
             claude_effort=effort,
         )
-
-    if selected == CliAdapter.CURSOR:
-        return _cursor_print_invocation(
+    elif selected == CliAdapter.CURSOR:
+        invocation = _cursor_print_invocation(
             prompt=prompt,
             workspace_root=workspace_root,
             cursor_model=apply_cursor_effort(model, effort),
             orchestrated=True,
         )
-
-    if selected == CliAdapter.CODEX:
-        return _codex_invocation(
+    elif selected == CliAdapter.CODEX:
+        invocation = _codex_invocation(
             prompt=prompt,
             workspace_root=workspace_root,
             codex_model=model,
             orchestrated=True,
         )
-
-    if selected == CliAdapter.LMSTUDIO:
-        return _lmstudio_invocation(
+    elif selected == CliAdapter.LMSTUDIO:
+        invocation = _lmstudio_invocation(
             prompt_file=prompt_file,
             workspace_root=workspace_root,
             base_url=resolve_lmstudio_base_url(workspace),
@@ -745,17 +747,22 @@ def resolve_cli_invocation(
             workspace_slug=workspace_slug,
             granted_tools=granted_tools,
         )
-
-    if selected == CliAdapter.OPENCODE:
-        return _opencode_invocation(
+    elif selected == CliAdapter.OPENCODE:
+        invocation = _opencode_invocation(
             prompt=prompt,
             workspace_root=workspace_root,
             opencode_model=model,
             opencode_effort=effort,
             orchestrated=True,
         )
+    else:
+        raise ValueError(f"Unknown CLI adapter: {selected}")
 
-    raise ValueError(f"Unknown CLI adapter: {selected}")
+    # Stamped once here rather than in each builder: what was pinned is the same
+    # question for every adapter, and the builders differ only in how they spell
+    # it on the command line. `model` is the bare id — cursor's argv folds effort
+    # into it, but the record keeps the two apart so both are queryable.
+    return replace(invocation, model=model, effort=effort)
 
 
 def _claude_triage_invocation(

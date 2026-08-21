@@ -63,6 +63,7 @@ from loregarden.db.migrations_queue import (
     m_orchestration_timeout_override,
     m_per_slot_queues,
 )
+from loregarden.db.migrations_run_usage import m_agent_run_token_usage
 from loregarden.db.migrations_skills import m_skill_versioning
 from loregarden.db.migrations_stage_fanout import m_stage_fanout_groups
 from loregarden.db.migrations_templates import (
@@ -1324,6 +1325,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0092_structured_ticket_ids", m_structured_ticket_ids),
     ("0093_repin_terminal_less_instances", m_repin_terminal_less_instances),
     ("0094_repin_unregistered_skill_instances", m_repin_unregistered_skill_instances),
+    ("0095_agent_run_token_usage", m_agent_run_token_usage),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

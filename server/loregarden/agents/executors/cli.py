@@ -29,10 +29,12 @@ from loregarden.agents.plan_context import (
     build_plan_synthesis_context,
 )
 from loregarden.agents.registry import get_agent
+from loregarden.agents.run_usage import parse_run_usage
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.agents.verify_context import build_verify_context
 from loregarden.models.domain import (
     AgentRun,
+    CliAdapter,
     DoctorStatus,
     RunStatus,
     Ticket,
@@ -283,6 +285,7 @@ class CliAgentExecutor:
 
                 streamer.finalize(status=status, stderr=stderr)
                 self._record_changed_paths(run, repo_root, paths_before)
+                self._record_usage(run, stdout=stdout, invocation=invocation)
                 artifacts = self._build_context_artifact(ticket, run, status)
                 completed = self.orchestration.complete_run(
                     run,
@@ -298,6 +301,7 @@ class CliAgentExecutor:
                 return self._complete_timed_out_run(
                     run,
                     exc,
+                    invocation=invocation,
                     fallback_timeout=timeout,
                     repo_root=repo_root,
                     paths_before=paths_before,
@@ -318,6 +322,7 @@ class CliAgentExecutor:
         run: AgentRun,
         exc: subprocess.TimeoutExpired,
         *,
+        invocation: CliInvocation,
         fallback_timeout: int,
         repo_root: Path,
         paths_before: set[str],
@@ -335,10 +340,14 @@ class CliAgentExecutor:
         msg = agent_timeout_message(exc.timeout or fallback_timeout)
         streamer.finalize(status=RunStatus.FAILED, stderr=msg)
         self._record_changed_paths(run, repo_root, paths_before)
+        # TimeoutExpired.output is bytes | str | None — a foreign union, not a schema.
+        output = exc.output
+        partial_stdout = output if isinstance(output, str) else ""  # py-org: allow-isinstance
+        self._record_usage(run, stdout=partial_stdout, invocation=invocation)
         return self.orchestration.complete_run(
             run,
             status=RunStatus.FAILED,
-            stdout=exc.output if isinstance(exc.output, str) else "",
+            stdout=partial_stdout,
             stderr=msg,
             advance_workflow=advance_workflow,
         )
@@ -871,6 +880,29 @@ class CliAgentExecutor:
         if not touched:
             return
         run.changed_paths_json = json.dumps(touched)
+        self.session.add(run)
+        self.session.commit()
+
+    def _record_usage(self, run: AgentRun, *, stdout: str, invocation: CliInvocation) -> None:
+        """Store what this run consumed, and what it was charged against.
+
+        Two sources, in that order of authority. The CLI's own usage event is
+        what the provider billed, so it wins; the invocation's pins are the
+        fallback for the model and effort, and are all there is for an adapter
+        that reports no usage at all.
+
+        Anything neither source knows is left NULL. A killed run, an adapter
+        with no usage surface and a stream that ended before its usage event
+        all land here, and every one of them is *unmeasured* — writing a zero
+        would put them in a cost average as free work.
+        """
+        usage = parse_run_usage(stdout, adapter=CliAdapter(invocation.adapter))
+        run.input_tokens = usage.input_tokens
+        run.output_tokens = usage.output_tokens
+        run.cache_read_tokens = usage.cache_read_tokens
+        run.cache_write_tokens = usage.cache_write_tokens
+        run.model = usage.model or invocation.model or None
+        run.effort = usage.effort or invocation.effort or None
         self.session.add(run)
         self.session.commit()
 

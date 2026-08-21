@@ -234,3 +234,98 @@ def test_a_state_locked_ticket_still_reports_its_finished_workflow(db_session: S
     assert ticket.state not in StateMachine.TERMINAL_TICKET_STATES
     assert view.runs == []
     assert view.message == _FINISHED_MESSAGE
+
+
+def test_a_harness_reports_its_own_usage_and_changed_paths_over_mcp(db_session: Session):
+    """There is no adapter on this path, so nothing here read a usage event or
+    diffed the tree. Every externally driven run before this reported neither —
+    0 of the 22 runs on ticket 181 had changed paths recorded — which is why
+    the harness has to be able to say so itself.
+    """
+    ticket = _ticket(db_session)
+    orch_run = start_external_orchestration(db_session, ticket, harness=ExternalHarness.CLAUDE_CODE)
+    stage = json.loads(
+        execute_tool(db_session, "loregarden_begin_external_stage", {"run_id": orch_run.id})
+    )
+    agent_run_id = stage["runs"][0]["agent_run_id"]
+
+    execute_tool(
+        db_session,
+        "loregarden_finish_external_stage",
+        {
+            "agent_run_id": agent_run_id,
+            "transcript": PASSING_REPORT,
+            "input_tokens": 12_000,
+            "output_tokens": 3_400,
+            "cache_read_tokens": 88_000,
+            "cache_write_tokens": 0,
+            "model": "claude-opus-5",
+            "effort": "high",
+            "changed_paths": ["server/loregarden/api/runs.py", "server/tests/test_runs.py"],
+        },
+    )
+
+    run = db_session.get(AgentRun, agent_run_id)
+    db_session.refresh(run)
+    assert run.input_tokens == 12_000
+    assert run.output_tokens == 3_400
+    assert run.cache_read_tokens == 88_000
+    assert run.cache_write_tokens == 0
+    assert run.model == "claude-opus-5"
+    assert run.effort == "high"
+    assert json.loads(run.changed_paths_json) == [
+        "server/loregarden/api/runs.py",
+        "server/tests/test_runs.py",
+    ]
+
+
+def test_a_harness_that_reports_nothing_leaves_the_figures_unmeasured(db_session: Session):
+    """Silence must not be recorded as zero. A harness that cannot read its own
+    usage leaves NULL behind, and NULL is what keeps it out of a cost average.
+    """
+    ticket = _ticket(db_session)
+    orch_run = start_external_orchestration(db_session, ticket, harness=ExternalHarness.CODEX)
+    stage = json.loads(
+        execute_tool(db_session, "loregarden_begin_external_stage", {"run_id": orch_run.id})
+    )
+    agent_run_id = stage["runs"][0]["agent_run_id"]
+
+    execute_tool(
+        db_session,
+        "loregarden_finish_external_stage",
+        {"agent_run_id": agent_run_id, "transcript": PASSING_REPORT},
+    )
+
+    run = db_session.get(AgentRun, agent_run_id)
+    db_session.refresh(run)
+    assert run.input_tokens is None
+    assert run.output_tokens is None
+    assert run.model is None
+    assert run.effort is None
+
+
+def test_a_harness_reporting_a_genuine_zero_is_not_recorded_as_unmeasured(db_session: Session):
+    """The other half of the same distinction, on the surface an outside
+    harness actually uses: a reported 0 is stored as 0, not dropped to NULL."""
+    ticket = _ticket(db_session)
+    orch_run = start_external_orchestration(db_session, ticket, harness=ExternalHarness.CODEX)
+    stage = json.loads(
+        execute_tool(db_session, "loregarden_begin_external_stage", {"run_id": orch_run.id})
+    )
+    agent_run_id = stage["runs"][0]["agent_run_id"]
+
+    execute_tool(
+        db_session,
+        "loregarden_finish_external_stage",
+        {
+            "agent_run_id": agent_run_id,
+            "transcript": PASSING_REPORT,
+            "input_tokens": 0,
+            "output_tokens": 0,
+        },
+    )
+
+    run = db_session.get(AgentRun, agent_run_id)
+    db_session.refresh(run)
+    assert run.input_tokens == 0
+    assert run.output_tokens == 0
