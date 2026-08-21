@@ -203,6 +203,14 @@ status line the ternary discards. The `ts-organization` gate enforces it on stag
   `env -u GIT_DIR -u GIT_WORK_TREE` workaround is no longer needed. Still scrub the env if you
   invoke pytest yourself from a context that already has `GIT_DIR` set (e.g. nested in a hook) —
   the server's own git helpers pass the ambient environment through.
+- **Pre-push runs only the tests your commits reach.** `select_pytest_targets.py` walks the
+  import graph (string constants included, so `import_module("loregarden.x")` counts) and pytest
+  runs that subset; jest runs `--changedSince`. Anything unmappable — `conftest.py`,
+  `pyproject.toml`, a non-Python file, anything outside `server/`/`client/` — falls back to the
+  full suite, as does selecting zero tests. CI still runs everything, so a green push *predicts*
+  CI rather than proving it. `LOREGARDEN_FULL_TESTS=1` forces the full run;
+  `LOREGARDEN_TESTS_BASE=<ref>` asks what a given range would run.
+
 - Use `task dev` / `task server` / `task client`. Do not start servers ad-hoc.
 
 ## Anti-patterns
