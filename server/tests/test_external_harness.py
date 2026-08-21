@@ -11,6 +11,8 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+from loregarden.core.state_machine import StateMachine
+from loregarden.core.workflow_terminal import find_terminal_stage
 from loregarden.mcp.tools import execute_tool
 from loregarden.models.domain import (
     AgentRun,
@@ -21,8 +23,10 @@ from loregarden.models.domain import (
     RunStatus,
     StageStatus,
     Ticket,
+    TicketState,
 )
 from loregarden.services.external_harness import (
+    _FINISHED_MESSAGE,
     EXTERNAL_HARNESS_COMMAND_PREFIX,
     begin_external_stage,
     build_external_harness_prompt,
@@ -34,6 +38,8 @@ from loregarden.services.run_service import (
     fail_interrupted_orchestration_runs,
     fail_interrupted_runs,
 )
+from loregarden.services.workflow_service import resolve_ticket_stages
+from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session, select
 
 TICKET_SLUG = "03-wire-cli-agent-runner"
@@ -195,3 +201,36 @@ def test_finishing_a_run_no_harness_checked_out_is_refused(db_session: Session):
 
     with pytest.raises(ValueError, match="external harness"):
         finish_external_stage(db_session, run, transcript=PASSING_REPORT)
+
+
+def test_a_state_locked_ticket_still_reports_its_finished_workflow(db_session: Session):
+    """The stage map, not the ticket row, decides whether anything is left to run.
+
+    `state_locked` holds `ticket.state` wherever it was — a mid-run write can
+    leave it `in_progress` with every stage DONE. Answering from the ticket row
+    then reported the terminal stage as a human approval gate, and an autonomous
+    harness told to wait for the inbox waits forever: no approval exists, and
+    none is ever going to.
+    """
+    ticket = _ticket(db_session)
+    instance, _ = OrchestrationService(db_session).ensure_workflow_instance(ticket)
+    _, stages = resolve_ticket_stages(db_session, ticket)
+    terminal = find_terminal_stage(stages)
+    assert terminal is not None
+
+    for stage in stages:
+        if stage.key != terminal.key:
+            set_stage_status(ticket, instance, stages, stage.key, StageStatus.DONE)
+    ticket.state = TicketState.IN_PROGRESS
+    ticket.state_locked = True
+    db_session.add(ticket)
+    db_session.add(instance)
+    db_session.commit()
+
+    orch_run = start_external_orchestration(db_session, ticket, harness=ExternalHarness.CLAUDE_CODE)
+    view = begin_external_stage(db_session, orch_run)
+
+    db_session.refresh(ticket)
+    assert ticket.state not in StateMachine.TERMINAL_TICKET_STATES
+    assert view.runs == []
+    assert view.message == _FINISHED_MESSAGE

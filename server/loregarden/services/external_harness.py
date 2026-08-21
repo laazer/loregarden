@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 
 from loregarden.agents.mcp_context import resolve_mcp_url
 from loregarden.core.state_machine import StateMachine
+from loregarden.core.workflow_terminal import find_terminal_stage
 from loregarden.models.domain import (
     AgentRun,
     ExternalHarness,
@@ -53,6 +54,7 @@ from loregarden.services.parallel_stage import (
 )
 from loregarden.services.run_service import RunService, fail_interrupted_runs
 from loregarden.services.studio_routing import is_parallel_stage
+from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -93,14 +95,26 @@ def _workspace_for(session: Session, ticket: Ticket) -> Workspace:
     return workspace
 
 
-def _workflow_finished(ticket: Ticket) -> bool:
+def _workflow_finished(session: Session, ticket: Ticket) -> bool:
     """Whether there is nothing left for the harness to run.
 
-    Reaching the terminal stage is what finalizes the ticket (see
-    ``OrchestrationService.finalize_workflow``), so the ticket's own state is the
-    signal — a stage cursor can sit on the terminal key either side of that.
+    Answered from the stage map, not from ``ticket.state``. Finalizing a
+    workflow writes both, but the ticket row can be held back independently of
+    the stages — a state lock taken mid-run leaves every stage DONE with the
+    ticket still ``in_progress`` — and a finished workflow reported as a pending
+    approval gate stalls an autonomous harness on an inbox item that will never
+    appear. The terminal stage being resolved is the fact this question is
+    actually about.
+
+    Only a ticket with no terminal stage at all falls back to ticket state;
+    there is nothing else left to ask.
     """
-    return ticket.state in StateMachine.TERMINAL_TICKET_STATES
+    _, stages = resolve_ticket_stages(session, ticket)
+    terminal = find_terminal_stage(stages)
+    if terminal is None:
+        return ticket.state in StateMachine.TERMINAL_TICKET_STATES
+    status = OrchestrationService(session).stage_status(ticket, terminal.key)
+    return status in (StageStatus.DONE, StageStatus.WONT_DO)
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
@@ -277,7 +291,7 @@ def begin_external_stage(
     if not target_key:
         return ExternalStageView(
             stage_key=ticket.workflow_stage_key,
-            message=_FINISHED_MESSAGE if _workflow_finished(ticket) else _BLOCKED_MESSAGE,
+            message=_FINISHED_MESSAGE if _workflow_finished(session, ticket) else _BLOCKED_MESSAGE,
         )
 
     stage_def = OrchestrationService(session).stage_definition(ticket, target_key)
@@ -292,7 +306,7 @@ def begin_external_stage(
         # which start_stage_execution has already finalized.
         return ExternalStageView(
             stage_key=target_key,
-            message=_FINISHED_MESSAGE if _workflow_finished(ticket) else _GATE_MESSAGE,
+            message=_FINISHED_MESSAGE if _workflow_finished(session, ticket) else _GATE_MESSAGE,
         )
 
     orch_run.current_stage_key = run.stage_key
@@ -399,7 +413,7 @@ def finish_external_stage(
         workflow_stage_status=ticket.workflow_stage_status,
         ticket_state=ticket.state,
         blocking_issues=ticket.blocking_issues,
-        workflow_finished=_workflow_finished(ticket),
+        workflow_finished=_workflow_finished(session, ticket),
         stage_finalized=stage_finalized,
         outstanding_members=outstanding,
     )
