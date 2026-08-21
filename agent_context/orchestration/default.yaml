@@ -7,13 +7,15 @@ orchestrator:
   pipeline: agents/common_assets/pipeline_stages_v1.md
 gates:
   # On for the fallback profile too, so a workspace nobody wrote a profile for
-  # still gets the organization guardrails. Only the two workspace-agnostic
-  # checks run here: a repo we know nothing about has no ruff/oxlint toolchain
-  # we can assume, but these ship with loregarden and detect the layout they
-  # find. Both no-op (exit 0) when the repo has no Python or TypeScript.
+  # still gets the organization and silent-exception guardrails. Only the
+  # workspace-agnostic checks run here: a repo we know nothing about has no
+  # ruff/oxlint toolchain we can assume, but these ship with loregarden and
+  # detect the layout they find. All no-op (exit 0) when the repo has no Python
+  # or TypeScript.
   enabled: true
   commands:
     - python3 {loregarden_root}/.lefthook/scripts/py_organization_check.py --repo {workspace_root} --scope worktree
+    - python3 {loregarden_root}/.lefthook/scripts/py_silent_except_check.py --repo {workspace_root} --scope worktree
     - node {loregarden_root}/.lefthook/scripts/ts_organization_check.cjs --repo {workspace_root} --scope worktree
 subagents:
   spawn_via: external
