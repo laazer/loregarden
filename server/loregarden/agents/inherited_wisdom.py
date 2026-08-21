@@ -56,13 +56,18 @@ def _checkpoint_entries(
 
 
 def _memory_hits(memory: AgentMemoryService, ticket: Ticket, workspace_slug: str) -> list[str]:
-    """Learnings and memory notes whose text overlaps this ticket."""
-    query = (ticket.title or "").strip()
+    """Learnings and memory notes whose text overlaps this ticket.
+
+    Title *and* description: a title alone is a handful of terms, several of
+    them stopwords, and the description is where a ticket says what it is
+    actually about.
+    """
+    query = " ".join(part for part in (ticket.title, ticket.description) if part).strip()
     if not query:
         return []
-    found = memory.search(query, workspace_slug=workspace_slug, limit=_MAX_MEMORY_HITS)
+    found = memory.recall_related(query, workspace_slug=workspace_slug, limit=_MAX_MEMORY_HITS)
     hits: list[str] = []
-    for row in [*found.get("obsidian", []), *found.get("graph", [])]:
+    for row in found:
         title = str(row.get("title") or "").strip()
         summary = " ".join(str(row.get("body") or "").split())[:240]
         if title:
