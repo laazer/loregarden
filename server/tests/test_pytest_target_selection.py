@@ -1,6 +1,6 @@
 """Pre-push test selection: which tests can the pushed commits actually break?
 
-The full suite is ~19 minutes, so pre-push runs only the tests that reach the
+The full suite is minutes, so pre-push runs only the tests that reach the
 changed modules. That trade is only safe while the fallbacks hold: every case
 the selector cannot map has to widen to the full suite, never narrow to a fast
 green. These tests pin the fallbacks first and the graph second.

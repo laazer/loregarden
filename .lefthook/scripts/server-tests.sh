@@ -4,10 +4,11 @@
 # commits can actually break.
 #
 # The lint steps still run over everything; they cost seconds. pytest does not:
-# the full suite is ~19 minutes, which is how a pre-push hook teaches people to
-# reach for --no-verify. select_pytest_targets.py walks the import graph and
-# falls back to the full suite whenever it cannot map a change (see its
-# docstring — the bias is toward running too much).
+# the full suite is five minutes on an idle machine and worse under load, which
+# is how a pre-push hook teaches people to reach for --no-verify.
+# select_pytest_targets.py walks the import graph and falls back to the full
+# suite whenever it cannot map a change (see its docstring — the bias is toward
+# running too much).
 #
 # This means a green push no longer *proves* green CI. CI still runs the whole
 # suite on every PR, so a miss costs a slower signal, not an unguarded merge.

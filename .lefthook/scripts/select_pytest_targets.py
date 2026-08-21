@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Which test files can the commits being pushed actually break?
 
-The full suite is 2935 tests and ~19 minutes. Most pushes touch a handful of
-modules, and running everything to learn that is the reason people reach for
-`--no-verify`. This selects the test files that reach the changed modules
-through the import graph, and runs only those.
+The full suite is ~2950 tests and five minutes on an idle machine, considerably
+worse on a busy one. Most pushes touch a handful of modules, and running
+everything to learn that is the reason people reach for `--no-verify`. This
+selects the test files that reach the changed modules through the import graph,
+and runs only those — seconds, for a change to a leaf module.
 
 Selection is not free of risk, so the design is biased hard toward running too
 much:
