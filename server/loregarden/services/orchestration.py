@@ -1,6 +1,7 @@
 import json
 import logging
 import secrets
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from loregarden.core.event_bus import event_bus
@@ -39,7 +40,12 @@ from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.run_log_stream import bootstrap_run_log
 from loregarden.services.scheduling import schedule_orchestration
 from loregarden.services.stage_retry_budget import clear_stage_dispatches
-from loregarden.services.studio_routing import find_terminal_stage, is_terminal_stage
+from loregarden.services.studio_routing import (
+    find_terminal_stage,
+    is_agentless_stage,
+    is_terminal_stage,
+    resolve_stage_execution,
+)
 from loregarden.services.ticket_rollup import has_children, reconcile_ancestors, reconcile_parent
 from loregarden.services.ticket_state_service import choose
 from loregarden.services.ticket_tags import serialize_tags
@@ -51,6 +57,7 @@ from loregarden.services.workflow_service import resolve_ticket_stages, resolve_
 from loregarden.services.workflow_state import (
     build_stage_views,
     initial_stages_json,
+    next_executable_stage,
     parse_stage_map,
     reconcile_workflow_state,
     serialize_stage_map,
@@ -65,6 +72,51 @@ logger = logging.getLogger(__name__)
 
 def _run_code() -> str:
     return f"run_{secrets.token_hex(3)}"
+
+
+@dataclass(frozen=True)
+class _RunTarget:
+    """The stage a run is about to start on, once every precondition has held."""
+
+    instance: WorkflowInstance
+    stages: list[WorkflowStageDef]
+    target_key: str
+    stage_def: WorkflowStageDef
+    stage_map: dict[str, StageStatus]
+
+
+def _resolve_run_agent(
+    ticket: Ticket,
+    stage_def: WorkflowStageDef,
+    *,
+    agent_id: str | None,
+    skill_name: str | None,
+) -> tuple[str, str | None]:
+    """Which agent (and skill) runs this stage, or why nothing can.
+
+    Explicit ``agent_id``/``skill_name`` win over what the stage resolves to —
+    that is how a driver fans a parallel stage out one member at a time.
+    """
+    resolved_agent_id, resolved_skill = resolve_stage_execution(ticket, stage_def)
+    chosen_agent = agent_id or resolved_agent_id
+    chosen_skill = skill_name or resolved_skill or stage_def.skill_name
+    if is_agentless_stage(stage_def):
+        raise ValueError(
+            f"Stage '{stage_def.key}' is a human approval gate — it does not run an agent CLI."
+        )
+    if not chosen_agent:
+        # Two different faults used to share the gate message above, which
+        # sent every reader looking for a gate that was not there. A stage
+        # that *should* run an agent but resolved none is a routing defect —
+        # most often a parallel stage started without naming which member
+        # this run is (`agent_id`), since its agents live in
+        # `parallel_agents` and only a driver can fan them out.
+        raise ValueError(
+            f"Stage '{stage_def.key}' resolved no agent to run it. A "
+            f"'{stage_def.stage_type}' stage must either name an agent or be "
+            "started per member with an explicit agent_id."
+        )
+    return chosen_agent, chosen_skill
 
 
 def _blocking_issue_for_stage(
@@ -187,6 +239,35 @@ class OrchestrationService:
         instance = self.get_workflow_instance(ticket.id)
         _, stages = resolve_ticket_stages(self.session, ticket)
         return instance, stages
+
+    def next_executable_stage_key(self, ticket: Ticket) -> str | None:
+        """The stage a driver should run next, or None if nothing may run.
+
+        Public because every driver needs it, not just the builtin one: an
+        external harness asking for its next stage has no other way to resolve
+        the ticket's stage map. See ``next_executable_stage`` for the rules.
+        """
+        instance, stages = self._resolve_stages(ticket)
+        if not instance or not stages:
+            return None
+        return next_executable_stage(stages, parse_stage_map(instance, stages))
+
+    def stage_definition(self, ticket: Ticket, stage_key: str) -> WorkflowStageDef | None:
+        """This ticket's definition of ``stage_key``, or None if it has none.
+
+        Public for the same reason as ``next_executable_stage_key``: a driver
+        outside this process has to know what kind of stage it is being handed
+        before it can run it (see ``services.parallel_stage``).
+        """
+        _, stages = self._resolve_stages(ticket)
+        return next((s for s in stages if s.key == stage_key), None) if stages else None
+
+    def stage_status(self, ticket: Ticket, stage_key: str) -> StageStatus | None:
+        """The recorded status of ``stage_key`` on this ticket's instance."""
+        instance, stages = self._resolve_stages(ticket)
+        if not instance or not stages:
+            return None
+        return parse_stage_map(instance, stages).get(stage_key)
 
     def _resolve_transitions(self, ticket: Ticket) -> list[dict[str, str]]:
         template = self.get_template_for_ticket(ticket)
@@ -716,6 +797,56 @@ class OrchestrationService:
                 "Triage is currently running for this ticket — wait for it to finish before starting a stage run."
             )
 
+    def _reject_if_ticket_busy(self, ticket: Ticket, target_key: str) -> None:
+        """Refuse to start when something is already in flight on this ticket.
+
+        Re-entering the stage that is already RUNNING is the one exception —
+        that is a parallel member or a re-dispatch of the same stage.
+        """
+        if ticket.workflow_stage_status in (StageStatus.RUNNING, StageStatus.AWAITING):
+            if not (
+                ticket.workflow_stage_status == StageStatus.RUNNING
+                and target_key == ticket.workflow_stage_key
+            ):
+                raise ValueError("Current stage must complete before advancing")
+
+        self._reject_if_triage_active(ticket)
+
+    def _resolve_run_target(self, ticket: Ticket, stage_key: str | None) -> _RunTarget:
+        """Resolve the stage a run would start on, refusing if it may not start.
+
+        The checks run in this order deliberately: an earlier guard shadows a
+        later one, so the caller sees the first reason the run cannot start.
+        """
+        self.ensure_workflow_instance(ticket, commit=True)
+        instance, stages = self._resolve_stages(ticket)
+        if not instance or not stages:
+            raise ValueError("Ticket has no workflow instance")
+
+        target_key = stage_key or ticket.workflow_stage_key
+        if not target_key:
+            target_key = StateMachine.next_stage_key(stages, "")
+            if not target_key:
+                raise ValueError("Workflow has no stages")
+
+        self._reject_if_ticket_busy(ticket, target_key)
+
+        stage_def = next((s for s in stages if s.key == target_key), None)
+        if not stage_def:
+            raise ValueError(f"Unknown stage key: {target_key}")
+
+        stage_map = parse_stage_map(instance, stages)
+        if stage_map.get(target_key) == StageStatus.WONT_DO:
+            raise ValueError(f"Stage '{target_key}' is marked won't do")
+
+        return _RunTarget(
+            instance=instance,
+            stages=stages,
+            target_key=target_key,
+            stage_def=stage_def,
+            stage_map=stage_map,
+        )
+
     def start_run(
         self,
         ticket: Ticket,
@@ -731,35 +862,11 @@ class OrchestrationService:
         if not template:
             raise ValueError("No workflow template for ticket workspace")
 
-        self.ensure_workflow_instance(ticket, commit=True)
-        instance, stages = self._resolve_stages(ticket)
-        if not instance or not stages:
-            raise ValueError("Ticket has no workflow instance")
+        target = self._resolve_run_target(ticket, stage_key)
+        instance = target.instance
+        target_key = target.target_key
 
-        target_key = stage_key or ticket.workflow_stage_key
-        if not target_key:
-            target_key = StateMachine.next_stage_key(stages, "")
-            if not target_key:
-                raise ValueError("Workflow has no stages")
-
-        if ticket.workflow_stage_status in (StageStatus.RUNNING, StageStatus.AWAITING):
-            if not (
-                ticket.workflow_stage_status == StageStatus.RUNNING
-                and target_key == ticket.workflow_stage_key
-            ):
-                raise ValueError("Current stage must complete before advancing")
-
-        self._reject_if_triage_active(ticket)
-
-        stage_def = next((s for s in stages if s.key == target_key), None)
-        if not stage_def:
-            raise ValueError(f"Unknown stage key: {target_key}")
-
-        stage_map = parse_stage_map(instance, stages)
-        if stage_map.get(target_key) == StageStatus.WONT_DO:
-            raise ValueError(f"Stage '{target_key}' is marked won't do")
-
-        self._prepare_stage_start(ticket, target_key, stage_map)
+        self._prepare_stage_start(ticket, target_key, target.stage_map)
 
         if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
             raise ValueError(f"Cannot start run for ticket in state: {ticket.state.value}")
@@ -769,21 +876,15 @@ class OrchestrationService:
             self.session.refresh(ticket)
             instance = self.get_workflow_instance(ticket.id) or instance
 
-        from loregarden.services.studio_routing import is_agentless_stage, resolve_stage_execution
-
-        resolved_agent_id, resolved_skill = resolve_stage_execution(ticket, stage_def)
-        chosen_agent = agent_id or resolved_agent_id
-        chosen_skill = skill_name or resolved_skill or stage_def.skill_name
-        if not chosen_agent or is_agentless_stage(stage_def):
-            raise ValueError(
-                f"Stage '{target_key}' is a human approval gate — it does not run an agent CLI."
-            )
+        chosen_agent, chosen_skill = _resolve_run_agent(
+            ticket, target.stage_def, agent_id=agent_id, skill_name=skill_name
+        )
 
         _consume_scope_reroute_pin(ticket, chosen_agent)
 
         ticket.workflow_stage_key = target_key
-        if stage_map.get(target_key) != StageStatus.RUNNING:
-            set_stage_status(ticket, instance, stages, target_key, StageStatus.RUNNING)
+        if target.stage_map.get(target_key) != StageStatus.RUNNING:
+            set_stage_status(ticket, instance, target.stages, target_key, StageStatus.RUNNING)
         self.session.add(ticket)
         self.session.add(instance)
         self.session.commit()

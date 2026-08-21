@@ -29,17 +29,30 @@ from loregarden.models.domain import (
     ExternalHarness,
     ExternalHarnessPromptView,
     ExternalStageResultView,
+    ExternalStageRunView,
     ExternalStageView,
     OrchestrationDriver,
     OrchestrationRun,
     RunStatus,
+    StageStatus,
     Ticket,
+    WorkflowStageDef,
     Workspace,
 )
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
-from loregarden.services.run_service import RunService
+from loregarden.services.parallel_stage import (
+    ParallelMemberResult,
+    latest_member_run,
+    member_passed,
+    member_result_from_run,
+    member_skill_name,
+    prepare_tree_for_parallel_stage,
+    reconcile_parallel_stage,
+)
+from loregarden.services.run_service import RunService, fail_interrupted_runs
+from loregarden.services.studio_routing import is_parallel_stage
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session
 
@@ -62,6 +75,14 @@ _GATE_MESSAGE = (
 _FINISHED_MESSAGE = (
     "The workflow has no stage left to run — it reached its terminal stage. "
     "Finish by calling loregarden_complete_orchestration."
+)
+_BLOCKED_MESSAGE = (
+    "A stage on this ticket is blocked, so there is nothing to check out. Report "
+    "the blocker to the operator, or clear it and ask for the stage by key."
+)
+_SETTLED_MESSAGE = (
+    "Every member of this stage had already been handed back, so the stage has "
+    "now been settled. Ask for the next stage."
 )
 
 
@@ -102,6 +123,124 @@ def start_external_orchestration(
     )
 
 
+def _stage_name(session: Session, ticket: Ticket, stage_key: str) -> str:
+    views = OrchestrationService(session).build_stage_views(ticket)
+    view = next((s for s in views if s.key == stage_key), None)
+    return view.name if view else stage_key
+
+
+def _checked_out_run_view(
+    session: Session, orch_run: OrchestrationRun, run: AgentRun, ticket: Ticket
+) -> ExternalStageRunView:
+    """Stamp a started run as this harness's, and render its prompt."""
+    run_svc = RunService(session)
+    run.orchestration_run_id = orch_run.id
+    run.external_harness = orch_run.external_harness
+    session.add(run)
+    session.commit()
+
+    prompt, repo_root = run_svc.executor.render_stage_prompt(run, ticket)
+    run.command = f"{EXTERNAL_HARNESS_COMMAND_PREFIX} {orch_run.external_harness.value}"
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    return ExternalStageRunView(
+        agent_run_id=run.id,
+        run_code=run.run_code,
+        agent_id=run.agent_id,
+        skill_name=run.skill_name,
+        prompt=prompt,
+        repo_path=str(repo_root),
+        started_at=_as_utc(run.started_at),
+    )
+
+
+def _begin_parallel_stage(
+    session: Session,
+    orch_run: OrchestrationRun,
+    ticket: Ticket,
+    stage_def: WorkflowStageDef,
+    stage_key: str,
+) -> ExternalStageView:
+    """Check every member of a parallel stage out at once.
+
+    A parallel stage has no single agent — the members live in
+    ``stage_def.parallel_agents`` and fanning them out is the driver's job, which
+    on this path is the harness's. It gets one runnable entry per member and runs
+    them however it likes; the stage settles only when the last one is handed
+    back to ``finish_external_stage``.
+
+    Checking the same stage out twice is a re-checkout, not a second attempt: a
+    member already in flight is re-served rather than duplicated, and a member
+    that already passed is not offered again.
+    """
+    orch = OrchestrationService(session)
+    resuming = orch.stage_status(ticket, stage_key) == StageStatus.RUNNING
+    if not resuming:
+        # A fresh attempt supersedes whoever last held this stage. When resuming
+        # we must not reap: the members still in flight are the ones being
+        # re-served, and this reaper claims external runs when ticket-scoped.
+        fail_interrupted_runs(session, ticket_id=ticket.id, stage_key=stage_key)
+
+    runs: list[AgentRun] = []
+    for spec in stage_def.parallel_agents:
+        latest = (
+            latest_member_run(session, ticket, stage_def, stage_key, spec) if resuming else None
+        )
+        if latest is not None and member_passed(latest):
+            continue
+        if latest is not None and latest.status == RunStatus.RUNNING:
+            runs.append(latest)
+            continue
+        runs.append(
+            orch.start_run(
+                ticket,
+                stage_key=stage_key,
+                orchestration_run_id=orch_run.id,
+                agent_id=spec.agent_id,
+                skill_name=member_skill_name(stage_def, spec),
+            )
+        )
+    session.refresh(ticket)
+
+    orch_run.current_stage_key = stage_key
+    session.add(orch_run)
+    session.commit()
+
+    if not runs:
+        # Every member had already been settled while the stage sat RUNNING.
+        # Reconciling is what finalizes it; returning an empty checkout without
+        # doing so would leave the harness asking for this stage forever.
+        _, results = _member_runs_and_results(session, ticket, stage_def, stage_key)
+        reconcile_parallel_stage(session, ticket, orch_run, stage_key, results)
+        session.refresh(ticket)
+        return ExternalStageView(
+            stage_key=stage_key,
+            stage_name=_stage_name(session, ticket, stage_key),
+            parallel=True,
+            message=_SETTLED_MESSAGE,
+        )
+
+    # One tree for every member, resolved before any of them starts — they run
+    # concurrently and would otherwise race to create the ticket's worktree.
+    tree_error = prepare_tree_for_parallel_stage(session, ticket, stage_key, runs)
+    if tree_error:
+        session.refresh(ticket)
+        return ExternalStageView(
+            stage_key=stage_key,
+            stage_name=_stage_name(session, ticket, stage_key),
+            parallel=True,
+            message=tree_error,
+        )
+
+    return ExternalStageView(
+        stage_key=stage_key,
+        stage_name=_stage_name(session, ticket, stage_key),
+        parallel=True,
+        runs=[_checked_out_run_view(session, orch_run, run, ticket) for run in runs],
+    )
+
+
 def begin_external_stage(
     session: Session, orch_run: OrchestrationRun, *, stage_key: str | None = None
 ) -> ExternalStageView:
@@ -109,7 +248,8 @@ def begin_external_stage(
 
     Returns the prompt Loregarden's own agent would have been given for that
     stage, so the harness runs the same instructions rather than an improvised
-    reading of the ticket.
+    reading of the ticket. A parallel stage returns one entry per member; every
+    other stage returns exactly one.
     """
     ticket = session.get(Ticket, orch_run.ticket_id)
     if not ticket:
@@ -129,43 +269,59 @@ def begin_external_stage(
     # terminal an hour ago.
     OrchestrationCallbackService(session).touch_lease(orch_run)
 
+    # Pick the stage the same way the builtin driver does. Settling a stage
+    # leaves ticket.workflow_stage_key on the stage that just finished — choosing
+    # the next one is the driver's job — so falling through to the cursor here
+    # would hand the harness the stage it had just reported on, forever.
+    target_key = stage_key or OrchestrationService(session).next_executable_stage_key(ticket)
+    if not target_key:
+        return ExternalStageView(
+            stage_key=ticket.workflow_stage_key,
+            message=_FINISHED_MESSAGE if _workflow_finished(ticket) else _BLOCKED_MESSAGE,
+        )
+
+    stage_def = OrchestrationService(session).stage_definition(ticket, target_key)
+    if stage_def is not None and is_parallel_stage(stage_def):
+        return _begin_parallel_stage(session, orch_run, ticket, stage_def, target_key)
+
     run_svc = RunService(session)
-    run = run_svc.start_stage_execution(ticket, stage_key=stage_key)
+    run = run_svc.start_stage_execution(ticket, stage_key=target_key)
     session.refresh(ticket)
     if run is None:
         # An agentless stage: a human approval gate, or the terminal stage,
         # which start_stage_execution has already finalized.
         return ExternalStageView(
-            stage_key=stage_key or ticket.workflow_stage_key,
+            stage_key=target_key,
             message=_FINISHED_MESSAGE if _workflow_finished(ticket) else _GATE_MESSAGE,
         )
 
-    run.orchestration_run_id = orch_run.id
-    run.external_harness = orch_run.external_harness
-    session.add(run)
-    session.commit()
-
-    prompt, repo_root = run_svc.executor.render_stage_prompt(run, ticket)
-    run.command = f"{EXTERNAL_HARNESS_COMMAND_PREFIX} {orch_run.external_harness.value}"
     orch_run.current_stage_key = run.stage_key
-    session.add(run)
     session.add(orch_run)
     session.commit()
-    session.refresh(run)
-
-    stage_views = OrchestrationService(session).build_stage_views(ticket)
-    stage_view = next((s for s in stage_views if s.key == run.stage_key), None)
     return ExternalStageView(
-        agent_run_id=run.id,
-        run_code=run.run_code,
         stage_key=run.stage_key,
-        stage_name=stage_view.name if stage_view else run.stage_key,
-        agent_id=run.agent_id,
-        skill_name=run.skill_name,
-        prompt=prompt,
-        repo_path=str(repo_root),
-        started_at=_as_utc(run.started_at),
+        stage_name=_stage_name(session, ticket, run.stage_key),
+        runs=[_checked_out_run_view(session, orch_run, run, ticket)],
     )
+
+
+def _member_runs_and_results(
+    session: Session, ticket: Ticket, stage_def: WorkflowStageDef, stage_key: str
+) -> tuple[int, list[ParallelMemberResult]]:
+    """How many members are still outstanding, and how the settled ones judged.
+
+    A member is outstanding while it has no run of this stage at all, or its
+    latest one is still in flight. The stage cannot settle until none are.
+    """
+    outstanding = 0
+    results: list[ParallelMemberResult] = []
+    for spec in stage_def.parallel_agents:
+        latest = latest_member_run(session, ticket, stage_def, stage_key, spec)
+        if latest is None or latest.status == RunStatus.RUNNING:
+            outstanding += 1
+            continue
+        results.append(member_result_from_run(latest))
+    return outstanding, results
 
 
 def finish_external_stage(
@@ -176,6 +332,10 @@ def finish_external_stage(
     ``transcript`` goes through the same parser a supervised run's stdout does,
     so a `<<<LOREGARDEN_STAGE_REPORT>>>` block from an outside harness reroutes,
     blocks or advances the workflow identically.
+
+    On a parallel stage this settles **one member**. The stage itself is left
+    RUNNING until the last outstanding member is handed back, at which point it
+    is reconciled by the same code the built-in driver reconciles with.
     """
     if run.external_harness is None:
         raise ValueError(f"Run {run.run_code} was not checked out to an external harness")
@@ -192,17 +352,39 @@ def finish_external_stage(
     if orch_run is not None:
         OrchestrationCallbackService(session).touch_lease(orch_run)
 
-    started_at = _as_utc(run.started_at) or _as_utc(run.created_at)
+    ticket = session.get(Ticket, run.ticket_id)
+    if not ticket:
+        raise ValueError(f"Ticket not found: {run.ticket_id}")
+
     orch = OrchestrationService(session)
+    stage_def = orch.stage_definition(ticket, run.stage_key)
+    parallel = stage_def is not None and is_parallel_stage(stage_def)
+
+    started_at = _as_utc(run.started_at) or _as_utc(run.created_at)
     run = orch.complete_run(
         run,
         status=RunStatus.FAILED if failed else RunStatus.SUCCEEDED,
         stdout=transcript,
+        # One member's report must not route the whole stage. The stage settles
+        # once, below, from every member's report together.
+        advance_workflow=not parallel,
     )
     session.refresh(run)
-    ticket = session.get(Ticket, run.ticket_id)
-    if not ticket:
-        raise ValueError(f"Ticket not found: {run.ticket_id}")
+    session.refresh(ticket)
+
+    outstanding = 0
+    stage_finalized = True
+    if parallel:
+        outstanding, results = _member_runs_and_results(session, ticket, stage_def, run.stage_key)
+        stage_finalized = outstanding == 0
+        if stage_finalized:
+            if orch_run is None:
+                raise ValueError(
+                    f"Run {run.run_code} has no orchestration run, so its parallel "
+                    "stage cannot be settled — re-check the stage out."
+                )
+            reconcile_parallel_stage(session, ticket, orch_run, run.stage_key, results)
+            session.refresh(ticket)
 
     finished_at = _as_utc(run.finished_at) or datetime.now(timezone.utc)
     duration = (finished_at - started_at).total_seconds() if started_at else 0.0
@@ -218,6 +400,8 @@ def finish_external_stage(
         ticket_state=ticket.state,
         blocking_issues=ticket.blocking_issues,
         workflow_finished=_workflow_finished(ticket),
+        stage_finalized=stage_finalized,
+        outstanding_members=outstanding,
     )
 
 
@@ -303,25 +487,33 @@ def build_external_harness_prompt(
         '  run_id="<run_id from step 1>"',
         "```",
         "",
-        "You get back `agent_run_id`, `stage_key`, `repo_path`, and `prompt`. That prompt is",
-        "the exact instruction set Loregarden's own agent would receive for this stage —",
-        "follow it, in `repo_path`, instead of improvising from the ticket text above. An",
-        "empty `agent_run_id` means the stage runs no agent; `message` says why, and you stop.",
+        "You get back `stage_key` and a `runs` list. Each entry has its own `agent_run_id`,",
+        "`agent_id`, `skill_name`, `repo_path` and `prompt` — the exact instruction set",
+        "Loregarden's own agent would receive. Follow it, in `repo_path`, instead of",
+        "improvising from the ticket text above. An empty `runs` list means the stage runs",
+        "nothing; `message` says why, and you stop.",
         "",
         "**3. Do the stage's work.**",
         "",
-        "**4. Hand the stage back.**",
+        "A `parallel` stage returns several entries. They are separate reviewers of the same",
+        "change, not steps: run each one against its own prompt — concurrently if you can —",
+        "and keep their outputs apart. Every entry shares one `repo_path`, resolved before",
+        "any of them started, so do not create a tree of your own.",
+        "",
+        "**4. Hand each run back.**",
         "",
         "```",
         "loregarden_finish_external_stage",
-        '  agent_run_id="<from step 2>"',
-        '  transcript="<your stage report, verbatim>"',
+        '  agent_run_id="<one agent_run_id from step 2>"',
+        '  transcript="<that run\'s stage report, verbatim>"',
         "```",
         "",
         "`transcript` must contain the `<<<LOREGARDEN_STAGE_REPORT>>>` block the stage prompt",
         "asks for, unedited. Loregarden parses it and routes the workflow exactly as it does",
         "for its own runs — a rejected report reroutes upstream, a blocked one blocks the",
-        "ticket. The reply tells you the stage's `duration_seconds`, the next stage, and",
+        "ticket. Call this once per entry in `runs`. A parallel stage stays open until its",
+        "last member is back: `stage_finalized` is false and `outstanding_members` counts the",
+        "rest. The reply also tells you the run's `duration_seconds`, the next stage, and",
         "whether the workflow is finished.",
         "",
         "**5. Repeat 2–4** until the reply says `workflow_finished`, or you are blocked.",

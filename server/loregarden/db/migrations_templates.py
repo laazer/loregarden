@@ -12,10 +12,12 @@ so nothing about applied history moves with this.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from loregarden.db.migration_utils import table_exists
+from loregarden.services.skill_service import skill_seed_root
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
@@ -738,18 +740,32 @@ _PHANTOM_SKILL_NAMES = frozenset(
 )
 
 
-def _clear_phantom_skill_slots(stages: list[dict]) -> bool:
+#: Every place inside a stage that may name a skill: the stage itself, and each
+#: entry of these fan-out / routing slots.
+_SKILL_SLOT_KEYS = ("agents", "parallel_agents", "classify_routes")
+
+
+def _skill_holders(stage: dict) -> list[dict]:
+    """The stage plus every fan-out/route entry that carries its own skill name."""
+    holders = [stage]
+    for slot in _SKILL_SLOT_KEYS:
+        holders.extend(stage.get(slot) or [])
+    return holders
+
+
+def _clear_skill_names(stages: list[dict], unknown: Callable[[str], bool]) -> bool:
+    """Blank, in place, every skill name `unknown` rejects. True if anything changed."""
     changed = False
     for stage in stages:
-        if stage.get("skill_name") in _PHANTOM_SKILL_NAMES:
-            stage["skill_name"] = ""
-            changed = True
-        for slot in ("agents", "parallel_agents", "classify_routes"):
-            for item in stage.get(slot) or []:
-                if item.get("skill_name") in _PHANTOM_SKILL_NAMES:
-                    item["skill_name"] = ""
-                    changed = True
+        for holder in _skill_holders(stage):
+            if unknown(holder.get("skill_name") or ""):
+                holder["skill_name"] = ""
+                changed = True
     return changed
+
+
+def _clear_phantom_skill_slots(stages: list[dict]) -> bool:
+    return _clear_skill_names(stages, lambda name: name in _PHANTOM_SKILL_NAMES)
 
 
 def m_clear_phantom_skill_names(conn: Connection) -> None:
@@ -785,3 +801,275 @@ def m_clear_phantom_skill_names(conn: Connection) -> None:
                 text("UPDATE studio_workflows SET stages_json=:st WHERE id=:id"),
                 {"st": json.dumps(stages), "id": row["id"]},
             )
+
+
+def _template_stages_by_version(conn: Connection, template_id: str) -> dict[int, list[dict]]:
+    """Every stage list this template has ever been pinned at, keyed by version.
+
+    Read from `workflow_template_versions.snapshot_json` — which holds
+    `stages_json` as a JSON *string nested inside it*, not as a column. A query
+    that selects a bare `stages_json` alongside these rows silently resolves it
+    against `workflow_templates` and hands back the current template for every
+    version, making a broken snapshot look correct.
+
+    The live template is overlaid at its own version last: it is authoritative
+    for head even if a snapshot row for head drifted or was never written.
+    """
+    by_version: dict[int, list[dict]] = {}
+    if table_exists(conn, "workflow_template_versions"):
+        rows = (
+            conn.execute(
+                text(
+                    "SELECT version, snapshot_json FROM workflow_template_versions "
+                    "WHERE template_id=:id"
+                ),
+                {"id": template_id},
+            )
+            .mappings()
+            .all()
+        )
+        for row in rows:
+            snapshot = json.loads(row["snapshot_json"] or "{}")
+            by_version[int(row["version"])] = json.loads(snapshot.get("stages_json") or "[]")
+
+    live = (
+        conn.execute(
+            text("SELECT version, stages_json FROM workflow_templates WHERE id=:id"),
+            {"id": template_id},
+        )
+        .mappings()
+        .fetchone()
+    )
+    if live is not None:
+        by_version[int(live["version"] or 1)] = json.loads(live["stages_json"] or "[]")
+    return by_version
+
+
+def _terminal_only_successor(
+    pinned_version: int, pinned: list[dict], by_version: dict[int, list[dict]]
+) -> int | None:
+    """Lowest version *after* `pinned_version` that is `pinned` plus a terminal
+    stage and nothing else.
+
+    The equality is on the whole stage list, not just the keys: repinning is only
+    safe when the ticket keeps running the *same* definitions it started under.
+    A version that also renamed an agent, added a gate command, or reordered a
+    stage is not a candidate, and such an instance is left pinned where it is.
+    """
+    for version in sorted(by_version):
+        if version <= pinned_version:
+            continue
+        candidate = by_version[version]
+        if len(candidate) <= len(pinned) or candidate[: len(pinned)] != pinned:
+            continue
+        added = candidate[len(pinned) :]
+        if all(_has_terminal_stage([stage]) for stage in added):
+            return version
+    return None
+
+
+def m_repin_terminal_less_instances(conn: Connection) -> None:
+    """Move workflow instances off a pinned version that has no terminal stage.
+
+    `m_ensure_terminal_stage` appended a terminal `done` stage to every template
+    that ended at `gate`, but only to the templates. Instances already pinned to
+    the version *before* that fix kept resolving the terminal-less snapshot, so a
+    passing final gate had nowhere to advance to and the pipeline re-looped
+    through implement/verify/review instead of finishing. On the live database
+    that is 120 instances pinned to `studio-loregarden-tdd-v3` version 9, 103 of
+    them on tickets that have not reached done/wont_do.
+
+    Repinning rather than backfilling, deliberately. The two options give up
+    different guarantees:
+
+    * Backfilling a `done` stage into version 9's snapshot would fix every
+      affected instance in one write and touch no pins — but it rewrites an
+      applied, immutable version snapshot. Pinning only means something because
+      a version, once written, is what it was; a migration that edits history
+      makes every other pin unverifiable and would make "the ticket runs the
+      definition it started under" a claim no one can check.
+    * Repinning gives up a weaker promise: the affected tickets run version 10
+      rather than the version 9 they started under. Here that costs nothing
+      measurable, because version 10 *is* version 9 plus the terminal `done`
+      stage and the `gate -> done` pass edge — every stage definition the ticket
+      started under is byte-identical.
+
+    So the migration does not trust that shape, it *requires* it:
+    `_terminal_only_successor` only accepts a version that is the pinned stage
+    list plus terminal stages and nothing else. An instance with no such
+    successor is left alone rather than silently moved onto a different
+    workflow — visible, and a smaller problem than a wrong pin.
+
+    Idempotent: a repinned instance now resolves a terminal stage and is skipped
+    on any later run, as is every instance that was already pinned correctly.
+    """
+    if not table_exists(conn, "workflow_instances") or not table_exists(conn, "workflow_templates"):
+        return
+    rows = (
+        conn.execute(
+            text(
+                "SELECT id, template_id, template_version FROM workflow_instances "
+                "WHERE template_version IS NOT NULL"
+            )
+        )
+        .mappings()
+        .all()
+    )
+    stages_cache: dict[str, dict[int, list[dict]]] = {}
+    for row in rows:
+        template_id = row["template_id"]
+        if template_id not in stages_cache:
+            stages_cache[template_id] = _template_stages_by_version(conn, template_id)
+        by_version = stages_cache[template_id]
+        pinned_version = int(row["template_version"])
+        # A pin with no snapshot falls back to the live template at read time,
+        # which m_ensure_terminal_stage already fixed. Nothing to repin.
+        pinned = by_version.get(pinned_version)
+        if pinned is None or _has_terminal_stage(pinned):
+            continue
+        target = _terminal_only_successor(pinned_version, pinned, by_version)
+        if target is None:
+            continue
+        conn.execute(
+            text("UPDATE workflow_instances SET template_version=:v WHERE id=:id"),
+            {"v": target, "id": row["id"]},
+        )
+
+
+def _registered_skill_slugs(conn: Connection) -> frozenset[str]:
+    """Every skill name that resolves today, read the way `get_skill` resolves one.
+
+    `skills.registry.get_skill` looks in the `skills` table, and on a miss seeds
+    the table from `agent_context/skills/*/SKILL.md` and looks again. A name is
+    therefore registered if it is in the table *or* has a seedable directory, and
+    a migration that consulted only one of the two would call a name phantom on a
+    database that simply had not been seeded yet.
+
+    Deliberately not a hardcoded list: a copy of the skill names goes stale the
+    first time someone adds or removes one, and 0068's frozen `_PHANTOM_SKILL_NAMES`
+    is the evidence — it was already incomplete by the time this ran.
+    """
+    slugs: set[str] = set()
+    if table_exists(conn, "skills"):
+        slugs.update(row[0] for row in conn.execute(text("SELECT slug FROM skills")) if row[0])
+    seed_root = skill_seed_root()
+    if seed_root.is_dir():
+        slugs.update(child.name for child in seed_root.iterdir() if (child / "SKILL.md").is_file())
+    return frozenset(slugs)
+
+
+def _names_unregistered_skill(stages: list[dict], registered: frozenset[str]) -> bool:
+    """Whether any stage (or fan-out/route entry) names a skill nothing can resolve."""
+    return any(
+        bool(holder.get("skill_name")) and holder["skill_name"] not in registered
+        for stage in stages
+        for holder in _skill_holders(stage)
+    )
+
+
+def _skill_clearing_successor(
+    pinned_version: int,
+    pinned: list[dict],
+    by_version: dict[int, list[dict]],
+    registered: frozenset[str],
+) -> int | None:
+    """Lowest version after `pinned_version` that is `pinned` with its unresolvable
+    skill names blanked — plus, at most, appended terminal stages — and nothing else.
+
+    Composed with 0088's rule rather than replacing it: an instance can be stranded
+    on both defects at once, and the terminal-stage tail is the one other difference
+    already established as semantically empty for a pinned ticket.
+
+    The comparison is on whole stage dicts, so a candidate that also renamed an
+    agent, reordered a stage, or changed a gate command is rejected and the
+    instance stays pinned where it is. Visible beats silently moved.
+    """
+    normalized = json.loads(json.dumps(pinned))
+    _clear_skill_names(normalized, lambda name: bool(name) and name not in registered)
+    for version in sorted(by_version):
+        if version <= pinned_version:
+            continue
+        candidate = by_version[version]
+        if len(candidate) < len(normalized) or candidate[: len(normalized)] != normalized:
+            continue
+        if _names_unregistered_skill(candidate, registered):
+            continue
+        added = candidate[len(normalized) :]
+        if all(_has_terminal_stage([stage]) for stage in added):
+            return version
+    return None
+
+
+def m_repin_unregistered_skill_instances(conn: Connection) -> None:
+    """Move workflow instances off a pinned version that names a skill nothing can
+    resolve, so the stage dies at dispatch with `SkillNotFoundError`.
+
+    `m_clear_phantom_skill_names` (0068) blanked those names on the *templates*, and
+    every version published after it is clean. A pin, though, is a frozen snapshot:
+    an instance pinned to a version written before 0068 still resolves the phantom,
+    and `render_stage_prompt` raises for it on the builtin driver and the external
+    harness alike. On the live database that is 257 instances pinned to
+    `studio-loregarden-tdd-v3` version 10, whose `verify` stage names skill
+    `'verify'` — a name that has never existed in `agent_context/skills`.
+
+    **Why 0088 was not enough, and why this is not a fix to it.** 0088 moved
+    instances off version 9, which had no terminal stage, onto the lowest successor
+    that was version 9 plus terminal stages and nothing else — version 10. That rule
+    is correct and stays: a repin may not change the workflow a ticket is running,
+    so the *minimal* successor is the only defensible target. Version 10 happens to
+    carry a second, unrelated defect (the phantom `verify` skill), which 0088
+    faithfully preserved because clearing it was not 0088's difference to make.
+    Widening 0088 after the fact would have been the wrong repair twice over — it is
+    an applied id, and its rule is not what is broken. This is an orthogonal second
+    repair with its own minimality rule: a candidate qualifies only if it differs
+    from the pinned version by blanked unresolvable skill names (and, composing with
+    0088, appended terminal stages) and nothing else. On the live data version 11 is
+    exactly version 10 with `verify.skill_name` cleared, so it qualifies; a version
+    that had also renamed an agent would not, and that instance would be left pinned
+    where it is rather than silently moved onto a different workflow.
+
+    "Registered" is resolved against the live registry — the `skills` table union
+    the seedable `agent_context/skills` directories, which is how `get_skill` itself
+    answers — not against a hardcoded name list that goes stale on the next skill
+    someone adds.
+
+    Idempotent: a repinned instance now resolves only registered skills and is
+    skipped on any later run, as is every instance that was already clean. Snapshots
+    are never rewritten; the only write is `workflow_instances.template_version`.
+    """
+    if not table_exists(conn, "workflow_instances") or not table_exists(conn, "workflow_templates"):
+        return
+    registered = _registered_skill_slugs(conn)
+    if not registered:
+        # No registry to judge against — an un-seeded database with the skills
+        # directory absent. Every name would look phantom; repin nothing.
+        return
+    rows = (
+        conn.execute(
+            text(
+                "SELECT id, template_id, template_version FROM workflow_instances "
+                "WHERE template_version IS NOT NULL"
+            )
+        )
+        .mappings()
+        .all()
+    )
+    stages_cache: dict[str, dict[int, list[dict]]] = {}
+    for row in rows:
+        template_id = row["template_id"]
+        if template_id not in stages_cache:
+            stages_cache[template_id] = _template_stages_by_version(conn, template_id)
+        by_version = stages_cache[template_id]
+        pinned_version = int(row["template_version"])
+        # A pin with no snapshot resolves the live template at read time, which
+        # 0068 already cleaned. Nothing frozen, nothing to repin.
+        pinned = by_version.get(pinned_version)
+        if pinned is None or not _names_unregistered_skill(pinned, registered):
+            continue
+        target = _skill_clearing_successor(pinned_version, pinned, by_version, registered)
+        if target is None:
+            continue
+        conn.execute(
+            text("UPDATE workflow_instances SET template_version=:v WHERE id=:id"),
+            {"v": target, "id": row["id"]},
+        )

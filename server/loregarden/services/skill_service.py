@@ -201,12 +201,20 @@ def _apply_skill_update(skill: Skill, body: StudioSkillUpdate) -> None:
         skill.upstream_name = body.upstream_name
 
 
-def _seed_root() -> Path:
+def skill_seed_root() -> Path:
+    """The directory builtin skills are seeded from.
+
+    Public because it is also half the answer to "is this skill name
+    registered?": `get_skill` seeds from here on a miss, so a name that has a
+    directory here resolves even when the `skills` table has not been seeded
+    yet. Callers that must judge a name without opening a session — migrations,
+    notably — read this alongside the table (see `db.migrations_templates`).
+    """
     return settings.agent_context_dir / "skills"
 
 
 def seed_builtin_skills(session: Session, *, skills_dir: Path | None = None) -> list[str]:
-    root = skills_dir or _seed_root()
+    root = skills_dir or skill_seed_root()
     if not root.is_dir():
         logger.warning("seed_builtin_skills: seed directory missing: %s", root)
         return []

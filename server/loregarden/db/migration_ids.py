@@ -106,6 +106,8 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0084_repair_dangling_references",
     "0086_agent_run_lease",
     "0087_view_store",
+    "0088_repin_terminal_less_instances",
+    "0089_repin_unregistered_skill_instances",
 )
 
 

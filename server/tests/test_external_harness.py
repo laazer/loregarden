@@ -113,14 +113,15 @@ def test_the_stage_pair_is_reachable_over_mcp(db_session: Session):
     stage = json.loads(
         execute_tool(db_session, "loregarden_begin_external_stage", {"run_id": orch_run.id})
     )
-    assert stage["agent_run_id"]
-    assert stage["prompt"]
+    assert len(stage["runs"]) == 1
+    assert stage["runs"][0]["agent_run_id"]
+    assert stage["runs"][0]["prompt"]
 
     result = json.loads(
         execute_tool(
             db_session,
             "loregarden_finish_external_stage",
-            {"agent_run_id": stage["agent_run_id"], "transcript": PASSING_REPORT},
+            {"agent_run_id": stage["runs"][0]["agent_run_id"], "transcript": PASSING_REPORT},
         )
     )
     assert result["status"] == RunStatus.SUCCEEDED.value
@@ -132,11 +133,12 @@ def test_stage_round_trip_is_attributed_and_timed(db_session: Session):
     orch_run = start_external_orchestration(db_session, ticket, harness=ExternalHarness.CLAUDE_CODE)
 
     stage = begin_external_stage(db_session, orch_run)
-    assert stage.agent_run_id
-    assert stage.prompt
+    assert len(stage.runs) == 1
+    assert stage.runs[0].agent_run_id
+    assert stage.runs[0].prompt
     assert stage.stage_key
 
-    run = db_session.get(AgentRun, stage.agent_run_id)
+    run = db_session.get(AgentRun, stage.runs[0].agent_run_id)
     assert run.external_harness == ExternalHarness.CLAUDE_CODE
     assert run.command.startswith(EXTERNAL_HARNESS_COMMAND_PREFIX)
     assert run.orchestration_run_id == orch_run.id
@@ -155,7 +157,7 @@ def test_a_stage_report_that_rejects_reroutes_the_same_way(db_session: Session):
     ticket = _ticket(db_session)
     orch_run = start_external_orchestration(db_session, ticket, harness=ExternalHarness.CODEX)
     stage = begin_external_stage(db_session, orch_run)
-    run = db_session.get(AgentRun, stage.agent_run_id)
+    run = db_session.get(AgentRun, stage.runs[0].agent_run_id)
 
     result = finish_external_stage(
         db_session,
@@ -180,7 +182,7 @@ def test_the_restart_reapers_leave_external_runs_alone(db_session: Session):
     fail_interrupted_runs(db_session)
     fail_interrupted_orchestration_runs(db_session)
 
-    run = db_session.get(AgentRun, stage.agent_run_id)
+    run = db_session.get(AgentRun, stage.runs[0].agent_run_id)
     db_session.refresh(run)
     db_session.refresh(orch_run)
     assert run.status == RunStatus.RUNNING

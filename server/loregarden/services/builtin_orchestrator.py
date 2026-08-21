@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from enum import Enum
 
@@ -34,24 +33,21 @@ from loregarden.services.gate_observability import (
     run_gates_detail,
 )
 from loregarden.services.gate_runner import run_gate_autofix, run_transition_gates
-from loregarden.services.git_branch import ensure_ticket_branch
 from loregarden.services.git_commit_push_service import commit_paths
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
-from loregarden.services.rework_feedback import (
-    record_reroute_exhausts_budget,
-    rework_reroute_count,
+from loregarden.services.parallel_stage import (
+    ParallelMemberResult,
+    latest_member_run,
+    member_passed,
+    member_result_from_run,
+    prepare_tree_for_parallel_stage,
+    reconcile_parallel_stage,
 )
 from loregarden.services.run_cancellation import orchestration_cancel_requested
 from loregarden.services.run_interruption import blocked_by_interruption, interrupted_stage_key
 from loregarden.services.run_lease import lease_renewal
-from loregarden.services.stage_report import (
-    StageReport,
-    is_transient_failure,
-    parse_stage_report,
-    stage_report_artifact_content,
-)
 from loregarden.services.stage_retry_budget import (
     count_gate_fix_attempts,
     enforce_stage_retry_budget,
@@ -70,10 +66,12 @@ from loregarden.services.subtree_auto_run import (
     ticket_workflow_complete,
 )
 from loregarden.services.ticket_dependencies import TicketDependencyService
-from loregarden.services.ticket_worktree import resolve_execution_root
-from loregarden.services.workflow_routing import apply_stage_route, previous_stage_key
-from loregarden.services.workflow_state import parse_stage_map, set_stage_status
-from loregarden.services.workspace_paths import resolve_workspace_root
+from loregarden.services.workflow_routing import apply_stage_route
+from loregarden.services.workflow_state import (
+    next_executable_stage,
+    parse_stage_map,
+    set_stage_status,
+)
 from sqlmodel import Session, select
 
 
@@ -160,7 +158,7 @@ class BuiltinOrchestrator:
                     break
 
                 stage_map = parse_stage_map(instance, stages)
-                target_key = self._next_executable_stage(ticket, stages, stage_map)
+                target_key = next_executable_stage(stages, stage_map)
                 if not target_key:
                     return self._pause_orchestration(orch_run, ticket)
 
@@ -876,27 +874,11 @@ class BuiltinOrchestrator:
             auto_approve=auto_approve,
             timeout_seconds=timeout_seconds,
         )
-        tree_error = self._prepare_tree_for_parallel_stage(ticket, stage_key, runs)
+        tree_error = prepare_tree_for_parallel_stage(self.session, ticket, stage_key, runs)
         if tree_error:
             return False, tree_error
-        failures, reports, transient = _run_and_collect_parallel_results(runs)
-
-        for agent_id, report in reports:
-            self.callbacks.attach_artifact(
-                ticket,
-                kind="context",
-                title=f"Stage report — {stage_key} ({agent_id})",
-                content=stage_report_artifact_content(stage_key, report),
-            )
-
-        if failures:
-            return _handle_parallel_stage_failures(
-                self, ticket, orch_run, stage_key, failures, reports, transient
-            )
-
-        self.orch.finalize_stage(ticket, stage_key, status=StageStatus.DONE)
-        self.session.refresh(ticket)
-        return True, ""
+        results = _run_and_collect_parallel_results(runs)
+        return reconcile_parallel_stage(self.session, ticket, orch_run, stage_key, results)
 
     def _incomplete_parallel_specs(
         self, ticket: Ticket, stage_def: WorkflowStageDef, stage_key: str, specs
@@ -910,66 +892,13 @@ class BuiltinOrchestrator:
         an already-succeeded member here avoids redoing work a crash didn't touch,
         while whatever remains still runs concurrently via the normal parallel path.
         """
-        incomplete = []
-        for spec in specs:
-            latest = self.session.exec(
-                select(AgentRun)
-                .where(
-                    AgentRun.ticket_id == ticket.id,
-                    AgentRun.stage_key == stage_key,
-                    AgentRun.agent_id == spec.agent_id,
-                    # Lanes may share an agent and differ only by skill — three
-                    # planners under different lenses, say. Matching on agent
-                    # alone would let one finished lane mark its siblings done.
-                    AgentRun.skill_name == (spec.skill_name or stage_def.skill_name),
-                )
-                .order_by(AgentRun.created_at.desc())
-            ).first()
-            if latest is None or latest.status != RunStatus.SUCCEEDED:
-                incomplete.append(spec)
-                continue
-            report = parse_stage_report(latest.stdout)
-            # Missing report or non-pass: member is not done (fail-closed).
-            if report is None or report.status != "pass":
-                incomplete.append(spec)
-        return incomplete
-
-    def _prepare_tree_for_parallel_stage(
-        self, ticket: Ticket, stage_key: str, runs: list[AgentRun]
-    ) -> str:
-        """Have the tree the members will share ready before any of them start.
-
-        Resolved once, here, rather than by each member: the workers run
-        concurrently and would otherwise race to create the ticket's worktree
-        and end up in three different trees. Only when the worktree policy is
-        off does this fall back to checking the branch out in the shared tree.
-
-        Returns an error message (and finalizes the stage as BLOCKED) on
-        failure, else an empty string.
-        """
-        workspace = self.session.get(Workspace, ticket.workspace_id)
-        if not workspace or not runs:
-            return ""
-
-        workspace_root = resolve_workspace_root(workspace)
-        if not workspace_root.is_dir():
-            return ""
-
-        try:
-            if resolve_execution_root(self.session, runs[0], ticket, workspace) != workspace_root:
-                return ""
-            ensure_ticket_branch(workspace_root, ticket)
-        except (ValueError, subprocess.CalledProcessError) as exc:
-            message = f"Failed to checkout branch: {exc}"
-            self.orch.finalize_stage(
-                ticket,
-                stage_key,
-                status=StageStatus.BLOCKED,
-                blocking_message=message,
+        return [
+            spec
+            for spec in specs
+            if not member_passed(
+                latest_member_run(self.session, ticket, stage_def, stage_key, spec)
             )
-            self.session.refresh(ticket)
-            return message
-        return ""
+        ]
 
     def _start_parallel_stage_runs(
         self,
@@ -1001,7 +930,7 @@ class BuiltinOrchestrator:
 
         Startup reconciliation marks both the stage and ticket BLOCKED. The execute
         loop admits only exact interruption markers so this method can re-arm that
-        stage; genuine failures remain stopped. _next_executable_stage() otherwise
+        stage; genuine failures remain stopped. next_executable_stage() otherwise
         refuses every BLOCKED stage, so Continue Run would silently no-op forever.
 
         Returns the recovered stage key (so callers can tell _execute_parallel_stage
@@ -1020,33 +949,6 @@ class BuiltinOrchestrator:
         self.session.add(instance)
         self.session.commit()
         return stage_key
-
-    def _next_executable_stage(self, ticket: Ticket, stages, stage_map) -> str | None:
-        """Pick the next stage to run: earliest-in-template-order wins.
-
-        Deliberately ignores ticket.workflow_stage_key as a shortcut here — a
-        stage can be manually re-run independently of the ticket's cursor (the
-        UI exposes a Run/Re-Run button per stage), which can leave an earlier
-        stage PENDING while the cursor already points at a later one. Trusting
-        the cursor in that state would silently skip the earlier, still-
-        unresolved stage. Always scanning in order means the cursor being
-        "ahead" of an unresolved stage self-heals on the next orchestration
-        pass instead of compounding.
-        """
-        ordered = sorted(stages, key=lambda s: s.order)
-        keys = [s.key for s in ordered]
-
-        for status in (StageStatus.RUNNING, StageStatus.AWAITING, StageStatus.BLOCKED):
-            for key in keys:
-                if stage_map.get(key) == status:
-                    if status == StageStatus.BLOCKED:
-                        return None
-                    return key
-
-        for key in keys:
-            if stage_map.get(key) == StageStatus.PENDING:
-                return key
-        return None
 
 
 def _orchestrate_incomplete_children(
@@ -1102,22 +1004,16 @@ def _orchestrate_incomplete_children(
     return None
 
 
-def _run_and_collect_parallel_results(
-    runs: list[AgentRun],
-) -> tuple[list[str], list[tuple[str, StageReport]], bool]:
-    """Run parallel stage members and collect stage reports / failures.
+def _run_and_collect_parallel_results(runs: list[AgentRun]) -> list[ParallelMemberResult]:
+    """Run parallel stage members and judge each one.
 
-    Module-level so ``BuiltinOrchestrator`` stays under its size cap. Fail-closed:
-    a clean CLI exit without a parseable stage report counts as a member failure.
+    Module-level so ``BuiltinOrchestrator`` stays under its size cap. Executing
+    the members is this driver's job; deciding what each result *means* is
+    ``services.parallel_stage``'s, so both drivers agree.
     """
-    failures: list[str] = []
-    reports: list[tuple[str, StageReport]] = []
-    # Track whether any failure was infrastructure (API/usage limit), so the
-    # caller can pause the stage for retry rather than treat it as a rework
-    # rejection and reroute upstream.
-    transient_hits: list[str] = []
+    results: list[ParallelMemberResult] = []
 
-    def _run_agent(run_id: str) -> tuple[str, str, str, str]:
+    def _run_agent(run_id: str) -> ParallelMemberResult:
         with Session(engine) as session:
             worker = CliAgentExecutor(session)
             run = session.get(AgentRun, run_id)
@@ -1132,157 +1028,28 @@ def _run_and_collect_parallel_results(
                 advance_workflow=False,
                 skip_git_branch=True,
             )
-            return (
-                completed.agent_id,
-                completed.status.value,
-                completed.stderr or "",
-                completed.stdout or "",
-            )
-
-    def _collect_result(_agent_label: str, result: tuple[str, str, str, str]) -> None:
-        agent_id, status_value, stderr, stdout = result
-        report = parse_stage_report(stdout)
-        if report:
-            reports.append((agent_id, report))
-        if status_value != RunStatus.SUCCEEDED.value:
-            failures.append(f"{agent_id}: {stderr or 'agent run failed'}")
-            if is_transient_failure(stdout, stderr):
-                transient_hits.append(agent_id)
-        elif report is None:
-            failures.append(f"{agent_id}: missing <<<LOREGARDEN_STAGE_REPORT>>> block")
-        elif report.status in ("fail", "needs_rework", "blocked"):
-            failures.append(f"{agent_id}: {report.reroute_context or 'agent reported failure'}")
+            return member_result_from_run(completed)
 
     from sqlmodel.pool import StaticPool
 
     if isinstance(engine.pool, StaticPool):
         for run in runs:
             try:
-                _collect_result(run.agent_id, _run_agent(run.id))
+                results.append(_run_agent(run.id))
             except Exception as exc:
-                failures.append(f"{run.agent_id}: {exc}")
+                results.append(
+                    ParallelMemberResult(agent_id=run.agent_id, failure=f"{run.agent_id}: {exc}")
+                )
     else:
         with ThreadPoolExecutor(max_workers=max(1, len(runs))) as pool:
             future_map = {pool.submit(_run_agent, run.id): run.agent_id for run in runs}
             for future in as_completed(future_map):
                 agent_label = future_map[future]
                 try:
-                    _collect_result(agent_label, future.result())
+                    results.append(future.result())
                 except Exception as exc:
-                    failures.append(f"{agent_label}: {exc}")
+                    results.append(
+                        ParallelMemberResult(agent_id=agent_label, failure=f"{agent_label}: {exc}")
+                    )
 
-    return failures, reports, bool(transient_hits)
-
-
-def _handle_parallel_stage_failures(
-    builtin: BuiltinOrchestrator,
-    ticket: Ticket,
-    orch_run: OrchestrationRun,
-    stage_key: str,
-    failures: list[str],
-    reports: list[tuple[str, StageReport]],
-    transient: bool = False,
-) -> tuple[bool, str]:
-    """Route a parallel review stage's rework: record the reviewers' feedback for
-    the re-run agent and either reroute upstream or, at the loop cap, block for a
-    human. Module-level (not a method) so BuiltinOrchestrator stays under its size
-    cap; pairs with run_completion._reroute_or_block_for_rework (single-stage).
-    """
-    message = "; ".join(failures)
-    transitions = builtin.orch._resolve_transitions(ticket)
-
-    # Prefer an agent-specified reroute target (highest-confidence among
-    # reject/needs_rework reports) over the template's `reject` transition —
-    # apply_stage_route falls back to the template route, then to the immediately
-    # preceding stage, when this is empty.
-    rejecting = [
-        (agent_id, r)
-        for agent_id, r in reports
-        if r.status in ("fail", "needs_rework") and r.reroute_to_stage
-    ]
-    rejecting.sort(key=lambda pair: pair[1].confidence, reverse=True)
-    agent_to_key = rejecting[0][1].reroute_to_stage if rejecting else ""
-    agent_context = rejecting[0][1].reroute_context if rejecting else ""
-
-    if transient and not rejecting:
-        # The only failures were infrastructure (API/usage limit, overload, a CLI
-        # that could not authenticate), and no reviewer produced a genuine
-        # rejection. Rerouting to `implement` would waste a cycle and, via the
-        # rework loop cap, inch toward blocking for the wrong reason. Pause the
-        # stage for a human/resume instead — no reroute, no ledger entry, so the
-        # loop budget is untouched. A genuine rejection from another reviewer
-        # (rejecting non-empty) still takes precedence and is rerouted below with
-        # its real feedback.
-        builtin.callbacks.block_ticket(
-            orch_run,
-            ticket,
-            stage_key=stage_key,
-            message=(
-                f"'{stage_key}' stage hit a transient infrastructure/auth error, not a "
-                f"rework rejection. Paused — resume to retry once it clears. ({message[:300]})"
-            ),
-        )
-        builtin.session.refresh(ticket)
-        return False, message
-
-    template_route = StateMachine.resolve_transition_target(transitions, stage_key, "reject")
-    to_key = agent_to_key or (template_route[0] if template_route else "")
-    transition_agent = template_route[1] if template_route else ""
-
-    instance, stages = builtin.orch._resolve_stages(ticket)
-    if instance and stages:
-        # Record the reviewers' full feedback for the stage this rework will
-        # re-run, so the re-run agent sees every round in full rather than the
-        # short pointer ticket.blocking_issues keeps for the UI.
-        target_stage = to_key or previous_stage_key(stages, stage_key) or ""
-        if record_reroute_exhausts_budget(
-            builtin.session,
-            ticket,
-            target_stage=target_stage,
-            from_stage=stage_key,
-            context=agent_context or message,
-        ):
-            # Same target rerouted to the loop cap without sticking — stop the
-            # loop and pull in a human instead of bouncing again.
-            count = rework_reroute_count(builtin.session, ticket, target_stage)
-            builtin.callbacks.block_ticket(
-                orch_run,
-                ticket,
-                stage_key=stage_key,
-                message=(
-                    f"Rework loop: '{target_stage}' has been rerouted {count}× from "
-                    f"'{stage_key}' without passing. Paused for a human — see the "
-                    f"accumulated rework feedback before re-running."
-                ),
-            )
-            builtin.session.refresh(ticket)
-            return False, message
-
-        try:
-            apply_stage_route(
-                ticket,
-                instance,
-                stages,
-                transitions,
-                from_key=stage_key,
-                outcome="reject",
-                next_stage_key=to_key,
-                next_agent=transition_agent or ticket.next_agent,
-                blocking_issues=(agent_context or message)[:2000],
-            )
-            builtin.session.add(ticket)
-            builtin.session.add(instance)
-            builtin.session.commit()
-            builtin.session.refresh(ticket)
-            return True, message
-        except ValueError:
-            pass  # first-in-order stage, nowhere to fall back to — BLOCKED below
-
-    builtin.orch.finalize_stage(
-        ticket,
-        stage_key,
-        status=StageStatus.BLOCKED,
-        blocking_message=message[:2000],
-    )
-    builtin.session.refresh(ticket)
-    return False, message
+    return results

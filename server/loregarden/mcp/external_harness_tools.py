@@ -28,11 +28,12 @@ EXTERNAL_HARNESS_TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": McpTool.BEGIN_EXTERNAL_STAGE,
         "description": (
-            "Check the ticket's current stage out to the external harness driving this "
-            "orchestration run. Returns the prompt Loregarden's own agent would receive "
-            "for that stage, plus the agent_run_id to hand back with "
-            "loregarden_finish_external_stage. An empty agent_run_id means the stage runs "
-            "no agent — read `message` and stop."
+            "Check the ticket's next stage out to the external harness driving this "
+            "orchestration run. Returns a `runs` list — one entry per agent the stage "
+            "needs, so a parallel stage returns several — each with the prompt "
+            "Loregarden's own agent would receive and the agent_run_id to hand back "
+            "with loregarden_finish_external_stage. Every entry shares one repo_path. "
+            "An empty `runs` list means the stage runs no agent — read `message` and stop."
         ),
         "inputSchema": tool_schema(
             properties={
@@ -51,9 +52,11 @@ EXTERNAL_HARNESS_TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": McpTool.FINISH_EXTERNAL_STAGE,
         "description": (
-            "Settle a stage checked out with loregarden_begin_external_stage and route the "
-            "workflow from its stage report. Returns the stage's duration, where the "
-            "workflow went next, and whether it is finished."
+            "Settle one run checked out with loregarden_begin_external_stage and route the "
+            "workflow from its stage report. Call it once per entry in that call's `runs` "
+            "list; a parallel stage stays RUNNING until its last member is back "
+            "(`stage_finalized`, `outstanding_members`). Returns the run's duration, where "
+            "the workflow went next, and whether it is finished."
         ),
         "inputSchema": tool_schema(
             properties={

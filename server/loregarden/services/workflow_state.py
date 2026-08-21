@@ -53,6 +53,43 @@ def serialize_stage_map(stage_map: dict[str, StageStatus], stages: list[Workflow
     )
 
 
+def next_executable_stage(
+    stages: list[WorkflowStageDef], stage_map: dict[str, StageStatus]
+) -> str | None:
+    """Pick the next stage a driver should run: earliest-in-template-order wins.
+
+    Every driver shares this one picker. Advancing a run settles the *stage
+    instance* (``set_stage_status``) and deliberately leaves
+    ``ticket.workflow_stage_key`` on the stage that just finished — choosing what
+    runs next is the driver's job, not the completion path's. A driver that reads
+    the cursor instead of calling this re-serves the finished stage forever.
+
+    The cursor is not a shortcut here for a second reason: a stage can be re-run
+    on its own (the workflow-lifecycle UI has a Run/Re-Run button per stage),
+    which leaves an earlier stage PENDING while the cursor already points at a
+    later one. Trusting the cursor in that state silently skips the earlier,
+    still-unresolved stage. Always scanning in order means a cursor that is
+    "ahead" self-heals on the next pass instead of compounding.
+
+    Returns ``None`` when nothing may run — every stage resolved, or one is
+    BLOCKED, which stops the workflow rather than being skipped past.
+    """
+    ordered = sorted(stages, key=lambda s: s.order)
+    keys = [s.key for s in ordered]
+
+    for status in (StageStatus.RUNNING, StageStatus.AWAITING, StageStatus.BLOCKED):
+        for key in keys:
+            if stage_map.get(key) == status:
+                if status == StageStatus.BLOCKED:
+                    return None
+                return key
+
+    for key in keys:
+        if stage_map.get(key) == StageStatus.PENDING:
+            return key
+    return None
+
+
 def _stage_resolved(status: StageStatus) -> bool:
     return status in (StageStatus.DONE, StageStatus.WONT_DO)
 
@@ -267,7 +304,7 @@ def settle_unreached_stages(
     Reaching the terminal stage settles the workflow: anything still PENDING is
     on a path this ticket never took. Left PENDING it would both hold the ticket
     short of DONE (_derive_ticket_state needs every non-optional stage resolved)
-    and be picked up by _next_executable_stage, running a branch that was never
+    and be picked up by next_executable_stage, running a branch that was never
     chosen. Template order cannot tell us what was reachable, so settle by
     arrival instead.
     """
