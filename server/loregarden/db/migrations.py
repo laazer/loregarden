@@ -74,6 +74,8 @@ from loregarden.db.migrations_templates import (
     m_plan_skill_on_plan_stage,
     m_playtest_scene_placeholder,
     m_refactor_skill_routes,
+    m_repin_terminal_less_instances,
+    m_repin_unregistered_skill_instances,
     m_require_implement_real_surface,
     m_require_verify_evidence,
     m_retire_agent_owned_gate_items,
@@ -1320,6 +1322,8 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0090_agent_run_process_identity", m_agent_run_process_identity),
     ("0091_sidebar_entry_pinned", m_sidebar_entry_pinned),
     ("0092_structured_ticket_ids", m_structured_ticket_ids),
+    ("0093_repin_terminal_less_instances", m_repin_terminal_less_instances),
+    ("0094_repin_unregistered_skill_instances", m_repin_unregistered_skill_instances),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
