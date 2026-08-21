@@ -3,8 +3,9 @@ import { type ReactNode, useMemo, useState } from "react";
 
 import { api } from "../api/client";
 import { useAppPage } from "../lib/useAppNavigation";
+import { SidebarWorkspaceProvider } from "../state/SidebarWorkspaceContext";
 import { useUiStore } from "../state/uiStore";
-import { AppIconRail } from "./AppIconRail";
+import { AppSidebar } from "./AppSidebar";
 import { AppTopbar } from "./AppTopbar";
 import { AppUtilityDock } from "./AppUtilityDock";
 import { SettingsModal } from "./SettingsModal";
@@ -52,52 +53,100 @@ export function AppLayout({ children }: { children: ReactNode }) {
     },
   });
 
-  const defaultSettingsSlug = useMemo(() => {
-    if (workspace && workspace !== "all") return workspace;
+  /**
+   * The concrete workspace the *settings modal* opens on. `uiStore.workspace` is
+   * `"all"` until one is chosen, so this falls through to whichever slug the
+   * current page is scoped to, and finally to the first workspace.
+   *
+   * Route-dependent by design, and therefore not what the sidebar uses — see
+   * `sidebarWorkspaceSlug` below.
+   */
+  /**
+   * Whether the user has actually chosen a workspace. `uiStore.workspace` holds
+   * `"all"` until the Dashboard picker moves it, and both resolutions below turn
+   * on that one question — spelled twice, it is two places to fix the day the
+   * sentinel changes.
+   */
+  const workspaceChosen = Boolean(workspace) && workspace !== "all";
+
+  const resolvedWorkspaceSlug = useMemo(() => {
+    if (workspaceChosen) return workspace;
     if (appPage === "editor" && editorWorkspace) return editorWorkspace;
     if (appPage === "queue" && queueWorkspaceSlug) return queueWorkspaceSlug;
     if (appPage === "branch-triage" && branchTriageWorkspaceSlug) return branchTriageWorkspaceSlug;
-    return workspaces.data?.[0]?.slug ?? "loregarden";
-  }, [workspace, appPage, editorWorkspace, queueWorkspaceSlug, branchTriageWorkspaceSlug, workspaces.data]);
+    return workspaces.data?.[0]?.slug ?? "";
+  }, [
+    workspace,
+    workspaceChosen,
+    appPage,
+    editorWorkspace,
+    queueWorkspaceSlug,
+    branchTriageWorkspaceSlug,
+    workspaces.data,
+  ]);
+
+  /**
+   * The workspace the *sidebar* shows, which deliberately does not follow the
+   * route. `resolvedWorkspaceSlug` falls through to per-page slugs, so walking
+   * `/queue` → `/console` would swap the entire tab set underneath the user —
+   * chrome does not re-arrange itself because a page changed. Only an explicit
+   * choice moves it; otherwise it shows the first workspace.
+   *
+   * Seeding follows the resolved slug, not the choice. `uiStore.workspace` stays
+   * `"all"` until the Dashboard picker moves it, and "All workspaces" is a place
+   * a user may legitimately sit forever — gating the seed on an explicit choice
+   * leaves a fresh install with no navigation links at all. The first workspace
+   * is stable across navigation and one the user demonstrably has, so its
+   * default pins belong there.
+   */
+  const sidebarWorkspaceSlug = workspaceChosen ? workspace : workspaces.data?.[0]?.slug ?? "";
+  /**
+   * Whether that slug is this chrome's answer or just its state so far. Until
+   * the workspace list lands, an empty slug means "still asking" — and a route
+   * that renders "pick a workspace" on it says so on a page with no picker.
+   */
+  const sidebarWorkspaceResolved = workspaceChosen || !workspaces.isPending;
 
   const openSettings = () => {
-    setSettingsWorkspaceSlug(defaultSettingsSlug);
+    setSettingsWorkspaceSlug(resolvedWorkspaceSlug || "loregarden");
     setSettingsOpen(true);
   };
 
   return (
-    <div className="app-frame">
-      <div className="app-ambient" aria-hidden />
-      <AppIconRail onOpenSettings={openSettings} />
-      <TopbarPageSlotProvider>
-        <div className="app-main">
-          <AppTopbar />
-          <div className={`app-body app-body--dock-${utilityDockEdge}`}>
-            <div className="screen-area">{children}</div>
-            {/* Every screen, chat included: the bar carries the shell and the
-                dock control, which are screen-level tools rather than chat
-                ones. The bar itself drops its composer where the page has one
-                (see `composedOnScreen` in useActiveChatSession). */}
-            <AppUtilityDock />
+    <SidebarWorkspaceProvider slug={sidebarWorkspaceSlug} isResolved={sidebarWorkspaceResolved}>
+      <div className="app-frame">
+        <div className="app-ambient" aria-hidden />
+        <AppSidebar workspaceSlug={sidebarWorkspaceSlug} onOpenSettings={openSettings} />
+        <TopbarPageSlotProvider>
+          <div className="app-main">
+            <AppTopbar />
+            <div className={`app-body app-body--dock-${utilityDockEdge}`}>
+              <div className="screen-area">{children}</div>
+              {/* Every screen, chat included: the bar carries the shell and the
+                  dock control, which are screen-level tools rather than chat
+                  ones. The bar itself drops its composer where the page has one
+                  (see `composedOnScreen` in useActiveChatSession). */}
+              <AppUtilityDock />
+            </div>
           </div>
-        </div>
-      </TopbarPageSlotProvider>
+        </TopbarPageSlotProvider>
 
-      <SettingsModal
-        open={settingsOpen}
-        workspaceSlug={settingsWorkspaceSlug}
-        workspaces={workspaces.data ?? []}
-        runtimeOptions={runtimeOptions.data}
-        isSaving={setRuntime.isPending}
-        onClose={() => setSettingsOpen(false)}
-        onWorkspaceChange={setSettingsWorkspaceSlug}
-        onSave={async (slug, runtime) => {
-          await setRuntime.mutateAsync({ slug, runtime });
-        }}
-      />
+        <SettingsModal
+          open={settingsOpen}
+          workspaceSlug={settingsWorkspaceSlug}
+          workspaces={workspaces.data ?? []}
+          runtimeOptions={runtimeOptions.data}
+          isSaving={setRuntime.isPending}
+          onClose={() => setSettingsOpen(false)}
+          onWorkspaceChange={setSettingsWorkspaceSlug}
+          onSave={async (slug, runtime) => {
+            await setRuntime.mutateAsync({ slug, runtime });
+          }}
+        />
 
-      <ToastHost />
-      <QueueNotificationsHost />
-    </div>
+        <ToastHost />
+        <QueueNotificationsHost />
+      </div>
+    </SidebarWorkspaceProvider>
   );
 }

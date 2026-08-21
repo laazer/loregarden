@@ -35,7 +35,7 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _git_base_ref(cwd: Path) -> str | None:
+def git_base_ref(cwd: Path) -> str | None:
     for ref in ("main", "master", "origin/main", "origin/master"):
         if _git(cwd, "rev-parse", "--verify", ref).returncode == 0:
             return ref
@@ -205,7 +205,7 @@ def _branch_diff_context(
 
     base_ref = base.strip() if base else None
     if not base_ref:
-        base_ref = _git_base_ref(repo_root)
+        base_ref = git_base_ref(repo_root)
     if not base_ref:
         return None
 
@@ -555,7 +555,7 @@ def capture_git_diff(workspace: Workspace, repo_root: Path | None = None) -> dic
     if not (cwd / ".git").exists():
         return None
 
-    base = _git_base_ref(cwd)
+    base = git_base_ref(cwd)
     diff_ref = base if base else "HEAD"
     stat = _git(cwd, "diff", "--stat", diff_ref)
     if stat.returncode != 0 or not stat.stdout.strip():

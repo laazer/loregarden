@@ -103,7 +103,7 @@ def test_cli_prompt_includes_mcp_module():
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         assert ticket
         workspace = session.get(Workspace, ticket.workspace_id)
@@ -150,7 +150,7 @@ def test_cli_prompt_includes_stage_report_contract():
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         assert ticket
         workspace = session.get(Workspace, ticket.workspace_id)
@@ -193,7 +193,7 @@ def test_stage_report_contract_doc_excludes_v1_sections():
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         assert ticket
         workspace = session.get(Workspace, ticket.workspace_id)

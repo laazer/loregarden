@@ -5,6 +5,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-route
 import { AppLayout } from "./components/AppLayout";
 import { RouterBridgeSync } from "./components/RouterBridgeSync";
 import { StudioSectionRedirect } from "./components/StudioSectionRedirect";
+import { TicketRouteResolver } from "./components/TicketRouteResolver";
 import { TicketTabRedirect } from "./components/TicketTabRedirect";
 import { McpGatewayPage } from "./pages/McpGatewayPage";
 import { BaxterChatPage } from "./pages/BaxterChatPage";
@@ -14,6 +15,8 @@ import { EditorPage } from "./pages/EditorPage";
 import { HomePage } from "./pages/HomePage";
 import { QueuePage } from "./pages/QueuePage";
 import { StudioPage } from "./pages/StudioPage";
+import { ViewPage } from "./pages/ViewPage";
+import { viewIdFromPath } from "./lib/appNavigation";
 import { navigateToPage, pageFromPath } from "./lib/useAppNavigation";
 import { createQueryClient } from "./api/queryClient";
 import { QueueStatusProvider } from "./state/QueueStatusContext";
@@ -64,9 +67,18 @@ class PageErrorBoundary extends Component<
   }
 }
 
-function AppShell() {
+export function AppShell() {
   const location = useLocation();
-  const errorBoundaryKey = pageFromPath(location.pathname);
+  /**
+   * One boundary key per destination. `pageFromPath` answers `"home"` for every
+   * path it does not recognise, so keying on it alone gives every view route —
+   * and the Home page they escape to — a single shared key: a crash in one view
+   * stays on screen in the next, and on the page whose job is to be the way out.
+   * The view id is appended rather than substituted, so the non-view pages keep
+   * the distinct keys they already had.
+   */
+  const viewId = viewIdFromPath(location.pathname);
+  const errorBoundaryKey = viewId ? `view:${viewId}` : pageFromPath(location.pathname);
 
   return (
     <QueueStatusProvider>
@@ -77,7 +89,14 @@ function AppShell() {
             <Route path="/chat" element={<BaxterChatPage />} />
             <Route path="/console" element={<Dashboard />} />
             <Route path="/tickets/:ticketId" element={<TicketTabRedirect />} />
-            <Route path="/tickets/:ticketId/:artifactTab" element={<Dashboard />} />
+            <Route
+              path="/tickets/:ticketId/:artifactTab"
+              element={
+                <TicketRouteResolver>
+                  <Dashboard />
+                </TicketRouteResolver>
+              }
+            />
             <Route path="/studio" element={<StudioSectionRedirect />} />
             <Route path="/studio/:studioSection/:resourceId/*" element={<StudioPage />} />
             <Route path="/studio/:studioSection/*" element={<StudioPage />} />
@@ -86,6 +105,9 @@ function AppShell() {
             <Route path="/mcp" element={<McpGatewayPage />} />
             <Route path="/branch-triage" element={<BranchTriagePage />} />
             <Route path="/branch-triage/*" element={<BranchTriagePage />} />
+            {/* Before the catch-all, which would otherwise bounce every view
+                deep-link back to Home. */}
+            <Route path="/view/:viewId" element={<ViewPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </PageErrorBoundary>

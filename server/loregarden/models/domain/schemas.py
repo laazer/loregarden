@@ -62,6 +62,11 @@ class WorkflowStageDef(SQLModel):
     skip_when: str = ""
     model: str = ""
     checklist: list[str] = Field(default_factory=list)
+    # Template-authored instruction handed to this stage's agent. What the
+    # workflow wants from this stage specifically, beyond what its role file
+    # says — the seam that lets a duty move off a human gate and onto the stage
+    # that should have been doing it.
+    stage_brief: str = ""
 
 
 class WorkflowStageView(SQLModel):
@@ -118,6 +123,10 @@ class WorkspaceRuntimeSettings(SQLModel):
 class TicketSummary(SQLModel):
     id: str
     external_id: str
+    # The id this ticket was known by before the restructure. Carried so a
+    # surface can still show, or be searched by, the id someone wrote down —
+    # blank for anything created since.
+    legacy_external_id: str = ""
     title: str
     state: TicketState
     priority: int

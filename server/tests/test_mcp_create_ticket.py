@@ -24,11 +24,13 @@ Design assumptions pinned here (see the ticket's own acceptance criteria):
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments, tool_names
 from loregarden.models.domain import Ticket, WorkItemType, Workspace
 from loregarden.services.acceptance_criteria import load_criteria
+from loregarden.services.ticket_ids import resolve
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import select
 
@@ -135,7 +137,9 @@ def test_create_feature_with_parent_as_external_id_slug(client, db_session):
     assert stored.parent_ticket_id == milestone.id
 
 
-def test_create_ticket_auto_slugs_external_id_when_empty(client, db_session):
+def test_create_ticket_spells_the_external_id_when_empty(client, db_session):
+    """No external_id given: the ticket is spelled from workspace, milestone and
+    number — not slugged from the title, which went stale on every retitle."""
     milestone = _milestone(db_session)
     result = _create(
         db_session,
@@ -146,11 +150,12 @@ def test_create_ticket_auto_slugs_external_id_when_empty(client, db_session):
             "parent": milestone.id,
         },
     )
-    assert result["external_id"]
-    assert "auto-slug-me-please" in result["external_id"] or "auto" in result["external_id"]
+    assert re.fullmatch(r"lg-[a-z0-9-]+-\d+", result["external_id"]), result["external_id"]
 
 
-def test_create_ticket_respects_explicit_external_id(client, db_session):
+def test_create_ticket_keeps_an_explicit_external_id_as_the_legacy_id(client, db_session):
+    """An id from elsewhere is preserved and stays resolvable, but the ticket
+    still gets an id this system spelled."""
     milestone = _milestone(db_session)
     result = _create(
         db_session,
@@ -162,7 +167,11 @@ def test_create_ticket_respects_explicit_external_id(client, db_session):
             "external_id": "custom-explicit-slug",
         },
     )
-    assert result["external_id"] == "custom-explicit-slug"
+    assert result["legacy_external_id"] == "custom-explicit-slug"
+    assert re.fullmatch(r"lg-[a-z0-9-]+-\d+", result["external_id"]), result["external_id"]
+
+    found = resolve(db_session, "custom-explicit-slug")
+    assert found is not None and found.external_id == result["external_id"]
 
 
 def test_create_ticket_default_work_item_type_and_priority_match_schema_defaults(

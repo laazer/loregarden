@@ -202,7 +202,7 @@ def test_permission_bridge_reroutes_cross_scope_write_to_sibling(tmp_path):
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         assert ticket.workflow_stage_key == "implementation"
 
@@ -295,7 +295,7 @@ def test_scope_reroute_budget_exhaustion_blocks(tmp_path):
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
 
         repo_root = tmp_path / "repo"

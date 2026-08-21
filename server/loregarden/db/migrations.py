@@ -36,6 +36,7 @@ from loregarden.db.migrations_composer import m_composer_commands
 from loregarden.db.migrations_doctor import (
     m_agent_run_lease,
     m_agent_run_preflight,
+    m_agent_run_process_identity,
     m_agent_slot_number_unique,
     m_orchestration_run_lease,
 )
@@ -71,20 +72,23 @@ from loregarden.db.migrations_templates import (
     m_light_heavy_rigor_triage,
     m_parallel_review_in_v3,
     m_plan_skill_on_plan_stage,
+    m_playtest_scene_placeholder,
     m_refactor_skill_routes,
     m_repin_terminal_less_instances,
     m_repin_unregistered_skill_instances,
     m_require_implement_real_surface,
     m_require_verify_evidence,
+    m_retire_agent_owned_gate_items,
     m_verify_stage_in_v3,
 )
+from loregarden.db.migrations_ticket_ids import m_structured_ticket_ids
 from loregarden.db.migrations_ticket_studio import (
     m_reference_repos,
     m_ticket_studio_preview_state,
     m_ticket_studio_tables,
     m_ticket_studio_turn_lifecycle,
 )
-from loregarden.db.migrations_views import m_view_store
+from loregarden.db.migrations_views import m_sidebar_entry_pinned, m_view_store
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
@@ -1313,8 +1317,13 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0084_repair_dangling_references", m_repair_dangling_references),
     ("0086_agent_run_lease", m_agent_run_lease),
     ("0087_view_store", m_view_store),
-    ("0088_repin_terminal_less_instances", m_repin_terminal_less_instances),
-    ("0089_repin_unregistered_skill_instances", m_repin_unregistered_skill_instances),
+    ("0088_playtest_scene_placeholder", m_playtest_scene_placeholder),
+    ("0089_retire_agent_owned_gate_items", m_retire_agent_owned_gate_items),
+    ("0090_agent_run_process_identity", m_agent_run_process_identity),
+    ("0091_sidebar_entry_pinned", m_sidebar_entry_pinned),
+    ("0092_structured_ticket_ids", m_structured_ticket_ids),
+    ("0093_repin_terminal_less_instances", m_repin_terminal_less_instances),
+    ("0094_repin_unregistered_skill_instances", m_repin_unregistered_skill_instances),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

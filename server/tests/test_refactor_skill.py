@@ -132,7 +132,7 @@ def _prompt_for_skill(skill_name: str) -> str:
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         workspace = session.get(Workspace, ticket.workspace_id)
         run = AgentRun(

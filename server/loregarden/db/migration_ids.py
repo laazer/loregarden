@@ -106,8 +106,13 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0084_repair_dangling_references",
     "0086_agent_run_lease",
     "0087_view_store",
-    "0088_repin_terminal_less_instances",
-    "0089_repin_unregistered_skill_instances",
+    "0088_playtest_scene_placeholder",
+    "0089_retire_agent_owned_gate_items",
+    "0090_agent_run_process_identity",
+    "0091_sidebar_entry_pinned",
+    "0092_structured_ticket_ids",
+    "0093_repin_terminal_less_instances",
+    "0094_repin_unregistered_skill_instances",
 )
 
 

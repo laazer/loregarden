@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from loregarden.models.domain import Ticket, TicketState, WorkItemType, Workspace
+from loregarden.services.ticket_ids import resolve as resolve_external_id
 from sqlmodel import Session, col, select
 
 _UUID_RE = re.compile(
@@ -35,6 +36,10 @@ def compact_ticket_row(session: Session, ticket: Ticket) -> dict[str, Any]:
     return {
         "id": ticket.id,
         "external_id": ticket.external_id,
+        # Included so an agent handed a pre-restructure id in an older artifact or
+        # branch name can see which ticket it now names, rather than concluding the
+        # ticket is gone.
+        "legacy_external_id": ticket.legacy_external_id,
         "title": ticket.title,
         "state": ticket.state.value if hasattr(ticket.state, "value") else str(ticket.state),
         "work_item_type": ticket.work_item_type.value
@@ -75,20 +80,20 @@ def list_tickets_mcp(
     if parent_ticket_id:
         query = query.where(Ticket.parent_ticket_id == parent_ticket_id)
     if parent_external_id:
-        parent = session.exec(
-            select(Ticket).where(
-                Ticket.workspace_id == ws.id,
-                Ticket.external_id == parent_external_id,
-            )
-        ).first()
+        parent = resolve_external_id(session, parent_external_id, workspace_id=ws.id)
         if not parent:
             return {"workspace_slug": workspace_slug, "count": 0, "tickets": []}
         query = query.where(Ticket.parent_ticket_id == parent.id)
     if roots_only:
-        query = query.where(Ticket.parent_ticket_id.is_(None))  # type: ignore[union-attr]
+        query = query.where(col(Ticket.parent_ticket_id).is_(None))
     if search:
         term = f"%{search.strip()}%"
-        query = query.where((col(Ticket.title).like(term)) | (col(Ticket.external_id).like(term)))
+        query = query.where(
+            col(Ticket.title).like(term)
+            | col(Ticket.external_id).like(term)
+            # Someone searching a ticket they knew under its old id should find it.
+            | col(Ticket.legacy_external_id).like(term)
+        )
 
     cap = max(1, min(limit, 100))
     tickets = session.exec(query.order_by(Ticket.priority, Ticket.created_at).limit(cap)).all()

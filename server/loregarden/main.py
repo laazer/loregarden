@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -51,6 +52,7 @@ from loregarden.services.baxter_chat_run_service import fail_interrupted_baxter_
 from loregarden.services.branch_triage_run_service import fail_interrupted_branch_triage_turns
 from loregarden.services.btw_run_service import fail_interrupted_asides
 from loregarden.services.chat_thinking import clear_orphaned_chat_turn_thinking
+from loregarden.services.drain import begin_drain, end_drain, wait_for_quiescence
 from loregarden.services.orchestration_recovery import resume_interrupted_orchestrations
 from loregarden.services.reconcile_timer import start_reconcile_loop
 from loregarden.services.reconciliation import reconcile_once
@@ -75,6 +77,10 @@ async def lifespan(app: FastAPI):
             "runs agents) is reachable by any local process. Set a token to "
             "require authentication on shared machines."
         )
+    # A fresh app is never draining. Matters because a test process builds and
+    # tears down many apps in one interpreter, and the flag below outlives the
+    # app that set it.
+    end_drain()
     init_db()
     with Session(engine) as session:
         seed_database(session)
@@ -113,8 +119,23 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # Draining before anything else is torn down: the point is to stop
+        # starting work and give what is running a bounded chance to land.
+        # Whatever misses the window is settled by the interruption path on the
+        # next boot, exactly as it is today — drain improves the good case and
+        # must not change the bad one.
+        begin_drain()
+        if settings.drain_timeout_seconds > 0:
+            await asyncio.to_thread(
+                wait_for_quiescence, timeout_seconds=settings.drain_timeout_seconds
+            )
         if reconcile_task is not None:
             reconcile_task.cancel()
+        # The drain is over, so stop advertising it. A real process exits here
+        # and nobody reads the flag again; a test process keeps going, and a
+        # flag left set refuses work in every test that follows — which is
+        # exactly what it did.
+        end_drain()
 
 
 app = FastAPI(title="Loregarden Control Plane", version="0.1.0", lifespan=lifespan)

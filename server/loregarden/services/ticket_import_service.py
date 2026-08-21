@@ -19,6 +19,18 @@ from loregarden.services.ticket_service import TicketService
 from sqlmodel import Session, select
 
 
+def _index_spellings(external_to_id: dict[str, str], ticket: Ticket) -> None:
+    """Make ``ticket`` findable by every id it answers to.
+
+    A `parent_external_id` in an import file names the id that file knows, which
+    is the ref the ticket was created under — and that lands in
+    `legacy_external_id`, not `external_id`.
+    """
+    for spelling in (ticket.external_id, ticket.legacy_external_id):
+        if spelling:
+            external_to_id[spelling] = ticket.id
+
+
 def _import_sort_key(item: TicketImportItem) -> tuple[int, str]:
     order = {
         WorkItemType.MILESTONE: 0,
@@ -96,13 +108,9 @@ class TicketImportService:
         svc = TicketService(self.session)
         created_ids: list[str] = []
         errors: list[str] = []
-        external_to_id: dict[str, str] = {
-            ticket.external_id: ticket.id
-            for ticket in self.session.exec(
-                select(Ticket).where(Ticket.workspace_id == ws.id)
-            ).all()
-            if ticket.external_id
-        }
+        external_to_id: dict[str, str] = {}
+        for ticket in self.session.exec(select(Ticket).where(Ticket.workspace_id == ws.id)).all():
+            _index_spellings(external_to_id, ticket)
 
         ordered = sorted(tickets, key=_import_sort_key)
         pending = list(ordered)
@@ -142,8 +150,7 @@ class TicketImportService:
                     continue
 
                 created_ids.append(created.id)
-                if created.external_id:
-                    external_to_id[created.external_id] = created.id
+                _index_spellings(external_to_id, created)
                 progress = True
 
             if not progress:

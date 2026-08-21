@@ -119,6 +119,7 @@ def entry_payload(entry: SidebarEntry) -> dict:
         "entry_kind": entry.entry_kind.value,
         "page_key": entry.page_key or "",
         "view_id": entry.view_id or "",
+        "pinned": entry.pinned,
     }
 
 
@@ -382,6 +383,31 @@ def pin_page(session: Session, workspace_id: str, page_key: str) -> SidebarEntry
     if existing:
         return existing
     raise SidebarContentionError("The sidebar is being reordered by another request; try again")
+
+
+def set_entry_pinned(session: Session, entry: SidebarEntry, pinned: bool) -> SidebarEntry:
+    """Move a view's tab between the sidebar's Pinned section and Tabs.
+
+    Only a view entry can be pinned. The built-in pages are no longer stored at
+    all — the sidebar's Tools section is derived from the client's page catalog —
+    so a page entry is a leftover row from before that change, and moving one
+    between two sections that never draw it would be a write with no effect the
+    caller could see.
+
+    The rank is untouched: pinning is which section draws the tab, not where it
+    sits in the ordering the two sections share. Re-pinning something already
+    pinned is the same request twice, so it is not an error and it does not
+    disturb the row.
+    """
+    if entry.entry_kind != SidebarEntryKind.VIEW:
+        raise ValueError("Only a view's tab can be pinned or unpinned")
+    if entry.pinned == pinned:
+        return entry
+    entry.pinned = pinned
+    session.add(entry)
+    session.commit()
+    session.refresh(entry)
+    return entry
 
 
 def delete_entry(session: Session, entry: SidebarEntry) -> None:

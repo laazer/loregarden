@@ -14,7 +14,7 @@ def test_start_run_bootstraps_live_log(isolated_db):
     with Session(isolated_db) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         orch = OrchestrationService(session)
         run = orch.start_run(ticket, stage_key="planning")
@@ -37,7 +37,7 @@ def test_artifacts_grouped_prefers_active_run_without_stale_fallback():
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
 
         stale_run = AgentRun(
@@ -96,7 +96,7 @@ def test_artifacts_grouped_single_running_run_has_no_runs_key():
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
 
         active_run = AgentRun(
@@ -148,7 +148,7 @@ def test_artifacts_grouped_multiple_running_runs_has_no_runs_key():
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
 
         run_with_log = AgentRun(
@@ -213,7 +213,7 @@ def test_artifacts_grouped_zero_running_runs_with_completed_run_log_has_no_runs_
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
 
         done_run = AgentRun(
@@ -262,7 +262,7 @@ def test_artifacts_grouped_no_log_artifacts_anywhere_on_ticket_has_no_runs_key()
     with Session(engine) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
 
         run_a = AgentRun(
@@ -299,7 +299,7 @@ def test_ticket_detail_endpoint_never_serializes_runs_key_with_concurrent_runnin
     test in this module calls `_artifacts_grouped`/`_apply_log_artifacts` directly and
     would not catch that — this one drives the actual endpoint a client hits."""
     ticket = db_session.exec(
-        select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+        select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
     ).first()
 
     run_a = AgentRun(

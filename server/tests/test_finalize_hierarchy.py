@@ -1,7 +1,15 @@
-"""Tests for finalize-hierarchy endpoint — atomic bulk work-item creation."""
+"""Tests for finalize-hierarchy endpoint — atomic bulk work-item creation.
+
+The ``external_id`` in a proposal is the ref that wires parents to children in
+the payload, not the id the created ticket ends up with: the endpoint spells
+that from workspace, milestone and number (see ``services.ticket_ids``) and
+keeps the ref as ``legacy_external_id``. These tests therefore look rows up by
+the ref they submitted, under the column it lands in.
+"""
 
 from fastapi.testclient import TestClient
 from loregarden.models.domain import Ticket, WorkItemType
+from loregarden.services.ticket_ids import resolve
 from sqlmodel import Session, select
 
 
@@ -36,7 +44,7 @@ class TestFinalizeHierarchyHappyPath:
 
         # Verify ticket was created in database
         ticket = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-milestone-01")
+            select(Ticket).where(Ticket.legacy_external_id == "test-milestone-01")
         ).first()
         assert ticket is not None
         assert ticket.work_item_type == WorkItemType.MILESTONE
@@ -72,8 +80,12 @@ class TestFinalizeHierarchyHappyPath:
         assert len(body["created_ids"]) == 2
 
         # Verify parent-child relationship
-        milestone = db_session.exec(select(Ticket).where(Ticket.external_id == "test-m-02")).first()
-        feature = db_session.exec(select(Ticket).where(Ticket.external_id == "test-f-02")).first()
+        milestone = db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "test-m-02")
+        ).first()
+        feature = db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "test-f-02")
+        ).first()
         assert milestone is not None
         assert feature is not None
         assert feature.parent_ticket_id == milestone.id
@@ -116,10 +128,14 @@ class TestFinalizeHierarchyHappyPath:
         assert len(created_ids) == 3
 
         # Verify hierarchy chain
-        milestone = db_session.exec(select(Ticket).where(Ticket.external_id == "test-m-03")).first()
-        feature = db_session.exec(select(Ticket).where(Ticket.external_id == "test-f-03")).first()
+        milestone = db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "test-m-03")
+        ).first()
+        feature = db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "test-f-03")
+        ).first()
         capability = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-c-03")
+            select(Ticket).where(Ticket.legacy_external_id == "test-c-03")
         ).first()
 
         assert feature.parent_ticket_id == milestone.id
@@ -237,10 +253,10 @@ class TestFinalizeHierarchyAtomicity:
 
         # Verify neither item was created
         task_exists = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-task-parent")
+            select(Ticket).where(Ticket.legacy_external_id == "test-task-parent")
         ).first()
         capability_exists = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-bad-child")
+            select(Ticket).where(Ticket.legacy_external_id == "test-bad-child")
         ).first()
         assert task_exists is None
         assert capability_exists is None
@@ -275,7 +291,9 @@ class TestFinalizeHierarchyAtomicity:
         assert "error" in body or "detail" in body
 
         # Verify nothing was created
-        exists = db_session.exec(select(Ticket).where(Ticket.external_id == "test-dup-01")).all()
+        exists = db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "test-dup-01")
+        ).all()
         assert len(exists) == 0
 
     def test_rollback_on_milestone_with_parent_id(self, client: TestClient, db_session: Session):
@@ -298,7 +316,7 @@ class TestFinalizeHierarchyAtomicity:
         assert res.status_code == 400
         # Verify nothing was created
         exists = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-invalid-milestone")
+            select(Ticket).where(Ticket.legacy_external_id == "test-invalid-milestone")
         ).first()
         assert exists is None
 
@@ -460,11 +478,11 @@ class TestFinalizeHierarchyEdgeCases:
 
         # Verify all siblings have same parent
         parent = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-parent-sibs")
+            select(Ticket).where(Ticket.legacy_external_id == "test-parent-sibs")
         ).first()
         for i in range(1, 4):
             sibling = db_session.exec(
-                select(Ticket).where(Ticket.external_id == f"test-sib-{i}")
+                select(Ticket).where(Ticket.legacy_external_id == f"test-sib-{i}")
             ).first()
             assert sibling.parent_ticket_id == parent.id
 
@@ -487,7 +505,7 @@ class TestFinalizeHierarchyEdgeCases:
         assert res.status_code == 201
 
         ticket = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-special-chars")
+            select(Ticket).where(Ticket.legacy_external_id == "test-special-chars")
         ).first()
         assert ticket.title == "Test: Special™ Characters (with @#$%)"
 
@@ -512,7 +530,7 @@ class TestFinalizeHierarchyEdgeCases:
         assert res.status_code == 201
 
         ticket = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-multiline")
+            select(Ticket).where(Ticket.legacy_external_id == "test-multiline")
         ).first()
         assert ticket.description == multiline_desc
 
@@ -583,8 +601,12 @@ class TestFinalizeHierarchyEdgeCases:
         body = res.json()
         assert body["total_created"] == 2
 
-        m1 = db_session.exec(select(Ticket).where(Ticket.external_id == "test-root-1")).first()
-        m2 = db_session.exec(select(Ticket).where(Ticket.external_id == "test-root-2")).first()
+        m1 = db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "test-root-1")
+        ).first()
+        m2 = db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "test-root-2")
+        ).first()
         assert m1 is not None
         assert m2 is not None
 
@@ -616,7 +638,9 @@ class TestFinalizeHierarchyBugs:
             },
         )
         assert res.status_code == 201
-        bug = db_session.exec(select(Ticket).where(Ticket.external_id == "test-bug-1")).first()
+        bug = db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "test-bug-1")
+        ).first()
         assert bug.work_item_type == WorkItemType.BUG
 
     def test_bug_under_feature(self, client: TestClient, db_session: Session):
@@ -702,8 +726,10 @@ class TestFinalizeHierarchyResponseStructure:
 class TestFinalizeHierarchyExternalIdGeneration:
     """External ID handling during finalization."""
 
-    def test_explicit_external_id_preserved(self, client: TestClient, db_session: Session):
-        """Explicit external_id values are preserved as-is."""
+    def test_proposal_ref_is_kept_but_the_ticket_is_spelled(
+        self, client: TestClient, db_session: Session
+    ):
+        """The submitted ref survives as the legacy id; the ticket gets a real one."""
         external_id = "custom-explicit-id"
         res = client.post(
             "/api/tickets/finalize-hierarchy",
@@ -720,8 +746,14 @@ class TestFinalizeHierarchyExternalIdGeneration:
             },
         )
         assert res.status_code == 201
-        ticket = db_session.exec(select(Ticket).where(Ticket.external_id == external_id)).first()
-        assert ticket.external_id == external_id
+        ticket = db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == external_id)
+        ).first()
+        assert ticket is not None
+        assert ticket.external_id == f"lg-explicit-id-{ticket.ticket_number}"
+        # And the ref still finds it, which is what makes a re-import safe.
+        found = resolve(db_session, external_id, workspace_id=ticket.workspace_id)
+        assert found is not None and found.id == ticket.id
 
     def test_no_duplicate_external_ids_across_workspace(
         self, client: TestClient, db_session: Session
@@ -783,7 +815,7 @@ class TestFinalizeHierarchyDefaultValues:
         )
         assert res.status_code == 201
         ticket = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-default-state")
+            select(Ticket).where(Ticket.legacy_external_id == "test-default-state")
         ).first()
         assert ticket.state == "backlog"
 
@@ -805,7 +837,7 @@ class TestFinalizeHierarchyDefaultValues:
         )
         assert res.status_code == 201
         ticket = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-default-priority")
+            select(Ticket).where(Ticket.legacy_external_id == "test-default-priority")
         ).first()
         assert ticket.priority == 3
 
@@ -827,7 +859,7 @@ class TestFinalizeHierarchyDefaultValues:
         )
         assert res.status_code == 201
         ticket = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-default-desc")
+            select(Ticket).where(Ticket.legacy_external_id == "test-default-desc")
         ).first()
         assert ticket.description == "" or ticket.description is None
 
@@ -860,9 +892,11 @@ class TestFinalizeHierarchyAdvancedTypeValidation:
         )
         assert res.status_code == 400
         # Verify neither was created
-        bug = db_session.exec(select(Ticket).where(Ticket.external_id == "test-bug-parent")).first()
+        bug = db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "test-bug-parent")
+        ).first()
         child = db_session.exec(
-            select(Ticket).where(Ticket.external_id == "test-invalid-under-bug")
+            select(Ticket).where(Ticket.legacy_external_id == "test-invalid-under-bug")
         ).first()
         assert bug is None
         assert child is None
@@ -893,7 +927,9 @@ class TestFinalizeHierarchyAdvancedTypeValidation:
         assert res.status_code == 400
         # Verify neither was created
         assert (
-            db_session.exec(select(Ticket).where(Ticket.external_id == "test-feature-task")).first()
+            db_session.exec(
+                select(Ticket).where(Ticket.legacy_external_id == "test-feature-task")
+            ).first()
             is None
         )
 
@@ -1093,7 +1129,8 @@ class TestFinalizeHierarchyAtomicityAdvanced:
             "test-deep-bad",
         ]:
             assert (
-                db_session.exec(select(Ticket).where(Ticket.external_id == ext_id)).first() is None
+                db_session.exec(select(Ticket).where(Ticket.legacy_external_id == ext_id)).first()
+                is None
             )
 
     def test_rollback_on_duplicate_id_in_deep_hierarchy(
@@ -1131,7 +1168,9 @@ class TestFinalizeHierarchyAtomicityAdvanced:
         assert res.status_code == 400
         # Verify no items were created
         for ext_id in ["test-dup-deep-root", "test-dup-deep-f"]:
-            count = len(db_session.exec(select(Ticket).where(Ticket.external_id == ext_id)).all())
+            count = len(
+                db_session.exec(select(Ticket).where(Ticket.legacy_external_id == ext_id)).all()
+            )
             assert count == 0 or count == 1  # At most the pre-existing one
 
 
@@ -1202,8 +1241,12 @@ class TestFinalizeHierarchyAcceptanceCriteria:
         )
         assert res.status_code == 201
         # Both exist because transaction succeeded
-        root = db_session.exec(select(Ticket).where(Ticket.external_id == "ac2-root")).first()
-        child = db_session.exec(select(Ticket).where(Ticket.external_id == "ac2-child")).first()
+        root = db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "ac2-root")
+        ).first()
+        child = db_session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "ac2-child")
+        ).first()
         assert root is not None
         assert child is not None
         assert child.parent_ticket_id == root.id
@@ -1256,11 +1299,11 @@ class TestFinalizeHierarchyAcceptanceCriteria:
         assert res.status_code == 201
 
         # Verify the complete hierarchy
-        m = db_session.exec(select(Ticket).where(Ticket.external_id == "ac3-m")).first()
-        f1 = db_session.exec(select(Ticket).where(Ticket.external_id == "ac3-f1")).first()
-        f2 = db_session.exec(select(Ticket).where(Ticket.external_id == "ac3-f2")).first()
-        c1 = db_session.exec(select(Ticket).where(Ticket.external_id == "ac3-c1")).first()
-        t1 = db_session.exec(select(Ticket).where(Ticket.external_id == "ac3-t1")).first()
+        m = db_session.exec(select(Ticket).where(Ticket.legacy_external_id == "ac3-m")).first()
+        f1 = db_session.exec(select(Ticket).where(Ticket.legacy_external_id == "ac3-f1")).first()
+        f2 = db_session.exec(select(Ticket).where(Ticket.legacy_external_id == "ac3-f2")).first()
+        c1 = db_session.exec(select(Ticket).where(Ticket.legacy_external_id == "ac3-c1")).first()
+        t1 = db_session.exec(select(Ticket).where(Ticket.legacy_external_id == "ac3-t1")).first()
 
         # Check all relationships
         assert f1.parent_ticket_id == m.id

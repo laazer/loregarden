@@ -56,21 +56,23 @@ feature/ticket-auth-123
 bugfix/ticket-payment-456
 ```
 
-Or simpler (uses last component of branch):
+Or simpler (uses the last component of the branch), which is what the ticket's own
+default branch does:
 
 ```
-feature/auth-system  # Loregarden will search for ticket with external_id "auth-system"
-feature/payment-flow
+queue-execution/lor-queue-execution-142   # resolves to ticket lor-queue-execution-142
+feature/auth-system                        # resolves to a ticket with that external_id
 ```
 
-**In GitHub**: When you create a branch for a feature, match the ticket ID:
+A ticket's id is `<workspace prefix>-<milestone code>-<number>`, and the number is
+the authoritative part: `lor-anything-142` and `lor-142` both resolve to ticket
+142, as does the id it carried before the restructure. So a branch cut before a
+ticket moved between milestones still matches.
+
+**In GitHub**: When you create a branch by hand, end it with the ticket id:
 ```bash
-git checkout -b feature/ticket-auth-123
+git checkout -b feature/lor-queue-execution-142
 ```
-
-**In Loregarden**: Ensure your ticket's `external_id` matches:
-- Ticket ID: `auth-123`
-- Branch: `feature/ticket-auth-123`
 
 ### 4. Configure Workflow to Trigger Webhook
 
@@ -193,9 +195,9 @@ LOREGARDEN_CI_LOG_RETENTION_DAYS=30
 
 Error: "Could not extract ticket ID from branch"
 
-**Solution**: Ensure branch name matches ticket external_id:
-- Branch: `feature/ticket-auth-123`
-- Ticket external_id: `auth-123` (or full branch suffix works too)
+**Solution**: End the branch with the ticket's id:
+- Branch: `feature/lor-queue-execution-142`
+- Ticket id: `lor-queue-execution-142` (its pre-restructure id also resolves)
 
 ### Signature Verification Failed
 

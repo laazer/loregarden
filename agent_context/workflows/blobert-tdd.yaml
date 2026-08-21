@@ -37,6 +37,10 @@ stages:
     skill_name: ""
     stage_type: classify
     order: 6
+    stage_brief: >-
+      Your run must end with no console errors or warnings, and you must say so with the
+      evidence that shows it. The playtest gate no longer asks a human to watch the output
+      for you.
     classify_routes:
       - specialties: ["simulation", "core", "deterministic"]
         agent_id: core_simulation
@@ -63,6 +67,10 @@ stages:
     skill_name: ""
     stage_type: parallel
     order: 7
+    stage_brief: >-
+      Hunt regressions in the adjacent systems this change touches, not just defects in the
+      lines it changed. That sweep used to be a bullet on the playtest checklist, where a
+      human was asked to do it by eye after the fact; it is yours now.
     parallel_agents:
       - agent_id: gdscript_reviewer
         skill_name: ""
@@ -83,11 +91,8 @@ stages:
     optional: true
     order: 9
     checklist:
-      - Create or update the test level scene(s) needed to exercise this change
-      - Load the affected scene(s) in the Godot editor and run them
-      - "{{acceptance_criteria}}"
-      - Check for regressions in adjacent systems the change touches
-      - Confirm no console errors/warnings appear during play
+      - "{{playtest_scenes}}"
+      - "{{ticket_intent}}"
   - key: learning
     name: Learning
     agent_id: learning

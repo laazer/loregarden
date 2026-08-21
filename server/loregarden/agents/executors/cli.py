@@ -60,6 +60,7 @@ from loregarden.services.handoff_boundary import (
     verify_run_boundary,
 )
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.process_identity import record_process_identity
 from loregarden.services.run_cancellation import cancel_requested
 from loregarden.services.run_errors import TIMEOUT_HARD_CAP_MULTIPLIER, agent_timeout_message
 from loregarden.services.run_log_stream import RunLogStreamer
@@ -456,7 +457,17 @@ class CliAgentExecutor:
         streamer.append("WARN", model_warning, force=True)
 
     def _spawn_print_process(self, invocation, repo_root: Path):
-        """Open the CLI subprocess and feed it any stdin prompt."""
+        """Open the CLI subprocess in its own session, and feed it any stdin prompt.
+
+        `start_new_session` is what detaches it. Without it the agent is in this
+        process's group, so a Ctrl-C, a reload, or anything else that signals the
+        group takes a turn that may be minutes in — and backend edits *require* a
+        reload to be picked up, so that happens by design rather than by accident.
+
+        Detaching alone does not make the run recoverable; 470 is what reattaches
+        to it. What this owes 470 is a pid it can trust, which is why the caller
+        records an identity alongside the number.
+        """
         proc = subprocess.Popen(
             invocation.argv,
             cwd=invocation.cwd or str(repo_root),
@@ -465,6 +476,7 @@ class CliAgentExecutor:
             stderr=subprocess.PIPE,
             stdin=subprocess.PIPE if invocation.stdin_prompt else None,
             bufsize=0,
+            start_new_session=True,
         )
         if invocation.stdin_prompt and proc.stdin:
             proc.stdin.write(invocation.stdin_prompt.encode("utf-8"))
@@ -521,6 +533,11 @@ class CliAgentExecutor:
         except BaseException:
             launch_slot.release()
             raise
+
+        # Recorded together, and immediately: the identity is the process start
+        # time, so it has to be read while this pid is still certainly ours. A
+        # pid stored without one is a number a later process can wear.
+        record_process_identity(run_id, proc.pid)
 
         stdout_lines: list[str] = []
         assert proc.stdout is not None

@@ -11,7 +11,10 @@ import {
   studioSectionFromPath,
   studioTicketSessionPath,
   studioWorkflowPath,
+  ticketIdFromPath,
   ticketPath,
+  viewIdFromPath,
+  viewPath,
 } from "../appNavigation";
 
 describe("appNavigation", () => {
@@ -81,5 +84,36 @@ describe("appNavigation", () => {
     expect(studioPath("gates")).toBe("/studio/gates");
     expect(studioSectionFromPath("/studio/gates")).toBe("gates");
     expect(studioSectionFromPath("/studio/gates/anything")).toBe("gates");
+  });
+
+  it("reads a view id off its route, decoded", () => {
+    expect(viewIdFromPath(viewPath("v grid"))).toBe("v grid");
+    expect(viewIdFromPath("/console")).toBeNull();
+  });
+
+  it("hands back a malformed view segment rather than throwing on it", () => {
+    // A URL segment is whatever the address bar holds, and a bare `%` is not
+    // valid percent-encoding. This runs during render, above the error
+    // boundaries, so a throw here blanks the whole shell instead of missing.
+    expect(viewIdFromPath("/view/%")).toBe("%");
+    expect(viewIdFromPath("/view/%E0%A4%A")).toBe("%E0%A4%A");
+    // Same guarantee for a ticket segment: it does not throw. It answers null
+    // rather than `%` because a malformed segment is not a ticket id either —
+    // see the shareable-id case below.
+    expect(ticketIdFromPath("/tickets/%/diff")).toBeNull();
+  });
+
+  it("reads the ticket id from a canonical ticket path", () => {
+    const uuid = "41aac2d7-26a6-4f0b-988a-fc220d8dfa6c";
+    expect(ticketIdFromPath(`/tickets/${uuid}/diff`)).toBe(uuid);
+    expect(ticketIdFromPath(`/tickets/${uuid}`)).toBe(uuid);
+    expect(ticketIdFromPath("/console")).toBeNull();
+  });
+
+  it("reports no ticket while a shareable id is still being resolved", () => {
+    // App chrome reads the path directly, so answering with the ref would make
+    // it fetch ticket-scoped endpoints under an id none of them accept.
+    expect(ticketIdFromPath("/tickets/lor-mcp-gateway-142/diff")).toBeNull();
+    expect(ticketIdFromPath("/tickets/456-one-dispatch-decision/diff")).toBeNull();
   });
 });

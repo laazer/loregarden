@@ -23,6 +23,8 @@ _ENGINE_BINDINGS = (
     "loregarden.api.chat_turn_events.engine",
     "loregarden.services.builtin_orchestrator.engine",
     "loregarden.services.stage_fanout_service.engine",
+    "loregarden.services.drain.engine",
+    "loregarden.services.process_identity.engine",
     "loregarden.services.run_cancellation.engine",
     "loregarden.services.run_lease.engine",
     "loregarden.agents.executors.permission_bridge.engine",
@@ -32,6 +34,28 @@ _ENGINE_BINDINGS = (
     "loregarden.services.ticket_studio_run_service.engine",
     "loregarden.services.btw_run_service.engine",
 )
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _no_shutdown_drain_in_tests():
+    """Tests do not wait 20s to shut down an app they built.
+
+    The lifespan drains on the way out, and a test suite builds and tears down
+    many apps while leaving RUNNING rows behind on purpose — so each teardown
+    sat through the full production window waiting for runs that no process was
+    ever going to finish. One test took 56 seconds; the suite took 22 minutes.
+
+    Zero is the documented off switch, and it exercises the same code path: the
+    drain still begins, still refuses new work, and still hands what is left to
+    the interruption path. Only the wait is skipped. A test that wants the wait
+    passes its own timeout to `wait_for_quiescence`.
+    """
+    from loregarden.config import settings
+
+    previous = settings.drain_timeout_seconds
+    settings.drain_timeout_seconds = 0
+    yield
+    settings.drain_timeout_seconds = previous
 
 
 @pytest.fixture(autouse=True)

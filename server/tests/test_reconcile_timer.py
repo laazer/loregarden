@@ -16,9 +16,9 @@ of it until 435 gives `agent_runs` a heartbeat that can disprove RUNNING.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from unittest.mock import patch
 
-import pytest
 from loregarden.models.domain import (
     AgentRun,
     AgentSlot,
@@ -168,43 +168,79 @@ def test_the_pass_never_raises(db_session):
 
 # ---- the clock ---------------------------------------------------------
 
+#: Deadlock guard, not a timing budget. `_sweeps_until` resumes on the sweep
+#: that reaches its target, so this bounds only the pathological case of a loop
+#: that has stopped sweeping without ending — it is never what the assertions
+#: below are waiting on, and a healthy or a dead loop both finish long before it.
+_HANG_GUARD_SECONDS = 30.0
+
+
+async def _sweeps_until(sweep: Callable[[], list[str]], target: int) -> tuple[list[int], bool]:
+    """Run the timer's loop until it has swept `target` times, then cancel it.
+
+    Nothing here waits on a duration. The interval is zero, so each iteration is
+    a bare yield to the event loop, and the driver resumes on the sweep that
+    hits the target — which makes the outcome the same on an idle machine and
+    under `pytest -n auto`. Both predecessors were wall-clock races: the first
+    slept 0.05s against a 0.01s interval and asserted two iterations had fitted
+    inside it (6 of 20 runs saw only one, under load), and its replacement
+    polled a ten-second ceiling, which made the race rarer without removing it.
+
+    Returns the sweeps recorded, and whether the loop was still running at the
+    moment it was cancelled — a loop that had already ended on its own is the
+    regression these tests exist to catch.
+    """
+    loop = asyncio.get_running_loop()
+    calls: list[int] = []
+    reached = asyncio.Event()
+
+    def _counted() -> list[str]:
+        # Called on a worker thread: the loop invokes `_sweep` via
+        # asyncio.to_thread, so the event has to be set back on the loop's own
+        # thread rather than directly.
+        calls.append(1)
+        if len(calls) >= target:
+            loop.call_soon_threadsafe(reached.set)
+        return sweep()
+
+    with patch("loregarden.services.reconcile_timer._sweep", _counted):
+        task = asyncio.create_task(run_reconcile_loop(0))
+        waiter = asyncio.create_task(reached.wait())
+        # Racing the two means a loop that dies is noticed on the spot instead
+        # of after the guard expires.
+        await asyncio.wait(
+            {task, waiter}, return_when=asyncio.FIRST_COMPLETED, timeout=_HANG_GUARD_SECONDS
+        )
+        still_running = not task.done()
+        waiter.cancel()
+        task.cancel()
+        await asyncio.gather(task, waiter, return_exceptions=True)
+
+    return calls, still_running
+
 
 def test_the_loop_sweeps_repeatedly(db_session):
     """The whole point: repair happens again without anyone doing anything."""
-    calls: list[int] = []
 
-    async def _drive():
-        with patch("loregarden.services.reconcile_timer._sweep", lambda: calls.append(1) or []):
-            task = asyncio.create_task(run_reconcile_loop(0.01))
-            await asyncio.sleep(0.05)
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
+    def _ok() -> list[str]:
+        return []
 
-    asyncio.run(_drive())
+    calls, still_running = asyncio.run(_sweeps_until(_ok, 2))
 
     assert len(calls) >= 2, f"expected repeated sweeps, got {len(calls)}"
+    assert still_running, "the loop ended instead of waiting for its next tick"
 
 
 def test_the_loop_survives_a_failing_sweep(db_session):
     """A bad pass must not end the cadence and quietly restore the old one."""
-    calls: list[int] = []
 
-    def _explode():
-        calls.append(1)
+    def _explode() -> list[str]:
         raise RuntimeError("whole sweep exploded")
 
-    async def _drive():
-        with patch("loregarden.services.reconcile_timer._sweep", _explode):
-            task = asyncio.create_task(run_reconcile_loop(0.01))
-            await asyncio.sleep(0.05)
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
-
-    asyncio.run(_drive())
+    calls, still_running = asyncio.run(_sweeps_until(_explode, 2))
 
     assert len(calls) >= 2, "the loop died on the first failing sweep"
+    assert still_running, "the loop ended instead of waiting for its next tick"
 
 
 def test_a_non_positive_interval_disables_the_timer():

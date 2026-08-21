@@ -71,7 +71,7 @@ def test_workspace_template_switch_changes_stages(client: TestClient):
 
     ticket_id = None
     for t in client.get("/api/tickets").json():
-        if t["external_id"] == "01-bootstrap-fastapi-control-plane":
+        if t["legacy_external_id"] == "01-bootstrap-fastapi-control-plane":
             ticket_id = t["id"]
             break
     detail = client.get(f"/api/tickets/{ticket_id}").json()

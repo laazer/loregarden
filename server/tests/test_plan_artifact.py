@@ -150,7 +150,7 @@ def test_a_later_stage_prompt_carries_the_plan():
     with Session(_engine()) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         _attach_plan(session, ticket, {"approach": "split the resolver out of the service"})
 
@@ -165,7 +165,7 @@ def test_a_verifier_is_not_shown_the_plan():
     with Session(_engine()) as session:
         seed_database(session)
         ticket = session.exec(
-            select(Ticket).where(Ticket.external_id == "03-wire-cli-agent-runner")
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
         ).first()
         _attach_plan(session, ticket, {"approach": "split the resolver out of the service"})
 

@@ -4,9 +4,9 @@ Agents emit refs (ticket_id, agent_id, …). The client then renders live state
 from existing APIs; this layer only checks the ref resolves and fills a
 display title so a broken link can degrade gracefully.
 
-Resolution is confined to the chat's workspace. `external_id` is only unique
-per workspace (`_next_external_id` numbers from 01 within each one), so an
-unscoped lookup would resolve a colliding ref to an arbitrary workspace.
+Resolution is confined to the chat's workspace. `external_id` numbers from 1
+within each workspace (see `services.ticket_ids`), so an unscoped lookup would
+resolve a colliding ref to an arbitrary workspace.
 """
 
 from __future__ import annotations
@@ -25,7 +25,8 @@ from loregarden.models.domain.chat_primitives import (
     TicketWorkflowPart,
     WorkflowPart,
 )
-from sqlmodel import Session, select
+from loregarden.services.ticket_ids import resolve as resolve_external_id
+from sqlmodel import Session
 
 
 def _resolve_ticket_id(
@@ -36,12 +37,7 @@ def _resolve_ticket_id(
     if ticket is not None and ticket.workspace_id != workspace_id:
         ticket = None
     if ticket is None:
-        ticket = session.exec(
-            select(Ticket).where(
-                Ticket.external_id == ticket_id,
-                Ticket.workspace_id == workspace_id,
-            )
-        ).first()
+        ticket = resolve_external_id(session, ticket_id, workspace_id=workspace_id)
     if ticket is None:
         return ticket_id, None
     return ticket.id, ticket.title or ticket.external_id or ticket.id

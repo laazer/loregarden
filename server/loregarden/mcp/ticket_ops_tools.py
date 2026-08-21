@@ -30,6 +30,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.ticket_ids import reissue_in_workspace
 from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_service import TicketService
 
@@ -103,6 +104,9 @@ def _move_ticket_workspace(session: Session, svc, arguments: dict[str, Any]) -> 
         item.revision += 1
         item.last_updated_by = "triage"
         session.add(item)
+    # Ticket numbers are per workspace, so the whole subtree is re-issued here;
+    # the ids it arrived under stay resolvable as legacy ids.
+    reissue_in_workspace(session, moved, destination)
     session.commit()
 
     return json.dumps(
@@ -261,7 +265,7 @@ TICKET_OPS_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
         "inputSchema": tool_schema(
             properties={
-                "ticket_id": string_prop("Loregarden ticket UUID or external_id slug."),
+                "ticket_id": string_prop("Loregarden ticket UUID or external id."),
                 "workspace_slug": string_prop("Destination workspace slug."),
                 "new_parent_ticket_id": string_prop(
                     "Parent to adopt in the destination workspace (UUID or external_id)."
@@ -286,7 +290,7 @@ TICKET_OPS_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
         "inputSchema": tool_schema(
             properties={
-                "ticket_id": string_prop("Loregarden ticket UUID or external_id slug."),
+                "ticket_id": string_prop("Loregarden ticket UUID or external id."),
                 "workflow_template_slug": string_prop(
                     "Workflow template slug to assign. Empty string removes the workflow."
                 ),
@@ -311,7 +315,7 @@ TICKET_OPS_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         ),
         "inputSchema": tool_schema(
             properties={
-                "ticket_id": string_prop("Loregarden ticket UUID or external_id slug."),
+                "ticket_id": string_prop("Loregarden ticket UUID or external id."),
                 "reason": string_prop(
                     "Why this block is being cleared — what changed since it was raised."
                 ),
