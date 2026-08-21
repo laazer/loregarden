@@ -16,11 +16,18 @@ from loregarden.config import (
     resolved_obsidian_vault,
     settings,
 )
+from loregarden.services import term_overlap
 from loregarden.services.path_resolve import (
     is_under_icloud,
     resolve_icloud_root,
     sqlite_url_for_path,
 )
+
+# How many records `recall_related` may consider, per store, per prompt build.
+# AC5 pins the Obsidian side at one pass over at most this many notes, and the
+# graph side mirrors it so it cannot become the new cost centre. Cited by name
+# in `list_nodes` and `recall_related`; there is no second literal.
+RECALL_CANDIDATE_CAP = 500
 
 
 def _utcnow_iso() -> str:
@@ -330,6 +337,14 @@ class ObsidianMemoryStore:
 
         title_match = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
         title = title_match.group(1).strip() if title_match else path.stem
+        if title_match and title_match.start() == 0:
+            # `upsert_note` writes the title back into the file as a leading
+            # `# <title>` line, which is what this match just consumed. Leaving
+            # it in `.body` would make the note disagree with the body its
+            # writer passed — and with the graph copy of the same content,
+            # which carries no such line. Only a match at position 0 is that
+            # injected heading; a `#` heading further down is the author's.
+            body = body[title_match.end() :].lstrip("\n")
         tags: list[str] = []
         for line in fm_match.group(1).splitlines() if fm_match else []:
             stripped = line.strip()
@@ -489,6 +504,59 @@ class MemoryGraphStore:
             "relation_type": relation_type,
             "created_at": now,
         }
+
+    def list_nodes(
+        self,
+        *,
+        workspace_slug: str = "",
+        limit: int = RECALL_CANDIDATE_CAP,
+    ) -> list[dict[str, Any]]:
+        """Every node in the workspace, newest first — enumeration, not matching.
+
+        `search()` is the only other reader of this table, and it is a
+        `LIKE '%query%'` match. Ranking its output would rank whatever survived
+        a whole-phrase substring test, i.e. almost always nothing, so recall
+        needs a surface that filters on nothing at all. The default is
+        `RECALL_CANDIDATE_CAP`, mirroring the Obsidian side so the graph cannot
+        become the new cost centre.
+        """
+        slug = workspace_slug.strip()
+        with self._connect() as conn:
+            if slug:
+                rows = conn.execute(
+                    """
+                    SELECT id, title, body, tags_json, ticket_id, workspace_slug, node_type, created_at, updated_at
+                    FROM memory_nodes
+                    WHERE workspace_slug = ?
+                    ORDER BY updated_at DESC
+                    LIMIT ?
+                    """,
+                    (slug, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT id, title, body, tags_json, ticket_id, workspace_slug, node_type, created_at, updated_at
+                    FROM memory_nodes
+                    ORDER BY updated_at DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "title": row["title"],
+                "body": row["body"],
+                "tags": json.loads(row["tags_json"] or "[]"),
+                "ticket_id": row["ticket_id"],
+                "workspace_slug": row["workspace_slug"],
+                "node_type": row["node_type"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        ]
 
     def search(
         self,
@@ -794,3 +862,106 @@ class AgentMemoryService:
             "obsidian": obsidian_hits,
             "graph": graph_hits,
         }
+
+    # How much of a body the dedupe key reads. Long enough that two notes
+    # sharing an opening paragraph do not collide, short enough that the key
+    # stays cheap for `RECALL_CANDIDATE_CAP` candidates.
+    _KEYED_BODY_CHARS = 200
+
+    @staticmethod
+    def _content_key(title: str, body: str) -> tuple[str, str]:
+        """Identify one piece of remembered content across both stores.
+
+        `append_learning` and `upsert_memory` dual-write the same text to
+        Obsidian and to the graph under two different uuid4s, so ids cannot
+        answer "is this the same learning twice?" — only the content can.
+
+        The two copies read back byte-identical (`_read_note` returns the body
+        its writer passed, not the file's rendering of it), so this only has to
+        absorb whitespace and case. It deliberately does not strip markdown:
+        a key that reinterprets the text is a key that can disagree with itself
+        on content it was not anticipating, which is exactly how the leading-
+        heading strip this replaced broke on bodies opening with `## Context`.
+        """
+        return (
+            (title or "").strip().casefold(),
+            " ".join((body or "").split())[: AgentMemoryService._KEYED_BODY_CHARS].casefold(),
+        )
+
+    def recall_related(
+        self,
+        query_text: str,
+        *,
+        workspace_slug: str = "",
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Notes and nodes whose wording overlaps `query_text`, best match first.
+
+        This is the automatic inherited-wisdom briefing's read path
+        (`agents/inherited_wisdom._memory_hits`), where the query is a whole
+        ticket title and description — prose, not keywords. `search()` above
+        stays a substring match because it answers a different question: an
+        agent calling `loregarden_search_memory` passes a short deliberate
+        keyword, and there substring is exactly right. The two policies sit on
+        one screen so nobody discovers a year from now that they drifted.
+
+        Returns candidate records, not briefing lines: the sibling Reciprocal
+        Rank Fusion ticket fuses this list with another ranker's, keyed on
+        `(source, id)`. Each row carries `id`, `source` (`"obsidian"` or
+        `"sqlite"`), `title`, `body`, `tags`, `updated_at`, and the `overlap`
+        count `rank_by_overlap` adds — the shared-term score the order is built
+        from, which the RRF ticket reads to weigh this ranker against another.
+        """
+        wanted = term_overlap.terms(query_text)
+        if not wanted:
+            # No terms, no hits — and crucially no vault read and no graph file
+            # opened. An all-stopword title must cost nothing at all.
+            return []
+
+        candidates: list[dict[str, Any]] = []
+        if self.obsidian:
+            candidates += [
+                {
+                    "id": n.id,
+                    "source": "obsidian",
+                    "title": n.title,
+                    "body": n.body,
+                    "tags": n.tags,
+                    "updated_at": n.updated_at,
+                }
+                # The one call site carrying AC5's budget. When `list_notes`
+                # grows a `NotePage(notes, truncated)` return, read `truncated`
+                # here rather than reflexively taking `.notes` — it is the only
+                # signal that the vault has outgrown RECALL_CANDIDATE_CAP and
+                # the briefing is now ranking a prefix of it.
+                for n in self.obsidian.list_notes(
+                    workspace_slug=workspace_slug, limit=RECALL_CANDIDATE_CAP
+                )
+            ]
+        graph = self._graph_for_workspace(workspace_slug)
+        if graph:
+            candidates += [
+                {
+                    "id": row["id"],
+                    "source": "sqlite",
+                    "title": row["title"],
+                    "body": row["body"],
+                    "tags": row["tags"],
+                    "updated_at": row["updated_at"],
+                }
+                for row in graph.list_nodes(
+                    workspace_slug=workspace_slug, limit=RECALL_CANDIDATE_CAP
+                )
+            ]
+
+        deduped: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for row in term_overlap.rank_by_overlap(wanted, candidates):
+            key = self._content_key(row["title"], row["body"])
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(row)
+        # Truncate after ranking, never before: `limit` must drop the weakest
+        # candidates, not whichever ones the stores happened to enumerate last.
+        return deduped[:limit]
