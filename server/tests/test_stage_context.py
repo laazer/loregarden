@@ -165,7 +165,7 @@ def test_inherited_context_section_reaches_the_stage_prompt(tmp_path, monkeypatc
     assert "## Inherited context (already decided — do not re-derive)" in prompt
     assert "streams stdout line-by-line" in prompt
     # Sits with the ticket's own context, ahead of the reference modules.
-    assert prompt.index("Inherited context") < prompt.index("## Loregarden MCP module")
+    assert prompt.index("Inherited context") < prompt.index("## Loregarden control-plane module")
     assert prompt.index("## Acceptance Criteria") < prompt.index("Inherited context")
 
 

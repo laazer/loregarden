@@ -22,6 +22,7 @@ from loregarden.agents.mcp_context import (
     load_memory_protocol_doc,
     load_stage_report_contract_doc,
     load_ui_primitives_doc,
+    resolve_control_plane_transport,
 )
 from loregarden.agents.plan_context import (
     SYNTHESIS_SKILL,
@@ -45,10 +46,11 @@ from loregarden.services.cli_settings import (
     WorkspaceRuntimeSettings,
     adapter_model_pins_apply,
     get_ticket_orchestration_runtime,
+    resolve_effective_adapter,
     resolve_model_for_adapter,
     weak_mcp_model_warning,
 )
-from loregarden.services.code_map import render_code_map
+from loregarden.services.code_map import code_map_reference
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
 from loregarden.services.doctor import park_for_environment, preflight_run, preflight_summary
 from loregarden.services.evidence import FULL_SUITE_EVIDENCE_KIND
@@ -785,10 +787,24 @@ class CliAgentExecutor:
             posture=resolve_compatibility_posture(self.session, ticket, workspace),
             session=self.session,
         )
-        mcp_context = build_mcp_run_context(
-            ticket=ticket, run=run, workspace=workspace, stage_def=stage_def
+        # Resolved from the wiring this run will actually get, not from the kind
+        # of run it is: the prompt has to describe the channel the agent has.
+        transport = resolve_control_plane_transport(
+            run=run,
+            adapter=resolve_effective_adapter(
+                agent_adapter=agent.get("adapter", "local"),
+                workspace=workspace,
+                ticket_adapter=get_ticket_orchestration_runtime(ticket).cli_adapter,
+            ),
         )
-        mcp_doc = load_loregarden_mcp_doc(agent_context_dir)
+        mcp_context = build_mcp_run_context(
+            ticket=ticket,
+            run=run,
+            workspace=workspace,
+            stage_def=stage_def,
+            transport=transport,
+        )
+        mcp_doc = load_loregarden_mcp_doc(agent_context_dir, transport=transport)
         memory_doc = load_memory_protocol_doc(agent_context_dir)
         ui_primitives_doc = load_ui_primitives_doc(agent_context_dir)
         stage_report_doc = load_stage_report_contract_doc(agent_context_dir)
@@ -847,15 +863,18 @@ class CliAgentExecutor:
                 "## Plans to reconcile",
                 build_plan_synthesis_context(self.session, ticket) if is_synthesis else "",
             ),
-            # Before the role, so an agent knows the shape of the repo before it
-            # is told its job. The implementers run on cursor, which does not
-            # pick up CLAUDE.md the way Claude Code does, so without this they
-            # rediscover the layout by grepping on every run.
-            _titled_block("## Repository map", render_code_map(repo_root)),
+            # Before the role, so an agent knows where the shape of the repo is
+            # written down before it is told its job. A pointer rather than the
+            # map itself: the file is in the tree this run is standing in, and
+            # inlining it re-sent the same few thousand characters to every
+            # stage of every ticket. Named explicitly because the implementers
+            # run on cursor, which does not pick up CLAUDE.md the way Claude
+            # Code does.
+            _titled_block("## Repository map", code_map_reference(repo_root)),
             skill_prompt_block(skill_name, skill_body),
             _titled_block("## Agent Role", role_body),
-            _raw_block(build_studio_prompt_sections(agent)),
-            _titled_block("## Loregarden MCP module", mcp_doc, cap=12000),
+            _raw_block(build_studio_prompt_sections(agent, transport=transport)),
+            _titled_block("## Loregarden control-plane module", mcp_doc, cap=12000),
             _titled_block("## Memory protocol module", memory_doc, cap=8000),
             _titled_block("## Chat UI primitives", ui_primitives_doc, cap=6000),
             [

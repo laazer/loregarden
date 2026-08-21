@@ -8,6 +8,7 @@ import re
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from loregarden.agents.mcp_context import select_transport_blocks
 from loregarden.agents.registry import AGENTS
 from loregarden.agents.registry import list_agents as list_builtin_agents
 from loregarden.config import settings
@@ -18,6 +19,7 @@ from loregarden.mcp.tool_ids import (
     mcp_tool_values,
 )
 from loregarden.models.domain import (
+    ControlPlaneTransport,
     StudioAgent,
     StudioAgentCreate,
     StudioAgentPreview,
@@ -609,19 +611,26 @@ def _studio_agent_dict(agent: StudioAgent) -> dict:
     }
 
 
-def build_studio_prompt_sections(agent_cfg: dict) -> str:
+def build_studio_prompt_sections(
+    agent_cfg: dict, *, transport: ControlPlaneTransport = ControlPlaneTransport.MCP
+) -> str:
+    """This agent's own tool guide, handoff checks and gates.
+
+    ``transport`` decides how the tools are described, because "use these MCP
+    tools" is false for a run that has none. The pointers to the MCP and memory
+    modules that used to live here are gone: every consumer of this block
+    already appends both modules a few lines further down.
+    """
     sections: list[str] = []
     if agent_cfg.get("mcp_enabled", True):
         tools = agent_cfg.get("mcp_tools") or tool_names()
-        sections.extend(
-            [
-                "## Loregarden MCP tools",
-                "Use these MCP tools for ticket workflow state:",
-                ", ".join(tools),
-                "Read `agent_context/agents/common_assets/loregarden_mcp_v1.md` for full reference.",
-                "Read `agent_context/agents/common_assets/memory_protocol_v1.md` for memory, learnings, and blog post paths — MCP only, always pass `workspace_slug`.",
-            ]
+        lead = (
+            "Use these MCP tools for ticket workflow state:"
+            if transport is ControlPlaneTransport.MCP
+            else "Use these tools for ticket workflow state, each invoked as "
+            "`./scripts/loregarden-cli.sh mcp call <tool> key=value…`:"
         )
+        sections.extend(["## Loregarden control-plane tools", lead, ", ".join(tools)])
         guide_map = {item.name: item for item in MCP_TOOL_GUIDES}
         for tool in tools:
             guide = guide_map.get(tool)
@@ -695,7 +704,13 @@ def preview_agent_markdown(body: StudioAgentPreviewRequest) -> StudioAgentPrevie
     mcp_doc_path = settings.agent_context_dir / "agents/common_assets/loregarden_mcp_v1.md"
     if body.mcp_enabled and mcp_doc_path.is_file():
         section_names.append("mcp_module")
-        mcp_doc = strip_markdown_frontmatter(mcp_doc_path.read_text(encoding="utf-8"))[:8000]
+        # The preview shows a supervised run's prompt, and a supervised run is
+        # the one this process wires MCP into — so the module is rendered for
+        # that transport rather than with both channels' text at once.
+        mcp_doc = select_transport_blocks(
+            strip_markdown_frontmatter(mcp_doc_path.read_text(encoding="utf-8")),
+            ControlPlaneTransport.MCP,
+        )[:8000]
         parts.extend(["", "## Loregarden MCP module (excerpt)", mcp_doc])
     memory_doc_path = settings.agent_context_dir / "agents/common_assets/memory_protocol_v1.md"
     if body.mcp_enabled and memory_doc_path.is_file():

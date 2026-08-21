@@ -10,7 +10,14 @@ from pathlib import Path
 from typing import Any
 
 from loregarden.config import settings
-from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    CliAdapter,
+    ControlPlaneTransport,
+    Ticket,
+    WorkflowStageDef,
+    Workspace,
+)
 from loregarden.services.mcp_registry import cli_server_entries
 from sqlmodel import Session
 
@@ -24,6 +31,69 @@ STAGE_REPORT_SECTION_TITLE = "STAGE REPORT CONTRACT"
 _SECTION_DIVIDER_RE = re.compile(r"^-{20,}\s*$", re.MULTILINE)
 MCP_SERVER_NAME = "loregarden"
 CLAUDE_MCP_TOOL_PREFIX = f"mcp__{MCP_SERVER_NAME}__"
+
+#: How a CLI-transport run invokes a control-plane tool from Bash. The wrapper
+#: runs the tool in-process against the database, so it needs no server.
+CLI_TOOL_COMMAND = "./scripts/loregarden-cli.sh mcp call"
+
+#: The adapters this process actually wires its MCP server into — the union of
+#: what ``append_mcp_cli_args`` and ``mcp_cli_env`` configure. Both read it, so
+#: "which runs have MCP tools" has one answer rather than two that can drift.
+MCP_WIRED_ADAPTERS: frozenset[CliAdapter] = frozenset(
+    {CliAdapter.CLAUDE, CliAdapter.CURSOR, CliAdapter.CODEX, CliAdapter.OPENCODE}
+)
+
+#: Marks a run of prompt-asset text as belonging to one transport. Written as an
+#: HTML comment so the asset still reads as ordinary markdown to a human.
+_TRANSPORT_BLOCK_RE = re.compile(
+    r"[ \t]*<!--\s*loregarden:transport=(?P<transport>\w+)\s*-->\n"
+    r"(?P<body>.*?)"
+    r"[ \t]*<!--\s*/loregarden:transport\s*-->\n?",
+    re.DOTALL,
+)
+
+
+def _adapter_or_none(adapter: str) -> CliAdapter | None:
+    """The adapter enum for a raw pin, or None when it names no known runner.
+
+    An operator's ``LOREGARDEN_CLI_ADAPTER`` override is free text, so this has
+    to answer "not one of ours" rather than raise.
+    """
+    try:
+        return CliAdapter(adapter)
+    except ValueError:
+        return None
+
+
+def resolve_control_plane_transport(*, run: AgentRun, adapter: str) -> ControlPlaneTransport:
+    """The channel ``run`` will actually reach the control plane through.
+
+    Read off the wiring, never off a preference. Three things decide it, and
+    each is a fact about this run rather than a policy about a kind of run:
+
+    - An externally driven run is executed by a harness this process never
+      spawns, so nothing here attaches an MCP client to it. Whatever that
+      harness configures for itself, the control plane cannot assert it — and
+      asserting it is what produced a prompt telling the agent to call tools it
+      did not have.
+    - ``LOREGARDEN_DISABLE_MCP_CLI`` turns the injection off wholesale.
+    - Only ``MCP_WIRED_ADAPTERS`` get an MCP server wired in at all; a run on any
+      other runner reaches the database through the CLI wrapper.
+    """
+    if run.external_harness is not None:
+        return ControlPlaneTransport.CLI
+    if not mcp_cli_injection_enabled():
+        return ControlPlaneTransport.CLI
+    if _adapter_or_none(adapter) not in MCP_WIRED_ADAPTERS:
+        return ControlPlaneTransport.CLI
+    return ControlPlaneTransport.MCP
+
+
+def tool_reference(name: str, transport: ControlPlaneTransport) -> str:
+    """How the agent invokes control-plane tool ``name`` on its own transport."""
+    if transport is ControlPlaneTransport.MCP:
+        return f"`{CLAUDE_MCP_TOOL_PREFIX}{name}`"
+    return f"`{CLI_TOOL_COMMAND} {name}`"
 
 
 def _tool_names() -> list[str]:
@@ -185,6 +255,8 @@ def append_mcp_cli_args(
     """
     if not mcp_cli_injection_enabled():
         return
+    if _adapter_or_none(adapter) not in MCP_WIRED_ADAPTERS:
+        return
     if adapter == "claude":
         argv.extend(
             ["--mcp-config", loregarden_mcp_cli_config_json(session, orchestrated=orchestrated)]
@@ -222,11 +294,28 @@ def append_mcp_cli_args(
             )
 
 
-def load_loregarden_mcp_doc(agent_context_dir: Path) -> str:
+def select_transport_blocks(text: str, transport: ControlPlaneTransport) -> str:
+    """Keep only the marked passages that are true on ``transport``.
+
+    An unmarked passage is transport-neutral and always survives. A passage
+    marked for the other transport is not trimmed for length — it is removed
+    because it describes a channel this run does not have.
+    """
+
+    def _keep(match: re.Match[str]) -> str:
+        if match.group("transport") == transport.value:
+            return match.group("body")
+        return ""
+
+    return _TRANSPORT_BLOCK_RE.sub(_keep, text).strip()
+
+
+def load_loregarden_mcp_doc(agent_context_dir: Path, *, transport: ControlPlaneTransport) -> str:
+    """The MCP module, rendered for the channel this run actually has."""
     path = agent_context_dir / MCP_DOC_REL
     if not path.is_file():
         return ""
-    return path.read_text(encoding="utf-8")
+    return select_transport_blocks(path.read_text(encoding="utf-8"), transport)
 
 
 def load_memory_protocol_doc(agent_context_dir: Path) -> str:
@@ -263,34 +352,108 @@ def load_stage_report_contract_doc(agent_context_dir: Path) -> str:
     return ""
 
 
+def tool_invocation(name: str, transport: ControlPlaneTransport, args: dict[str, str]) -> str:
+    """A worked call of ``name`` with real values, in this run's own syntax."""
+    if transport is ControlPlaneTransport.MCP:
+        rendered = ", ".join(f'`{key}="{value}"`' for key, value in args.items())
+        return f"{tool_reference(name, transport)} with {rendered}"
+    rendered = " ".join(f"{key}={value}" for key, value in args.items())
+    return f"`{CLI_TOOL_COMMAND} {name} {rendered}`"
+
+
+def _transport_header_lines(transport: ControlPlaneTransport) -> list[str]:
+    """How this run talks to the control plane, stated once, at the top.
+
+    Only one of these is ever rendered. Handing an agent both is what let a
+    supervised run be told about a Bash fallback it has no need of, and an
+    externally driven one be told to call MCP tools it was never given.
+    """
+    if transport is ControlPlaneTransport.MCP:
+        return [
+            "## Loregarden MCP (required for workflow state)",
+            f"The `{MCP_SERVER_NAME}` MCP server is **pre-configured** for this run — "
+            "call native MCP tools directly.",
+            f"In Claude Code, tools are named `{CLAUDE_MCP_TOOL_PREFIX}<tool>` "
+            f"(example: `{CLAUDE_MCP_TOOL_PREFIX}loregarden_get_ticket`).",
+            "Do **not** initialize MCP via Bash/curl or manual JSON-RPC.",
+            "",
+            f"HTTP endpoint (operators only): `{resolve_mcp_url()}`",
+        ]
+    return [
+        "## Loregarden CLI (required for workflow state)",
+        "This run has **no MCP tools attached**. Every control-plane tool is reachable "
+        "from Bash instead, and runs in-process against the database — no server has "
+        "to be up:",
+        "",
+        "```bash",
+        f"{CLI_TOOL_COMMAND.removesuffix(' call')} list                 # every tool + description",
+        f"{CLI_TOOL_COMMAND.removesuffix(' call')} describe <tool>      # its arguments",
+        f"{CLI_TOOL_COMMAND} <tool> key=value…",
+        "```",
+        "",
+        "Arguments are `key=value`, typed from each tool's own schema — a wrong name "
+        "is rejected with the valid ones, so guess nothing. For a long value "
+        "(`content`, artifact bodies) write the text to a file and pass "
+        "`content=@path`; never paste a multi-line body onto the command line. "
+        "Exit codes: `0` ok, `1` the tool failed, `2` you invoked it wrong.",
+        "",
+        "Do **not** hand-write JSON-RPC against the HTTP endpoint, and do not give up "
+        "on a control-plane write because no MCP tool is listed.",
+    ]
+
+
+def _artifact_section_lines(workspace: Workspace, transport: ControlPlaneTransport) -> list[str]:
+    return [
+        "## Loregarden artifacts (memory, learnings, blog posts, checkpoints)",
+        "Workspace-scoped **Obsidian markdown** + optional **SQLite memory graph**. "
+        "**Never write files or SQL directly.**",
+        f'Always pass `workspace_slug="{workspace.slug}"` on memory tools.',
+        "**Discover backends:** "
+        + tool_invocation("loregarden_memory_status", transport, {"workspace_slug": workspace.slug})
+        + " → Obsidian dirs + `memory_sqlite_path` (graph DB for memory/learnings nodes).",
+        "SQLite stores `memory` and `learning` nodes in `memory_nodes` + "
+        "`memory_relations`. Blog posts and checkpoints are Obsidian-only.",
+        f"**Memory:** {tool_reference('loregarden_upsert_memory', transport)} · "
+        f"**learnings:** {tool_reference('loregarden_append_learning', transport)} · "
+        f"**blog posts:** {tool_reference('loregarden_upsert_blog_post', transport)} · "
+        f"**checkpoints:** {tool_reference('loregarden_append_checkpoint', transport)} "
+        "(see checkpoint protocol module below) · "
+        f"**graph links:** {tool_reference('loregarden_create_memory_relation', transport)} · "
+        f"**search:** {tool_reference('loregarden_search_memory', transport)} "
+        "(Obsidian + SQLite).",
+        "See Memory protocol module below.",
+    ]
+
+
 def build_mcp_run_context(
     *,
     ticket: Ticket,
     run: AgentRun,
     workspace: Workspace,
     stage_def: WorkflowStageDef | None = None,
+    transport: ControlPlaneTransport,
 ) -> str:
-    mcp_url = resolve_mcp_url()
     lines = [
-        "## Loregarden MCP (required for workflow state)",
-        f"The `{MCP_SERVER_NAME}` MCP server is **pre-configured** for this run — call native MCP tools directly.",
-        f"In Claude Code, tools are named `{CLAUDE_MCP_TOOL_PREFIX}<tool>` "
-        f"(example: `{CLAUDE_MCP_TOOL_PREFIX}loregarden_get_ticket`).",
-        "Do **not** initialize MCP via Bash/curl or manual JSON-RPC.",
+        *_transport_header_lines(transport),
         "",
         "**First call — load ticket state (use these exact values):**",
-        f"- `{CLAUDE_MCP_TOOL_PREFIX}loregarden_get_ticket_by_external` with "
-        f'`workspace_slug="{workspace.slug}"`, `external_id="{ticket.external_id}"`',
-        f'- or `{CLAUDE_MCP_TOOL_PREFIX}loregarden_get_ticket` with `ticket_id="{ticket.id}"` '
-        f'(UUID) or `ticket_id="{ticket.external_id}"` + `workspace_slug="{workspace.slug}"` '
-        "(external id)",
+        "- "
+        + tool_invocation(
+            "loregarden_get_ticket_by_external",
+            transport,
+            {"workspace_slug": workspace.slug, "external_id": ticket.external_id},
+        ),
+        "- or "
+        + tool_invocation("loregarden_get_ticket", transport, {"ticket_id": ticket.id})
+        + " (UUID), or the same tool with "
+        f"`ticket_id={ticket.external_id}` + `workspace_slug={workspace.slug}` (external id)",
         "",
         "**Discover related or other tickets:**",
-        f'- `{CLAUDE_MCP_TOOL_PREFIX}loregarden_list_tickets` with `workspace_slug="{workspace.slug}"` '
-        "and optional `search`, `parent_external_id`, or `state` filters",
-        "- `loregarden_get_ticket` responses include a `hierarchy` block (parent, siblings, children)",
-        "",
-        f"HTTP endpoint (operators only): `{mcp_url}`",
+        "- "
+        + tool_invocation("loregarden_list_tickets", transport, {"workspace_slug": workspace.slug})
+        + " and optional `search`, `parent_external_id`, or `state` filters",
+        "- `loregarden_get_ticket` responses include a `hierarchy` block "
+        "(parent, siblings, children)",
         "",
         f"- ticket_id: `{ticket.id}`",
         f"- external_id: `{ticket.external_id}`",
@@ -302,7 +465,6 @@ def build_mcp_run_context(
     lines.extend(
         [
             "",
-            "Use MCP tools for all ticket data — see Loregarden MCP module below.",
             "Tickets live in Loregarden's database, not in the repo. Do not search for a ticket",
             "markdown file, and do not write ticket content to one.",
             "",
@@ -311,29 +473,16 @@ def build_mcp_run_context(
             "`<<<LOREGARDEN_STAGE_REPORT>>>` block when the CLI exits — emit that "
             "sentinel with `pass|fail|needs_rework|blocked` as the last thing in "
             "your response. A clean exit with no report **blocks** the stage.",
-            f"Do **not** call `{CLAUDE_MCP_TOOL_PREFIX}loregarden_complete_stage` "
+            "Do **not** call "
+            f"{tool_reference('loregarden_complete_stage', transport)} "
             "(or skip/block orchestration tools) from a stage run — those are for "
             "the orchestrator / autopilot. Attach detail with "
-            f"`{CLAUDE_MCP_TOOL_PREFIX}loregarden_attach_artifact` when needed.",
+            f"{tool_reference('loregarden_attach_artifact', transport)} when needed.",
             "",
-            "## Loregarden artifacts (memory, learnings, blog posts, checkpoints)",
-            "Workspace-scoped **Obsidian markdown** + optional **SQLite memory graph**. **Never write files or SQL directly.**",
-            f'Always pass `workspace_slug="{workspace.slug}"` on memory tools.',
-            f"**Discover backends:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_memory_status` with "
-            f'`workspace_slug="{workspace.slug}"` → Obsidian dirs + `memory_sqlite_path` (graph DB for memory/learnings nodes).',
-            "SQLite stores `memory` and `learning` nodes in `memory_nodes` + `memory_relations`. "
-            "Blog posts and checkpoints are Obsidian-only.",
-            f"**Memory:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_upsert_memory` · "
-            f"**learnings:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_append_learning` · "
-            f"**blog posts:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_upsert_blog_post` · "
-            f"**checkpoints:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_append_checkpoint` "
-            "(see checkpoint protocol module below) · "
-            f"**graph links:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_create_memory_relation` · "
-            f"**search:** `{CLAUDE_MCP_TOOL_PREFIX}loregarden_search_memory` (Obsidian + SQLite).",
-            "See Memory protocol module below.",
+            *_artifact_section_lines(workspace, transport),
             "",
             "## Handoff artifact (workflow gate)",
-            *_handoff_section_lines(stage_def),
+            *_handoff_section_lines(stage_def, transport),
             "",
             "Available tools: " + ", ".join(_tool_names()),
         ]
@@ -341,7 +490,9 @@ def build_mcp_run_context(
     return "\n".join(lines)
 
 
-def _handoff_section_lines(stage_def: WorkflowStageDef | None) -> list[str]:
+def _handoff_section_lines(
+    stage_def: WorkflowStageDef | None, transport: ControlPlaneTransport
+) -> list[str]:
     """Handoff instructions for the run's stage.
 
     A parallel stage's several agents are co-reviewers of one stage, not a chain
@@ -357,14 +508,15 @@ def _handoff_section_lines(stage_def: WorkflowStageDef | None) -> list[str]:
         return [
             "This is a **parallel review stage** — you are one of several co-reviewers, not the",
             "stage's finishing agent. Do **not** call "
-            f"`{CLAUDE_MCP_TOOL_PREFIX}loregarden_write_handoff`; a parallel reviewer does not own a",
+            f"{tool_reference('loregarden_write_handoff', transport)}; a parallel reviewer does not own a",
             "`(from_agent → to_agent)` handoff pair, and inventing one is rejected by the workspace",
             "handoff gate. Record your review through the stage report (and "
-            f"`{CLAUDE_MCP_TOOL_PREFIX}loregarden_attach_artifact` for detail); the orchestrator runs",
+            f"{tool_reference('loregarden_attach_artifact', transport)} for detail); the orchestrator runs",
             "the stage-boundary transition gate for you.",
         ]
     return [
-        f"**Finishing agents:** write `handoff-latest.yaml` via `{CLAUDE_MCP_TOOL_PREFIX}loregarden_write_handoff` "
+        "**Finishing agents:** write `handoff-latest.yaml` via "
+        f"{tool_reference('loregarden_write_handoff', transport)} "
         "(structured `checklist`, not hand-written YAML). It renders canonical schema, computes the "
         "counters, validates against the workspace handoff gate, and returns violations on FAIL so you "
         "fix and retry before the orchestrator runs the blocking transition gate. Use the exact "

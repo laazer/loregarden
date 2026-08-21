@@ -1,11 +1,15 @@
 ---
-description: Loregarden MCP — control-plane tools for ticket workflow, stages, approvals, and artifacts.
+description: Loregarden control plane — tools for ticket workflow, stages, approvals, and artifacts.
 globs: []
-alwaysApply: true
 ---
-# LOREGARDEN MCP
+# LOREGARDEN CONTROL PLANE
 
-When Loregarden orchestrates work (IDE, API, or autopilot), **use Loregarden MCP tools** for all ticket data. Tickets live in Loregarden's database and are reachable only through MCP — they are not files in the repo.
+When Loregarden orchestrates work (IDE, API, or autopilot), **use Loregarden's control-plane
+tools** for all ticket data. Tickets live in Loregarden's database and are reachable only
+through those tools — they are not files in the repo.
+
+Sections below marked for one transport are rendered only into a run that actually has it.
+The run context at the top of your prompt states which one you are on; there is exactly one.
 
 ## No markdown deliverables in the repo
 
@@ -16,13 +20,12 @@ reads none of them, so a report written to disk is invisible to the control plan
 gets swept into an unrelated ticket's commit by the orchestrator.
 
 If your role says to "produce a report", "document your findings", or "provide a summary" and
-names no destination, the destination is **MCP** — never a new file:
+names no destination, the destination is **a control-plane tool** — never a new file:
 
 | You want to record… | Use | Not |
 |---|---|---|
 | Findings, analysis, test output, review report | `loregarden_attach_artifact` | a `*.md` file |
 | Stage outcome on a **stage run** (pass / reject / blocked) | `<<<LOREGARDEN_STAGE_REPORT>>>` sentinel in your response | `loregarden_complete_stage` or a `*_COMPLETION.md` file |
-| Stage outcome / advance cursor (**orchestrator / autopilot only**) | `loregarden_complete_stage` | a `*_COMPLETION.md` file |
 | Assumption or ambiguity you resolved alone | `loregarden_append_checkpoint` | a checkpoint `.md` |
 | Ticket learnings, anti-patterns | `loregarden_append_learning` | `LEARNINGS.md` / `learning-output.md` |
 | Spec, description, acceptance criteria | `loregarden_update_ticket` | a spec `.md` |
@@ -32,23 +35,37 @@ Short findings belong **in your response text**. Long ones belong in
 `loregarden_attach_artifact`. Writing real source code and real test files is of course still
 your job — this rule is about *reports about* the work, not the work.
 
-## Transport
+<!-- loregarden:transport=mcp -->
+## Transport — native MCP tools
 
-When Loregarden starts a stage run, the **`loregarden` MCP server is pre-configured** (HTTP at `{MCP_URL}` when the dev server is running, or stdio via `scripts/mcp-server.sh`). Use **native MCP tools** directly — do not call the HTTP endpoint via Bash/curl.
+The **`loregarden` MCP server is pre-configured** for this run (HTTP at `{MCP_URL}` while the
+dev server is up, or stdio via `scripts/mcp-server.sh`). Call **native MCP tools** directly —
+do not reach the HTTP endpoint via Bash/curl or hand-written JSON-RPC.
 
 - **Claude Code tool names:** `mcp__loregarden__<tool>` (e.g. `mcp__loregarden__loregarden_get_ticket`)
-- **Stage runs (Claude/Cursor):** native MCP tools — wired via `--mcp-config` / `.cursor/mcp.json`
-- **HTTP JSON-RPC (operators / external drivers):** `POST {MCP_URL}` on the Loregarden server (default `http://127.0.0.1:8000/mcp`)
-- **Stdio in-process (recommended for local agents):** `scripts/mcp-server.sh` with `LOREGARDEN_MCP_INPROCESS=1`
+- Config uses `"type": "stdio"` or `"type": "http"` — never a bare `url` alone (Claude Code
+  schema validation fails).
 
-Use `"type": "stdio"` or `"type": "http"` in MCP config — never bare `url` alone (Claude Code schema validation fails).
+## Permission bridge
 
-### No MCP tools attached? Use the CLI, not curl
+CLI permission prompts (Bash, AskUserQuestion, etc.) route to the Loregarden **approval inbox**
+automatically. Resolve approvals in the IDE Triage or Inbox tabs — the agent run resumes after
+approval.
 
-If `mcp__loregarden__*` tools are absent from your tool list, or the control-plane server is
-not running, the **same tools are reachable from Bash** — they run in-process against the
-database, so no server is required. This is the supported fallback; do not give up on the
-ticket, and do not hand-write JSON-RPC at the HTTP endpoint.
+## Failure handling
+
+If the MCP tools error or the server is unreachable, the same tools also run in-process from
+Bash: `./scripts/loregarden-cli.sh mcp call <tool> key=value…` (`mcp list` / `mcp describe
+<tool>` for the arguments). Only if that also fails: log the error in your output and continue
+read-only work where possible. Do not invent workflow state — escalate via checkpoint protocol
+or block the ticket with a clear message.
+<!-- /loregarden:transport -->
+
+<!-- loregarden:transport=cli -->
+## Transport — Bash CLI
+
+This run has **no `mcp__loregarden__*` tools**. Every control-plane tool runs in-process
+against the database from Bash, so no server has to be up:
 
 ```bash
 ./scripts/loregarden-cli.sh mcp list                    # every tool + description
@@ -57,106 +74,43 @@ ticket, and do not hand-write JSON-RPC at the HTTP endpoint.
 ```
 
 - The wrapper script exists when your cwd is the **loregarden checkout**; when the package is
-  installed, the same command is just `loregarden mcp …`. In another workspace's repo with
-  neither available, fall back to the stdio/HTTP transports above.
+  installed, the same command is just `loregarden mcp …`.
 - Arguments are `key=value`, typed from each tool's own schema. `describe` tells you the
   accepted names — a wrong name is rejected with the list of valid ones, so guess nothing.
 - For long values (`content`, artifact bodies), write the text to a file and pass
   `content=@path` — never paste a multi-line body onto the command line.
 - Exit codes: `0` ok, `1` the tool failed, `2` you invoked it wrong. Errors go to stderr.
 
-## When to use MCP
+Do **not** hand-write JSON-RPC against the HTTP endpoint, and do not abandon a control-plane
+write because no MCP tool is listed.
+
+## Failure handling
+
+If a call fails, read stderr and fix the invocation — exit `2` means the arguments were wrong,
+and `describe` lists the accepted ones. Only if the tool itself keeps failing: log the error in
+your output and continue read-only work where possible. Do not invent workflow state — escalate
+via checkpoint protocol or block the ticket with a clear message.
+<!-- /loregarden:transport -->
+
+## Which tool for which situation
 
 | Situation | Tool |
 |-----------|------|
 | Read current stage map, blocking issues, active orchestration | `loregarden_get_ticket` or `loregarden_get_ticket_by_external` |
 | Find tickets by title/slug, list siblings/children, browse workspace | `loregarden_list_tickets` |
-| Start top-level autopilot / external orchestration | `loregarden_start_orchestration` |
-| Mark a stage running before sub-agent work (orchestrator only) | `loregarden_start_stage` |
-| Stage succeeded — advance workflow cursor (orchestrator only) | `loregarden_complete_stage` |
-| Route back to upstream agent after gate/review failure | `loregarden_complete_stage` with `outcome: reject`, `next_stage_key`, and `next_agent` |
-| Skip optional stage | `loregarden_skip_stage` |
 | Unrecoverable failure | `loregarden_block_ticket` |
 | Human sign-off needed | `loregarden_request_approval` |
 | Attach log/diff/test output | `loregarden_attach_artifact` |
-| Finish orchestration run | `loregarden_complete_orchestration` |
-| Persist learnings / memory (Obsidian + iCloud SQLite) | `loregarden_append_learning`, `loregarden_upsert_memory`, `loregarden_search_memory` |
+| Persist learnings / memory | `loregarden_append_learning`, `loregarden_upsert_memory`, `loregarden_search_memory` |
 | Persist blog post markdown | `loregarden_upsert_blog_post` |
 | Log a checkpoint (assumption/ambiguity, see `checkpoint_protocol_v1.md`) | `loregarden_append_checkpoint` |
 | Inspect memory backend config | `loregarden_memory_status` |
 
-## Memory, learnings, blog posts, and checkpoints (workspace-scoped)
+`loregarden_get_ticket` accepts a UUID, or an `external_id` slug when `workspace_slug` is also
+given; its response includes a `hierarchy` block (parent, siblings, children). The exact
+identifiers for this run are in the run context at the top of your prompt — use those values
+rather than searching for them.
 
-Agent artifacts are **per workspace**. Loregarden resolves Obsidian and SQLite paths — agents must **not** write vault files directly.
-
-1. Read `agent_context/agents/common_assets/memory_protocol_v1.md`
-2. Call `loregarden_memory_status` with `workspace_slug` from the run prompt
-3. Always pass `workspace_slug` on memory tools
-
-| Artifact | Tool | Resolved path field |
-|----------|------|---------------------|
-| Durable memory | `loregarden_upsert_memory` | `obsidian_memory_dir` + `memory_sqlite_path` (`memory_nodes`) |
-| Ticket learnings | `loregarden_append_learning` | `obsidian_learnings_dir` + `memory_sqlite_path` (`memory_nodes`) |
-| Blog posts | `loregarden_upsert_blog_post` | `obsidian_blogposts_dir` only (not in SQLite) |
-| Checkpoints | `loregarden_append_checkpoint` | `obsidian_checkpoints_dir` only (not in SQLite) |
-| Graph links | `loregarden_create_memory_relation` | `memory_sqlite_path` (`memory_relations`) |
-| Prior context | `loregarden_search_memory` | searches Obsidian notes + SQLite `memory_nodes` |
-
-## Stage-run agents (planner, static_qa, implementers, gatekeepers, …)
-
-Loregarden **stage runs** (started from the IDE or `POST /api/tickets/{id}/start`) already
-update workflow state when the CLI run completes — from the **stage report sentinel**, not
-from `loregarden_complete_stage`. During a stage run:
-
-1. **Read** ticket state with `loregarden_get_ticket`. MCP is the **only** source of ticket
-   data — title, description, acceptance criteria, and stage cursor all live in Loregarden's
-   database. There is no ticket markdown to read; do not go looking for one.
-   - UUID: `{"ticket_id": "<uuid>"}`
-   - Slug: `{"ticket_id": "03-wire-cli-agent-runner", "workspace_slug": "loregarden"}`
-   - Or `loregarden_get_ticket_by_external` / `loregarden_list_tickets` for discovery
-2. **Do not** search the repo for a ticket file. `project_board/` is not a ticket store — it
-   holds only checkpoint and handoff artifacts. A grep for the ticket there finds nothing and
-   wastes the run. If `loregarden_get_ticket` does not have what you need, the data does not
-   exist anywhere else.
-3. **Do not** write ticket content to disk. Update the ticket via `loregarden_update_ticket`;
-   never mirror description or acceptance criteria into a markdown file. Files written under
-   `project_board/` get swept into unrelated commits by the orchestrator.
-4. **Do** end with the `<<<LOREGARDEN_STAGE_REPORT>>>` block (`pass` / `fail` /
-   `needs_rework` / `blocked`). That is the routing signal. A clean CLI exit with no report
-   **blocks** the stage — it does not advance. Rejects use `fail` or `needs_rework` plus
-   `reroute_to_stage` / `reroute_context`; do **not** call `loregarden_complete_stage` from a
-   stage run (orchestrator-only).
-5. **Do** use MCP to attach extra artifacts (`loregarden_attach_artifact`) or request human
-   approval (`loregarden_request_approval`) when your role requires it.
-
-## Orchestrator / autopilot
-
-The top-level orchestrator (autopilot skill or external MCP driver) **must** drive transitions via MCP:
-
-- `loregarden_start_stage` before each sub-agent
-- `loregarden_complete_stage` / `loregarden_skip_stage` / `loregarden_block_ticket` after gates
-- To route **back to an upstream agent** for rework, call `loregarden_complete_stage` with `outcome: "reject"`, `next_stage_key` (e.g. `implementation`), and `next_agent` — workflow templates may also declare `when: reject` transitions
-- Never advance Stage in markdown while Loregarden SQLite is authoritative
-
-## Identifiers
-
-Use values from the run prompt:
-
-- `ticket_id` — UUID from Loregarden DB, **or external_id slug** when `workspace_slug` is also provided
-- `external_id` — ticket slug (e.g. `03-wire-cli-agent-runner`)
-- `workspace_slug` — workspace name in Loregarden
-- `run_id` — orchestration run UUID (orchestrator tools only)
-
-Use `loregarden_list_tickets` when you need to discover tickets without knowing the UUID. Responses from `loregarden_get_ticket` include `hierarchy` (parent, siblings, children).
-
-## Permission bridge
-
-CLI permission prompts (Bash, AskUserQuestion, etc.) route to the Loregarden **approval inbox** automatically when using Claude/Cursor adapters without bypass. Resolve approvals in the IDE Triage or Inbox tabs — the agent run resumes after approval.
-
-## Failure handling
-
-If MCP is unreachable, **try the CLI fallback first** (`./scripts/loregarden-cli.sh mcp call …`,
-see *Transport*) — a server that is down does not stop tool calls, since the CLI talks to the
-database directly. Only if that also fails: log the error in your output and continue read-only
-work where possible. Do not invent workflow state — escalate via checkpoint protocol or block
-the ticket with a clear message.
+**Do not** search the repo for a ticket file. `project_board/` is not a ticket store — it holds
+only checkpoint and handoff artifacts. If `loregarden_get_ticket` does not have what you need,
+the data does not exist anywhere else.
