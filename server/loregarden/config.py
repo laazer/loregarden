@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     # alongside the workspace repo. Empty defaults to ~/.loregarden/reference_repos.
     reference_repo_cache_dir: str = ""
     reference_repo_clone_timeout: int = 600
+    # Fetch-through cache for reference MCP tools (wired by later tickets).
+    reference_cache_ttl_seconds: int = 604800  # 7 days
+    reference_fetch_timeout_seconds: float = 15.0
+    reference_fetch_max_bytes: int = 5_000_000
+    reference_fetch_max_redirects: int = 5
     # iCloud + Obsidian memory (optional — empty disables external memory backends)
     icloud_root: str = ""
     obsidian_vault_dir: str = ""

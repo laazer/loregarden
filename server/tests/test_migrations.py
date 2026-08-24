@@ -531,6 +531,73 @@ def test_queued_runs_gets_created_at_and_backfills(tmp_path):
     datetime.fromisoformat(str(created_at)).astimezone(timezone.utc)
 
 
+def test_reference_pages_table_is_created(tmp_path):
+    """0095 adds reference_pages with a unique url index and kind default.
+
+    Ticket 172's text still says 0040; the live ledger ends at 0094, so the
+    id is 0095. The table must exist both after apply_migrations on an older
+    schema and after create_all on a fresh one.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'ref.db'}")
+    with engine.begin() as conn:
+        conn.execute(
+            text("CREATE TABLE tickets (id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '')")
+        )
+        missing = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='reference_pages'")
+        ).fetchone()
+    assert missing is None
+    apply_migrations(engine)
+
+    cols = _columns(engine, "reference_pages")
+    assert "url" in cols
+    assert "kind" in cols
+    assert ("url",) in _index_columns(engine, "reference_pages")
+    with engine.connect() as conn:
+        unique_index_names = {
+            row[1]
+            for row in conn.execute(text("PRAGMA index_list(reference_pages)")).fetchall()
+            if row[2]
+        }
+    assert "ix_reference_pages_url" in unique_index_names
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO reference_pages (id, url, fetched_at, created_at) "
+                "VALUES ('p1', 'https://example.com/doc', '2026-01-01T00:00:00+00:00', "
+                "'2026-01-01T00:00:00+00:00')"
+            )
+        )
+        kind = conn.execute(text("SELECT kind FROM reference_pages WHERE id = 'p1'")).scalar_one()
+    assert kind == "page"
+
+    with engine.begin() as conn:
+        try:
+            conn.execute(
+                text(
+                    "INSERT INTO reference_pages (id, url, fetched_at, created_at) "
+                    "VALUES ('p2', 'https://example.com/doc', '2026-01-02T00:00:00+00:00', "
+                    "'2026-01-02T00:00:00+00:00')"
+                )
+            )
+        except IntegrityError:
+            pass
+        else:
+            raise AssertionError("duplicate url must violate the unique index")
+
+    assert apply_migrations(engine) == []
+
+    fresh = create_engine(f"sqlite:///{tmp_path / 'ref-fresh.db'}")
+    SQLModel.metadata.create_all(fresh)
+    assert "kind" in _columns(fresh, "reference_pages")
+    assert ("url",) in _index_columns(fresh, "reference_pages")
+    apply_migrations(fresh)
+    assert apply_migrations(fresh) == []
+
+
 def test_ticket_enum_columns_move_from_names_to_values(tmp_path):
     """0042 rewrites tickets.state/workflow_stage_status from names to values.
 
