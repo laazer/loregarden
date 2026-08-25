@@ -37,6 +37,18 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def comparable_utc(value: datetime) -> datetime:
+    """One instant for ordering, whether SQLite returned naive or aware.
+
+    Naive values are UTC: that is how ``utcnow`` writes, and how SQLite
+    round-trips an aware datetime by dropping tzinfo. Comparing the raw
+    column raises TypeError once a ticket mixes both.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 class TicketState(str, Enum):
     BACKLOG = "backlog"
     IN_PROGRESS = "in_progress"
