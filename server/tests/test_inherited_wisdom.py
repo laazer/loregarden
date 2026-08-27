@@ -353,3 +353,25 @@ def test_an_unreadable_memory_graph_costs_only_the_section(tmp_path):
 
     assert "Retry budget" not in text
     assert "### Related learnings" not in text
+
+
+@pytest.mark.parametrize("build_service", _SERVICE_SHAPES)
+def test_a_discredited_learning_is_absent_from_the_briefing(tmp_path, build_service):
+    """A node marked wrong must not flow into inherited wisdom, on every store shape."""
+    memory = build_service(tmp_path)
+    created = memory.upsert_memory(
+        title="Retry budget for throttled tools",
+        body=_MATCHING_BODY,
+        workspace_slug="lg",
+    )
+    node_id = (created.get("graph") or created["obsidian"])["id"]
+    memory.upsert_memory(
+        node_id=node_id,
+        title="Retry budget for throttled tools",
+        body=_MATCHING_BODY,
+        workspace_slug="lg",
+        discredited=True,
+    )
+
+    text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory)
+    assert "Retry budget for throttled tools" not in text
