@@ -19,7 +19,7 @@ import userEvent from "@testing-library/user-event";
 
 import { newContainerFor } from "../../components/views/primitives/registry";
 import { updateView, viewsKeys, type ViewSummary } from "../../lib/viewsApi";
-import { useViewLayoutWrite } from "../useViewLayoutEdit";
+import { useViewLayoutEdit, useViewLayoutWrite } from "../useViewLayoutEdit";
 
 jest.mock("../../lib/viewsApi", () => ({
   ...jest.requireActual("../../lib/viewsApi"),
@@ -160,5 +160,74 @@ describe("useViewLayoutWrite", () => {
     });
 
     expect(mockUpdateView).not.toHaveBeenCalled();
+  });
+});
+
+describe("useViewLayoutEdit — an edit that asks for nothing", () => {
+  /** One control whose edit hands the layout straight back. */
+  function NoOpHarness({ slug, viewId }: { slug: string; viewId: string }) {
+    const edit = useViewLayoutEdit(slug, viewId);
+    return (
+      <button type="button" onClick={() => edit((layout) => layout)}>
+        no-op
+      </button>
+    );
+  }
+
+  it("sends no request, and leaves the caches it would have disturbed alone", async () => {
+    // The canvas reaches this on every click of the front-most container: raising
+    // an item that is already at the front returns the layout untouched. Skipping
+    // only the PATCH is not enough — resolving the mutation with the record it
+    // already had would still cancel every in-flight read of this view and
+    // refetch the sidebar's whole view list, so a click that sent nothing would
+    // cost two requests instead of one.
+    const user = userEvent.setup();
+    const qc = testClient();
+    const cancelQueries = jest.spyOn(qc, "cancelQueries");
+    const invalidateQueries = jest.spyOn(qc, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={qc}>
+        <NoOpHarness slug={SLUG} viewId="v-a" />
+      </QueryClientProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "no-op" }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockUpdateView).not.toHaveBeenCalled();
+    expect(cancelQueries).not.toHaveBeenCalled();
+    expect(invalidateQueries).not.toHaveBeenCalled();
+    // And the record it was composed from is still exactly the record.
+    expect(qc.getQueryData<ViewSummary>(viewsKeys.view(SLUG, "v-a"))?.layout).toEqual(
+      gridLayout("c-v-a"),
+    );
+  });
+
+  it("still writes when the edit rebuilt an equal layout, because that edit decided to", async () => {
+    // Identity, not deep equality. A caller that returned a *new* object asked
+    // for a write, and second-guessing it with a deep compare would silently drop
+    // edits whose difference this hook cannot see.
+    const user = userEvent.setup();
+    mockUpdateView.mockImplementation(async (_slug, viewId) => view(viewId, gridLayout("c-v-a")));
+
+    function RebuildHarness() {
+      const edit = useViewLayoutEdit(SLUG, "v-a");
+      return (
+        <button type="button" onClick={() => edit((layout) => ({ ...layout }))}>
+          rebuild
+        </button>
+      );
+    }
+
+    render(
+      <QueryClientProvider client={testClient()}>
+        <RebuildHarness />
+      </QueryClientProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "rebuild" }));
+
+    expect(mockUpdateView).toHaveBeenCalledTimes(1);
   });
 });
