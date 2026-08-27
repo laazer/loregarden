@@ -1,29 +1,16 @@
 """Prior decisions reach a stage without it having to go looking (#5)."""
 
-import json
 from unittest.mock import Mock, patch
 
 import pytest
 from loregarden.agents.inherited_wisdom import build_inherited_wisdom
-from loregarden.models.domain import Ticket, WorkItemType
 from loregarden.services.memory_store import (
     AgentMemoryService,
     MemoryGraphStore,
     ObsidianMemoryStore,
 )
+from tests.memory_helpers import briefing_ticket as _ticket
 from tests.memory_helpers import frozen_clock
-
-
-def _ticket(*, title: str = "Add rate limiting to the public API", description: str = "") -> Ticket:
-    return Ticket(
-        id="ticket-uuid-1",
-        external_id="42-add-rate-limiting",
-        workspace_id="ws",
-        title=title,
-        description=description,
-        work_item_type=WorkItemType.TASK,
-        acceptance_criteria_json=json.dumps([]),
-    )
 
 
 def _memory(tmp_path) -> AgentMemoryService:

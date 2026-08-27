@@ -9,7 +9,10 @@ its docstrings claim.
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
+
+from loregarden.models.domain import Ticket, WorkItemType
 
 
 def frozen_clock(*stamps: str):
@@ -26,3 +29,24 @@ def frozen_clock(*stamps: str):
         return remaining.pop(0) if len(remaining) > 1 else remaining[0]
 
     return patch("loregarden.services.memory_store._utcnow_iso", side_effect=_next)
+
+
+def briefing_ticket(
+    *, title: str = "Add rate limiting to the public API", description: str = ""
+) -> Ticket:
+    """A ticket shaped for the inherited-wisdom briefing.
+
+    Shared for the same reason `frozen_clock` is: the briefing's behaviour is
+    pinned from two angles — the text it assembles and the telemetry it reports —
+    and two ticket factories drifting apart would let one of those suites stop
+    exercising the query the other one thinks it is testing.
+    """
+    return Ticket(
+        id="ticket-uuid-1",
+        external_id="42-add-rate-limiting",
+        workspace_id="ws",
+        title=title,
+        description=description,
+        work_item_type=WorkItemType.TASK,
+        acceptance_criteria_json=json.dumps([]),
+    )
