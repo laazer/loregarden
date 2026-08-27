@@ -113,7 +113,8 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0092_structured_ticket_ids",
     "0093_repin_terminal_less_instances",
     "0094_repin_unregistered_skill_instances",
-    "0095_agent_run_token_usage",
+    "0095_reference_pages_table",
+    "0096_agent_run_token_usage",
 )
 
 

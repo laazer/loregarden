@@ -128,16 +128,27 @@ Applies to `server/**/*.py`. Enforce, beyond the automated gates:
 - Watch the hotspots in `AGENTS.md` → *Notes*: new code in a 1000-line service usually belongs
   in a new module.
 
+- No silently caught exceptions. A broad `except Exception` (or bare `except:`, or
+  `contextlib.suppress(Exception)`) whose body is inert — `pass`, `return None`, `return False`,
+  `value = None` — reports success the code never had. Log it, re-raise it, record it on the
+  result, or narrow the catch to the failure you actually expect. Handlers that surface the
+  error are fine. The `py-silent-except` gate enforces this — on staged lines pre-commit, and
+  on the worktree at every stage transition — and, like the organization gates, it is
+  diff-scoped: only handlers your change added or edited can fail it. `# py-silent: allow` on
+  the `except` line waives one, for a swallow that is genuinely right (best-effort cleanup on
+  an already-failing path).
+
 - Shell out to git through `loregarden.services.git_subprocess.run_git`, never
   `subprocess.run(["git", ...])` — `GIT_DIR` overrides `cwd`, so an unscrubbed call can operate
   on the wrong repository. Same for `gh`, which resolves its repo through git. The
   `py-git-subprocess` gate enforces this.
 
 The automated gates (Ruff, Pylint diff-scoped, organization, defensive-normalization,
-git-subprocess routing) run on staged files via lefthook.
+silent-exception, git-subprocess routing) run on staged files via lefthook.
 
-**The organization gates are workspace-agnostic and run twice.** One copy lives in
-`.lefthook/scripts/`; both surfaces invoke it from there rather than copying it around:
+**The organization and silent-exception gates are workspace-agnostic and run twice.** One copy
+lives in `.lefthook/scripts/`; both surfaces invoke it from there rather than copying it
+around:
 
 - **Pre-commit**, on staged files — for loregarden via `lefthook.yml`, for other workspaces via
   `scripts/install-workspace-hooks.sh <workspace-root>`, which writes a marker-delimited block
@@ -192,6 +203,14 @@ status line the ternary discards. The `ts-organization` gate enforces it on stag
   `env -u GIT_DIR -u GIT_WORK_TREE` workaround is no longer needed. Still scrub the env if you
   invoke pytest yourself from a context that already has `GIT_DIR` set (e.g. nested in a hook) —
   the server's own git helpers pass the ambient environment through.
+- **Pre-push runs only the tests your commits reach.** `select_pytest_targets.py` walks the
+  import graph (string constants included, so `import_module("loregarden.x")` counts) and pytest
+  runs that subset; jest runs `--changedSince`. Anything unmappable — `conftest.py`,
+  `pyproject.toml`, a non-Python file, anything outside `server/`/`client/` — falls back to the
+  full suite, as does selecting zero tests. CI still runs everything, so a green push *predicts*
+  CI rather than proving it. `LOREGARDEN_FULL_TESTS=1` forces the full run;
+  `LOREGARDEN_TESTS_BASE=<ref>` asks what a given range would run.
+
 - Use `task dev` / `task server` / `task client`. Do not start servers ad-hoc.
 
 ## Anti-patterns

@@ -22,11 +22,13 @@ gates:
     - bash -c "cd server && uv run ruff check ."
     - bash -c "cd server && uv run ruff format --check ."
     - bash -c "cd client && npx --no-install oxlint ."
-    # Organization guardrails. Same checks the pre-commit hook runs, scoped to
-    # the working tree because an agent's edits are uncommitted when this fires.
-    # No fixer pairs with these: naming a vocabulary or modelling a payload is a
-    # design decision, so a failure goes straight to the stage's own agent.
+    # Organization and silent-exception guardrails. Same checks the pre-commit
+    # hook runs, scoped to the working tree because an agent's edits are
+    # uncommitted when this fires. No fixer pairs with these: naming a
+    # vocabulary, modelling a payload, or deciding how a failure should surface
+    # is a design decision, so a failure goes straight to the stage's own agent.
     - python3 {loregarden_root}/.lefthook/scripts/py_organization_check.py --repo {workspace_root} --scope worktree
+    - python3 {loregarden_root}/.lefthook/scripts/py_silent_except_check.py --repo {workspace_root} --scope worktree
     - node {loregarden_root}/.lefthook/scripts/ts_organization_check.cjs --repo {workspace_root} --scope worktree
   autofix_commands:
     - bash -c "cd server && uv run ruff check --fix ."

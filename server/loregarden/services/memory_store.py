@@ -71,6 +71,7 @@ class MemoryNote:
     note_type: str
     created_at: str
     updated_at: str
+    discredited: bool = False
 
 
 class ObsidianMemoryStore:
@@ -142,6 +143,7 @@ class ObsidianMemoryStore:
         ticket_id: str = "",
         workspace_slug: str = "",
         note_type: str = "memory",
+        discredited: bool | None = None,
     ) -> MemoryNote:
         note_id = note_id.strip() or str(uuid4())
         tags = list(tags or [])
@@ -155,11 +157,13 @@ class ObsidianMemoryStore:
         path.parent.mkdir(parents=True, exist_ok=True)
 
         created_at = now
+        existing_discredited = False
         if path.is_file():
-            existing = path.read_text(encoding="utf-8")
-            match = re.search(r'^created:\s*"([^"]+)"', existing, re.MULTILINE)
-            if match:
-                created_at = match.group(1)
+            existing = self._read_note(path)
+            if existing:
+                created_at = existing.created_at or now
+                existing_discredited = existing.discredited
+        flag = existing_discredited if discredited is None else discredited
 
         frontmatter = _format_frontmatter(
             {
@@ -171,6 +175,7 @@ class ObsidianMemoryStore:
                 "workspace": workspace_slug,
                 "created": created_at,
                 "updated": now,
+                "discredited": True if flag else None,
             }
         )
         path.write_text(f"{frontmatter}\n\n# {title}\n\n{body.strip()}\n", encoding="utf-8")
@@ -185,6 +190,7 @@ class ObsidianMemoryStore:
             note_type=note_type,
             created_at=created_at,
             updated_at=now,
+            discredited=flag,
         )
 
     def append_learning(
@@ -296,6 +302,8 @@ class ObsidianMemoryStore:
                 if note and (not note_type or note.note_type == note_type):
                     if workspace_slug.strip() and note.workspace_slug != workspace_slug.strip():
                         continue
+                    if note.discredited:
+                        continue
                     notes.append(note)
                 if len(notes) >= limit:
                     return notes
@@ -362,11 +370,18 @@ class ObsidianMemoryStore:
             note_type=fields.get("type", "memory"),
             created_at=fields.get("created", ""),
             updated_at=fields.get("updated", ""),
+            discredited=fields.get("discredited", "").strip().lower() == "true",
         )
 
 
 class MemoryGraphStore:
     """Structured memory graph backed by SQLite (safe for iCloud when using DELETE journal)."""
+
+    _NODE_COLUMNS = (
+        "id, title, body, tags_json, ticket_id, workspace_slug, "
+        "node_type, created_at, updated_at, discredited"
+    )
+    _VISIBLE_NODES = "COALESCE(discredited, 0) = 0"
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path.resolve()
@@ -405,7 +420,8 @@ class MemoryGraphStore:
                     workspace_slug TEXT NOT NULL DEFAULT '',
                     node_type TEXT NOT NULL DEFAULT 'memory',
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    discredited INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS memory_relations (
                     id TEXT PRIMARY KEY,
@@ -421,6 +437,30 @@ class MemoryGraphStore:
                 CREATE INDEX IF NOT EXISTS ix_memory_relations_source ON memory_relations(source_id);
                 """
             )
+            self._ensure_discredited_column(conn)
+
+    @staticmethod
+    def _ensure_discredited_column(conn: sqlite3.Connection) -> None:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(memory_nodes)")}
+        if "discredited" not in columns:
+            conn.execute(
+                "ALTER TABLE memory_nodes ADD COLUMN discredited INTEGER NOT NULL DEFAULT 0"
+            )
+
+    @staticmethod
+    def _node_row(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "title": row["title"],
+            "body": row["body"],
+            "tags": json.loads(row["tags_json"] or "[]"),
+            "ticket_id": row["ticket_id"],
+            "workspace_slug": row["workspace_slug"],
+            "node_type": row["node_type"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "discredited": bool(row["discredited"]),
+        }
 
     def upsert_node(
         self,
@@ -432,20 +472,27 @@ class MemoryGraphStore:
         ticket_id: str = "",
         workspace_slug: str = "",
         node_type: str = "memory",
+        discredited: bool | None = None,
     ) -> dict[str, Any]:
         node_id = node_id.strip() or str(uuid4())
         now = _utcnow_iso()
         tags_json = json.dumps(tags or [])
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT created_at FROM memory_nodes WHERE id = ?", (node_id,)
+                "SELECT created_at, discredited FROM memory_nodes WHERE id = ?",
+                (node_id,),
             ).fetchone()
             created_at = row["created_at"] if row else now
+            if discredited is None:
+                flag = int(row["discredited"]) if row else 0
+            else:
+                flag = 1 if discredited else 0
             conn.execute(
                 """
                 INSERT INTO memory_nodes (
-                    id, title, body, tags_json, ticket_id, workspace_slug, node_type, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    id, title, body, tags_json, ticket_id, workspace_slug,
+                    node_type, created_at, updated_at, discredited
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     title = excluded.title,
                     body = excluded.body,
@@ -453,7 +500,8 @@ class MemoryGraphStore:
                     ticket_id = excluded.ticket_id,
                     workspace_slug = excluded.workspace_slug,
                     node_type = excluded.node_type,
-                    updated_at = excluded.updated_at
+                    updated_at = excluded.updated_at,
+                    discredited = excluded.discredited
                 """,
                 (
                     node_id,
@@ -465,6 +513,7 @@ class MemoryGraphStore:
                     node_type,
                     created_at,
                     now,
+                    flag,
                 ),
             )
         return {
@@ -477,6 +526,7 @@ class MemoryGraphStore:
             "node_type": node_type,
             "created_at": created_at,
             "updated_at": now,
+            "discredited": bool(flag),
             "sqlite_path": str(self.db_path),
         }
 
@@ -511,23 +561,24 @@ class MemoryGraphStore:
         workspace_slug: str = "",
         limit: int = RECALL_CANDIDATE_CAP,
     ) -> list[dict[str, Any]]:
-        """Every node in the workspace, newest first — enumeration, not matching.
+        """Visible nodes in the workspace, newest first — enumeration, not matching.
 
-        `search()` is the only other reader of this table, and it is a
+        `search()` is the other reader of this table, and it is a
         `LIKE '%query%'` match. Ranking its output would rank whatever survived
         a whole-phrase substring test, i.e. almost always nothing, so recall
-        needs a surface that filters on nothing at all. The default is
-        `RECALL_CANDIDATE_CAP`, mirroring the Obsidian side so the graph cannot
-        become the new cost centre.
+        needs a surface that filters on nothing except the discredited flag.
+        The default is `RECALL_CANDIDATE_CAP`, mirroring the Obsidian side so
+        the graph cannot become the new cost centre.
         """
         slug = workspace_slug.strip()
         with self._connect() as conn:
             if slug:
                 rows = conn.execute(
-                    """
-                    SELECT id, title, body, tags_json, ticket_id, workspace_slug, node_type, created_at, updated_at
+                    f"""
+                    SELECT {self._NODE_COLUMNS}
                     FROM memory_nodes
                     WHERE workspace_slug = ?
+                      AND {self._VISIBLE_NODES}
                     ORDER BY updated_at DESC
                     LIMIT ?
                     """,
@@ -535,28 +586,16 @@ class MemoryGraphStore:
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    """
-                    SELECT id, title, body, tags_json, ticket_id, workspace_slug, node_type, created_at, updated_at
+                    f"""
+                    SELECT {self._NODE_COLUMNS}
                     FROM memory_nodes
+                    WHERE {self._VISIBLE_NODES}
                     ORDER BY updated_at DESC
                     LIMIT ?
                     """,
                     (limit,),
                 ).fetchall()
-        return [
-            {
-                "id": row["id"],
-                "title": row["title"],
-                "body": row["body"],
-                "tags": json.loads(row["tags_json"] or "[]"),
-                "ticket_id": row["ticket_id"],
-                "workspace_slug": row["workspace_slug"],
-                "node_type": row["node_type"],
-                "created_at": row["created_at"],
-                "updated_at": row["updated_at"],
-            }
-            for row in rows
-        ]
+        return [self._node_row(row) for row in rows]
 
     def search(
         self,
@@ -572,10 +611,11 @@ class MemoryGraphStore:
         with self._connect() as conn:
             if slug:
                 rows = conn.execute(
-                    """
-                    SELECT id, title, body, tags_json, ticket_id, workspace_slug, node_type, created_at, updated_at
+                    f"""
+                    SELECT {self._NODE_COLUMNS}
                     FROM memory_nodes
                     WHERE workspace_slug = ?
+                      AND {self._VISIBLE_NODES}
                       AND (title LIKE ? OR body LIKE ? OR tags_json LIKE ?)
                     ORDER BY updated_at DESC
                     LIMIT ?
@@ -584,29 +624,17 @@ class MemoryGraphStore:
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    """
-                    SELECT id, title, body, tags_json, ticket_id, workspace_slug, node_type, created_at, updated_at
+                    f"""
+                    SELECT {self._NODE_COLUMNS}
                     FROM memory_nodes
-                    WHERE title LIKE ? OR body LIKE ? OR tags_json LIKE ?
+                    WHERE {self._VISIBLE_NODES}
+                      AND (title LIKE ? OR body LIKE ? OR tags_json LIKE ?)
                     ORDER BY updated_at DESC
                     LIMIT ?
                     """,
                     (needle, needle, needle, limit),
                 ).fetchall()
-        return [
-            {
-                "id": row["id"],
-                "title": row["title"],
-                "body": row["body"],
-                "tags": json.loads(row["tags_json"] or "[]"),
-                "ticket_id": row["ticket_id"],
-                "workspace_slug": row["workspace_slug"],
-                "node_type": row["node_type"],
-                "created_at": row["created_at"],
-                "updated_at": row["updated_at"],
-            }
-            for row in rows
-        ]
+        return [self._node_row(row) for row in rows]
 
     def sqlite_url(self) -> str:
         return sqlite_url_for_path(self.db_path)
@@ -728,10 +756,12 @@ class AgentMemoryService:
         tags: list[str] | None = None,
         ticket_id: str = "",
         workspace_slug: str = "",
+        discredited: bool | None = None,
     ) -> dict[str, Any]:
         graph = self._graph_for_workspace(workspace_slug)
         if not self.obsidian and not graph:
             raise ValueError("No memory backend configured.")
+        node_id = node_id.strip() or str(uuid4())
         result: dict[str, Any] = {}
         if self.obsidian:
             note = self.obsidian.upsert_note(
@@ -742,6 +772,7 @@ class AgentMemoryService:
                 ticket_id=ticket_id,
                 workspace_slug=workspace_slug,
                 note_type="memory",
+                discredited=discredited,
             )
             result["obsidian"] = {"id": note.id, "path": note.path, "updated_at": note.updated_at}
         if graph:
@@ -753,6 +784,7 @@ class AgentMemoryService:
                 ticket_id=ticket_id,
                 workspace_slug=workspace_slug,
                 node_type="memory",
+                discredited=discredited,
             )
         return result
 

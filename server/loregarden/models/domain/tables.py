@@ -20,6 +20,7 @@ from loregarden.models.domain.enums import (
     OrchestrationRunStatus,
     QueueOperationType,
     QueuePosition,
+    ReferencePageKind,
     RunStatus,
     SidebarEntryKind,
     StageFanoutAttemptStatus,
@@ -532,6 +533,33 @@ class McpToolCall(SQLModel, table=True):
     decision: str = ""
     decision_ms: int = 0
     created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
+class ReferencePage(SQLModel, table=True):
+    """Global fetch-through cache for reference MCP tools.
+
+    One row per normalized URL. 173's service owns fetch, SSRF, and TTL;
+    this table is only the durable shape those later tickets write into.
+    """
+
+    __tablename__ = "reference_pages"
+    __table_args__ = (UniqueConstraint("url", name="ix_reference_pages_url"),)
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    url: str
+    title: str = ""
+    content_markdown: str = ""
+    etag: str = ""
+    last_modified: str = ""
+    #: page / index / catalog — raw DevDocs JSON rows ride the same cache.
+    kind: ReferencePageKind = Field(
+        default=ReferencePageKind.PAGE,
+        sa_column=_str_enum_column(ReferencePageKind, ReferencePageKind.PAGE),
+    )
+    content_chars: int = 0
+    hit_count: int = 0
+    fetched_at: datetime = Field(default_factory=utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class RunMessage(SQLModel, table=True):
