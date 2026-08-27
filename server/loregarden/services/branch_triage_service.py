@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import subprocess
 import time
@@ -25,6 +26,8 @@ from loregarden.services.git_branch import resolve_ticket_branch, validate_branc
 from loregarden.services.git_subprocess import run_git, scrubbed_git_env
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, select
+
+logger = logging.getLogger(__name__)
 
 STALE_DAYS = 30
 RECENT_COMMIT_LIMIT = 8
@@ -366,7 +369,8 @@ def _branch_pr_statuses(repo_root: Path, branches: list[str]) -> dict[str, dict[
             name = future_map[future]
             try:
                 value = future.result()
-            except Exception:
+            except Exception as exc:
+                logger.warning("PR status lookup failed for branch %s: %s", name, exc)
                 value = None
             _pr_status_cache[(str(repo_root), name)] = (now, value)
             results[name] = value
