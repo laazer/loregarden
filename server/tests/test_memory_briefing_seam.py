@@ -149,6 +149,43 @@ def test_each_assembly_writes_its_own_row(isolated_db, tmp_path):
     ]
 
 
+def test_render_stage_prompt_labels_its_assembly_as_render(isolated_db, tmp_path):
+    """The wiring, not the plumbing.
+
+    Every other test here hands `_build_prompt` an `assembly_source` of its own,
+    so none of them can see the two call sites swapped — `render_stage_prompt`
+    passing DISPATCH and supervised dispatch passing RENDER satisfies all of
+    them, and every recorded row then names the wrong path. A swap flips both
+    sites, so pinning either one catches it.
+
+    `render_stage_prompt` resolves an execution root and can check a branch out
+    in it; that is stubbed, because this test is about which constant reaches
+    `_build_prompt` and nothing else.
+    """
+    captured: list[MemoryBriefingAssembly] = []
+
+    def capture(
+        self, ticket, run, agent, agent_context_dir, workspace, stage_def, *, assembly_source
+    ) -> str:
+        captured.append(assembly_source)
+        return ""
+
+    execution_root = tmp_path / "tree"
+    execution_root.mkdir()
+    with Session(isolated_db) as session:
+        ticket, _workspace, run, _memory = _fixture(session, tmp_path, seed_checkpoint=False)
+        with (
+            patch(
+                "loregarden.agents.executors.cli.resolve_execution_root",
+                return_value=execution_root,
+            ),
+            patch.object(CliAgentExecutor, "_build_prompt", capture),
+        ):
+            CliAgentExecutor(session).render_stage_prompt(run, ticket)
+
+    assert captured == [MemoryBriefingAssembly.RENDER]
+
+
 def test_a_verify_assembly_records_a_skipped_row_and_carries_no_inherited_context(
     isolated_db, tmp_path
 ):

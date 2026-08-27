@@ -450,7 +450,14 @@ def test_not_attempted_is_a_zeroed_record_with_no_store_states():
 
 
 def test_the_briefing_still_never_raises_when_every_lookup_explodes(tmp_path):
-    """The never-fatal property survives the return-type change."""
+    """The never-fatal property survives the return-type change.
+
+    Both failing stores must survive into the record, sorted: `store_errors` is
+    a tuple the telemetry row is comma-joined from, and an implementation that
+    reports only the first failure, or reports them in whichever order the
+    lookups happened to run, sends an operator after one broken system while the
+    other stays invisible. Single-store cases cannot see either defect.
+    """
     memory = _both(tmp_path)
 
     with (
@@ -460,7 +467,9 @@ def test_the_briefing_still_never_raises_when_every_lookup_explodes(tmp_path):
         result = build_inherited_wisdom(_ticket(), "lg", memory=memory)
 
     assert result.text == ""
+    assert result.store_errors == ("checkpoints:OSError", "vault:OSError")
     assert result.store_states[MemoryStoreKind.CHECKPOINTS] == MemoryStoreState.ERRORED
+    assert result.store_states[MemoryStoreKind.VAULT] == MemoryStoreState.ERRORED
 
 
 def test_elapsed_ms_covers_the_assembly_it_measures(tmp_path):

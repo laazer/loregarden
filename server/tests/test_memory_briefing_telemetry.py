@@ -455,23 +455,67 @@ def test_the_buckets_sum_to_the_rows_they_summarise(isolated_db):
         second = _extra_run(session, ticket, run_code="run_2", started_at=utcnow())
         third = _extra_run(session, ticket, run_code="run_3", started_at=utcnow())
 
+        fourth = _extra_run(session, ticket, run_code="run_4", started_at=utcnow())
+
         _record(session, ticket, first, _all(MemoryStoreState.READ), chars=100)
         _record(session, ticket, second, _all(MemoryStoreState.READ))
         _record(session, ticket, third, _all(MemoryStoreState.ERRORED))
         _record(session, ticket, third, InheritedWisdom.not_attempted().store_states, skipped=True)
+        # NO_STORE is the bucket most likely to be dropped on the floor: it is the
+        # newest outcome, and an aggregate that never maps it — folding it into
+        # `empty`, or omitting it from the GROUP BY — still satisfies every other
+        # assertion here while hiding the exact degradation AC2 exists to expose.
+        _record(session, ticket, fourth, _all(MemoryStoreState.UNCONFIGURED))
 
         stats = briefing_stats(session, window_days=7)
 
-    assert stats.rows_in_window == 4
+    assert stats.rows_in_window == 5
     assert stats.built == 1
     assert stats.empty == 1
     assert stats.store_error == 1
     assert stats.skipped == 1
-    assert stats.no_store == 0
+    assert stats.no_store == 1
     assert (
         stats.built + stats.empty + stats.store_error + stats.no_store + stats.skipped
         == stats.rows_in_window
     )
+
+
+def test_the_aggregate_counts_the_stored_outcome_and_never_re_derives_it(isolated_db):
+    """S5's FORBIDDEN clause, made falsifiable.
+
+    A row is written whose stored outcome disagrees with its own counters and
+    store states — the shape a classifier change would leave behind on rows
+    written before it. The aggregate must report the column, because an
+    aggregate that re-derives the outcome in SQL is a second classifier, and the
+    drift between the two shows up as summary numbers that disagree with the
+    rows they claim to summarise.
+    """
+    with Session(isolated_db) as session:
+        _workspace, ticket, run = _seed(session)
+        session.add(
+            MemoryBriefing(
+                run_id=run.id,
+                ticket_id=ticket.id,
+                workspace_id=run.workspace_id,
+                stage_key=run.stage_key,
+                assembly_source=MemoryBriefingAssembly.DISPATCH,
+                outcome=MemoryBriefingOutcome.STORE_ERROR,
+                chars_injected=412,
+                store_states_json=json.dumps(
+                    {"checkpoints": "read", "vault": "read", "graph": "read"}, sort_keys=True
+                ),
+                store_errors="",
+            )
+        )
+        session.commit()
+
+        stats = briefing_stats(session, window_days=7)
+
+    assert stats.rows_in_window == 1
+    assert stats.store_error == 1
+    assert stats.built == 0
+    assert stats.empty == 0
 
 
 def test_a_skipped_assembly_is_neither_built_nor_empty(isolated_db):
@@ -625,6 +669,22 @@ def test_the_briefings_endpoint_reports_the_aggregate(client):
         "no_store",
         "skipped",
     }
+
+
+def test_the_endpoint_reports_the_rows_that_are_actually_there(client, isolated_db):
+    """The other endpoint tests assert on shape, and an endpoint returning a
+    hardcoded zeroed model satisfies all of them — which is this ticket's own
+    defect wearing a 200. AC3 wants numbers that move when the data does."""
+    with Session(isolated_db) as session:
+        _workspace, ticket, run = _seed(session)
+        _record(session, ticket, run, _all(MemoryStoreState.ERRORED))
+
+    body = client.get("/api/memory/briefings").json()
+
+    assert body["rows_in_window"] == 1
+    assert body["store_error"] == 1
+    assert body["built"] == 0
+    assert body["last_row_at"] is not None
 
 
 def test_the_endpoint_honours_the_requested_window(client):
