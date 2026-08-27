@@ -24,6 +24,7 @@ from loregarden.models.domain.view_layout import (
     MAX_CONTAINERS,
     MAX_LAYOUT_NODES,
     MAX_SPLIT_DEPTH,
+    layout_payload,
     parse_view_layout,
 )
 from pydantic import ValidationError
@@ -549,3 +550,87 @@ def test_a_layout_with_too_many_containers_is_rejected():
 
     with pytest.raises(ValidationError):
         parse_view_layout(payload)
+
+
+# --- open settings, still not silently edited -----------------------------
+#
+# 444. `settings` is an open mapping because its vocabulary belongs to the
+# frontend primitive registry (436), not to the control plane. Open means the
+# server does not know what these keys mean — not that it may quietly rewrite
+# their values.
+
+
+def _settings_layout(settings: dict) -> dict:
+    return _flex_grid(
+        containers={"c1": {"kind": ContainerKind.PANEL.value, "settings": settings}},
+        root=_leaf("n1", "c1"),
+    )
+
+
+@pytest.mark.parametrize("value", [math.inf, -math.inf, math.nan])
+@pytest.mark.parametrize(
+    ("placement", "settings"),
+    [
+        ("at the top level", lambda value: {"zoom": value}),
+        ("nested in a mapping", lambda value: {"camera": {"zoom": value}}),
+        ("nested in a list", lambda value: {"stops": [0.5, value]}),
+        ("nested under a list", lambda value: {"stops": [{"at": value}]}),
+    ],
+)
+def test_a_non_finite_number_in_settings_is_refused(placement: str, settings, value: float):
+    """Refused, not rewritten.
+
+    `layout_payload`'s `model_dump(mode="json")` turns a non-finite float into
+    `None` before the byte cap or `json.dumps` sees it, so before this rule the
+    write succeeded and stored `{"zoom": null}`. That is the one outcome that is
+    wrong under either policy, because it breaks the round-trip guarantee the
+    rest of this layout keeps.
+
+    Depth is parametrized because a zoom one level down is the same defect: a
+    camera computed from a divide-by-zero is how `Infinity` actually arrives.
+    """
+    with pytest.raises(ValidationError) as caught:
+        parse_view_layout(_settings_layout(settings(value)))
+
+    assert "non-finite" in str(caught.value)
+    assert placement  # named for the failure report
+
+
+def test_a_finite_number_in_settings_is_kept_verbatim():
+    """The refusal is about non-finite values only. A primitive that declares a
+    numeric setting — none does yet, and 442's camera is the obvious first — must
+    still be able to store an ordinary number."""
+    layout = parse_view_layout(_settings_layout({"zoom": 1.5, "offset": -0.25, "steps": 3}))
+
+    assert layout_payload(layout)["containers"]["c1"]["settings"] == {
+        "zoom": 1.5,
+        "offset": -0.25,
+        "steps": 3,
+    }
+
+
+def test_settings_the_server_has_no_vocabulary_for_still_round_trip():
+    """The narrowing is number handling, not what keys settings may carry: the
+    registry (436) still owns the vocabulary, so an unrecognized key of any
+    shape comes back byte-identical."""
+    settings = {
+        "primitive_id": "some.registry.id",
+        "unknown_key": {"nested": [1, "two", True, None]},
+        "": "an empty key is still a key",
+    }
+
+    layout = parse_view_layout(_settings_layout(settings))
+
+    assert layout_payload(layout)["containers"]["c1"]["settings"] == settings
+
+
+def test_a_canvas_container_is_held_to_the_same_settings_rule():
+    """The rule lives on the container, which both arrangements share, so
+    neither view kind can be the one that still coerces."""
+    with pytest.raises(ValidationError):
+        parse_view_layout(
+            _canvas(
+                containers={"c1": {"kind": ContainerKind.PANEL.value, "settings": {"z": math.inf}}},
+                items=[_item("p1", "c1")],
+            )
+        )

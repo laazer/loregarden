@@ -14,11 +14,12 @@ cannot be repaired from the UI that fails to open it.
 
 from __future__ import annotations
 
+import json
 import math
 from typing import Annotated, Any, Literal
 
 from loregarden.models.domain.enums import ContainerKind, SplitOrientation, ViewKind
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
 #: Sibling fractions are authored by a UI that divides 1.0 by a pane count, so
 #: an evenly split row does not sum to exactly 1.0 in binary floating point
@@ -55,6 +56,17 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def _opaque(_value: Any) -> None:
+    """Stand-in for a settings value ``json`` cannot write.
+
+    Whether settings are *encodable* is the service's error to report — it
+    already answers that with a 400 naming the offending value. Substituting
+    here keeps the scan below from stopping at the first foreign object and
+    missing a non-finite number behind it.
+    """
+    return None
+
+
 class ViewContainer(_Strict):
     """One pane's content, independent of where it currently sits.
 
@@ -69,6 +81,38 @@ class ViewContainer(_Strict):
 
     kind: ContainerKind
     settings: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("settings")
+    @classmethod
+    def _settings_hold_no_non_finite_number(cls, settings: dict[str, Any]) -> dict[str, Any]:
+        """Refuse ``Infinity``/``NaN`` anywhere in settings, at any depth.
+
+        Open does not mean edited. ``json.loads`` accepts the ``Infinity`` and
+        ``NaN`` literals, nothing above rejects them because the server owns no
+        vocabulary for these keys, and then ``layout_payload``'s
+        ``model_dump(mode="json")`` rewrites them to ``null`` before either the
+        byte cap or ``json.dumps`` sees them. The write succeeds and the client
+        silently does not get back what it sent — the one outcome that breaks
+        the round-trip guarantee every other part of this layout keeps.
+
+        Refusing matches the typed fields beside it: ``size`` and the canvas
+        ``x``/``y``/``width``/``height`` all carry ``allow_inf_nan=False`` and
+        reject rather than coerce.
+
+        ``json.dumps`` *is* the walk — it is the same traversal that does the
+        coercion, asked to refuse instead — so nesting, lists, and ``bool``
+        versus ``float`` need no hand-rolled recursion that could disagree with
+        it. ``skipkeys`` keeps a key ``json`` cannot write from aborting the
+        scan; such a key cannot arrive over the wire, where every key is a
+        string.
+        """
+        try:
+            json.dumps(settings, allow_nan=False, default=_opaque, skipkeys=True)
+        except ValueError as exc:
+            raise ValueError(
+                "Container settings must not contain a non-finite number (Infinity or NaN)"
+            ) from exc
+        return settings
 
 
 ContainerRegistry = Annotated[dict[ContainerId, ViewContainer], Field(max_length=MAX_CONTAINERS)]
