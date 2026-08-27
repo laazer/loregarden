@@ -1,25 +1,26 @@
 /**
  * Where a canvas was last looked at: the pan offset and the zoom.
  *
- * **Why this is not in the layout.** `CanvasLayout` is `extra="forbid"`
- * server-side, so a `viewport` key alongside `containers` and `items` is a 422 —
- * persisting the viewport in the layout would take a server model change. It is
- * also the wrong home: pan and zoom are where *this person, on this screen* is
- * looking, the same category as a scroll position. Stored in the shared layout
- * they would yank a second viewer's viewport on every pan, and they would spend
- * bytes against the 256,000-byte cap that a container's `settings` already
- * competes for.
+ * **Where it is stored.** In the view record, in its own `viewport` field —
+ * a `viewport_json` column beside `layout_json` rather than a key inside it
+ * (480). Two reasons, both the server's: `CanvasLayout` is `extra="forbid"`, so
+ * a `viewport` key alongside `containers` and `items` is a 422; and the layout
+ * column is capped at 256,000 bytes and returned whole by `GET /views`, so
+ * folding a value that changes on every pan into it would make each gesture
+ * rewrite the column the cap governs.
  *
- * So it lives in `localStorage`, keyed by workspace and view. The consequence,
- * stated plainly because AC8 does not distinguish them: the viewport is restored
- * per **device**, not per account. Opening the same canvas on another machine
- * starts at the origin at 100%.
+ * It used to live in `localStorage`, which restored the viewport per *device*.
+ * Stored on the record it follows the account, and a canvas opened on another
+ * machine opens where it was left. The consequence of the move, stated because
+ * nothing migrates it: a viewport written by the old build stays in that
+ * machine's `localStorage` and is not read again, so each canvas opens once at
+ * its default before the first pan stores a new one.
  *
- * Every read is total — a key that is missing, unparseable, holds the wrong
- * shape, or holds a non-finite number returns the home viewport rather than
- * throwing. `localStorage` itself can throw (Safari private browsing, a storage
- * quota, a disabled origin), and a canvas that will not open because it could not
- * remember where it was is worse than one that opens at the origin.
+ * **Reading is total.** A record whose viewport is absent, is not an object, or
+ * holds a non-finite number reads as the home viewport rather than throwing. A
+ * canvas that will not open because it could not remember where it was is worse
+ * than one that opens at the origin, and `{}` — no stored position — is a state
+ * the server serves deliberately.
  */
 
 /** The zoom range the surface offers. Below 10% nothing is legible. */
@@ -43,40 +44,28 @@ export function clampZoom(zoom: number): number {
   return Math.min(Math.max(zoom, MIN_ZOOM), MAX_ZOOM);
 }
 
-function storageKey(slug: string, viewId: string): string {
-  return `loregarden.canvas-viewport.${slug}.${viewId}`;
-}
-
 function readNumber(source: Record<string, unknown>, field: string): number | undefined {
   const value = source[field];
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
   return value;
 }
 
-/** The stored viewport for this view, or the home one. */
-export function readViewport(slug: string, viewId: string): CanvasViewport {
-  if (slug === "" || viewId === "") return HOME_VIEWPORT;
-  let raw: string | null = null;
-  try {
-    raw = window.localStorage.getItem(storageKey(slug, viewId));
-  } catch {
+/**
+ * The stored viewport as the surface's own shape, or the home one.
+ *
+ * The wire is snake_case because the whole view record is; the surface speaks
+ * `panX`/`panY`, so the translation happens here rather than in the renderer.
+ * Pan is floored at zero: it is a scroll offset, and no element scrolls to a
+ * negative one — a stored negative would be silently clamped by the browser and
+ * then written back as the clamped value anyway.
+ */
+export function readViewport(stored: unknown): CanvasViewport {
+  if (typeof stored !== "object" || stored === null || Array.isArray(stored)) {
     return HOME_VIEWPORT;
   }
-  if (raw === null) return HOME_VIEWPORT;
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return HOME_VIEWPORT;
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return HOME_VIEWPORT;
-  }
-
-  const source = parsed as Record<string, unknown>;
-  const panX = readNumber(source, "panX");
-  const panY = readNumber(source, "panY");
+  const source = stored as Record<string, unknown>;
+  const panX = readNumber(source, "pan_x");
+  const panY = readNumber(source, "pan_y");
   const zoom = readNumber(source, "zoom");
   return {
     panX: panX === undefined ? HOME_VIEWPORT.panX : Math.max(0, panX),
@@ -85,13 +74,16 @@ export function readViewport(slug: string, viewId: string): CanvasViewport {
   };
 }
 
-/** Remember where this canvas is being looked at. Failure is not the user's problem. */
-export function writeViewport(slug: string, viewId: string, viewport: CanvasViewport): void {
-  if (slug === "" || viewId === "") return;
-  try {
-    window.localStorage.setItem(storageKey(slug, viewId), JSON.stringify(viewport));
-  } catch {
-    // A full or disabled store costs the user their scroll position on the next
-    // visit. It must not cost them the pan they are in the middle of.
-  }
+/**
+ * The viewport as the server's body: all three fields, none of them optional.
+ *
+ * The server requires the three together, because a viewport carrying only a
+ * zoom would store a pan of 0 the client never asked for.
+ */
+export function viewportPatch(viewport: CanvasViewport): {
+  pan_x: number;
+  pan_y: number;
+  zoom: number;
+} {
+  return { pan_x: viewport.panX, pan_y: viewport.panY, zoom: viewport.zoom };
 }

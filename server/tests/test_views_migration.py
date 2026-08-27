@@ -15,7 +15,11 @@ import loregarden.models.domain  # noqa: F401  (registers the tables on SQLModel
 import pytest
 from loregarden.db import migrations as M
 from loregarden.db.migration_ids import SHIPPED_MIGRATION_IDS
-from loregarden.db.migrations_views import m_sidebar_entry_pinned, m_view_store
+from loregarden.db.migrations_views import (
+    m_sidebar_entry_pinned,
+    m_view_store,
+    m_view_viewport,
+)
 from loregarden.models.domain import Workspace
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
@@ -108,15 +112,16 @@ def _schema(engine, table: str) -> dict:
 def _apply(engine, times: int = 1) -> None:
     """Every migration these two tables own, in ledger order.
 
-    ``m_sidebar_entry_pinned`` (472) is a separate id because ``m_view_store``
-    already shipped and is append-only, but the two describe one table — so the
-    ORM-parity check has to see both, or it compares the ORM against a schema
-    no deployment ever has.
+    ``m_sidebar_entry_pinned`` (472) and ``m_view_viewport`` (480) are separate
+    ids because ``m_view_store`` already shipped and is append-only, but all
+    three describe these two tables — so the ORM-parity check has to see every
+    one of them, or it compares the ORM against a schema no deployment ever has.
     """
     for _ in range(times):
         with engine.begin() as conn:
             m_view_store(conn)
             m_sidebar_entry_pinned(conn)
+            m_view_viewport(conn)
 
 
 def _seed_parents(engine, workspaces: tuple[str, ...] = ("ws1",), views: tuple[str, ...] = ()):
@@ -464,3 +469,62 @@ def test_the_pinned_migration_is_idempotent():
     _apply(engine, times=3)
 
     assert "pinned" in _columns(engine, "sidebar_entries")
+
+
+VIEWPORT_MIGRATION_ID = "0097_view_viewport"
+
+
+def test_the_viewport_migration_is_registered_and_appended_to_the_ledger():
+    """The same two facts for 480's column, which ships as its own id.
+
+    ``m_view_store`` guards its own CREATE TABLE, so on every database that
+    already holds ``views`` it does nothing — the column cannot be folded into
+    it. The number skips 0096, which a parallel branch has already applied to
+    the live database; claiming it again would run two different bodies under
+    one id depending on which branch a deployment saw first.
+    """
+    ids = [migration_id for migration_id, _ in M.MIGRATIONS]
+
+    assert VIEWPORT_MIGRATION_ID in ids
+    assert VIEWPORT_MIGRATION_ID in SHIPPED_MIGRATION_IDS
+    assert dict(M.MIGRATIONS)[VIEWPORT_MIGRATION_ID] is m_view_viewport
+    assert SHIPPED_MIGRATION_IDS.index(VIEWPORT_MIGRATION_ID) > SHIPPED_MIGRATION_IDS.index(
+        PINNED_MIGRATION_ID
+    )
+
+
+def test_the_views_table_carries_the_viewport_column():
+    engine = _fresh_engine()
+    _apply(engine)
+
+    assert "viewport_json" in _columns(engine, "views")
+
+
+def test_an_existing_view_has_no_stored_position_after_the_column_lands():
+    """The backfill every view composed before 480 depends on.
+
+    ``'{}'`` is the absent viewport — no stored position, so the canvas opens at
+    its default. A column added without a default would make those rows NULL,
+    and a NULL is a second spelling of the same state that every reader would
+    then have to know about.
+    """
+    engine = _fresh_engine()
+    with engine.begin() as conn:
+        m_view_store(conn)
+    _seed_parents(engine, views=("v1",))
+
+    with engine.begin() as conn:
+        m_view_viewport(conn)
+
+    with engine.begin() as conn:
+        stored = conn.execute(text("SELECT viewport_json FROM views WHERE id = 'v1'")).scalar()
+    assert stored == "{}"
+
+
+def test_the_viewport_migration_is_idempotent():
+    """It runs on every boot of every database, including ones already carrying
+    the column."""
+    engine = _fresh_engine()
+    _apply(engine, times=3)
+
+    assert "viewport_json" in _columns(engine, "views")

@@ -43,7 +43,7 @@ import { CanvasSurface } from "../components/views/CanvasSurface";
 import { FlexGridSurface } from "../components/views/FlexGridSurface";
 import { readGridTree } from "../lib/gridLayout";
 import { asJson } from "../lib/viewLayouts";
-import { fetchView, viewsKeys } from "../lib/viewsApi";
+import { fetchView, viewsKeys, type ViewViewport } from "../lib/viewsApi";
 import { useSidebarWorkspace } from "../state/SidebarWorkspaceContext";
 import { describeError } from "../state/toastStore";
 
@@ -144,12 +144,27 @@ export function ViewPage() {
       {/* Keyed by the view: the pane components carry a layout write of their
           own, and reusing one across two views hands a pending write the
           identity of a view it was never issued against. */}
-      <ViewSurface key={loaded.id} kind={loaded.kind} layout={layout} />
+      <ViewSurface
+        key={loaded.id}
+        kind={loaded.kind}
+        layout={layout}
+        viewport={loaded.viewport}
+      />
     </div>
   );
 }
 
-function ViewSurface({ kind, layout }: { kind: string; layout: Json | undefined }) {
+function ViewSurface({
+  kind,
+  layout,
+  viewport,
+}: {
+  kind: string;
+  layout: Json | undefined;
+  // Only the canvas has one. The grid arranges itself to the pane it is drawn
+  // in, so there is no pan or zoom for it to remember.
+  viewport: ViewViewport;
+}) {
   if (layout === undefined) {
     return <ViewUndrawable reason="Its stored layout is missing or is not a layout." />;
   }
@@ -159,7 +174,7 @@ function ViewSurface({ kind, layout }: { kind: string; layout: Json | undefined 
   // full of good ones. The grid below is the opposite case — a tree it cannot
   // read leaves it with nothing at all to draw — which is why only that one is
   // parsed here.
-  if (kind === "canvas") return <CanvasSurface layout={layout} />;
+  if (kind === "canvas") return <CanvasSurface layout={layout} viewport={viewport} />;
   if (kind === "flex_grid") {
     // Parsed here rather than inside the renderer, because "this grid has no
     // readable arrangement" is one of the undrawable states this page owns — a

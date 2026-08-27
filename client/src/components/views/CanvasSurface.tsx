@@ -70,11 +70,12 @@ import {
   ZOOM_STEP,
   clampZoom,
   readViewport,
-  writeViewport,
+  viewportPatch,
   type CanvasViewport,
 } from "../../lib/canvasViewport";
+import { useViewViewportWrite } from "../../hooks/useViewViewportWrite";
 import { asJson } from "../../lib/viewLayouts";
-import type { ViewLayout } from "../../lib/viewsApi";
+import type { ViewLayout, ViewViewport } from "../../lib/viewsApi";
 import { useSidebarWorkspaceSlug } from "../../state/SidebarWorkspaceContext";
 import { CanvasItemView, type CanvasActions } from "./CanvasItemView";
 import { ICON_BUTTON } from "./paneChrome";
@@ -96,8 +97,19 @@ const TOOLBAR_BUTTON = "btn-secondary btn-compact";
  * The layout arrives whole rather than as items and containers separately: every
  * edit this renderer makes is composed from the *cache's* newest layout inside
  * `useViewLayoutEdit`, and what is passed here is only what to draw.
+ *
+ * `viewport` is the record's stored pan and zoom, and it is read exactly once —
+ * on mount, to restore where the user was. Later values of the prop are this
+ * surface's own writes coming back through the cache, and applying one would
+ * yank the canvas back to a position the user has since panned away from.
  */
-export function CanvasSurface({ layout }: { layout: ViewLayout }) {
+export function CanvasSurface({
+  layout,
+  viewport: stored,
+}: {
+  layout: ViewLayout;
+  viewport: ViewViewport;
+}) {
   const slug = useSidebarWorkspaceSlug();
   // Outside the view route there is no id, and the write refuses to compose a
   // PATCH without one — a canvas can only reach the screen underneath it.
@@ -105,7 +117,12 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
   const edit = useViewLayoutEdit(slug, viewId);
 
   const viewport = useRef<HTMLDivElement>(null);
-  const [zoom, setZoom] = useState(() => readViewport(slug, viewId).zoom);
+  // The stored viewport, read once at mount for the reason the prop's note
+  // gives. A lazy initializer rather than a ref assigned during render: the read
+  // happens once, not on every render with only the first kept. The renderer is
+  // keyed by view id, so a mount is a view.
+  const [opened] = useState(() => readViewport(stored));
+  const [zoom, setZoom] = useState(() => opened.zoom);
   /**
    * The zoom a handler outside the render should read.
    *
@@ -140,17 +157,24 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
     };
   }, [items]);
 
-  /** Remember where this canvas is being looked at, once it stops moving. */
+  /**
+   * Remember where this canvas is being looked at, once it stops moving.
+   *
+   * Debounced, and through a write of its own rather than the layout queue: a
+   * pan fires at pointer rate, and putting it through the queue that serializes
+   * layout edits would starve the edits that change what the view contains.
+   */
+  const writeViewport = useViewViewportWrite(slug, viewId);
   const settle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const remember = useCallback(
     (next: CanvasViewport) => {
       if (settle.current !== undefined) clearTimeout(settle.current);
       settle.current = setTimeout(
-        () => writeViewport(slug, viewId, next),
+        () => writeViewport(viewportPatch(next)),
         VIEWPORT_SETTLE_MS,
       );
     },
-    [slug, viewId],
+    [writeViewport],
   );
 
   const rememberNow = useCallback(() => {
@@ -165,17 +189,21 @@ export function CanvasSurface({ layout }: { layout: ViewLayout }) {
   // Once per mount, and once per mount is once per view *because the page keys
   // this renderer by view id* (`ViewPage`'s `<ViewSurface key={loaded.id} …>`).
   // Without that key a second view would never restore, and `rememberNow` would
-  // write the first view's scroll under the second view's storage key.
+  // write the first view's scroll into the second view's record.
+  //
+  // Restoring wins over "fit to content" on open, and nothing here has to
+  // arbitrate: fitting is a control the user presses (AC9's rescue), never
+  // something that runs by itself. A canvas opens where it was left, and one
+  // click brings everything back into sight.
   const restored = useRef(false);
   useLayoutEffect(() => {
     if (restored.current) return;
     const element = viewport.current;
     if (element === null) return;
     restored.current = true;
-    const stored = readViewport(slug, viewId);
-    element.scrollLeft = stored.panX;
-    element.scrollTop = stored.panY;
-  }, [slug, viewId]);
+    element.scrollLeft = opened.panX;
+    element.scrollTop = opened.panY;
+  }, [opened]);
 
   useEffect(() => {
     return () => {

@@ -1303,6 +1303,12 @@ class View(SQLModel, table=True):
     #: A validated `view_layout.ViewLayout`, serialized. Never written unparsed:
     #: a malformed layout is a view that cannot be opened to be repaired.
     layout_json: str = "{}"
+    #: A validated `view_viewport.ViewViewport`, serialized — where the view was
+    #: last looked at. Its own column rather than a key in the layout: a pan or a
+    #: zoom step writes here without touching the capped layout column, and the
+    #: two are independently settable. `'{}'` means no stored position, which is
+    #: a legal state and what every view composed before 480 holds.
+    viewport_json: str = "{}"
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

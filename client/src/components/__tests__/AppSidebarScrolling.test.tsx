@@ -85,6 +85,7 @@ function viewsFixture(): ViewSummary[] {
     title,
     icon: "",
     layout: { kind: "flex_grid", root: null },
+    viewport: {},
     created_at: "2026-08-01T00:00:00",
     updated_at: "2026-08-01T00:00:00",
   });

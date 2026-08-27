@@ -1,15 +1,17 @@
 /**
- * Where a canvas was last looked at, and what happens when that record is
- * missing, corrupt, or unwritable.
+ * Reading a view record's stored viewport, and composing the body that stores
+ * one.
  *
- * AC8 asks that pan and zoom be restored when returning to a canvas. These cases
- * pin the storage contract that makes it possible; that the surface then applies
- * the restored values is `ViewPageCanvas.test.tsx`.
+ * The viewport lives on the record now — its own `viewport` field, from the
+ * `viewport_json` column 480 adds — rather than in `localStorage`, so it is
+ * restored per account rather than per device. What these cases pin is the
+ * translation at that boundary: the wire is snake_case and total-read, the
+ * surface speaks `panX`/`panY`, and `{}` is the server's spelling of "no stored
+ * position".
  *
- * The scope this satisfies is deliberate and worth stating: `CanvasLayout` is
- * `extra="forbid"` server-side, so the viewport cannot ride in the layout, and no
- * per-user column exists. It is therefore restored **per device**, not per
- * account.
+ * That the *surface* then applies the restored values, and writes a new one when
+ * it stops moving, is `ViewPageCanvas.test.tsx`. That the two fields are
+ * independently settable is the server's, in `test_views_api.py`.
  */
 
 import {
@@ -18,15 +20,8 @@ import {
   MIN_ZOOM,
   clampZoom,
   readViewport,
-  writeViewport,
+  viewportPatch,
 } from "../canvasViewport";
-
-const SLUG = "loregarden";
-const VIEW_ID = "v-canvas";
-
-beforeEach(() => {
-  window.localStorage.clear();
-});
 
 describe("clampZoom", () => {
   it("holds zoom inside a range a surface can be drawn at", () => {
@@ -44,95 +39,71 @@ describe("clampZoom", () => {
 });
 
 describe("reading a stored viewport", () => {
-  it("round-trips what was written", () => {
-    writeViewport(SLUG, VIEW_ID, { panX: 320, panY: 180, zoom: 1.5 });
-    expect(readViewport(SLUG, VIEW_ID)).toEqual({ panX: 320, panY: 180, zoom: 1.5 });
+  it("reads the record's pan and zoom as the surface's own shape", () => {
+    expect(readViewport({ pan_x: 320, pan_y: 180, zoom: 1.5 })).toEqual({
+      panX: 320,
+      panY: 180,
+      zoom: 1.5,
+    });
   });
 
-  it("keeps one canvas's viewport out of another's", () => {
-    writeViewport(SLUG, "v-a", { panX: 100, panY: 0, zoom: 2 });
-    expect(readViewport(SLUG, "v-b")).toEqual(HOME_VIEWPORT);
+  it("opens at the origin for a view with no stored position", () => {
+    // `{}` is what the server stores for a canvas nobody has panned, and what
+    // every view composed before this column holds.
+    expect(readViewport({})).toEqual(HOME_VIEWPORT);
   });
 
-  it("keeps one workspace's viewport out of another's", () => {
-    // View ids are unique per workspace, not globally: two workspaces can hold
-    // the same id, and a shared key would restore the wrong pan.
-    writeViewport("blobert", VIEW_ID, { panX: 100, panY: 0, zoom: 2 });
-    expect(readViewport(SLUG, VIEW_ID)).toEqual(HOME_VIEWPORT);
-  });
-
-  it("starts at the origin when nothing was ever stored", () => {
-    expect(readViewport(SLUG, VIEW_ID)).toEqual(HOME_VIEWPORT);
-  });
-
-  it("starts at the origin rather than throwing on a record that is not JSON", () => {
-    // A canvas that will not open because it could not remember where it was is
-    // worse than one that opens at the origin.
-    window.localStorage.setItem(`loregarden.canvas-viewport.${SLUG}.${VIEW_ID}`, "{not json");
-    expect(readViewport(SLUG, VIEW_ID)).toEqual(HOME_VIEWPORT);
-  });
-
-  it("ignores a stored value of the wrong shape", () => {
-    window.localStorage.setItem(`loregarden.canvas-viewport.${SLUG}.${VIEW_ID}`, "[1,2,3]");
-    expect(readViewport(SLUG, VIEW_ID)).toEqual(HOME_VIEWPORT);
+  it("opens at the origin rather than throwing on a value of the wrong shape", () => {
+    // A canvas that will not open because it could not read where it was is
+    // worse than one that opens at the origin. Reachable from a hand-edited
+    // row, and from any future build that widens the field.
+    expect(readViewport(undefined)).toEqual(HOME_VIEWPORT);
+    expect(readViewport(null)).toEqual(HOME_VIEWPORT);
+    expect(readViewport([1, 2, 3])).toEqual(HOME_VIEWPORT);
+    expect(readViewport("far left")).toEqual(HOME_VIEWPORT);
   });
 
   it("replaces a non-finite stored number rather than restoring it", () => {
-    // `JSON.stringify(Infinity)` is `null`, so this is reachable from a write
-    // that went wrong as well as from a hand-edited store.
-    window.localStorage.setItem(
-      `loregarden.canvas-viewport.${SLUG}.${VIEW_ID}`,
-      '{"panX":null,"panY":"far","zoom":null}',
-    );
-    expect(readViewport(SLUG, VIEW_ID)).toEqual(HOME_VIEWPORT);
+    // JSON has no `Infinity`, so a value that went wrong arrives as `null` or as
+    // a string. The server refuses to store either; a row predating it, or one
+    // edited by hand, still has to open.
+    expect(readViewport({ pan_x: null, pan_y: "far", zoom: null })).toEqual(HOME_VIEWPORT);
   });
 
-  it("clamps a stored zoom outside the drawable range", () => {
-    window.localStorage.setItem(
-      `loregarden.canvas-viewport.${SLUG}.${VIEW_ID}`,
-      '{"panX":0,"panY":0,"zoom":9999}',
-    );
-    expect(readViewport(SLUG, VIEW_ID).zoom).toBe(MAX_ZOOM);
+  it("clamps a stored zoom outside the range this surface draws", () => {
+    // The server's ceiling is deliberately wider than the canvas's own range, so
+    // a stored zoom the surface cannot draw is a value it must narrow, not a
+    // value it can assume away.
+    expect(readViewport({ pan_x: 0, pan_y: 0, zoom: 99 }).zoom).toBe(MAX_ZOOM);
+    expect(readViewport({ pan_x: 0, pan_y: 0, zoom: 0.001 }).zoom).toBe(MIN_ZOOM);
   });
 
-  it("refuses a negative pan, which no scroll position can be", () => {
-    window.localStorage.setItem(
-      `loregarden.canvas-viewport.${SLUG}.${VIEW_ID}`,
-      '{"panX":-40,"panY":-40,"zoom":1}',
-    );
-    expect(readViewport(SLUG, VIEW_ID)).toMatchObject({ panX: 0, panY: 0 });
+  it("floors a negative pan, which no scroll position can be", () => {
+    expect(readViewport({ pan_x: -40, pan_y: -40, zoom: 1 })).toMatchObject({ panX: 0, panY: 0 });
+  });
+
+  it("keeps the fields it can read when one of them is missing", () => {
+    // A partial object is not something the server stores — the three fields are
+    // required together — but the read is total, and dropping a good pan because
+    // the zoom was absent would move the user for no reason.
+    expect(readViewport({ pan_x: 90, pan_y: 40 })).toEqual({ panX: 90, panY: 40, zoom: 1 });
   });
 });
 
-describe("when the store itself fails", () => {
-  it("survives a read that throws", () => {
-    // Safari private browsing, a disabled origin, a quota. The user loses their
-    // scroll position; they must not lose the canvas.
-    const getItem = jest.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("storage disabled");
+describe("the body that stores a viewport", () => {
+  it("sends all three fields under the names the server requires", () => {
+    // The server's model is `extra="forbid"` with three required fields: a body
+    // spelled `panX` is a 422, and one carrying only the zoom is refused rather
+    // than stored with a pan the client never asked for.
+    expect(viewportPatch({ panX: 320, panY: 180, zoom: 1.5 })).toEqual({
+      pan_x: 320,
+      pan_y: 180,
+      zoom: 1.5,
     });
-    try {
-      expect(readViewport(SLUG, VIEW_ID)).toEqual(HOME_VIEWPORT);
-    } finally {
-      getItem.mockRestore();
-    }
   });
 
-  it("survives a write that throws", () => {
-    const setItem = jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("quota exceeded");
-    });
-    try {
-      expect(() => writeViewport(SLUG, VIEW_ID, { panX: 1, panY: 1, zoom: 1 })).not.toThrow();
-    } finally {
-      setItem.mockRestore();
-    }
-  });
-
-  it("writes nothing at all without a view to key it by", () => {
-    // Outside the view route there is no id, and a shared key would have every
-    // canvas restore the last one's pan.
-    writeViewport(SLUG, "", { panX: 50, panY: 50, zoom: 2 });
-    expect(window.localStorage.length).toBe(0);
+  it("round-trips through a read", () => {
+    const viewport = { panX: 512, panY: 64, zoom: 2 };
+    expect(readViewport(viewportPatch(viewport))).toEqual(viewport);
   });
 });

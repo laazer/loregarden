@@ -47,6 +47,7 @@ function view(id: string, layout: Json): ViewSummary {
     title: id,
     icon: "",
     layout,
+    viewport: {},
     created_at: "2026-08-01T00:00:00",
     updated_at: "2026-08-01T00:00:00",
   };

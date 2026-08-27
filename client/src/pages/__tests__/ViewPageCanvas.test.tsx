@@ -23,7 +23,7 @@ import userEvent from "@testing-library/user-event";
 
 import { ApiError } from "../../api/http";
 import { MIN_ITEM_PX, REACHABLE_EXTENT } from "../../lib/canvasLayout";
-import { MAX_ZOOM, readViewport } from "../../lib/canvasViewport";
+import { MAX_ZOOM } from "../../lib/canvasViewport";
 import {
   SLUG,
   VIEW_ID,
@@ -89,6 +89,13 @@ const KEY_STEP_PX = 8;
 
 async function shown(layout: Json) {
   const rendered = renderCanvas(layout);
+  await screen.findByTestId("view-host");
+  return rendered;
+}
+
+/** The same, for a view whose record already carries a stored viewport. */
+async function shownWith(layout: Json, viewport: Json) {
+  const rendered = renderCanvas(layout, undefined, viewport);
   await screen.findByTestId("view-host");
   return rendered;
 }
@@ -563,29 +570,31 @@ describe("AC7 — a refused write does not leave the screen lying", () => {
   });
 });
 
-describe("AC8 — the viewport is restored", () => {
-  it("applies a stored zoom on a cold mount", async () => {
-    window.localStorage.setItem(
-      `loregarden.canvas-viewport.${SLUG}.${VIEW_ID}`,
-      '{"panX":0,"panY":0,"zoom":2}',
-    );
-
-    const { container } = await shown(oneItemCanvas());
+describe("AC8 — the viewport is restored, from the view's own record", () => {
+  it("applies the record's stored zoom on a cold mount", async () => {
+    const { container } = await shownWith(oneItemCanvas(), { pan_x: 0, pan_y: 0, zoom: 2 });
 
     expect(Number(surfaceEl(container).dataset.zoom)).toBe(2);
     expect(surfaceEl(container).style.transform).toBe("scale(2)");
   });
 
-  it("applies a stored pan to the viewport on a cold mount", async () => {
+  it("opens a view with no stored position at 100%", async () => {
+    // `{}` is what the server stores for a canvas nobody has panned, and what
+    // every view composed before the column holds. It is a legal state, not a
+    // viewport of zeroes: the surface opens at its default rather than at a
+    // zoom of 0.
+    const { container } = await shownWith(oneItemCanvas(), {});
+
+    expect(Number(surfaceEl(container).dataset.zoom)).toBe(1);
+    expect(surfaceEl(container).style.transform).toBe("");
+  });
+
+  it("applies the record's stored pan to the viewport on a cold mount", async () => {
     // jsdom never scrolls — nothing overflows because nothing is laid out — so
     // `scrollLeft` reads 0 no matter what is assigned to it. Watching the setter
     // is what makes the assignment observable at all; whether the browser then
     // scrolls that far is the browser's business, and this asserts only that the
     // canvas asked it to.
-    window.localStorage.setItem(
-      `loregarden.canvas-viewport.${SLUG}.${VIEW_ID}`,
-      '{"panX":640,"panY":320,"zoom":1}',
-    );
     const scrolledTo: { left: number[]; top: number[] } = { left: [], top: [] };
     const original = Object.getOwnPropertyDescriptor(Element.prototype, "scrollLeft");
     Object.defineProperty(Element.prototype, "scrollLeft", {
@@ -605,7 +614,7 @@ describe("AC8 — the viewport is restored", () => {
     });
 
     try {
-      await shown(oneItemCanvas());
+      await shownWith(oneItemCanvas(), { pan_x: 640, pan_y: 320, zoom: 1 });
       expect(scrolledTo.left).toContain(640);
       expect(scrolledTo.top).toContain(320);
     } finally {
@@ -616,7 +625,7 @@ describe("AC8 — the viewport is restored", () => {
     }
   });
 
-  it("remembers a zoom change once the viewport stops moving", async () => {
+  it("writes the viewport to the record once it stops moving", async () => {
     jest.useFakeTimers();
     try {
       renderCanvas(oneItemCanvas());
@@ -624,14 +633,60 @@ describe("AC8 — the viewport is restored", () => {
       act(() => {
         (toolbarAction(host, "zoom-in") as HTMLButtonElement).click();
       });
-      act(() => {
+      // Awaited inside `act`, because the settled write is a mutation: the
+      // timer only hands it to react-query, which dispatches it on a microtask.
+      await act(async () => {
         jest.advanceTimersByTime(1000);
       });
 
-      expect(readViewport(SLUG, VIEW_ID).zoom).toBeGreaterThan(1);
+      expect(mockUpdateView).toHaveBeenCalledTimes(1);
+      const [slug, viewId, patch] = mockUpdateView.mock.calls[0];
+      expect([slug, viewId]).toEqual([SLUG, VIEW_ID]);
+      // The layout is *not* in the body. That is the independence the column
+      // exists for: a zoom step must not rewrite the arrangement, and must not
+      // travel through the queue that serializes real layout edits.
+      expect(Object.keys(patch as Json)).toEqual(["viewport"]);
+      expect((patch as { viewport: { zoom: number } }).viewport.zoom).toBeGreaterThan(1);
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it("does not write a viewport until the gesture settles", async () => {
+    // Debounced on purpose: a pan fires at pointer rate, and a PATCH per event
+    // would be a request per frame of a drag.
+    jest.useFakeTimers();
+    try {
+      renderCanvas(oneItemCanvas());
+      const host = await screen.findByTestId("view-host");
+      act(() => {
+        (toolbarAction(host, "zoom-in") as HTMLButtonElement).click();
+        (toolbarAction(host, "zoom-in") as HTMLButtonElement).click();
+        (toolbarAction(host, "zoom-in") as HTMLButtonElement).click();
+      });
+
+      expect(mockUpdateView).not.toHaveBeenCalled();
+
+      await act(async () => {
+        jest.advanceTimersByTime(1000);
+      });
+      expect(mockUpdateView).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("leaves the viewport alone when the layout is what changed", async () => {
+    // The other half of the same independence: placing a container writes the
+    // arrangement and says nothing about where the user is looking.
+    const user = userEvent.setup();
+    const { container } = await shown(emptyCanvas());
+
+    await user.click(toolbarAction(container, "add-container"));
+
+    await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(Object.keys(mockUpdateView.mock.calls[0][2] as Json)).toEqual(["layout"]);
   });
 });
 

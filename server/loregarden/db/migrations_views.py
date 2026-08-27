@@ -102,3 +102,23 @@ def m_sidebar_entry_pinned(conn: Connection) -> None:
         "sidebar_entries",
         {"pinned": "ALTER TABLE sidebar_entries ADD COLUMN pinned BOOLEAN NOT NULL DEFAULT 0"},
     )
+
+
+def m_view_viewport(conn: Connection) -> None:
+    """Where a view was last looked at — its pan offset and zoom (480).
+
+    Its own column rather than a key inside ``layout_json``: the layout is
+    capped at 256,000 bytes and returned whole by ``GET /views``, while a
+    viewport changes on every pan and every zoom step. One column would put a
+    scroll gesture and a deliberate layout edit through the same write.
+
+    ``DEFAULT '{}'`` is the absent viewport, and it is what every existing row
+    gets: a view composed before this column has no stored position, and the
+    canvas opens it at its default rather than at the origin at zoom 0. Not
+    nullable, so "no stored position" has one spelling rather than two.
+    """
+    add_columns_if_missing(
+        conn,
+        "views",
+        {"viewport_json": "ALTER TABLE views ADD COLUMN viewport_json TEXT NOT NULL DEFAULT '{}'"},
+    )

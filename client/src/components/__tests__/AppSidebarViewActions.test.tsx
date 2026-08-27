@@ -134,6 +134,7 @@ const views = (): ViewSummary[] => [
     title: "Build Board",
     icon: "",
     layout: gridLayout(),
+    viewport: {},
     created_at: "2026-08-01T00:00:00",
     updated_at: "2026-08-01T00:00:00",
   },
@@ -143,6 +144,7 @@ const views = (): ViewSummary[] => [
     title: "Sketch Surface",
     icon: "",
     layout: { kind: "canvas", containers: {}, items: [] },
+    viewport: {},
     created_at: "2026-08-01T00:00:00",
     updated_at: "2026-08-01T00:00:00",
   },
@@ -158,6 +160,7 @@ const created = (): ViewSummary => ({
   // grid. A fixture the server could never send teaches the implementation the
   // wrong shape for the thing it is about to render.
   layout: seededGridLayout(),
+  viewport: {},
   created_at: "2026-08-14T00:00:00",
   updated_at: "2026-08-14T00:00:00",
 });
