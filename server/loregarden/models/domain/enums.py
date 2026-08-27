@@ -476,3 +476,15 @@ class SidebarEntryKind(str, Enum):
 
     VIEW = "view"
     PAGE = "page"
+
+
+class ReferencePageKind(str, Enum):
+    """What a cached reference document is, from the fetcher's point of view.
+
+    Raw DevDocs JSON rows ride the same cache as rendered pages; the kind is
+    how a later reader tells them apart without sniffing the body.
+    """
+
+    PAGE = "page"
+    INDEX = "index"
+    CATALOG = "catalog"
