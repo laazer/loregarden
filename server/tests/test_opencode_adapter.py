@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from pathlib import Path
 from unittest import mock
 from unittest.mock import MagicMock, patch
@@ -29,9 +30,11 @@ from loregarden.services.cli_settings import (
     resolve_model_for_adapter,
 )
 from loregarden.services.opencode_discovery import (
+    DISCOVERY_TIMEOUT_SECONDS,
     _parse_models_output,
     list_opencode_models,
     opencode_model_options,
+    reset_model_cache,
 )
 from loregarden.services.run_log_stream import format_stream_payload
 
@@ -41,6 +44,14 @@ def _workspace_picks_the_adapter(monkeypatch):
     """conftest pins LOREGARDEN_CLI_ADAPTER=local session-wide, and the env tier
     outranks everything — clear it so these tests exercise the workspace pin."""
     monkeypatch.delenv("LOREGARDEN_CLI_ADAPTER", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _no_memoized_catalog():
+    """Discovery memoizes across calls; a leaked entry would answer the next test."""
+    reset_model_cache()
+    yield
+    reset_model_cache()
 
 
 def _workspace(**kwargs) -> Workspace:
@@ -261,6 +272,66 @@ def test_discovery_reads_the_cli_catalog():
             {"id": "opencode/a", "label": "opencode/a"},
             {"id": "opencode/b", "label": "opencode/b"},
         ]
+
+
+def test_discovery_waits_long_enough_for_the_cli_to_answer():
+    # `opencode models` refreshes every authenticated provider over the network
+    # first; it measured ~15s locally, and the old 12s budget expired every time,
+    # leaving the picker permanently empty on a perfectly healthy install.
+    assert DISCOVERY_TIMEOUT_SECONDS > 15.0
+
+
+def test_discovery_runs_the_cli_once_and_reuses_the_catalog():
+    completed = MagicMock(stdout="opencode/a\n")
+    with (
+        patch(
+            "loregarden.services.opencode_discovery.resolve_opencode_binary",
+            return_value="/bin/opencode",
+        ),
+        patch(
+            "loregarden.services.opencode_discovery.subprocess.run", return_value=completed
+        ) as run,
+    ):
+        assert list_opencode_models() == ["opencode/a"]
+        assert list_opencode_models() == ["opencode/a"]
+
+    # A ~15s subprocess per runtime-options request would stall the settings modal.
+    assert run.call_count == 1
+
+
+def test_cached_catalog_cannot_be_mutated_by_a_caller():
+    completed = MagicMock(stdout="opencode/a\n")
+    with (
+        patch(
+            "loregarden.services.opencode_discovery.resolve_opencode_binary",
+            return_value="/bin/opencode",
+        ),
+        patch("loregarden.services.opencode_discovery.subprocess.run", return_value=completed),
+    ):
+        first = list_opencode_models()
+        first.append("opencode/injected")
+
+        assert list_opencode_models() == ["opencode/a"]
+
+
+def test_a_failed_probe_is_retried_sooner_than_a_successful_one(monkeypatch):
+    monkeypatch.setattr("loregarden.services.opencode_discovery.FAILURE_CACHE_TTL_SECONDS", 0.0)
+    with (
+        patch(
+            "loregarden.services.opencode_discovery.resolve_opencode_binary",
+            return_value="/bin/opencode",
+        ),
+        patch(
+            "loregarden.services.opencode_discovery.subprocess.run",
+            side_effect=[
+                subprocess.TimeoutExpired(cmd="opencode", timeout=1),
+                MagicMock(stdout="opencode/a\n"),
+            ],
+        ),
+    ):
+        # Authenticating a provider must not take five minutes to show up.
+        assert list_opencode_models() == []
+        assert list_opencode_models() == ["opencode/a"]
 
 
 def test_adapter_availability_follows_the_binary(monkeypatch, tmp_path):
