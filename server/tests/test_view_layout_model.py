@@ -15,6 +15,7 @@ layout that reaches the database is a view that cannot be opened and cannot be
 repaired from the UI that fails to open it.
 """
 
+import json
 import math
 
 import pytest
@@ -602,13 +603,39 @@ def test_a_settings_value_that_cannot_be_written_back_is_refused():
     """The same rule, one step wider.
 
     A value `json` cannot write is one more thing that cannot survive the
-    round-trip, and the alternatives inside `json.dumps` — `default` and
-    `skipkeys` — both *substitute* for it silently, which is the behaviour this
-    whole rule exists to stop. Substituting would also drop the entry, hiding a
-    non-finite number filed beneath it.
+    round-trip — pydantic's encoder would coerce a `set` to a list and a
+    `datetime` to a string, which is the round-trip breakage under another name
+    — and `json.dumps`'s `default` hook would substitute for it silently, which
+    is the behaviour this whole rule exists to stop.
     """
     with pytest.raises(ValidationError):
         parse_view_layout(_settings_layout({"handle": object()}))
+
+
+def test_a_non_finite_number_under_an_unwritable_key_is_refused():
+    """The regression test for `skipkeys`.
+
+    `json.dumps(skipkeys=True)` looks like it only tolerates a key `json` cannot
+    write. It drops the whole *entry* — key and value — so this `inf` was never
+    scanned, the layout validated, and `layout_payload` stored
+    `{"a": {"1,2": {"z": null}}}`: the exact coercion this rule exists to
+    refuse, hidden one key-type deep. Nothing else here fires under `skipkeys`,
+    because `json` writes a float key rather than skipping it.
+    """
+    with pytest.raises(ValidationError):
+        parse_view_layout(_settings_layout({"a": {(1, 2): {"z": math.inf}}}))
+
+
+def test_a_string_the_response_encoder_cannot_write_is_refused():
+    """A lone surrogate is the one value that used to commit and then 500.
+
+    `json.loads` accepts the escape, and escaped again on the way out it writes
+    fine — so the row committed, and then encoding the *response* raised, making
+    every later read of that workspace's views a 500 no API call could undo. The
+    check therefore encodes as UTF-8 rather than trusting the escape.
+    """
+    with pytest.raises(ValidationError):
+        parse_view_layout(_settings_layout(json.loads('{"s": "\\ud800"}')))
 
 
 def test_a_finite_number_in_settings_is_kept_verbatim():
