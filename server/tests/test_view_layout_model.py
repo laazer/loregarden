@@ -569,15 +569,16 @@ def _settings_layout(settings: dict) -> dict:
 
 @pytest.mark.parametrize("value", [math.inf, -math.inf, math.nan])
 @pytest.mark.parametrize(
-    ("placement", "settings"),
+    "settings",
     [
-        ("at the top level", lambda value: {"zoom": value}),
-        ("nested in a mapping", lambda value: {"camera": {"zoom": value}}),
-        ("nested in a list", lambda value: {"stops": [0.5, value]}),
-        ("nested under a list", lambda value: {"stops": [{"at": value}]}),
+        pytest.param(lambda value: {"zoom": value}, id="at the top level"),
+        pytest.param(lambda value: {"camera": {"zoom": value}}, id="nested in a mapping"),
+        pytest.param(lambda value: {"stops": [0.5, value]}, id="inside a list"),
+        pytest.param(lambda value: {"stops": [{"at": value}]}, id="under a list"),
+        pytest.param(lambda value: {"corners": {value: "top left"}}, id="as a mapping key"),
     ],
 )
-def test_a_non_finite_number_in_settings_is_refused(placement: str, settings, value: float):
+def test_a_non_finite_number_in_settings_is_refused(settings, value: float):
     """Refused, not rewritten.
 
     `layout_payload`'s `model_dump(mode="json")` turns a non-finite float into
@@ -588,12 +589,26 @@ def test_a_non_finite_number_in_settings_is_refused(placement: str, settings, va
 
     Depth is parametrized because a zoom one level down is the same defect: a
     camera computed from a divide-by-zero is how `Infinity` actually arrives.
+    The error names the container's settings, so a client is told which of them
+    to fix rather than that the layout is bad somewhere.
     """
     with pytest.raises(ValidationError) as caught:
         parse_view_layout(_settings_layout(settings(value)))
 
-    assert "non-finite" in str(caught.value)
-    assert placement  # named for the failure report
+    assert caught.value.errors()[0]["loc"][-1] == "settings"
+
+
+def test_a_settings_value_that_cannot_be_written_back_is_refused():
+    """The same rule, one step wider.
+
+    A value `json` cannot write is one more thing that cannot survive the
+    round-trip, and the alternatives inside `json.dumps` — `default` and
+    `skipkeys` — both *substitute* for it silently, which is the behaviour this
+    whole rule exists to stop. Substituting would also drop the entry, hiding a
+    non-finite number filed beneath it.
+    """
+    with pytest.raises(ValidationError):
+        parse_view_layout(_settings_layout({"handle": object()}))
 
 
 def test_a_finite_number_in_settings_is_kept_verbatim():

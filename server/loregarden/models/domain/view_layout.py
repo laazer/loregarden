@@ -56,17 +56,6 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def _opaque(_value: Any) -> None:
-    """Stand-in for a settings value ``json`` cannot write.
-
-    Whether settings are *encodable* is the service's error to report — it
-    already answers that with a 400 naming the offending value. Substituting
-    here keeps the scan below from stopping at the first foreign object and
-    missing a non-finite number behind it.
-    """
-    return None
-
-
 class ViewContainer(_Strict):
     """One pane's content, independent of where it currently sits.
 
@@ -84,33 +73,41 @@ class ViewContainer(_Strict):
 
     @field_validator("settings")
     @classmethod
-    def _settings_hold_no_non_finite_number(cls, settings: dict[str, Any]) -> dict[str, Any]:
-        """Refuse ``Infinity``/``NaN`` anywhere in settings, at any depth.
+    def _settings_survive_being_written_back(cls, settings: dict[str, Any]) -> dict[str, Any]:
+        """Refuse settings a round-trip would alter — ``Infinity``/``NaN`` above all.
 
         Open does not mean edited. ``json.loads`` accepts the ``Infinity`` and
         ``NaN`` literals, nothing above rejects them because the server owns no
         vocabulary for these keys, and then ``layout_payload``'s
         ``model_dump(mode="json")`` rewrites them to ``null`` before either the
-        byte cap or ``json.dumps`` sees them. The write succeeds and the client
-        silently does not get back what it sent — the one outcome that breaks
-        the round-trip guarantee every other part of this layout keeps.
+        byte cap or ``json.dumps`` sees them. The write succeeded and the client
+        silently did not get back what it sent — the one outcome that breaks the
+        round-trip guarantee every other part of this layout keeps.
 
         Refusing matches the typed fields beside it: ``size`` and the canvas
         ``x``/``y``/``width``/``height`` all carry ``allow_inf_nan=False`` and
         reject rather than coerce.
 
-        ``json.dumps`` *is* the walk — it is the same traversal that does the
-        coercion, asked to refuse instead — so nesting, lists, and ``bool``
-        versus ``float`` need no hand-rolled recursion that could disagree with
-        it. ``skipkeys`` keeps a key ``json`` cannot write from aborting the
-        scan; such a key cannot arrive over the wire, where every key is a
-        string.
+        ``json.dumps`` *is* the walk — the same traversal that did the coercion,
+        asked to refuse instead — so nesting, lists, and ``bool`` versus
+        ``float`` need no hand-rolled recursion that could disagree with it. It
+        is asked in its strictest form: no ``default`` and no ``skipkeys``, both
+        of which *substitute* rather than object, which is the behaviour this
+        rule exists to stop. That widens the refusal from non-finite numbers to
+        anything unwritable — a value the service's own encodability check
+        already turns away, one layer later, so nothing that used to store stops
+        being refused.
+
+        ``json``'s own reason is carried through rather than restated: it also
+        raises for a circular reference and for an integer past its digit limit,
+        and a client told those are an ``Infinity`` it never sent is worse off
+        than one told nothing.
         """
         try:
-            json.dumps(settings, allow_nan=False, default=_opaque, skipkeys=True)
-        except ValueError as exc:
+            json.dumps(settings, allow_nan=False)
+        except (TypeError, ValueError) as exc:
             raise ValueError(
-                "Container settings must not contain a non-finite number (Infinity or NaN)"
+                f"Container settings must be writable as JSON with finite numbers: {exc}"
             ) from exc
         return settings
 

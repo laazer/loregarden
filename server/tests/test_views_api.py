@@ -1374,16 +1374,17 @@ def _layout_with_settings(raw_settings: str) -> str:
 
 
 @pytest.mark.parametrize(
-    ("name", "raw_settings"),
+    "raw_settings",
     [
-        ("infinity", '{"zoom": Infinity}'),
-        ("negative infinity", '{"zoom": -Infinity}'),
-        ("nan", '{"zoom": NaN}'),
-        ("nested", '{"camera": {"zoom": Infinity}}'),
+        pytest.param('{"zoom": Infinity}', id="infinity"),
+        pytest.param('{"zoom": -Infinity}', id="negative infinity"),
+        pytest.param('{"zoom": NaN}', id="nan"),
+        pytest.param('{"camera": {"zoom": Infinity}}', id="nested"),
+        pytest.param('{"stops": [0.5, Infinity]}', id="inside a list"),
     ],
 )
 def test_creating_a_view_with_a_non_finite_setting_is_refused(
-    client: TestClient, name: str, raw_settings: str
+    client: TestClient, raw_settings: str
 ):
     """Before this rule the POST returned 201 and stored ``{"zoom": null}``: the
     dump to JSON coerced the value before the byte cap or ``json.dumps`` saw it,
@@ -1395,7 +1396,6 @@ def test_creating_a_view_with_a_non_finite_setting_is_refused(
 
     assert res.status_code == 422, res.text
     assert client.get(VIEWS).json() == []
-    assert name  # named for the failure report
 
 
 def test_the_refusal_renders_a_422_body_rather_than_a_500(client: TestClient):
