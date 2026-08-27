@@ -1430,7 +1430,13 @@ def test_updating_a_view_with_a_non_finite_setting_is_refused(client: TestClient
 def test_a_finite_settings_value_still_round_trips_through_the_api(client: TestClient):
     """The narrowing is number handling only. Keys the server has no vocabulary
     for — the registry's business, not the control plane's — come back
-    byte-identical, numbers included."""
+    byte-identical, numbers included.
+
+    Asserted on the response *bytes* rather than on the parsed mapping, because
+    the damage this rule exists to catch is at that level: parsed-dict equality
+    cannot see a value re-encoded on the way through, and a `null` where a
+    number went in is only one of the ways that shows up.
+    """
     settings = {"primitive_id": "some.registry.id", "zoom": 1.5, "offset": -0.25, "steps": 3}
     layout = _grid_layout(
         containers={"c1": {"kind": ContainerKind.PANEL.value, "settings": settings}}
@@ -1438,5 +1444,6 @@ def test_a_finite_settings_value_still_round_trips_through_the_api(client: TestC
 
     created = _create_view(client, "Board", layout=layout)
 
-    stored = client.get(f"{VIEWS}/{created['id']}").json()["layout"]
-    assert stored["containers"]["c1"]["settings"] == settings
+    fetched = client.get(f"{VIEWS}/{created['id']}")
+    assert json.dumps(settings, separators=(",", ":")) in fetched.text
+    assert fetched.json()["layout"]["containers"]["c1"]["settings"] == settings
