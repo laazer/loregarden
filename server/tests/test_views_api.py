@@ -1349,3 +1349,101 @@ def test_deleting_a_pinned_views_tab_still_deletes_the_view(client: TestClient):
 
     assert client.delete(f"{VIEWS}/{view['id']}").status_code == 200
     assert _entries(client) == []
+
+
+# --- non-finite numbers in settings (444) --------------------------------
+
+
+def _raw_json(client: TestClient, method: str, url: str, body: str):
+    """A body carrying the ``Infinity``/``NaN`` literals.
+
+    ``json.dumps`` refuses to write them, so the request cannot be built with
+    ``json=``. ``json.loads`` — which is what parses the request server-side —
+    accepts them, which is exactly how one reaches the layout model in
+    production.
+    """
+    return client.request(method, url, content=body, headers={"content-type": "application/json"})
+
+
+def _layout_with_settings(raw_settings: str) -> str:
+    return (
+        '{"kind": "flex_grid",'
+        f' "containers": {{"c1": {{"kind": "panel", "settings": {raw_settings}}}}},'
+        ' "root": {"node": "leaf", "id": "n1", "size": 1.0, "container_id": "c1"}}'
+    )
+
+
+@pytest.mark.parametrize(
+    "raw_settings",
+    [
+        pytest.param('{"zoom": Infinity}', id="infinity"),
+        pytest.param('{"zoom": -Infinity}', id="negative infinity"),
+        pytest.param('{"zoom": NaN}', id="nan"),
+        pytest.param('{"camera": {"zoom": Infinity}}', id="nested"),
+        pytest.param('{"stops": [0.5, Infinity]}', id="inside a list"),
+    ],
+)
+def test_creating_a_view_with_a_non_finite_setting_is_refused(
+    client: TestClient, raw_settings: str
+):
+    """Before this rule the POST returned 201 and stored ``{"zoom": null}``: the
+    dump to JSON coerced the value before the byte cap or ``json.dumps`` saw it,
+    so nothing downstream had a chance to object. The client got a 201 for a
+    write that silently was not the one it made."""
+    body = f'{{"title": "Board", "icon": "grid", "layout": {_layout_with_settings(raw_settings)}}}'
+
+    res = _raw_json(client, "POST", VIEWS, body)
+
+    assert res.status_code == 422, res.text
+    assert client.get(VIEWS).json() == []
+
+
+def test_the_refusal_renders_a_422_body_rather_than_a_500(client: TestClient):
+    """The echoed ``input`` is the settings map that could not be written back,
+    so the error body is the one place this rejection could still become a 500.
+    The path a client acts on survives."""
+    layout = _layout_with_settings('{"z": NaN}')
+    body = f'{{"title": "Board", "icon": "grid", "layout": {layout}}}'
+
+    res = _raw_json(client, "POST", VIEWS, body)
+
+    assert res.status_code == 422
+    locations = [error["loc"] for error in res.json()["detail"]]
+    assert any("settings" in location for location in locations), res.text
+
+
+def test_updating_a_view_with_a_non_finite_setting_is_refused(client: TestClient):
+    """The rule lives on the layout model, which both routes validate through,
+    so PATCH inherits it without a second copy of the check — and the stored
+    layout is left exactly as it was."""
+    created = _create_view(client, "Board")
+    before = client.get(f"{VIEWS}/{created['id']}").json()["layout"]
+
+    layout = _layout_with_settings('{"zoom": Infinity}')
+
+    res = _raw_json(client, "PATCH", f"{VIEWS}/{created['id']}", f'{{"layout": {layout}}}')
+
+    assert res.status_code == 422, res.text
+    assert client.get(f"{VIEWS}/{created['id']}").json()["layout"] == before
+
+
+def test_a_finite_settings_value_still_round_trips_through_the_api(client: TestClient):
+    """The narrowing is number handling only. Keys the server has no vocabulary
+    for — the registry's business, not the control plane's — come back
+    byte-identical, numbers included.
+
+    Asserted on the response *bytes* rather than on the parsed mapping, because
+    the damage this rule exists to catch is at that level: parsed-dict equality
+    cannot see a value re-encoded on the way through, and a `null` where a
+    number went in is only one of the ways that shows up.
+    """
+    settings = {"primitive_id": "some.registry.id", "zoom": 1.5, "offset": -0.25, "steps": 3}
+    layout = _grid_layout(
+        containers={"c1": {"kind": ContainerKind.PANEL.value, "settings": settings}}
+    )
+
+    created = _create_view(client, "Board", layout=layout)
+
+    fetched = client.get(f"{VIEWS}/{created['id']}")
+    assert json.dumps(settings, separators=(",", ":")) in fetched.text
+    assert fetched.json()["layout"]["containers"]["c1"]["settings"] == settings

@@ -15,6 +15,7 @@ layout that reaches the database is a view that cannot be opened and cannot be
 repaired from the UI that fails to open it.
 """
 
+import json
 import math
 
 import pytest
@@ -24,6 +25,7 @@ from loregarden.models.domain.view_layout import (
     MAX_CONTAINERS,
     MAX_LAYOUT_NODES,
     MAX_SPLIT_DEPTH,
+    layout_payload,
     parse_view_layout,
 )
 from pydantic import ValidationError
@@ -549,3 +551,128 @@ def test_a_layout_with_too_many_containers_is_rejected():
 
     with pytest.raises(ValidationError):
         parse_view_layout(payload)
+
+
+# --- open settings, still not silently edited -----------------------------
+#
+# 444. `settings` is an open mapping because its vocabulary belongs to the
+# frontend primitive registry (436), not to the control plane. Open means the
+# server does not know what these keys mean — not that it may quietly rewrite
+# their values.
+
+
+def _settings_layout(settings: dict) -> dict:
+    return _flex_grid(
+        containers={"c1": {"kind": ContainerKind.PANEL.value, "settings": settings}},
+        root=_leaf("n1", "c1"),
+    )
+
+
+@pytest.mark.parametrize("value", [math.inf, -math.inf, math.nan])
+@pytest.mark.parametrize(
+    "settings",
+    [
+        pytest.param(lambda value: {"zoom": value}, id="at the top level"),
+        pytest.param(lambda value: {"camera": {"zoom": value}}, id="nested in a mapping"),
+        pytest.param(lambda value: {"stops": [0.5, value]}, id="inside a list"),
+        pytest.param(lambda value: {"stops": [{"at": value}]}, id="under a list"),
+        pytest.param(lambda value: {"corners": {value: "top left"}}, id="as a mapping key"),
+    ],
+)
+def test_a_non_finite_number_in_settings_is_refused(settings, value: float):
+    """Refused, not rewritten.
+
+    `layout_payload`'s `model_dump(mode="json")` turns a non-finite float into
+    `None` before the byte cap or `json.dumps` sees it, so before this rule the
+    write succeeded and stored `{"zoom": null}`. That is the one outcome that is
+    wrong under either policy, because it breaks the round-trip guarantee the
+    rest of this layout keeps.
+
+    Depth is parametrized because a zoom one level down is the same defect: a
+    camera computed from a divide-by-zero is how `Infinity` actually arrives.
+    The error names the container's settings, so a client is told which of them
+    to fix rather than that the layout is bad somewhere.
+    """
+    with pytest.raises(ValidationError) as caught:
+        parse_view_layout(_settings_layout(settings(value)))
+
+    assert caught.value.errors()[0]["loc"][-1] == "settings"
+
+
+def test_a_settings_value_that_cannot_be_written_back_is_refused():
+    """The same rule, one step wider.
+
+    A value `json` cannot write is one more thing that cannot survive the
+    round-trip — pydantic's encoder would coerce a `set` to a list and a
+    `datetime` to a string, which is the round-trip breakage under another name
+    — and `json.dumps`'s `default` hook would substitute for it silently, which
+    is the behaviour this whole rule exists to stop.
+    """
+    with pytest.raises(ValidationError):
+        parse_view_layout(_settings_layout({"handle": object()}))
+
+
+def test_a_non_finite_number_under_an_unwritable_key_is_refused():
+    """The regression test for `skipkeys`.
+
+    `json.dumps(skipkeys=True)` looks like it only tolerates a key `json` cannot
+    write. It drops the whole *entry* — key and value — so this `inf` was never
+    scanned, the layout validated, and `layout_payload` stored
+    `{"a": {"1,2": {"z": null}}}`: the exact coercion this rule exists to
+    refuse, hidden one key-type deep. Nothing else here fires under `skipkeys`,
+    because `json` writes a float key rather than skipping it.
+    """
+    with pytest.raises(ValidationError):
+        parse_view_layout(_settings_layout({"a": {(1, 2): {"z": math.inf}}}))
+
+
+def test_a_string_the_response_encoder_cannot_write_is_refused():
+    """A lone surrogate is the one value that used to commit and then 500.
+
+    `json.loads` accepts the escape, and escaped again on the way out it writes
+    fine — so the row committed, and then encoding the *response* raised, making
+    every later read of that workspace's views a 500 no API call could undo. The
+    check therefore encodes as UTF-8 rather than trusting the escape.
+    """
+    with pytest.raises(ValidationError):
+        parse_view_layout(_settings_layout(json.loads('{"s": "\\ud800"}')))
+
+
+def test_a_finite_number_in_settings_is_kept_verbatim():
+    """The refusal is about non-finite values only. A primitive that declares a
+    numeric setting — none does yet, and 442's camera is the obvious first — must
+    still be able to store an ordinary number."""
+    layout = parse_view_layout(_settings_layout({"zoom": 1.5, "offset": -0.25, "steps": 3}))
+
+    assert layout_payload(layout)["containers"]["c1"]["settings"] == {
+        "zoom": 1.5,
+        "offset": -0.25,
+        "steps": 3,
+    }
+
+
+def test_settings_the_server_has_no_vocabulary_for_still_round_trip():
+    """The narrowing is number handling, not what keys settings may carry: the
+    registry (436) still owns the vocabulary, so an unrecognized key of any
+    shape comes back byte-identical."""
+    settings = {
+        "primitive_id": "some.registry.id",
+        "unknown_key": {"nested": [1, "two", True, None]},
+        "": "an empty key is still a key",
+    }
+
+    layout = parse_view_layout(_settings_layout(settings))
+
+    assert layout_payload(layout)["containers"]["c1"]["settings"] == settings
+
+
+def test_a_canvas_container_is_held_to_the_same_settings_rule():
+    """The rule lives on the container, which both arrangements share, so
+    neither view kind can be the one that still coerces."""
+    with pytest.raises(ValidationError):
+        parse_view_layout(
+            _canvas(
+                containers={"c1": {"kind": ContainerKind.PANEL.value, "settings": {"z": math.inf}}},
+                items=[_item("p1", "c1")],
+            )
+        )

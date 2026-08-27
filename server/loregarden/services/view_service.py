@@ -70,10 +70,14 @@ class SidebarContentionError(ValueError):
 def _serialized_layout(layout: ViewLayoutModel) -> str:
     """The layout as the string that goes in the column, refused if oversized.
 
-    Encoding is fallible independently of validation: ``settings`` is an open
-    mapping, so a value that validated fine can still be something ``json``
-    cannot write. Both failures are the request's fault, so both are a
-    ``ValueError`` the API answers with a 4xx rather than a traceback.
+    Encoding is fallible independently of validation, though no longer because
+    of ``settings``: ``ViewContainer`` now refuses a value ``json`` cannot write
+    (444). What still reaches here is depth — the dump of a *whole* layout runs
+    deeper than the settings-only dump the validator did, and pydantic's
+    serializer gives up around 250 levels, which is how a nesting the validator
+    accepted still fails to encode. Both that and the byte cap are the request's
+    fault, so both are a ``ValueError`` the API answers with a 4xx rather than a
+    traceback.
     """
     try:
         encoded = json.dumps(layout_payload(layout))
