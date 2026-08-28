@@ -471,7 +471,7 @@ def test_the_pinned_migration_is_idempotent():
     assert "pinned" in _columns(engine, "sidebar_entries")
 
 
-VIEWPORT_MIGRATION_ID = "0097_view_viewport"
+VIEWPORT_MIGRATION_ID = "0098_view_viewport"
 
 
 def test_the_viewport_migration_is_registered_and_appended_to_the_ledger():
