@@ -53,6 +53,25 @@ def _warn_if_database_is_ahead(applied_ids: set[str], known_ids: set[str]) -> li
     return unknown
 
 
+def unknown_migration_ids(engine: Engine, known_ids: set[str]) -> list[str]:
+    """Migration ids this database has applied that `known_ids` has never heard of.
+
+    The same set :func:`_warn_if_database_is_ahead` logs, returned so a caller can
+    act on it. A build that is behind can still READ a database — the risk is
+    writing rows the current code cannot spell, which is how 38 tickets were once
+    created carrying `ticket_number = 0` because the writing build predated the
+    column.
+
+    Takes `known_ids` rather than importing the registry, for the same cycle
+    reason :func:`apply_pending` does.
+    """
+    if not str(engine.url).startswith("sqlite"):
+        return []
+    with engine.connect() as conn:
+        _ensure_migrations_table(conn)
+        return sorted(_applied_ids(conn) - known_ids)
+
+
 def apply_pending(engine: Engine, migrations: list[tuple[str, object]]) -> list[str]:
     """Apply pending migrations in order. Returns the ids that ran this call.
 
