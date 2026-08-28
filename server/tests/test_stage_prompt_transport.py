@@ -21,6 +21,7 @@ from loregarden.models.domain import (
     AgentRun,
     ControlPlaneTransport,
     ExternalHarness,
+    MemoryBriefingAssembly,
     Ticket,
     Workspace,
 )
@@ -68,6 +69,7 @@ def _render(session: Session, *, harness: ExternalHarness | None) -> str:
         resolve_agent_context_dir(workspace),
         workspace,
         executor._resolve_stage_def(ticket, run),
+        assembly_source=MemoryBriefingAssembly.DISPATCH,
     )
 
 
