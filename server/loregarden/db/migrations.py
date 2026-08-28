@@ -82,7 +82,10 @@ from loregarden.db.migrations_templates import (
     m_retire_agent_owned_gate_items,
     m_verify_stage_in_v3,
 )
-from loregarden.db.migrations_ticket_ids import m_structured_ticket_ids
+from loregarden.db.migrations_ticket_ids import (
+    m_structured_ticket_ids,
+    m_unique_ticket_number,
+)
 from loregarden.db.migrations_ticket_studio import (
     m_reference_repos,
     m_ticket_studio_preview_state,
@@ -1330,6 +1333,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0093_repin_terminal_less_instances", m_repin_terminal_less_instances),
     ("0094_repin_unregistered_skill_instances", m_repin_unregistered_skill_instances),
     ("0095_reference_pages_table", m_reference_pages_table),
+    ("0097_unique_ticket_number", m_unique_ticket_number),
     # 0096 and 0097 are claimed by parallel branches (agent run token usage,
     # unique ticket number) and are already applied to the live database; this
     # one takes the next free number rather than colliding with either.
