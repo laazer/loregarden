@@ -12,7 +12,14 @@ from loregarden.agents.plan_context import (
 )
 from loregarden.config import settings
 from loregarden.db.migrations import apply_migrations
-from loregarden.models.domain import AgentRun, Artifact, Ticket, WorkflowStageDef, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    Artifact,
+    MemoryBriefingAssembly,
+    Ticket,
+    WorkflowStageDef,
+    Workspace,
+)
 from loregarden.services.seed import seed_database
 from loregarden.services.skill_service import parse_skill_markdown
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
@@ -142,6 +149,7 @@ def _prompt_for_stage(session: Session, ticket: Ticket, stage_key: str) -> str:
         resolve_agent_context_dir(workspace),
         workspace,
         executor._resolve_stage_def(ticket, run),
+        assembly_source=MemoryBriefingAssembly.DISPATCH,
     )
 
 
@@ -185,6 +193,7 @@ def test_a_verifier_is_not_shown_the_plan():
             resolve_agent_context_dir(workspace),
             workspace,
             WorkflowStageDef(key="verify", name="Verify", order=9, stage_type=VERIFY_STAGE_TYPE),
+            assembly_source=MemoryBriefingAssembly.DISPATCH,
         )
         assert "## Plan (settled by the plan stage)" not in prompt
         assert "split the resolver out of the service" not in prompt

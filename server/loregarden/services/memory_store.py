@@ -16,6 +16,7 @@ from loregarden.config import (
     resolved_obsidian_vault,
     settings,
 )
+from loregarden.models.domain.enums import MemoryStoreKind, MemoryStoreState
 from loregarden.services import term_overlap
 from loregarden.services.path_resolve import (
     is_under_icloud,
@@ -28,6 +29,20 @@ from loregarden.services.path_resolve import (
 # graph side mirrors it so it cannot become the new cost centre. Cited by name
 # in `list_nodes` and `recall_related`; there is no second literal.
 RECALL_CANDIDATE_CAP = 500
+
+
+class MemoryStoreReadError(Exception):
+    """A store read failed, labelled with the store that failed it.
+
+    Raised at the read itself rather than derived by a caller: by the time an
+    exception has crossed `recall_related`, "the vault would not open" and "the
+    graph would not open" look identical, and a briefing that cannot name the
+    failing store sends an operator at the wrong system.
+    """
+
+    def __init__(self, store: MemoryStoreKind) -> None:
+        super().__init__(f"{store.value} read failed")
+        self.store = store
 
 
 def _utcnow_iso() -> str:
@@ -673,6 +688,32 @@ class AgentMemoryService:
             return None
         return MemoryGraphStore(path)
 
+    def store_readiness(self, *, workspace_slug: str) -> dict[MemoryStoreKind, MemoryStoreState]:
+        """What each store *is*, sampled from configuration and the filesystem.
+
+        MUST be called before any lookup runs. `MemoryGraphStore.__init__`
+        mkdirs its parent and runs `_init_schema`, so merely constructing one
+        CREATES an empty database — a wrong or unset graph path then reads back
+        as a real store that happened to be empty. Answering from the path
+        before anything is constructed is what keeps "silently absent" from
+        being recorded as "read and empty".
+
+        Reports only the three real stores. `MemoryStoreKind.SERVICE` never
+        appears here: it names a factory failure, at which point there is no
+        service to ask.
+        """
+        vault = MemoryStoreState.READ if self.obsidian else MemoryStoreState.UNCONFIGURED
+        graph_path = self._graph_path_for_workspace(workspace_slug)
+        return {
+            MemoryStoreKind.CHECKPOINTS: vault,
+            MemoryStoreKind.VAULT: vault,
+            MemoryStoreKind.GRAPH: (
+                MemoryStoreState.READ
+                if graph_path is not None and graph_path.is_file()
+                else MemoryStoreState.UNCONFIGURED
+            ),
+        }
+
     def status(self, *, workspace_slug: str = "") -> dict[str, Any]:
         obsidian_vault = resolved_obsidian_vault()
         memory_db = resolved_memory_sqlite_path(workspace_slug)
@@ -951,40 +992,18 @@ class AgentMemoryService:
             return []
 
         candidates: list[dict[str, Any]] = []
-        if self.obsidian:
-            candidates += [
-                {
-                    "id": n.id,
-                    "source": "obsidian",
-                    "title": n.title,
-                    "body": n.body,
-                    "tags": n.tags,
-                    "updated_at": n.updated_at,
-                }
-                # The one call site carrying AC5's budget. When `list_notes`
-                # grows a `NotePage(notes, truncated)` return, read `truncated`
-                # here rather than reflexively taking `.notes` — it is the only
-                # signal that the vault has outgrown RECALL_CANDIDATE_CAP and
-                # the briefing is now ranking a prefix of it.
-                for n in self.obsidian.list_notes(
-                    workspace_slug=workspace_slug, limit=RECALL_CANDIDATE_CAP
-                )
-            ]
-        graph = self._graph_for_workspace(workspace_slug)
-        if graph:
-            candidates += [
-                {
-                    "id": row["id"],
-                    "source": "sqlite",
-                    "title": row["title"],
-                    "body": row["body"],
-                    "tags": row["tags"],
-                    "updated_at": row["updated_at"],
-                }
-                for row in graph.list_nodes(
-                    workspace_slug=workspace_slug, limit=RECALL_CANDIDATE_CAP
-                )
-            ]
+        # Each read is labelled at its raise point. A caller that catches the
+        # failure further up cannot tell an unopenable vault from an unopenable
+        # graph, and an unlabelled failure sends an operator to restart iCloud
+        # when the SQLite file is the broken thing.
+        try:
+            candidates += self._obsidian_candidates(workspace_slug)
+        except Exception as exc:
+            raise MemoryStoreReadError(MemoryStoreKind.VAULT) from exc
+        try:
+            candidates += self._graph_candidates(workspace_slug)
+        except Exception as exc:
+            raise MemoryStoreReadError(MemoryStoreKind.GRAPH) from exc
 
         deduped: list[dict[str, Any]] = []
         seen: set[tuple[str, str]] = set()
@@ -997,3 +1016,41 @@ class AgentMemoryService:
         # Truncate after ranking, never before: `limit` must drop the weakest
         # candidates, not whichever ones the stores happened to enumerate last.
         return deduped[:limit]
+
+    def _obsidian_candidates(self, workspace_slug: str) -> list[dict[str, Any]]:
+        if not self.obsidian:
+            return []
+        return [
+            {
+                "id": n.id,
+                "source": "obsidian",
+                "title": n.title,
+                "body": n.body,
+                "tags": n.tags,
+                "updated_at": n.updated_at,
+            }
+            # The one call site carrying AC5's budget. When `list_notes`
+            # grows a `NotePage(notes, truncated)` return, read `truncated`
+            # here rather than reflexively taking `.notes` — it is the only
+            # signal that the vault has outgrown RECALL_CANDIDATE_CAP and
+            # the briefing is now ranking a prefix of it.
+            for n in self.obsidian.list_notes(
+                workspace_slug=workspace_slug, limit=RECALL_CANDIDATE_CAP
+            )
+        ]
+
+    def _graph_candidates(self, workspace_slug: str) -> list[dict[str, Any]]:
+        graph = self._graph_for_workspace(workspace_slug)
+        if not graph:
+            return []
+        return [
+            {
+                "id": row["id"],
+                "source": "sqlite",
+                "title": row["title"],
+                "body": row["body"],
+                "tags": row["tags"],
+                "updated_at": row["updated_at"],
+            }
+            for row in graph.list_nodes(workspace_slug=workspace_slug, limit=RECALL_CANDIDATE_CAP)
+        ]

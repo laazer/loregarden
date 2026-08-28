@@ -9,6 +9,7 @@ from loregarden.db.migrations import apply_migrations
 from loregarden.models.domain import (
     AgentRun,
     Artifact,
+    MemoryBriefingAssembly,
     StudioAgent,
     StudioAgentVersion,
     Ticket,
@@ -606,6 +607,7 @@ def test_prompt_truncates_skill_at_render_time_with_explicit_notice(client, db_s
             agent_id="backend_implementer",
             skill_name="long-render-skill",
         ),
+        assembly_source=MemoryBriefingAssembly.DISPATCH,
     )
 
     assert "long-render-skill" in prompt

@@ -55,6 +55,7 @@ from loregarden.db.migrations_mcp import (
     m_mcp_servers_table,
     m_mcp_tool_calls_table,
 )
+from loregarden.db.migrations_memory_briefings import m_memory_briefings_table
 from loregarden.db.migrations_queue import (
     m_global_agent_slots,
     m_lane_entry_dismissed,
@@ -1336,10 +1337,11 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0095_reference_pages_table", m_reference_pages_table),
     ("0096_agent_run_token_usage", m_agent_run_token_usage),
     ("0097_unique_ticket_number", m_unique_ticket_number),
-    # 0096, 0097 and 0098 were claimed concurrently on three branches. They
-    # merge in numeric order, which is what the append-only prefix assertion
-    # checks — the numbers were never in doubt, only which branch landed first.
+    # 0096 through 0099 were claimed concurrently on four branches. They merge
+    # in numeric order, which is what the append-only prefix assertion checks —
+    # the numbers were never in doubt, only which branch landed first.
     ("0098_view_viewport", m_view_viewport),
+    ("0099_memory_briefings_table", m_memory_briefings_table),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
