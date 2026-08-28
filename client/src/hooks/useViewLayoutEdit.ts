@@ -151,7 +151,15 @@ export function useViewLayoutEdit(
       // The server's record, not a refetch: the write already returned it. Under
       // the key this write's own variables name — not the one the page happens
       // to be showing now.
-      qc.setQueryData(key, record);
+      //
+      // Every field of it *except* the viewport, which this write did not set
+      // and is not authoritative about: a pan that committed between this
+      // PATCH's commit and its response landing is already in the cache, and
+      // the record in hand still carries the position from before it.
+      // `cancelQueries` above cancels reads, not the sibling mutation.
+      qc.setQueryData<ViewSummary>(key, (previous) =>
+        previous === undefined ? record : { ...record, viewport: previous.viewport },
+      );
       qc.invalidateQueries({ queryKey: viewsKeys.views(vars.slug) });
     },
   });

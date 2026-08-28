@@ -145,6 +145,7 @@ function view(id: string, title: string, kind: "flex_grid" | "canvas"): ViewSumm
     title,
     icon: "",
     layout: kind === "flex_grid" ? { kind, root: null } : { kind, containers: [] },
+    viewport: {},
     created_at: "2026-08-01T00:00:00",
     updated_at: "2026-08-01T00:00:00",
   };

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from loregarden.db.session import get_session
 from loregarden.models.domain import SidebarEntry, View, Workspace
 from loregarden.models.domain.view_layout import ViewLayout
+from loregarden.models.domain.view_viewport import ViewViewport
 from loregarden.services.view_service import (
     MAX_PAGE_KEY_LENGTH,
     SidebarContentionError,
@@ -64,6 +65,10 @@ class ViewUpdate(BaseModel):
     title: str | None = None
     icon: str | None = None
     layout: ViewLayout | None = None
+    #: Where the view is being looked at. Independently settable: a viewport-only
+    #: PATCH leaves the layout alone, which is what lets a pan be written at
+    #: gesture rate without racing a deliberate layout edit through one column.
+    viewport: ViewViewport | None = None
 
 
 class SidebarPin(BaseModel):
@@ -146,7 +151,14 @@ def patch_view(
     workspace = _workspace(session, slug)
     view = _view(session, workspace.id, view_id)
     try:
-        updated = update_view(session, view, title=body.title, icon=body.icon, layout=body.layout)
+        updated = update_view(
+            session,
+            view,
+            title=body.title,
+            icon=body.icon,
+            layout=body.layout,
+            viewport=body.viewport,
+        )
     except ValueError as exc:
         # The same limits POST answers with a 400. A body refused on create and
         # accepted — or 500ing — on update teaches the client the wrong lesson.

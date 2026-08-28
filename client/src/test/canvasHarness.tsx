@@ -135,13 +135,19 @@ export const threeItemCanvas = (): Json => ({
   ],
 });
 
-export function viewOf(layout: Json): ViewSummary {
+/**
+ * The record the fake server serves. `viewport` defaults to the absent one —
+ * `{}`, which is what the server stores for a canvas nobody has panned yet — so
+ * only a test about restoring has to say anything about it.
+ */
+export function viewOf(layout: Json, viewport: Json = {}): ViewSummary {
   return {
     id: VIEW_ID,
     kind: "canvas",
     title: "Sketch Surface",
     icon: "",
     layout,
+    viewport,
     created_at: "2026-08-01T00:00:00",
     updated_at: "2026-08-01T00:00:00",
   };
@@ -151,8 +157,8 @@ export function canvasRoute(client: QueryClient) {
   return viewRoute(VIEW_ID, client);
 }
 
-export function renderCanvas(layout: Json, client?: QueryClient) {
-  return renderView(viewOf(layout), client);
+export function renderCanvas(layout: Json, client?: QueryClient, viewport: Json = {}) {
+  return renderView(viewOf(layout, viewport), client);
 }
 
 // ---------------------------------------------------------------------------

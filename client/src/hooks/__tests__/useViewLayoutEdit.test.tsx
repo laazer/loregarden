@@ -47,6 +47,7 @@ function view(id: string, layout: Json): ViewSummary {
     title: id,
     icon: "",
     layout,
+    viewport: {},
     created_at: "2026-08-01T00:00:00",
     updated_at: "2026-08-01T00:00:00",
   };
@@ -203,6 +204,40 @@ describe("useViewLayoutEdit — an edit that asks for nothing", () => {
     expect(qc.getQueryData<ViewSummary>(viewsKeys.view(SLUG, "v-a"))?.layout).toEqual(
       gridLayout("c-v-a"),
     );
+  });
+
+  it("leaves a pan that landed while the write was open in the cache", async () => {
+    // The viewport is written by a separate mutation (480), so a settled pan can
+    // commit between this PATCH committing server-side and its response landing
+    // here. The record in hand still carries the position from before that pan,
+    // and storing it whole would move the canvas back on the next open.
+    const user = userEvent.setup();
+    const qc = testClient();
+    const key = viewsKeys.view(SLUG, "v-a");
+    let land: (updated: ViewSummary) => void = () => {};
+    mockUpdateView.mockReturnValue(
+      new Promise<ViewSummary>((resolve) => {
+        land = resolve;
+      }),
+    );
+
+    render(
+      <QueryClientProvider client={qc}>
+        <Harness slug={SLUG} viewId="v-a" />
+      </QueryClientProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "pick" }));
+
+    // The pan settles and its own write lands first.
+    const panned = { ...qc.getQueryData<ViewSummary>(key)!, viewport: { pan_x: 80, pan_y: 40, zoom: 1 } };
+    qc.setQueryData(key, panned);
+
+    await act(async () => {
+      // The server's answer to the *layout* PATCH, which knows nothing of the pan.
+      land(view("v-a", gridLayout("c-v-a")));
+    });
+
+    expect(qc.getQueryData<ViewSummary>(key)?.viewport).toEqual({ pan_x: 80, pan_y: 40, zoom: 1 });
   });
 
   it("still writes when the edit rebuilt an equal layout, because that edit decided to", async () => {

@@ -242,6 +242,9 @@ export function viewOf(layout: Json): ViewSummary {
     title: "Build Board",
     icon: "",
     layout,
+    // A grid arranges itself to the pane it is drawn in, so it has no pan or
+    // zoom to remember: its stored viewport is always the absent one.
+    viewport: {},
     created_at: "2026-08-01T00:00:00",
     updated_at: "2026-08-01T00:00:00",
   };

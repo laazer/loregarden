@@ -89,7 +89,11 @@ from loregarden.db.migrations_ticket_studio import (
     m_ticket_studio_tables,
     m_ticket_studio_turn_lifecycle,
 )
-from loregarden.db.migrations_views import m_sidebar_entry_pinned, m_view_store
+from loregarden.db.migrations_views import (
+    m_sidebar_entry_pinned,
+    m_view_store,
+    m_view_viewport,
+)
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
@@ -1326,6 +1330,10 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0093_repin_terminal_less_instances", m_repin_terminal_less_instances),
     ("0094_repin_unregistered_skill_instances", m_repin_unregistered_skill_instances),
     ("0095_reference_pages_table", m_reference_pages_table),
+    # 0096 and 0097 are claimed by parallel branches (agent run token usage,
+    # unique ticket number) and are already applied to the live database; this
+    # one takes the next free number rather than colliding with either.
+    ("0098_view_viewport", m_view_viewport),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
