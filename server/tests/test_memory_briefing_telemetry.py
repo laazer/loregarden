@@ -40,7 +40,7 @@ from loregarden.services.memory_briefing_telemetry import (
 from sqlalchemy import text
 from sqlmodel import Session, create_engine, select
 
-_MIGRATION_ID = "0097_memory_briefings_table"
+_MIGRATION_ID = "0099_memory_briefings_table"
 
 
 def _result(**overrides) -> InheritedWisdom:
@@ -207,7 +207,7 @@ def _seed(session: Session, *, started_at=None, run_code: str = "run_1"):
 def test_a_recorded_briefing_carries_every_figure_ac1_names(isolated_db):
     """AC1 — one queryable record per assembly, with the counts, the flags, the
     per-store labels and the elapsed time."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         workspace, ticket, run = _seed(session)
         result = _result(
             text="body",
@@ -265,7 +265,7 @@ def test_a_recorded_briefing_carries_every_figure_ac1_names(isolated_db):
 def test_store_error_tokens_are_recorded_as_a_sorted_comma_joined_string(isolated_db):
     """AC2 — the operator-facing half of the record. Two failing stores must
     both survive into the row, and in a stable order."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, run = _seed(session)
         result = _result(
             store_states={
@@ -296,7 +296,7 @@ def test_a_skipped_row_records_no_store_states_at_all(isolated_db):
     counters are placeholder zeros, and an empty store_states_json is what says
     so — three stores recorded as 'unconfigured' would be a measurement nobody
     took."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, run = _seed(session)
 
         row_id = record_briefing(
@@ -320,7 +320,7 @@ def test_a_skipped_row_records_no_store_states_at_all(isolated_db):
 def test_the_returned_id_resolves_to_a_real_row(isolated_db):
     """AC5 — ticket 178 attaches its surfaced-learning rows by foreign-keying
     this id, so it has to be a row identifier and not a best-effort token."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, run = _seed(session)
         row_id = record_briefing(
             session,
@@ -340,7 +340,7 @@ def test_the_row_lands_in_the_database_the_caller_is_using(isolated_db):
     binding that the test fixture does not redirect writes into the developer's
     real data/loregarden.db while the suite runs, and every other assertion here
     still passes."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, run = _seed(session)
         record_briefing(
             session,
@@ -363,7 +363,7 @@ def test_a_failing_write_returns_nothing_and_leaves_the_caller_usable(isolated_d
     rollback nobody asked for, and the damage only surfaces at the run
     lifecycle's next commit, far from here.
     """
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, run = _seed(session)
 
         with patch(
@@ -394,7 +394,7 @@ def test_a_write_against_a_run_that_does_not_exist_is_swallowed(isolated_db):
     """Foreign keys are enforced on every engine in this repo, so a run that was
     never persisted raises inside the write. AC4 says that costs the row, not the
     run."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, _run = _seed(session)
         phantom = AgentRun(
             run_code="run_phantom",
@@ -450,7 +450,7 @@ def _extra_run(session, ticket, *, run_code, started_at):
 def test_the_buckets_sum_to_the_rows_they_summarise(isolated_db):
     """AC3 — the stated invariant. Buckets count rows, and two assemblies for one
     run is a live path, so they are not comparable to the run counts."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, first = _seed(session)
         second = _extra_run(session, ticket, run_code="run_2", started_at=utcnow())
         third = _extra_run(session, ticket, run_code="run_3", started_at=utcnow())
@@ -491,7 +491,7 @@ def test_the_aggregate_counts_the_stored_outcome_and_never_re_derives_it(isolate
     drift between the two shows up as summary numbers that disagree with the
     rows they claim to summarise.
     """
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, run = _seed(session)
         session.add(
             MemoryBriefing(
@@ -521,7 +521,7 @@ def test_the_aggregate_counts_the_stored_outcome_and_never_re_derives_it(isolate
 def test_a_skipped_assembly_is_neither_built_nor_empty(isolated_db):
     """A verify stage must not inflate the healthy buckets, and must not read as
     a hole either — it is its own thing."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, run = _seed(session)
         _record(session, ticket, run, InheritedWisdom.not_attempted().store_states, skipped=True)
 
@@ -535,7 +535,7 @@ def test_a_skipped_assembly_is_neither_built_nor_empty(isolated_db):
 
 def test_a_run_that_wrote_no_row_is_counted_as_a_hole(isolated_db):
     """AC3 — the point of denominating over runs."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, first = _seed(session)
         _extra_run(session, ticket, run_code="run_2", started_at=utcnow())
         _record(session, ticket, first, _all(MemoryStoreState.READ), chars=10)
@@ -556,9 +556,14 @@ def test_a_seam_that_stopped_writing_shows_as_holes_not_as_stale_health(isolated
     stopped is that the newest run is newer than the newest row.
     """
     now = utcnow()
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, old = _seed(session, started_at=now - timedelta(days=3))
-        _record(session, ticket, old, _all(MemoryStoreState.READ), chars=100)
+        row_id = _record(session, ticket, old, _all(MemoryStoreState.READ), chars=100)
+        # `created_at` stamps the write, and in a test that is now. The scenario
+        # is a seam that recorded three days ago and has recorded nothing since,
+        # so the row has to carry the time its run actually assembled.
+        session.get(MemoryBriefing, row_id).created_at = now - timedelta(days=3)
+        session.commit()
         _extra_run(session, ticket, run_code="run_new_1", started_at=now - timedelta(hours=2))
         _extra_run(session, ticket, run_code="run_new_2", started_at=now - timedelta(hours=1))
 
@@ -573,7 +578,7 @@ def test_a_seam_that_stopped_writing_shows_as_holes_not_as_stale_health(isolated
 
 
 def test_two_assemblies_for_one_run_are_two_rows_and_one_run(isolated_db):
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, run = _seed(session)
         _record(session, ticket, run, _all(MemoryStoreState.READ), chars=10)
         _record(session, ticket, run, _all(MemoryStoreState.READ), chars=10)
@@ -586,7 +591,7 @@ def test_two_assemblies_for_one_run_are_two_rows_and_one_run(isolated_db):
 
 
 def test_runs_started_outside_the_window_are_excluded(isolated_db):
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, old = _seed(session, started_at=utcnow() - timedelta(days=30))
         _record(session, ticket, old, _all(MemoryStoreState.READ), chars=10)
 
@@ -601,7 +606,7 @@ def test_last_row_at_is_scoped_to_the_window(isolated_db):
     """A row belonging to an out-of-window run must not set `last_row_at`.
     A global maximum would report a timestamp for a window in which nothing was
     written, which is the comfortable silence the denominator exists to kill."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, old = _seed(session, started_at=utcnow() - timedelta(days=30))
         _record(session, ticket, old, _all(MemoryStoreState.READ), chars=10)
         _extra_run(session, ticket, run_code="run_recent", started_at=utcnow())
@@ -616,7 +621,7 @@ def test_last_row_at_is_scoped_to_the_window(isolated_db):
 def test_a_run_that_never_started_is_not_a_hole(isolated_db):
     """The denominator is runs that reached execution. A queued-then-cancelled
     run never assembled a prompt and must not be reported as missing telemetry."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, run = _seed(session)
         _extra_run(session, ticket, run_code="run_queued", started_at=None)
         _record(session, ticket, run, _all(MemoryStoreState.READ), chars=10)
@@ -628,7 +633,7 @@ def test_a_run_that_never_started_is_not_a_hole(isolated_db):
 
 
 def test_an_empty_window_reports_zeros_and_no_timestamps(isolated_db):
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         stats = briefing_stats(session, window_days=7)
 
     assert stats.window_days == 7
@@ -675,7 +680,7 @@ def test_the_endpoint_reports_the_rows_that_are_actually_there(client, isolated_
     """The other endpoint tests assert on shape, and an endpoint returning a
     hardcoded zeroed model satisfies all of them — which is this ticket's own
     defect wearing a 200. AC3 wants numbers that move when the data does."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         _workspace, ticket, run = _seed(session)
         _record(session, ticket, run, _all(MemoryStoreState.ERRORED))
 

@@ -8,6 +8,7 @@ from loregarden.agents.verify_context import build_verify_context
 from loregarden.models.domain import (
     AgentRun,
     Artifact,
+    MemoryBriefingAssembly,
     Ticket,
     WorkflowStageDef,
     WorkItemType,
@@ -88,6 +89,7 @@ def _prompt_for(session, stage_type, tmp_path):
         resolve_agent_context_dir(workspace),
         workspace,
         stage,
+        assembly_source=MemoryBriefingAssembly.DISPATCH,
     )
 
 

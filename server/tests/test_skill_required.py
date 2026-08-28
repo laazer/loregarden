@@ -1,6 +1,12 @@
 import pytest
 from loregarden.agents.executors.cli import CliAgentExecutor
-from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    MemoryBriefingAssembly,
+    Ticket,
+    WorkflowStageDef,
+    Workspace,
+)
 from loregarden.services.workspace_paths import resolve_agent_context_dir
 from loregarden.skills.registry import SkillNotFoundError
 
@@ -46,6 +52,7 @@ def test_build_prompt_rejects_declared_skill_that_resolves_nowhere(db_session):
             resolve_agent_context_dir(workspace),
             workspace,
             _stage("no-such-skill"),
+            assembly_source=MemoryBriefingAssembly.DISPATCH,
         )
 
     message = str(excinfo.value)
@@ -74,6 +81,7 @@ def test_build_prompt_never_emits_empty_skill_block_for_declared_skill(db_sessio
         resolve_agent_context_dir(workspace),
         workspace,
         _stage("plan"),
+        assembly_source=MemoryBriefingAssembly.DISPATCH,
     )
 
     assert "## Skill\n" in prompt
@@ -101,6 +109,7 @@ def test_stage_with_no_skill_emits_no_skill_section(db_session):
         resolve_agent_context_dir(workspace),
         workspace,
         _stage(""),
+        assembly_source=MemoryBriefingAssembly.DISPATCH,
     )
 
     assert "## Skill" not in prompt
@@ -126,6 +135,7 @@ def test_missing_agent_default_skill_uses_agent_message_prefix(db_session):
             resolve_agent_context_dir(workspace),
             workspace,
             _stage(""),
+            assembly_source=MemoryBriefingAssembly.DISPATCH,
         )
 
     message = str(excinfo.value)

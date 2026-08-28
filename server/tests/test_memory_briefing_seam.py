@@ -99,7 +99,7 @@ def _rows(engine, run_id: str) -> list[MemoryBriefing]:
 def test_a_stage_prompt_build_records_one_briefing_row(isolated_db, tmp_path):
     """AC1 — every assembly that calls the briefing leaves one queryable record,
     and the record describes the briefing that actually went into this prompt."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         ticket, workspace, run, memory = _fixture(session, tmp_path)
         with patch.object(AgentMemoryService, "from_settings", return_value=memory):
             prompt = _assemble(session, ticket, workspace, run)
@@ -124,7 +124,7 @@ def test_the_row_records_which_assembly_path_built_it(isolated_db, tmp_path, ass
     """Two assemblies for one run is a live path — supervised dispatch and
     `render_stage_prompt` both reach `_build_prompt`. A row that cannot say which
     one it came from makes the pair indistinguishable from a double write."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         ticket, workspace, run, memory = _fixture(session, tmp_path)
         with patch.object(AgentMemoryService, "from_settings", return_value=memory):
             _assemble(session, ticket, workspace, run, assembly_source=assembly_source)
@@ -135,7 +135,7 @@ def test_the_row_records_which_assembly_path_built_it(isolated_db, tmp_path, ass
 def test_each_assembly_writes_its_own_row(isolated_db, tmp_path):
     """No unique constraint on run_id: one run really can assemble twice, and
     collapsing the two would hide a re-dispatch."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         ticket, workspace, run, memory = _fixture(session, tmp_path)
         with patch.object(AgentMemoryService, "from_settings", return_value=memory):
             _assemble(session, ticket, workspace, run)
@@ -172,7 +172,7 @@ def test_render_stage_prompt_labels_its_assembly_as_render(isolated_db, tmp_path
 
     execution_root = tmp_path / "tree"
     execution_root.mkdir()
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         ticket, _workspace, run, _memory = _fixture(session, tmp_path, seed_checkpoint=False)
         with (
             patch(
@@ -196,7 +196,7 @@ def test_a_verify_assembly_records_a_skipped_row_and_carries_no_inherited_contex
     verify_stage = WorkflowStageDef(
         key="testing", name="Verify", stage_type=VERIFY_STAGE_TYPE, order=7
     )
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         ticket, workspace, run, memory = _fixture(session, tmp_path)
         with patch.object(AgentMemoryService, "from_settings", return_value=memory):
             prompt = _assemble(session, ticket, workspace, run, stage_def=verify_stage)
@@ -214,7 +214,7 @@ def test_a_verify_assembly_records_a_skipped_row_and_carries_no_inherited_contex
 def test_a_non_verify_assembly_of_the_same_ticket_is_not_skipped(isolated_db, tmp_path):
     """The positive control for the test above. Without it an implementation
     that records SKIPPED unconditionally passes."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         ticket, workspace, run, memory = _fixture(session, tmp_path)
         with patch.object(AgentMemoryService, "from_settings", return_value=memory):
             prompt = _assemble(session, ticket, workspace, run)
@@ -226,7 +226,7 @@ def test_a_non_verify_assembly_of_the_same_ticket_is_not_skipped(isolated_db, tm
 def test_the_recorded_row_id_is_resolvable_for_ticket_178(isolated_db, tmp_path):
     """AC5 — the seam's documented attach point is a row id, so the row the seam
     wrote has to be findable by it."""
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         ticket, workspace, run, memory = _fixture(session, tmp_path)
         with patch.object(AgentMemoryService, "from_settings", return_value=memory):
             _assemble(session, ticket, workspace, run)
@@ -242,7 +242,7 @@ def test_a_failing_telemetry_write_costs_the_row_and_nothing_else(isolated_db, t
     The prompt must still carry the briefing it assembled: a guard that
     degrades the prompt to protect the telemetry has the dependency backwards.
     """
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         ticket, workspace, run, memory = _fixture(session, tmp_path)
         with (
             patch.object(AgentMemoryService, "from_settings", return_value=memory),
@@ -274,7 +274,7 @@ def test_elapsed_ms_measures_the_briefing_and_not_the_telemetry_write(isolated_d
         time.sleep(0.4)
         return real_session(*args, **kwargs)
 
-    with Session(isolated_db) as session:
+    with Session(isolated_db, expire_on_commit=False) as session:
         ticket, workspace, run, memory = _fixture(session, tmp_path)
         with (
             patch.object(AgentMemoryService, "from_settings", return_value=memory),

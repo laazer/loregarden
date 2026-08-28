@@ -7,7 +7,13 @@ from loregarden.agents.mcp_context import (
     loregarden_mcp_cli_config_json,
     resolve_mcp_url,
 )
-from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    MemoryBriefingAssembly,
+    Ticket,
+    WorkflowStageDef,
+    Workspace,
+)
 from loregarden.services.seed import seed_database
 from loregarden.services.workspace_paths import resolve_agent_context_dir
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -125,6 +131,7 @@ def test_cli_prompt_includes_mcp_module():
             resolve_agent_context_dir(workspace),
             workspace,
             stage_def,
+            assembly_source=MemoryBriefingAssembly.DISPATCH,
         )
         assert "Loregarden MCP (required for workflow state)" in prompt
         assert "Loregarden memory (workspace-scoped)" in prompt or "Loregarden artifacts" in prompt
@@ -170,6 +177,7 @@ def test_cli_prompt_includes_stage_report_contract():
             resolve_agent_context_dir(workspace),
             workspace,
             executor._resolve_stage_def(ticket, run),
+            assembly_source=MemoryBriefingAssembly.DISPATCH,
         )
         assert "## Stage report contract" in prompt
         assert "<<<LOREGARDEN_STAGE_REPORT>>>" in prompt

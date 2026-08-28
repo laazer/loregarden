@@ -15,6 +15,7 @@ from loregarden.db.migrations import apply_migrations
 from loregarden.models.domain import (
     AgentRun,
     Artifact,
+    MemoryBriefingAssembly,
     ParallelAgentSpec,
     RunStatus,
     Ticket,
@@ -197,6 +198,7 @@ def test_the_synthesizer_gets_the_lanes_and_not_a_settled_plan():
             resolve_agent_context_dir(workspace),
             workspace,
             executor._resolve_stage_def(ticket, run),
+            assembly_source=MemoryBriefingAssembly.DISPATCH,
         )
         assert "## Plans to reconcile" in prompt
         assert "argument from plan-risk" in prompt
