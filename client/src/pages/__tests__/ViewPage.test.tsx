@@ -112,6 +112,7 @@ function view(id: string, kind: "flex_grid" | "canvas", layout: Json): ViewSumma
     title: kind === "canvas" ? "Sketch Surface" : "Build Board",
     icon: "",
     layout,
+    viewport: {},
     created_at: "2026-08-01T00:00:00",
     updated_at: "2026-08-01T00:00:00",
   };

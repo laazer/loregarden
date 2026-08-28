@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
-import { api } from "../api/client";
+import { api, type Approval } from "../api/client";
 import { navigateToTicket } from "../lib/useAppNavigation";
 import { useNotificationStore } from "../state/notificationStore";
 import { useUiStore } from "../state/uiStore";
+import { hasHumanCriteria } from "../utils/approvalCriteria";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import { IconCloseButton } from "./IconCloseButton";
-import { ApprovalCard } from "./ApprovalCard";
+import { ApprovalCard, type ApprovalResolvePayload } from "./ApprovalCard";
+import { ApprovalDetailModal } from "./ApprovalDetailModal";
 
 function toneAccent(tone: string): string {
   if (tone === "error") return "var(--rdl)";
@@ -36,6 +39,7 @@ export function ApprovalInboxPanel() {
   const qc = useQueryClient();
   const inboxOpen = useUiStore((s) => s.inboxOpen);
   const setInboxOpen = useUiStore((s) => s.setInboxOpen);
+  const [expandedApproval, setExpandedApproval] = useState<Approval | null>(null);
   const notifications = useNotificationStore((s) => s.notifications);
   const dismissNotification = useNotificationStore((s) => s.dismiss);
   const clearNotifications = useNotificationStore((s) => s.clear);
@@ -80,8 +84,19 @@ export function ApprovalInboxPanel() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["approvals"] });
       qc.invalidateQueries({ queryKey: ["ticket"] });
+      setExpandedApproval(null);
     },
   });
+
+  /** Inspect lands on the criteria for a human gate, on the diff otherwise. */
+  const inspectApproval = (approval: Approval) => {
+    if (!approval.ticket_id) return;
+    navigateToTicket(approval.ticket_id, {
+      tab: hasHumanCriteria(approval) ? "approvals" : "diff",
+    });
+    setExpandedApproval(null);
+    setInboxOpen(false);
+  };
 
   if (!inboxOpen) return null;
 
@@ -136,14 +151,10 @@ export function ApprovalInboxPanel() {
                 onReject={(payload) =>
                   resolveApproval.mutate({ id: a.id, action: "reject", ...payload })
                 }
-                onInspect={
-                  a.ticket_id
-                    ? () => {
-                        navigateToTicket(a.ticket_id, { tab: "diff" });
-                        setInboxOpen(false);
-                      }
-                    : undefined
-                }
+                onInspect={a.ticket_id ? () => inspectApproval(a) : undefined}
+                inspectLabel={hasHumanCriteria(a) ? "Approvals tab" : "Inspect"}
+                collapsible
+                onExpand={() => setExpandedApproval(a)}
                 isSubmitting={resolveApproval.isPending && resolveApproval.variables?.id === a.id}
               />
             ))}
@@ -216,6 +227,25 @@ export function ApprovalInboxPanel() {
           )}
         </div>
       </aside>
+      <ApprovalDetailModal
+        open={!!expandedApproval}
+        approval={expandedApproval}
+        isSubmitting={
+          resolveApproval.isPending && resolveApproval.variables?.id === expandedApproval?.id
+        }
+        onClose={() => setExpandedApproval(null)}
+        onApprove={(payload?: ApprovalResolvePayload) => {
+          if (!expandedApproval) return;
+          resolveApproval.mutate({ id: expandedApproval.id, action: "approve", ...payload });
+        }}
+        onReject={(payload?: ApprovalResolvePayload) => {
+          if (!expandedApproval) return;
+          resolveApproval.mutate({ id: expandedApproval.id, action: "reject", ...payload });
+        }}
+        onOpenApprovalsTab={
+          expandedApproval?.ticket_id ? () => inspectApproval(expandedApproval) : undefined
+        }
+      />
     </>
   );
 }

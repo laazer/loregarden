@@ -11,6 +11,7 @@ export type ArtifactTab =
   | "ledger"
   | "errors"
   | "pr"
+  | "approvals"
   | "artifacts";
 
 /** Nested under the Artifacts top tab (URL segment still matches ArtifactTab). */
@@ -29,6 +30,7 @@ export const ARTIFACT_TABS: ArtifactTab[] = [
   "context",
   "ledger",
   "pr",
+  "approvals",
 ];
 
 /** Top tab bar only — errors/context/ledger live under Artifacts. */
@@ -39,6 +41,7 @@ export const PRIMARY_ARTIFACT_TABS: ArtifactTab[] = [
   "tests",
   "hive",
   "pr",
+  "approvals",
 ];
 
 export const ARTIFACTS_SUB_TABS: ArtifactsSubTab[] = ["artifacts", "errors", "context", "ledger"];

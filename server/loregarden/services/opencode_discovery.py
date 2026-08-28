@@ -13,14 +13,29 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import threading
+import time
 from shutil import which
 
 from loregarden.services.cli_settings import ADAPTER_BINARIES
 
 logger = logging.getLogger(__name__)
 
-DISCOVERY_TIMEOUT_SECONDS = 12.0
+# ``opencode models`` refreshes each authenticated provider's catalog over the
+# network before it prints, which measures ~15s on a warm install — the old 12s
+# budget expired every single time and the picker was permanently empty.
+DISCOVERY_TIMEOUT_SECONDS = 45.0
+# Paying that cost on every runtime-options request would stall the settings
+# modal, so hold the answer. A failure is held briefly instead: the usual causes
+# (CLI absent, provider not yet authenticated) are fixed by the operator, who
+# should not wait five minutes to see the result.
+CACHE_TTL_SECONDS = 300.0
+FAILURE_CACHE_TTL_SECONDS = 30.0
 DEFAULT_OPTION = {"id": "", "label": "Default (OpenCode profile)"}
+
+_cache_lock = threading.Lock()
+_cached_models: list[str] = []
+_cache_expires_at = 0.0
 
 
 def resolve_opencode_binary() -> str | None:
@@ -52,8 +67,7 @@ def _parse_models_output(raw: str) -> list[str]:
     return ids
 
 
-def list_opencode_models() -> list[str]:
-    """Return the local OpenCode CLI's model ids, or []."""
+def _list_from_cli() -> list[str]:
     binary = resolve_opencode_binary()
     if not binary:
         return []
@@ -66,9 +80,40 @@ def list_opencode_models() -> list[str]:
             timeout=DISCOVERY_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        logger.debug("OpenCode model discovery CLI failed: %s", exc)
+        # Warning, not debug: this is the only signal that an empty picker is a
+        # discovery failure rather than an OpenCode install with no providers.
+        logger.warning("OpenCode model discovery CLI failed: %s", exc)
         return []
-    return _parse_models_output(completed.stdout)
+    models = _parse_models_output(completed.stdout)
+    if not models:
+        logger.warning(
+            "OpenCode model discovery listed nothing (exit %s): %r",
+            completed.returncode,
+            (completed.stderr or completed.stdout or "")[:200],
+        )
+    return models
+
+
+def reset_model_cache() -> None:
+    """Drop the memoized catalog so the next call re-runs the CLI."""
+    global _cached_models, _cache_expires_at
+    with _cache_lock:
+        _cached_models = []
+        _cache_expires_at = 0.0
+
+
+def list_opencode_models() -> list[str]:
+    """Return the local OpenCode CLI's model ids, or []. Memoized for a few minutes."""
+    global _cached_models, _cache_expires_at
+    with _cache_lock:
+        if time.monotonic() < _cache_expires_at:
+            return list(_cached_models)
+        models = _list_from_cli()
+        _cached_models = models
+        _cache_expires_at = time.monotonic() + (
+            CACHE_TTL_SECONDS if models else FAILURE_CACHE_TTL_SECONDS
+        )
+        return list(models)
 
 
 def opencode_model_options() -> list[dict[str, str]]:

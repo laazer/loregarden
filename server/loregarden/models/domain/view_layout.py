@@ -14,11 +14,12 @@ cannot be repaired from the UI that fails to open it.
 
 from __future__ import annotations
 
+import json
 import math
 from typing import Annotated, Any, Literal
 
 from loregarden.models.domain.enums import ContainerKind, SplitOrientation, ViewKind
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
 #: Sibling fractions are authored by a UI that divides 1.0 by a pane count, so
 #: an evenly split row does not sum to exactly 1.0 in binary floating point
@@ -69,6 +70,67 @@ class ViewContainer(_Strict):
 
     kind: ContainerKind
     settings: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("settings")
+    @classmethod
+    def _settings_survive_being_written_back(cls, settings: dict[str, Any]) -> dict[str, Any]:
+        """Refuse settings a round-trip would alter — ``Infinity``/``NaN`` above all.
+
+        Open does not mean edited. ``json.loads`` accepts the ``Infinity`` and
+        ``NaN`` literals, nothing above rejects them because the server owns no
+        vocabulary for these keys, and then ``layout_payload``'s
+        ``model_dump(mode="json")`` rewrites them to ``null`` before either the
+        byte cap or ``json.dumps`` sees them. The write succeeded and the client
+        silently did not get back what it sent — the one outcome that breaks the
+        round-trip guarantee every other part of this layout keeps.
+
+        Refusing matches the typed fields beside it: ``size`` and the canvas
+        ``x``/``y``/``width``/``height`` all carry ``allow_inf_nan=False`` and
+        reject rather than coerce.
+
+        The check is a *dump*, not a hand-rolled recursion that could disagree
+        with one — nesting, lists, and ``bool`` versus ``float`` all come free.
+        It is asked in its strictest form: no ``default`` and no ``skipkeys``,
+        both of which *substitute* rather than object, which is the behaviour
+        this rule exists to stop. ``skipkeys`` in particular drops the whole
+        entry, key and value, so a non-finite number filed under a key ``json``
+        cannot write would pass and then be coerced anyway.
+
+        It is not, however, the *same* walk that writes the column. That one is
+        ``model_dump(mode="json")`` into ``_serialized_layout``, and stdlib
+        ``json`` differs from pydantic's encoder in both directions:
+
+        - Pydantic writes types stdlib ``json`` refuses, coercing as it goes: a
+          ``set`` became a list, a ``Decimal`` or a ``datetime`` a string. Those
+          stored before this rule and are now a 422 — a real behaviour change,
+          and a deliberate one, since a coerced value is the round-trip breakage
+          under a different name. None is constructible from a JSON body, so no
+          client can reach it.
+        - ``ensure_ascii=False`` and the explicit UTF-8 encode are what stdlib
+          ``json`` needs to be the *stricter* of the two. Escaped, a lone
+          surrogate writes fine and the row commits — and then every later read
+          of that workspace's views is a 500 raised while encoding the response,
+          which no API call can undo. That is the failure the size bounds above
+          exist to prevent, reached by a different door.
+
+        One silent alteration this cannot catch: ``json`` stringifies a
+        non-string mapping key, and pydantic's encoder stringifies it the same
+        way, so ``{1: "x"}`` becomes ``{"1": "x"}`` with both walks agreeing.
+        There is no flag that refuses it instead, and JSON object keys are
+        strings, so nothing arriving over the wire can carry one.
+
+        ``json``'s own reason is carried through rather than restated: it also
+        raises for a circular reference and for an integer past its digit limit,
+        and a client told those are an ``Infinity`` it never sent is worse off
+        than one told nothing.
+        """
+        try:
+            json.dumps(settings, allow_nan=False, ensure_ascii=False).encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Container settings must be writable as JSON with finite numbers: {exc}"
+            ) from exc
+        return settings
 
 
 ContainerRegistry = Annotated[dict[ContainerId, ViewContainer], Field(max_length=MAX_CONTAINERS)]

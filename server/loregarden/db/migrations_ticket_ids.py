@@ -20,7 +20,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from loregarden.db.migration_utils import add_columns_if_missing, table_columns, table_exists
+from loregarden.db.migration_utils import (
+    add_columns_if_missing,
+    index_exists,
+    table_columns,
+    table_exists,
+)
 from loregarden.models.domain import WorkItemType
 from loregarden.services.ticket_ids import (
     NO_MILESTONE_SEGMENT,
@@ -208,3 +213,59 @@ def m_structured_ticket_ids(conn: Connection) -> None:
             ),
             {"issued": issued, "id": workspace_id},
         )
+
+
+TICKET_NUMBER_INDEX = "ux_tickets_workspace_ticket_number"
+
+
+def m_unique_ticket_number(conn: Connection) -> None:
+    """Make a duplicate ticket number impossible at the storage layer.
+
+    `services.ticket_ids.resolve` matches a shared id on its trailing number, so
+    two tickets sharing one number in a workspace make every link to either of
+    them ambiguous. Nothing enforced it: the number was issued by application
+    code, and a build that predated the column wrote the field's default of 0
+    instead — 38 tickets once landed that way, all answering to number 0 and none
+    to the number printed on it.
+
+    A unique index is the layer that holds regardless of which build did the
+    writing, which is the property the application-level guard cannot have.
+
+    SCOPED TO ISSUED NUMBERS (`ticket_number > 0`). Zero is the not-yet-issued
+    sentinel, and `m_structured_ticket_ids` legitimately rewinds a whole
+    workspace to it. So this enforces that no two tickets share an ISSUED number
+    — the invariant `resolve` depends on — and not that every ticket has one.
+    Presence is a different constraint (NOT NULL plus CHECK); adding it means
+    rebuilding a table 21 foreign keys point at, which is not worth it here while
+    the CLI already refuses the stale writes that leave the sentinel behind.
+
+    Duplicates raise rather than being renumbered here. Renumbering rewrites ids
+    that are already in branch names and shared links, and choosing which of two
+    tickets keeps the number is a judgement a migration must not make silently.
+    """
+    if not table_exists(conn, "tickets") or index_exists(conn, TICKET_NUMBER_INDEX):
+        return
+    # A database old enough to predate either column has nothing to constrain
+    # yet; the migration that adds them runs ahead of this one in a full chain.
+    if not {"workspace_id", "ticket_number"} <= table_columns(conn, "tickets"):
+        return
+    duplicates = conn.execute(
+        text(
+            "SELECT workspace_id, ticket_number, COUNT(*) FROM tickets "
+            "WHERE ticket_number > 0 "
+            "GROUP BY workspace_id, ticket_number HAVING COUNT(*) > 1"
+        )
+    ).fetchall()
+    if duplicates:
+        detail = ", ".join(f"workspace {row[0]} number {row[1]} x{row[2]}" for row in duplicates)
+        raise RuntimeError(
+            "Cannot make ticket numbers unique: duplicates already exist "
+            f"({detail}). Renumber them deliberately — a link shared under a "
+            "duplicated number resolves to whichever row is found first."
+        )
+    conn.execute(
+        text(
+            f"CREATE UNIQUE INDEX {TICKET_NUMBER_INDEX} "
+            "ON tickets (workspace_id, ticket_number) WHERE ticket_number > 0"
+        )
+    )

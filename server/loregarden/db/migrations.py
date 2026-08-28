@@ -83,14 +83,21 @@ from loregarden.db.migrations_templates import (
     m_retire_agent_owned_gate_items,
     m_verify_stage_in_v3,
 )
-from loregarden.db.migrations_ticket_ids import m_structured_ticket_ids
+from loregarden.db.migrations_ticket_ids import (
+    m_structured_ticket_ids,
+    m_unique_ticket_number,
+)
 from loregarden.db.migrations_ticket_studio import (
     m_reference_repos,
     m_ticket_studio_preview_state,
     m_ticket_studio_tables,
     m_ticket_studio_turn_lifecycle,
 )
-from loregarden.db.migrations_views import m_sidebar_entry_pinned, m_view_store
+from loregarden.db.migrations_views import (
+    m_sidebar_entry_pinned,
+    m_view_store,
+    m_view_viewport,
+)
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
@@ -1328,6 +1335,11 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0094_repin_unregistered_skill_instances", m_repin_unregistered_skill_instances),
     ("0095_reference_pages_table", m_reference_pages_table),
     ("0096_agent_run_token_usage", m_agent_run_token_usage),
+    ("0097_unique_ticket_number", m_unique_ticket_number),
+    # 0096, 0097 and 0098 were claimed concurrently on three branches. They
+    # merge in numeric order, which is what the append-only prefix assertion
+    # checks — the numbers were never in doubt, only which branch landed first.
+    ("0098_view_viewport", m_view_viewport),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])
