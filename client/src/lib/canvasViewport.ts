@@ -23,6 +23,8 @@
  * the server serves deliberately.
  */
 
+import type { ViewViewportPatch } from "./viewsApi";
+
 /** The zoom range the surface offers. Below 10% nothing is legible. */
 export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 4;
@@ -78,12 +80,10 @@ export function readViewport(stored: unknown): CanvasViewport {
  * The viewport as the server's body: all three fields, none of them optional.
  *
  * The server requires the three together, because a viewport carrying only a
- * zoom would store a pan of 0 the client never asked for.
+ * zoom would store a pan of 0 the client never asked for. The shape is
+ * `viewsApi`'s rather than a second copy of it: two spellings of one body drift
+ * into a 422 nothing on screen explains.
  */
-export function viewportPatch(viewport: CanvasViewport): {
-  pan_x: number;
-  pan_y: number;
-  zoom: number;
-} {
+export function viewportPatch(viewport: CanvasViewport): ViewViewportPatch {
   return { pan_x: viewport.panX, pan_y: viewport.panY, zoom: viewport.zoom };
 }

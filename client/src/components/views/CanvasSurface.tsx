@@ -163,18 +163,46 @@ export function CanvasSurface({
    * Debounced, and through a write of its own rather than the layout queue: a
    * pan fires at pointer rate, and putting it through the queue that serializes
    * layout edits would starve the edits that change what the view contains.
+   *
+   * Two refs make the debounce honest. `written` is the value the record already
+   * holds — seeded from what this canvas opened at — and a viewport equal to it
+   * is not written: restoring the pan assigns `scrollLeft`, the browser answers
+   * with a `scroll` event, and without this every open of every canvas with a
+   * stored pan would PATCH the value it just read. `pending` is what a settled
+   * timer will send, kept where the unmount can still reach it.
    */
   const writeViewport = useViewViewportWrite(slug, viewId);
   const settle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const written = useRef<CanvasViewport>(opened);
+  const pending = useRef<CanvasViewport | undefined>(undefined);
+
+  const flush = useCallback(() => {
+    const next = pending.current;
+    pending.current = undefined;
+    if (next === undefined) return;
+    written.current = next;
+    writeViewport(viewportPatch(next));
+  }, [writeViewport]);
+
   const remember = useCallback(
     (next: CanvasViewport) => {
       if (settle.current !== undefined) clearTimeout(settle.current);
-      settle.current = setTimeout(
-        () => writeViewport(viewportPatch(next)),
-        VIEWPORT_SETTLE_MS,
-      );
+      const settled = written.current;
+      if (
+        next.panX === settled.panX &&
+        next.panY === settled.panY &&
+        next.zoom === settled.zoom
+      ) {
+        // Back where the record already has it. Any queued write is now for a
+        // position that is no longer where the user is looking.
+        settle.current = undefined;
+        pending.current = undefined;
+        return;
+      }
+      pending.current = next;
+      settle.current = setTimeout(flush, VIEWPORT_SETTLE_MS);
     },
-    [writeViewport],
+    [flush],
   );
 
   const rememberNow = useCallback(() => {
@@ -207,9 +235,13 @@ export function CanvasSurface({
 
   useEffect(() => {
     return () => {
+      // Sent, not dropped. Closing a view within the settle window is the
+      // ordinary way to leave a canvas — clicking another tab in the sidebar —
+      // and the position it is left at is exactly the one the next open needs.
       if (settle.current !== undefined) clearTimeout(settle.current);
+      flush();
     };
-  }, []);
+  }, [flush]);
 
   /**
    * Zoom to `next`, keeping the surface point under `clientX`/`clientY` still.

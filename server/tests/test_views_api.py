@@ -1555,12 +1555,17 @@ def test_a_malformed_viewport_is_refused_and_stores_nothing(client: TestClient, 
     request it refused.
     """
     created = _create_view(client, "Sketch", layout=_canvas_layout())
-    client.patch(f"{VIEWS}/{created['id']}", json=_viewport())
+    # Seeded through the real route and asserted, so "writes nothing" is a claim
+    # about a value that was actually there. Against an empty column the check
+    # passes for a refusal that wipes the stored viewport as readily as for one
+    # that leaves it alone.
+    seeded = client.patch(f"{VIEWS}/{created['id']}", json={"viewport": _viewport()})
+    assert seeded.status_code == 200, seeded.text
 
     res = client.patch(f"{VIEWS}/{created['id']}", json={"viewport": viewport})
 
     assert 400 <= res.status_code < 500, res.text
-    assert _stored_viewport(client, created["id"]) == {}
+    assert _stored_viewport(client, created["id"]) == _viewport()
 
 
 @pytest.mark.parametrize("literal", ["Infinity", "-Infinity", "NaN"])
@@ -1572,12 +1577,14 @@ def test_a_non_finite_viewport_number_is_a_4xx_not_a_500(client: TestClient, lit
     succeed and the client would read back a viewport it never sent.
     """
     created = _create_view(client, "Sketch", layout=_canvas_layout())
+    seeded = client.patch(f"{VIEWS}/{created['id']}", json={"viewport": _viewport()})
+    assert seeded.status_code == 200, seeded.text
     body = f'{{"viewport": {{"pan_x": {literal}, "pan_y": 0.0, "zoom": 1.0}}}}'
 
     res = _raw_json(client, "PATCH", f"{VIEWS}/{created['id']}", body)
 
     assert res.status_code == 422, res.text
-    assert _stored_viewport(client, created["id"]) == {}
+    assert _stored_viewport(client, created["id"]) == _viewport()
 
 
 def test_a_viewport_survives_a_round_trip_at_the_bounds(client: TestClient):

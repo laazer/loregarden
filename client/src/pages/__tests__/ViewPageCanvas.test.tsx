@@ -87,6 +87,28 @@ installCanvasHarness();
  */
 const KEY_STEP_PX = 8;
 
+/**
+ * Fix what every element reports as its scroll offsets.
+ *
+ * jsdom lays nothing out, so nothing overflows and `scrollLeft` is always 0 no
+ * matter what is assigned. Stubbing it is what makes the *arithmetic* the
+ * surface does with a scroll position exercisable; nothing here measures
+ * anything, and the setter swallows the restore's assignment the way a browser
+ * that had already scrolled there would.
+ */
+function stubScroll(left: number, top: number): void {
+  Object.defineProperty(Element.prototype, "scrollLeft", {
+    configurable: true,
+    get: () => left,
+    set: () => undefined,
+  });
+  Object.defineProperty(Element.prototype, "scrollTop", {
+    configurable: true,
+    get: () => top,
+    set: () => undefined,
+  });
+}
+
 async function shown(layout: Json) {
   const rendered = renderCanvas(layout);
   await screen.findByTestId("view-host");
@@ -674,6 +696,116 @@ describe("AC8 — the viewport is restored, from the view's own record", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it("writes the pan the viewport settled at, not only a zoom", async () => {
+    // The debounce exists for panning above all — a scroll fires far faster than
+    // a toolbar click — and `rememberNow` is what reads the pan off the element.
+    // jsdom never scrolls on its own, so the offsets are stubbed and the `scroll`
+    // event is dispatched by hand: what is asserted is the body the surface
+    // composed from them, never a measurement.
+    jest.useFakeTimers();
+    const scrollLeft = Object.getOwnPropertyDescriptor(Element.prototype, "scrollLeft");
+    const scrollTop = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop");
+    // A getter with a swallowing setter, not a plain value: the restore effect
+    // assigns `scrollLeft`, and a read-only data property makes that assignment
+    // throw under the strict mode a module is always in.
+    stubScroll(480, 240);
+    try {
+      renderCanvas(oneItemCanvas());
+      const host = await screen.findByTestId("view-host");
+      act(() => {
+        fireEvent.scroll(viewportEl(host));
+      });
+
+      await act(async () => {
+        jest.advanceTimersByTime(1000);
+      });
+
+      expect(mockUpdateView).toHaveBeenCalledTimes(1);
+      expect(mockUpdateView.mock.calls[0][2]).toEqual({
+        viewport: { pan_x: 480, pan_y: 240, zoom: 1 },
+      });
+    } finally {
+      jest.useRealTimers();
+      if (scrollLeft !== undefined) {
+        Object.defineProperty(Element.prototype, "scrollLeft", scrollLeft);
+      }
+      if (scrollTop !== undefined) Object.defineProperty(Element.prototype, "scrollTop", scrollTop);
+    }
+  });
+
+  it("does not write back the position it just restored", async () => {
+    // Restoring assigns `scrollLeft`, and a browser answers that with a `scroll`
+    // event — so without a guard every open of every canvas with a stored pan
+    // would PATCH the value it had just read. The scroll offsets are stubbed to
+    // the stored ones, which is what the browser reports after the assignment
+    // succeeds.
+    jest.useFakeTimers();
+    const scrollLeft = Object.getOwnPropertyDescriptor(Element.prototype, "scrollLeft");
+    const scrollTop = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop");
+    stubScroll(640, 320);
+    try {
+      renderCanvas(oneItemCanvas(), undefined, { pan_x: 640, pan_y: 320, zoom: 1 });
+      const host = await screen.findByTestId("view-host");
+      act(() => {
+        fireEvent.scroll(viewportEl(host));
+      });
+
+      await act(async () => {
+        jest.advanceTimersByTime(1000);
+      });
+
+      expect(mockUpdateView).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+      if (scrollLeft !== undefined) {
+        Object.defineProperty(Element.prototype, "scrollLeft", scrollLeft);
+      }
+      if (scrollTop !== undefined) Object.defineProperty(Element.prototype, "scrollTop", scrollTop);
+    }
+  });
+
+  it("sends a viewport still waiting on the debounce when the view is closed", async () => {
+    // Clicking another tab within a quarter-second of a pan is the ordinary way
+    // to leave a canvas, and the position it was left at is exactly the one the
+    // next open needs. Dropping it was defensible while this was a per-device
+    // note; it is the stored position now.
+    jest.useFakeTimers();
+    try {
+      const { unmount } = renderCanvas(oneItemCanvas());
+      const host = await screen.findByTestId("view-host");
+      act(() => {
+        (toolbarAction(host, "zoom-in") as HTMLButtonElement).click();
+      });
+      expect(mockUpdateView).not.toHaveBeenCalled();
+
+      await act(async () => {
+        unmount();
+      });
+
+      expect(mockUpdateView).toHaveBeenCalledTimes(1);
+      expect(Object.keys(mockUpdateView.mock.calls[0][2] as Json)).toEqual(["viewport"]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("keeps the viewport it opened at when its own write comes back through the cache", async () => {
+    // The surface's writes return through the same record it is drawn from. A
+    // prop read on every render would let a landing write — or a background
+    // refetch — move the canvas out from under a user who has panned since.
+    const { container, rerender } = await shownWith(oneItemCanvas(), {
+      pan_x: 0,
+      pan_y: 0,
+      zoom: 2,
+    });
+    expect(Number(surfaceEl(container).dataset.zoom)).toBe(2);
+
+    rerender(canvasRoute(testClient()));
+    await screen.findByTestId("view-host");
+
+    expect(Number(surfaceEl(container).dataset.zoom)).toBe(2);
   });
 
   it("leaves the viewport alone when the layout is what changed", async () => {
