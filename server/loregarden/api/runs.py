@@ -14,6 +14,7 @@ from loregarden.services.run_service import (
     settle_dead_handoff_run,
 )
 from loregarden.services.run_steering import list_messages, queue_message, steer_refusal
+from loregarden.services.run_token_usage import TokenTotals, ticket_usage
 from sqlmodel import Session
 
 _IN_FLIGHT_STATUSES = (RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION)
@@ -50,6 +51,43 @@ def list_runs(
         }
         for r in runs
     ]
+
+
+def _totals_payload(totals: TokenTotals) -> dict:
+    """Totals as JSON, with nulls kept as nulls.
+
+    ``null`` is the answer, not a gap to fill: a client that renders it as 0
+    would put unmeasured runs into a cost figure as free work, which is the one
+    thing these columns exist to prevent.
+    """
+    return {
+        "key": totals.key,
+        "runs": totals.runs,
+        "measured_runs": totals.measured_runs,
+        "unmeasured_runs": totals.unmeasured_runs,
+        "input_tokens": totals.input_tokens,
+        "output_tokens": totals.output_tokens,
+        "cache_read_tokens": totals.cache_read_tokens,
+        "cache_write_tokens": totals.cache_write_tokens,
+        "total_tokens": totals.total_tokens,
+    }
+
+
+@router.get("/usage")
+def get_ticket_usage(
+    ticket_id: str = Query(),
+    session: Session = Depends(get_session),
+) -> dict:
+    """What this ticket's runs cost, whole and per stage.
+
+    Declared above ``/{run_id}`` so ``usage`` is not swallowed as a run id.
+    """
+    total, by_stage = ticket_usage(session, ticket_id)
+    return {
+        "ticket_id": ticket_id,
+        "total": _totals_payload(total),
+        "by_stage": [_totals_payload(stage) for stage in by_stage],
+    }
 
 
 @router.get("/{run_id}/log")

@@ -35,6 +35,7 @@ from loregarden.models.domain import (
     OrchestrationDriver,
     OrchestrationRun,
     RunStatus,
+    RunUsage,
     StageStatus,
     Ticket,
     WorkflowStageDef,
@@ -338,8 +339,46 @@ def _member_runs_and_results(
     return outstanding, results
 
 
+def _record_external_usage(
+    session: Session,
+    run: AgentRun,
+    *,
+    usage: RunUsage | None,
+    changed_paths: list[str] | None,
+) -> None:
+    """Write the harness's self-report onto the run, before it is completed.
+
+    Committed here rather than folded into ``complete_run`` so the numbers
+    survive even if routing the stage afterwards raises — the same reason
+    ``complete_run`` commits the run's terminal status before touching the
+    ticket.
+
+    Only what was reported is written. A harness that sends nothing leaves the
+    columns NULL, and a harness that reports usage but no paths keeps the
+    ``[]`` it was created with, which already means "nothing recorded here".
+    """
+    if usage is not None:
+        run.input_tokens = usage.input_tokens
+        run.output_tokens = usage.output_tokens
+        run.cache_read_tokens = usage.cache_read_tokens
+        run.cache_write_tokens = usage.cache_write_tokens
+        run.model = usage.model or None
+        run.effort = usage.effort or None
+    if changed_paths:
+        run.changed_paths_json = json.dumps(sorted(set(changed_paths)))
+    if usage is not None or changed_paths:
+        session.add(run)
+        session.commit()
+
+
 def finish_external_stage(
-    session: Session, run: AgentRun, *, transcript: str, failed: bool = False
+    session: Session,
+    run: AgentRun,
+    *,
+    transcript: str,
+    failed: bool = False,
+    usage: RunUsage | None = None,
+    changed_paths: list[str] | None = None,
 ) -> ExternalStageResultView:
     """Settle a stage the harness has finished, routing on its stage report.
 
@@ -347,12 +386,21 @@ def finish_external_stage(
     so a `<<<LOREGARDEN_STAGE_REPORT>>>` block from an outside harness reroutes,
     blocks or advances the workflow identically.
 
+    ``usage`` and ``changed_paths`` are the two things only the harness can
+    know. There is no subprocess here, so nothing on this side read a usage
+    event or diffed the tree before and after — which is why every externally
+    driven run to date has no changed paths recorded at all. Both stay unset
+    when the harness does not report them, because an unmeasured run must not
+    read as a free one.
+
     On a parallel stage this settles **one member**. The stage itself is left
     RUNNING until the last outstanding member is handed back, at which point it
     is reconciled by the same code the built-in driver reconciles with.
     """
     if run.external_harness is None:
         raise ValueError(f"Run {run.run_code} was not checked out to an external harness")
+
+    _record_external_usage(session, run, usage=usage, changed_paths=changed_paths)
 
     # The other half of the renewal. Settling the stage ends the agent run whose
     # liveness was covering this orchestration, and the harness is about to ask

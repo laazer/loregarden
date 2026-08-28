@@ -4,8 +4,8 @@ from pathlib import Path
 
 from loregarden.config import settings
 from loregarden.services.code_map import (
+    code_map_reference,
     lookup_entries,
-    render_code_map,
     structure_tree,
     verify_code_map,
 )
@@ -74,13 +74,15 @@ def test_a_mention_is_not_a_definition(tmp_path):
     assert any("resolve_route" in d.detail for d in verify_code_map(repo))
 
 
-def test_the_rendered_map_carries_structure_and_index(tmp_path):
-    rendered = render_code_map(_repo(tmp_path))
-    assert "Repository structure" in rendered
-    assert "Where to look" in rendered
-    assert "server/" in rendered
-    # The section after the table is not part of the map.
-    assert "not part of the map" not in rendered
+def test_the_reference_names_the_file_and_its_two_sections(tmp_path):
+    """What replaced the inlined map has to be actionable on its own: the agent
+    is told which file to open and which headings hold the two halves."""
+    reference = code_map_reference(_repo(tmp_path))
+    assert "AGENTS.md" in reference
+    assert "## STRUCTURE" in reference
+    assert "## WHERE TO LOOK" in reference
+    # The map itself is no longer copied into the prompt.
+    assert "server/" not in reference
 
 
 def test_parsing_stops_at_the_next_section(tmp_path):
@@ -89,7 +91,8 @@ def test_parsing_stops_at_the_next_section(tmp_path):
 
 
 def test_a_repo_without_a_map_contributes_nothing(tmp_path):
-    assert render_code_map(tmp_path) == ""
+    """A pointer to a file that is not there is worse than no pointer."""
+    assert code_map_reference(tmp_path) == ""
 
 
 def test_this_repository_map_is_still_true():

@@ -109,6 +109,23 @@ class CliAdapter(str, Enum):
     OPENCODE = "opencode"
 
 
+class ControlPlaneTransport(str, Enum):
+    """How a run actually reaches Loregarden — the channel its prompt must describe.
+
+    Not a preference and not a pin: it is resolved from the wiring the control
+    plane performed for that run. ``MCP`` means this process attached its MCP
+    server to the agent's session, so native tools exist. ``CLI`` means it did
+    not, and the agent's way in is ``scripts/loregarden-cli.sh mcp call``, which
+    runs the same tools in-process against the database.
+
+    A prompt rendered for the wrong one is not merely verbose — it instructs the
+    agent in a protocol it does not have.
+    """
+
+    MCP = "mcp"
+    CLI = "cli"
+
+
 class CompatibilityPosture(str, Enum):
     """How much freedom an agent has to change existing interfaces and tests.
 

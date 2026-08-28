@@ -1,3 +1,6 @@
+import os
+from unittest import mock
+
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.mcp_context import (
     build_mcp_run_context,
@@ -7,7 +10,13 @@ from loregarden.agents.mcp_context import (
     loregarden_mcp_cli_config_json,
     resolve_mcp_url,
 )
-from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    ControlPlaneTransport,
+    Ticket,
+    WorkflowStageDef,
+    Workspace,
+)
 from loregarden.services.seed import seed_database
 from loregarden.services.workspace_paths import resolve_agent_context_dir
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -36,7 +45,9 @@ def test_build_mcp_run_context_includes_ids():
         orchestration_run_id="orch-1",
     )
     workspace = Workspace(id="ws-1", slug="loregarden", name="Loregarden")
-    text = build_mcp_run_context(ticket=ticket, run=run, workspace=workspace)
+    text = build_mcp_run_context(
+        ticket=ticket, run=run, workspace=workspace, transport=ControlPlaneTransport.MCP
+    )
     assert "loregarden_get_ticket" in text
     assert "native MCP tools" in text
     assert "mcp__loregarden__loregarden_get_ticket" in text
@@ -66,7 +77,13 @@ def _handoff_run(stage_type: str) -> str:
     )
     workspace = Workspace(id="ws", slug="blobert", name="Blobert")
     stage_def = WorkflowStageDef(key="script_review", name="Script Review", stage_type=stage_type)
-    return build_mcp_run_context(ticket=ticket, run=run, workspace=workspace, stage_def=stage_def)
+    return build_mcp_run_context(
+        ticket=ticket,
+        run=run,
+        workspace=workspace,
+        stage_def=stage_def,
+        transport=ControlPlaneTransport.MCP,
+    )
 
 
 def test_handoff_instruction_linear_stage_tells_agent_to_write_handoff():
@@ -88,11 +105,19 @@ def test_handoff_instruction_defaults_to_linear_when_stage_unknown():
     ticket = Ticket(id="t", external_id="ext", title="T", workspace_id="ws")
     run = AgentRun(run_code="run_h", ticket_id="t", workspace_id="ws", agent_id="static_qa")
     workspace = Workspace(id="ws", slug="loregarden", name="Loregarden")
-    text = build_mcp_run_context(ticket=ticket, run=run, workspace=workspace)
+    text = build_mcp_run_context(
+        ticket=ticket, run=run, workspace=workspace, transport=ControlPlaneTransport.MCP
+    )
     assert "**Finishing agents:**" in text
 
 
 def test_cli_prompt_includes_mcp_module():
+    """The module reaches a run that has MCP.
+
+    The adapter is pinned because the suite forces `local`, which this process
+    wires no MCP server into — such a run is told about the CLI instead, and
+    that is the subject of test_stage_prompt_transport.py.
+    """
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -116,21 +141,27 @@ def test_cli_prompt_includes_mcp_module():
             stage_key="testing",
         )
         executor = CliAgentExecutor(session)
-        agent = {"role_file": "agents/9_static_qa/static_qa_v1.md"}
+        agent = {"role_file": "agents/9_static_qa/static_qa_v1.md", "adapter": "claude"}
         stage_def = executor._resolve_stage_def(ticket, run)
-        prompt = executor._build_prompt(
-            ticket,
-            run,
-            agent,
-            resolve_agent_context_dir(workspace),
-            workspace,
-            stage_def,
-        )
+        with mock.patch.dict(os.environ, {"LOREGARDEN_CLI_ADAPTER": "claude"}):
+            prompt = executor._build_prompt(
+                ticket,
+                run,
+                agent,
+                resolve_agent_context_dir(workspace),
+                workspace,
+                stage_def,
+            )
         assert "Loregarden MCP (required for workflow state)" in prompt
         assert "Loregarden memory (workspace-scoped)" in prompt or "Loregarden artifacts" in prompt
         assert "Memory protocol module" in prompt
         assert "loregarden_get_ticket" in prompt
-        assert load_loregarden_mcp_doc(resolve_agent_context_dir(workspace))[:200] in prompt
+        assert (
+            load_loregarden_mcp_doc(
+                resolve_agent_context_dir(workspace), transport=ControlPlaneTransport.MCP
+            )[:200]
+            in prompt
+        )
         assert load_memory_protocol_doc(resolve_agent_context_dir(workspace))[:200] in prompt
 
 
@@ -166,7 +197,7 @@ def test_cli_prompt_includes_stage_report_contract():
         prompt = executor._build_prompt(
             ticket,
             run,
-            {"role_file": "agents/9_static_qa/static_qa_v1.md"},
+            {"role_file": "agents/9_static_qa/static_qa_v1.md", "adapter": "claude"},
             resolve_agent_context_dir(workspace),
             workspace,
             executor._resolve_stage_def(ticket, run),

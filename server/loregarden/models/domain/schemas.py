@@ -391,6 +391,41 @@ class ExternalStageResultView(SQLModel):
     outstanding_members: int = 0
 
 
+class RunUsage(SQLModel):
+    """What one agent run consumed, and under what model and effort.
+
+    Every field defaults to ``None``, which means *nobody measured it* — never
+    zero. A CLI that printed no usage block, an adapter with no usage surface,
+    and a harness that declined to report all leave the field unset, so a run
+    of unknown cost can never be summed in as a free one. Only figures an
+    executor actually read are stored.
+
+    ``input_tokens`` counts tokens billed at the full input rate. Cache reads
+    and cache writes are priced differently and are recorded on their own, so
+    the three are disjoint and their sum is the run's whole input context. Each
+    adapter's own dialect is normalized to that in ``agents.run_usage``.
+    """
+
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    model: str | None = None
+    effort: str | None = None
+
+    def measured(self) -> bool:
+        """Whether any token figure was reported at all."""
+        return any(
+            value is not None
+            for value in (
+                self.input_tokens,
+                self.output_tokens,
+                self.cache_read_tokens,
+                self.cache_write_tokens,
+            )
+        )
+
+
 class CompleteStageRequest(SQLModel):
     stage_key: str
     next_agent: str = ""

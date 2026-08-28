@@ -64,6 +64,7 @@ from loregarden.db.migrations_queue import (
     m_per_slot_queues,
 )
 from loregarden.db.migrations_reference import m_reference_pages_table
+from loregarden.db.migrations_run_usage import m_agent_run_token_usage
 from loregarden.db.migrations_skills import m_skill_versioning
 from loregarden.db.migrations_stage_fanout import m_stage_fanout_groups
 from loregarden.db.migrations_templates import (
@@ -1333,10 +1334,11 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0093_repin_terminal_less_instances", m_repin_terminal_less_instances),
     ("0094_repin_unregistered_skill_instances", m_repin_unregistered_skill_instances),
     ("0095_reference_pages_table", m_reference_pages_table),
+    ("0096_agent_run_token_usage", m_agent_run_token_usage),
     ("0097_unique_ticket_number", m_unique_ticket_number),
-    # 0096 and 0097 are claimed by parallel branches (agent run token usage,
-    # unique ticket number) and are already applied to the live database; this
-    # one takes the next free number rather than colliding with either.
+    # 0096, 0097 and 0098 were claimed concurrently on three branches. They
+    # merge in numeric order, which is what the append-only prefix assertion
+    # checks — the numbers were never in doubt, only which branch landed first.
     ("0098_view_viewport", m_view_viewport),
 ]
 
