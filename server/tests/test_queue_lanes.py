@@ -452,6 +452,47 @@ def test_reconcile_leaves_a_live_entry_alone(lanes, session, workspace):
     assert entry.status == QueuePosition.ACTIVE
 
 
+def test_reconcile_cancels_a_waiting_entry_for_a_ticket_already_done(lanes, session, workspace):
+    """A ticket can finish through a route the lane never watches.
+
+    Nothing named a run or orchestration for this entry yet — it is still
+    waiting behind the lane head — so `_entry_work_is_over` has nothing to
+    judge it by. Left alone it would either sit on the board forever
+    reporting "queued" next to a ticket marked done, or get dispatched by
+    `start_lane_head`, which only checks the ticket still exists.
+    """
+    from loregarden.models.domain import QueuedRun, TicketState
+
+    first = _ticket(session, workspace.id, "LG-1")
+    second = _ticket(session, workspace.id, "LG-2")
+    lanes.add_to_lane(ticket_id=first.id, slot_number=1)
+    lanes.add_to_lane(ticket_id=second.id, slot_number=1)
+
+    second.state = TicketState.DONE
+    session.add(second)
+    session.commit()
+
+    lanes.reconcile_lanes()
+
+    entry = session.exec(select(QueuedRun).where(QueuedRun.ticket_id == second.id)).one()
+    assert entry.status == QueuePosition.CANCELLED
+    assert lanes.waiting_in_lane(1) == []
+
+
+def test_reconcile_leaves_a_waiting_entry_for_an_open_ticket_alone(lanes, session, workspace):
+    from loregarden.models.domain import QueuedRun
+
+    first = _ticket(session, workspace.id, "LG-1")
+    second = _ticket(session, workspace.id, "LG-2")
+    lanes.add_to_lane(ticket_id=first.id, slot_number=1)
+    lanes.add_to_lane(ticket_id=second.id, slot_number=1)
+
+    lanes.reconcile_lanes()
+
+    entry = session.exec(select(QueuedRun).where(QueuedRun.ticket_id == second.id)).one()
+    assert entry.status == QueuePosition.QUEUED
+
+
 def test_the_entry_settles_even_when_the_slot_is_already_gone(lanes, session, workspace):
     """`reconcile_slots` reclaims a terminal occupant's slot on any status read.
 

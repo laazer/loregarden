@@ -37,6 +37,7 @@ from loregarden.models.domain import (
     QueuedRun,
     QueuePosition,
     Ticket,
+    TicketState,
 )
 from loregarden.services.drain import is_draining, stamp_refusal
 from loregarden.services.parallel_queue import (
@@ -389,6 +390,7 @@ class QueueLaneService:
         every status read rather than waiting for a hand-reset.
         """
         self._requeue_stranded_entries()
+        cancelled = self._cancel_terminal_ticket_entries()
         settled = self._settle_finished_entries()
         freed = self.slots.reconcile_slots()
         # Nested child execute shares the parent's lane. Orphan-heal used to
@@ -414,7 +416,7 @@ class QueueLaneService:
         # Nested children of a slotted ancestor are not orphans — they share
         # that ancestor's lane for the life of the tree.
         claimed = self._claim_orphaned_orchestrations()
-        if freed or claimed or settled:
+        if freed or claimed or settled or cancelled:
             emit_execution_update()
         return freed
 
@@ -584,6 +586,47 @@ class QueueLaneService:
 
         for slot_number in {entry.slot_number for entry in stranded}:
             self._renumber(slot_number)
+
+    def _cancel_terminal_ticket_entries(self) -> list[int]:
+        """Drop waiting entries whose ticket is already done or won't-do.
+
+        A ticket can reach a terminal state by a route the lane never sees —
+        completed via another lane, resolved by hand, superseded — while a
+        `QueuedRun` still sits `QUEUED`/`SCHEDULED` behind it, never having
+        named a run or orchestration for `_entry_work_is_over` to judge. Left
+        alone it is dispatched anyway (`start_lane_head` only checks the
+        ticket still *exists*) or sits forever on the board reporting
+        `ticket_activity: queued` next to a `ticket_state` of `done`.
+
+        Returns the lane numbers with an entry cancelled, so the caller can
+        renumber and report a changed board like every other settle here.
+        """
+        stale = self.session.exec(
+            select(QueuedRun, Ticket.state)
+            .join(Ticket, col(Ticket.id) == col(QueuedRun.ticket_id))
+            .where(col(QueuedRun.status).in_(WAITING_STATUSES))
+            .where(col(Ticket.state).in_((TicketState.DONE, TicketState.WONT_DO)))
+        ).all()
+        if not stale:
+            return []
+
+        lanes: set[int] = set()
+        for entry, ticket_state in stale:
+            logger.warning(
+                "Cancelling queue entry %s (ticket %s, lane %d): ticket is already %s",
+                entry.id,
+                entry.ticket_id,
+                entry.slot_number,
+                ticket_state.value,
+            )
+            entry.status = QueuePosition.CANCELLED
+            self.session.add(entry)
+            lanes.add(entry.slot_number)
+        self.session.commit()
+
+        for slot_number in lanes:
+            self._renumber(slot_number)
+        return sorted(lanes)
 
     def _entry_work_is_over(self, entry: QueuedRun) -> bool:
         """Whether the thing this entry started has reached a terminal status.
