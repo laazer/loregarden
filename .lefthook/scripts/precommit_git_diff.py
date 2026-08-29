@@ -36,13 +36,24 @@ GIT_LOCATION_ENV_VARS = (
     "GIT_COMMON_DIR",
     "GIT_NAMESPACE",
     "GIT_PREFIX",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CONFIG_COUNT",
 )
+
+#: Ad-hoc config git reads from `GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>` pairs,
+#: counted by `GIT_CONFIG_COUNT`. One such pair setting `core.attributesFile`
+#: points every diff at attributes that can mark sources `-diff`, which empties
+#: the gate's diff while `--name-only` still lists the file: the environment
+#: reaching the same hole a committed `.gitattributes` opens.
+GIT_CONFIG_ENV_PREFIXES = ("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
 
 
 def scrubbed_git_env() -> Dict[str, str]:
-    """The ambient environment minus git's repo bindings."""
+    """The ambient environment minus git's repo bindings and injected config."""
     env = dict(os.environ)
     for name in GIT_LOCATION_ENV_VARS:
+        env.pop(name, None)
+    for name in [n for n in env if n.startswith(GIT_CONFIG_ENV_PREFIXES)]:
         env.pop(name, None)
     return env
 
@@ -225,12 +236,40 @@ class ResolvedScope:
         return self.diff_scope in _UNTRACKED_SCOPES
 
 
-def git_merge_base(repo: Path, base_ref: str) -> Optional[str]:
-    """The commit this branch forked from, or None when ``base_ref`` is unknown.
+def git_rev_exists(repo: Path, ref: str) -> bool:
+    """True when ``ref`` names a commit in ``repo``.
 
-    Unknown is a real answer here, not a swallowed failure: workspaces the
-    control plane drives do not all call their trunk ``main``, and every caller
-    of this either reports the unresolved ref in the scope line or raises.
+    Separates the two failures ``git merge-base`` reports with the same exit
+    status: a ref that does not exist, and a ref that exists but shares no
+    history with HEAD. They need opposite treatment, and collapsing them
+    reported an orphan branch as an unresolvable trunk — a message that sent
+    readers to trunk detection while every stage transition blocked.
+    """
+    proc = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"{_validated_ref(ref)}^{{commit}}"],
+        cwd=repo,
+        env=scrubbed_git_env(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return proc.returncode == 0
+
+
+def git_empty_tree(repo: Path) -> str:
+    """The hash of the empty tree, as this repository's hash algorithm spells it.
+
+    Diffing against it yields "everything", which is exactly the branch diff of
+    a branch that shares no commit with its base. Computed rather than hardcoded
+    because a sha256 repository names it differently.
+    """
+    return _git(["hash-object", "-t", "tree", os.devnull], repo).strip()
+
+
+def git_merge_base(repo: Path, base_ref: str) -> Optional[str]:
+    """The commit this branch forked from, or None when there is no such commit.
+
+    None covers two cases the caller must tell apart — see `git_rev_exists`.
     """
     proc = subprocess.run(
         ["git", "merge-base", _validated_ref(base_ref), "HEAD"],
@@ -285,6 +324,20 @@ def resolve_scope(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") 
             "worktree changes (no commits yet)",
         )
     merge_base = git_merge_base(repo, base_ref)
+    if merge_base is None and git_rev_exists(repo, base_ref):
+        # The ref resolves; the histories are disjoint (orphan branch,
+        # re-initialised repo, shallow clone). There is no fork point to diff
+        # from, but there is no unknown either — every commit on this branch is
+        # unshared, so the branch diff *is* the whole tree. Refusing to run here
+        # blocked every stage transition in such a workspace, under a message
+        # about trunk detection that named the wrong cause.
+        empty_tree = git_empty_tree(repo)
+        return ResolvedScope(
+            SINCE,
+            empty_tree,
+            git_changed_paths(repo, SINCE, empty_tree),
+            f"whole branch and worktree (no common ancestor with {base_ref!r})",
+        )
     if merge_base is None:
         return ResolvedScope(
             WORKTREE,
@@ -334,12 +387,26 @@ def all_line_numbers(path: Path) -> Set[int]:
         return set()
 
 
+def located_path(path: Path) -> Path:
+    """``path`` with its *directory* resolved, but not the file itself.
+
+    Resolving the whole path follows a symlinked source file out of the tree: a
+    module linked into ``src/`` resolves to wherever it really lives, falls
+    outside the source root, and is dropped — `examined 0`, exit 0, the vacuous
+    pass again — and, for a file that survives that filter, stops matching the
+    relpath git used in the diff, emptying its touched-line set. Resolving only
+    the parent still normalises the symlinked prefix a checkout can sit behind
+    (macOS ``/tmp`` -> ``/private/tmp``), which is why the resolve is there.
+    """
+    return path.parent.resolve() / path.name
+
+
 def repo_relative_posix(path: Path, repo: Optional[Path]) -> str:
     """``path`` as git names it in a diff, or unchanged when it is outside ``repo``."""
     if repo is None:
         return path.as_posix()
     try:
-        return path.resolve().relative_to(repo).as_posix()
+        return located_path(path).relative_to(repo.resolve()).as_posix()
     except ValueError:
         return path.as_posix()
 
@@ -355,8 +422,16 @@ class GateRun:
     steps has to use the *resolved* scope, and a gate that reaches for the
     requested one instead compiles, prints a credible file count, and reports a
     pass over an empty touched-line set. That is the vacuous-gate bug in its
-    most convincing form, so a gate does not get to perform any of these steps
-    itself: it asks this object.
+    most convincing form, so no gate performs any of these steps itself: each
+    asks this object, and `resolve_gate_scope` is the only way to build one.
+
+    The pieces it composes stay public and scope-parameterized — the pre-commit
+    filters (`pylint_diff_filter`, `ruff_complexity_diff_filter`) call
+    `git_diff_cached` and `parse_staged_additions` directly for the index, and
+    the gate tests drive `resolve_scope` on its own. So this is a convention the
+    three transition gates keep, not a wall the module enforces: a *new* gate
+    could still assemble the steps by hand and get them wrong. Route new gates
+    through here.
     """
 
     label: str
@@ -367,8 +442,9 @@ class GateRun:
     additions: Dict[str, Set[int]]
     #: relpaths git is not tracking; their whole contents count as touched.
     untracked: FrozenSet[str]
-    #: relpath -> (added, deleted), for "don't make it worse" size checks.
-    numstat: Dict[str, Tuple[int, int]]
+    #: line counts for the "don't make it worse" size checks, and the relpaths
+    #: whose diff git suppressed — see `DiffNumstat`.
+    numstat: DiffNumstat
 
     @property
     def diff_scope(self) -> str:
@@ -387,13 +463,24 @@ class GateRun:
         if self.repo is None:
             return None
         rel = repo_relative_posix(path, self.repo)
-        if rel in self.untracked:
+        if rel in self.untracked or rel in self.numstat.undiffable:
+            # Untracked: new in its entirety. Undiffable: git changed it but
+            # would not say where, so there is no smaller honest answer than
+            # the whole file. Returning the empty set instead is what let a
+            # `.gitattributes` `-diff` entry pass every violation in the repo.
             return all_line_numbers(path)
         return self.additions.get(rel, set())
 
     def net_growing(self, path: Path) -> bool:
-        """True when this change adds more lines to ``path`` than it removes."""
-        added, deleted = self.numstat.get(repo_relative_posix(path, self.repo), (0, 0))
+        """True when this change adds more lines to ``path`` than it removes.
+
+        An undiffable file has no counts to compare; it is graded whole, so it
+        is treated as growing rather than exempted from the size checks.
+        """
+        rel = repo_relative_posix(path, self.repo)
+        if rel in self.numstat.undiffable:
+            return True
+        added, deleted = self.numstat.counts.get(rel, (0, 0))
         return added > deleted
 
 
@@ -413,6 +500,13 @@ def resolve_gate_scope(
     line still names the scope that was asked for rather than assuming the
     index. Otherwise the diff decides, via `resolve_scope`.
     """
+    if diff_scope not in DIFF_SCOPES:
+        # Coercing an unrecognised `--scope` to `staged` made a typo examine the
+        # index — empty at a stage transition — and exit 0 over a committed
+        # violation: the same vacuous pass, one argument over.
+        raise GitScopeError(
+            f"unknown scope {diff_scope!r}; expected one of {', '.join(DIFF_SCOPES)}"
+        )
     candidates = list(explicit_files)
     discovered = not candidates and repo is not None
     if discovered:
@@ -436,7 +530,7 @@ def resolve_gate_scope(
     print(examined_line(label, len(files), scope.description))
     additions: Dict[str, Set[int]] = {}
     untracked: FrozenSet[str] = frozenset()
-    numstat: Dict[str, Tuple[int, int]] = {}
+    numstat = DiffNumstat({}, frozenset())
     if repo is not None and files:
         diff = git_diff_cached(repo, scope.diff_scope, scope.base_ref)
         additions = {
@@ -505,27 +599,46 @@ def parse_staged_additions(diff: str) -> Dict[str, List[Tuple[int, str]]]:
     return result
 
 
+@dataclass(frozen=True)
+class DiffNumstat:
+    """Per-file line counts for a diff, and the files git would not diff at all.
+
+    ``git diff --numstat`` writes ``-\\t-\\tpath`` when it produced no textual
+    diff for a file: a real binary, or — the reason this is a field and not a
+    dropped line — a path a ``.gitattributes`` entry marks ``-diff``/``binary``.
+    One committed ``*.py -diff`` emptied every ``-U0`` diff while ``--name-only``
+    still listed the files, so each gate saw a plausible file count, an empty
+    touched-line set for every file, and printed a pass. Discarding that marker
+    was what made the suppression invisible, so it is carried instead.
+    """
+
+    counts: Dict[str, Tuple[int, int]]
+    #: relpaths git reported as changed but refused to diff by line.
+    undiffable: FrozenSet[str]
+
+
 def git_diff_numstat(
     repo: Path, diff_scope: str = STAGED, base_ref: str = "main"
-) -> Dict[str, Tuple[int, int]]:
-    """Map relpath -> (added_lines, deleted_lines) for this diff.
+) -> DiffNumstat:
+    """relpath -> (added_lines, deleted_lines) for this diff, plus the undiffable ones.
 
-    Used for "don't make it worse" checks (e.g. file-length caps) that should
-    fire on net growth, not on any touch to an already-oversized file —
+    The counts drive "don't make it worse" checks (e.g. file-length caps) that
+    should fire on net growth, not on any touch to an already-oversized file —
     otherwise a pure cleanup/shrink of a long file would itself get blocked.
     """
     out = _run_git([*_scope_args(diff_scope, base_ref), "--numstat", "--"], repo)
-    result: Dict[str, Tuple[int, int]] = {}
+    counts: Dict[str, Tuple[int, int]] = {}
+    undiffable: Set[str] = set()
     for line in out.splitlines():
         parts = line.split("\t")
         if len(parts) != 3:
             continue
         added, deleted, path = parts
-        try:
-            result[path] = (int(added), int(deleted))
-        except ValueError:
-            continue  # binary file ("-\t-\tpath")
-    return result
+        if added == "-" or deleted == "-":
+            undiffable.add(path)
+            continue
+        counts[path] = (int(added), int(deleted))
+    return DiffNumstat(counts, frozenset(undiffable))
 
 
 def staged_file_text(repo: Path, relpath: str) -> Optional[str]:

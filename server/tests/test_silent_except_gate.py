@@ -241,8 +241,9 @@ def test_repo_and_scope_flags_are_gate_mode():
     assert inv.files == []
 
 
-def test_unknown_scope_falls_back_to_staged():
-    assert checker.parse_argv(["--scope", "nonsense"]).diff_scope == "staged"
+def test_unknown_scope_is_carried_through_to_be_refused_not_coerced():
+    """See the organization gate's twin: a coerced scope read the empty index."""
+    assert checker.parse_argv(["--scope", "nonsense"]).diff_scope == "nonsense"
 
 
 # --------------------------------------------------------------------------- #

@@ -23,11 +23,13 @@ helper or in each gate, and these should not care which.
 
 from __future__ import annotations
 
+import importlib
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
+from unittest import mock
 
 import pytest
 import yaml
@@ -688,3 +690,175 @@ def test_a_gate_script_edited_during_a_stage_is_graded_at_worktree_scope(
 
     assert result.returncode == 1, _out(result)
     assert "planted_check.py" in _out(result)
+
+
+# --------------------------------------------------------------------------- #
+# A workspace file, or the environment, must not be able to empty the diff
+# --------------------------------------------------------------------------- #
+
+
+def _load_script(module_name: str):
+    """Import a gate script by name, with `.lefthook/scripts` on the path.
+
+    Imported rather than exec'd from a spec so it lands in `sys.modules`: its
+    dataclasses resolve their annotations through their own module, and a
+    module that is not registered there raises while building them.
+    """
+    if str(_SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(_SCRIPTS))
+    return importlib.import_module(module_name)
+
+
+@pytest.mark.parametrize("attribute", ["-diff", "binary"])
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_a_gitattributes_entry_cannot_empty_the_diff(
+    repo: Path, gate: list[str], relpath: str, body: str, attribute: str
+) -> None:
+    """One committed workspace file disarmed every gate.
+
+    A repo-root `.gitattributes` marking sources `-diff` (or `binary`) leaves
+    `git diff -U0` with no hunks while `--name-only` still lists the file. The
+    graded-file guard is satisfied — `examined 1 file(s)` — every touched-line
+    set is empty, and the gate exits 0 over a real violation. `--numstat`
+    already reports these as `-\t-\tpath`; discarding that marker is what made
+    the suppression invisible. A file git will not diff by line is a file that
+    must be graded whole, not one reported as graded and clean.
+    """
+    _commit_agent_work(repo, relpath, body)
+    (repo / ".gitattributes").write_text(f"* {attribute}\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "attributes")
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    assert result.returncode == 1, _out(result)
+    assert Path(relpath).name in _out(result)
+
+
+@pytest.mark.parametrize(
+    "scrub",
+    [
+        pytest.param(lambda: _load_script("precommit_git_diff"), id="gate-script"),
+        pytest.param(
+            lambda: importlib.import_module("loregarden.services.git_subprocess"), id="service"
+        ),
+    ],
+)
+def test_the_git_env_scrub_drops_injected_config(scrub) -> None:
+    """`GIT_CONFIG_KEY_n` reaches the `.gitattributes` hole through the environment.
+
+    `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.attributesFile` makes git read
+    attributes from any path the caller names, so the suppression above needs no
+    committed file. `GIT_ALTERNATE_OBJECT_DIRECTORIES` is the same class of
+    binding as `GIT_OBJECT_DIRECTORY`, which was already scrubbed.
+    """
+    module = scrub()
+    injected = {
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "core.attributesFile",
+        "GIT_CONFIG_VALUE_0": "/tmp/attrs",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES": "/tmp/objects",
+    }
+    with mock.patch.dict(os.environ, injected):
+        scrubbed = module.scrubbed_git_env()
+
+    assert not set(injected) & set(scrubbed), sorted(set(injected) & set(scrubbed))
+
+
+# --------------------------------------------------------------------------- #
+# Disjoint history: no fork point is not the same as no such ref
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_disjoint_history_grades_the_branch_rather_than_blocking_every_transition(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """An orphan branch is not an unresolvable trunk.
+
+    `git merge-base` exits non-zero for two different answers: the ref does not
+    exist, and the ref exists but shares no commit with HEAD. Collapsing both to
+    "did not resolve" made every stage transition in such a workspace fail
+    permanently, under a message that named trunk detection instead of the real
+    cause. There is no fork point to diff from, but nothing is shared either —
+    so the whole branch is the change, and the gate grades it.
+    """
+    _git(repo, "checkout", "-q", "--orphan", "orphan-branch")
+    _git(repo, "rm", "-rq", "--cached", ".")
+    for tracked in ("src/pkg/base.py", "client/src/base.ts"):
+        (repo / tracked).unlink()
+    _commit_agent_work(repo, relpath, body)
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    assert result.returncode == 1, _out(result)
+    assert Path(relpath).name in _out(result)
+    assert "did not resolve" not in _out(result), _out(result)
+
+
+# --------------------------------------------------------------------------- #
+# The scope argument itself
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_an_unrecognised_scope_is_refused_rather_than_coerced_to_the_index(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """A typo'd `--scope` silently became `staged` — the same vacuous pass, one argument over.
+
+    At a stage transition the index is empty, so `--scope wortree` examined zero
+    files and exited 0 over a committed violation, in all three gates.
+    """
+    _commit_agent_work(repo, relpath, body)
+
+    result = _run_gate(gate, repo, "--base", "main", scope="wortree")
+
+    assert result.returncode != 0, _out(result)
+    assert "wortree" in _out(result), _out(result)
+    _assert_no_vacuous_pass(result)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_an_explicitly_named_untracked_file_is_graded_whole(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """The `.cjs` mirror decided "no untracked files" instead of deriving it.
+
+    In explicit-file mode `resolveGateScope` hardcoded `includesUntracked:false`
+    where the Python resolver derives it from the scope, so a named untracked
+    file was diffed against HEAD, produced no added lines, and passed — while
+    Python, on identical inputs, graded the whole file and exited 1.
+    """
+    target = repo / relpath
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(body)
+
+    result = _run_gate(gate, repo, "--base", "main", str(target))
+
+    assert result.returncode == 1, _out(result)
+    assert Path(relpath).name in _out(result)
+
+
+@pytest.mark.parametrize(
+    "gate", [PY_ORGANIZATION_GATE, PY_SILENT_EXCEPT_GATE], ids=["py-org", "py-silent-except"]
+)
+def test_a_symlinked_source_file_is_still_graded(
+    repo: Path, gate: list[str], tmp_path: Path
+) -> None:
+    """`resolve()` followed a symlinked module out of the source root.
+
+    The scope filter resolved each candidate before asking whether it sat under
+    the repo's Python root, so a file linked into `src/` resolved to wherever it
+    really lives, failed the test, and was dropped: `examined 0 file(s)`, exit 0,
+    no degraded warning. Resolving the file's *directory* still normalises the
+    symlinked prefix a checkout can sit behind without following the file.
+    """
+    real = tmp_path.parent / "linked_module.py"
+    real.write_text(PY_ORGANIZATION_VIOLATION + PY_SILENT_EXCEPT_VIOLATION)
+    (repo / "src" / "pkg" / "linked.py").symlink_to(real)
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    assert result.returncode == 1, _out(result)
+    assert "linked.py" in _out(result)

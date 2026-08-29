@@ -36,10 +36,10 @@ if str(_LEFTHOOK_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_LEFTHOOK_SCRIPTS))
 
 from precommit_git_diff import (
-    DIFF_SCOPES,
     STAGED,
     GitScopeError,
     git_repo_root,
+    located_path,
     repo_relative_posix,
     resolve_gate_scope,
 )
@@ -517,7 +517,7 @@ _GATE_SCRIPT_DIR_PARTS = (".lefthook", "scripts")
 
 def _is_gate_script(py_file: Path, repo: Path) -> bool:
     try:
-        rel = py_file.resolve().relative_to(repo.resolve())
+        rel = located_path(py_file).relative_to(repo.resolve())
     except ValueError:
         return False
     return rel.parts[: len(_GATE_SCRIPT_DIR_PARTS)] == _GATE_SCRIPT_DIR_PARTS
@@ -544,7 +544,7 @@ def python_files_in_scope(
     return [
         path
         for path in python
-        if source_root in path.resolve().parents or _is_gate_script(path, repo)
+        if source_root in located_path(path).parents or _is_gate_script(path, repo)
     ]
 
 
@@ -690,8 +690,6 @@ def parse_argv(argv: List[str]) -> Invocation:
             if arg.endswith(".py"):
                 files.append(Path(arg))
             index += 1
-    if diff_scope not in DIFF_SCOPES:
-        diff_scope = STAGED
     repo = Path(repo_arg).resolve() if repo_arg else git_repo_root()
     label = "pre-commit" if diff_scope == STAGED and repo_arg is None else "gate"
     return Invocation(files, repo, diff_scope, base_ref, label)

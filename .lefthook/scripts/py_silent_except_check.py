@@ -56,7 +56,6 @@ if str(_LEFTHOOK_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_LEFTHOOK_SCRIPTS))
 
 from precommit_git_diff import (  # noqa: E402 - sys.path is set up just above
-    DIFF_SCOPES,
     STAGED,
     GitScopeError,
     git_repo_root,
@@ -237,8 +236,6 @@ def parse_argv(argv: list[str]) -> Invocation:
             if arg.endswith(".py"):
                 files.append(Path(arg))
             index += 1
-    if diff_scope not in DIFF_SCOPES:
-        diff_scope = STAGED
     repo = Path(repo_arg).resolve() if repo_arg else git_repo_root()
     label = "pre-commit" if diff_scope == STAGED and repo_arg is None else "gate"
     return Invocation(files, repo, diff_scope, base_ref, label)

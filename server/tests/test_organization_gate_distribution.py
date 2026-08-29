@@ -71,8 +71,15 @@ def test_repo_and_scope_flags_are_gate_mode():
     assert inv.files == []
 
 
-def test_unknown_scope_falls_back_to_staged():
-    assert checker.parse_argv(["prog", "--scope", "nonsense"]).diff_scope == "staged"
+def test_unknown_scope_is_carried_through_to_be_refused_not_coerced():
+    """Coercing a typo'd `--scope` to `staged` examined the index and exited 0.
+
+    At a stage transition the index is empty, so `--scope wortree` read nothing
+    over a committed violation. `parse_argv` now reports what it was given and
+    `resolve_gate_scope` raises on it — see
+    `test_gate_scope_visibility.py::test_an_unrecognised_scope_is_refused_...`.
+    """
+    assert checker.parse_argv(["prog", "--scope", "nonsense"]).diff_scope == "nonsense"
 
 
 def test_branch_scope_takes_a_base_ref():
