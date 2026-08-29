@@ -39,8 +39,8 @@ import { useId, useState, type FormEvent } from "react";
 import { useParams } from "react-router-dom";
 
 import { useContainerSettingsWrite } from "../../hooks/useViewLayoutEdit";
-import { asJson } from "../../lib/viewLayouts";
 import { useSidebarWorkspaceSlug } from "../../state/SidebarWorkspaceContext";
+import { paneSettings } from "./paneChrome";
 import "./paneChrome.css";
 import { initialDraft, readDraft, type DraftValue } from "./paneSettingsDraft";
 import type { RegisteredPrimitive } from "./primitives/types";
@@ -66,14 +66,26 @@ export function PaneSettingsEditor({
   const writeSettings = useContainerSettingsWrite(slug, viewId);
   const fieldId = useId();
 
-  const stored = asJson(asJson(container)?.settings) ?? {};
+  const stored = paneSettings(container);
   // Seeded once. Re-deriving from the record on every render would discard the
   // half-typed value the moment any other write to this view landed.
   const [draft, setDraft] = useState(() => initialDraft(primitive.settingsFields, stored));
   const [errors, setErrors] = useState<ReadonlyMap<string, string>>(new Map());
+  // A refusal that belongs to no single field: the write never left. Kept apart
+  // from `errors` because no amount of retyping fixes it.
+  const [formError, setFormError] = useState("");
 
   function setValue(key: string, value: DraftValue) {
     setDraft((previous) => new Map(previous).set(key, value));
+    // A refusal describes the value that was submitted, not the one being
+    // typed. Left standing, "Enter a number." sits under a field that now holds
+    // a number, and `aria-invalid` keeps saying so until the next Save.
+    setErrors((previous) => {
+      if (!previous.has(key)) return previous;
+      const next = new Map(previous);
+      next.delete(key);
+      return next;
+    });
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -81,7 +93,15 @@ export function PaneSettingsEditor({
     const { values, errors: refused } = readDraft(primitive.settingsFields, draft);
     setErrors(refused);
     if (refused.size > 0) return;
-    writeSettings(containerId, primitive.id, values);
+    // Dismissed only if a write actually went out. Both ways of writing nothing
+    // — a primitive the registry cannot resolve, a pane mounted before the
+    // workspace resolved — are silent, and a panel that closed on one of them
+    // would discard the draft while looking exactly like a save that worked.
+    if (!writeSettings(containerId, primitive.id, values)) {
+      setFormError("These settings could not be saved. This pane is not ready to be written to.");
+      return;
+    }
+    setFormError("");
     onDone();
   }
 
@@ -91,8 +111,14 @@ export function PaneSettingsEditor({
         const inputId = `${fieldId}-${field.key}`;
         const helpId = `${inputId}-help`;
         const errorId = `${inputId}-error`;
-        const error = errors.get(field.key);
         const value = draft.get(field.key);
+        // A checkbox has no refusal to describe — `readDraft` reads every
+        // boolean as `true` or `false` and can reject neither — so its
+        // description is the hint alone. Naming `errorId` there would point at
+        // an element that branch never renders, and a dangling
+        // `aria-describedby` is read as nothing at all: the help text goes with
+        // it.
+        const error = field.kind === "boolean" ? undefined : errors.get(field.key);
         // The hint and the refusal both name this input, so a screen reader
         // hears why the field was rejected rather than only that it was.
         const describedBy =
@@ -114,7 +140,9 @@ export function PaneSettingsEditor({
                 {/* The label is the control's accessible name, not decoration
                     beside it — a checkbox named only by adjacent text has no
                     name at all, and no hit area beyond 13 pixels. */}
-                <label htmlFor={inputId}>{field.label}</label>
+                <label className="field-label" htmlFor={inputId}>
+                  {field.label}
+                </label>
               </div>
               {field.help === undefined ? null : (
                 <p className="pane-settings-help" id={helpId}>
@@ -154,6 +182,11 @@ export function PaneSettingsEditor({
           </div>
         );
       })}
+      {formError === "" ? null : (
+        <p className="pane-settings-error" role="alert">
+          {formError}
+        </p>
+      )}
       <div className="pane-settings-actions">
         <button type="button" className="btn-secondary btn-compact" onClick={onDone}>
           Cancel

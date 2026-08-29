@@ -177,7 +177,11 @@ export function PaneHeader({
         {/* Zone 3 — arrangement. The arrangement's own controls. */}
         {buttons}
       </div>
-      {editing && primitive !== undefined ? (
+      {/* Gated on the same condition as the button that opens it. A primitive
+          swapped underneath an open panel can leave `editing` true against a
+          schema with no fields, and a form with no inputs whose Save writes
+          bare defaults is the control-that-lies this ticket exists to remove. */}
+      {editing && configurable && primitive !== undefined ? (
         <div className="pane-settings-panel">
           {/* Keyed by the primitive: a pick made while the editor was open is a
               different schema, and a form that kept its draft across that would

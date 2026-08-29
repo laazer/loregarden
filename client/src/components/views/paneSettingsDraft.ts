@@ -20,9 +20,18 @@ import type { SettingsField } from "./primitives/types";
  */
 export type DraftValue = string | boolean;
 
-/** The stored value of `field`, as its input wants to receive it. */
+/**
+ * The stored value of `field`, as its input wants to receive it.
+ *
+ * `hasOwn` before the read, because a field key is authored text and a bare
+ * `stored[key]` reaches `Object.prototype`: a field keyed `constructor` on a
+ * container that never stored one would otherwise seed its input from `Object`
+ * itself. The `typeof` guards below happen to reject that today, which is luck
+ * rather than a design — and luck that runs out the moment a field's kind
+ * matches what the prototype hands back.
+ */
 function draftValue(field: SettingsField, stored: Record<string, unknown>): DraftValue {
-  const value = stored[field.key];
+  const value = Object.hasOwn(stored, field.key) ? stored[field.key] : undefined;
   if (field.kind === "boolean") return typeof value === "boolean" ? value : field.default;
   if (field.kind === "number") {
     // A stored non-finite number is a value 444 already established the server

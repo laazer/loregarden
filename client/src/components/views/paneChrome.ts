@@ -37,17 +37,41 @@ export const ICON_BUTTON = "btn-secondary btn-compact btn-icon-only";
 export const EMPTY_PANE_TITLE = "Empty pane";
 
 /**
+ * A stored container's settings map, narrowed.
+ *
+ * One spelling of `asJson(asJson(container)?.settings) ?? {}`, which the title,
+ * the primitive lookup, the pane and the settings editor all need. The layout
+ * blob is `unknown` by contract, and an array or a `null` reaching a `Record`
+ * read is the bug the narrowing exists to stop — four times over, if each
+ * reader re-derives it.
+ */
+export function paneSettings(container: unknown): Record<string, unknown> {
+  return asJson(asJson(container)?.settings) ?? {};
+}
+
+/** The `primitive_id` a container stores, when it stores a usable one. */
+export function panePrimitiveId(container: unknown): string {
+  const primitiveId = paneSettings(container).primitive_id;
+  return typeof primitiveId === "string" ? primitiveId : "";
+}
+
+/**
  * The registry entry a stored container names, when this build still has one.
  *
- * `undefined` covers three different panes that a header treats the same way:
- * one that has not picked a primitive yet, one whose stored id is not a string,
- * and one written by a build that had a primitive this one does not. None of
- * them has a name to show or a schema to edit.
+ * `undefined` covers three panes: one that has not picked a primitive yet, one
+ * whose stored id is not a string, and one written by a build that had a
+ * primitive this one does not. None of them has a schema to edit — which is why
+ * a header with no entry offers no settings control.
+ *
+ * `paneTitle` deliberately does *not* collapse those three: it separates "no
+ * primitive" from "a primitive this build lost", because a pane naming a
+ * missing primitive is not an empty pane and must not read as one. Both are
+ * built on the two lookups above, so that distinction stays a decision rather
+ * than becoming a drift.
  */
 export function panePrimitive(container: unknown): RegisteredPrimitive | undefined {
-  const settings = asJson(asJson(container)?.settings) ?? {};
-  const primitiveId = settings.primitive_id;
-  if (typeof primitiveId !== "string" || primitiveId === "") return undefined;
+  const primitiveId = panePrimitiveId(container);
+  if (primitiveId === "") return undefined;
   return getPrimitive(primitiveId);
 }
 
@@ -58,8 +82,6 @@ export function panePrimitive(container: unknown): RegisteredPrimitive | undefin
  * "Terminal" goes stale the moment the entry is renamed.
  */
 export function paneTitle(container: unknown): string {
-  const settings = asJson(asJson(container)?.settings) ?? {};
-  const primitiveId = typeof settings.primitive_id === "string" ? settings.primitive_id : "";
-  if (primitiveId === "") return EMPTY_PANE_TITLE;
-  return getPrimitive(primitiveId)?.displayName ?? "Unknown contents";
+  if (panePrimitiveId(container) === "") return EMPTY_PANE_TITLE;
+  return panePrimitive(container)?.displayName ?? "Unknown contents";
 }

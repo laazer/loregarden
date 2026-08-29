@@ -16,7 +16,12 @@ import type { CSSProperties } from "react";
 import { PrimitiveErrorBoundary } from "./PrimitiveErrorBoundary";
 import { runLedgerPrimitive } from "./runLedgerPrimitive";
 import { terminalPrimitive } from "./terminalPrimitive";
-import type { ContainerKind, RegisteredPrimitive, ViewContainer } from "./types";
+import type {
+  ContainerKind,
+  RegisteredPrimitive,
+  SettingsField,
+  ViewContainer,
+} from "./types";
 import { webEmbedPrimitive } from "./webEmbedPrimitive";
 
 export const CONTAINER_PRIMITIVES: RegisteredPrimitive[] = [
@@ -56,19 +61,43 @@ export function getPrimitive(id: string): RegisteredPrimitive | undefined {
  *
  * Returns `undefined` for an id the registry does not know, on the same
  * reasoning as `getPrimitive`: the caller's id can come from stored text.
+ *
+ * The composition itself is `composeSettings`, exported and separately tested:
+ * no registered primitive declares a `__proto__` or `primitive_id` field, so
+ * the two rules above have no reachable path through this function and would
+ * otherwise be asserted nowhere.
  */
+export function composeSettings(
+  fields: SettingsField[],
+  values: ReadonlyMap<string, unknown>,
+  primitiveId: string,
+): Record<string, unknown> {
+  const settings = Object.fromEntries(
+    fields.map((field) => [
+      field.key,
+      values.has(field.key) ? values.get(field.key) : field.default,
+    ]),
+  );
+  // `primitive_id` last, so a field that declares that key cannot overwrite the
+  // id with a user-typed string and store a container nothing can mount.
+  //
+  // Spread rather than assignment, for the same reason `fromEntries` is used
+  // above: both *define* their keys. `settings["__proto__"] = x` instead hits
+  // `Object.prototype`'s setter, is silently swallowed, and the declared field
+  // never reaches the wire — with no error raised anywhere.
+  return { ...settings, primitive_id: primitiveId };
+}
+
 export function containerWithSettings(
   primitiveId: string,
   values: ReadonlyMap<string, unknown>,
 ): ViewContainer | undefined {
   const entry = getPrimitive(primitiveId);
   if (entry === undefined) return undefined;
-
-  const settings: Record<string, unknown> = { primitive_id: entry.id };
-  for (const field of entry.settingsFields) {
-    settings[field.key] = values.has(field.key) ? values.get(field.key) : field.default;
-  }
-  return { kind: entry.containerKind, settings };
+  return {
+    kind: entry.containerKind,
+    settings: composeSettings(entry.settingsFields, values, entry.id),
+  };
 }
 
 /** The container a freshly picked primitive becomes: its schema's defaults. */

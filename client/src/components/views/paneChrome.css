@@ -331,10 +331,12 @@
   min-width: 0;
 }
 
-.pane-settings-check label {
-  font-size: 11.5px;
-  color: var(--txm);
-  font-weight: 500;
+/* The checkbox's name is `.field-label` like every other field's, so the two
+   labels in one form cannot drift apart. Only what is genuinely this panel's
+   layout is said here: the label sits beside its box rather than above it, so
+   the stacking margin comes off. */
+.pane-settings-check .field-label {
+  margin-bottom: 0;
   cursor: pointer;
   min-width: 0;
 }
