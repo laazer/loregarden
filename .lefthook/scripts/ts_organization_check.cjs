@@ -205,6 +205,14 @@ function errorNarrowingErrors(filePath, ast, lines, added, repoRoot) {
   return found;
 }
 
+/**
+ * A scope git could not resolve — an unresolvable `--base` exits 128 with an
+ * empty stdout, indistinguishable from a clean diff. Swallowing it let this
+ * gate report a pass over a scope it never resolved; mirrors
+ * precommit_git_diff.py's `GitScopeError`.
+ */
+class GitScopeError extends Error {}
+
 function git(args, cwd) {
   try {
     return execFileSync("git", args, {
@@ -212,8 +220,9 @@ function git(args, cwd) {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
-  } catch {
-    return "";
+  } catch (err) {
+    const detail = String(err.stderr || err.stdout || err.message).trim();
+    throw new GitScopeError(`\`git ${args.join(" ")}\` failed in ${cwd}: ${detail}`);
   }
 }
 
@@ -222,6 +231,25 @@ function scopeArgs(diffScope, baseRef) {
   if (diffScope === "worktree") return ["HEAD"];
   if (diffScope === "branch") return [`${baseRef}...HEAD`];
   return ["--cached"];
+}
+
+/**
+ * False in a repository with no commits yet — an unborn HEAD. `git diff HEAD`
+ * cannot resolve there, but a brand-new workspace is not a scope the gate
+ * failed to resolve: every file in it is untracked. Mirrors
+ * precommit_git_diff.py's `git_has_head`.
+ */
+function hasHead(repoRoot) {
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", "HEAD"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function untrackedPaths(repoRoot) {
@@ -236,15 +264,43 @@ function untrackedPaths(repoRoot) {
  * Untracked files are included under `worktree` for the same reason the Python
  * gate includes them: a new file an agent just wrote is the least reviewed code
  * in the change, and `git diff` never lists it.
+ *
+ * Every path, not just the TypeScript ones — `resolveScope` needs to know
+ * whether the *tree* is clean, and a run that only touched Python is not a
+ * clean tree.
  */
 function changedPaths(repoRoot, diffScope, baseRef) {
+  if (diffScope === "worktree" && !hasHead(repoRoot)) {
+    return [...new Set(untrackedPaths(repoRoot))];
+  }
   const out = git(
     ["diff", ...scopeArgs(diffScope, baseRef), "--name-only", "--diff-filter=ACMR"],
     repoRoot,
   );
   const paths = out.split("\n").map((l) => l.trim()).filter(Boolean);
   if (diffScope === "worktree") paths.push(...untrackedPaths(repoRoot));
-  return [...new Set(paths)].filter((p) => /\.(ts|tsx)$/.test(p));
+  return [...new Set(paths)];
+}
+
+/**
+ * What this run should examine, and never "nothing" — mirrors
+ * precommit_git_diff.py's `resolve_scope`. A driver that commits the ticket
+ * worktree to satisfy the worktree-retire guard empties the `HEAD` diff, so a
+ * clean tree falls back to the branch diff that still holds that commit.
+ */
+function resolveScope(repoRoot, diffScope, baseRef) {
+  const paths = changedPaths(repoRoot, diffScope, baseRef);
+  if (diffScope === "worktree" && paths.length === 0 && hasHead(repoRoot)) {
+    return {
+      diffScope: "branch",
+      paths: changedPaths(repoRoot, "branch", baseRef),
+      description: `branch diff ${baseRef}...HEAD (worktree is clean)`,
+    };
+  }
+  let description = "staged changes";
+  if (diffScope === "worktree") description = "worktree changes vs HEAD";
+  else if (diffScope === "branch") description = `branch diff ${baseRef}...HEAD`;
+  return { diffScope, paths, description };
 }
 
 function stagedAdditions(repoRel, repoRoot, diffScope, baseRef, isUntracked, lineCount) {
@@ -417,55 +473,75 @@ function parseArgv(argv) {
   return { files, repoRoot, diffScope, baseRef, label };
 }
 
-const { files, repoRoot, diffScope, baseRef, label } = parseArgv(process.argv.slice(2));
+function run() {
+  const { files, repoRoot, diffScope, baseRef, label } = parseArgv(process.argv.slice(2));
 
-// Gate mode: no explicit list, so the diff says what to read — confined to the
-// repo's TypeScript source root, mirroring the lefthook glob.
-const sourceRoot = tsSourceRoot(repoRoot);
-const args =
-  files.length > 0
-    ? files
-    : changedPaths(repoRoot, diffScope, baseRef)
-        .map((rel) => path.resolve(repoRoot, rel))
-        .filter((full) => full.startsWith(`${sourceRoot}${path.sep}`));
+  // Gate mode: no explicit list, so the diff says what to read — confined to the
+  // repo's TypeScript source root, mirroring the lefthook glob.
+  const sourceRoot = tsSourceRoot(repoRoot);
+  // An explicit file list (lefthook) means the caller already scoped this run.
+  const scope =
+    files.length > 0
+      ? { diffScope, paths: [], description: "staged changes" }
+      : resolveScope(repoRoot, diffScope, baseRef);
+  const args =
+    files.length > 0
+      ? files
+      : scope.paths
+          .filter((p) => /\.(ts|tsx)$/.test(p))
+          .map((rel) => path.resolve(repoRoot, rel))
+          .filter((full) => full.startsWith(`${sourceRoot}${path.sep}`));
 
-if (args.length === 0) {
-  process.exit(0);
-}
+  console.log(`${label}: examined ${args.length} file(s) — ${scope.description}`);
+  if (args.length === 0) {
+    return 0;
+  }
 
-const untracked = new Set(
-  diffScope === "worktree" ? untrackedPaths(repoRoot).map((p) => path.resolve(repoRoot, p)) : [],
-);
-const changedSet = new Set(args.map((a) => path.resolve(a)));
-const catalog = buildCatalog(changedSet, repoRoot);
-
-for (const filePath of args) {
-  if (!fs.existsSync(filePath)) continue;
-  const content = fs.readFileSync(filePath, "utf8");
-  const lines = content.split("\n");
-  const repoRel = path.relative(repoRoot, path.resolve(filePath));
-  const { added, addedCount, deletedCount } = stagedAdditions(
-    repoRel,
-    repoRoot,
-    diffScope,
-    baseRef,
-    untracked.has(path.resolve(filePath)),
-    lines.length,
+  const untracked = new Set(
+    scope.diffScope === "worktree"
+      ? untrackedPaths(repoRoot).map((p) => path.resolve(repoRoot, p))
+      : [],
   );
-  const netGrowing = addedCount > deletedCount;
-  errors.push(...checkFile(filePath, content, lines, { added, netGrowing, repoRoot }));
-  if (!isTestFile(filePath)) {
-    errors.push(...crossDryErrors(filePath, content, lines, catalog));
+  const changedSet = new Set(args.map((a) => path.resolve(a)));
+  const catalog = buildCatalog(changedSet, repoRoot);
+
+  for (const filePath of args) {
+    if (!fs.existsSync(filePath)) continue;
+    const content = fs.readFileSync(filePath, "utf8");
+    const lines = content.split("\n");
+    const repoRel = path.relative(repoRoot, path.resolve(filePath));
+    const { added, addedCount, deletedCount } = stagedAdditions(
+      repoRel,
+      repoRoot,
+      scope.diffScope,
+      baseRef,
+      untracked.has(path.resolve(filePath)),
+      lines.length,
+    );
+    const netGrowing = addedCount > deletedCount;
+    errors.push(...checkFile(filePath, content, lines, { added, netGrowing, repoRoot }));
+    if (!isTestFile(filePath)) {
+      errors.push(...crossDryErrors(filePath, content, lines, catalog));
+    }
   }
+
+  if (errors.length > 0) {
+    console.error(`${label}: TypeScript organization check failed:`);
+    for (const err of errors) {
+      console.error(` - ${err}`);
+    }
+    return 1;
+  }
+
+  console.log(`${label}: TypeScript organization checks passed.`);
+  return 0;
 }
 
-if (errors.length > 0) {
-  console.error(`${label}: TypeScript organization check failed:`);
-  for (const err of errors) {
-    console.error(` - ${err}`);
-  }
+try {
+  process.exit(run());
+} catch (err) {
+  if (!(err instanceof GitScopeError)) throw err;
+  // A scope the gate could not resolve is not a scope it examined.
+  console.error(`gate: cannot determine what to examine: ${err.message}`);
   process.exit(1);
 }
-
-console.log(`${label}: TypeScript organization checks passed.`);
-process.exit(0);

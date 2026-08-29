@@ -15,10 +15,21 @@ from __future__ import annotations
 
 import re
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+
+class GitScopeError(RuntimeError):
+    """git could not answer what this run should examine.
+
+    An unresolvable ``--base`` makes ``git diff`` exit 128 with nothing on
+    stdout, which is byte-identical to a clean diff. Returning that empty string
+    let a gate report a pass over a scope it never resolved, so the failure is
+    raised instead and the gates turn it into a loud non-zero exit.
+    """
 
 
 def git_repo_root() -> Optional[Path]:
@@ -58,17 +69,22 @@ def _scope_args(diff_scope: str, base_ref: str) -> List[str]:
     return ["--cached"]
 
 
-def _run_git(args: List[str], repo: Path) -> str:
+def _git(command: List[str], repo: Path) -> str:
     proc = subprocess.run(
-        ["git", "diff", *args],
+        ["git", *command],
         cwd=repo,
         capture_output=True,
         text=True,
         check=False,
     )
     if proc.returncode != 0:
-        return ""
+        detail = proc.stderr.strip() or proc.stdout.strip() or f"exit status {proc.returncode}"
+        raise GitScopeError(f"`git {' '.join(command)}` failed in {repo}: {detail}")
     return proc.stdout
+
+
+def _run_git(args: List[str], repo: Path) -> str:
+    return _git(["diff", *args], repo)
 
 
 def git_diff_cached(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") -> str:
@@ -83,25 +99,93 @@ def git_untracked_paths(repo: Path) -> List[str]:
     agent's new module is exactly the code that has never been reviewed, and
     scoping it out would report a clean pass over the only new file in the run.
     """
+    out = _git(["ls-files", "--others", "--exclude-standard"], repo)
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def git_has_head(repo: Path) -> bool:
+    """False in a repository with no commits yet — an unborn HEAD.
+
+    `git diff HEAD` cannot resolve there, but a brand-new workspace is not a
+    scope the gate failed to resolve: every file in it is untracked, which the
+    worktree scope already collects. Exit 1 from `rev-parse --verify` is that
+    command's answer to the question, not a failure being swallowed.
+    """
     proc = subprocess.run(
-        ["git", "ls-files", "--others", "--exclude-standard"],
+        ["git", "rev-parse", "--verify", "--quiet", "HEAD"],
         cwd=repo,
         capture_output=True,
         text=True,
         check=False,
     )
-    if proc.returncode != 0:
-        return []
-    return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    return proc.returncode == 0
 
 
 def git_changed_paths(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") -> List[str]:
     """Repo-relative paths this diff touches, for callers given no explicit file list."""
+    if diff_scope == WORKTREE and not git_has_head(repo):
+        return sorted(set(git_untracked_paths(repo)))
     out = _run_git([*_scope_args(diff_scope, base_ref), "--name-only", "--diff-filter=ACMR"], repo)
     paths = [line.strip() for line in out.splitlines() if line.strip()]
     if diff_scope == WORKTREE:
         paths.extend(git_untracked_paths(repo))
     return sorted(set(paths))
+
+
+@dataclass(frozen=True)
+class ResolvedScope:
+    """What a gate run actually ended up reading, and where it came from.
+
+    ``diff_scope`` is the scope every downstream diff must use — not the one the
+    caller asked for. When the worktree fallback fires, scoping the line-level
+    diffs to ``HEAD`` would hand every file an empty touched-line set and filter
+    out precisely the violations the fallback went looking for.
+    """
+
+    diff_scope: str
+    base_ref: str
+    paths: List[str]
+    fell_back: bool
+
+    def describe(self) -> str:
+        if self.fell_back:
+            return f"branch diff {self.base_ref}...HEAD (worktree is clean)"
+        if self.diff_scope == WORKTREE:
+            return "worktree changes vs HEAD"
+        if self.diff_scope == BRANCH:
+            return f"branch diff {self.base_ref}...HEAD"
+        return "staged changes"
+
+
+def resolve_scope(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") -> ResolvedScope:
+    """Work out what a gate run should examine, and never let that be "nothing".
+
+    ``worktree`` diffs against ``HEAD``. Any driver that commits the ticket
+    worktree before settling a stage — which the external harness must, because
+    the worktree-retire guard refuses to remove a tree holding uncommitted work
+    — empties that diff. The gate then matched zero files and exited 0, so the
+    commit that satisfied one safeguard silently disarmed the other.
+
+    A clean worktree therefore falls back to the branch diff, which still holds
+    the very commit that emptied the worktree diff. It is a fallback rather than
+    a failure because a stage that legitimately changes no code (plan, review,
+    spec) must not block the transition; when git itself cannot resolve the
+    scope, `_git` raises instead and the run fails loudly.
+    """
+    paths = git_changed_paths(repo, diff_scope, base_ref)
+    if diff_scope == WORKTREE and not paths and git_has_head(repo):
+        return ResolvedScope(BRANCH, base_ref, git_changed_paths(repo, BRANCH, base_ref), True)
+    return ResolvedScope(diff_scope, base_ref, paths, False)
+
+
+def examined_line(label: str, count: int, description: str) -> str:
+    """The one line every gate run prints, pass or fail.
+
+    A gate that printed nothing was indistinguishable from a gate that never
+    ran, and "passed" over zero files read exactly like "passed" over reviewed
+    ones. The count is what separates them.
+    """
+    return f"{label}: examined {count} file(s) — {description}"
 
 
 def parse_staged_additions(diff: str) -> Dict[str, List[Tuple[int, str]]]:

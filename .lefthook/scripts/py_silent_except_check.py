@@ -58,11 +58,14 @@ from precommit_git_diff import (  # noqa: E402 - sys.path is set up just above
     DIFF_SCOPES,
     STAGED,
     WORKTREE,
-    git_changed_paths,
+    GitScopeError,
+    ResolvedScope,
+    examined_line,
     git_diff_cached,
     git_repo_root,
     git_untracked_paths,
     parse_staged_additions,
+    resolve_scope,
 )
 from py_organization_check import python_source_root  # noqa: E402 - same
 
@@ -246,7 +249,7 @@ def parse_argv(argv: list[str]) -> Invocation:
     return Invocation(files, repo, diff_scope, base_ref, label)
 
 
-def _gate_candidates(invocation: Invocation, repo: Path) -> list[Path]:
+def _gate_candidates(repo: Path, scope: ResolvedScope) -> list[Path]:
     """Changed Python files under the repo's own source root.
 
     Mirrors the lefthook glob: without it the gate grades build tooling and
@@ -254,11 +257,7 @@ def _gate_candidates(invocation: Invocation, repo: Path) -> list[Path]:
     code.
     """
     source_root = python_source_root(repo).resolve()
-    changed = (
-        repo / rel
-        for rel in git_changed_paths(repo, invocation.diff_scope, invocation.base_ref)
-        if rel.endswith(".py")
-    )
+    changed = (repo / rel for rel in scope.paths if rel.endswith(".py"))
     return [path for path in changed if source_root in path.resolve().parents]
 
 
@@ -280,23 +279,39 @@ def _repo_relative_posix(path: Path, repo: Path | None) -> str:
 
 def main(argv: list[str]) -> int:
     invocation = parse_argv(argv)
+    try:
+        return _check(invocation)
+    except GitScopeError as exc:
+        # A scope the gate could not resolve is not a scope it examined.
+        print(f"{invocation.label}: cannot determine what to examine: {exc}")
+        return 1
+
+
+def _check(invocation: Invocation) -> int:
     repo = invocation.repo
     candidates = invocation.files
+    # Explicit file list (lefthook): the caller already scoped this run.
+    diff_scope = invocation.diff_scope
+    description = "staged changes"
     if not candidates and repo is not None:
         # Gate mode: no explicit file list, so the diff itself says what to read.
-        candidates = _gate_candidates(invocation, repo)
+        scope = resolve_scope(repo, invocation.diff_scope, invocation.base_ref)
+        diff_scope = scope.diff_scope
+        description = scope.describe()
+        candidates = _gate_candidates(repo, scope)
     candidates = [path for path in candidates if path.suffix == ".py" and not _is_exempt(path)]
+    print(examined_line(invocation.label, len(candidates), description))
     if not candidates:
         return 0
 
     additions_map: dict[str, set[int]] = {}
     untracked: set[str] = set()
     if repo is not None:
-        diff = git_diff_cached(repo, invocation.diff_scope, invocation.base_ref)
+        diff = git_diff_cached(repo, diff_scope, invocation.base_ref)
         additions_map = {
             path: {ln for ln, _ in items} for path, items in parse_staged_additions(diff).items()
         }
-        if invocation.diff_scope == WORKTREE:
+        if diff_scope == WORKTREE:
             untracked = set(git_untracked_paths(repo))
 
     failures: list[str] = []
