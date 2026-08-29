@@ -40,6 +40,18 @@ export function TerminalWorkspace({
   const [activeTabId, setActiveTabId] = useState(() => tabs[0].id);
   const wasVisible = useRef(visible);
   const nextLabelNumber = useRef(2);
+  const tabRefs = useRef(new Map<number, HTMLDivElement>());
+
+  /**
+   * The tab strip scrolls horizontally rather than wrapping (see
+   * TerminalWorkspace.css), and its scrollbar is hidden — so a new or
+   * newly-active tab past the visible edge is not just off-screen, it is
+   * invisible with no affordance that it exists. Every activation carries the
+   * strip to it.
+   */
+  useEffect(() => {
+    tabRefs.current.get(activeTabId)?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [activeTabId]);
 
   useEffect(() => {
     const opening = visible && !wasVisible.current;
@@ -118,7 +130,14 @@ export function TerminalWorkspace({
           {tabs.map((tab) => {
             const active = tab.id === activeTabId;
             return (
-              <div className={`terminal-tab${active ? " is-active" : ""}`} key={tab.id}>
+              <div
+                className={`terminal-tab${active ? " is-active" : ""}`}
+                key={tab.id}
+                ref={(el) => {
+                  if (el) tabRefs.current.set(tab.id, el);
+                  else tabRefs.current.delete(tab.id);
+                }}
+              >
                 <button
                   type="button"
                   className="terminal-tab-select"

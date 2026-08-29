@@ -13,7 +13,7 @@
  * to rove between and is one stop on its own.
  */
 
-import type { DragEvent, KeyboardEvent, ReactNode } from "react";
+import type { DragEvent, KeyboardEvent, MouseEvent, ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 
 import { viewPath } from "../lib/appNavigation";
@@ -25,6 +25,19 @@ const VIEW_KIND_LABELS: Record<ViewKind, string> = {
   flex_grid: "Grid",
   canvas: "Canvas",
 };
+
+/**
+ * A row's link keeps focus after it navigates — clicking it does not blur it
+ * the way clicking away does — and the rail reads focus as a reason to stay
+ * expanded (see `AppSidebar`'s `focusWithin`). Left alone, that pins the rail
+ * open until something else on the page steals focus, well after the row that
+ * caused it is gone. Blurring on click is scoped to just the row link: the
+ * footer's own controls (the pin menu, in particular) still rely on focus to
+ * stay open while a keyboard user is working through them.
+ */
+function blurOnClick(event: MouseEvent<HTMLAnchorElement>) {
+  event.currentTarget.blur();
+}
 
 /**
  * Native HTML5 drag, the only reorder precedent in this app. It is pointer-only
@@ -149,6 +162,7 @@ export function ToolRow({ page, active }: { page: SidebarPageDef; active: boolea
         to={page.path}
         end={page.path === "/"}
         className={`app-sidebar-link${active ? " app-sidebar-link--active" : ""}`}
+        onClick={blurOnClick}
       >
         {active ? <span className="app-sidebar-bar" aria-hidden /> : null}
         <span className="app-sidebar-icon">{page.icon}</span>
@@ -228,6 +242,7 @@ export function ViewRow({
         to={viewPath(view.id)}
         aria-label={view.title}
         className={`app-sidebar-link${active ? " app-sidebar-link--active" : ""}`}
+        onClick={blurOnClick}
       >
         {active ? <span className="app-sidebar-bar" aria-hidden /> : null}
         <span className="app-sidebar-icon">
