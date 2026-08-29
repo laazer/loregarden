@@ -5,7 +5,7 @@
   padding: 28px 36px 40px;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
 }
 
 .home-header {
@@ -117,20 +117,28 @@
   background: var(--bg3);
 }
 
-.home-cards {
+.home-board {
+  flex: 1 1 auto;
+  min-height: 380px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr) minmax(360px, 1.5fr);
   gap: 14px;
+  align-items: stretch;
 }
 
 .home-card {
   display: flex;
   flex-direction: column;
-  min-height: 220px;
+  min-height: 380px;
   border: 1px solid var(--bd);
   border-radius: 14px;
   background: var(--bg1);
   overflow: hidden;
+}
+
+.home-card--status {
+  flex: none;
+  min-height: 0;
 }
 
 .home-card-head {
@@ -147,6 +155,13 @@
   font-family: var(--dp);
   font-size: 15px;
   font-weight: 600;
+}
+
+.home-card-head-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
 }
 
 .home-card-count {
@@ -166,6 +181,7 @@
   flex-direction: column;
   gap: 2px;
   padding: 8px;
+  overflow: auto;
 }
 
 .home-card-foot {
@@ -182,6 +198,11 @@
   font-size: 12px;
   padding: 7px 10px;
   cursor: pointer;
+}
+
+.home-card-action--inline {
+  width: auto;
+  padding: 5px 10px;
 }
 
 .home-card-action:hover {
@@ -244,16 +265,21 @@
   font-size: 11px;
 }
 
-/* Two stat groups stacked; the card is a readout, not a list of rows. */
+/* Full-width strip: two groups of four, so the labels actually fit. */
 .home-status-body {
-  gap: 12px;
-  padding: 12px 14px;
+  display: flex;
+  gap: 20px 32px;
+  padding: 16px 18px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .home-status-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .home-status-label {
@@ -268,33 +294,34 @@
 .home-status-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  gap: 8px;
   margin: 0;
+  width: 100%;
 }
 
 .home-stat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 12px 14px;
   border: 1px solid var(--bd);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--bg2);
   min-width: 0;
+  min-height: 72px;
 }
 
 .home-stat dt {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--txl);
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .home-stat dd {
   margin: 0;
   font-family: var(--mono);
-  font-size: 18px;
+  font-size: 26px;
   line-height: 1.1;
   color: var(--tx);
 }
@@ -312,14 +339,26 @@
 }
 
 .home-activity {
+  display: flex;
+  flex-direction: column;
+  min-height: 380px;
   border: 1px solid var(--bd);
   border-radius: 14px;
   background: var(--bg1);
+  overflow: hidden;
+}
+
+.home-activity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--bd);
 }
 
 .home-activity-head h2 {
-  margin: 0 0 10px;
+  margin: 0;
   font-family: var(--dp);
   font-size: 15px;
   font-weight: 600;
@@ -328,22 +367,29 @@
 .home-activity-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 8px 8px;
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .home-activity-item {
-  border-top: 1px solid var(--bd);
+  border-bottom: 1px solid var(--bd);
+}
+
+.home-activity-item:last-child {
+  border-bottom: none;
 }
 
 .home-activity-row {
   display: grid;
-  grid-template-columns: 88px minmax(120px, 1fr) minmax(0, 2fr);
+  grid-template-columns: 118px minmax(0, 1fr);
   gap: 12px;
-  align-items: center;
+  align-items: start;
   width: 100%;
-  padding: 9px 4px;
+  padding: 10px 8px;
   font-size: 12.5px;
   background: none;
   border: none;
@@ -371,10 +417,12 @@ button.home-activity-row:hover {
   color: var(--txl);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  padding-top: 2px;
 }
 
 .home-run-status--running,
-.home-run-status--queued {
+.home-run-status--queued,
+.home-run-status--awaiting_permission {
   color: var(--aml);
 }
 
@@ -392,12 +440,45 @@ button.home-activity-row:hover {
 .home-activity-main {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  min-width: 0;
+}
+
+.home-activity-ticket {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--tx);
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+}
+
+.home-activity-ticket-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.home-activity-ticket-id {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ac2);
+}
+
+.home-activity-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
   min-width: 0;
 }
 
 .home-activity-agent {
-  color: var(--tx);
+  color: var(--txm);
   font-weight: 500;
 }
 
@@ -407,21 +488,25 @@ button.home-activity-row:hover {
   font-size: 11px;
 }
 
-.home-activity-ticket {
-  color: var(--txm);
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .home-activity-cmd {
-  color: var(--txm);
+  color: var(--txl);
   font-family: var(--mono);
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+@media (max-width: 1100px) {
+  .home-board {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .home-activity {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 980px) {
@@ -429,7 +514,7 @@ button.home-activity-row:hover {
     padding: 20px 18px 32px;
   }
 
-  .home-cards {
+  .home-board {
     grid-template-columns: 1fr;
   }
 
@@ -437,11 +522,11 @@ button.home-activity-row:hover {
     grid-template-columns: 1fr;
   }
 
-  .home-activity-row {
-    grid-template-columns: 72px 1fr;
+  .home-status-body {
+    flex-direction: column;
   }
 
-  .home-activity-cmd {
-    grid-column: 1 / -1;
+  .home-activity-row {
+    grid-template-columns: 96px 1fr;
   }
 }

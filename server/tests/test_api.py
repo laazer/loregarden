@@ -170,10 +170,13 @@ def test_start_run_failure_blocks_ticket(client: TestClient, monkeypatch):
 def test_runs_api_after_start(client: TestClient):
     ticket_id = _ticket_id_by_external_id(client, "04-workflow-template-overrides")
     client.post(f"/api/tickets/{ticket_id}/start", json={"manual": True})
+    ticket = _ticket_detail(client, ticket_id)
     runs = client.get(f"/api/runs?ticket_id={ticket_id}").json()
     assert runs
     assert runs[0]["status"] == "succeeded"
     assert "local_runner" in runs[0]["command"]
+    assert runs[0]["ticket_title"] == ticket["title"]
+    assert runs[0]["ticket_external_id"] == ticket["external_id"]
     detail = client.get(f"/api/runs/{runs[0]['id']}").json()
     assert detail["run_code"] == runs[0]["run_code"]
 
