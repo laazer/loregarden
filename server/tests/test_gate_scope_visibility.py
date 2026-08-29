@@ -371,6 +371,63 @@ def test_unresolvable_base_at_branch_scope_never_reports_zero_files_and_success(
     _assert_no_vacuous_pass(result)
 
 
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_an_unresolvable_base_with_a_stray_file_still_fails_loudly(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """The production default, and the shape the "nothing examined" guard missed.
+
+    `default.yaml`, `blobert.yaml` and `loregarden.yaml` pass no `--base`, so a
+    workspace whose trunk is not `main` degrades to worktree-vs-HEAD on every
+    run. Guarding that fallback on the *raw path list* meant one stray file
+    nobody grades — a scratch note, a log — was enough to make it look like a
+    scope with content, and all three gates printed `examined 0 file(s)` and
+    exited 0 over committed violations they never read.
+    """
+    _commit_agent_work(repo, relpath, body)
+    (repo / "scratch-note.txt").write_text("left behind by an agent\n")
+
+    result = _run_gate(gate, repo, "--base", "no-such-base-ref")
+
+    assert result.returncode != 0, _out(result)
+    assert "no-such-base-ref" in _out(result)
+    _assert_no_vacuous_pass(result)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_an_ambient_git_dir_does_not_redirect_the_gate(
+    repo: Path, gate: list[str], relpath: str, body: str, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """GIT_DIR beats `cwd`, so an inherited one aims every gate at another repo.
+
+    The control plane runs these gates as subprocesses, and anything nested
+    inside a git hook — or a worktree push — carries GIT_DIR. Pointed at an
+    unrelated repository the gate resolves that repo's scope instead, examines
+    nothing of the workspace it was handed, and exits 0.
+    """
+    other = tmp_path_factory.mktemp("other-repo")
+    _git(other, "init", "-q", "-b", "main", ".")
+    _git(other, "config", "user.email", "t@example.com")
+    _git(other, "config", "user.name", "t")
+    (other / "unrelated.txt").write_text("x\n")
+    _git(other, "add", "-A")
+    _git(other, "commit", "-qm", "base")
+    _commit_agent_work(repo, relpath, body)
+
+    if gate is TS_ORGANIZATION_GATE:
+        _require_ts_parser()
+    result = subprocess.run(
+        [*gate, "--repo", str(repo), "--scope", "worktree", "--base", "main"],
+        capture_output=True,
+        text=True,
+        env={**_scrubbed_env(), "GIT_DIR": str(other / ".git"), "GIT_WORK_TREE": str(other)},
+    )
+
+    assert result.returncode == 1, _out(result)
+    assert Path(relpath).name in _out(result)
+    _assert_no_vacuous_pass(result)
+
+
 # --------------------------------------------------------------------------- #
 # AC2 — every gate says what it examined
 # --------------------------------------------------------------------------- #
@@ -606,11 +663,6 @@ def test_a_violation_planted_in_a_gate_script_is_caught(
     assert "planted_check.py" in _out(result)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="gate mode confines discovered files to the Python source root, so a "
-    "gate script an agent edits mid-stage is never graded — implement owns this",
-)
 @pytest.mark.parametrize(
     ("gate", "body"),
     [
@@ -621,13 +673,14 @@ def test_a_violation_planted_in_a_gate_script_is_caught(
 def test_a_gate_script_edited_during_a_stage_is_graded_at_worktree_scope(
     repo: Path, gate: list[str], body: str
 ) -> None:
-    """The surface that matters for agents, and the one still open.
+    """The surface that matters for agents.
 
     A transition gate discovers its own file list from the diff, and
-    `python_files_in_scope` then drops everything outside the detected source
-    root — `server/` here. An agent that edits `.lefthook/scripts/*.py` during a
-    stage therefore has that edit gated by nothing at all, which is precisely
-    the vacuous-pass shape this ticket exists to close, one directory over.
+    `python_files_in_scope` drops everything outside the detected source root —
+    `server/` here. An agent that edits `.lefthook/scripts/*.py` during a stage
+    therefore had that edit gated by nothing at all, which is precisely the
+    vacuous-pass shape this ticket exists to close, one directory over. The
+    selector now exempts the gate scripts from that confinement.
     """
     _commit_agent_work(repo, ".lefthook/scripts/planted_check.py", body)
 

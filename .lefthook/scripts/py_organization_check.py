@@ -39,11 +39,8 @@ from precommit_git_diff import (
     DIFF_SCOPES,
     STAGED,
     GitScopeError,
-    git_diff_cached,
-    git_diff_numstat,
     git_repo_root,
-    git_untracked_paths,
-    parse_staged_additions,
+    repo_relative_posix,
     resolve_gate_scope,
 )
 from py_string_vocab import collect_enum_members, string_vocabulary_errors
@@ -510,6 +507,22 @@ def python_source_root(repo_root: Path, changed_files: Optional[List[Path]] = No
     return roots[0] if len(roots) == 1 else repo_root
 
 
+#: The gate scripts themselves, which live outside every Python source root a
+#: workspace has. Without this the source-root confinement exempts exactly the
+#: code that enforces these rules: an agent editing a gate mid-stage has that
+#: edit graded by nothing, one directory over from the hole this all closes.
+#: Pre-commit already reaches them through lefthook's own glob.
+_GATE_SCRIPT_DIR_PARTS = (".lefthook", "scripts")
+
+
+def _is_gate_script(py_file: Path, repo: Path) -> bool:
+    try:
+        rel = py_file.resolve().relative_to(repo.resolve())
+    except ValueError:
+        return False
+    return rel.parts[: len(_GATE_SCRIPT_DIR_PARTS)] == _GATE_SCRIPT_DIR_PARTS
+
+
 def python_files_in_scope(
     repo: Optional[Path], candidates: Sequence[Path], discovered: bool = True
 ) -> List[Path]:
@@ -518,7 +531,8 @@ def python_files_in_scope(
     A ``discovered`` list came from a diff, so it is confined to the repo's own
     Python source root — mirroring the lefthook glob, without which a gate
     grades build tooling and AST-walking scripts by rules written for
-    application code. An explicit list was already scoped by its caller.
+    application code. The gate scripts are the one exception: see
+    ``_is_gate_script``. An explicit list was already scoped by its caller.
 
     Shared by every Python gate: this filter decides half of whether a run
     examined anything, so it does not get reimplemented per gate.
@@ -527,7 +541,11 @@ def python_files_in_scope(
     if repo is None or not discovered:
         return python
     source_root = python_source_root(repo).resolve()
-    return [path for path in python if source_root in path.resolve().parents]
+    return [
+        path
+        for path in python
+        if source_root in path.resolve().parents or _is_gate_script(path, repo)
+    ]
 
 
 def _read_and_parse(py_file: Path) -> Optional[Tuple[str, ast.AST]]:
@@ -607,7 +625,7 @@ def build_repo_catalogs(
                 collect_enum_members(tree, enum_catalog)
                 added_members = sum(len(v) for v in enum_catalog.values()) - before
                 if added_members > 0:
-                    enum_density[_repo_relative_posix(py_file, root.resolve())] = added_members
+                    enum_density[repo_relative_posix(py_file, root.resolve())] = added_members
                 if py_file.resolve() in changed_set:
                     continue
                 for key, func_name, lineno, _end in function_keys_from_tree(tree, source):
@@ -635,22 +653,6 @@ def codebase_dry_errors(
                 f"{py_file}:{lineno}: function `{func_name}` duplicates existing code ({refs}); reuse existing logic to keep DRY"
             )
     return errors
-
-
-def _repo_relative_posix(py_file: Path, repo: Optional[Path]) -> str:
-    if repo is None:
-        return py_file.as_posix()
-    try:
-        return py_file.resolve().relative_to(repo).as_posix()
-    except ValueError:
-        return py_file.as_posix()
-
-
-def _all_line_numbers(path: Path) -> Set[int]:
-    try:
-        return set(range(1, len(path.read_text(encoding="utf-8").splitlines()) + 1))
-    except (OSError, UnicodeDecodeError):
-        return set()
 
 
 @dataclass(frozen=True)
@@ -714,40 +716,21 @@ def _check(invocation: Invocation) -> int:
         explicit_files=invocation.files,
         select=python_files_in_scope,
     )
-    repo = run.repo
     candidates = run.files
     if not candidates:
         return 0
 
-    additions_map: dict[str, Set[int]] = {}
-    numstat_map: Dict[str, Tuple[int, int]] = {}
-    untracked: Set[str] = set()
-    if repo is not None:
-        diff = git_diff_cached(repo, run.diff_scope, run.base_ref)
-        additions_map = {
-            path: {ln for ln, _ in items} for path, items in parse_staged_additions(diff).items()
-        }
-        numstat_map = git_diff_numstat(repo, run.diff_scope, run.base_ref)
-        if run.scope.includes_untracked:
-            untracked = set(git_untracked_paths(repo))
-
     touched_map: Dict[Path, Optional[Set[int]]] = {}
     all_errors: List[str] = []
-    catalogs = build_repo_catalogs(candidates, repo)
+    catalogs = build_repo_catalogs(candidates, run.repo)
     for path in candidates:
-        rel = _repo_relative_posix(path, repo)
-        touched: Optional[Set[int]] = additions_map.get(rel, set()) if repo is not None else None
-        if rel in untracked:
-            # Nothing in the diff to scope against: the whole file is new.
-            touched = _all_line_numbers(path)
+        touched = run.touched_lines(path)
         touched_map[path] = touched
-        added, deleted = numstat_map.get(rel, (0, 0))
-        net_growing = added > deleted
         all_errors.extend(
             check_file(
                 path,
                 touched_lines=touched,
-                net_growing=net_growing,
+                net_growing=run.net_growing(path),
                 catalogs=catalogs,
             )
         )

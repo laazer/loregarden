@@ -213,10 +213,33 @@ function errorNarrowingErrors(filePath, ast, lines, added, repoRoot) {
  */
 class GitScopeError extends Error {}
 
+/**
+ * Git exports these into hooks and everything they spawn, and they **override
+ * `cwd`** — a gate invoked with `--repo <workspace>` from a context that has
+ * GIT_DIR set reads the *other* repository, finds nothing, and reports a pass.
+ * Mirrors `GIT_LOCATION_ENV_VARS` in precommit_git_diff.py.
+ */
+const GIT_LOCATION_ENV_VARS = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_COMMON_DIR",
+  "GIT_NAMESPACE",
+  "GIT_PREFIX",
+];
+
+function scrubbedGitEnv() {
+  const env = { ...process.env };
+  for (const name of GIT_LOCATION_ENV_VARS) delete env[name];
+  return env;
+}
+
 function git(args, cwd) {
   try {
     return execFileSync("git", args, {
       cwd,
+      env: scrubbedGitEnv(),
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -256,6 +279,7 @@ function mergeBase(repoRoot, baseRef) {
     return (
       execFileSync("git", ["merge-base", validatedRef(baseRef), "HEAD"], {
         cwd: repoRoot,
+        env: scrubbedGitEnv(),
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
       }).trim() || null
@@ -278,6 +302,7 @@ function hasHead(repoRoot) {
   try {
     execFileSync("git", ["rev-parse", "--verify", "--quiet", "HEAD"], {
       cwd: repoRoot,
+      env: scrubbedGitEnv(),
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -355,21 +380,17 @@ function resolveScope(repoRoot, diffScope, baseRef) {
   }
   const base = mergeBase(repoRoot, baseRef);
   if (base === null) {
-    const paths = changedPaths(repoRoot, "worktree", baseRef);
-    if (paths.length === 0) {
-      throw new GitScopeError(
-        `base ref "${baseRef}" did not resolve and the worktree is clean: ` +
-          "there is nothing this run could have examined",
-      );
-    }
+    // Degraded, not resolved: this scope cannot see the branch's commits, so
+    // `resolveGateScope` refuses to call it a pass if it grades nothing.
     return {
       diffScope: "worktree",
       baseRef,
-      paths,
+      paths: changedPaths(repoRoot, "worktree", baseRef),
       description:
         `worktree changes vs HEAD (base "${baseRef}" did not resolve; ` +
         "branch commits not examined)",
       includesUntracked: true,
+      degraded: true,
     };
   }
   return {
@@ -382,9 +403,12 @@ function resolveScope(repoRoot, diffScope, baseRef) {
 }
 
 /**
- * Resolve, filter, count and announce — the whole preamble, once, so no gate
- * can silently omit one of the four steps and report a pass over files it never
- * read. Mirrors precommit_git_diff.py's `resolve_gate_scope`.
+ * Resolve, filter, count, announce and diff — the whole preamble, once, so no
+ * gate can omit one of the steps and report a pass over files it never read.
+ * The returned `touched(filePath, lineCount)` answers with the *resolved*
+ * scope: a gate reaching for the requested one instead prints a credible file
+ * count over an empty touched-line set. Mirrors precommit_git_diff.py's
+ * `resolve_gate_scope` / `GateRun`.
  */
 function resolveGateScope({ label, repoRoot, diffScope, baseRef, files, select }) {
   // An explicit file list (lefthook) means the caller already scoped this run.
@@ -396,15 +420,41 @@ function resolveGateScope({ label, repoRoot, diffScope, baseRef, files, select }
           paths: [],
           description: describeScope(diffScope, baseRef),
           includesUntracked: false,
+          degraded: false,
         }
       : resolveScope(repoRoot, diffScope, baseRef);
   const discovered = files.length === 0;
   const candidates = discovered ? scope.paths.map((rel) => path.resolve(repoRoot, rel)) : files;
   const graded = select(candidates, discovered);
+  if (scope.degraded && graded.length === 0) {
+    // The fallback is only tolerable while it still has something to grade.
+    // With nothing left, this run read none of the branch's commits and none of
+    // the working tree either: exiting 0 would report a pass over a scope that
+    // was never resolved.
+    throw new GitScopeError(
+      `base ref "${scope.baseRef}" did not resolve, so this run fell back to ` +
+        "worktree changes vs HEAD and found nothing to grade: the branch's " +
+        "commits went unread",
+    );
+  }
   // Counted after filtering, always: the number has to be the number of files
   // the gate read, or it is one more thing that looks like a pass over work.
   console.log(`${label}: examined ${graded.length} file(s) — ${scope.description}`);
-  return { scope, files: graded };
+  const untracked = new Set(
+    scope.includesUntracked && graded.length > 0
+      ? untrackedPaths(repoRoot).map((p) => path.resolve(repoRoot, p))
+      : [],
+  );
+  const touched = (filePath, lineCount) =>
+    stagedAdditions(
+      path.relative(repoRoot, path.resolve(filePath)),
+      repoRoot,
+      scope.diffScope,
+      scope.baseRef,
+      untracked.has(path.resolve(filePath)),
+      lineCount,
+    );
+  return { scope, files: graded, touched };
 }
 
 function stagedAdditions(repoRel, repoRoot, diffScope, baseRef, isUntracked, lineCount) {
@@ -595,7 +645,7 @@ function tsFilesInScope(repoRoot, candidates, discovered) {
 }
 
 function run({ files, repoRoot, diffScope, baseRef, label }) {
-  const { scope, files: args } = resolveGateScope({
+  const { files: args, touched } = resolveGateScope({
     label,
     repoRoot,
     diffScope,
@@ -607,11 +657,6 @@ function run({ files, repoRoot, diffScope, baseRef, label }) {
     return 0;
   }
 
-  const untracked = new Set(
-    scope.includesUntracked
-      ? untrackedPaths(repoRoot).map((p) => path.resolve(repoRoot, p))
-      : [],
-  );
   const changedSet = new Set(args.map((a) => path.resolve(a)));
   const catalog = buildCatalog(changedSet, repoRoot);
 
@@ -619,15 +664,7 @@ function run({ files, repoRoot, diffScope, baseRef, label }) {
     if (!fs.existsSync(filePath)) continue;
     const content = fs.readFileSync(filePath, "utf8");
     const lines = content.split("\n");
-    const repoRel = path.relative(repoRoot, path.resolve(filePath));
-    const { added, addedCount, deletedCount } = stagedAdditions(
-      repoRel,
-      repoRoot,
-      scope.diffScope,
-      scope.baseRef,
-      untracked.has(path.resolve(filePath)),
-      lines.length,
-    );
+    const { added, addedCount, deletedCount } = touched(filePath, lines.length);
     const netGrowing = addedCount > deletedCount;
     errors.push(...checkFile(filePath, content, lines, { added, netGrowing, repoRoot }));
     if (!isTestFile(filePath)) {

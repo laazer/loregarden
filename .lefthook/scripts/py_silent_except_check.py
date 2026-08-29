@@ -59,10 +59,7 @@ from precommit_git_diff import (  # noqa: E402 - sys.path is set up just above
     DIFF_SCOPES,
     STAGED,
     GitScopeError,
-    git_diff_cached,
     git_repo_root,
-    git_untracked_paths,
-    parse_staged_additions,
     resolve_gate_scope,
 )
 from py_organization_check import python_files_in_scope  # noqa: E402 - same
@@ -257,22 +254,6 @@ def _graded_files(repo: Path | None, candidates: Sequence[Path], discovered: boo
     return [path for path in in_scope if not _is_exempt(path)]
 
 
-def _all_line_numbers(path: Path) -> set[int]:
-    try:
-        return set(range(1, len(path.read_text(encoding="utf-8").splitlines()) + 1))
-    except (OSError, UnicodeDecodeError):
-        return set()
-
-
-def _repo_relative_posix(path: Path, repo: Path | None) -> str:
-    if repo is None:
-        return path.as_posix()
-    try:
-        return path.resolve().relative_to(repo).as_posix()
-    except ValueError:
-        return path.as_posix()
-
-
 def main(argv: list[str]) -> int:
     invocation = parse_argv(argv)
     try:
@@ -292,28 +273,13 @@ def _check(invocation: Invocation) -> int:
         explicit_files=invocation.files,
         select=_graded_files,
     )
-    repo = run.repo
     candidates = run.files
     if not candidates:
         return 0
 
-    additions_map: dict[str, set[int]] = {}
-    untracked: set[str] = set()
-    if repo is not None:
-        diff = git_diff_cached(repo, run.diff_scope, run.base_ref)
-        additions_map = {
-            path: {ln for ln, _ in items} for path, items in parse_staged_additions(diff).items()
-        }
-        if run.scope.includes_untracked:
-            untracked = set(git_untracked_paths(repo))
-
     failures: list[str] = []
     for path in candidates:
-        rel = _repo_relative_posix(path, repo)
-        touched: set[int] | None = additions_map.get(rel, set()) if repo is not None else None
-        if rel in untracked:
-            # Nothing in the diff to scope against: the whole file is new.
-            touched = _all_line_numbers(path)
+        touched = run.touched_lines(path)
         for lineno, caught in violations_in(path):
             if touched is not None and lineno not in touched:
                 continue

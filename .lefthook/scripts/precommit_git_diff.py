@@ -13,13 +13,38 @@ shape either way.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple
 
 HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+#: Git exports these into hooks and everything they spawn, and they **override
+#: `cwd`** — a gate invoked with `--repo <workspace>` from a context that has
+#: GIT_DIR set reads the *other* repository, finds nothing, and reports a pass.
+#: Same list, same reason, as `GIT_LOCATION_ENV_VARS` in
+#: `loregarden.services.git_subprocess`; it is repeated rather than imported
+#: because these scripts install into workspaces that have no such module.
+GIT_LOCATION_ENV_VARS = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+    "GIT_PREFIX",
+)
+
+
+def scrubbed_git_env() -> Dict[str, str]:
+    """The ambient environment minus git's repo bindings."""
+    env = dict(os.environ)
+    for name in GIT_LOCATION_ENV_VARS:
+        env.pop(name, None)
+    return env
 
 
 class GitScopeError(RuntimeError):
@@ -36,6 +61,7 @@ def git_repo_root() -> Optional[Path]:
     try:
         proc = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
+            env=scrubbed_git_env(),
             capture_output=True,
             text=True,
             check=False,
@@ -96,6 +122,7 @@ def _git(command: List[str], repo: Path) -> str:
     proc = subprocess.run(
         ["git", *command],
         cwd=repo,
+        env=scrubbed_git_env(),
         capture_output=True,
         text=True,
         check=False,
@@ -139,6 +166,7 @@ def git_has_head(repo: Path) -> bool:
     proc = subprocess.run(
         ["git", "rev-parse", "--verify", "--quiet", "HEAD"],
         cwd=repo,
+        env=scrubbed_git_env(),
         capture_output=True,
         text=True,
         check=False,
@@ -185,6 +213,12 @@ class ResolvedScope:
     base_ref: str
     paths: List[str]
     description: str
+    #: True when ``base_ref`` did not resolve and this run fell back to a
+    #: narrower scope than the caller asked for. The fallback still reads the
+    #: uncommitted edits, so it is worth running — but it cannot see the
+    #: branch's commits, so a run that then grades nothing has not examined the
+    #: change at all and must not report a pass.
+    degraded: bool = False
 
     @property
     def includes_untracked(self) -> bool:
@@ -201,6 +235,7 @@ def git_merge_base(repo: Path, base_ref: str) -> Optional[str]:
     proc = subprocess.run(
         ["git", "merge-base", _validated_ref(base_ref), "HEAD"],
         cwd=repo,
+        env=scrubbed_git_env(),
         capture_output=True,
         text=True,
         check=False,
@@ -228,10 +263,10 @@ def resolve_scope(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") 
     gate printed a plausible count and a pass.
 
     When ``base_ref`` names nothing (a workspace whose trunk is not ``main``),
-    there is no branch diff to union in: the run degrades to ``HEAD`` and says
-    so in the scope line, unless that leaves it with nothing at all — a run that
-    can neither resolve its base nor find a local edit has not examined
-    anything, and raises rather than reporting a pass.
+    there is no branch diff to union in: the run degrades to ``HEAD``, says so
+    in the scope line, and is marked ``degraded`` so `resolve_gate_scope` can
+    refuse to call it a pass if the narrower scope leaves this gate with
+    nothing to grade.
     """
     if diff_scope != WORKTREE:
         return ResolvedScope(
@@ -251,18 +286,13 @@ def resolve_scope(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") 
         )
     merge_base = git_merge_base(repo, base_ref)
     if merge_base is None:
-        paths = git_changed_paths(repo, WORKTREE, base_ref)
-        if not paths:
-            raise GitScopeError(
-                f"base ref {base_ref!r} did not resolve and the worktree is clean: "
-                "there is nothing this run could have examined"
-            )
         return ResolvedScope(
             WORKTREE,
             base_ref,
-            paths,
+            git_changed_paths(repo, WORKTREE, base_ref),
             f"worktree changes vs HEAD (base {base_ref!r} did not resolve; "
             "branch commits not examined)",
+            degraded=True,
         )
     return ResolvedScope(
         SINCE,
@@ -292,21 +322,53 @@ def examined_line(label: str, count: int, description: str) -> str:
 GateFileSelector = Callable[[Optional[Path], Sequence[Path], bool], List[Path]]
 
 
+def all_line_numbers(path: Path) -> Set[int]:
+    """Every line of ``path``, as a touched-line set.
+
+    What a file with no diff to scope against is graded on: an untracked file
+    is new in its entirety, so every line in it is part of this change.
+    """
+    try:
+        return set(range(1, len(path.read_text(encoding="utf-8").splitlines()) + 1))
+    except (OSError, UnicodeDecodeError):
+        return set()
+
+
+def repo_relative_posix(path: Path, repo: Optional[Path]) -> str:
+    """``path`` as git names it in a diff, or unchanged when it is outside ``repo``."""
+    if repo is None:
+        return path.as_posix()
+    try:
+        return path.resolve().relative_to(repo).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 @dataclass(frozen=True)
 class GateRun:
-    """One gate invocation, already scoped, filtered, counted and announced.
+    """One gate invocation: scoped, filtered, counted, announced, and diffed.
 
-    `resolve_scope` centralised the *decision* and left four steps to each gate:
-    override the scope with the resolved one, take its description, filter to
-    the files it grades, and print the count. Skipping any one of them
-    reproduces the vacuous-gate bug — a gate that reports a pass over files it
-    never read — so a gate does not get to perform them itself.
+    `resolve_scope` centralised the *decision* and left the rest to each gate —
+    override the requested scope with the resolved one, take its description,
+    filter to the files this gate grades, print the count, then re-diff those
+    files to find which of their lines the change touched. Every one of those
+    steps has to use the *resolved* scope, and a gate that reaches for the
+    requested one instead compiles, prints a credible file count, and reports a
+    pass over an empty touched-line set. That is the vacuous-gate bug in its
+    most convincing form, so a gate does not get to perform any of these steps
+    itself: it asks this object.
     """
 
     label: str
     repo: Optional[Path]
     scope: ResolvedScope
     files: List[Path]
+    #: relpath -> line numbers this change added or modified, from the resolved diff.
+    additions: Dict[str, Set[int]]
+    #: relpaths git is not tracking; their whole contents count as touched.
+    untracked: FrozenSet[str]
+    #: relpath -> (added, deleted), for "don't make it worse" size checks.
+    numstat: Dict[str, Tuple[int, int]]
 
     @property
     def diff_scope(self) -> str:
@@ -315,6 +377,24 @@ class GateRun:
     @property
     def base_ref(self) -> str:
         return self.scope.base_ref
+
+    def touched_lines(self, path: Path) -> Optional[Set[int]]:
+        """Lines in ``path`` this run may report violations on.
+
+        ``None`` means "no diff to scope against at all" — no repository, so
+        the whole file is fair game; callers treat that as an unbounded set.
+        """
+        if self.repo is None:
+            return None
+        rel = repo_relative_posix(path, self.repo)
+        if rel in self.untracked:
+            return all_line_numbers(path)
+        return self.additions.get(rel, set())
+
+    def net_growing(self, path: Path) -> bool:
+        """True when this change adds more lines to ``path`` than it removes."""
+        added, deleted = self.numstat.get(repo_relative_posix(path, self.repo), (0, 0))
+        return added > deleted
 
 
 def resolve_gate_scope(
@@ -326,7 +406,7 @@ def resolve_gate_scope(
     explicit_files: Iterable[Path],
     select: GateFileSelector,
 ) -> GateRun:
-    """Resolve, filter, count and announce — the whole preamble, once.
+    """Resolve, filter, count, announce and diff — the whole preamble, once.
 
     An explicit file list (lefthook passes the staged files) means the caller
     already scoped the run, so only the gate's own filter applies; the scope
@@ -341,10 +421,39 @@ def resolve_gate_scope(
     else:
         scope = ResolvedScope(diff_scope, base_ref, [], describe_scope(diff_scope, base_ref))
     files = select(repo, candidates, discovered)
+    if scope.degraded and not files:
+        # The fallback is only tolerable while it still has something to grade.
+        # With nothing left, this run read none of the branch's commits and none
+        # of the working tree either: exiting 0 here would report a pass over a
+        # scope that was never resolved, which is the bug, not the fallback.
+        raise GitScopeError(
+            f"base ref {scope.base_ref!r} did not resolve, so this run fell back to "
+            "worktree changes vs HEAD and found nothing to grade: the branch's "
+            "commits went unread"
+        )
     # Counted after filtering, always: the number has to be the number of files
     # the gate read, or it is one more thing that looks like a pass over work.
     print(examined_line(label, len(files), scope.description))
-    return GateRun(label=label, repo=repo, scope=scope, files=files)
+    additions: Dict[str, Set[int]] = {}
+    untracked: FrozenSet[str] = frozenset()
+    numstat: Dict[str, Tuple[int, int]] = {}
+    if repo is not None and files:
+        diff = git_diff_cached(repo, scope.diff_scope, scope.base_ref)
+        additions = {
+            path: {ln for ln, _ in items} for path, items in parse_staged_additions(diff).items()
+        }
+        numstat = git_diff_numstat(repo, scope.diff_scope, scope.base_ref)
+        if scope.includes_untracked:
+            untracked = frozenset(git_untracked_paths(repo))
+    return GateRun(
+        label=label,
+        repo=repo,
+        scope=scope,
+        files=files,
+        additions=additions,
+        untracked=untracked,
+        numstat=numstat,
+    )
 
 
 def parse_staged_additions(diff: str) -> Dict[str, List[Tuple[int, str]]]:
@@ -423,6 +532,7 @@ def staged_file_text(repo: Path, relpath: str) -> Optional[str]:
     proc = subprocess.run(
         ["git", "show", f":0:{relpath}"],
         cwd=repo,
+        env=scrubbed_git_env(),
         capture_output=True,
         text=True,
         check=False,
