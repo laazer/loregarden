@@ -48,7 +48,7 @@ import { EMPTY_PANE_TITLE, ICON_BUTTON, paneTitle, panePrimitive } from "./paneC
 import "./paneChrome.css";
 import { PaneSettingsEditor } from "./PaneSettingsEditor";
 import { PANE_SETTINGS_LABEL } from "./paneSettingsLabel";
-import { PrimitivePicker } from "./PrimitivePicker";
+import { PrimitivePickerModal } from "../PrimitivePickerModal";
 
 type PaneRowPointerHandler = (event: ReactPointerEvent<HTMLDivElement>) => void;
 
@@ -195,16 +195,18 @@ export function PaneHeader({
           />
         </div>
       ) : null}
+      {/* A dialog rather than a panel under the header (557): sixteen options
+          do not fit in a pane, and one drawn inside a zoomed canvas would be
+          scaled with it. `PrimitivePickerModal` portals out of both. */}
       {picking ? (
-        <div className="pane-picker-panel">
-          <PrimitivePicker
-            legend="Change contents to"
-            onPick={(primitiveId) => {
-              setPicking(false);
-              onPickPrimitive(containerId, primitiveId);
-            }}
-          />
-        </div>
+        <PrimitivePickerModal
+          legend="Change contents to"
+          onClose={() => setPicking(false)}
+          onPick={(primitiveId) => {
+            setPicking(false);
+            onPickPrimitive(containerId, primitiveId);
+          }}
+        />
       ) : null}
     </>
   );

@@ -174,14 +174,29 @@ describe("AC1 — a typed registry maps ids to display metadata, a settings sche
     expect(readSource("src/components/views/primitives/definePrimitive.tsx")).toMatch(
       /function\s+definePrimitive\s*</,
     );
-    const calls = viewsSourceFiles()
-      .filter((file) => !file.endsWith("definePrimitive.tsx"))
-      .reduce(
-        (total, file) =>
-          total + (fs.readFileSync(file, "utf8").match(/\bdefinePrimitive\s*</g) ?? []).length,
-        0,
-      );
-    expect(calls).toBeGreaterThanOrEqual(CONTAINER_PRIMITIVES.length);
+    expect(
+      viewsSourceFiles()
+        .filter((file) => !file.endsWith("definePrimitive.tsx"))
+        .some((file) => /\bdefinePrimitive\s*</.test(fs.readFileSync(file, "utf8"))),
+    ).toBe(true);
+
+    // Counting `definePrimitive<` occurrences used to stand in for "every entry
+    // went through it", and it was a wrong oracle: 557 registers thirteen
+    // primitives through one shared generic factory that calls `definePrimitive`
+    // once, which is the *better* shape and made the count assertion fail.
+    //
+    // What the criterion actually asks is observable on the entries themselves.
+    // `definePrimitive` is the only thing that names the component it returns
+    // `Primitive(<id>)` — an object asserted into the registry's type by hand
+    // carries its own component's name, or none. So this reads the registry
+    // rather than the source, and every entry has to answer for itself however
+    // many factories sit between it and the erasure.
+    for (const entry of CONTAINER_PRIMITIVES) {
+      expect({ id: entry.id, displayName: entry.Component.displayName }).toEqual({
+        id: entry.id,
+        displayName: `Primitive(${entry.id})`,
+      });
+    }
 
     for (const file of viewsSourceFiles()) {
       const source = fs.readFileSync(file, "utf8");

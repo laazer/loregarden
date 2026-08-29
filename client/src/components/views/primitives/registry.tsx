@@ -13,6 +13,7 @@
 
 import type { CSSProperties } from "react";
 
+import { CHAT_PANE_PRIMITIVES } from "./chatPanePrimitives";
 import { PrimitiveErrorBoundary } from "./PrimitiveErrorBoundary";
 import { runLedgerPrimitive } from "./runLedgerPrimitive";
 import { terminalPrimitive } from "./terminalPrimitive";
@@ -27,6 +28,7 @@ import { webEmbedPrimitive } from "./webEmbedPrimitive";
 export const CONTAINER_PRIMITIVES: RegisteredPrimitive[] = [
   terminalPrimitive,
   runLedgerPrimitive,
+  ...CHAT_PANE_PRIMITIVES,
   webEmbedPrimitive,
 ];
 

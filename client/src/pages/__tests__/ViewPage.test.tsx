@@ -220,13 +220,28 @@ function promptIn(root: HTMLElement, containerId: string): HTMLElement {
   return within(pane).getByRole("button", { name: /primitive/i });
 }
 
-/** The picker option for one primitive, once the picker is open. */
+/**
+ * The picker option for one primitive, once the picker is open.
+ *
+ * Searched from the *document*, not from the render root. 557 made the picker
+ * a dialog portalled to `document.body` — deliberately, because a
+ * `position: fixed` panel inside 442's zoomed canvas would be scaled and
+ * offset along with it. `root` stays in the signature so every call site still
+ * reads as "the option in this view", and is used to assert the dialog is
+ * outside it rather than to search within it.
+ */
 async function primitiveOption(root: HTMLElement, primitiveId: string): Promise<HTMLElement> {
   return waitFor(() => {
-    const found = root.querySelector<HTMLElement>(`[data-primitive-id="${primitiveId}"]`);
+    const found = document.querySelector<HTMLElement>(`[data-primitive-id="${primitiveId}"]`);
     expect(found).not.toBeNull();
+    expect(root.contains(found)).toBe(false);
     return found as HTMLElement;
   });
+}
+
+/** Every option the open picker is offering, wherever it was portalled to. */
+function offeredOptions(): NodeListOf<HTMLElement> {
+  return document.querySelectorAll<HTMLElement>("[data-primitive-id]");
 }
 
 beforeEach(() => {
@@ -398,7 +413,7 @@ describe("AC6 — a new flex grid opens on a container asking for a primitive", 
     await primitiveOption(container, "terminal");
     // Derived from the registry rather than authored here, so a picker offering
     // a hardcoded subset fails this.
-    expect(container.querySelectorAll("[data-primitive-id]").length).toBeGreaterThanOrEqual(3);
+    expect(offeredOptions().length).toBeGreaterThanOrEqual(3);
   });
 
   it("replaces the container with newContainerFor's, rather than merging settings", async () => {

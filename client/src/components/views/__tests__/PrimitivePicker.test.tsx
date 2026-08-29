@@ -54,8 +54,15 @@ describe("AC2 — the picker is generated from the registry", () => {
     expect(container.querySelectorAll("[data-primitive-id]")).toHaveLength(
       CONTAINER_PRIMITIVES.length,
     );
+    // Matched by id, and the *name* is then read off that option. A substring
+    // role query stood here until 557 registered sixteen primitives: /Ticket/i
+    // matches "Ticket", "Ticket List", "Ticket Workflow" and "Parent Ticket"
+    // alike, so the query threw on ambiguity rather than checking anything.
+    // Pinning the id-to-name pairing is what the criterion wanted anyway.
     for (const entry of CONTAINER_PRIMITIVES) {
-      expect(screen.getByRole("button", { name: nameMatcher(entry.displayName) })).toBeInTheDocument();
+      const option = container.querySelector(`[data-primitive-id="${entry.id}"]`);
+      expect({ id: entry.id, found: option !== null }).toEqual({ id: entry.id, found: true });
+      expect(option).toHaveTextContent(nameMatcher(entry.displayName));
     }
   });
 

@@ -21,7 +21,7 @@ import { useViewLayoutWrite } from "../../hooks/useViewLayoutEdit";
 import { asJson } from "../../lib/viewLayouts";
 import { useSidebarWorkspaceSlug } from "../../state/SidebarWorkspaceContext";
 import { paneSettings } from "./paneChrome";
-import { PrimitivePicker } from "./PrimitivePicker";
+import { PrimitivePickerModal } from "../PrimitivePickerModal";
 import "./paneChrome.css";
 import { ContainerPrimitiveHost } from "./primitives/registry";
 import { containerKindOf } from "./primitives/types";
@@ -45,21 +45,27 @@ function EmptyContainerPrompt({
 
   return (
     <div className="pane-empty" data-container-id={containerId}>
+      <div className="pane-empty-eyebrow">Empty pane</div>
+      <p className="pane-empty-hint">
+        This pane has no contents yet. Pick what it should hold — you can change it later.
+      </p>
+      <button type="button" className="btn-primary btn-compact" onClick={() => setPicking(true)}>
+        Choose a primitive
+      </button>
+      {/* The prompt stays put behind the dialog rather than being replaced by
+          the list (557). The list is now long enough that an empty pane could
+          not hold it, and a modal is not something the pane has to make room
+          for. */}
       {picking ? (
-        <div className="pane-empty-picker">
-          <PrimitivePicker legend="Choose a primitive" onPick={onPick} />
-        </div>
-      ) : (
-        <>
-          <div className="pane-empty-eyebrow">Empty pane</div>
-          <p className="pane-empty-hint">
-            This pane has no contents yet. Pick what it should hold — you can change it later.
-          </p>
-          <button type="button" className="btn-primary btn-compact" onClick={() => setPicking(true)}>
-            Choose a primitive
-          </button>
-        </>
-      )}
+        <PrimitivePickerModal
+          legend="Choose a primitive"
+          onClose={() => setPicking(false)}
+          onPick={(primitiveId) => {
+            setPicking(false);
+            onPick(primitiveId);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

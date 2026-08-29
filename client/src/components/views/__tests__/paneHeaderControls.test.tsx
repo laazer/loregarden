@@ -43,13 +43,16 @@ installGridHarness();
 
 const TERMINAL_CONTAINER = { kind: "terminal", settings: { primitive_id: "terminal" } };
 
-function renderHeader(container: unknown = TERMINAL_CONTAINER) {
+function renderHeader(
+  container: unknown = TERMINAL_CONTAINER,
+  onPickPrimitive: (containerId: string, primitiveId: string) => void = () => {},
+) {
   return render(
     <PaneHeader
       container={container}
       actionAttribute="data-grid-action"
       containerId="c1"
-      onPickPrimitive={() => {}}
+      onPickPrimitive={onPickPrimitive}
       buttons={
         <button type="button" className="btn-secondary" aria-label="Close this pane" title="Close this pane">
           <span aria-hidden="true">✕</span>
@@ -146,16 +149,37 @@ describe("556 — the header's zone order, which 554 builds against", () => {
 });
 
 describe("556 — the primitive picker says what it is offering", () => {
-  it("labels the picker list, so its purpose is not carried by position alone", () => {
-    // Before this pass the panel opened as a bare strip of buttons: what the
-    // list was for was inferable only from which button had been pressed.
-    const { container } = renderHeader();
+  it("names what the picker is offering, so its purpose is not carried by position alone", () => {
+    // Before 556's pass the panel opened as a bare strip of buttons: what the
+    // list was for was inferable only from which button had been pressed. 557
+    // moved the list into a dialog and split it into one list per category, so
+    // the name that used to be on the single list is now the dialog's — the
+    // criterion is unchanged, the element carrying it is not.
+    //
+    // Queried from the screen rather than from `container`: the dialog is
+    // portalled to `document.body`, deliberately, because a `position: fixed`
+    // panel inside 442's zoomed canvas would be scaled and offset with it.
+    renderHeader();
     fireEvent.click(screen.getByRole("button", { name: "Change contents" }));
 
-    const list = container.querySelector(".primitive-picker");
-    expect(list).not.toBeNull();
-    expect(list).toHaveAttribute("aria-label", "Change contents to");
-    // Each option names its primitive in text, not only in a glyph.
-    expect(within(list as HTMLElement).getByText("Terminal")).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "Change contents to" });
+    expect(dialog).toBeInTheDocument();
+    // Each option names its primitive in text, not only in a glyph, and each
+    // list is named by the category that groups it.
+    const shell = within(dialog).getByRole("list", { name: "Shell" });
+    expect(within(shell).getByText("Terminal")).toBeInTheDocument();
+  });
+
+  it("closes the dialog when a primitive is picked, and reports the id", () => {
+    // The panel used to close on pick; a dialog that stays open over the pane
+    // it just rewrote is the same defect with a backdrop.
+    const picked: string[] = [];
+    renderHeader(undefined, (_containerId, primitiveId) => picked.push(primitiveId));
+    fireEvent.click(screen.getByRole("button", { name: "Change contents" }));
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: /Web Embed/ }),
+    );
+    expect(picked).toEqual(["web_embed"]);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
