@@ -211,10 +211,11 @@ def test_baxter_chat_prompt_includes_snapshot_and_stored_history(client: TestCli
 
     captured: dict[str, object] = {}
 
-    def fake_run(profile, *, workspace, prompt, user_prompt=None, **_kwargs):
+    def fake_run(profile, *, workspace, prompt, user_prompt=None, read_only=True, **_kwargs):
         captured["profile_stub_env"] = profile.stub_env
         captured["workspace"] = workspace.slug
         captured["prompt"] = prompt
+        captured["read_only"] = read_only
         return "ok from model"
 
     session_id = _new_session(client)
@@ -225,7 +226,8 @@ def test_baxter_chat_prompt_includes_snapshot_and_stored_history(client: TestCli
     )
 
     monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
-    # Force the advisory path so this test stays about prompt content, not the bridge.
+    # Cursor is oneshot (not the Claude bridge). The prompt under test is the
+    # execute prompt — Home chat writes on execute-capable adapters.
     monkeypatch.setattr(baxter_chat_service, "resolve_effective_adapter", lambda **_: "cursor")
     monkeypatch.setattr(agent_turn_runner, "run_cli_agent_turn", fake_run)
     client.post(
@@ -252,8 +254,9 @@ def test_baxter_chat_prompt_includes_snapshot_and_stored_history(client: TestCli
     # History comes from the stored thread, not from the client.
     assert "user: Hi" in prompt
     assert "assistant: Hello" in prompt
-    # The read-only turn is told its snapshot is advisory, not actionable.
-    assert "advisory only" in prompt
+    assert "real tool access" in prompt
+    assert "advisory only" not in prompt
+    assert captured["read_only"] is False
 
 
 def test_baxter_chat_uses_session_runtime_for_turn(client: TestClient, monkeypatch):
@@ -455,6 +458,7 @@ def test_baxter_chat_interactive_prompt_grants_tools(client: TestClient, monkeyp
     assert "adapter_capabilities" in snapshot
     prompt = str(captured["prompt"])
     assert "real tool access" in prompt
+    assert "file read/write, git, shell" in prompt
     assert "no ticket is implied" in prompt
     assert captured["intent"] == "execute"
     # The pending assistant row's id, so the turn's reasoning has a channel.

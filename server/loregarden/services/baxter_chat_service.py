@@ -9,8 +9,8 @@ from what the thread actually contains.
 A turn runs through ``agent_turn_runner``: intent comes from adapter
 capabilities (permission bridge vs writable oneshot), not adapter-name
 checks. Unlike triage there is no work item, so runs and approvals are
-workspace-scoped (see ``ApprovalScope.for_workspace``). Oneshot adapters
-without an inbox path stay advisory until the operator presses Run.
+workspace-scoped (see ``ApprovalScope.for_workspace``). Execute-capable
+adapters act on every turn — file writes and ordinary git included.
 """
 
 from __future__ import annotations
@@ -592,10 +592,13 @@ def build_baxter_chat_prompt(
     if interactive:
         sections.extend(
             [
-                "You have real tool access in this workspace — file read/write, shell, and the "
-                "Loregarden MCP tools where the runtime supports them.",
+                "You have real tool access in this workspace — file read/write, git, shell, and "
+                "the Loregarden MCP tools where the runtime supports them.",
                 "Investigate before answering: read code, run tests, reproduce failures.",
                 "When you find an actionable fix, make it directly rather than only describing it.",
+                "Git is in scope when the operator asks — status, diff, add, commit, and push of "
+                "the current branch. Destructive git (force-push, reset --hard, deleting a "
+                "branch) still goes through the approval inbox.",
                 "This channel is not scoped to a work item, so no ticket is implied — name the "
                 "ticket explicitly on any MCP call that needs one.",
             ]
@@ -741,11 +744,12 @@ def invoke_baxter_chat_model(
         agent_adapter=agent.get("adapter", "claude"), workspace=workspace
     )
     caps = adapter_capabilities(selected)
-    # Oneshot adapters have no inbox approvals — stay advisory until Run.
+    # Same as ticket triage: execute-capable adapters act. Cursor/Codex have no
+    # inbox, but they run writable oneshot so the operator can get a code change
+    # or a git action from a normal message, not only from pressing Run on a plan.
     intent = resolve_chat_intent(
         selected,
         wants_execute=is_agent_plan_execute_message(message),
-        require_operator_run=True,
     )
     interactive = intent == "execute"
 

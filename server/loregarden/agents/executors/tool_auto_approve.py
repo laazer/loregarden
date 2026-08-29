@@ -14,6 +14,7 @@ from loregarden.mcp.tool_ids import (
     McpTool,
 )
 from loregarden.models.domain import Ticket
+from loregarden.services.agent_scope import FILE_WRITE_TOOLS
 from loregarden.services.organization_gate_service import READ_ONLY_ACTIONS, OrganizationAction
 
 ASK_USER_QUESTION_TOOL = "AskUserQuestion"
@@ -25,6 +26,59 @@ LOREGARDEN_MCP_PREFIX = "mcp__loregarden__"
 #: rule and an unattended research run stalls on the first fetch. These only
 #: read; they cannot touch the repo or the control plane.
 AUTO_APPROVED_CLI_TOOLS = frozenset({"WebFetch", "WebSearch"})
+
+#: Workspace tools an interactive chat turn (Home, ticket triage, branch) may
+#: use without the inbox. Stage runs still prompt — a pipeline agent writing
+#: the repo is a different bar than the operator talking to Baxter.
+CHAT_WORKSPACE_CLI_TOOLS = FILE_WRITE_TOOLS | frozenset(
+    {"Read", "Glob", "Grep", "LS", "NotebookRead", "TodoRead", "TodoWrite"}
+)
+
+#: Git verbs a chat agent may run unattended. Destructive ones stay in the
+#: inbox even on interactive turns; hook bypass is a hard deny elsewhere.
+SAFE_GIT_SUBCOMMANDS = frozenset(
+    {
+        "status",
+        "diff",
+        "log",
+        "show",
+        "add",
+        "commit",
+        "branch",
+        "checkout",
+        "switch",
+        "stash",
+        "fetch",
+        "pull",
+        "push",
+        "merge",
+        "cherry-pick",
+        "revert",
+        "tag",
+        "remote",
+        "rev-parse",
+        "describe",
+        "blame",
+        "ls-files",
+        "ls-tree",
+        "cat-file",
+        "shortlog",
+        "version",
+        "config",
+        "symbolic-ref",
+        "rev-list",
+        "name-rev",
+        "merge-base",
+        "format-patch",
+    }
+)
+
+_SHELL_OPERATORS = frozenset({"&&", "||", ";", "|", "&"})
+_CHAT_HARMLESS_COMMANDS = frozenset({"cd", "true", ":"})
+_FORCE_FLAGS = frozenset({"--force", "--force-with-lease", "-f"})
+_DELETE_FLAGS = frozenset({"-D", "-d", "--delete"})
+_STASH_DESTRUCTIVE = frozenset({"drop", "clear"})
+_FORCEFUL_CHECKOUT = frozenset({"checkout", "switch"})
 
 
 def _git_subcommand_index(tokens: list[str], git_index: int) -> int | None:
@@ -93,6 +147,100 @@ def denied_cli_tool_message(tool_name: str, tool_input: dict[str, Any]) -> str:
 
 def is_auto_approved_cli_tool(tool_name: str) -> bool:
     return tool_name in AUTO_APPROVED_CLI_TOOLS
+
+
+def is_chat_auto_approved_cli_tool(tool_name: str, tool_input: dict[str, Any]) -> bool:
+    """Whether an interactive chat turn may run this CLI tool without the inbox.
+
+    File reads/writes and ordinary git are the work Home and the chat page were
+    asked to do. Arbitrary shell, force-push, reset, and branch delete still
+    wait on the operator. Hook bypass never reaches here — it is denied first.
+    """
+    if tool_name in CHAT_WORKSPACE_CLI_TOOLS:
+        return True
+    if tool_name != "Bash":
+        return False
+    command = tool_input.get("command")
+    if not isinstance(command, str) or not command.strip():  # py-org: allow-isinstance
+        return False
+    return _bash_is_chat_auto_approved_git(command)
+
+
+def _shell_segments(command: str) -> list[list[str]] | None:
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    segments: list[list[str]] = []
+    current: list[str] = []
+    for token in tokens:
+        if token in _SHELL_OPERATORS:
+            if current:
+                segments.append(current)
+                current = []
+            continue
+        current.append(token)
+    if current:
+        segments.append(current)
+    return segments or None
+
+
+def _executable_and_args(tokens: list[str]) -> tuple[str, list[str]] | None:
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if "=" in token and not token.startswith("=") and not token.startswith("-"):
+            index += 1
+            continue
+        break
+    if index >= len(tokens):
+        return None
+    return tokens[index], tokens[index + 1 :]
+
+
+def _git_args_are_destructive(subcommand: str, args: list[str]) -> bool:
+    tokens = set(args)
+    if subcommand not in SAFE_GIT_SUBCOMMANDS:
+        return True
+    if subcommand == "push" and (
+        tokens & _FORCE_FLAGS or any(arg.startswith("--force") for arg in args)
+    ):
+        return True
+    if subcommand in _FORCEFUL_CHECKOUT and tokens & _FORCE_FLAGS:
+        return True
+    if subcommand == "branch" and tokens & _DELETE_FLAGS:
+        return True
+    if subcommand == "tag" and tokens & _DELETE_FLAGS:
+        return True
+    if subcommand == "stash":
+        action = next((arg for arg in args if not arg.startswith("-")), "")
+        if action in _STASH_DESTRUCTIVE:
+            return True
+    return False
+
+
+def _segment_is_chat_auto_approved(tokens: list[str]) -> bool:
+    parsed = _executable_and_args(tokens)
+    if parsed is None:
+        return False
+    executable, args = parsed
+    if PurePath(executable).name in _CHAT_HARMLESS_COMMANDS:
+        return True
+    if not _looks_like_git_executable(executable):
+        return False
+    git_tokens = [executable, *args]
+    subcommand_index = _git_subcommand_index(git_tokens, 0)
+    if subcommand_index is None:
+        return False
+    subcommand = git_tokens[subcommand_index]
+    return not _git_args_are_destructive(subcommand, git_tokens[subcommand_index + 1 :])
+
+
+def _bash_is_chat_auto_approved_git(command: str) -> bool:
+    segments = _shell_segments(command)
+    if not segments:
+        return False
+    return all(_segment_is_chat_auto_approved(segment) for segment in segments)
 
 
 def bare_mcp_tool_name(tool_name: str) -> str | None:
