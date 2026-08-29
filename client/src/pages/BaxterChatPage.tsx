@@ -128,12 +128,12 @@ function BaxterHeroAsk({
           iconOnlySend={false}
           commands={commands}
         />
-        <div className="lg-chat-chip-row baxter-chat-chip-row" role="list">
+        <div className="lg-chat-chip-row" role="list">
           {EMPTY_CHIPS.map((chip) => (
             <button
               key={chip}
               type="button"
-              className="lg-chat-chip baxter-chat-chip"
+              className="lg-chat-chip"
               role="listitem"
               onClick={() => setDraft(chip)}
             >
@@ -187,7 +187,7 @@ function BaxterReplyDock({
             <button
               key={chip}
               type="button"
-              className="lg-chat-chip baxter-chat-chip"
+              className="lg-chat-chip"
               onClick={() => onSend(chip)}
             >
               {chip}
@@ -439,7 +439,7 @@ export function BaxterChatPage() {
   ) : null;
 
   return (
-    <div className={`baxter-chat lg-chat-surface${isEmpty ? " baxter-chat--empty" : ""}`}>
+    <div className="baxter-chat lg-chat-surface">
       {isEmpty ? (
         <div className="baxter-chat-welcome">
           <header className="baxter-chat-intro">

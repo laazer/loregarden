@@ -44,7 +44,7 @@ function PreviewField({
 }) {
   const display = value.trim() || empty;
   return (
-    <div className="import-preview-field">
+    <div >
       <div className="import-preview-field-label">{label}</div>
       <div
         className={`import-preview-field-value${mono ? " import-preview-field-mono" : ""}${
@@ -156,7 +156,7 @@ export function ImportTicketPreviewCard({
       )}
 
       <div className="import-preview-grid">
-        <div className="import-preview-field import-preview-field-span">
+        <div className="import-preview-field-span">
           <div className="import-preview-field-label">Title</div>
           <input
             className="btn-secondary filter-select"
@@ -184,7 +184,7 @@ export function ImportTicketPreviewCard({
         <PreviewField label="Source file" value={ticket.source_label || ""} mono />
         <PreviewField label="Format" value={ticket.source_format || ""} mono />
 
-        <div className="import-preview-field import-preview-field-span">
+        <div className="import-preview-field-span">
           <div className="import-preview-field-label">Milestone</div>
           <div className="import-preview-control-row">
             <select
@@ -217,7 +217,7 @@ export function ImportTicketPreviewCard({
         </div>
 
         {needsParent && (
-          <div className="import-preview-field import-preview-field-span">
+          <div className="import-preview-field-span">
             <div className="import-preview-field-label">Parent work item</div>
             <div className="import-preview-control-row">
               <select
@@ -268,7 +268,7 @@ export function ImportTicketPreviewCard({
           </div>
         )}
 
-        <div className="import-preview-field import-preview-field-span">
+        <div className="import-preview-field-span">
           <div className="import-preview-field-label">Description</div>
           <div className="import-preview-field-value import-preview-field-block">
             {ticket.description?.trim() || "—"}
@@ -276,7 +276,7 @@ export function ImportTicketPreviewCard({
         </div>
 
         {(
-          <div className="import-preview-field import-preview-field-span">
+          <div className="import-preview-field-span">
             <div className="import-preview-field-label">Acceptance criteria</div>
             <textarea
               className="btn-secondary filter-select import-preview-textarea"

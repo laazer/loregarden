@@ -248,7 +248,7 @@ export function BranchTriageOverviewPanel({
           </div>
         </section>
 
-        <section className="branch-triage-activity">
+        <section >
           <div className="branch-triage-activity-header">
             <h3>Recent commits</h3>
             {commits.length ? (

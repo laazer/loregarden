@@ -571,3 +571,11 @@ a.branch-triage-badge:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* `.branch-worktrees-status.dirty` has always been defined; a clean worktree
+   fell through to the neutral pill, so "clean" and "unknown" looked the same. */
+.branch-worktrees-status.clean {
+  color: var(--grl);
+  border-color: rgba(53, 196, 106, 0.35);
+  background: rgba(53, 196, 106, 0.08);
+}

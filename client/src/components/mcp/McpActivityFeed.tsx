@@ -60,7 +60,7 @@ export function McpActivityFeed({ server }: { server?: string }) {
   }
 
   return (
-    <div className="mcp-activity">
+    <div >
       {servers.length > 0 && (
         <div className="mcp-activity-counts">
           {servers.map(([name, count]) => (

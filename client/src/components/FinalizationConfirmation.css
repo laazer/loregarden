@@ -1,0 +1,59 @@
+/*
+ * The finalize result card.
+ *
+ * Every rule here was already written — as an inline `style={{}}` next to a
+ * class name that resolved to nothing. The component named `.finalization-title`
+ * and then set the margin by hand three lines later, so the class documented an
+ * intent the stylesheet never carried. Moving the values here makes the names
+ * true and lets the three states share one frame instead of repeating it.
+ */
+
+.finalization-error-title {
+  margin: 0 0 8px;
+  color: var(--rdl);
+}
+
+.finalization-error-message {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--txm);
+}
+
+.finalization-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.finalization-title {
+  margin: 0;
+}
+
+.finalization-total {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.finalization-total-count {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.finalization-total-label {
+  font-size: 13px;
+  color: var(--txm);
+}
+
+.finalization-breakdown-summary {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--txm);
+}
+
+.finalization-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}

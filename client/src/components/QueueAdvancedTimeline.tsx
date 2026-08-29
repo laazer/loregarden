@@ -127,11 +127,11 @@ export function QueueAdvancedTimeline({
         <div className="timeline-content">
           {/* Active Runs Section */}
           {activeRuns.length > 0 && (
-            <div className="timeline-section active-section">
+            <div className="timeline-section">
               <div className="section-label">Active Runs</div>
 
               {activeRuns.map((run) => (
-                <div key={run.run_id} className="timeline-row active-row">
+                <div key={run.run_id} className="timeline-row">
                   <div className="row-label">
                     <span className="slot-badge">Slot {run.slot_number}</span>
                     <span className="ticket-id">{run.ticket_id}</span>
@@ -186,7 +186,7 @@ export function QueueAdvancedTimeline({
 
           {/* Queued Runs Section */}
           {queuedRuns.length > 0 && (
-            <div className="timeline-section queued-section">
+            <div className="timeline-section">
               <div className="section-label">Queue</div>
 
               {queuedRuns.map((run, index) => {
@@ -195,7 +195,7 @@ export function QueueAdvancedTimeline({
                   timelineMetrics.activeTime + index * 300;
 
                 return (
-                  <div key={run.run_id} className="timeline-row queued-row">
+                  <div key={run.run_id} className="timeline-row">
                     <div className="row-label">
                       <span className="position-badge">#{run.position}</span>
                       <span className="ticket-id">{run.ticket_id}</span>

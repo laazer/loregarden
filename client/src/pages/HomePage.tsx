@@ -116,7 +116,7 @@ export function HomePage() {
   return (
     <div className="home-page lg-chat-surface">
       <header className="home-header">
-        <div className="home-header-text">
+        <div >
           <p className="home-kicker">{formatDateLine(now)}</p>
           <h1 className="home-greeting">{greetingFor(now)}</h1>
           <p className="home-summary">{summaryLine}</p>
@@ -281,7 +281,7 @@ function StatusCard({
   const open = summary ? summary.backlog + summary.in_progress + summary.blocked : null;
 
   return (
-    <article className="home-card home-card--status" aria-label="Board status">
+    <article className="home-card" aria-label="Board status">
       <header className="home-card-head">
         <h2>Board status</h2>
         <span className="home-card-count">{open === null ? "…" : `${open} open`}</span>

@@ -238,7 +238,7 @@ export function ImportTicketsConfirmModal({
           </div>
 
           {hasTickets && (
-            <div className="modal-field import-bulk-milestone">
+            <div className="modal-field">
               <div className="modal-field-label">Assign milestone to all</div>
               <div className="import-bulk-milestone-row">
                 <select

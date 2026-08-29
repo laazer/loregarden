@@ -600,6 +600,14 @@
   animation: pulse 1.9s ease-in-out infinite;
 }
 
+/* With the station sprites hidden the HQ tile loses the figure that located it,
+   so the marker variant keeps a ring where the sprite used to stand. */
+.hive-css__god--marker {
+  outline: 2px dashed rgba(111, 174, 143, 0.55);
+  outline-offset: -3px;
+  border-radius: 6px;
+}
+
 .hive-css__god-label,
 .hive-css__station-label,
 .hive-css__waiting-label,
@@ -1200,3 +1208,11 @@
 .hive-debug__key--reception { --hive-debug-swatch: #ff6fae; }
 
 .hive-debug__marker--zone { --hive-debug-dot: #ffffff; }
+
+/* The canvas host is the positioning context for `.hive-panel__idle`, which is
+   absolutely placed and would otherwise anchor to whichever ancestor happens to
+   be positioned. Sizing is deliberately left alone: HiveFloorScene currently has
+   no importer, so any box metrics here would be guesses nothing can exercise. */
+.hive-panel__canvas-host {
+  position: relative;
+}

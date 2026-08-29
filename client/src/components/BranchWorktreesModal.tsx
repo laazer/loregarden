@@ -32,7 +32,7 @@ export function BranchWorktreesModal({
     <>
       <div className="modal-overlay" onClick={onClose} role="presentation" />
       <div
-        className="modal-panel branch-worktrees-modal"
+        className="modal-panel"
         role="dialog"
         aria-labelledby="branch-worktrees-title"
         aria-modal="true"

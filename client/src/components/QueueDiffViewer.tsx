@@ -269,7 +269,7 @@ export function QueueDiffViewer({
 
         {stats.total === 0 && (
           <div className="no-changes">
-            <div className="no-changes-icon">✓</div>
+            <div >✓</div>
             <div className="no-changes-text">No changes in this operation</div>
           </div>
         )}
@@ -277,10 +277,10 @@ export function QueueDiffViewer({
 
       {/* Footer Stats */}
       <div className="diff-footer">
-        <span className="total-changes">
+        <span >
           {stats.total} total change{stats.total === 1 ? '' : 's'}
         </span>
-        <span className="queue-sizes">
+        <span >
           {beforeState.length} → {afterState.length} runs
         </span>
       </div>

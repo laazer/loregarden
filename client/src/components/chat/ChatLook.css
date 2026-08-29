@@ -383,3 +383,9 @@
   font-size: 11.5px;
   color: var(--rdl);
 }
+
+/* A turn that is asking the user something, rather than reporting. The accent
+   rail is the only cue that the thread is waiting on a person. */
+.lg-chat-turn--ask {
+  box-shadow: inset 2px 0 0 var(--ac);
+}

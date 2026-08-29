@@ -185,7 +185,7 @@ export function HiveFloorScene({ model, skin }: HiveFloorSceneProps) {
   return (
     <div ref={hostRef} className="hive-panel__canvas-host">
       {!ready ? (
-        <div className="hive-panel__idle hive-panel__idle--overlay">
+        <div className="hive-panel__idle">
           <div className="hive-panel__idle-copy">Starting floor…</div>
         </div>
       ) : null}

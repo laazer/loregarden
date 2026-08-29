@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import "./FinalizationConfirmation.css";
 
 export interface FinalizationBreakdown {
   milestone?: number | string | null;
@@ -47,11 +48,11 @@ export function FinalizationConfirmation({
 
   if (error) {
     return (
-      <div className="finalization-confirmation finalization-confirmation--error">
-        <h3 className="finalization-error-title" style={{ margin: "0 0 8px", color: "var(--rdl)" }}>
+      <div >
+        <h3 className="finalization-error-title">
           Unable to finalize
         </h3>
-        <p className="finalization-error-message" style={{ margin: 0, fontSize: 13.5, color: "var(--txm)" }}>
+        <p className="finalization-error-message">
           {error}
         </p>
         {onClose && (
@@ -65,8 +66,8 @@ export function FinalizationConfirmation({
 
   if (isLoading) {
     return (
-      <div className="finalization-confirmation finalization-confirmation--loading">
-        <div role="status" className="finalization-spinner">
+      <div >
+        <div role="status">
           Finalizing hierarchy…
         </div>
       </div>
@@ -103,8 +104,8 @@ export function FinalizationConfirmation({
   };
 
   return (
-    <div className="finalization-confirmation finalization-confirmation--success">
-      <div role="status" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+    <div >
+      <div role="status" className="finalization-header">
         <svg
           data-testid="finalization-success-icon"
           width="20"
@@ -117,27 +118,27 @@ export function FinalizationConfirmation({
         >
           <path d="M20 6 9 17l-5-5" />
         </svg>
-        <h3 className="finalization-title" style={{ margin: 0 }}>
+        <h3 className="finalization-title">
           Hierarchy created successfully
         </h3>
       </div>
 
-      <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 12 }}>
-        <span className="finalization-total-count" style={{ fontSize: 24, fontWeight: 700 }}>
+      <div className="finalization-total">
+        <span className="finalization-total-count">
           {total}
         </span>
-        <span className="finalization-total-label" style={{ fontSize: 13, color: "var(--txm)" }}>
+        <span className="finalization-total-label">
           item{total === 1 ? "" : "s"}
         </span>
       </div>
 
       {breakdownSummary && (
-        <p className="finalization-breakdown-summary" style={{ margin: "8px 0 0", fontSize: 12.5, color: "var(--txm)" }}>
+        <p className="finalization-breakdown-summary">
           {breakdownSummary}
         </p>
       )}
 
-      <div className="finalization-actions" style={{ display: "flex", gap: 8, marginTop: 16 }}>
+      <div className="finalization-actions">
         <button type="button" className="btn-primary" disabled={navDisabled} onClick={handleNavigate}>
           View hierarchy
         </button>

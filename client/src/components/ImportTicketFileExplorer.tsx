@@ -71,7 +71,7 @@ export function ImportTicketFileExplorer({
   };
 
   return (
-    <div className="repo-path-explorer import-file-explorer">
+    <div className="repo-path-explorer">
       <PathExplorerToolbar
         disabled={disabled}
         loading={loading}

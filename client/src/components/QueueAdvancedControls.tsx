@@ -217,7 +217,7 @@ export function QueueAdvancedControls({
             {isProcessing === 'bulk' ? '⏳' : '✕'} Cancel Selected ({selectedRuns.size})
           </button>
           <button
-            className="bulk-btn clear"
+            className="bulk-btn"
             onClick={() => setSelectedRuns(new Set())}
             disabled={isProcessing === 'bulk'}
           >
