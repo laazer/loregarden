@@ -29,7 +29,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 _LEFTHOOK_SCRIPTS = Path(__file__).resolve().parent
 if str(_LEFTHOOK_SCRIPTS) not in sys.path:
@@ -38,16 +38,13 @@ if str(_LEFTHOOK_SCRIPTS) not in sys.path:
 from precommit_git_diff import (
     DIFF_SCOPES,
     STAGED,
-    WORKTREE,
     GitScopeError,
-    ResolvedScope,
-    examined_line,
     git_diff_cached,
     git_diff_numstat,
     git_repo_root,
     git_untracked_paths,
     parse_staged_additions,
-    resolve_scope,
+    resolve_gate_scope,
 )
 from py_string_vocab import collect_enum_members, string_vocabulary_errors
 
@@ -513,6 +510,26 @@ def python_source_root(repo_root: Path, changed_files: Optional[List[Path]] = No
     return roots[0] if len(roots) == 1 else repo_root
 
 
+def python_files_in_scope(
+    repo: Optional[Path], candidates: Sequence[Path], discovered: bool = True
+) -> List[Path]:
+    """The Python files a gate should read, from a run's candidate paths.
+
+    A ``discovered`` list came from a diff, so it is confined to the repo's own
+    Python source root — mirroring the lefthook glob, without which a gate
+    grades build tooling and AST-walking scripts by rules written for
+    application code. An explicit list was already scoped by its caller.
+
+    Shared by every Python gate: this filter decides half of whether a run
+    examined anything, so it does not get reimplemented per gate.
+    """
+    python = [path for path in candidates if path.suffix == ".py"]
+    if repo is None or not discovered:
+        return python
+    source_root = python_source_root(repo).resolve()
+    return [path for path in python if source_root in path.resolve().parents]
+
+
 def _read_and_parse(py_file: Path) -> Optional[Tuple[str, ast.AST]]:
     if not py_file.exists():
         return None
@@ -678,17 +695,6 @@ def parse_argv(argv: List[str]) -> Invocation:
     return Invocation(files, repo, diff_scope, base_ref, label)
 
 
-def _gate_candidates(repo: Path, scope: ResolvedScope) -> List[Path]:
-    """Changed Python files under the repo's own source root.
-
-    Mirrors the lefthook glob — otherwise the gate grades build tooling and
-    AST-walking scripts by rules written for application code.
-    """
-    source_root = python_source_root(repo).resolve()
-    changed = (repo / rel for rel in scope.paths if rel.endswith(".py"))
-    return [path for path in changed if source_root in path.resolve().parents]
-
-
 def main(argv: List[str]) -> int:
     invocation = parse_argv(argv)
     try:
@@ -700,18 +706,16 @@ def main(argv: List[str]) -> int:
 
 
 def _check(invocation: Invocation) -> int:
-    repo = invocation.repo
-    candidates = invocation.files
-    # Explicit file list (lefthook): the caller already scoped this run.
-    diff_scope = invocation.diff_scope
-    description = "staged changes"
-    if not candidates and repo is not None:
-        # Gate mode: no explicit file list, so the diff itself says what to read.
-        scope = resolve_scope(repo, invocation.diff_scope, invocation.base_ref)
-        diff_scope = scope.diff_scope
-        description = scope.describe()
-        candidates = _gate_candidates(repo, scope)
-    print(examined_line(invocation.label, len(candidates), description))
+    run = resolve_gate_scope(
+        label=invocation.label,
+        repo=invocation.repo,
+        diff_scope=invocation.diff_scope,
+        base_ref=invocation.base_ref,
+        explicit_files=invocation.files,
+        select=python_files_in_scope,
+    )
+    repo = run.repo
+    candidates = run.files
     if not candidates:
         return 0
 
@@ -719,12 +723,12 @@ def _check(invocation: Invocation) -> int:
     numstat_map: Dict[str, Tuple[int, int]] = {}
     untracked: Set[str] = set()
     if repo is not None:
-        diff = git_diff_cached(repo, diff_scope, invocation.base_ref)
+        diff = git_diff_cached(repo, run.diff_scope, run.base_ref)
         additions_map = {
             path: {ln for ln, _ in items} for path, items in parse_staged_additions(diff).items()
         }
-        numstat_map = git_diff_numstat(repo, diff_scope, invocation.base_ref)
-        if diff_scope == WORKTREE:
+        numstat_map = git_diff_numstat(repo, run.diff_scope, run.base_ref)
+        if run.scope.includes_untracked:
             untracked = set(git_untracked_paths(repo))
 
     touched_map: Dict[Path, Optional[Set[int]]] = {}

@@ -226,11 +226,46 @@ function git(args, cwd) {
   }
 }
 
-/** git-diff selector per scope; mirrors precommit_git_diff.py's `_scope_args`. */
+/**
+ * Refuse a ref git would read as an option — `--base --output=/tmp/x` reached
+ * `git diff` as a flag, wrote a file outside the repository, and returned a
+ * zero-file exit 0. Mirrors precommit_git_diff.py's `_validated_ref`.
+ */
+function validatedRef(ref) {
+  if (ref.startsWith("-")) {
+    throw new GitScopeError(`base ref "${ref}" looks like an option, not a revision`);
+  }
+  return ref;
+}
+
+/**
+ * git-diff selector per scope; mirrors precommit_git_diff.py's `_scope_args`.
+ * `since` is not a scope a caller may ask for: it is the resolved form of
+ * `worktree`, an already-resolved merge base compared against the working tree.
+ */
 function scopeArgs(diffScope, baseRef) {
   if (diffScope === "worktree") return ["HEAD"];
-  if (diffScope === "branch") return [`${baseRef}...HEAD`];
+  if (diffScope === "branch") return [`${validatedRef(baseRef)}...HEAD`];
+  if (diffScope === "since") return [validatedRef(baseRef)];
   return ["--cached"];
+}
+
+/** The commit this branch forked from, or null when `baseRef` is unknown. */
+function mergeBase(repoRoot, baseRef) {
+  try {
+    return (
+      execFileSync("git", ["merge-base", validatedRef(baseRef), "HEAD"], {
+        cwd: repoRoot,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim() || null
+    );
+  } catch (err) {
+    if (err instanceof GitScopeError) throw err;
+    // Unknown is a real answer: not every workspace calls its trunk `main`, and
+    // both callers of this either name the unresolved ref or raise.
+    return null;
+  }
 }
 
 /**
@@ -274,33 +309,102 @@ function changedPaths(repoRoot, diffScope, baseRef) {
     return [...new Set(untrackedPaths(repoRoot))];
   }
   const out = git(
-    ["diff", ...scopeArgs(diffScope, baseRef), "--name-only", "--diff-filter=ACMR"],
+    ["diff", ...scopeArgs(diffScope, baseRef), "--name-only", "--diff-filter=ACMR", "--"],
     repoRoot,
   );
   const paths = out.split("\n").map((l) => l.trim()).filter(Boolean);
-  if (diffScope === "worktree") paths.push(...untrackedPaths(repoRoot));
+  if (diffScope === "worktree" || diffScope === "since") paths.push(...untrackedPaths(repoRoot));
   return [...new Set(paths)];
+}
+
+/** How a scope reads in the `examined N file(s) — …` line. */
+function describeScope(diffScope, baseRef) {
+  if (diffScope === "worktree") return "worktree changes vs HEAD";
+  if (diffScope === "branch") return `branch diff ${baseRef}...HEAD`;
+  if (diffScope === "since") return `worktree and branch changes since ${baseRef}`;
+  return "staged changes";
 }
 
 /**
  * What this run should examine, and never "nothing" — mirrors
  * precommit_git_diff.py's `resolve_scope`. A driver that commits the ticket
- * worktree to satisfy the worktree-retire guard empties the `HEAD` diff, so a
- * clean tree falls back to the branch diff that still holds that commit.
+ * worktree to satisfy the worktree-retire guard empties the `HEAD` diff, so
+ * `worktree` resolves to the merge base instead: one diff carrying the branch's
+ * commits *and* whatever is still uncommitted. The two are not alternatives —
+ * consulting the branch only when the whole tree happened to be clean left one
+ * stray untracked file able to hide the committed change again.
  */
 function resolveScope(repoRoot, diffScope, baseRef) {
-  const paths = changedPaths(repoRoot, diffScope, baseRef);
-  if (diffScope === "worktree" && paths.length === 0 && hasHead(repoRoot)) {
+  if (diffScope !== "worktree") {
     return {
-      diffScope: "branch",
-      paths: changedPaths(repoRoot, "branch", baseRef),
-      description: `branch diff ${baseRef}...HEAD (worktree is clean)`,
+      diffScope,
+      baseRef,
+      paths: changedPaths(repoRoot, diffScope, baseRef),
+      description: describeScope(diffScope, baseRef),
+      includesUntracked: false,
     };
   }
-  let description = "staged changes";
-  if (diffScope === "worktree") description = "worktree changes vs HEAD";
-  else if (diffScope === "branch") description = `branch diff ${baseRef}...HEAD`;
-  return { diffScope, paths, description };
+  if (!hasHead(repoRoot)) {
+    return {
+      diffScope,
+      baseRef,
+      paths: changedPaths(repoRoot, "worktree", baseRef),
+      description: "worktree changes (no commits yet)",
+      includesUntracked: true,
+    };
+  }
+  const base = mergeBase(repoRoot, baseRef);
+  if (base === null) {
+    const paths = changedPaths(repoRoot, "worktree", baseRef);
+    if (paths.length === 0) {
+      throw new GitScopeError(
+        `base ref "${baseRef}" did not resolve and the worktree is clean: ` +
+          "there is nothing this run could have examined",
+      );
+    }
+    return {
+      diffScope: "worktree",
+      baseRef,
+      paths,
+      description:
+        `worktree changes vs HEAD (base "${baseRef}" did not resolve; ` +
+        "branch commits not examined)",
+      includesUntracked: true,
+    };
+  }
+  return {
+    diffScope: "since",
+    baseRef: base,
+    paths: changedPaths(repoRoot, "since", base),
+    description: describeScope("since", baseRef),
+    includesUntracked: true,
+  };
+}
+
+/**
+ * Resolve, filter, count and announce — the whole preamble, once, so no gate
+ * can silently omit one of the four steps and report a pass over files it never
+ * read. Mirrors precommit_git_diff.py's `resolve_gate_scope`.
+ */
+function resolveGateScope({ label, repoRoot, diffScope, baseRef, files, select }) {
+  // An explicit file list (lefthook) means the caller already scoped this run.
+  const scope =
+    files.length > 0
+      ? {
+          diffScope,
+          baseRef,
+          paths: [],
+          description: describeScope(diffScope, baseRef),
+          includesUntracked: false,
+        }
+      : resolveScope(repoRoot, diffScope, baseRef);
+  const discovered = files.length === 0;
+  const candidates = discovered ? scope.paths.map((rel) => path.resolve(repoRoot, rel)) : files;
+  const graded = select(candidates, discovered);
+  // Counted after filtering, always: the number has to be the number of files
+  // the gate read, or it is one more thing that looks like a pass over work.
+  console.log(`${label}: examined ${graded.length} file(s) — ${scope.description}`);
+  return { scope, files: graded };
 }
 
 function stagedAdditions(repoRel, repoRoot, diffScope, baseRef, isUntracked, lineCount) {
@@ -473,32 +577,38 @@ function parseArgv(argv) {
   return { files, repoRoot, diffScope, baseRef, label };
 }
 
-function run() {
-  const { files, repoRoot, diffScope, baseRef, label } = parseArgv(process.argv.slice(2));
-
-  // Gate mode: no explicit list, so the diff says what to read — confined to the
-  // repo's TypeScript source root, mirroring the lefthook glob.
+/**
+ * The TypeScript files this gate grades. A `discovered` list came from a diff,
+ * so it is confined to the repo's own source root — mirroring the lefthook
+ * glob, so the gate does not judge build tooling by rules written for
+ * application code. An explicit list was already scoped by its caller, and
+ * narrowing it again would silently drop files that caller meant to have
+ * graded.
+ */
+function tsFilesInScope(repoRoot, candidates, discovered) {
   const sourceRoot = tsSourceRoot(repoRoot);
-  // An explicit file list (lefthook) means the caller already scoped this run.
-  const scope =
-    files.length > 0
-      ? { diffScope, paths: [], description: "staged changes" }
-      : resolveScope(repoRoot, diffScope, baseRef);
-  const args =
-    files.length > 0
-      ? files
-      : scope.paths
-          .filter((p) => /\.(ts|tsx)$/.test(p))
-          .map((rel) => path.resolve(repoRoot, rel))
-          .filter((full) => full.startsWith(`${sourceRoot}${path.sep}`));
+  return candidates.filter(
+    (candidate) =>
+      /\.(ts|tsx)$/.test(candidate) &&
+      (!discovered || path.resolve(repoRoot, candidate).startsWith(`${sourceRoot}${path.sep}`)),
+  );
+}
 
-  console.log(`${label}: examined ${args.length} file(s) — ${scope.description}`);
+function run({ files, repoRoot, diffScope, baseRef, label }) {
+  const { scope, files: args } = resolveGateScope({
+    label,
+    repoRoot,
+    diffScope,
+    baseRef,
+    files,
+    select: (candidates, discovered) => tsFilesInScope(repoRoot, candidates, discovered),
+  });
   if (args.length === 0) {
     return 0;
   }
 
   const untracked = new Set(
-    scope.diffScope === "worktree"
+    scope.includesUntracked
       ? untrackedPaths(repoRoot).map((p) => path.resolve(repoRoot, p))
       : [],
   );
@@ -514,7 +624,7 @@ function run() {
       repoRel,
       repoRoot,
       scope.diffScope,
-      baseRef,
+      scope.baseRef,
       untracked.has(path.resolve(filePath)),
       lines.length,
     );
@@ -537,11 +647,12 @@ function run() {
   return 0;
 }
 
+const invocation = parseArgv(process.argv.slice(2));
 try {
-  process.exit(run());
+  process.exit(run(invocation));
 } catch (err) {
   if (!(err instanceof GitScopeError)) throw err;
   // A scope the gate could not resolve is not a scope it examined.
-  console.error(`gate: cannot determine what to examine: ${err.message}`);
+  console.error(`${invocation.label}: cannot determine what to examine: ${err.message}`);
   process.exit(1);
 }

@@ -177,6 +177,93 @@ def test_clean_tree_run_names_the_branch_scope_it_fell_back_to(
     assert "branch" in _out(result).lower()
 
 
+#: Files that are not this run's subject: a scratch note an agent left behind,
+#: and an unrelated edit to a file that was already tracked. Neither says
+#: anything about the commit the stage just made.
+UNRELATED_UNTRACKED = "NOTES.txt"
+UNRELATED_TRACKED = {
+    "src/pkg/new_mod.py": ("src/pkg/base.py", "y = 2\n"),
+    "client/src/new_mod.ts": ("client/src/base.ts", "export const z = 3;\n"),
+}
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_a_stray_untracked_file_does_not_hide_the_committed_change(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """AC1: the branch diff is not an alternative to the worktree diff.
+
+    Reading the branch only when the *whole* tree is clean reopens the hole this
+    ticket exists to close: the gate fires after the driver commits, and
+    anything the agent left behind in between — a scratch note, a log, a report
+    — puts the committed violation back out of view. One `echo notes >
+    NOTES.txt` was enough to turn exit 1 into `examined 0 file(s)`, exit 0.
+    """
+    _commit_agent_work(repo, relpath, body)
+    (repo / UNRELATED_UNTRACKED).write_text("notes\n")
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    assert result.returncode == 1, _out(result)
+    assert Path(relpath).name in _out(result)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_an_unrelated_tracked_edit_does_not_hide_the_committed_change(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """AC1, the worse variant: a plausible count *and* a pass.
+
+    Touching any already-tracked file gives the worktree diff something to
+    report, so the run printed `examined 1 file(s)` and `check passed` — a
+    count that looks like work was read, over a file that is not the one the
+    stage committed.
+    """
+    _commit_agent_work(repo, relpath, body)
+    unrelated_rel, appended = UNRELATED_TRACKED[relpath]
+    unrelated = repo / unrelated_rel
+    unrelated.write_text(unrelated.read_text() + appended)
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    assert result.returncode == 1, _out(result)
+    assert Path(relpath).name in _out(result)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_a_base_ref_that_looks_like_an_option_is_refused(
+    repo: Path, gate: list[str], relpath: str, body: str, tmp_path: Path
+) -> None:
+    """A `--base` starting with `-` reached git as a flag.
+
+    `--base --output=/tmp/x` interpolated straight into the argv, so git wrote a
+    real file outside the repository and the run reported zero files, exit 0.
+    """
+    _commit_agent_work(repo, relpath, body)
+    written = tmp_path / "escaped.txt"
+
+    result = _run_gate(gate, repo, "--base", f"--output={written}")
+
+    assert result.returncode != 0, _out(result)
+    assert not written.exists(), "the base ref reached git as an option"
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), CLEAN_TRANSITION_GATES)
+def test_an_explicit_file_list_names_the_scope_it_was_given(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """AC2: the scope line must not claim the index when the run is not scoped to it."""
+    target = repo / relpath
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(body)
+    _git(repo, "add", "-A")
+
+    result = _run_gate(gate, repo, str(target))
+
+    assert "staged changes" not in _out(result), _out(result)
+    assert "worktree" in _out(result).lower(), _out(result)
+
+
 @pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
 def test_uncommitted_work_is_examined_at_worktree_scope(
     repo: Path, gate: list[str], relpath: str, body: str
