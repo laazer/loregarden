@@ -12,7 +12,12 @@ import { BaxterAvatar } from "../components/chat/BaxterAvatar";
 import { StudioChatComposer } from "../components/studio/StudioChat";
 import { ticketPath } from "../lib/appNavigation";
 import { chatPath, stashHomeBaxterPrompt } from "../lib/homeBaxter";
-import { ticketActivityColor, ticketActivityLabel, ticketStateLabel } from "../lib/ticketStates";
+import {
+  runStatusLabel,
+  ticketActivityColor,
+  ticketActivityLabel,
+  ticketStateLabel,
+} from "../lib/ticketStates";
 import { useUiStore } from "../state/uiStore";
 import "./HomePage.css";
 
@@ -25,6 +30,19 @@ const HERO_CHIPS = [
 
 function pendingApprovals(approvals: Approval[] | undefined): Approval[] {
   return (approvals ?? []).filter((a) => !a.status || a.status === "pending");
+}
+
+function runLabel(run: {
+  ticket_id?: string;
+  ticket_title?: string;
+  ticket_external_id?: string;
+}): string {
+  const title = run.ticket_title?.trim();
+  if (title) return title;
+  const code = run.ticket_external_id?.trim();
+  if (code) return code;
+  if (run.ticket_id) return `Ticket ${run.ticket_id.slice(0, 8)}`;
+  return "Workspace";
 }
 
 function greetingFor(now: Date): string {
@@ -89,15 +107,7 @@ export function HomePage() {
   const inProgress = tickets.filter((t) => t.state === "in_progress");
   const blocked = tickets.filter((t) => t.state === "blocked");
   const ticketsLoading = ticketsQ.isLoading || (ticketsQ.isFetching && !ticketsQ.data);
-  // Named for what it is: recent runs. "Activity" now means ticket activity.
-  const recentRuns = (runsQ.data ?? []).slice(0, 8);
-  // Only covers active tickets, since that's what the page already fetches —
-  // a run against a ticket that's since finished just falls back to its id.
-  const ticketTitleById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const t of tickets) map.set(t.id, t.title);
-    return map;
-  }, [tickets]);
+  const recentRuns = (runsQ.data ?? []).slice(0, 16);
 
   const status = statusQ.data;
   const summaryLine = useMemo(() => {
@@ -123,7 +133,7 @@ export function HomePage() {
   return (
     <div className="home-page lg-chat-surface">
       <header className="home-header">
-        <div >
+        <div>
           <p className="home-kicker">{formatDateLine(now)}</p>
           <h1 className="home-greeting">{greetingFor(now)}</h1>
           <p className="home-summary">{summaryLine}</p>
@@ -163,13 +173,13 @@ export function HomePage() {
         </div>
       </section>
 
-      <section className="home-cards" aria-label="Live status">
-        <StatusCard
-          summary={status}
-          loading={statusQ.isLoading}
-          onAction={() => navigate("/console")}
-        />
+      <StatusCard
+        summary={status}
+        loading={statusQ.isLoading}
+        onAction={() => navigate("/console")}
+      />
 
+      <section className="home-board" aria-label="Live status">
         <HomeCard
           title="Approvals waiting"
           count={pending.length}
@@ -180,7 +190,7 @@ export function HomePage() {
             navigate("/console");
           }}
         >
-          {pending.slice(0, 4).map((a) => (
+          {pending.slice(0, 8).map((a) => (
             <button
               key={a.id}
               type="button"
@@ -203,7 +213,7 @@ export function HomePage() {
           actionLabel="Open Console"
           onAction={() => navigate("/console")}
         >
-          {activeTickets.slice(0, 8).map((t: TicketSummary) => (
+          {activeTickets.slice(0, 12).map((t: TicketSummary) => (
             <button
               key={t.id}
               type="button"
@@ -215,8 +225,6 @@ export function HomePage() {
                 <span className={`home-row-meta home-row-meta--${t.state}`}>
                   {ticketStateLabel(t.state)}
                 </span>
-                {/* The state above says the ticket is open; this says whether
-                    anything is happening on it. */}
                 <span
                   className="home-row-activity"
                   style={{ color: ticketActivityColor(t.activity) }}
@@ -227,53 +235,63 @@ export function HomePage() {
             </button>
           ))}
         </HomeCard>
-      </section>
 
-      <section className="home-activity" aria-label="Recent activity">
-        <div className="home-activity-head">
-          <h2>Recent activity</h2>
-        </div>
-        {recentRuns.length === 0 ? (
-          <p className="home-empty">No recent runs.</p>
-        ) : (
-          <ul className="home-activity-list">
-            {recentRuns.map((run) => {
-              const ticketTitle = run.ticket_id ? ticketTitleById.get(run.ticket_id) : undefined;
-              const content = (
-                <>
-                  <span className={`home-run-status home-run-status--${run.status}`}>{run.status}</span>
-                  <span className="home-activity-main">
-                    <span className="home-activity-agent">{run.agent_id || "agent"}</span>
-                    <span className="home-activity-stage">
-                      {run.stage_key || run.run_code || run.id.slice(0, 8)}
+        <section className="home-activity" aria-label="Recent activity">
+          <div className="home-activity-head">
+            <h2>Recent activity</h2>
+            <span className="home-card-count">{recentRuns.length}</span>
+          </div>
+          {recentRuns.length === 0 ? (
+            <p className="home-empty">No recent runs.</p>
+          ) : (
+            <ul className="home-activity-list">
+              {recentRuns.map((run) => {
+                const ticketId = run.ticket_id;
+                const content = (
+                  <>
+                    <span className={`home-run-status home-run-status--${run.status}`}>
+                      {runStatusLabel(run.status)}
                     </span>
-                    {run.ticket_id && (
-                      <span className="home-activity-ticket">{ticketTitle || `Ticket ${run.ticket_id.slice(0, 8)}`}</span>
+                    <span className="home-activity-main">
+                      <span className="home-activity-ticket">
+                        {run.ticket_external_id && run.ticket_title ? (
+                          <span className="home-activity-ticket-id">{run.ticket_external_id}</span>
+                        ) : null}
+                        <span className="home-activity-ticket-name">{runLabel(run)}</span>
+                      </span>
+                      <span className="home-activity-meta">
+                        <span className="home-activity-agent">{run.agent_id || "agent"}</span>
+                        {run.stage_key ? (
+                          <span className="home-activity-stage">{run.stage_key}</span>
+                        ) : null}
+                        {run.command ? (
+                          <span className="home-activity-cmd" title={run.command}>
+                            {run.command}
+                          </span>
+                        ) : null}
+                      </span>
+                    </span>
+                  </>
+                );
+                return (
+                  <li key={run.id} className="home-activity-item">
+                    {ticketId ? (
+                      <button
+                        type="button"
+                        className="home-activity-row"
+                        onClick={() => navigate(ticketPath(ticketId))}
+                      >
+                        {content}
+                      </button>
+                    ) : (
+                      <span className="home-activity-row home-activity-row--static">{content}</span>
                     )}
-                  </span>
-                  <span className="home-activity-cmd" title={run.command}>
-                    {run.command || "—"}
-                  </span>
-                </>
-              );
-              return (
-                <li key={run.id} className="home-activity-item">
-                  {run.ticket_id ? (
-                    <button
-                      type="button"
-                      className="home-activity-row"
-                      onClick={() => navigate(ticketPath(run.ticket_id as string))}
-                    >
-                      {content}
-                    </button>
-                  ) : (
-                    <span className="home-activity-row home-activity-row--static">{content}</span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
       </section>
     </div>
   );
@@ -311,10 +329,15 @@ function StatusCard({
   const open = summary ? summary.backlog + summary.in_progress + summary.blocked : null;
 
   return (
-    <article className="home-card" aria-label="Board status">
+    <article className="home-card home-card--status" aria-label="Board status">
       <header className="home-card-head">
         <h2>Board status</h2>
-        <span className="home-card-count">{open === null ? "…" : `${open} open`}</span>
+        <div className="home-card-head-meta">
+          <span className="home-card-count">{open === null ? "…" : `${open} open`}</span>
+          <button type="button" className="home-card-action home-card-action--inline" onClick={onAction}>
+            Open Console
+          </button>
+        </div>
       </header>
       <div className="home-card-body home-status-body">
         {!summary && !loading ? (
@@ -348,11 +371,6 @@ function StatusCard({
           </>
         )}
       </div>
-      <footer className="home-card-foot">
-        <button type="button" className="home-card-action" onClick={onAction}>
-          Open Console
-        </button>
-      </footer>
     </article>
   );
 }

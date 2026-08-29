@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loregarden.core.timestamps import iso_utc
 from loregarden.db.session import get_session
-from loregarden.models.domain import HandoffCheckinRequest, RunMessageCreate, RunStatus
+from loregarden.models.domain import HandoffCheckinRequest, RunMessageCreate, RunStatus, Ticket
 from loregarden.services.artifact_service import load_run_log
 from loregarden.services.run_cancellation import cancel_refusal, request_cancel
 from loregarden.services.run_errors import normalize_timeout_stderr
@@ -15,11 +15,20 @@ from loregarden.services.run_service import (
 )
 from loregarden.services.run_steering import list_messages, queue_message, steer_refusal
 from loregarden.services.run_token_usage import TokenTotals, ticket_usage
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 _IN_FLIGHT_STATUSES = (RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION)
 
 router = APIRouter(prefix="/runs", tags=["runs"])
+
+
+def _tickets_by_id(session: Session, ticket_ids: set[str]) -> dict[str, Ticket]:
+    if not ticket_ids:
+        return {}
+    return {
+        row.id: row
+        for row in session.exec(select(Ticket).where(col(Ticket.id).in_(ticket_ids))).all()
+    }
 
 
 @router.get("")
@@ -30,27 +39,35 @@ def list_runs(
 ) -> list[dict]:
     svc = RunService(session)
     runs = svc.list_runs(ticket_id=ticket_id, limit=limit)
-    return [
-        {
-            "id": r.id,
-            "run_code": r.run_code,
-            "ticket_id": r.ticket_id or "",
-            "workspace_id": r.workspace_id,
-            "agent_id": r.agent_id,
-            "skill_name": r.skill_name,
-            "stage_key": r.stage_key,
-            "status": r.status.value,
-            "command": r.command,
-            # created_at is the only stamp a run that never started still has —
-            # the errors list must be able to say when a dispatch failed too.
-            "created_at": iso_utc(r.created_at),
-            "started_at": iso_utc(r.started_at),
-            "finished_at": iso_utc(r.finished_at),
-            "stdout": r.stdout[:2000] if r.stdout else "",
-            "stderr": normalize_timeout_stderr(r.stderr[:2000] if r.stderr else ""),
-        }
-        for r in runs
-    ]
+    tickets = _tickets_by_id(session, {r.ticket_id for r in runs if r.ticket_id})
+    payload = []
+    for r in runs:
+        ticket = tickets.get(r.ticket_id) if r.ticket_id else None
+        payload.append(
+            {
+                "id": r.id,
+                "run_code": r.run_code,
+                "ticket_id": r.ticket_id or "",
+                "ticket_title": ticket.title if ticket else "",
+                "ticket_external_id": ticket.external_id if ticket else "",
+                "workspace_id": r.workspace_id,
+                "agent_id": r.agent_id,
+                "skill_name": r.skill_name,
+                "stage_key": r.stage_key,
+                "status": r.status.value,
+                "command": r.command,
+                # created_at is the only stamp a run that never started still has —
+                # the errors list must be able to say when a dispatch failed too.
+                "created_at": iso_utc(r.created_at),
+                "started_at": iso_utc(r.started_at),
+                "finished_at": iso_utc(r.finished_at),
+                # Blobs live on GET /runs/{id}. Selecting them here table-scans
+                # hundreds of MB of stdout and stalls the home page.
+                "stdout": "",
+                "stderr": "",
+            }
+        )
+    return payload
 
 
 def _totals_payload(totals: TokenTotals) -> dict:

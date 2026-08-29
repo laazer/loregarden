@@ -136,6 +136,32 @@ describe("HomePage", () => {
     });
   });
 
+  describe("recent activity", () => {
+    it("shows the ticket name even when that ticket is no longer active", async () => {
+      mockedApi.tickets.mockResolvedValue([]);
+      mockedApi.runs.mockResolvedValue([
+        {
+          id: "run-done",
+          run_code: "R9",
+          status: "succeeded",
+          command: "pytest -q",
+          agent_id: "backend_implementer",
+          stage_key: "impl",
+          ticket_id: "t-done",
+          ticket_title: "Ship the home page",
+          ticket_external_id: "lor-home-12",
+        },
+      ]);
+
+      renderHome();
+
+      const activity = await screen.findByRole("region", { name: /Recent activity/i });
+      expect(await within(activity).findByText("Ship the home page")).toBeInTheDocument();
+      expect(within(activity).getByText("lor-home-12")).toBeInTheDocument();
+      expect(within(activity).getByText("Succeeded")).toBeInTheDocument();
+    });
+  });
+
   it("badges an in-progress ticket with whether it is actually running", async () => {
     mockedApi.tickets.mockResolvedValue([
       ticketFixture({ id: "t-run", title: "Live one", activity: "running" }),

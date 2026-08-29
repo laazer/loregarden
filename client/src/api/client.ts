@@ -164,6 +164,8 @@ export const api = {
         id: string;
         run_code: string;
         ticket_id?: string;
+        ticket_title?: string;
+        ticket_external_id?: string;
         status: string;
         command: string;
         agent_id: string;

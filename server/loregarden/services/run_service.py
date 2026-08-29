@@ -38,6 +38,7 @@ from loregarden.services.scheduling import set_orchestration_scheduler
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workflow_state import set_stage_status
+from sqlalchemy.orm import defer
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -628,7 +629,12 @@ class RunService:
         limit: int = 50,
         include_triage: bool = False,
     ) -> list[AgentRun]:
-        query = select(AgentRun).order_by(AgentRun.created_at.desc()).limit(limit)
+        query = (
+            select(AgentRun)
+            .options(defer(AgentRun.stdout), defer(AgentRun.stderr))
+            .order_by(AgentRun.created_at.desc())
+            .limit(limit)
+        )
         if ticket_id:
             query = query.where(AgentRun.ticket_id == ticket_id)
         if not include_triage:
