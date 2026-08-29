@@ -479,6 +479,7 @@ export function CanvasSurface({
           className={ICON_BUTTON}
           data-canvas-action="zoom-out"
           aria-label="Zoom out"
+          title="Zoom out"
           disabled={zoom <= MIN_ZOOM}
           onClick={() => zoomAround(zoom / ZOOM_STEP, undefined, undefined)}
         >
@@ -498,6 +499,7 @@ export function CanvasSurface({
           className={ICON_BUTTON}
           data-canvas-action="zoom-in"
           aria-label="Zoom in"
+          title="Zoom in"
           disabled={zoom >= MAX_ZOOM}
           onClick={() => zoomAround(zoom * ZOOM_STEP, undefined, undefined)}
         >

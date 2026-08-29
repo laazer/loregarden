@@ -382,6 +382,7 @@ function GridLeafView({
               className={ICON_BUTTON}
               data-grid-action="split-horizontal"
               aria-label="Split horizontally"
+              title="Split horizontally"
               onClick={() => actions.split(leaf.id, "horizontal")}
             >
               <span aria-hidden="true">▥</span>
@@ -391,6 +392,7 @@ function GridLeafView({
               className={ICON_BUTTON}
               data-grid-action="split-vertical"
               aria-label="Split vertically"
+              title="Split vertically"
               onClick={() => actions.split(leaf.id, "vertical")}
             >
               <span aria-hidden="true">▤</span>
@@ -400,6 +402,7 @@ function GridLeafView({
               className={ICON_BUTTON}
               data-grid-action="close"
               aria-label="Close this pane"
+              title="Close this pane"
               onClick={() => actions.close(leaf.id)}
             >
               <span aria-hidden="true">✕</span>

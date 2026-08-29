@@ -399,6 +399,7 @@ export function CanvasItemView({
               className={ICON_BUTTON}
               data-canvas-action="bring-to-front"
               aria-label="Bring to front"
+              title="Bring to front"
               onClick={() => actions.restack(item.id, true)}
             >
               <span aria-hidden="true">▲</span>
@@ -408,6 +409,7 @@ export function CanvasItemView({
               className={ICON_BUTTON}
               data-canvas-action="send-to-back"
               aria-label="Send to back"
+              title="Send to back"
               onClick={() => actions.restack(item.id, false)}
             >
               <span aria-hidden="true">▼</span>
@@ -417,6 +419,7 @@ export function CanvasItemView({
               className={ICON_BUTTON}
               data-canvas-action="close"
               aria-label="Remove this container"
+              title="Remove this container"
               onClick={() => actions.remove(item.id)}
             >
               <span aria-hidden="true">✕</span>

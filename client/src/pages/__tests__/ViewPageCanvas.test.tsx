@@ -1060,6 +1060,29 @@ describe("removing a container", () => {
     ]);
   });
 
+  it("backs every canvas pane-header control with a title as well as an aria-label", async () => {
+    // 556 AC3, for the canvas arrangement's own controls. The grid's copy of
+    // this lives in `views/__tests__/paneHeaderControls.test.tsx`; both are
+    // needed because `PaneHeader` renders only the picker button and each
+    // arrangement passes its own controls in — so covering one arrangement
+    // says nothing about the other's.
+    const { container } = await shown(oneItemCanvas());
+
+    const header = container.querySelector(".pane-header");
+    expect(header).not.toBeNull();
+    const buttons = Array.from((header as HTMLElement).querySelectorAll("button"));
+    // Change contents, bring to front, send to back, remove.
+    expect(buttons).toHaveLength(4);
+
+    for (const button of buttons) {
+      const label = button.getAttribute("aria-label");
+      expect({ label, title: button.getAttribute("title") }).toEqual({
+        label: expect.any(String),
+        title: label,
+      });
+    }
+  });
+
   it("lets a double-click reach the surface through the empty state", async () => {
     // The empty state covers the whole viewport, so it can only be laid over a
     // surface the user still has to be able to click: placing the first

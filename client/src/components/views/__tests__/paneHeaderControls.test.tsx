@@ -22,7 +22,24 @@
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
 
+import { installGridHarness, leafLayout, renderGrid } from "../../../test/gridHarness";
 import { PaneHeader } from "../PaneHeader";
+
+// The harness drives these two seams; they have to be mocked in this file's own
+// module registry, not the harness's.
+jest.mock("../../../lib/viewsApi", () => ({
+  ...jest.requireActual("../../../lib/viewsApi"),
+  fetchView: jest.fn(),
+  updateView: jest.fn(),
+}));
+
+/** A real terminal opens a websocket and an xterm instance; the header does not care. */
+jest.mock("../../TerminalPanel", () => ({
+  __esModule: true,
+  TerminalPanel: () => <div data-testid="fake-terminal" />,
+}));
+
+installGridHarness();
 
 const TERMINAL_CONTAINER = { kind: "terminal", settings: { primitive_id: "terminal" } };
 
@@ -57,13 +74,29 @@ describe("556 AC3 — pane header controls name themselves", () => {
     }
   });
 
-  it("backs each icon-only control with a title as well as an aria-label", () => {
+  it("backs each icon-only control with a title as well as an aria-label", async () => {
     // The specific failure this catches: a control that is perfectly legible to
     // a screen reader and completely opaque to an eye, because the only visible
     // thing in it is a Unicode glyph with no shared metrics.
-    const { container } = renderHeader();
+    //
+    // Rendered through the *real* grid rather than through `renderHeader`'s
+    // fixture, and that is the whole point of the test. `PaneHeader` draws only
+    // the picker button itself; the rest of the row — split, split, close — is
+    // passed in by the arrangement. A version of this test that inspected a
+    // button the test itself had written would assert nothing about the buttons
+    // that actually ship, and would pass while every real control in the header
+    // carried a glyph and no title. It did, briefly, which is why this renders
+    // the surface instead.
+    const { container } = renderGrid(leafLayout());
+    await screen.findByTestId("view-host");
 
-    for (const button of Array.from(container.querySelectorAll("button"))) {
+    const header = container.querySelector(".pane-header");
+    expect(header).not.toBeNull();
+    const buttons = Array.from((header as HTMLElement).querySelectorAll("button"));
+    // The grid header ships four: change contents, split ×2, close.
+    expect(buttons).toHaveLength(4);
+
+    for (const button of buttons) {
       const label = button.getAttribute("aria-label");
       const title = button.getAttribute("title");
       // Both present, and agreeing — a title that says something else is a
