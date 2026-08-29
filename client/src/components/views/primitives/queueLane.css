@@ -1,0 +1,129 @@
+/*
+ * The lane pane's own styling.
+ *
+ * No fixed heights and no viewport units anywhere — `containerPrimitives.
+ * smallSize` scans every stylesheet under `views/` for them, because a pixel
+ * height is exactly what made the Queue Dashboard unusable in a pane. Sizes
+ * here are all relative or intrinsic, so the pane decides.
+ */
+
+.queue-lane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  font-size: 12.5px;
+  color: var(--txm);
+}
+
+.queue-lane-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.queue-lane-slot {
+  font-weight: 600;
+  color: var(--txh);
+  letter-spacing: 0.02em;
+}
+
+.queue-lane-state {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--txl);
+}
+
+.queue-lane-state[data-running="true"] {
+  color: var(--grn);
+}
+
+.queue-lane-empty {
+  margin: 0;
+  color: var(--txl);
+}
+
+.queue-lane-running {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--bg2);
+}
+
+.queue-lane-running-name {
+  color: var(--txh);
+  /* Clamped rather than truncated at one line: a pane wide enough for two lines
+     of a ticket title should use them, and a pane that is not still stops. */
+  overflow-wrap: anywhere;
+}
+
+.queue-lane-running-meta {
+  color: var(--txl);
+  font-size: 11.5px;
+}
+
+.queue-lane-waiting-head {
+  color: var(--txl);
+  font-size: 11.5px;
+}
+
+.queue-lane-waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-height: 0;
+}
+
+.queue-lane-waiting-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.queue-lane-position {
+  color: var(--txl);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.queue-lane-waiting-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The tier the host publishes, answered in CSS for the things that are only
+ * spacing. The layout decisions that change *what* is rendered are in the
+ * component; these are the ones that would be a re-render for nothing.
+ */
+[data-pane-tier="compact"] .queue-lane {
+  gap: 5px;
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+[data-pane-tier="compact"] .queue-lane-running {
+  padding: 6px 8px;
+}
+
+[data-pane-tier="wide"] .queue-lane {
+  gap: 11px;
+  padding: 14px 16px;
+}

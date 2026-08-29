@@ -11,21 +11,12 @@
  * in it, which the copy says outright rather than leaving to be discovered.
  */
 
-import { useQuery } from '@tanstack/react-query';
-
-import { API_BASE } from '../api/client';
+import { useQueueLanes } from '../hooks/useQueueLanes';
 import type { QueueLane } from '../lib/queueSocket';
 import './LanePicker.css';
 
 /** Null means "no preference" — the server picks the quietest lane. */
 export type LaneChoice = number | null;
-
-async function fetchLanes(): Promise<QueueLane[]> {
-  const response = await fetch(`${API_BASE}/api/parallel/status`);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const data = await response.json();
-  return (data.lanes ?? []) as QueueLane[];
-}
 
 function laneSummary(lane: QueueLane): string {
   const waiting = lane.waiting.length;
@@ -47,13 +38,10 @@ export function LanePicker({ value, onChange, enabled = true, disabled }: LanePi
   // Polled rather than socketed: a dialog is open for seconds, and the queue's
   // own socket lives on the queue screen, which is not mounted behind most of
   // the places this is used.
-  const lanes = useQuery({
-    queryKey: ['queue-lanes-picker'],
-    queryFn: fetchLanes,
-    enabled,
-    refetchInterval: 5000,
-  });
-  const rows = lanes.data ?? [];
+  // Shared with the lane panes and the pane-settings lane picker, under one
+  // cache key: this used to be its own `fetchLanes` under its own key, which
+  // meant a second request for a list already in the cache.
+  const { lanes: rows, isError } = useQueueLanes(enabled);
   const chosen = rows.find((lane) => lane.slot_number === value);
 
   return (
@@ -91,7 +79,7 @@ export function LanePicker({ value, onChange, enabled = true, disabled }: LanePi
         ))}
       </div>
       <div className="lane-picker-hint">
-        {lanes.isError
+        {isError
           ? 'Could not read the queue — this will still start in whichever lane is free.'
           : chosen?.running
             ? `Starts when lane ${chosen.slot_number} finishes what it is running.`

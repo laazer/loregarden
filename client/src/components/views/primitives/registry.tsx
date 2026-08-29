@@ -11,10 +11,13 @@
  * and never through a dynamic import.
  */
 
+import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 
+import { PaneSizeContext, paneTierFor, type PaneSize } from "../paneSize";
 import { CHAT_PANE_PRIMITIVES } from "./chatPanePrimitives";
 import { PrimitiveErrorBoundary } from "./PrimitiveErrorBoundary";
+import { queueLanePrimitive } from "./queueLanePrimitive";
 import { runLedgerPrimitive } from "./runLedgerPrimitive";
 import { terminalPrimitive } from "./terminalPrimitive";
 import type {
@@ -28,6 +31,7 @@ import { webEmbedPrimitive } from "./webEmbedPrimitive";
 export const CONTAINER_PRIMITIVES: RegisteredPrimitive[] = [
   terminalPrimitive,
   runLedgerPrimitive,
+  queueLanePrimitive,
   ...CHAT_PANE_PRIMITIVES,
   webEmbedPrimitive,
 ];
@@ -124,6 +128,54 @@ const HOST_STYLE: CSSProperties = {
   overflow: "auto",
 };
 
+/**
+ * Measure the host element, so the primitive inside it can lay out for the room
+ * it has rather than for the room it hoped for.
+ *
+ * Here rather than in each primitive: there is one host, every primitive mounts
+ * through it, and sixteen `ResizeObserver`s watching sixteen elements to learn
+ * the same number is sixteen chances to disagree about it.
+ *
+ * `ResizeObserver` is absent in jsdom and in older embedded webviews. The size
+ * stays `null` there and `usePaneSize` reports `regular`, which is the layout
+ * every primitive was written for before this existed — the feature degrades to
+ * exactly the previous behaviour rather than to a broken one.
+ */
+function usePaneMeasurement(node: HTMLElement | null): PaneSize | null {
+  const [box, setBox] = useState<{ width: number; height: number } | null>(null);
+
+  useEffect(() => {
+    if (node === null) return;
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      if (entry === undefined) return;
+      // `contentRect` rather than `borderBoxSize`: the primitive lays out inside
+      // the padding box, which is what the content rect describes, and it is the
+      // field every browser with a ResizeObserver agrees on.
+      const { width, height } = entry.contentRect;
+      // Rounded, and compared before storing: a pane being dragged reports
+      // sub-pixel widths continuously, and re-rendering every primitive in the
+      // view on each fractional change is a resize that costs more than it
+      // informs.
+      const next = { width: Math.round(width), height: Math.round(height) };
+      setBox((previous) =>
+        previous !== null && previous.width === next.width && previous.height === next.height
+          ? previous
+          : next,
+      );
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node]);
+
+  return useMemo(
+    () => (box === null ? null : { ...box, tier: paneTierFor(box.width, box.height) }),
+    [box],
+  );
+}
+
 export interface ContainerPrimitiveHostProps {
   containerId: string;
   /** The container's stored settings, verbatim: snake_case and unvalidated. */
@@ -161,6 +213,8 @@ export function ContainerPrimitiveHost({
   settings,
   kind,
 }: ContainerPrimitiveHostProps) {
+  const [node, setNode] = useState<HTMLElement | null>(null);
+  const size = usePaneMeasurement(node);
   const storedId = settings.primitive_id;
   const entry = typeof storedId === "string" ? getPrimitive(storedId) : undefined;
 
@@ -185,11 +239,22 @@ export function ContainerPrimitiveHost({
 
   const Primitive = entry.Component;
   return (
-    <div data-container-id={containerId} data-primitive-id={entry.id} style={HOST_STYLE}>
+    <div
+      ref={setNode}
+      data-container-id={containerId}
+      data-primitive-id={entry.id}
+      // The tier as an attribute as well as a context value, so a primitive can
+      // answer the easy cases in its own stylesheet — padding, a hidden
+      // secondary column — without re-rendering on every drag frame.
+      data-pane-tier={size?.tier ?? "regular"}
+      style={HOST_STYLE}
+    >
       {/* One boundary here, rather than one per view kind: a primitive that
           throws must lose its own pane and nothing else. */}
       <PrimitiveErrorBoundary resetKey={`${containerId}:${entry.id}`}>
-        <Primitive containerId={containerId} settings={settings} />
+        <PaneSizeContext.Provider value={size}>
+          <Primitive containerId={containerId} settings={settings} />
+        </PaneSizeContext.Provider>
       </PrimitiveErrorBoundary>
     </div>
   );

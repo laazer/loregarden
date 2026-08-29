@@ -58,6 +58,7 @@ export const CHOICE_SOURCES = [
   "agent",
   "workflow",
   "ticket_state",
+  "lane",
 ] as const;
 
 export type ChoiceSource = (typeof CHOICE_SOURCES)[number];
