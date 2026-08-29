@@ -50,7 +50,7 @@ describe("AC2 — the picker is generated from the registry", () => {
     // Options are identified by `data-primitive-id` — the same attribute the
     // host carries — so counting them is not thrown off by whatever chrome the
     // picker grows later.
-    const { container } = render(<PrimitivePicker onPick={noop} />);
+    const { container } = render(<PrimitivePicker legend="Choose a primitive" onPick={noop} />);
     expect(container.querySelectorAll("[data-primitive-id]")).toHaveLength(
       CONTAINER_PRIMITIVES.length,
     );
@@ -63,7 +63,11 @@ describe("AC2 — the picker is generated from the registry", () => {
     // The whole of AC2's second clause, expressed as something observable: the
     // only change is an added registry entry.
     const { container } = render(
-      <PrimitivePicker entries={[...CONTAINER_PRIMITIVES, SYNTHETIC]} onPick={noop} />,
+      <PrimitivePicker
+        entries={[...CONTAINER_PRIMITIVES, SYNTHETIC]}
+        legend="Choose a primitive"
+        onPick={noop}
+      />,
     );
     expect(container.querySelectorAll("[data-primitive-id]")).toHaveLength(
       CONTAINER_PRIMITIVES.length + 1,
@@ -77,6 +81,7 @@ describe("AC2 — the picker is generated from the registry", () => {
     render(
       <PrimitivePicker
         entries={[...CONTAINER_PRIMITIVES, SYNTHETIC]}
+        legend="Choose a primitive"
         onPick={(id) => picked.push(id)}
       />,
     );

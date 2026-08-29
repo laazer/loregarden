@@ -21,6 +21,7 @@ import { useViewLayoutWrite } from "../../hooks/useViewLayoutEdit";
 import { asJson } from "../../lib/viewLayouts";
 import { useSidebarWorkspaceSlug } from "../../state/SidebarWorkspaceContext";
 import { PrimitivePicker } from "./PrimitivePicker";
+import "./paneChrome.css";
 import { ContainerPrimitiveHost } from "./primitives/registry";
 import { containerKindOf } from "./primitives/types";
 
@@ -42,28 +43,21 @@ function EmptyContainerPrompt({
   const [picking, setPicking] = useState(false);
 
   return (
-    <div
-      data-container-id={containerId}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-        alignItems: "flex-start",
-        justifyContent: "center",
-        padding: 16,
-        height: "100%",
-        width: "100%",
-        minHeight: 0,
-        minWidth: 0,
-        overflow: "auto",
-      }}
-    >
+    <div className="pane-empty" data-container-id={containerId}>
       {picking ? (
-        <PrimitivePicker onPick={onPick} />
+        <div className="pane-empty-picker">
+          <PrimitivePicker legend="Choose a primitive" onPick={onPick} />
+        </div>
       ) : (
-        <button type="button" className="btn-secondary" onClick={() => setPicking(true)}>
-          Choose a primitive
-        </button>
+        <>
+          <div className="pane-empty-eyebrow">Empty pane</div>
+          <p className="pane-empty-hint">
+            This pane has no contents yet. Pick what it should hold — you can change it later.
+          </p>
+          <button type="button" className="btn-primary btn-compact" onClick={() => setPicking(true)}>
+            Choose a primitive
+          </button>
+        </>
       )}
     </div>
   );

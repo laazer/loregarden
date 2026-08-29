@@ -79,6 +79,7 @@ import type { ViewLayout, ViewViewport } from "../../lib/viewsApi";
 import { useSidebarWorkspaceSlug } from "../../state/SidebarWorkspaceContext";
 import { CanvasItemView, type CanvasActions } from "./CanvasItemView";
 import { ICON_BUTTON } from "./paneChrome";
+import "./paneChrome.css";
 
 /** How long the viewport sits still before it is written down. */
 const VIEWPORT_SETTLE_MS = 250;
@@ -608,7 +609,7 @@ export function CanvasSurface({
           double-click still places a container through it. */}
         {items.length === 0 ? (
           <div
-            className="queue-page-empty"
+            className="canvas-empty"
             data-testid="view-canvas-empty"
             style={{
               position: "absolute",
@@ -616,13 +617,15 @@ export function CanvasSurface({
               left: 0,
               right: 0,
               bottom: 0,
-              pointerEvents: "none",
             }}
           >
-            <p style={{ maxWidth: 520 }}>
-              This canvas is empty. Add a container, or double-click anywhere on
-              the surface to place one.
-            </p>
+            <div className="canvas-empty-card">
+              <p className="canvas-empty-title">This canvas is empty</p>
+              <p className="canvas-empty-hint">
+                Use <strong>Add container</strong> above, or double-click anywhere on the
+                surface to place one where you clicked.
+              </p>
+            </div>
           </div>
         ) : null}
       </div>

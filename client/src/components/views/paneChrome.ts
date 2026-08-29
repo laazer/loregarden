@@ -26,6 +26,16 @@ import { getPrimitive } from "./primitives/registry";
 export const ICON_BUTTON = "btn-secondary btn-compact btn-icon-only";
 
 /**
+ * What a header calls a container that has not been given a primitive yet.
+ *
+ * Exported because the header also *styles* that state — an unconfigured pane
+ * says so in its title, not only in its body — and a second spelling of the
+ * string in the header is a comparison that silently stops matching the day this
+ * one is reworded.
+ */
+export const EMPTY_PANE_TITLE = "Empty pane";
+
+/**
  * What a header calls this pane: the registry's name for what it holds.
  *
  * Named by the registry, never spelled here — a header holding its own copy of
@@ -34,6 +44,6 @@ export const ICON_BUTTON = "btn-secondary btn-compact btn-icon-only";
 export function paneTitle(container: unknown): string {
   const settings = asJson(asJson(container)?.settings) ?? {};
   const primitiveId = typeof settings.primitive_id === "string" ? settings.primitive_id : "";
-  if (primitiveId === "") return "Empty pane";
+  if (primitiveId === "") return EMPTY_PANE_TITLE;
   return getPrimitive(primitiveId)?.displayName ?? "Unknown contents";
 }

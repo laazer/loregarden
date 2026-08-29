@@ -1,0 +1,272 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Flex Views pane chrome (556)
+
+   The empty pane, the pane header, the primitive picker and the two empty
+   states. Every value here comes from the extracted system — the surface
+   ladder for depth, --bd for separation, one accent per surface — because the
+   reason these surfaces looked unconsidered is that six tickets each invented
+   their own.
+
+   Two rules the layout tests pin and this file must not break:
+     - a pane fills its container and asserts no size of its own: no pixel
+       heights, no viewport units, min-height 0 preserved;
+     - nothing here transforms the canvas surface.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── The pane header ─────────────────────────────────────────────────────
+   A single dense row: name, then controls grouped by what they act on.
+   Ordered zones, left to right — see the PaneHeader docstring, which is the
+   contract the settings-editor ticket (554) builds against.
+     1. the name
+     2. contents controls  — what the pane holds  (settings, change contents)
+     3. arrangement controls — where the pane sits (split / stack / close)
+   `background` is --bg1 so the header reads as chrome against a --bg0 pane. */
+.pane-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--bd);
+  background: var(--bg1);
+  min-width: 0;
+}
+
+/* One line, ellipsised. `flex: 1 1 0` with `min-width: 0` is what makes the
+   name give way to the buttons: a flex child defaults to `min-width: auto` and
+   refuses to shrink below its text, which pushes the controls out of a narrow
+   pane instead of truncating the name. */
+.pane-header-title {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--txm);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  padding-left: 3px;
+}
+
+/* An unconfigured pane says so in the header too, not only in its body. */
+.pane-header-title.is-empty {
+  color: var(--txl);
+  font-weight: 400;
+  font-style: italic;
+}
+
+/* The hairline that separates the two control zones. A 1px rule rather than a
+   gap, because at this density a gap reads as accidental spacing. */
+.pane-header-zone-rule {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 2px;
+  background: var(--bd);
+  flex: none;
+}
+
+/* ── The empty pane ──────────────────────────────────────────────────────
+   Was a large void with one small button adrift at its left edge. Now a
+   centred stack that says what the pane is and what to do about it, so the
+   button is the end of a sentence rather than the whole message. */
+.pane-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px;
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  background:
+    radial-gradient(100% 80% at 50% 42%, rgba(111, 174, 143, 0.045), transparent 70%),
+    var(--bg0);
+}
+
+/* The prompt is an instruction, not content to select. On a canvas the gesture
+   that places a container is a double-click, and a double-click that lands on a
+   pane leaves its text highlighted — the prompt would be selected the moment the
+   pane it belongs to appeared. */
+.pane-empty-eyebrow,
+.pane-empty-hint {
+  user-select: none;
+}
+
+.pane-empty-eyebrow {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--txl);
+}
+
+.pane-empty-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--txm);
+  max-width: 34ch;
+  margin: 0;
+}
+
+/* The picker replaces the stack in place, so the pane must be able to scroll
+   it in a short pane rather than clip it. */
+.pane-empty-picker {
+  width: 100%;
+  max-width: 420px;
+  text-align: left;
+}
+
+/* ── The primitive picker ────────────────────────────────────────────────
+   One column of option rows rather than a wrapping strip of pills: the rows
+   have room for the primitive's category, which is the only thing that tells
+   a "Terminal" from a "Web Embed" before you pick one. */
+.primitive-picker {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.primitive-picker-legend {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--txl);
+  margin-bottom: 7px;
+}
+
+.primitive-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 10px;
+  border: 1px solid var(--bd);
+  background: var(--bg1);
+  color: var(--tx);
+  padding: 8px 10px;
+  font-family: var(--ui);
+  transition: all 0.2s ease;
+}
+
+.primitive-option:hover {
+  background: var(--bg2);
+  border-color: var(--bd2);
+}
+
+.primitive-option:focus-visible {
+  outline: none;
+  border-color: var(--ac);
+}
+
+/* The glyph gets a tile of its own so the row has a fixed left edge whatever
+   the glyph's width — the icons are bare Unicode with no shared metrics. */
+.primitive-option-glyph {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--bg3);
+  color: var(--ac2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.primitive-option-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 1px;
+}
+
+.primitive-option-name {
+  font-size: 12.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.primitive-option-category {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--txl);
+}
+
+/* The picker panel a pane header opens — a sibling of the header row, never a
+   child of it, because on a canvas the row is the drag handle. */
+.pane-picker-panel {
+  padding: 8px;
+  border-bottom: 1px solid var(--bd);
+  background: var(--bg1);
+}
+
+/* ── The canvas empty state ──────────────────────────────────────────────
+   Laid over the viewport and transparent to the pointer, so a double-click
+   still places a container through it. The card itself is the only thing that
+   paints, so an empty canvas reads as empty rather than as broken. */
+.canvas-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: none;
+}
+
+.canvas-empty-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  max-width: 420px;
+  padding: 22px 26px;
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  background: var(--bg1);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32);
+}
+
+.canvas-empty-title {
+  font-family: var(--dp);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--tx);
+  margin: 0;
+}
+
+.canvas-empty-hint {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--txm);
+  margin: 0;
+}
+
+.canvas-empty-hint kbd {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--tx);
+  background: var(--bg3);
+  border: 1px solid var(--bd2);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+

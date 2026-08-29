@@ -9,6 +9,12 @@
  * It stays open while the create is in flight and reports a refusal in place:
  * the failure a malformed create produces is a modal that will not close, and
  * the only thing worse is one that closes on a view that was never made.
+ *
+ * The markup here always asked for `.field-label` and `.input`; until 556 neither
+ * class existed anywhere in the client, and with no element-level `input` rule to
+ * fall back on the browser default painted a white box on a #0b0f16 dialog (555).
+ * The fix was to give those names a definition beside the six feature-scoped copies
+ * that had grown up instead of one — not to invent a seventh style for this dialog.
  */
 
 import { useId, useState, type FormEvent } from "react";
@@ -72,11 +78,18 @@ export function NewViewModal({
               onChange={(event) => setTitle(event.target.value)}
             />
 
-            <div style={{ marginTop: 14, display: "grid", gap: 8 }} role="radiogroup">
+            {/*
+              Real radio inputs inside label cards: the radiogroup semantics and
+              the arrow-key behaviour are the browser's, and only the painting is
+              ours. The native dot stays visible rather than being hidden behind
+              an accent ring — the dot is what says "one of these", and a ring
+              alone has to be learned.
+            */}
+            <div className="view-kind-group" role="radiogroup" aria-label="View kind">
               {KIND_OPTIONS.map((option) => (
                 <label
                   key={option.kind}
-                  style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer" }}
+                  className={`view-kind-option${kind === option.kind ? " is-selected" : ""}`}
                 >
                   <input
                     type="radio"
@@ -85,31 +98,14 @@ export function NewViewModal({
                     onChange={() => setKind(option.kind)}
                   />
                   <span>
-                    <span style={{ display: "block", fontSize: 13 }}>{option.label}</span>
-                    <span style={{ display: "block", fontSize: 12, color: "var(--txm)" }}>
-                      {option.hint}
-                    </span>
+                    <span className="view-kind-label">{option.label}</span>
+                    <span className="view-kind-hint">{option.hint}</span>
                   </span>
                 </label>
               ))}
             </div>
 
-            {error ? (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid rgba(255, 106, 84, 0.35)",
-                  background: "rgba(255, 106, 84, 0.08)",
-                  color: "var(--rdl)",
-                  fontSize: 12,
-                  lineHeight: 1.45,
-                }}
-              >
-                {error}
-              </div>
-            ) : null}
+            {error ? <div className="form-error">{error}</div> : null}
           </div>
 
           <div className="modal-footer">

@@ -752,6 +752,21 @@ button {
   min-width: 0;
 }
 
+/*
+ * `.field-label` / `.input` are the app-wide names for this treatment; the
+ * `.studio-*` names are the same rule under the label Ticket Studio reached for
+ * first. They share one declaration rather than two copies because the drift
+ * this file already carries — six near-identical field rules, one per feature —
+ * is what let a field ship with no treatment at all (555): there was no generic
+ * name to reach for, so `class="input"` matched nothing and the browser default
+ * painted a white box on a #0b0f16 dialog.
+ *
+ * There is deliberately still no bare `input { }` element rule. Adding one would
+ * reach every checkbox, radio and search box in the client at once, which is a
+ * change with a blast radius no design pass should carry. The gap is recorded on
+ * the ticket instead.
+ */
+.field-label,
 .studio-field-label {
   font-size: 11.5px;
   color: var(--txm);
@@ -759,6 +774,7 @@ button {
   margin-bottom: 7px;
 }
 
+.input,
 .studio-input,
 .studio-textarea,
 .studio-select {
@@ -772,11 +788,16 @@ button {
   outline: none;
 }
 
+.input,
 .studio-input,
 .studio-select {
   height: 40px;
   padding: 0 13px;
   font-size: 13.5px;
+}
+
+.input::placeholder {
+  color: var(--txl);
 }
 
 .studio-input.mono,
@@ -794,6 +815,7 @@ button {
   border-radius: 11px;
 }
 
+.input:focus,
 .studio-input:focus,
 .studio-textarea:focus,
 .studio-select:focus {
@@ -5381,4 +5403,75 @@ button {
   z-index: 20;
   max-height: 40vh;
   overflow-y: auto;
+}
+
+/* ── The New view dialog's kind chooser ──────────────────────────────────
+   Real radio inputs inside label cards: the radiogroup semantics and arrow-key
+   behaviour are the browser's, and only the painting is ours. The native dot is
+   kept rather than hidden — it is the affordance that says "one of these", and
+   an accent ring alone has to be learned. */
+.view-kind-group {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.view-kind-option {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+  padding: 10px 12px;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg2);
+  transition: all 0.2s ease;
+}
+
+.view-kind-option:hover {
+  border-color: var(--bd2);
+}
+
+.view-kind-option.is-selected {
+  border-color: rgba(111, 174, 143, 0.45);
+  background: rgba(111, 174, 143, 0.07);
+}
+
+.view-kind-option:focus-within {
+  border-color: var(--ac);
+}
+
+.view-kind-option input {
+  margin: 2px 0 0;
+  accent-color: var(--ac);
+  flex: none;
+}
+
+.view-kind-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--tx);
+}
+
+.view-kind-hint {
+  display: block;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--txm);
+  margin-top: 2px;
+}
+
+/* An in-place refusal, styled from the danger pair: --red family for the frame,
+   --rdl for the text, because the base value does not clear contrast at body
+   size on these surfaces. */
+.form-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 106, 84, 0.35);
+  background: rgba(255, 106, 84, 0.08);
+  color: var(--rdl);
+  font-size: 12px;
+  line-height: 1.45;
 }
