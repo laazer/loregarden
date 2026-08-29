@@ -85,11 +85,19 @@ For each stage in cursor order:
    `loregarden_attach_evidence`. Both are read by later stages; your transcript
    is not.
 
-**Reroute discipline.** Every reject is recorded in the rework ledger
-(`kind='rework_feedback'`), and the loop is capped. If a stage rejects to the
-same target a second time, the feedback was not actionable — sharpen it, or
-block. Bouncing implement ↔ verify is the failure mode this ledger exists to
-catch.
+**Reroute discipline.** A reject asserts that a stated **acceptance criterion is false** —
+not that a reviewer found something real. Before you route a reject, check that the report
+names an unmet criterion. If `unmet_criteria` is empty and the finding is a new defect no
+criterion covers, do not reroute: file it with `loregarden_create_ticket`, record why in the
+stage report, and advance. A defect *family* will yield a new instance every round forever, so
+it cannot be allowed to gate one ticket.
+
+Every reject is recorded in the rework ledger (`kind='context'`, title `Rework feedback — <stage>`)
+and capped at `MAX_REWORK_REROUTES = 3`. When the cap blocks a ticket, that is the safeguard
+working. `loregarden_requeue_ticket` clears it, and the reason must name the unmet criterion
+justifying another round — if you cannot, the ticket is done and the rest is new scope. Decide
+each ticket's round budget when you start it, not at round four when sunk cost is loudest.
+Bouncing implement ↔ verify is the failure mode this ledger exists to catch.
 
 ## Step 3 — Gates
 
