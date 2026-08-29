@@ -913,7 +913,7 @@ export function Dashboard() {
   const expandedSet = useMemo(() => new Set(expandedTicketIds), [expandedTicketIds]);
 
   return (
-    <div className="screen-view screen-view--ide">
+    <div className="screen-view">
       {/* Three tickets can hold slots at once now that each runs in its own
           worktree; a page built around one selection would show only one. */}
       <DashboardActiveTickets selectedTicketId={sel?.id} onSelect={selectTicket} />

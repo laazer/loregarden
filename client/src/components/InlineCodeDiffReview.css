@@ -408,3 +408,11 @@
   flex-direction: column;
   gap: 8px;
 }
+
+/* The split view's left column. `--new` has always been defined; `--old` was
+   named by the markup and never written, so the removed side inherited the
+   neutral pane and read identically to the added one. */
+.inline-code-diff-split-pane--old {
+  background: rgba(255, 106, 84, 0.05);
+  border-right: 1px solid var(--bd);
+}

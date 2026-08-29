@@ -92,7 +92,7 @@ export function EditorPage() {
   const activeWorkspace = workspaces.data?.find((ws) => ws.slug === workspaceSlug);
 
   return (
-    <div className="screen-view screen-view--editor editor-page">
+    <div className="screen-view">
       <PageTopbar title="File Editor">
         <label className="topbar-workspace-picker">
           <span className="topbar-workspace-picker-label">Workspace</span>

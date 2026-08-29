@@ -966,11 +966,8 @@ textarea::placeholder {
   flex: 1;
   min-width: 220px;
   height: 40px;
-  background: var(--bg2);
-  border: 1px solid var(--bd);
   border-radius: 10px;
   padding: 0 13px;
-  color: var(--tx);
   font-size: 13.5px;
   outline: none;
 }
@@ -1086,14 +1083,10 @@ textarea::placeholder {
   width: 100%;
   height: 34px;
   background: var(--bg1);
-  border: 1px solid var(--bd);
-  border-radius: 8px;
   padding: 0 10px;
-  color: var(--tx);
   font-size: 12.5px;
   box-sizing: border-box;
   outline: none;
-  font-family: inherit;
 }
 
 .studio-stage-input.mono,
@@ -2646,10 +2639,6 @@ textarea::placeholder {
 .ticket-search {
   width: 100%;
   padding: 7px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--bd);
-  background: var(--bg2);
-  color: var(--tx);
   font-size: 12px;
 }
 
@@ -2662,10 +2651,6 @@ textarea::placeholder {
   flex: 1;
   font-size: 11.5px;
   padding: 5px 8px;
-  border-radius: 8px;
-  border: 1px solid var(--bd);
-  background: var(--bg2);
-  color: var(--tx);
 }
 
 .btn-compact {
@@ -4586,8 +4571,11 @@ textarea::placeholder {
 }
 
 /* A long approval clamps in the rail; the fade says there is more below. */
-.approval-card-body--clamped {
+.approval-card-body {
   position: relative;
+}
+
+.approval-card-body--clamped {
   overflow: hidden;
 }
 
@@ -5565,4 +5553,76 @@ textarea::placeholder {
    list it sits in is labelled with the same category. */
 .primitive-picker-group .primitive-option-category {
   display: none;
+}
+
+/*
+ * Names the markup has always used, defined nowhere until now. Each value here
+ * was already in the component as an inline `style={{}}` beside the class, or
+ * is the layout the surrounding rules assume.
+ */
+.approval-checklist {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.preview-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: rgba(229, 167, 44, 0.14);
+  color: var(--aml);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.ticket-imported-item {
+  padding: 10px;
+  border-radius: 4px;
+  background: var(--bg3);
+  font-size: 12px;
+}
+
+.mcp-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.home-header-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.import-preview-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.modal-section {
+  margin-bottom: 18px;
+}
+
+.modal-section:last-child {
+  margin-bottom: 0;
+}
+
+.queue-hierarchy-title {
+  color: var(--tx);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* `.workflow-stage-dot.running` has always been defined; the dot for the stage
+   the run is actually on had no cue of its own. */
+.workflow-stage-dot.current {
+  box-shadow: 0 0 0 3px rgba(111, 174, 143, 0.22);
 }

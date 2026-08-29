@@ -184,10 +184,7 @@ export function ApprovalCard({
         <MarkdownContent content={impactText ?? approval.impact} className="approval-impact" />
 
         {!!checklist.length && (
-          <div
-            className="approval-checklist"
-            style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}
-          >
+          <div className="approval-checklist">
             <div style={{ fontSize: 10, fontWeight: 700, color: "var(--ac2)" }}>
               Testing checklist (notes only, not required to approve)
             </div>

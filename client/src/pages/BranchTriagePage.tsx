@@ -90,7 +90,7 @@ export function BranchTriagePage() {
   };
 
   return (
-    <div className="screen-view screen-view--branch-triage">
+    <div className="screen-view">
       <PageTopbar title="Branch cleanup">
         {triage.data ? (
           <span className="topbar-page-note">

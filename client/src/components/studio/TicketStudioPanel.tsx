@@ -429,18 +429,7 @@ export function TicketStudioPanel({
       <div className="ticket-studio-drafts-header">
         <span className="ticket-studio-drafts-title">Draft tickets</span>
         {isPreview && showPreviewBadge && (
-          <span data-testid="preview-state-indicator" className="preview-badge" style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            padding: "2px 8px",
-            backgroundColor: "rgba(229, 167, 44, 0.14)",
-            color: "var(--aml)",
-            borderRadius: 3,
-            fontSize: 11,
-            fontWeight: 500,
-            marginLeft: 8,
-          }}>
+          <span data-testid="preview-state-indicator" className="preview-badge">
             Preview
           </span>
         )}
@@ -471,12 +460,6 @@ export function TicketStudioPanel({
                 key={ticket.external_id}
                 data-testid="imported-ticket-item"
                 className="ticket-imported-item"
-                style={{
-                  padding: 10,
-                  backgroundColor: "var(--bg3)",
-                  borderRadius: 4,
-                  fontSize: 12,
-                }}
               >
                 <div style={{ fontWeight: 500, marginBottom: 2 }}>
                   {ticket.title}
@@ -777,8 +760,8 @@ export function TicketStudioPanel({
                 {selectedSession.summary && (
                   <div className="ticket-studio-msg-row">
                     <BaxterAvatar variant="head" state="idle" label={TRIAGE_AGENT_NAME} />
-                    <div className="ticket-studio-msg ticket-studio-msg-assistant">
-                      <div className="ticket-studio-msg-body">{selectedSession.summary}</div>
+                    <div className="lg-chat-reply">
+                      <div>{selectedSession.summary}</div>
                     </div>
                   </div>
                 )}

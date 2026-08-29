@@ -178,8 +178,8 @@ export const StudioChatMessages = memo(function StudioChatMessages({
                   </span>
                 </div>
               ) : (
-                <div className="lg-chat-user-bubble ticket-studio-msg ticket-studio-msg-user">
-                  <MarkdownContent content={body} className="ticket-studio-msg-body" />
+                <div className="lg-chat-user-bubble">
+                  <MarkdownContent content={body} />
                 </div>
               )}
               {renderAfterMessage?.(message)}
@@ -193,8 +193,8 @@ export const StudioChatMessages = memo(function StudioChatMessages({
           <>
             {leadingReasoning}
             {textBody ? (
-              <div className="lg-chat-reply ticket-studio-msg ticket-studio-msg-assistant">
-                <MarkdownContent content={textBody} className="ticket-studio-msg-body" />
+              <div className="lg-chat-reply">
+                <MarkdownContent content={textBody} />
               </div>
             ) : null}
             {hasNonTextParts ? (
@@ -219,8 +219,8 @@ export const StudioChatMessages = memo(function StudioChatMessages({
                 <div className="lg-chat-assistant-row ticket-studio-msg-row">
                   <BaxterAvatar variant="head" state={state} label={assistantLabel} />
                   {textBody ? (
-                    <div className="lg-chat-reply ticket-studio-msg ticket-studio-msg-assistant">
-                      <MarkdownContent content={textBody} className="ticket-studio-msg-body" />
+                    <div className="lg-chat-reply">
+                      <MarkdownContent content={textBody} />
                     </div>
                   ) : (
                     <div style={{ flex: 1 }} />
@@ -257,7 +257,7 @@ export const StudioChatMessages = memo(function StudioChatMessages({
             {showAssistantAvatar ? (
               <div className="lg-chat-loading-header ticket-studio-msg-row ticket-studio-thinking-row">
                 <BaxterAvatar variant="head" state={busyState} label={assistantLabel} />
-                <p className="lg-chat-loading-title ticket-studio-thinking">{thinkingMessage}</p>
+                <p className="lg-chat-loading-title">{thinkingMessage}</p>
               </div>
             ) : (
               <p className="lg-chat-loading-title">{thinkingMessage}</p>
@@ -385,7 +385,7 @@ export function StudioChatComposer({
       ].join(" ")}
     >
       {commands ? <ComposerNotes commands={commands} /> : null}
-      <div className="lg-chat-composer ticket-studio-composer">
+      <div className="lg-chat-composer">
         <div className="lg-composer-commands">
           {commands ? (
             <ComposerCommandMenu
@@ -399,7 +399,7 @@ export function StudioChatComposer({
           ) : null}
           <textarea
             ref={commands?.inputRef as React.Ref<HTMLTextAreaElement>}
-            className="lg-chat-composer-input ticket-studio-composer-input"
+            className="lg-chat-composer-input"
             value={value}
             onChange={(e) =>
               commands ? commands.handleChange(e.target.value, e.target) : onChange(e.target.value)
@@ -430,9 +430,9 @@ export function StudioChatComposer({
             }}
           />
         </div>
-        <div className="lg-chat-composer-toolbar ticket-studio-composer-toolbar">
+        <div className="lg-chat-composer-toolbar">
           {toolbar}
-          <div className="lg-chat-composer-spacer ticket-studio-composer-spacer" />
+          <div className="lg-chat-composer-spacer" />
           {showShortcut && !showStop ? (
             <span className="lg-chat-composer-shortcut" aria-hidden>
               ⌘J

@@ -541,7 +541,7 @@ export function StudioPage() {
   };
 
   return (
-    <div className="screen-view screen-view--studio">
+    <div className="screen-view">
       <PageTopbar
         title={
           tab === "agents"

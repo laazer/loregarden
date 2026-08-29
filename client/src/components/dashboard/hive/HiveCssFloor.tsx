@@ -212,7 +212,7 @@ export function HiveCssFloor({ model, speedMultiplier = 1 }: HiveCssFloorProps) 
           className="hive-css__zone"
           style={tilePercent({ x: zone.x, y: zone.y }, map)}
         >
-          <span className="hive-css__zone-label hive-css__nameplate hive-css__nameplate--muted">
+          <span className="hive-css__nameplate hive-css__nameplate--muted">
             {zone.label}
           </span>
         </div>

@@ -1783,3 +1783,9 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* The fourth event kind. `--run`, `--scheduled`, `--cron` and `--plan` were all
+   written; a one-off event fell through to the unmodified event chip. */
+.lg-primitive-calendar-event--one_time {
+  border-left-color: var(--vio);
+}

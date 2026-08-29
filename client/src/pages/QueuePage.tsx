@@ -18,7 +18,7 @@ function QueueScreen() {
   const { workspaces, workspacesLoading } = useQueueStatus();
 
   return (
-    <div className="screen-view screen-view--queue">
+    <div className="screen-view">
       <PageTopbar title="Queue Dashboard">
         <QueueTopbarControls />
       </PageTopbar>

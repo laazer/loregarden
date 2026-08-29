@@ -763,3 +763,9 @@
     border-top: 1px solid var(--bd);
   }
 }
+
+/* Sits beside `.mcp-node-badge--idle`, which has always been defined. */
+.mcp-node-badge--server {
+  border-color: var(--bd2);
+  color: var(--txm);
+}

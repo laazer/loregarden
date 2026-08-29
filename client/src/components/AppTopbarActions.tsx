@@ -102,7 +102,7 @@ export function AppTopbarActions() {
           <AppTopbarToolMenu />
           <button
             type="button"
-            className={`btn-secondary topbar-action-btn usage-btn${usage.data?.near_limit && !usageOpen ? " usage-btn-warning" : ""}`}
+            className={`btn-secondary topbar-action-btn${usage.data?.near_limit && !usageOpen ? " usage-btn-warning" : ""}`}
             onClick={() => setUsageOpen(true)}
             aria-label={
               usage.data?.near_limit

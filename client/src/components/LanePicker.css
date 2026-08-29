@@ -67,3 +67,9 @@
   font-size: 11px;
   color: var(--txl);
 }
+
+.lane-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
