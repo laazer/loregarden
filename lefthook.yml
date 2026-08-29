@@ -57,7 +57,10 @@ pre-commit:
     py-organization:
       name: Python organization guardrails
       priority: 1
-      glob: "server/**/*.py"
+      # The gate scripts are graded by the rules they enforce. Everything
+      # under .lefthook/scripts/ was outside every glob, so a violation planted
+      # in a gate went undetected by the gate itself.
+      glob: "{server/**/*.py,.lefthook/scripts/*.py}"
       run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_organization_check.py {staged_files}
     py-defensive-normalization:
       name: Python defensive normalization check (code smell)
@@ -67,7 +70,10 @@ pre-commit:
     py-silent-except:
       name: Python silently-caught exceptions
       priority: 1
-      glob: "server/**/*.py"
+      # The gate scripts are graded by the rules they enforce. Everything
+      # under .lefthook/scripts/ was outside every glob, so a violation planted
+      # in a gate went undetected by the gate itself.
+      glob: "{server/**/*.py,.lefthook/scripts/*.py}"
       run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_silent_except_check.py {staged_files}
     py-git-subprocess:
       name: Python git subprocess routing (GIT_DIR safety)
