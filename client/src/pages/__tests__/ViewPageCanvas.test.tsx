@@ -18,6 +18,9 @@
  * behaviour, and it is browser work to verify. This suite does not claim it.
  */
 
+import fs from "fs";
+import path from "path";
+
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -1038,6 +1041,62 @@ describe("removing a container", () => {
 
     await user.click(itemAction(container, "i-1", "close"));
 
-    expect(await screen.findByTestId("view-canvas-empty")).toBeVisible();
+    // `toBeVisible()` alone would be very nearly vacuous here: jsdom has no
+    // layout engine, so it is true of anything attached without `display:none`
+    // — including the bug this assertion is meant to exclude, an empty state
+    // rendered *after* a 1200px-tall surface and therefore below the fold on a
+    // blank scroll area. The structural cause is what is checkable: the empty
+    // state must be a pinned overlay of the viewport frame, not a sibling that
+    // follows the surface in flow.
+    const empty = await screen.findByTestId("view-canvas-empty");
+    expect(empty).toBeVisible();
+    expect(empty).toHaveTextContent(/this canvas is empty/i);
+    expect(empty.style.position).toBe("absolute");
+    expect([empty.style.top, empty.style.left, empty.style.right, empty.style.bottom]).toEqual([
+      "0px",
+      "0px",
+      "0px",
+      "0px",
+    ]);
+  });
+
+  it("backs every canvas pane-header control with a title as well as an aria-label", async () => {
+    // 556 AC3, for the canvas arrangement's own controls. The grid's copy of
+    // this lives in `views/__tests__/paneHeaderControls.test.tsx`; both are
+    // needed because `PaneHeader` renders only the picker button and each
+    // arrangement passes its own controls in — so covering one arrangement
+    // says nothing about the other's.
+    const { container } = await shown(oneItemCanvas());
+
+    const header = container.querySelector(".pane-header");
+    expect(header).not.toBeNull();
+    const buttons = Array.from((header as HTMLElement).querySelectorAll("button"));
+    // Change contents, bring to front, send to back, remove.
+    expect(buttons).toHaveLength(4);
+
+    for (const button of buttons) {
+      const label = button.getAttribute("aria-label");
+      expect({ label, title: button.getAttribute("title") }).toEqual({
+        label: expect.any(String),
+        title: label,
+      });
+    }
+  });
+
+  it("lets a double-click reach the surface through the empty state", async () => {
+    // The empty state covers the whole viewport, so it can only be laid over a
+    // surface the user still has to be able to click: placing the first
+    // container on an empty canvas means double-clicking *through* it.
+    //
+    // The rule now lives in `paneChrome.css` rather than in an inline style, so
+    // the stylesheet is where it has to be asserted — jsdom does not load the
+    // app's CSS and would report `pointer-events` empty either way.
+    const css = fs.readFileSync(
+      path.resolve(__dirname, "../../components/views/paneChrome.css"),
+      "utf8",
+    );
+    const rule = css.match(/\.canvas-empty\s*\{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    expect((rule as RegExpMatchArray)[1]).toMatch(/pointer-events:\s*none/);
   });
 });

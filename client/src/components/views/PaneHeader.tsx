@@ -12,11 +12,40 @@
  *
  * The pieces it is assembled from — `ICON_BUTTON`, `paneTitle` — are in
  * `paneChrome`, which the canvas toolbar also draws on.
+ *
+ * ## The header's shape (556) — the contract 554 builds against
+ *
+ * The row is three ordered zones, left to right, and a control's zone is decided
+ * by *what it acts on*, not by which ticket added it:
+ *
+ *   1. **the name** — `flex: 1 1 0`, truncating, and the only thing that grows.
+ *   2. **contents controls** — what the pane *holds*. "Change contents" (⇄) is
+ *      here, and **a pane's settings control belongs here too**, immediately
+ *      before the picker, because a settings editor generated from the
+ *      primitive's own fields edits the contents and nothing else.
+ *   3. **arrangement controls** — where the pane *sits*: split, raise, lower,
+ *      and close. Supplied by the arrangement through `buttons`, because only
+ *      the arrangement knows them. Close is always last.
+ *
+ * A `.pane-header-zone-rule` hairline separates zone 2 from zone 3. So the
+ * settings-editor ticket adds its control to *this* module between the title and
+ * the picker button, not to `buttons` — a settings control passed through
+ * `buttons` would land on the wrong side of the rule and be spelled twice, once
+ * per arrangement, which is the duplication this component exists to end.
+ *
+ * ## Icons are never the only carrier of meaning
+ *
+ * Every control here is an accessible name (`aria-label`, real text in the
+ * accessibility tree — 434's rule, and `title` is never the only name) *and* a
+ * `title`, which is what gives a sighted pointer user the name too. The glyphs
+ * are bare Unicode with no shared metrics and cannot carry a meaning on their
+ * own, so a new control needs both attributes, not one.
  */
 
 import { useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
-import { ICON_BUTTON, paneTitle } from "./paneChrome";
+import { EMPTY_PANE_TITLE, ICON_BUTTON, paneTitle } from "./paneChrome";
+import "./paneChrome.css";
 import { PrimitivePicker } from "./PrimitivePicker";
 
 type PaneRowPointerHandler = (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -39,29 +68,23 @@ export interface PaneDragHandle {
   onPointerCancel: PaneRowPointerHandler;
 }
 
-const HEADER_ROW = {
-  display: "flex",
-  alignItems: "center",
-  gap: 4,
-  padding: "4px 6px",
-  borderBottom: "1px solid var(--bd)",
-  minWidth: 0,
-} as const;
-
 /**
- * The title: one line, ellipsised. `flex: 1 1 0` with `minWidth: 0` is what makes
- * it give way to the buttons — a flex child defaults to `min-width: auto` and
- * refuses to shrink below its text, which pushes the buttons out of a narrow pane
- * instead of truncating the name.
+ * What a header row carries beyond its class: only the properties that turn it
+ * into a drag handle. Everything else is `.pane-header` in `paneChrome.css`, so
+ * the row is described in one place rather than as seven inline properties per
+ * arrangement — the drift 556 was opened to end.
+ *
+ * That stylesheet lives beside this component rather than in the global
+ * `index.css` for a reason that outlives taste: the suites that pin a pane's
+ * sizing rules — no pixel heights, no viewport units, `min-height: 0` on every
+ * flex column — walk `components/views/` and parse the CSS they find there.
+ * Pane styling moved to `index.css` would still render and would silently stop
+ * being checked.
  */
-const HEADER_TITLE = {
-  flex: "1 1 0",
-  minWidth: 0,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  color: "var(--txl)",
-  fontSize: 11.5,
+const DRAG_HANDLE_STYLE = {
+  cursor: "move",
+  userSelect: "none",
+  touchAction: "none",
 } as const;
 
 /**
@@ -89,38 +112,44 @@ export function PaneHeader({
   drag?: PaneDragHandle;
 }) {
   const [picking, setPicking] = useState(false);
+  const title = paneTitle(container);
 
   return (
     <>
       <div
+        className="pane-header"
         {...(drag === undefined ? {} : { [drag.attribute]: drag.id })}
         onPointerDown={drag?.onPointerDown}
         onPointerMove={drag?.onPointerMove}
         onPointerUp={drag?.onPointerUp}
         onPointerCancel={drag?.onPointerCancel}
-        style={
-          drag === undefined
-            ? HEADER_ROW
-            : // A handle is never text to select, and never a touch scroll.
-              { ...HEADER_ROW, cursor: "move", userSelect: "none", touchAction: "none" }
-        }
+        // A handle is never text to select, and never a touch scroll.
+        style={drag === undefined ? undefined : DRAG_HANDLE_STYLE}
       >
-        <span style={HEADER_TITLE}>{paneTitle(container)}</span>
+        <span className={`pane-header-title${title === EMPTY_PANE_TITLE ? " is-empty" : ""}`}>
+          {title}
+        </span>
+        {/* Zone 2 — contents. A settings control joins this zone, ahead of the
+            picker; see the module docstring. */}
         <button
           type="button"
           className={ICON_BUTTON}
           {...{ [actionAttribute]: "pick-primitive" }}
           aria-label="Change contents"
+          title="Change contents"
           aria-expanded={picking}
           onClick={() => setPicking((open) => !open)}
         >
           <span aria-hidden="true">⇄</span>
         </button>
+        <span className="pane-header-zone-rule" aria-hidden="true" />
+        {/* Zone 3 — arrangement. The arrangement's own controls. */}
         {buttons}
       </div>
       {picking ? (
-        <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--bd)" }}>
+        <div className="pane-picker-panel">
           <PrimitivePicker
+            legend="Change contents to"
             onPick={(primitiveId) => {
               setPicking(false);
               onPickPrimitive(containerId, primitiveId);
