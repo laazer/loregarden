@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { StudioAgentPreview } from "../../api/client";
 import { IconCloseButton } from "../IconCloseButton";
 import { AgentPreviewContent } from "./AgentPreviewContent";
+import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
 
 export function AgentPreviewModal({
   open,
@@ -17,6 +18,7 @@ export function AgentPreviewModal({
   slug?: string;
   onClose: () => void;
 }) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   if (!open) return null;
 
   const fileLabel = slug ? `${slug}.system.md` : "agent.system.md";
@@ -25,6 +27,7 @@ export function AgentPreviewModal({
     <>
       <div className="modal-overlay" onClick={onClose} role="presentation" />
       <div
+        ref={dialogRef}
         className="modal-panel studio-preview-modal"
         role="dialog"
         aria-labelledby="agent-preview-modal-title"

@@ -4,10 +4,12 @@ import { createPortal } from "react-dom";
 
 import { PrimitiveFrameContext, primitiveSize } from "./primitiveFrame";
 import "./PrimitiveCard.css";
+import { useDialogFocusTrap } from "../../../hooks/useDialogFocusTrap";
 
 /** Wraps one primitive so it can claim more room than the chat measure allows,
  *  and — for breakout tiers — hoist itself into a full-viewport overlay. */
 export function PrimitiveSlot({ kind, children }: { kind: string; children: ReactNode }) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const size = primitiveSize(kind);
   const canExpand = size !== "regular";
   const [expanded, setExpanded] = useState(false);
@@ -44,6 +46,7 @@ export function PrimitiveSlot({ kind, children }: { kind: string; children: Reac
         {expanded
           ? createPortal(
               <div
+                ref={dialogRef}
                 className="lg-primitive-overlay"
                 role="dialog"
                 aria-modal="true"

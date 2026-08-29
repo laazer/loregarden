@@ -1,6 +1,7 @@
 import { IconCloseButton } from "./IconCloseButton";
 
 import type { UsageBreakdownItem, UsageMeter, UsageProviderSnapshot, UsageSnapshot } from "../api/client";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 interface UsageModalProps {
   open: boolean;
@@ -134,12 +135,18 @@ function ProviderSection({
 }
 
 export function UsageModal({ open, snapshot, isLoading, error, onClose, onRefresh }: UsageModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   if (!open) return null;
 
   return (
     <>
       <div className="modal-overlay" onClick={isLoading ? undefined : onClose} role="presentation" />
-      <div className="modal-panel usage-modal-panel" role="dialog" aria-labelledby="usage-modal-title">
+      <div
+        ref={dialogRef}
+        className="modal-panel usage-modal-panel"
+        role="dialog"
+        aria-labelledby="usage-modal-title"
+      >
         <div className="modal-header">
           <div>
             <div className="state-label">Providers</div>

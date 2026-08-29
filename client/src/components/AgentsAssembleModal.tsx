@@ -13,6 +13,7 @@ import {
   WorkspaceRuntimeFields,
   runtimeSettingsEqual,
 } from "./WorkspaceRuntimeFields";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export interface AgentsAssembleOptions {
   runtime: WorkspaceRuntimeSettings;
@@ -57,6 +58,7 @@ export function AgentsAssembleModal({
   onClose,
   onConfirm,
 }: AgentsAssembleModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const [draftRuntime, setDraftRuntime] = useState(workspaceRuntime);
   const [stopAtStageKey, setStopAtStageKey] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
@@ -86,7 +88,12 @@ export function AgentsAssembleModal({
   return (
     <>
       <div className="modal-overlay" onClick={busy ? undefined : onClose} role="presentation" />
-      <div className="modal-panel" role="dialog" aria-labelledby="agents-assemble-title">
+      <div
+        ref={dialogRef}
+        className="modal-panel"
+        role="dialog"
+        aria-labelledby="agents-assemble-title"
+      >
         <div className="modal-header">
           <div>
             <div className="state-label">Orchestration</div>

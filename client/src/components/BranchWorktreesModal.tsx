@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { removeBranchWorktree, type BranchTriageEntry } from "../lib/branchTriageApi";
 import { IconCloseButton } from "./IconCloseButton";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export function BranchWorktreesModal({
   open,
@@ -14,6 +15,7 @@ export function BranchWorktreesModal({
   workspaceSlug: string;
   onClose: () => void;
 }) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const qc = useQueryClient();
 
   const remove = useMutation({
@@ -32,6 +34,7 @@ export function BranchWorktreesModal({
     <>
       <div className="modal-overlay" onClick={onClose} role="presentation" />
       <div
+        ref={dialogRef}
         className="modal-panel"
         role="dialog"
         aria-labelledby="branch-worktrees-title"

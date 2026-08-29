@@ -9,6 +9,7 @@ import {
   priorityLabel,
 } from "../../lib/importTicketPreview";
 import { workItemTypeLabel } from "../../lib/workItemHierarchy";
+import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
 
 const TYPE_OPTIONS = ["feature", "capability", "task", "bug", "milestone"] as const;
 const PRIORITY_OPTIONS = [1, 2, 3] as const;
@@ -47,6 +48,9 @@ export function TicketStudioDraftModal({
   onSave,
 }: TicketStudioDraftModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // Mirrored, because the effect below re-focuses the panel when its
+  // contents change under an already-open dialog.
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>(panelRef);
   const [draft, setDraft] = useState<TicketStudioDraftItem | null>(null);
   const [acceptanceText, setAcceptanceText] = useState("");
 
@@ -118,7 +122,7 @@ export function TicketStudioDraftModal({
     <>
       <div className="modal-overlay" onClick={onClose} role="presentation" />
       <div
-        ref={panelRef}
+        ref={dialogRef}
         className="modal-panel modal-panel-wide"
         role="dialog"
         aria-labelledby="studio-draft-modal-title"

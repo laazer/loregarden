@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { Approval } from "../api/client";
 import { IconCloseButton } from "./IconCloseButton";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export interface RejectApprovalPayload {
   response: string;
@@ -23,6 +24,7 @@ export function RejectApprovalModal({
   onClose,
   onConfirm,
 }: RejectApprovalModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const [reason, setReason] = useState("");
   const [routeStageKey, setRouteStageKey] = useState("");
 
@@ -52,7 +54,12 @@ export function RejectApprovalModal({
         onClick={isSubmitting ? undefined : onClose}
         role="presentation"
       />
-      <div className="modal-panel" role="dialog" aria-labelledby="reject-approval-title">
+      <div
+        ref={dialogRef}
+        className="modal-panel"
+        role="dialog"
+        aria-labelledby="reject-approval-title"
+      >
         <div className="modal-header">
           <div>
             <div className="state-label">{approval.stage_name}</div>

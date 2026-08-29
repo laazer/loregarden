@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { WorkflowTemplateSummary } from "../api/client";
 import { slugify } from "../lib/slugify";
 import { RepoPathExplorer } from "./RepoPathExplorer";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export interface AddWorkspaceDraft {
   name: string;
@@ -34,6 +35,7 @@ export function AddWorkspaceModal({
   onClose,
   onCreate,
 }: AddWorkspaceModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const [draft, setDraft] = useState<AddWorkspaceDraft>({
     name: "",
     slug: "",
@@ -85,7 +87,12 @@ export function AddWorkspaceModal({
   return (
     <>
       <div className="modal-overlay" onClick={isSaving ? undefined : onClose} role="presentation" />
-      <div className="modal-panel" role="dialog" aria-labelledby="add-workspace-title">
+      <div
+        ref={dialogRef}
+        className="modal-panel"
+        role="dialog"
+        aria-labelledby="add-workspace-title"
+      >
         <div className="modal-header">
           <div>
             <div className="state-label">Workspaces</div>

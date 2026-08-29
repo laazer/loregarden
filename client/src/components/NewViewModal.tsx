@@ -21,6 +21,7 @@ import { useId, useState, type FormEvent } from "react";
 
 import type { ViewKind } from "../lib/viewsApi";
 import { IconCloseButton } from "./IconCloseButton";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 const KIND_OPTIONS: { kind: ViewKind; label: string; hint: string }[] = [
   { kind: "flex_grid", label: "Flex grid", hint: "Nested splits that fill the screen." },
@@ -39,6 +40,7 @@ export function NewViewModal({
   onClose: () => void;
   onCreate: (input: { title: string; kind: ViewKind }) => void;
 }) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const titleId = useId();
   const groupName = useId();
   const [title, setTitle] = useState("");
@@ -53,7 +55,13 @@ export function NewViewModal({
   return (
     <>
       <div className="modal-overlay" onClick={isCreating ? undefined : onClose} role="presentation" />
-      <div className="modal-panel" role="dialog" aria-labelledby={titleId} aria-modal="true">
+      <div
+        ref={dialogRef}
+        className="modal-panel"
+        role="dialog"
+        aria-labelledby={titleId}
+        aria-modal="true"
+      >
         <form onSubmit={submit}>
           <div className="modal-header">
             <div>

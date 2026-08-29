@@ -7,6 +7,7 @@ import {
   type SelectedImportFile,
 } from "./ImportTicketFileExplorer";
 import { selectedImportFileList } from "../lib/importTicketFiles";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export type ImportMode = "regular" | "smart";
 
@@ -38,6 +39,7 @@ export function ImportTicketsModal({
   initialMode = "regular",
   lockMode = false,
 }: ImportTicketsModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const normalizedInitialMode = normalizeInitialMode(initialMode);
   const [selectedFiles, setSelectedFiles] = useState<Map<string, SelectedImportFile>>(new Map());
   const [mode, setMode] = useState<ImportMode>(normalizedInitialMode);
@@ -120,7 +122,12 @@ export function ImportTicketsModal({
   return (
     <>
       <div className="modal-overlay" onClick={isLoading ? undefined : () => onClose()} role="presentation" />
-      <div className="modal-panel" role="dialog" aria-labelledby="import-tickets-picker-title">
+      <div
+        ref={dialogRef}
+        className="modal-panel"
+        role="dialog"
+        aria-labelledby="import-tickets-picker-title"
+      >
         <div className="modal-header">
           <div>
             <div className="state-label">{workspaceSlug}</div>

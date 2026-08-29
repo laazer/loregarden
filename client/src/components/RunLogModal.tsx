@@ -6,11 +6,15 @@ import { IconCloseButton } from "./IconCloseButton";
 import { LiveLogLine, LogLineRow } from "./logs/LogLineRow";
 import { RunSteerComposer } from "./RunSteerComposer";
 import "./LogsPanel.css";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 const ACTIVE_STATUSES = new Set(["running", "awaiting_permission"]);
 
 export function RunLogModal({ runId, onClose }: { runId: string | null; onClose: () => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // Mirrored, because the effect below re-focuses the panel when its
+  // contents change under an already-open dialog.
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>(panelRef);
   const isOpen = Boolean(runId);
 
   const log = useQuery({
@@ -46,7 +50,7 @@ export function RunLogModal({ runId, onClose }: { runId: string | null; onClose:
     <>
       <div className="modal-overlay" data-testid="modal-backdrop" onClick={onClose} role="presentation" />
       <div
-        ref={panelRef}
+        ref={dialogRef}
         className="modal-panel modal-panel-wide"
         role="dialog"
         aria-labelledby="run-log-modal-title"

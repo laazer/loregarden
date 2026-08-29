@@ -2,6 +2,7 @@ import { IconCloseButton } from "./IconCloseButton";
 
 import type { TicketDetail } from "../api/client";
 import { workItemTypeLabel } from "../lib/workItemHierarchy";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 interface DeleteTicketConfirmModalProps {
   open: boolean;
@@ -20,6 +21,7 @@ export function DeleteTicketConfirmModal({
   onClose,
   onConfirm,
 }: DeleteTicketConfirmModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   if (!open || !ticket) return null;
 
   return (
@@ -30,6 +32,7 @@ export function DeleteTicketConfirmModal({
         role="presentation"
       />
       <div
+        ref={dialogRef}
         className="modal-panel"
         role="dialog"
         aria-labelledby="delete-ticket-confirm-title"

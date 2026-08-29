@@ -8,6 +8,7 @@ import {
   runtimeFromWorkspace,
   runtimeSettingsEqual,
 } from "./WorkspaceRuntimeFields";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 interface SettingsModalProps {
   open: boolean;
@@ -30,6 +31,7 @@ export function SettingsModal({
   onWorkspaceChange,
   onSave,
 }: SettingsModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const workspace = workspaces.find((w) => w.slug === workspaceSlug);
   const [draft, setDraft] = useState<WorkspaceRuntimeSettings>(() => runtimeFromWorkspace(workspace));
 
@@ -52,7 +54,12 @@ export function SettingsModal({
   return (
     <>
       <div className="modal-overlay" onClick={isSaving ? undefined : onClose} role="presentation" />
-      <div className="modal-panel" role="dialog" aria-labelledby="settings-modal-title">
+      <div
+        ref={dialogRef}
+        className="modal-panel"
+        role="dialog"
+        aria-labelledby="settings-modal-title"
+      >
         <div className="modal-header">
           <div>
             <div className="state-label">Workspace</div>

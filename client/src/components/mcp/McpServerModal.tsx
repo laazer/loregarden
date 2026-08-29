@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import type { McpServerInput, McpServerView } from "../../api/client";
 import { IconCloseButton } from "../IconCloseButton";
 import { McpServerForm } from "./McpServerForm";
+import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
 
 /**
  * Register or edit a server, over the gateway rather than instead of it.
@@ -27,6 +28,7 @@ export function McpServerModal({
   onSubmit: (body: McpServerInput) => void;
   onClose: () => void;
 }) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -42,6 +44,7 @@ export function McpServerModal({
     <>
       <div className="modal-overlay" data-testid="modal-backdrop" onClick={onClose} role="presentation" />
       <div
+        ref={dialogRef}
         className="modal-panel"
         role="dialog"
         aria-labelledby="mcp-server-modal-title"

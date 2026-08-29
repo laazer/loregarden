@@ -11,6 +11,7 @@ import {
 } from "../lib/parentTicketTree";
 import { workItemTypeLabel } from "../lib/workItemHierarchy";
 import { collectExpandableIds, findAncestorIds, TicketTree } from "./TicketTree";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export interface ParentTicketSelection {
   id: string;
@@ -53,6 +54,7 @@ export function ParentTicketSelector({
   hint,
   placeholder = "Choose a parent work item…",
 }: ParentTicketSelectorProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(value);
@@ -158,6 +160,7 @@ export function ParentTicketSelector({
         <>
           <div className="modal-overlay" onClick={() => setOpen(false)} role="presentation" />
           <div
+            ref={dialogRef}
             className="modal-panel modal-panel-wide parent-ticket-selector-modal"
             role="dialog"
             aria-labelledby="parent-ticket-selector-title"
