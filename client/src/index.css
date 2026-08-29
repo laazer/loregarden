@@ -112,6 +112,66 @@ button {
   font-family: inherit;
 }
 
+/*
+ * Baseline treatment for text-like form controls.
+ *
+ * Without this rule a control that names no field class renders as the browser
+ * default: a white box on a #0b0f16 page. That is not hypothetical — it is how
+ * 555 shipped, and the two unclassed <select>s in StageFanoutPanel are the
+ * same bug waiting for someone to notice them.
+ *
+ * Two constraints make the rule safe to state at element level:
+ *
+ * 1. **The exclusions live in `:where()`, not in a bare `:not()`.** A bare
+ *    `input:not([type="checkbox"])` carries the attribute selector's weight and
+ *    scores (0,1,1) — heavier than `.studio-input`, `.studio-stage-input`,
+ *    `.studio-describe-input`, `.ticket-search`, `.filter-select` and
+ *    `.app-action-bar-input`, all of which are (0,1,0). It would win against
+ *    the six rules it is supposed to defer to. `:where()` contributes zero, so
+ *    this stays at (0,0,1) and loses to every class, every `.parent input`
+ *    descendant rule, and every inline style.
+ *
+ * 2. **It sets only colour, border and font — never box metrics.** Padding,
+ *    height and layout are deliberately absent: `.app-action-bar-input` and
+ *    `.topbar-search input` are borderless and transparent, and rely on the
+ *    UA's near-zero padding to sit flush in their bars. A baseline padding
+ *    would shift the caret in both. `border-radius` is safe for them because a
+ *    radius on a transparent, border-less box paints nothing.
+ *
+ * Checkbox, radio, range, colour, file and the button-like types keep their
+ * native appearance; painting a background over those replaces the control.
+ *
+ * This is a floor, not the field treatment. `.input` / `.field-label` further
+ * down are what a form should actually name; a field falling through to here is
+ * legible rather than correct, and usually means a missing class.
+ */
+input:not(:where(
+    [type="checkbox"],
+    [type="radio"],
+    [type="range"],
+    [type="color"],
+    [type="file"],
+    [type="submit"],
+    [type="reset"],
+    [type="button"],
+    [type="image"]
+  )),
+textarea,
+select {
+  background: var(--bg2);
+  color: var(--tx);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  font-family: inherit;
+}
+
+/* The UA placeholder grey is a light-background choice and reads as noise on
+   these surfaces. Class rules that want a different one still win. */
+input::placeholder,
+textarea::placeholder {
+  color: var(--txl);
+}
+
 .app-frame {
   height: 100vh;
   display: flex;
@@ -761,10 +821,12 @@ button {
  * name to reach for, so `class="input"` matched nothing and the browser default
  * painted a white box on a #0b0f16 dialog.
  *
- * There is deliberately still no bare `input { }` element rule. Adding one would
- * reach every checkbox, radio and search box in the client at once, which is a
- * change with a blast radius no design pass should carry. The gap is recorded on
- * the ticket instead.
+ * The systemic half of 555 — a control that names *no* class at all — is closed
+ * separately, by the element-level baseline near the top of this file. That
+ * baseline is only a floor: it paints the surface so nothing can render white,
+ * and stays below one class in specificity so this rule still wins wherever it
+ * applies. Reach for `.input` when you want the real field; the baseline is
+ * what catches you when you forget.
  */
 .field-label,
 .studio-field-label {
