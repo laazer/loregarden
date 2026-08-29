@@ -20,7 +20,11 @@ from loregarden.models.domain import (
     Worktree,
     utcnow,
 )
-from loregarden.services.workflow_state import parse_stage_map, serialize_stage_map
+from loregarden.services.workflow_state import (
+    parse_stage_map,
+    parse_stage_notes,
+    serialize_stage_map,
+)
 from sqlmodel import Session, select
 
 T = TypeVar("T")
@@ -77,7 +81,9 @@ def create_group(
         attempt_count=attempt_count,
         pre_fanout_workflow_stage_key=ticket.workflow_stage_key,
         pre_fanout_workflow_stage_status=_enum_value(ticket.workflow_stage_status),
-        pre_fanout_stage_map_json=serialize_stage_map(stage_map, stages),
+        pre_fanout_stage_map_json=serialize_stage_map(
+            stage_map, stages, notes=parse_stage_notes(instance)
+        ),
         pre_fanout_next_agent=ticket.next_agent,
     )
     session.add(group)

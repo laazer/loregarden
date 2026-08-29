@@ -381,6 +381,7 @@ class EventType(str, Enum):
     WORKFLOW_STARTED = "WorkflowStarted"
     STAGE_STARTED = "StageStarted"
     STAGE_COMPLETED = "StageCompleted"
+    STAGE_SKIPPED = "StageSkipped"
     AGENT_RUN_STARTED = "AgentRunStarted"
     AGENT_RUN_COMPLETED = "AgentRunCompleted"
     ORCHESTRATION_RUN_STARTED = "OrchestrationRunStarted"

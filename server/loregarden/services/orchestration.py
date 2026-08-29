@@ -60,6 +60,7 @@ from loregarden.services.workflow_state import (
     initial_stages_json,
     next_executable_stage,
     parse_stage_map,
+    parse_stage_notes,
     reconcile_workflow_state,
     serialize_stage_map,
     set_stage_status,
@@ -462,7 +463,9 @@ class OrchestrationService:
                 key = ticket.workflow_stage_key
                 if key in stage_map:
                     stage_map[key] = ticket.workflow_stage_status
-                    instance.stages_json = serialize_stage_map(stage_map, stages)
+                    instance.stages_json = serialize_stage_map(
+                        stage_map, stages, notes=parse_stage_notes(instance)
+                    )
                 instance.current_stage_key = ticket.workflow_stage_key
             if body.auto_state is True or not ticket.state_locked:
                 self._reconcile_workflow(ticket, instance, stages)
@@ -527,7 +530,9 @@ class OrchestrationService:
             stage_map[key] = status
             if status == StageStatus.PENDING:
                 self.refresh_stage_retry_budget(ticket, key)
-        instance.stages_json = serialize_stage_map(stage_map, stages)
+        instance.stages_json = serialize_stage_map(
+            stage_map, stages, notes=parse_stage_notes(instance)
+        )
         if auto_state:
             self._reconcile_workflow(ticket, instance, stages)
 

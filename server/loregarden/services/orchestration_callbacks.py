@@ -27,6 +27,7 @@ from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.run_concurrency import find_active_orchestration_run
+from loregarden.services.studio_routing import is_prunable_stage, prunable_stage_keys
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.ticket_ids import resolve as resolve_external_id
 from loregarden.services.ticket_state_service import choose
@@ -428,19 +429,79 @@ class OrchestrationCallbackService:
         stage_key: str,
         reason: str = "",
     ) -> Ticket:
+        """Declare a stage won't-do for this ticket, with the reason on record.
+
+        Only a stage the template marks prunable may be skipped, and only before
+        it has run — see `is_prunable_stage` for why the allowance is the
+        template's to give. The reason is stored as that stage's note rather
+        than on `ticket.blocking_issues`: the latter is read by
+        `_derive_ticket_state`, so explaining a skip used to flip the ticket to
+        BLOCKED whenever the caller's own stage was still RUNNING.
+        """
         self.touch_lease(orch_run)
         instance, stages = self.orch._resolve_stages(ticket)
         if not instance or not stages:
             raise ValueError("Ticket has no workflow instance")
-        set_stage_status(ticket, instance, stages, stage_key, StageStatus.WONT_DO)
-        if reason:
-            ticket.blocking_issues = reason[:2000]
+
+        stage_map = parse_stage_map(instance, stages)
+        if stage_key not in stage_map:
+            raise ValueError(f"Unknown stage key: {stage_key}")
+        stage_def = next(s for s in stages if s.key == stage_key)
+
+        if not is_prunable_stage(stage_def):
+            offered = prunable_stage_keys(stages)
+            hint = ", ".join(f"'{key}'" for key in offered) if offered else "(none)"
+            raise ValueError(
+                f"Stage '{stage_key}' is required by this workflow and cannot be skipped. "
+                f"Skippable stages: {hint}"
+            )
+
+        current = stage_map[stage_key]
+        if current == StageStatus.RUNNING:
+            raise ValueError(
+                f"Stage '{stage_key}' is running — report its outcome with complete_stage "
+                "instead of skipping it"
+            )
+        if current == StageStatus.DONE:
+            raise ValueError(f"Stage '{stage_key}' already ran and cannot be skipped")
+
+        set_stage_status(
+            ticket,
+            instance,
+            stages,
+            stage_key,
+            StageStatus.WONT_DO,
+            note=reason[:500],
+        )
+        # A cursor left on the stage just pruned reads as "we are here" in the
+        # workflow pane, on a stage nothing will ever run. Move it to the first
+        # stage still open; reconcile settles the rest.
+        if ticket.workflow_stage_key == stage_key:
+            resolved = (StageStatus.DONE, StageStatus.WONT_DO)
+            stage_map = parse_stage_map(instance, stages)
+            for stage in sorted(stages, key=lambda s: s.order):
+                if stage_map.get(stage.key) not in resolved:
+                    ticket.workflow_stage_key = stage.key
+                    ticket.workflow_stage_status = stage_map[stage.key]
+                    break
         ticket.revision += 1
         orch_run.current_stage_key = stage_key
         self.session.add(ticket)
         self.session.add(instance)
         self.session.add(orch_run)
         self.session.commit()
+
+        event_bus.publish(
+            self.session,
+            EventType.STAGE_SKIPPED,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            payload={
+                "stage_key": stage_key,
+                "orchestration_run_id": orch_run.id,
+                "reason": reason,
+            },
+        )
         self.orch.reconcile_ticket(ticket)
         self.session.refresh(ticket)
         return ticket

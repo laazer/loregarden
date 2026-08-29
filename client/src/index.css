@@ -1868,6 +1868,15 @@ button {
   padding: 1px 5px;
 }
 
+/* Why a stage ended up where it did — chiefly why a run pruned it to won't-do.
+   Without it a skipped stage reads as an unexplained gap in the timeline. */
+.workflow-stage-note {
+  font-size: 11.5px;
+  color: var(--txl);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
 .workflow-stage-status-pill {
   margin-left: auto;
   font-size: 10px;
