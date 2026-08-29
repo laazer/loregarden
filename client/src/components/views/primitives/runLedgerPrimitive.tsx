@@ -25,7 +25,8 @@ export const runLedgerPrimitive = definePrimitive<RunLedgerSettings>({
   settingsFields: [
     {
       key: "ticket_id",
-      kind: "string",
+      kind: "choice",
+      source: "ticket",
       label: "Ticket",
       default: "",
       help: "The ticket whose stage visits this pane lists.",

@@ -26,6 +26,12 @@
  * does not validate `settings` either, and a value naming something absent is
  * supposed to render the primitive's own empty state rather than block the edit.
  *
+ * A `choice` field does not change that. It offers the app's own list of
+ * workspaces, tickets, agents, workflows or ticket states so the operator is
+ * not typing an identifier they have no way to look up — but it stores a plain
+ * string, keeps a value the list does not contain, and falls back to the text
+ * box whenever the list cannot be fetched. See `PaneSettingsChoiceInput`.
+ *
  * The one exception is a number that does not parse, and it is not an exception
  * to that rule. `NaN` serialises to `null`, which 444 established the server
  * accepts silently; sending it would discard the field with no feedback at all.
@@ -42,6 +48,7 @@ import { useContainerSettingsWrite } from "../../hooks/useViewLayoutEdit";
 import { useSidebarWorkspaceSlug } from "../../state/SidebarWorkspaceContext";
 import { paneSettings } from "./paneChrome";
 import "./paneChrome.css";
+import { PaneSettingsChoiceInput } from "./PaneSettingsChoiceInput";
 import { initialDraft, readDraft, type DraftValue } from "./paneSettingsDraft";
 import type { RegisteredPrimitive } from "./primitives/types";
 
@@ -153,32 +160,57 @@ export function PaneSettingsEditor({
           );
         }
 
+        // The help line, wherever it is rendered from. `choice` substitutes its
+        // own text while a list is loading, so it needs the element rather than
+        // the string — and rendering it in two places would be two ids for one
+        // `aria-describedby`.
+        const help = (text: string | undefined) =>
+          text === undefined ? null : (
+            <p className="pane-settings-help" id={helpId}>
+              {text}
+            </p>
+          );
+
+        const refusal =
+          error === undefined ? null : (
+            <p className="pane-settings-error" id={errorId} role="alert">
+              {error}
+            </p>
+          );
+
         return (
           <div className="pane-settings-field" key={field.key}>
             <label className="field-label" htmlFor={inputId}>
               {field.label}
             </label>
-            <input
-              id={inputId}
-              className="input"
-              // The union's whole purpose: `kind` picks the input, so a number
-              // field is never a free-text box this form then has to police.
-              type={field.kind === "number" ? "number" : "text"}
-              value={typeof value === "string" ? value : ""}
-              aria-describedby={describedBy}
-              aria-invalid={error === undefined ? undefined : true}
-              onChange={(event) => setValue(field.key, event.target.value)}
-            />
-            {field.help === undefined ? null : (
-              <p className="pane-settings-help" id={helpId}>
-                {field.help}
-              </p>
+            {field.kind === "choice" ? (
+              <PaneSettingsChoiceInput
+                field={field}
+                inputId={inputId}
+                value={typeof value === "string" ? value : ""}
+                describedBy={describedBy}
+                invalid={error !== undefined}
+                onChange={(next) => setValue(field.key, next)}
+                renderHelp={help}
+              />
+            ) : (
+              <>
+                <input
+                  id={inputId}
+                  className="input"
+                  // The union's whole purpose: `kind` picks the input, so a
+                  // number field is never a free-text box this form then has to
+                  // police.
+                  type={field.kind === "number" ? "number" : "text"}
+                  value={typeof value === "string" ? value : ""}
+                  aria-describedby={describedBy}
+                  aria-invalid={error === undefined ? undefined : true}
+                  onChange={(event) => setValue(field.key, event.target.value)}
+                />
+                {help(field.help)}
+              </>
             )}
-            {error === undefined ? null : (
-              <p className="pane-settings-error" id={errorId} role="alert">
-                {error}
-              </p>
-            )}
+            {refusal}
           </div>
         );
       })}

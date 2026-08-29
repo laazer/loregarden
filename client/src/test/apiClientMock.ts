@@ -25,6 +25,7 @@ export const api = {
   addRelation: jest.fn(),
   removeRelation: jest.fn(),
   workflowTemplates: jest.fn().mockResolvedValue([]),
+  studioAgents: jest.fn().mockResolvedValue([]),
   workspaceWorkflow: jest.fn().mockResolvedValue(null),
   approvals: jest.fn().mockResolvedValue([]),
   runs: jest.fn().mockResolvedValue([]),
