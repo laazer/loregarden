@@ -39,6 +39,7 @@ import { IconCloseButton } from "./IconCloseButton";
 import { PrimitivePicker } from "./views/PrimitivePicker";
 import { CONTAINER_PRIMITIVES } from "./views/primitives/registry";
 import type { RegisteredPrimitive } from "./views/primitives/types";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 /** Whether `entry` answers `query`, matched against everything the row shows. */
 function matches(entry: RegisteredPrimitive, query: string): boolean {
@@ -86,6 +87,7 @@ export function PrimitivePickerModal({
   onPick,
   onClose,
 }: PrimitivePickerModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const [query, setQuery] = useState("");
   // Two pickers can be open in one document — a grid of panes each has a
   // header — so the label/input pairing is per instance rather than a constant.
@@ -111,7 +113,13 @@ export function PrimitivePickerModal({
   return createPortal(
     <>
       <div className="modal-overlay" onClick={onClose} role="presentation" />
-      <div className="modal-panel" role="dialog" aria-labelledby={titleId} aria-modal="true">
+      <div
+        ref={dialogRef}
+        className="modal-panel"
+        role="dialog"
+        aria-labelledby={titleId}
+        aria-modal="true"
+      >
         <div className="modal-header">
           <div>
             <div className="state-label">Pane</div>

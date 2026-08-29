@@ -8,6 +8,7 @@
 
 import type { ViewSummary } from "../lib/viewsApi";
 import { IconCloseButton } from "./IconCloseButton";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export function DeleteViewConfirmModal({
   view,
@@ -21,6 +22,7 @@ export function DeleteViewConfirmModal({
   onClose: () => void;
   onConfirm: () => void;
 }) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   if (!view) return null;
 
   return (
@@ -31,6 +33,7 @@ export function DeleteViewConfirmModal({
         role="presentation"
       />
       <div
+        ref={dialogRef}
         className="modal-panel"
         role="dialog"
         aria-labelledby="delete-view-confirm-title"

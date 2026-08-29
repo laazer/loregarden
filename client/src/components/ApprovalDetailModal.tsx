@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import type { Approval } from "../api/client";
 import { ApprovalCard, type ApprovalResolvePayload } from "./ApprovalCard";
 import { IconCloseButton } from "./IconCloseButton";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 /**
  * The full approval — criteria, checklist, questions — outside the narrow rail
@@ -26,6 +27,7 @@ export function ApprovalDetailModal({
   onReject: (payload?: ApprovalResolvePayload) => void;
   onOpenApprovalsTab?: () => void;
 }) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
@@ -41,8 +43,10 @@ export function ApprovalDetailModal({
     <>
       <div className="modal-overlay" onClick={onClose} role="presentation" />
       <div
+        ref={dialogRef}
         className="modal-panel modal-panel-wide"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="approval-detail-title"
       >
         <div className="modal-header">

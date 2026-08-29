@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import type { MemoryConfigResponse, MemoryConfigSettings } from "../api/client";
 import { RepoPathExplorer, sanitizeBrowsePath } from "./RepoPathExplorer";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 interface MemorySetupModalProps {
   open: boolean;
@@ -54,6 +55,7 @@ export function MemorySetupModal({
   onSave,
   onRefresh,
 }: MemorySetupModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const [draft, setDraft] = useState<MemoryConfigSettings>(() => data?.config ?? emptyConfig());
   const [icloudJump, setIcloudJump] = useState("");
   const [obsidianJump, setObsidianJump] = useState("");
@@ -140,7 +142,13 @@ export function MemorySetupModal({
   return (
     <>
       <div className="modal-overlay" onClick={isSaving ? undefined : onClose} role="presentation" />
-      <div className="modal-panel modal-panel-wide" role="dialog" aria-labelledby="memory-setup-title">
+      <div
+        ref={dialogRef}
+        className="modal-panel modal-panel-wide"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="memory-setup-title"
+      >
         <div className="modal-header">
           <div>
             <div className="state-label">Agent memory</div>

@@ -9,6 +9,7 @@ import {
   defaultChildType,
   workItemTypeLabel,
 } from "../lib/workItemHierarchy";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 const WORK_ITEM_TYPES: { id: WorkItemType; label: string }[] = [
   { id: "milestone", label: "Milestone" },
@@ -127,6 +128,7 @@ export function CreateWorkItemModal({
   onClose,
   onCreate,
 }: CreateWorkItemModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const lockedParent =
     lockParent && parentTicketId && parentTicketType
       ? { id: parentTicketId, type: parentTicketType }
@@ -205,7 +207,13 @@ export function CreateWorkItemModal({
   return (
     <>
       <div className="modal-overlay" onClick={isSaving ? undefined : onClose} role="presentation" />
-      <div className="modal-panel" role="dialog" aria-labelledby="create-work-item-title">
+      <div
+        ref={dialogRef}
+        className="modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-work-item-title"
+      >
         <div className="modal-header">
           <div>
             <div className="state-label">{workspaceSlug}</div>

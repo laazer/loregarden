@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { IconCloseButton } from "../IconCloseButton";
 
@@ -9,6 +9,7 @@ import {
   priorityLabel,
 } from "../../lib/importTicketPreview";
 import { workItemTypeLabel } from "../../lib/workItemHierarchy";
+import { useDialogFocusTrap } from "../../hooks/useDialogFocusTrap";
 
 const TYPE_OPTIONS = ["feature", "capability", "task", "bug", "milestone"] as const;
 const PRIORITY_OPTIONS = [1, 2, 3] as const;
@@ -46,7 +47,7 @@ export function TicketStudioDraftModal({
   onClose,
   onSave,
 }: TicketStudioDraftModalProps) {
-  const panelRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const [draft, setDraft] = useState<TicketStudioDraftItem | null>(null);
   const [acceptanceText, setAcceptanceText] = useState("");
 
@@ -59,11 +60,6 @@ export function TicketStudioDraftModal({
     setDraft({ ...item, acceptance_criteria: [...item.acceptance_criteria] });
     setAcceptanceText(formatAcceptanceCriteriaText(item.acceptance_criteria));
   }, [item?.ref, item?.title, item?.description, item?.work_item_type, item?.parent_ref, item?.priority, item?.workflow_template_slug, item?.selected, item?.acceptance_criteria]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    panelRef.current?.focus();
-  }, [isOpen, item?.ref]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -118,9 +114,10 @@ export function TicketStudioDraftModal({
     <>
       <div className="modal-overlay" onClick={onClose} role="presentation" />
       <div
-        ref={panelRef}
+        ref={dialogRef}
         className="modal-panel modal-panel-wide"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="studio-draft-modal-title"
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}

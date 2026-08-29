@@ -16,6 +16,7 @@ import {
 import { workItemTypeLabel } from "../lib/workItemHierarchy";
 import { ImportQuickCreate } from "./ImportQuickCreate";
 import { ImportTicketPreviewCard } from "./ImportTicketPreviewCard";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export interface ImportTicketsConfirmModalProps {
   open: boolean;
@@ -45,6 +46,7 @@ export function ImportTicketsConfirmModal({
   onClose,
   onConfirm,
 }: ImportTicketsConfirmModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const [draftTickets, setDraftTickets] = useState<TicketImportItem[]>([]);
   const [bulkMilestoneId, setBulkMilestoneId] = useState("");
 
@@ -196,8 +198,10 @@ export function ImportTicketsConfirmModal({
     <>
       <div className="modal-overlay" onClick={isImporting ? undefined : onClose} role="presentation" />
       <div
+        ref={dialogRef}
         className="modal-panel import-confirm-modal"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="import-tickets-title"
       >
         <div className="modal-header">

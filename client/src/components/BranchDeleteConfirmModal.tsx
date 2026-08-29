@@ -1,6 +1,7 @@
 import { IconCloseButton } from "./IconCloseButton";
 
 import type { BranchTriageEntry } from "../lib/branchTriageApi";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 interface BranchDeleteConfirmModalProps {
   open: boolean;
@@ -19,6 +20,7 @@ export function BranchDeleteConfirmModal({
   onClose,
   onConfirm,
 }: BranchDeleteConfirmModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   if (!open || !branch) return null;
 
   const worktreePaths = branch.worktrees.map((item) => item.path).filter(Boolean);
@@ -32,6 +34,7 @@ export function BranchDeleteConfirmModal({
         role="presentation"
       />
       <div
+        ref={dialogRef}
         className="modal-panel branch-delete-confirm-modal"
         role="dialog"
         aria-labelledby="branch-delete-confirm-title"

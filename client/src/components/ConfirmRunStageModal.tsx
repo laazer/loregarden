@@ -15,6 +15,7 @@ import {
   WorkspaceRuntimeFields,
   runtimeSettingsEqual,
 } from "./WorkspaceRuntimeFields";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 interface ConfirmRunStageModalProps {
   open: boolean;
@@ -51,6 +52,7 @@ export function ConfirmRunStageModal({
   onConfirm,
   onOpenPr,
 }: ConfirmRunStageModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const [draftRuntime, setDraftRuntime] = useState(workspaceRuntime);
   const [autoApprove, setAutoApprove] = useState(false);
   const [timeoutSeconds, setTimeoutSeconds] = useState("");
@@ -83,7 +85,13 @@ export function ConfirmRunStageModal({
   return (
     <>
       <div className="modal-overlay" onClick={busy ? undefined : onClose} role="presentation" />
-      <div className="modal-panel" role="dialog" aria-labelledby="confirm-run-stage-title">
+      <div
+        ref={dialogRef}
+        className="modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-run-stage-title"
+      >
         <div className="modal-header">
           <div>
             <div className="state-label">Stage execution</div>

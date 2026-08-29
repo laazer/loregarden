@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import type { RuntimeOptions, WorkspaceRuntimeSettings } from "../api/client";
 import { WorkspaceRuntimeFields, runtimeSettingsEqual } from "./WorkspaceRuntimeFields";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 interface TriageModelModalProps {
   open: boolean;
@@ -26,6 +27,7 @@ export function TriageModelModal({
   scopeLabel = "Triage",
   subtitle = "Choose a provider, then pick a model for this ticket",
 }: TriageModelModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const [draft, setDraft] = useState<WorkspaceRuntimeSettings>(runtime);
 
   useEffect(() => {
@@ -46,7 +48,13 @@ export function TriageModelModal({
   return (
     <>
       <div className="modal-overlay" onClick={isSaving ? undefined : onClose} role="presentation" />
-      <div className="modal-panel" role="dialog" aria-labelledby="triage-model-modal-title">
+      <div
+        ref={dialogRef}
+        className="modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="triage-model-modal-title"
+      >
         <div className="modal-header">
           <div>
             <div className="state-label">{scopeLabel}</div>

@@ -4,6 +4,7 @@ import { IconCloseButton } from "./IconCloseButton";
 import { TICKET_STATE_COLORS, TICKET_STATE_LABELS } from "../lib/ticketStates";
 
 import type { StageStatus, TicketDetail, TicketState } from "../api/client";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export const TICKET_STATES: TicketState[] = [
   "backlog",
@@ -109,6 +110,7 @@ export function UpdateStateModal({
   onClose,
   onSave,
 }: UpdateStateModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const original = useMemo(() => (ticket ? draftFromTicket(ticket) : null), [ticket]);
   const [draft, setDraft] = useState<StateUpdateDraft | null>(original);
   const [bulkStatus, setBulkStatus] = useState<StageStatus>("pending");
@@ -159,7 +161,13 @@ export function UpdateStateModal({
   return (
     <>
       <div className="modal-overlay" onClick={onClose} role="presentation" />
-      <div className="modal-panel" role="dialog" aria-labelledby="update-state-title">
+      <div
+        ref={dialogRef}
+        className="modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="update-state-title"
+      >
         <div className="modal-header">
           <div>
             <div className="state-label">Manual update</div>

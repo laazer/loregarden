@@ -1,16 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 import { api } from "../api/client";
 import { IconCloseButton } from "./IconCloseButton";
 import { LiveLogLine, LogLineRow } from "./logs/LogLineRow";
 import { RunSteerComposer } from "./RunSteerComposer";
 import "./LogsPanel.css";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 const ACTIVE_STATUSES = new Set(["running", "awaiting_permission"]);
 
 export function RunLogModal({ runId, onClose }: { runId: string | null; onClose: () => void }) {
-  const panelRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const isOpen = Boolean(runId);
 
   const log = useQuery({
@@ -21,11 +22,6 @@ export function RunLogModal({ runId, onClose }: { runId: string | null; onClose:
     refetchInterval: (query) =>
       ACTIVE_STATUSES.has(query.state.data?.status?.toLowerCase() ?? "") ? 2000 : false,
   });
-
-  useEffect(() => {
-    if (!isOpen) return;
-    panelRef.current?.focus();
-  }, [isOpen, runId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -46,7 +42,7 @@ export function RunLogModal({ runId, onClose }: { runId: string | null; onClose:
     <>
       <div className="modal-overlay" data-testid="modal-backdrop" onClick={onClose} role="presentation" />
       <div
-        ref={panelRef}
+        ref={dialogRef}
         className="modal-panel modal-panel-wide"
         role="dialog"
         aria-labelledby="run-log-modal-title"

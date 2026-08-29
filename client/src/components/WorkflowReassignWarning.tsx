@@ -1,4 +1,5 @@
 import type { WorkflowReassignmentPreview } from "../api/client";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 export interface WorkflowReassignWarningProps {
   preview: WorkflowReassignmentPreview | null;
@@ -24,6 +25,7 @@ export function WorkflowReassignWarning({
   onConfirm,
   onCancel,
 }: WorkflowReassignWarningProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   if (!preview?.destructive) return null;
 
   const target = preview.target_template_name || preview.target_template_slug;
@@ -32,6 +34,7 @@ export function WorkflowReassignWarning({
   return (
     <div className="modal-backdrop" role="presentation" onClick={onCancel}>
       <div
+        ref={dialogRef}
         className="modal-panel"
         role="alertdialog"
         aria-modal="true"

@@ -1,6 +1,7 @@
 import { IconCloseButton } from "./IconCloseButton";
 
 import type { BranchTriageEntry } from "../lib/branchTriageApi";
+import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 
 interface BranchCheckoutConfirmModalProps {
   open: boolean;
@@ -21,6 +22,7 @@ export function BranchCheckoutConfirmModal({
   onClose,
   onConfirm,
 }: BranchCheckoutConfirmModalProps) {
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   if (!open || !branch) return null;
 
   return (
@@ -31,6 +33,7 @@ export function BranchCheckoutConfirmModal({
         role="presentation"
       />
       <div
+        ref={dialogRef}
         className="modal-panel branch-delete-confirm-modal"
         role="dialog"
         aria-labelledby="branch-checkout-confirm-title"
