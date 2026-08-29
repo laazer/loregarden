@@ -1,29 +1,16 @@
 """Prior decisions reach a stage without it having to go looking (#5)."""
 
-import json
 from unittest.mock import Mock, patch
 
 import pytest
 from loregarden.agents.inherited_wisdom import build_inherited_wisdom
-from loregarden.models.domain import Ticket, WorkItemType
 from loregarden.services.memory_store import (
     AgentMemoryService,
     MemoryGraphStore,
     ObsidianMemoryStore,
 )
+from tests.memory_helpers import briefing_ticket as _ticket
 from tests.memory_helpers import frozen_clock
-
-
-def _ticket(*, title: str = "Add rate limiting to the public API", description: str = "") -> Ticket:
-    return Ticket(
-        id="ticket-uuid-1",
-        external_id="42-add-rate-limiting",
-        workspace_id="ws",
-        title=title,
-        description=description,
-        work_item_type=WorkItemType.TASK,
-        acceptance_criteria_json=json.dumps([]),
-    )
 
 
 def _memory(tmp_path) -> AgentMemoryService:
@@ -40,7 +27,7 @@ def test_checkpoints_from_earlier_stages_are_surfaced(tmp_path):
         entry="Chose a token bucket over a sliding window; simpler to reason about.",
     )
 
-    text = build_inherited_wisdom(ticket, "lg", memory=memory)
+    text = build_inherited_wisdom(ticket, "lg", memory=memory).text
     assert "token bucket" in text
     assert "do not re-derive" in text
 
@@ -56,12 +43,12 @@ def test_checkpoints_are_found_under_either_identifier(tmp_path):
         run_id="run_1",
         entry="Recorded against the UUID form.",
     )
-    assert "UUID form" in build_inherited_wisdom(ticket, "lg", memory=memory)
+    assert "UUID form" in build_inherited_wisdom(ticket, "lg", memory=memory).text
 
 
 def test_returns_empty_when_the_ticket_has_no_history(tmp_path):
     """An empty block drops out of the prompt entirely."""
-    assert build_inherited_wisdom(_ticket(), "lg", memory=_memory(tmp_path)) == ""
+    assert build_inherited_wisdom(_ticket(), "lg", memory=_memory(tmp_path)).text == ""
 
 
 def test_output_is_capped(tmp_path):
@@ -74,7 +61,7 @@ def test_output_is_capped(tmp_path):
             run_id=f"run_{i}",
             entry="x" * 900,
         )
-    assert len(build_inherited_wisdom(ticket, "lg", memory=memory, max_chars=500)) <= 500
+    assert len(build_inherited_wisdom(ticket, "lg", memory=memory, max_chars=500).text) <= 500
 
 
 def test_unreadable_memory_never_breaks_the_prompt():
@@ -93,12 +80,18 @@ def test_unreadable_memory_never_breaks_the_prompt():
     briefing never got as far as raising'.
     """
 
-    class Exploding:
-        obsidian = None
+    class Exploding(AgentMemoryService):
+        """A real service — only its recall read is replaced.
+
+        Subclassed rather than duck-typed: the briefing also samples
+        `store_readiness`, and a bare stub would fail on the attribute rather
+        than on the raise this test is about.
+        """
+
         recall_related = Mock(side_effect=OSError("vault unavailable"))
 
-    memory = Exploding()
-    assert build_inherited_wisdom(_ticket(), "lg", memory=memory) == ""
+    memory = Exploding(obsidian=None, graph_sqlite_base=None)
+    assert build_inherited_wisdom(_ticket(), "lg", memory=memory).text == ""
     assert memory.recall_related.called
 
 
@@ -154,7 +147,7 @@ def test_a_learning_sharing_distinctive_terms_is_surfaced(tmp_path, build_servic
         workspace_slug="lg",
     )
 
-    text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory)
+    text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
     assert "Retry budget for throttled tools" in text
 
 
@@ -173,7 +166,7 @@ def test_the_surfaced_learning_does_not_contain_the_title_verbatim(tmp_path, bui
     haystack = f"Retry budget for throttled tools\n{_MATCHING_BODY}".lower()
     assert _REALISTIC_TITLE.lower() not in haystack
 
-    text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory)
+    text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
     assert "Retry budget for throttled tools" in text
 
 
@@ -192,7 +185,10 @@ def test_terms_from_the_description_alone_surface_a_learning(tmp_path):
         description="The trusted server is called again once the throttled path clears.",
     )
 
-    assert "Retry budget for throttled tools" in build_inherited_wisdom(ticket, "lg", memory=memory)
+    assert (
+        "Retry budget for throttled tools"
+        in build_inherited_wisdom(ticket, "lg", memory=memory).text
+    )
 
 
 def test_a_short_distinctive_note_outranks_a_long_generic_one(tmp_path):
@@ -216,7 +212,7 @@ def test_a_short_distinctive_note_outranks_a_long_generic_one(tmp_path):
             workspace_slug="lg",
         )
 
-    text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory)
+    text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
     assert "Weekly notes" in text
     assert text.index("Retry budget for throttled tools") < text.index("Weekly notes")
 
@@ -232,7 +228,7 @@ def test_a_dual_written_learning_appears_once(tmp_path):
         content=_MATCHING_BODY,
     )
 
-    text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory)
+    text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
     assert text.count("- **Learning — t-01**") == 1
 
 
@@ -250,7 +246,7 @@ def test_a_dual_written_learning_whose_body_opens_with_a_heading_appears_once(tm
         content=_HEADED_BODY,
     )
 
-    text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory)
+    text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
     assert text.count("- **Learning — t-02**") == 1
 
 
@@ -277,8 +273,8 @@ def test_the_briefing_reads_the_same_whichever_store_the_dedupe_kept(tmp_path):
         memory.append_learning(ticket_id="t-02", workspace_slug="lg", content=_HEADED_BODY)
 
     ticket = _ticket(title=_REALISTIC_TITLE)
-    from_obsidian = build_inherited_wisdom(ticket, "lg", memory=obsidian)
-    from_graph = build_inherited_wisdom(ticket, "lg", memory=graph)
+    from_obsidian = build_inherited_wisdom(ticket, "lg", memory=obsidian).text
+    from_graph = build_inherited_wisdom(ticket, "lg", memory=graph).text
 
     assert from_obsidian == from_graph
     assert from_obsidian.count("Learning — t-02") == 1
@@ -294,7 +290,7 @@ def test_the_newer_of_two_equally_matching_notes_comes_first(tmp_path):
     with frozen_clock("2026-02-01T00:00:00+00:00"):
         memory.upsert_memory(title="Newer note", body=_MATCHING_BODY, workspace_slug="lg")
 
-    text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory)
+    text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
     assert text.index("Newer note") < text.index("Older note")
 
 
@@ -303,7 +299,7 @@ def test_an_empty_title_and_description_surface_nothing(tmp_path):
     memory = _both(tmp_path)
     memory.upsert_memory(title="Retry budget", body=_MATCHING_BODY, workspace_slug="lg")
 
-    assert build_inherited_wisdom(_ticket(title="", description=""), "lg", memory=memory) == ""
+    assert build_inherited_wisdom(_ticket(title="", description=""), "lg", memory=memory).text == ""
 
 
 def test_an_all_stopword_query_surfaces_nothing(tmp_path):
@@ -313,7 +309,7 @@ def test_an_all_stopword_query_surfaces_nothing(tmp_path):
     memory.upsert_memory(title="Retry budget", body=_MATCHING_BODY, workspace_slug="lg")
     ticket = _ticket(title="That which should be used", description="This one could also update")
 
-    assert build_inherited_wisdom(ticket, "lg", memory=memory) == ""
+    assert build_inherited_wisdom(ticket, "lg", memory=memory).text == ""
 
 
 # ---------------------------------------------------------------------------
@@ -336,7 +332,7 @@ def test_an_unreadable_obsidian_vault_costs_only_the_section(tmp_path):
     memory.upsert_memory(title="Retry budget", body=_MATCHING_BODY, workspace_slug="lg")
 
     with patch.object(ObsidianMemoryStore, "list_notes", side_effect=OSError("vault unavailable")):
-        text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory)
+        text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
 
     assert "Retry budget" not in text
     assert "### Related learnings" not in text
@@ -349,7 +345,7 @@ def test_an_unreadable_memory_graph_costs_only_the_section(tmp_path):
     memory.upsert_memory(title="Retry budget", body=_MATCHING_BODY, workspace_slug="lg")
 
     with patch.object(MemoryGraphStore, "list_nodes", side_effect=OSError("graph unavailable")):
-        text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory)
+        text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
 
     assert "Retry budget" not in text
     assert "### Related learnings" not in text
@@ -373,5 +369,5 @@ def test_a_discredited_learning_is_absent_from_the_briefing(tmp_path, build_serv
         discredited=True,
     )
 
-    text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory)
+    text = build_inherited_wisdom(_ticket(title=_REALISTIC_TITLE), "lg", memory=memory).text
     assert "Retry budget for throttled tools" not in text

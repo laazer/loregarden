@@ -15,7 +15,7 @@ from loregarden.agents.cli_adapters import (
 from loregarden.agents.evidence_context import build_evidence_ledger
 from loregarden.agents.executors.launch_gate import MAX_HOLD_SECONDS, acquire_launch_slot
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
-from loregarden.agents.inherited_wisdom import build_inherited_wisdom
+from loregarden.agents.inherited_wisdom import InheritedWisdom, build_inherited_wisdom
 from loregarden.agents.mcp_context import (
     build_mcp_run_context,
     load_loregarden_mcp_doc,
@@ -37,6 +37,7 @@ from loregarden.models.domain import (
     AgentRun,
     CliAdapter,
     DoctorStatus,
+    MemoryBriefingAssembly,
     RunStatus,
     Ticket,
     WorkflowStageDef,
@@ -63,6 +64,7 @@ from loregarden.services.handoff_boundary import (
     verdict_proceeds,
     verify_run_boundary,
 )
+from loregarden.services.memory_briefing_telemetry import record_briefing
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.process_identity import record_process_identity
 from loregarden.services.run_cancellation import cancel_requested
@@ -190,7 +192,15 @@ class CliAgentExecutor:
             return parked
 
         try:
-            prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace, stage_def)
+            prompt = self._build_prompt(
+                ticket,
+                run,
+                agent,
+                agent_context_dir,
+                workspace,
+                stage_def,
+                assembly_source=MemoryBriefingAssembly.DISPATCH,
+            )
         except SkillNotFoundError as exc:
             return self.orchestration.complete_run(
                 run,
@@ -385,7 +395,15 @@ class CliAgentExecutor:
             ensure_ticket_branch(repo_root, ticket)
 
         stage_def = self._resolve_stage_def(ticket, run)
-        prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace, stage_def)
+        prompt = self._build_prompt(
+            ticket,
+            run,
+            agent,
+            agent_context_dir,
+            workspace,
+            stage_def,
+            assembly_source=MemoryBriefingAssembly.RENDER,
+        )
         return prompt, repo_root
 
     def prepare_terminal_handoff(
@@ -747,6 +765,62 @@ class CliAgentExecutor:
             "or scoped one."
         )
 
+    def _inherited_context(
+        self,
+        ticket: Ticket,
+        run: AgentRun,
+        workspace: Workspace,
+        *,
+        is_verify: bool,
+        assembly_source: MemoryBriefingAssembly,
+    ) -> str:
+        """The inherited-wisdom block, and THE single recording point for its telemetry.
+
+        Every briefing assembly is recorded here, including the verify case,
+        which records a SKIPPED row: a verify stage really did assemble a prompt
+        and deliberately carried no briefing, and writing nothing would make it
+        indistinguishable from a run whose telemetry write silently failed.
+
+        Do not assemble a briefing anywhere else in the prompt blocks. The
+        aggregate over `memory_briefings` is denominated over runs precisely so
+        that a seam which stopped recording shows up as a hole; a second,
+        unrecorded assembly reopens the blindness this exists to close.
+
+        Ticket 178 (the observed-outcome ladder) attaches its surfaced-learning
+        rows here, by foreign-keying the `memory_briefings.id` that
+        `record_briefing` returns. That work extends `record_briefing`'s
+        signature and body — not this file, which only has to keep calling it
+        once per assembly.
+
+        Note for whoever extends the figures: `RECALL_CANDIDATE_CAP`
+        (`services/memory_store.py`) is a second, still-unreported truncation
+        bound. The `truncated` flag covers the prompt-character cap only, not a
+        vault that has outgrown the candidate budget.
+
+        Never raises — `record_briefing` swallows its own failures, and this
+        method adds no guard of its own.
+        """
+        if is_verify:
+            record_briefing(
+                self.session,
+                run,
+                ticket,
+                InheritedWisdom.not_attempted(),
+                skipped=True,
+                assembly_source=assembly_source,
+            )
+            return ""
+        result = build_inherited_wisdom(ticket, workspace.slug)
+        record_briefing(
+            self.session,
+            run,
+            ticket,
+            result,
+            skipped=False,
+            assembly_source=assembly_source,
+        )
+        return result.text
+
     def _build_prompt(
         self,
         ticket: Ticket,
@@ -755,6 +829,8 @@ class CliAgentExecutor:
         agent_context_dir: Path,
         workspace: Workspace,
         stage_def: WorkflowStageDef | None,
+        *,
+        assembly_source: MemoryBriefingAssembly,
     ) -> str:
         # The tree this run will work in — the ticket's worktree once it has
         # one. A prompt built from the shared checkout would describe a repo
@@ -845,7 +921,9 @@ class CliAgentExecutor:
             # a verifier that agrees because it was told to proves nothing.
             _titled_block(
                 "## Inherited context (already decided — do not re-derive)",
-                "" if is_verify else build_inherited_wisdom(ticket, workspace.slug),
+                self._inherited_context(
+                    ticket, run, workspace, is_verify=is_verify, assembly_source=assembly_source
+                ),
             ),
             _titled_block(
                 "## Claim under review",

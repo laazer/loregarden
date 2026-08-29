@@ -13,6 +13,7 @@ from loregarden.agents.mcp_context import (
 from loregarden.models.domain import (
     AgentRun,
     ControlPlaneTransport,
+    MemoryBriefingAssembly,
     Ticket,
     WorkflowStageDef,
     Workspace,
@@ -151,6 +152,7 @@ def test_cli_prompt_includes_mcp_module():
                 resolve_agent_context_dir(workspace),
                 workspace,
                 stage_def,
+                assembly_source=MemoryBriefingAssembly.DISPATCH,
             )
         assert "Loregarden MCP (required for workflow state)" in prompt
         assert "Loregarden memory (workspace-scoped)" in prompt or "Loregarden artifacts" in prompt
@@ -201,6 +203,7 @@ def test_cli_prompt_includes_stage_report_contract():
             resolve_agent_context_dir(workspace),
             workspace,
             executor._resolve_stage_def(ticket, run),
+            assembly_source=MemoryBriefingAssembly.DISPATCH,
         )
         assert "## Stage report contract" in prompt
         assert "<<<LOREGARDEN_STAGE_REPORT>>>" in prompt

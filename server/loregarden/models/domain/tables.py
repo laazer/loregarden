@@ -16,6 +16,8 @@ from loregarden.models.domain.enums import (
     CycleStatus,
     EventType,
     ExternalHarness,
+    MemoryBriefingAssembly,
+    MemoryBriefingOutcome,
     OrchestrationDriver,
     OrchestrationRunStatus,
     QueueOperationType,
@@ -560,6 +562,63 @@ class ReferencePage(SQLModel, table=True):
     hit_count: int = 0
     fetched_at: datetime = Field(default_factory=utcnow)
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class MemoryBriefing(SQLModel, table=True):
+    """One inherited-wisdom assembly, as it actually behaved.
+
+    Written once per stage-prompt build from the single seam in
+    `agents/executors/cli.py`. `outcome` is stored, never re-derived: an
+    aggregate that reclassifies these rows in SQL is a second classifier, and
+    the drift between the two shows up as summary numbers that disagree with
+    the rows they claim to summarise.
+
+    On a SKIPPED row — a verify assembly, which deliberately carries no
+    briefing — every counter is a placeholder zero, never a measurement.
+    `store_states_json` is `'{}'` there for the same reason: no store was
+    consulted, so recording three of them as anything would be a measurement
+    nobody took.
+
+    No unique constraint on `run_id`: supervised dispatch and
+    `render_stage_prompt` both assemble a prompt, so two rows for one run is a
+    live path rather than a double write.
+    """
+
+    __tablename__ = "memory_briefings"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    run_id: str = Field(foreign_key="agent_runs.id", index=True)
+    #: Nullable because `AgentRun.ticket_id` is: a workspace-scoped run has no
+    #: ticket, and a NOT NULL column here would make the telemetry write raise
+    #: on a path it must never fail.
+    ticket_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    stage_key: str = ""
+    assembly_source: MemoryBriefingAssembly = Field(
+        default=MemoryBriefingAssembly.DISPATCH,
+        sa_column=_str_enum_column(MemoryBriefingAssembly, MemoryBriefingAssembly.DISPATCH),
+    )
+    #: No default. The caller always classifies; a default would let an
+    #: unclassified row read as a healthy bucket.
+    outcome: MemoryBriefingOutcome = Field(sa_column=_str_enum_column(MemoryBriefingOutcome))
+    #: `_injected`, not `_found`: both counters are capped (6 checkpoints, 5
+    #: learnings), so they plateau. The saturation flags are what stop a flat
+    #: five reading as a healthy corpus.
+    checkpoints_injected: int = 0
+    learnings_injected: int = 0
+    checkpoints_saturated: bool = False
+    learnings_saturated: bool = False
+    query_had_terms: bool = False
+    chars_injected: int = 0
+    pre_truncation_chars: int = 0
+    truncated: bool = False
+    #: JSON object keyed by the three real `MemoryStoreKind` values, each
+    #: mapping to a `MemoryStoreState` value.
+    store_states_json: str = "{}"
+    #: Sorted, comma-joined `f"{store}:{ExcName}"` tokens; `''` when none.
+    store_errors: str = ""
+    elapsed_ms: int = 0
+    created_at: datetime = Field(default_factory=utcnow, index=True)
 
 
 class RunMessage(SQLModel, table=True):
