@@ -48,7 +48,7 @@ export function FinalizationConfirmation({
 
   if (error) {
     return (
-      <div className="finalization-confirmation finalization-confirmation--error">
+      <div >
         <h3 className="finalization-error-title">
           Unable to finalize
         </h3>
@@ -66,8 +66,8 @@ export function FinalizationConfirmation({
 
   if (isLoading) {
     return (
-      <div className="finalization-confirmation finalization-confirmation--loading">
-        <div role="status" className="finalization-spinner">
+      <div >
+        <div role="status">
           Finalizing hierarchy…
         </div>
       </div>
@@ -104,7 +104,7 @@ export function FinalizationConfirmation({
   };
 
   return (
-    <div className="finalization-confirmation finalization-confirmation--success">
+    <div >
       <div role="status" className="finalization-header">
         <svg
           data-testid="finalization-success-icon"

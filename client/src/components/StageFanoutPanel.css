@@ -57,10 +57,3 @@
   font-size: 11px;
   color: var(--txm, #8b8f98);
 }
-
-.fanout-panel__header {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 10px;
-}

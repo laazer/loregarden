@@ -579,9 +579,3 @@ a.branch-triage-badge:hover {
   border-color: rgba(53, 196, 106, 0.35);
   background: rgba(53, 196, 106, 0.08);
 }
-
-.branch-triage-activity {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}

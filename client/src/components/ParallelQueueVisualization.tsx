@@ -139,7 +139,7 @@ function TicketHierarchy({
                 {node.title ? <span className="queue-hierarchy-sep"> · </span> : null}
               </>
             ) : null}
-            {node.title ? <span className="queue-hierarchy-title">{node.title}</span> : null}
+            {node.title ? <span >{node.title}</span> : null}
           </div>
         );
       })}

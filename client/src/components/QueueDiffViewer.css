@@ -357,21 +357,3 @@
   gap: 6px;
   flex-wrap: wrap;
 }
-
-/* The empty state's tick and the footer's two counters: named by the markup
-   since it was written, defined nowhere until now. */
-.no-changes-icon {
-  font-size: 22px;
-  line-height: 1;
-  color: var(--grn);
-}
-
-.total-changes {
-  font-size: 12px;
-  color: var(--tx);
-}
-
-.queue-sizes {
-  font-size: 12px;
-  color: var(--txm);
-}

@@ -8,28 +8,6 @@
  * true and lets the three states share one frame instead of repeating it.
  */
 
-.finalization-confirmation {
-  padding: 16px;
-  border: 1px solid var(--bd);
-  border-radius: 12px;
-  background: var(--bg1);
-}
-
-/* The three terminal states differ only in the frame; the body is shared. */
-.finalization-confirmation--error {
-  border-color: rgba(255, 106, 84, 0.35);
-  background: rgba(255, 106, 84, 0.06);
-}
-
-.finalization-confirmation--success {
-  border-color: rgba(111, 174, 143, 0.35);
-  background: rgba(111, 174, 143, 0.06);
-}
-
-.finalization-confirmation--loading {
-  border-style: dashed;
-}
-
 .finalization-error-title {
   margin: 0 0 8px;
   color: var(--rdl);
@@ -38,11 +16,6 @@
 .finalization-error-message {
   margin: 0;
   font-size: 13.5px;
-  color: var(--txm);
-}
-
-.finalization-spinner {
-  font-size: 13px;
   color: var(--txm);
 }
 

@@ -172,7 +172,7 @@ export function UpdateStateModal({
         </div>
 
         <div className="modal-body">
-          <section className="modal-section">
+          <section >
             <h3 className="modal-section-title">Ticket state · WHAT</h3>
             <span className="modal-field-label">Pick a status</span>
             <div className="modal-state-grid" role="radiogroup" aria-label="Ticket state">
@@ -226,7 +226,7 @@ export function UpdateStateModal({
             </label>
           </section>
 
-          <section className="modal-section">
+          <section >
             <h3 className="modal-section-title">Workflow cursor · HOW</h3>
             <label className="modal-field">
               <span className="modal-field-label">Current stage</span>
@@ -266,7 +266,7 @@ export function UpdateStateModal({
             </label>
           </section>
 
-          <section className="modal-section">
+          <section >
             <div className="modal-section-header">
               <h3 className="modal-section-title">Lifecycle steps</h3>
             </div>

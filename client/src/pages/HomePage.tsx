@@ -116,7 +116,7 @@ export function HomePage() {
   return (
     <div className="home-page lg-chat-surface">
       <header className="home-header">
-        <div className="home-header-text">
+        <div >
           <p className="home-kicker">{formatDateLine(now)}</p>
           <h1 className="home-greeting">{greetingFor(now)}</h1>
           <p className="home-summary">{summaryLine}</p>

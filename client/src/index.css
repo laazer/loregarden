@@ -3374,7 +3374,6 @@ textarea::placeholder {
   padding: 11px 12px;
 }
 
-
 .tree-external-id {
   font-family: var(--mono);
   font-size: 10.5px;
@@ -5585,40 +5584,6 @@ textarea::placeholder {
   border-radius: 4px;
   background: var(--bg3);
   font-size: 12px;
-}
-
-.mcp-activity {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.home-header-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.import-preview-field {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.modal-section {
-  margin-bottom: 18px;
-}
-
-.modal-section:last-child {
-  margin-bottom: 0;
-}
-
-.queue-hierarchy-title {
-  color: var(--tx);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* `.workflow-stage-dot.running` has always been defined; the dot for the stage

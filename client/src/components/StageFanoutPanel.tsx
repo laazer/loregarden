@@ -67,7 +67,7 @@ export function StageFanoutPanel({ ticketId, stages }: Props) {
 
   return (
     <section className="fanout-panel" aria-label="Competing attempts">
-      <header className="fanout-panel__header">
+      <header >
         <span className="fanout-panel__title">Competing attempts</span>
         <span className="fanout-panel__hint">
           Runs one stage several times in separate worktrees and keeps one. Worth the N× tokens on a

@@ -57,7 +57,7 @@ export function LanePicker({ value, onChange, enabled = true, disabled }: LanePi
   const chosen = rows.find((lane) => lane.slot_number === value);
 
   return (
-    <div className="lane-picker">
+    <div >
       <div className="lane-picker-label" id="lane-picker-label">
         Execution lane
       </div>
