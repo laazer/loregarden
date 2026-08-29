@@ -41,6 +41,7 @@ from precommit_git_diff import (
     UnexaminableFileError,
     git_repo_root,
     located_path,
+    parse_python_source,
     read_source_text,
     repo_relative_posix,
     resolve_gate_scope,
@@ -209,7 +210,7 @@ def check_file(
         )
 
     try:
-        tree = ast.parse(content, filename=str(py_file))
+        tree = parse_python_source(content, py_file)
     except SyntaxError as exc:
         errors.append(f"{py_file}:{exc.lineno}: syntax error during organization checks: {exc.msg}")
         return errors
@@ -556,7 +557,7 @@ def _read_and_parse(py_file: Path) -> Optional[Tuple[str, ast.AST]]:
     """
     source = read_source_text(py_file)
     try:
-        return source, ast.parse(source, filename=str(py_file))
+        return source, parse_python_source(source, py_file)
     except SyntaxError:
         return None
 

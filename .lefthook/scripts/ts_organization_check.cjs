@@ -611,6 +611,7 @@ function resolveGateScope({ label, repoRoot, diffScope, baseRef, files, select }
   // Counted after filtering, always: the number has to be the number of files
   // the gate read, or it is one more thing that looks like a pass over work.
   console.log(`${label}: examined ${graded.length} file(s) — ${scope.description}`);
+  if (discovered && hasHead(repoRoot)) announceUngradedSubmodules(label, repoRoot, scope);
   const untracked = new Set(
     scope.includesUntracked && graded.length > 0
       ? untrackedPaths(repoRoot).map((p) => path.resolve(repoRoot, p))
@@ -637,6 +638,41 @@ function resolveGateScope({ label, repoRoot, diffScope, baseRef, files, select }
   return { scope, files: graded, touched };
 }
 
+/** `git diff --raw` spells a gitlink — a submodule pointer — with this mode. */
+const GITLINK_MODE = "160000";
+
+/**
+ * Say out loud that a submodule bump went ungraded.
+ *
+ * `--name-only` lists the gitlink like any other path, the language filter
+ * drops it (it is a directory), and the run prints `examined 0 file(s)` and
+ * exits 0 over a change nobody read. A gate cannot grade another repository,
+ * and failing on every pointer move would block transitions for reasons
+ * unrelated to code quality — but silently exiting 0 is the one option this
+ * ticket exists to remove. Mirrors `announce_ungraded_submodules`.
+ */
+function announceUngradedSubmodules(label, repoRoot, scope) {
+  const out = git(
+    ["diff", ...scopeArgs(scope.diffScope, scope.baseRef), "--raw", "--"],
+    repoRoot,
+  );
+  const found = new Set();
+  for (const line of out.split("\n")) {
+    if (!line.startsWith(":")) continue;
+    const [head, ...rest] = line.split("\t");
+    if (rest.length === 0) continue;
+    const modes = head.slice(1).split(/\s+/).slice(0, 2);
+    if (!modes.includes(GITLINK_MODE)) continue;
+    found.add(decodeGitPath(rest[rest.length - 1]));
+  }
+  if (found.size === 0) return;
+  const names = [...found].sort();
+  console.log(
+    `${label}: not examined — ${names.length} submodule(s) changed ` +
+      `(${names.join(", ")}); gate their own repository there`,
+  );
+}
+
 function wholeFile(lineCount) {
   const added = new Set();
   for (let i = 1; i <= lineCount; i += 1) added.add(i);
@@ -644,23 +680,67 @@ function wholeFile(lineCount) {
 }
 
 /**
- * Repo-relative paths git reports as changed but refuses to diff by line —
- * `--numstat` writes `-\t-\tpath`. A real binary, or a path a `.gitattributes`
- * entry marks `-diff`/`binary`: one committed `*.ts -diff` left every `-U0`
- * diff without hunks while `--name-only` still listed the files, so the gate
- * printed a plausible count, an empty added-line set per file, and a pass.
- * Mirrors `DiffNumstat.undiffable` in precommit_git_diff.py; read once per run
- * because it is one git call for the whole diff.
+ * Absolute paths git reports as changed but produces no hunk for — graded whole.
+ *
+ * Two ways in, one meaning. `--numstat` writes `-\t-\tpath` for a diff git
+ * itself declines: a real binary, or a path a `.gitattributes` entry marks
+ * `-diff`/`binary`. But a `diff=<driver>` naming a command that prints nothing,
+ * and a `filter=` that cleans a file to empty, suppress the diff with real
+ * counts still reported — the marker never fires, `stagedAdditions` fell
+ * through its `if (!diff)` to an empty added-set, and the gate printed a
+ * plausible count and a pass over a committed violation. So the diff text is
+ * asked directly: *did you emit a `+++ b/<path>` header for this path*. That
+ * question has one answer for every way of suppressing a diff, including the
+ * next one.
+ *
+ * Non-zero counts are the discriminator: a mode-only `chmod` reports `0\t0` and
+ * legitimately has no hunk, so it stays out. Mirrors `DiffNumstat.undiffable`
+ * plus `suppressed_diff_paths` in precommit_git_diff.py; two git calls for the
+ * whole run.
  */
 function undiffablePaths(repoRoot, diffScope, baseRef) {
   const out = git(["diff", ...scopeArgs(diffScope, baseRef), "--numstat", "--"], repoRoot);
-  return new Set(
-    out
-      .split("\n")
-      .map((line) => line.split("\t"))
-      .filter((parts) => parts.length === 3 && (parts[0] === "-" || parts[1] === "-"))
-      .map((parts) => path.resolve(repoRoot, decodeGitPath(parts[2]))),
+  const suppressed = new Set();
+  const counted = new Map();
+  for (const line of out.split("\n")) {
+    const parts = line.split("\t");
+    if (parts.length !== 3) continue;
+    const rel = decodeGitPath(parts[2]);
+    if (parts[0] === "-" || parts[1] === "-") {
+      suppressed.add(path.resolve(repoRoot, rel));
+      continue;
+    }
+    counted.set(rel, Number(parts[0]) + Number(parts[1]));
+  }
+  const diff = git(
+    ["diff", ...scopeArgs(diffScope, baseRef), "--no-color", "-U0", "--"],
+    repoRoot,
   );
+  const headers = new Set(
+    diff
+      .split("\n")
+      .filter((line) => line.startsWith("+++ "))
+      .map((line) => decodeGitPath(line.slice(4)))
+      .filter((name) => name.startsWith("b/"))
+      .map((name) => name.slice(2)),
+  );
+  for (const [rel, changed] of counted) {
+    if (changed > 0 && !headers.has(rel)) suppressed.add(path.resolve(repoRoot, rel));
+  }
+  // A path this scope *adds* is new in its entirety, exactly like an untracked
+  // one. Normally a no-op — every line of an added file is a `+` line anyway —
+  // which is why it is safe, and why it is asked separately: a `filter=` whose
+  // clean step empties the blob commits the file with no content, so `--numstat`
+  // says `0\t0` and the diff carries no hunk while the file on disk (the one
+  // this gate reads) is full of code. Counts alone cannot tell that from a
+  // mode-only `chmod`; "it is new, so all of it is new" can. Mirrors
+  // `git_added_paths` in precommit_git_diff.py.
+  const added = git(
+    ["diff", ...scopeArgs(diffScope, baseRef), "--name-only", "--diff-filter=A", "--"],
+    repoRoot,
+  );
+  for (const rel of decodedGitPaths(added)) suppressed.add(path.resolve(repoRoot, rel));
+  return suppressed;
 }
 
 function stagedAdditions(repoRel, repoRoot, diffScope, baseRef, isUntracked, lineCount) {

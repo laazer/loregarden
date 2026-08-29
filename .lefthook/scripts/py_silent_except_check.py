@@ -60,6 +60,7 @@ from precommit_git_diff import (  # noqa: E402 - sys.path is set up just above
     UnexaminableError,
     UnexaminableFileError,
     git_repo_root,
+    parse_python_source,
     read_source_text,
     resolve_gate_scope,
 )
@@ -164,7 +165,7 @@ def violations_in(path: Path) -> list[tuple[int, str]]:
     """(line, what-was-caught) for every silent broad catch in the file."""
     source = read_source_text(path)
     try:
-        tree = ast.parse(source)
+        tree = parse_python_source(source, path)
     except SyntaxError as exc:
         # "Ruff will speak up" was an assumption about a *different* run. This
         # one graded the file and found nothing, which is not the same as the

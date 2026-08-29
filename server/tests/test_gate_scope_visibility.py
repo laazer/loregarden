@@ -937,3 +937,311 @@ def test_a_path_git_lists_but_the_worktree_lacks_is_not_reported_clean(
     assert result.returncode == 1, _out(result)
     assert "could not read it" in _out(result), _out(result)
     assert "passed" not in _out(result), _out(result)
+
+
+# --------------------------------------------------------------------------- #
+# A diff that will not say which lines changed
+# --------------------------------------------------------------------------- #
+
+
+def _suppress_via_diff_driver(repo: Path, pattern: str) -> None:
+    """A `diff=<driver>` whose command prints nothing.
+
+    `--name-only` still lists the file and `--numstat` still reports real
+    counts, so the `-\t-` marker `-diff`/`binary` produces never fires — but
+    `git diff -U0` emits no hunk at all.
+    """
+    _git(repo, "config", "diff.nodiff.command", "/usr/bin/true")
+    (repo / ".gitattributes").write_text(f"{pattern} diff=nodiff\n")
+
+
+def _suppress_via_clean_filter(repo: Path, pattern: str) -> None:
+    """A `filter=` whose clean step empties the blob.
+
+    The committed blob has no content, so `--numstat` reports `0\t0` and the
+    diff carries no hunk — while the file on disk, the one the gate reads, is
+    full of code. Counts alone cannot tell this from a mode-only `chmod`.
+    """
+    _git(repo, "config", "filter.dropall.clean", "/usr/bin/true")
+    (repo / ".gitattributes").write_text(f"{pattern} filter=dropall\n")
+
+
+SUPPRESSION_PATTERNS = {
+    "src/pkg/new_mod.py": "*.py",
+    "client/src/new_mod.ts": "*.ts",
+}
+
+
+#: Each suppression crossed with whether the violating file *arrives* on the
+#: branch or is *edited* there. Both arrivals, because the two halves of the fix
+#: cover different ones and running only `added` hid that: an added file is
+#: graded whole for being added, so the "git emitted no hunk for this path" rule
+#: could be deleted outright and every added-file case still passed. Only an
+#: edit to a file that already existed puts that rule under load — and an agent
+#: editing an existing module is the commoner shape.
+#:
+#: `clean-filter` has no `modified` row because there is nothing to construct:
+#: the clean step empties the blob, so an edit to an already-emptied file leaves
+#: the index unchanged and git records no commit at all.
+SUPPRESSION_MATRIX = [
+    pytest.param(setup, added, id=f"{setup_id}-{'added' if added else 'modified'}")
+    for setup, setup_id in [
+        (
+            lambda repo, pattern: (repo / ".gitattributes").write_text(f"{pattern} -diff\n"),
+            "attr-nodiff",
+        ),
+        (
+            lambda repo, pattern: (repo / ".gitattributes").write_text(f"{pattern} binary\n"),
+            "attr-binary",
+        ),
+        (_suppress_via_diff_driver, "diff-driver"),
+        (_suppress_via_clean_filter, "clean-filter"),
+    ]
+    for added in (True, False)
+    if not (setup_id == "clean-filter" and not added)
+]
+
+
+@pytest.mark.parametrize(("suppress", "added"), SUPPRESSION_MATRIX)
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_a_suppressed_diff_is_graded_whole_rather_than_passed(
+    repo: Path, gate: list[str], relpath: str, body: str, suppress, added: bool
+) -> None:
+    """ "Which lines changed?" answered with silence is not "none of them".
+
+    Round 4 keyed on the `-\t-` marker git writes for `-diff`/`binary`, which
+    covers two of these four and none of the others: a `diff=<driver>` that
+    prints nothing reports real counts (`10\t0`) and emits no hunk, and a
+    `filter=` that cleans to empty reports `0\t0` with the code still on disk.
+    Each printed `examined 1 file(s)`, `checks passed.`, exit 0 over a
+    committed violation. The marker is one spelling; asking the diff whether it
+    emitted a hunk for the path is the question, and it has an answer for the
+    spelling nobody has found yet.
+    """
+    if not added:
+        # Already on `main`, clean, so the branch *edits* it rather than adding it.
+        _git(repo, "checkout", "-q", "main")
+        _commit_agent_work(repo, relpath, "# placeholder\n")
+        _git(repo, "checkout", "-q", "ticket-branch")
+        _git(repo, "merge", "-q", "main")
+    suppress(repo, SUPPRESSION_PATTERNS[relpath])
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "attributes")
+    _commit_agent_work(repo, relpath, body)
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    assert result.returncode == 1, _out(result)
+    assert Path(relpath).name in _out(result), _out(result)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_a_mode_only_change_is_not_graded_whole(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """The discriminator, from the other side — and the reason it is a discriminator.
+
+    `chmod +x` reports `0\t0` in `--numstat` and emits no hunk either, so it is
+    indistinguishable from a suppressed diff by "was there a hunk?" alone. A
+    rule that graded every hunkless path whole would grade this file's existing
+    contents and block the transition over a violation the branch never
+    touched. Non-zero counts, and "is it an addition", are what keep it out.
+
+    The violation is on `main`, so a run that reports it has over-reached.
+    """
+    _git(repo, "checkout", "-q", "main")
+    _commit_agent_work(repo, relpath, body)
+    _git(repo, "checkout", "-q", "-b", "chmod-branch")
+    (repo / relpath).chmod(0o755)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "chmod")
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    assert result.returncode == 0, _out(result)
+    match = EXAMINED_RE.search(_out(result))
+    assert match is not None and int(match.group(1)) == 1, _out(result)
+
+
+# --------------------------------------------------------------------------- #
+# Failures that were loud but bypassed the one channel
+# --------------------------------------------------------------------------- #
+
+PY_GATES = [
+    pytest.param(PY_ORGANIZATION_GATE, id="py-org"),
+    pytest.param(PY_SILENT_EXCEPT_GATE, id="py-silent-except"),
+]
+
+
+@pytest.mark.parametrize("gate", PY_GATES)
+def test_a_nul_byte_names_the_file_rather_than_crashing_the_gate(
+    repo: Path, gate: list[str]
+) -> None:
+    """A `.py` a gate cannot parse must leave through the diagnosis, not a traceback.
+
+    Which exception carries it is the interpreter's business and it has
+    changed: CPython <= 3.10 raises `ValueError` for a NUL byte, which every
+    gate's `except SyntaxError` missed, so the run died mid-walk with a stack
+    trace instead of naming the file. 3.11 raises `SyntaxError`. Pinning the
+    outcome rather than the exception is what makes this hold on both — see
+    `test_a_parse_failure_that_is_not_a_syntax_error_is_unexaminable` for the
+    branch this interpreter does not reach.
+    """
+    _commit_agent_work(repo, "src/pkg/new_mod.py", "x = 1\n\x00\n")
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    assert result.returncode != 0, _out(result)
+    assert "Traceback" not in _out(result), _out(result)
+    assert "new_mod.py" in _out(result), _out(result)
+    assert "passed" not in _out(result), _out(result)
+
+
+def test_a_parse_failure_that_is_not_a_syntax_error_is_unexaminable() -> None:
+    """The `ValueError` branch, which this interpreter does not raise.
+
+    `ast.parse` is not required to fail with `SyntaxError`, and on the
+    interpreters where it does not, `except SyntaxError` let the failure out
+    past the one channel every gate handles. Driven directly because a
+    black-box repository cannot produce it here.
+    """
+    module = _load_script("precommit_git_diff")
+    with mock.patch.object(module.ast, "parse", side_effect=ValueError("nope")):
+        with pytest.raises(module.UnexaminableFileError) as caught:
+            module.parse_python_source("x = 1\n", Path("src/pkg/new_mod.py"))
+    assert "cannot be reported clean" in str(caught.value)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_non_utf8_content_is_reported_rather_than_crashing_the_gate(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """A latin-1 byte anywhere in the diff took the whole run down.
+
+    The diff carries the *content* of every file it touches, so one undecodable
+    byte made `subprocess.run(text=True)` raise `UnicodeDecodeError` before any
+    gate could say which file it was. The file that holds the bytes still fails
+    — by name, through the same channel as every other unreadable file.
+    """
+    target = repo / relpath
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes("# caf\xe9\n".encode("latin-1") + body.encode())
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "agent work")
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    assert result.returncode != 0, _out(result)
+    assert "Traceback" not in _out(result), _out(result)
+    assert Path(relpath).name in _out(result), _out(result)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_a_submodule_bump_is_named_rather_than_silently_skipped(
+    repo: Path, gate: list[str], relpath: str, body: str, tmp_path_factory
+) -> None:
+    """A gate cannot grade another repository — but it must not pretend it did.
+
+    The parent diff lists only the gitlink, every language filter drops it (it
+    is a directory), and the run printed `examined 0 file(s)` and exited 0 over
+    a change nobody read. Failing on every pointer move would block transitions
+    in any workspace that uses submodules for reasons unrelated to code
+    quality, so the deliberate choice is to report: silent exit 0 is the one
+    option that is wrong.
+    """
+    other = tmp_path_factory.mktemp("submodule")
+    _git(other, "init", "-q", "-b", "main", ".")
+    _git(other, "config", "user.email", "t@example.com")
+    _git(other, "config", "user.name", "t")
+    (other / "a.py").write_text("y = 1\n")
+    _git(other, "add", "-A")
+    _git(other, "commit", "-qm", "s1")
+    _git(
+        repo,
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        "-q",
+        str(other),
+        "vendor/sub",
+    )
+    _git(repo, "commit", "-qm", "add submodule")
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    assert "submodule" in _out(result), _out(result)
+    assert "vendor/sub" in _out(result), _out(result)
+
+
+# --------------------------------------------------------------------------- #
+# Conformance: the `.cjs` is a hand-mirror of the `.py`, and drift is the bug
+# --------------------------------------------------------------------------- #
+
+#: Three of the nine instances of this defect found on this ticket were the
+#: `.cjs` drifting from the `.py` — a fix landing in one and not the other, or
+#: landing differently. Nothing shares code across the language boundary and
+#: nothing can, so the mirror is held by this table instead: one repository
+#: state, all three gates, and an assertion that they agree on *both* halves of
+#: what a gate says — the verdict and the count. A gate that reads a different
+#: number of files from its siblings under the same conditions has drifted,
+#: whether or not its verdict happens to match today.
+CONFORMANCE_PLANT = {
+    "src/pkg/new_mod.py": PY_ORGANIZATION_VIOLATION + PY_SILENT_EXCEPT_VIOLATION,
+    "client/src/new_mod.ts": TS_VIOLATION,
+}
+
+
+def _conformance_repo(repo: Path) -> None:
+    for relpath, body in CONFORMANCE_PLANT.items():
+        target = repo / relpath
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "agent work")
+
+
+CONFORMANCE_MUTATIONS = [
+    pytest.param(lambda repo: None, id="plain-commit"),
+    pytest.param(lambda repo: (repo / "NOTES.txt").write_text("notes\n"), id="stray-untracked"),
+    pytest.param(lambda repo: _suppress_via_diff_driver(repo, "*"), id="diff-driver"),
+    pytest.param(lambda repo: _suppress_via_clean_filter(repo, "*"), id="clean-filter"),
+    pytest.param(lambda repo: (repo / ".gitattributes").write_text("* -diff\n"), id="attr-nodiff"),
+]
+
+
+@pytest.mark.parametrize("mutate", CONFORMANCE_MUTATIONS)
+def test_all_three_gates_agree_on_verdict_and_count(repo: Path, mutate) -> None:
+    """The conformance table: one repo state, three gates, identical answers.
+
+    Each scenario plants exactly one violating source file per language, so
+    every gate has exactly one file of its own to grade and every gate should
+    report `examined 1 file(s)` and exit 1. A `.cjs` that misses a fix the `.py`
+    got — or vice versa — changes one of those two numbers, and this fails with
+    the drift named, instead of the drift surviving to become the next instance.
+    """
+    _require_ts_parser()
+    mutate(repo)
+    _git(repo, "add", "-A")
+    if _porcelain(repo).strip():
+        _git(repo, "commit", "-qm", "setup")
+    _conformance_repo(repo)
+
+    verdicts = {}
+    for gate, gate_id in (
+        (PY_ORGANIZATION_GATE, "py-org"),
+        (PY_SILENT_EXCEPT_GATE, "py-silent-except"),
+        (TS_ORGANIZATION_GATE, "ts-org"),
+    ):
+        result = _run_gate(gate, repo, "--base", "main")
+        match = EXAMINED_RE.search(_out(result))
+        verdicts[gate_id] = (result.returncode, None if match is None else int(match.group(1)))
+
+    # Identical verdict *and* identical count. The fixture plants exactly one
+    # violating source file per language on top of one base file per language,
+    # so the file counts are symmetric by construction and a difference is
+    # drift, not a language difference.
+    assert len(set(verdicts.values())) == 1, verdicts
+    returncode, examined = next(iter(set(verdicts.values())))
+    assert returncode == 1, verdicts
+    assert examined is not None and examined >= 1, verdicts

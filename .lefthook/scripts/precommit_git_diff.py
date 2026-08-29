@@ -13,6 +13,7 @@ shape either way.
 
 from __future__ import annotations
 
+import ast
 import os
 import re
 import subprocess
@@ -168,6 +169,27 @@ def read_source_text(path: Path) -> str:
         ) from exc
 
 
+def parse_python_source(source: str, path: Path) -> ast.Module:
+    """``ast.parse``, with its non-syntax failures routed to the one channel.
+
+    A NUL byte in a ``.py`` makes ``ast.parse`` raise ``ValueError``, which is
+    not a ``SyntaxError`` — so every gate's ``except SyntaxError`` missed it and
+    the run died with a traceback out of the middle of the walk. That exits
+    non-zero, so it was never a false pass, but it printed a stack trace instead
+    of naming the file, and it bypassed the `UnexaminableError` channel that is
+    supposed to be the single place a gate decides what to do about a file it
+    could not examine. ``SyntaxError`` still propagates: each gate already has
+    an answer for it.
+    """
+    try:
+        return ast.parse(source, filename=str(path))
+    except ValueError as exc:
+        raise UnexaminableFileError(
+            f"{path}: this run could not parse it, so it cannot be reported clean "
+            f"({type(exc).__name__}: {exc})"
+        ) from exc
+
+
 def git_repo_root() -> Optional[Path]:
     try:
         proc = subprocess.run(
@@ -236,6 +258,14 @@ def _git(command: List[str], repo: Path) -> str:
         env=scrubbed_git_env(),
         capture_output=True,
         text=True,
+        # A diff carries the *content* of every file it touches, so one latin-1
+        # byte anywhere in the change made `text=True` raise `UnicodeDecodeError`
+        # out of `subprocess.run` and take the whole run down with a traceback,
+        # before any gate could say which file it was. Undecodable bytes survive
+        # as surrogates here; the file that actually holds them still fails
+        # loudly and by name in `read_source_text`, which is where that decision
+        # belongs.
+        errors="surrogateescape",
         check=False,
     )
     if proc.returncode != 0:
@@ -581,6 +611,50 @@ class GateRun:
         return added > deleted
 
 
+#: `git diff --raw` spells a gitlink — a submodule pointer — with this mode.
+GITLINK_MODE = "160000"
+
+
+def git_gitlink_paths(repo: Path, diff_scope: str, base_ref: str) -> List[str]:
+    """Submodule paths this diff moved.
+
+    ``--name-only`` lists the gitlink like any other path, every gate's language
+    filter drops it (it is a directory), and the run prints ``examined 0
+    file(s)`` and exits 0 — a change nobody graded, reported as a clean gate.
+    """
+    out = _run_git([*_scope_args(diff_scope, base_ref), "--raw", "--"], repo)
+    found: List[str] = []
+    for line in out.splitlines():
+        if not line.startswith(":"):
+            continue
+        head, _, paths = line.partition("\t")
+        if not paths:
+            continue
+        fields = head.lstrip(":").split()
+        if len(fields) < 2 or GITLINK_MODE not in fields[:2]:
+            continue
+        found.append(decode_git_path(paths.split("\t")[-1]))
+    return sorted(set(found))
+
+
+def announce_ungraded_submodules(label: str, repo: Path, scope: ResolvedScope) -> None:
+    """Say out loud that a submodule bump went ungraded.
+
+    A gate cannot grade another repository's contents, and failing on every
+    submodule pointer move would block transitions in any workspace that uses
+    them for reasons that have nothing to do with code quality. So the choice
+    here is to report rather than to fail — but *silently* exiting 0 over an
+    unexamined change is the one option this ticket exists to remove, so the
+    run names them.
+    """
+    gitlinks = git_gitlink_paths(repo, scope.diff_scope, scope.base_ref)
+    if gitlinks:
+        print(
+            f"{label}: not examined — {len(gitlinks)} submodule(s) changed "
+            f"({', '.join(gitlinks)}); gate their own repository there"
+        )
+
+
 def resolve_gate_scope(
     *,
     label: str,
@@ -625,6 +699,8 @@ def resolve_gate_scope(
     # Counted after filtering, always: the number has to be the number of files
     # the gate read, or it is one more thing that looks like a pass over work.
     print(examined_line(label, len(files), scope.description))
+    if discovered and repo is not None and git_has_head(repo):
+        announce_ungraded_submodules(label, repo, scope)
     additions: Dict[str, Set[int]] = {}
     untracked: FrozenSet[str] = frozenset()
     numstat = DiffNumstat({}, frozenset())
@@ -633,9 +709,18 @@ def resolve_gate_scope(
         additions = {
             path: {ln for ln, _ in items} for path, items in parse_staged_additions(diff).items()
         }
+        untracked = (
+            frozenset(git_untracked_paths(repo)) if scope.includes_untracked else frozenset()
+        )
         numstat = git_diff_numstat(repo, scope.diff_scope, scope.base_ref)
-        if scope.includes_untracked:
-            untracked = frozenset(git_untracked_paths(repo))
+        # Asked only of the files this gate grades: a path outside them is
+        # never looked up, and a deleted path (no `+++ b/`, real counts) would
+        # otherwise be marked graded-whole and then fail to read.
+        graded_rels = frozenset(repo_relative_posix(f, repo) for f in files) - untracked
+        numstat = numstat.with_suppressed(
+            suppressed_diff_paths(diff, numstat, graded_rels)
+            | (graded_rels & frozenset(git_added_paths(repo, scope.diff_scope, scope.base_ref)))
+        )
     return GateRun(
         label=label,
         repo=repo,
@@ -644,6 +729,64 @@ def resolve_gate_scope(
         additions=additions,
         untracked=untracked,
         numstat=numstat,
+    )
+
+
+def diff_header_path(line: str) -> Optional[str]:
+    """The relpath a ``+++ `` header names, or None for ``/dev/null``.
+
+    The quoting wraps the *whole* operand, prefix included:
+    ``+++ "b/src/pkg/b\\303\\244d.py"``. Matching on a literal ``+++ b/``
+    therefore missed every non-ASCII path outright — the file got no entry in
+    the additions map, so its touched-line set came back empty and every
+    violation in it was filtered out of a passing run.
+    """
+    name = decode_git_path(line[4:])
+    return name[2:] if name.startswith("b/") else None
+
+
+def diff_header_paths(diff: str) -> Set[str]:
+    """Every relpath this diff text actually produced a file header for.
+
+    The other half of the question ``--numstat`` answers. A file git lists as
+    changed but never emits a header for is a file whose diff something
+    suppressed — see `suppressed_diff_paths`.
+    """
+    return {
+        path
+        for path in (
+            diff_header_path(line) for line in diff.splitlines() if line.startswith("+++ ")
+        )
+        if path is not None
+    }
+
+
+def suppressed_diff_paths(
+    diff: str, numstat: DiffNumstat, candidates: Iterable[str]
+) -> FrozenSet[str]:
+    """Candidate relpaths git changed but produced no hunk for — graded whole.
+
+    This is the *mechanism* behind the ``.gitattributes`` hole rather than one
+    of its spellings. ``-diff``/``binary`` is the spelling git labels for us,
+    with ``-\\t-`` in ``--numstat``; ``diff=<driver>`` naming a command that
+    prints nothing, and a ``filter=`` that cleans a file to empty, are the same
+    suppression with real counts still reported, so the marker never fired and
+    all three gates printed ``examined 1 file(s)`` and a pass over a committed
+    violation. Asking the diff itself — *did you emit a header for this path* —
+    is the question that has one answer for every way of suppressing a diff,
+    including the next one.
+
+    Non-zero counts are the discriminator, and they are load-bearing in both
+    directions: a mode-only ``chmod`` reports ``0\\t0`` and legitimately has no
+    hunk, so it stays out; a rename's ``old => new`` operand never matches a
+    candidate relpath, so it stays out too (a pre-existing gap in the size
+    checks, not one this widens).
+    """
+    headers = diff_header_paths(diff)
+    return frozenset(
+        path
+        for path in candidates
+        if path not in headers and sum(numstat.counts.get(path, (0, 0))) > 0
     )
 
 
@@ -660,13 +803,7 @@ def parse_staged_additions(diff: str) -> Dict[str, List[Tuple[int, str]]]:
             i += 1
             continue
         if line.startswith("+++ "):
-            # The quoting wraps the *whole* operand, prefix included:
-            # `+++ "b/src/pkg/b\303\244d.py"`. Matching on a literal `+++ b/`
-            # therefore missed every non-ASCII path outright — the file got no
-            # entry here, so its touched-line set came back empty and every
-            # violation in it was filtered out of a passing run.
-            name = decode_git_path(line[4:])
-            current_file = name[2:] if name.startswith("b/") else None
+            current_file = diff_header_path(line)
             i += 1
             continue
         if line.startswith("@@ "):
@@ -717,6 +854,31 @@ class DiffNumstat:
     counts: Dict[str, Tuple[int, int]]
     #: relpaths git reported as changed but refused to diff by line.
     undiffable: FrozenSet[str]
+
+    def with_suppressed(self, paths: FrozenSet[str]) -> DiffNumstat:
+        """The same counts, with `suppressed_diff_paths` folded into ``undiffable``.
+
+        Both arrive at the same place because they mean the same thing
+        downstream: git changed this file and would not say where, so the whole
+        file is the only honest touched-line set.
+        """
+        return DiffNumstat(self.counts, self.undiffable | paths)
+
+
+def git_added_paths(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") -> List[str]:
+    """Relpaths this scope *adds*, which are new in their entirety.
+
+    Same standing as an untracked file, and graded the same way. Normally this
+    changes nothing — every line of an added file shows up as a `+` line anyway
+    — which is exactly why it is safe, and why it is worth asking separately: a
+    ``filter=`` whose clean step empties the blob makes git commit the file with
+    no content, so ``--numstat`` reports ``0\\t0`` and the diff carries no hunk,
+    while the file on disk (the one the gate actually reads) is full of code.
+    That pair is indistinguishable from a mode-only ``chmod`` by counts alone,
+    so counts alone cannot decide it. "It is new, so all of it is new" can.
+    """
+    out = _run_git([*_scope_args(diff_scope, base_ref), "--name-only", "--diff-filter=A", "--"], repo)
+    return decoded_git_paths(out)
 
 
 def git_diff_numstat(
