@@ -31,13 +31,13 @@
 .terminal-panel-surface {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 6px 8px;
 }
 
-/* xterm sizes itself to its container, which needs a height to size against. */
-.terminal-panel-surface .xterm,
-.terminal-panel-surface .xterm-viewport {
+/* FitAddon subtracts padding from xterm itself, not from its parent. Keeping
+   the inset here prevents it from fitting a final row below the visible box. */
+.terminal-panel-surface .xterm {
   height: 100%;
+  padding: 6px 8px;
 }
 
 .terminal-panel-ended {

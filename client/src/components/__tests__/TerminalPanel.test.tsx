@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+
 import { render, screen, act } from "@testing-library/react";
 
 import { TerminalPanel } from "../TerminalPanel";
@@ -168,6 +171,18 @@ describe("TerminalPanel", () => {
 });
 
 describe("re-fitting when the surface changes size", () => {
+  it("keeps the final row inside the fitted and scrollable viewport", () => {
+    const css = fs.readFileSync(path.resolve(__dirname, "../TerminalPanel.css"), "utf8");
+    const surfaceRule = css.match(/\.terminal-panel-surface\s*\{([^}]*)\}/)?.[1];
+    const terminalRule = css.match(/\.terminal-panel-surface \.xterm\s*\{([^}]*)\}/)?.[1];
+
+    expect(surfaceRule).toBeDefined();
+    expect(surfaceRule).not.toMatch(/\bpadding\s*:/);
+    expect(terminalRule).toMatch(/\bheight\s*:\s*100%/);
+    expect(terminalRule).toMatch(/\bpadding\s*:\s*6px 8px/);
+    expect(css).not.toMatch(/\.terminal-panel-surface \.xterm-viewport/);
+  });
+
   it("watches the element xterm is mounted into", () => {
     const { container } = renderOpenedPanel();
 

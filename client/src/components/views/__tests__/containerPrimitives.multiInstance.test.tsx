@@ -11,7 +11,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 
 import { api } from "../../../api/client";
 import type { TicketLedger } from "../../../api/types";
@@ -67,6 +67,12 @@ function renderPair(a: Record<string, unknown>, b: Record<string, unknown>) {
       <ContainerPrimitiveHost containerId="right" settings={b} />
     </QueryClientProvider>,
   );
+}
+
+function renderOpenedTerminalPair(a: Record<string, unknown>, b: Record<string, unknown>) {
+  const rendered = renderPair(a, b);
+  act(() => jest.runOnlyPendingTimers());
+  return rendered;
 }
 
 /**
@@ -217,8 +223,11 @@ describe("AC7 — two run-ledger panels side by side", () => {
 });
 
 describe("AC7 — two terminals side by side", () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
   it("each opens and reaps its own shell", () => {
-    const { unmount } = renderPair(
+    const { unmount } = renderOpenedTerminalPair(
       { primitive_id: "terminal", workspace_slug: "loregarden" },
       { primitive_id: "terminal", workspace_slug: "blobert" },
     );
@@ -234,7 +243,7 @@ describe("AC7 — two terminals side by side", () => {
     // The collision an over-eager cache would introduce: keying a shell on the
     // workspace slug rather than on the container gives both panes one shell,
     // and closing one pane kills the other.
-    renderPair(
+    renderOpenedTerminalPair(
       { primitive_id: "terminal", workspace_slug: "loregarden" },
       { primitive_id: "terminal", workspace_slug: "loregarden" },
     );
