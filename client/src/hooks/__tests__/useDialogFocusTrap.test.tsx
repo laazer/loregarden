@@ -159,12 +159,25 @@ describe("useDialogFocusTrap", () => {
     expect(screen.getByRole("button", { name: "First" })).toHaveFocus();
   });
 
-  it("restores focus to the opener when the dialog unmounts", () => {
+  it.each([
+    ["a plain dialog", null],
+    ["a dialog that autofocuses a field", "Search"],
+  ])("restores focus to the opener when %s unmounts", (_label, autoFocused) => {
+    // The autofocus case is not a variation, it is the one that broke: React
+    // applies `autoFocus` while committing the dialog's children, before any
+    // effect here runs, so an opener remembered from inside the effect is the
+    // dialog's own field — and restoring to it after unmount lands on `<body>`.
     function Host({ open }: { open: boolean }) {
       return (
         <>
           <button type="button">Opener</button>
-          {open ? <Dialog /> : null}
+          {open ? (
+            <Dialog>
+              <button type="button">First</button>
+              {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
+              {autoFocused === null ? null : <input autoFocus aria-label={autoFocused} />}
+            </Dialog>
+          ) : null}
         </>
       );
     }
@@ -174,7 +187,9 @@ describe("useDialogFocusTrap", () => {
     opener.focus();
 
     rerender(<Host open />);
-    expect(screen.getByRole("button", { name: "First" })).toHaveFocus();
+    expect(
+      autoFocused === null ? screen.getByRole("button", { name: "First" }) : screen.getByLabelText(autoFocused),
+    ).toHaveFocus();
 
     rerender(<Host open={false} />);
     expect(opener).toHaveFocus();

@@ -36,6 +36,17 @@
  * effect is keyed on the node itself: it runs when the node attaches and tears
  * down when it goes.
  *
+ * ## Why the opener is read during render
+ *
+ * React applies `autoFocus` while committing the host node — a *child* of the
+ * component holding this hook — so it runs before any effect here, layout
+ * effects included. An effect that read `document.activeElement` on the way in
+ * would find the dialog's own search field, remember *that* as the opener, and
+ * on close try to restore focus to a node it had just unmounted: focus lands on
+ * `<body>`, which is the bug this hook exists to fix. The read below happens on
+ * renders where no panel is mounted — while the trigger still holds focus — and
+ * stops the moment one is.
+ *
  * ## Why a stack
  *
  * Dialogs nest here: a pane's settings editor can open the primitive picker,
@@ -44,7 +55,7 @@
  * the most recently mounted one acts; the rest wait their turn.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
 /**
@@ -113,6 +124,10 @@ export function useDialogFocusTrap<T extends HTMLElement>(
   mirror?: RefObject<T | null>,
 ): (node: T | null) => void {
   const [container, setContainer] = useState<T | null>(null);
+
+  // Read during render, not in the effect: see the note above.
+  const openerRef = useRef<Element | null>(null);
+  if (container === null) openerRef.current = document.activeElement;
   // Stable, so React attaches and detaches the node rather than tearing the
   // trap down and rebuilding it on every render of the dialog.
   const containerRef = useCallback(
@@ -126,10 +141,10 @@ export function useDialogFocusTrap<T extends HTMLElement>(
   useEffect(() => {
     if (container === null) return;
 
-    // Remembered before the trap moves anything, and re-checked on the way out:
-    // the opener can be unmounted by the same interaction that closed the
-    // dialog, and focusing a detached node silently sends focus to `<body>`.
-    const previouslyFocused = document.activeElement;
+    // Re-checked on the way out rather than trusted: the opener can be
+    // unmounted by the same interaction that closed the dialog, and focusing a
+    // detached node silently sends focus to `<body>`.
+    const previouslyFocused = openerRef.current;
 
     // A dialog with nothing tabbable in it still has to hold focus, or Tab
     // walks straight out into the page the overlay is covering. `-1` is
