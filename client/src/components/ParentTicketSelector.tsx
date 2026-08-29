@@ -163,6 +163,7 @@ export function ParentTicketSelector({
             ref={dialogRef}
             className="modal-panel modal-panel-wide parent-ticket-selector-modal"
             role="dialog"
+            aria-modal="true"
             aria-labelledby="parent-ticket-selector-title"
           >
             <div className="modal-header">

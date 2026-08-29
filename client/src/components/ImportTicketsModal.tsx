@@ -126,6 +126,7 @@ export function ImportTicketsModal({
         ref={dialogRef}
         className="modal-panel"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="import-tickets-picker-title"
       >
         <div className="modal-header">

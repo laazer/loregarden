@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { IconCloseButton } from "../IconCloseButton";
 
@@ -47,10 +47,7 @@ export function TicketStudioDraftModal({
   onClose,
   onSave,
 }: TicketStudioDraftModalProps) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  // Mirrored, because the effect below re-focuses the panel when its
-  // contents change under an already-open dialog.
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>(panelRef);
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const [draft, setDraft] = useState<TicketStudioDraftItem | null>(null);
   const [acceptanceText, setAcceptanceText] = useState("");
 
@@ -63,11 +60,6 @@ export function TicketStudioDraftModal({
     setDraft({ ...item, acceptance_criteria: [...item.acceptance_criteria] });
     setAcceptanceText(formatAcceptanceCriteriaText(item.acceptance_criteria));
   }, [item?.ref, item?.title, item?.description, item?.work_item_type, item?.parent_ref, item?.priority, item?.workflow_template_slug, item?.selected, item?.acceptance_criteria]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    panelRef.current?.focus();
-  }, [isOpen, item?.ref]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -125,6 +117,7 @@ export function TicketStudioDraftModal({
         ref={dialogRef}
         className="modal-panel modal-panel-wide"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="studio-draft-modal-title"
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 import { api } from "../api/client";
 import { IconCloseButton } from "./IconCloseButton";
@@ -11,10 +11,7 @@ import { useDialogFocusTrap } from "../hooks/useDialogFocusTrap";
 const ACTIVE_STATUSES = new Set(["running", "awaiting_permission"]);
 
 export function RunLogModal({ runId, onClose }: { runId: string | null; onClose: () => void }) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  // Mirrored, because the effect below re-focuses the panel when its
-  // contents change under an already-open dialog.
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>(panelRef);
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
   const isOpen = Boolean(runId);
 
   const log = useQuery({
@@ -25,11 +22,6 @@ export function RunLogModal({ runId, onClose }: { runId: string | null; onClose:
     refetchInterval: (query) =>
       ACTIVE_STATUSES.has(query.state.data?.status?.toLowerCase() ?? "") ? 2000 : false,
   });
-
-  useEffect(() => {
-    if (!isOpen) return;
-    panelRef.current?.focus();
-  }, [isOpen, runId]);
 
   useEffect(() => {
     if (!isOpen) return;

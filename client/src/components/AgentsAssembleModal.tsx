@@ -92,6 +92,7 @@ export function AgentsAssembleModal({
         ref={dialogRef}
         className="modal-panel"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="agents-assemble-title"
       >
         <div className="modal-header">

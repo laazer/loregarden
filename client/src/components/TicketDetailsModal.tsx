@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import * as apiClient from '../api/client';
 import type { TicketState } from '../api/client';
 import { priorityLabel } from '../lib/importTicketPreview';
@@ -102,10 +102,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
   const [tagsText, setTagsText] = useState('');
   const [state, setState] = useState<TicketState>('backlog');
   const [priority, setPriority] = useState(3);
-  const panelRef = useRef<HTMLDivElement>(null);
-  // Mirrored, because the effect below re-focuses the panel when its
-  // contents change under an already-open dialog.
-  const dialogRef = useDialogFocusTrap<HTMLDivElement>(panelRef);
+  const dialogRef = useDialogFocusTrap<HTMLDivElement>();
 
   // Joined rather than the array itself: a refetch hands back a new array identity
   // every time, which would re-seed the textarea and discard an in-progress edit.
@@ -122,11 +119,6 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
       setPriority(ticket.priority);
     }
   }, [ticket?.id, ticket?.title, ticket?.description, ticket?.state, ticket?.priority, criteriaSeed, tagsSeed]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    panelRef.current?.focus();
-  }, [isOpen, ticket?.id]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -188,6 +180,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
         ref={dialogRef}
         className="modal-panel"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="modal-title"
         aria-describedby="modal-description"
         tabIndex={-1}

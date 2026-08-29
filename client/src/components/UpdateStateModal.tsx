@@ -165,6 +165,7 @@ export function UpdateStateModal({
         ref={dialogRef}
         className="modal-panel"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="update-state-title"
       >
         <div className="modal-header">

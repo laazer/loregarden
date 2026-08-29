@@ -30,6 +30,7 @@ export function AgentPreviewModal({
         ref={dialogRef}
         className="modal-panel studio-preview-modal"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="agent-preview-modal-title"
       >
         <div className="modal-header">

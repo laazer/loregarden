@@ -91,6 +91,7 @@ export function AddWorkspaceModal({
         ref={dialogRef}
         className="modal-panel"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="add-workspace-title"
       >
         <div className="modal-header">

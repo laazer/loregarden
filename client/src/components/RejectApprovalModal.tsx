@@ -58,6 +58,7 @@ export function RejectApprovalModal({
         ref={dialogRef}
         className="modal-panel"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="reject-approval-title"
       >
         <div className="modal-header">

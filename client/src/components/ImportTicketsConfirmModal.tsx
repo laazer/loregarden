@@ -201,6 +201,7 @@ export function ImportTicketsConfirmModal({
         ref={dialogRef}
         className="modal-panel import-confirm-modal"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="import-tickets-title"
       >
         <div className="modal-header">

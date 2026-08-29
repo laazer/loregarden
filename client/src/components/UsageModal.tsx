@@ -145,6 +145,7 @@ export function UsageModal({ open, snapshot, isLoading, error, onClose, onRefres
         ref={dialogRef}
         className="modal-panel usage-modal-panel"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="usage-modal-title"
       >
         <div className="modal-header">

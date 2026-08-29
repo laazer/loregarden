@@ -8,7 +8,7 @@
  * asked to keep focus away from anything is not being tested.
  */
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 
@@ -195,6 +195,40 @@ describe("useDialogFocusTrap", () => {
     expect(opener).toHaveFocus();
   });
 
+  it("restores focus when a dialog that stays mounted drops its panel", async () => {
+    // The `if (!view) return null` shape closing, rather than being unmounted:
+    // the ref detaches while the component lives on, so the trap tears down
+    // through a re-render rather than an unmount.
+    function LateDialog({ view }: { view: string | null }) {
+      const ref = useDialogFocusTrap<HTMLDivElement>();
+      if (view === null) return null;
+      return (
+        <div ref={ref} role="dialog" aria-label={view}>
+          <button type="button">Confirm</button>
+        </div>
+      );
+    }
+
+    function Host({ view }: { view: string | null }) {
+      return (
+        <>
+          <button type="button">Opener</button>
+          <LateDialog view={view} />
+        </>
+      );
+    }
+
+    const { rerender } = render(<Host view={null} />);
+    const opener = screen.getByRole("button", { name: "Opener" });
+    opener.focus();
+
+    rerender(<Host view="Delete view?" />);
+    expect(screen.getByRole("button", { name: "Confirm" })).toHaveFocus();
+
+    rerender(<Host view={null} />);
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
   it("survives an opener that the same interaction removed", () => {
     function Host({ step }: { step: number }) {
       return (
@@ -240,20 +274,53 @@ describe("useDialogFocusTrap", () => {
 });
 
 describe("tabbableWithin", () => {
-  it("skips what the platform will not tab to", () => {
+  function tabbableIds(html: string): string[] {
     const root = document.createElement("div");
-    root.innerHTML = `
-      <button id="ok">ok</button>
-      <button disabled>disabled</button>
-      <input aria-hidden="true" />
-      <div hidden><button id="buried">buried</button></div>
-      <div tabindex="-1">programmatic only</div>
-      <div tabindex="0" id="custom">custom stop</div>
-    `;
+    root.innerHTML = html;
     document.body.appendChild(root);
+    try {
+      return tabbableWithin(root).map((element) => element.id);
+    } finally {
+      root.remove();
+    }
+  }
 
-    expect(tabbableWithin(root).map((element) => element.id)).toEqual(["ok", "custom"]);
+  it("skips what the platform will not tab to", () => {
+    expect(
+      tabbableIds(`
+        <button id="ok">ok</button>
+        <button disabled>disabled</button>
+        <button aria-disabled="true">off</button>
+        <fieldset disabled><button id="in-fieldset">grouped off</button></fieldset>
+        <input aria-hidden="true" />
+        <div hidden><button id="buried">buried</button></div>
+        <div inert><button id="inert">inert</button></div>
+        <div contenteditable="false" id="not-editable"></div>
+        <div tabindex="-1">programmatic only</div>
+        <div tabindex="0" id="custom">custom stop</div>
+      `),
+    ).toEqual(["ok", "custom"]);
+  });
 
-    root.remove();
+  it("counts a radio group as the one stop the browser makes", () => {
+    // `UpdateStateModal` has an eight-option `role="radiogroup"`. Counting each
+    // radio as its own stop would put seven phantom ones between the real
+    // controls, and the wrap — computed from the edges of this list — would
+    // land somewhere the Tab key never goes.
+    expect(
+      tabbableIds(`
+        <input type="radio" name="state" id="backlog" />
+        <input type="radio" name="state" id="doing" checked />
+        <input type="radio" name="state" id="done" />
+        <input type="radio" id="unnamed" />
+      `),
+    ).toEqual(["doing", "unnamed"]);
+
+    expect(
+      tabbableIds(`
+        <input type="radio" name="state" id="first" />
+        <input type="radio" name="state" id="second" />
+      `),
+    ).toEqual(["first"]);
   });
 });

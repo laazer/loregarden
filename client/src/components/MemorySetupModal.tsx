@@ -146,6 +146,7 @@ export function MemorySetupModal({
         ref={dialogRef}
         className="modal-panel modal-panel-wide"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="memory-setup-title"
       >
         <div className="modal-header">

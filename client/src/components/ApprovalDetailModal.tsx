@@ -46,6 +46,7 @@ export function ApprovalDetailModal({
         ref={dialogRef}
         className="modal-panel modal-panel-wide"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="approval-detail-title"
       >
         <div className="modal-header">

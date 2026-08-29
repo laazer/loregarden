@@ -211,6 +211,7 @@ export function CreateWorkItemModal({
         ref={dialogRef}
         className="modal-panel"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="create-work-item-title"
       >
         <div className="modal-header">

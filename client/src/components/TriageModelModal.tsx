@@ -52,6 +52,7 @@ export function TriageModelModal({
         ref={dialogRef}
         className="modal-panel"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="triage-model-modal-title"
       >
         <div className="modal-header">

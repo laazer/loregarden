@@ -58,6 +58,7 @@ export function SettingsModal({
         ref={dialogRef}
         className="modal-panel"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="settings-modal-title"
       >
         <div className="modal-header">

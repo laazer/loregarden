@@ -56,7 +56,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { RefObject } from "react";
 
 /**
  * What the platform will hand a Tab press to, before per-element filtering.
@@ -75,6 +74,9 @@ const FOCUSABLE_SELECTOR = [
   "iframe",
   "audio[controls]",
   "video[controls]",
+  // Plain, not `:not([contenteditable="false"])`: the `tabIndex >= 0` filter
+  // below already excludes a non-editable one, so the narrowing was a
+  // refinement no test could tell apart from its absence.
   "[contenteditable]",
   "[tabindex]",
 ].join(",");
@@ -88,20 +90,56 @@ const FOCUSABLE_SELECTOR = [
  */
 const trapStack: HTMLElement[] = [];
 
+/**
+ * Whether the platform will refuse `element` a tab stop for being turned off.
+ *
+ * `disabled` is read as an attribute rather than a property so one filter
+ * covers every tag — `HTMLInputElement` has the property and `<a>` does not —
+ * and `fieldset[disabled]` because disabling a fieldset disables its controls
+ * without marking any of them.
+ */
+function isDisabled(element: HTMLElement): boolean {
+  return (
+    element.hasAttribute("disabled") ||
+    element.getAttribute("aria-disabled") === "true" ||
+    element.closest("fieldset[disabled]") !== null
+  );
+}
+
+/**
+ * Radios Tab as a group: the browser stops on the checked one, or on the first
+ * of a group with none checked, and skips the rest. Named groups only — an
+ * unnamed radio is a group of one and is reached like any other control.
+ *
+ * It matters here because the wrap is computed from the *edges* of this list. A
+ * `role="radiogroup"` of eight states — `UpdateStateModal` has one — would
+ * otherwise put seven phantom stops between the real ones, and Tab would appear
+ * to stick.
+ */
+function isSkippedRadio(element: HTMLElement, root: HTMLElement): boolean {
+  if (!(element instanceof HTMLInputElement) || element.type !== "radio") return false;
+  if (element.name === "" || element.checked) return false;
+  const group = Array.from(
+    root.querySelectorAll<HTMLInputElement>(
+      `input[type="radio"][name="${CSS.escape(element.name)}"]`,
+    ),
+  );
+  return group.some((radio) => radio.checked) || group[0] !== element;
+}
+
 /** The tabbable descendants of `root`, in document order. */
 export function tabbableWithin(root: HTMLElement): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
     (element) =>
-      // `disabled` is checked as an attribute rather than a property so the
-      // list stays one filter for every tag: `HTMLInputElement` has the
-      // property and `<a>` does not.
-      !element.hasAttribute("disabled") &&
+      element.tabIndex >= 0 &&
+      !isDisabled(element) &&
       element.getAttribute("aria-hidden") !== "true" &&
       // Not visibility: jsdom has no layout engine and reports every element at
       // zero, so a size test would make this hook untestable and — worse —
-      // silently empty in the suite while working in a browser.
-      element.closest("[hidden]") === null &&
-      element.tabIndex >= 0,
+      // silently empty in the suite while working in a browser. `[inert]` is
+      // the declarative form and does work here.
+      element.closest("[hidden],[inert]") === null &&
+      !isSkippedRadio(element, root),
   );
 }
 
@@ -111,18 +149,8 @@ export function tabbableWithin(root: HTMLElement): HTMLElement[] {
  * Attach the ref to the element carrying `role="dialog"`, not the overlay: the
  * overlay is a sibling backdrop, and trapping on it would make everything the
  * dialog contains unreachable.
- *
- * `mirror` exists for the three dialogs that already held a ref to that same
- * element and re-focus it when their *contents* change under an open panel — a
- * run log switching runs, a details modal switching tickets. React takes one
- * ref per element, and an inline arrow merging two would be a new callback
- * every render, which detaches and re-attaches the node and so re-runs the trap
- * — stealing focus on every keystroke. The node is written through here
- * instead.
  */
-export function useDialogFocusTrap<T extends HTMLElement>(
-  mirror?: RefObject<T | null>,
-): (node: T | null) => void {
+export function useDialogFocusTrap<T extends HTMLElement>(): (node: T | null) => void {
   const [container, setContainer] = useState<T | null>(null);
 
   // Read during render, not in the effect: see the note above.
@@ -130,13 +158,7 @@ export function useDialogFocusTrap<T extends HTMLElement>(
   if (container === null) openerRef.current = document.activeElement;
   // Stable, so React attaches and detaches the node rather than tearing the
   // trap down and rebuilding it on every render of the dialog.
-  const containerRef = useCallback(
-    (node: T | null) => {
-      if (mirror !== undefined) mirror.current = node;
-      setContainer(node);
-    },
-    [mirror],
-  );
+  const containerRef = useCallback((node: T | null) => setContainer(node), []);
 
   useEffect(() => {
     if (container === null) return;

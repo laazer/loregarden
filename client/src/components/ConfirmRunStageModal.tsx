@@ -89,6 +89,7 @@ export function ConfirmRunStageModal({
         ref={dialogRef}
         className="modal-panel"
         role="dialog"
+        aria-modal="true"
         aria-labelledby="confirm-run-stage-title"
       >
         <div className="modal-header">
