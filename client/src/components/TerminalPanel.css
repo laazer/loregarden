@@ -52,6 +52,6 @@
   color: #9fb0c0;
 }
 
-.xterm-screen {
+.copilot-dock-terminal .xterm-screen {
   height: 28vh !important;
 }
