@@ -46,7 +46,7 @@ import { useState, type PointerEvent as ReactPointerEvent, type ReactNode } from
 
 import { EMPTY_PANE_TITLE, ICON_BUTTON, paneTitle, panePrimitive } from "./paneChrome";
 import "./paneChrome.css";
-import { PaneSettingsEditor } from "./PaneSettingsEditor";
+import { PaneSettingsModal } from "../PaneSettingsModal";
 import { PANE_SETTINGS_LABEL } from "./paneSettingsLabel";
 import { PrimitivePickerModal } from "../PrimitivePickerModal";
 
@@ -178,22 +178,21 @@ export function PaneHeader({
         {buttons}
       </div>
       {/* Gated on the same condition as the button that opens it. A primitive
-          swapped underneath an open panel can leave `editing` true against a
+          swapped underneath an open dialog can leave `editing` true against a
           schema with no fields, and a form with no inputs whose Save writes
-          bare defaults is the control-that-lies this ticket exists to remove. */}
+          bare defaults is the control-that-lies 554 exists to remove.
+
+          A dialog rather than a panel under the header, for the two reasons
+          that moved the picker out in 557 and were already true here: 554
+          measured a 167px form in a 149px pane with its Save below the fold,
+          and a panel inside a zoomed canvas is scaled with the pane. */}
       {editing && configurable && primitive !== undefined ? (
-        <div className="pane-settings-panel">
-          {/* Keyed by the primitive: a pick made while the editor was open is a
-              different schema, and a form that kept its draft across that would
-              be holding one primitive's values against another's fields. */}
-          <PaneSettingsEditor
-            key={primitive.id}
-            containerId={containerId}
-            container={container}
-            primitive={primitive}
-            onDone={() => setEditing(false)}
-          />
-        </div>
+        <PaneSettingsModal
+          containerId={containerId}
+          container={container}
+          primitive={primitive}
+          onClose={() => setEditing(false)}
+        />
       ) : null}
       {/* A dialog rather than a panel under the header (557): sixteen options
           do not fit in a pane, and one drawn inside a zoomed canvas would be

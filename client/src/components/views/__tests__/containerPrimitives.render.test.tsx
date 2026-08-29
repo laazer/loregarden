@@ -29,8 +29,23 @@ const mockApi = api as jest.Mocked<typeof api>;
 
 /** Sockets opened during a test, newest last. */
 const opened: FakeSocket[] = [];
-/** ResizeObserver targets and the callback each would receive. */
-const observed: { target: Element; fire: () => void }[] = [];
+/**
+ * ResizeObserver targets and the callback each would receive.
+ *
+ * `fire` takes a size because the real API hands its callback an entry list and
+ * nothing else — a fake that called back with no arguments let a consumer read
+ * `entries[0]` and crash only in a browser, which is the kind of stand-in that
+ * makes a suite green over a broken pane.
+ */
+const observed: { target: Element; fire: (width?: number, height?: number) => void }[] = [];
+
+/** The one field of a `ResizeObserverEntry` anything here reads. */
+function entryFor(target: Element, width: number, height: number): ResizeObserverEntry {
+  return {
+    target,
+    contentRect: { width, height, top: 0, left: 0, bottom: height, right: width, x: 0, y: 0 },
+  } as unknown as ResizeObserverEntry;
+}
 
 class FakeSocket {
   static readonly OPEN = 1;
@@ -68,6 +83,25 @@ class FakeSocket {
  * fit a zero-sized box, so a test that wants a fit has to say how big the
  * surface is.
  */
+/**
+ * The observer watching something inside the pane, not the pane host itself.
+ *
+ * Two elements are observed now: the host measures itself to publish a pane
+ * tier, and the terminal measures its own box to re-fit. "The last one
+ * registered" used to mean the terminal and now means the host — React runs
+ * child effects before parent ones — so the target is what selects it. A
+ * positional index here was a test that passed for a reason unrelated to its
+ * subject.
+ */
+function observerInsidePane(): { target: Element; fire: (w?: number, h?: number) => void } {
+  const match = observed.filter(
+    (entry) => !(entry.target as HTMLElement).hasAttribute("data-container-id"),
+  );
+  const last = match[match.length - 1];
+  if (last === undefined) throw new Error("nothing inside the pane is being observed");
+  return last;
+}
+
 function layOut(width: number, height: number) {
   Element.prototype.getBoundingClientRect = function () {
     return {
@@ -87,12 +121,19 @@ beforeEach(() => {
     .mockImplementation((cb) => ((cb as FrameRequestCallback)(0), 1));
   (globalThis as unknown as { WebSocket: unknown }).WebSocket = FakeSocket;
   (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
-    callback: () => void;
-    constructor(callback: () => void) {
+    callback: ResizeObserverCallback;
+    constructor(callback: ResizeObserverCallback) {
       this.callback = callback;
     }
     observe(target: Element): void {
-      observed.push({ target, fire: this.callback });
+      observed.push({
+        target,
+        fire: (width = 800, height = 600) =>
+          this.callback(
+            [entryFor(target, width, height)],
+            this as unknown as ResizeObserver,
+          ),
+      });
     }
     disconnect(): void {}
     unobserve(): void {}
@@ -181,7 +222,7 @@ describe("AC3 — a terminal primitive renders a working shell via TerminalPanel
     socket.sent.length = 0;
 
     layOut(0, 0);
-    observed[observed.length - 1].fire();
+    observerInsidePane().fire(0, 0);
     expect(socket.sent.filter((frame) => frame.includes('"type":"resize"'))).toEqual([]);
   });
 
@@ -196,7 +237,7 @@ describe("AC3 — a terminal primitive renders a working shell via TerminalPanel
 
     layOut(400, 200);
     expect(observed.length).toBeGreaterThan(0);
-    observed[observed.length - 1].fire();
+    observerInsidePane().fire(400, 200);
 
     const resizes = socket.sent.filter((frame) => frame.includes('"type":"resize"'));
     expect(resizes.length).toBeGreaterThan(0);

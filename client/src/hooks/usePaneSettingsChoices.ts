@@ -38,6 +38,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../api/client";
 import { TICKET_STATE_LABELS } from "../lib/ticketStates";
+import { useQueueLanes } from "./useQueueLanes";
 import type { ChoiceSource } from "../components/views/primitives/types";
 
 export interface ChoiceOption {
@@ -97,6 +98,10 @@ export function useChoiceOptions(source: ChoiceSource, workspaceSlug: string): C
     queryFn: api.workflowTemplates,
     enabled: source === "workflow",
   });
+  // The same shared key the lane panes and the run dialogs' picker read, so
+  // opening this form costs nothing when a lane is already on screen.
+  const lanesQuery = useQueueLanes(source === "lane");
+
   const tickets = useQuery({
     // Scoped to the workspace the chrome is showing, which is the one the view
     // belongs to. An unscoped list would offer tickets from workspaces this
@@ -137,6 +142,18 @@ export function useChoiceOptions(source: ChoiceSource, workspaceSlug: string): C
       mode: "select",
       isLoading: workflows.isLoading,
       isUnavailable: workflows.isError || (workflows.data ?? []).length === 0,
+    },
+    lane: {
+      options: lanesQuery.lanes.map((lane) => ({
+        value: String(lane.slot_number),
+        label:
+          lane.running === null
+            ? `Lane ${lane.slot_number} · idle`
+            : `Lane ${lane.slot_number} · running`,
+      })),
+      mode: "select",
+      isLoading: lanesQuery.isLoading,
+      isUnavailable: lanesQuery.isError || lanesQuery.lanes.length === 0,
     },
     ticket: {
       options: (tickets.data ?? []).map(ticketChoice),
