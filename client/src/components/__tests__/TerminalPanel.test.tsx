@@ -50,7 +50,20 @@ function layOut(width: number, height: number) {
   };
 }
 
+function letSocketOpen() {
+  act(() => {
+    jest.runOnlyPendingTimers();
+  });
+}
+
+function renderOpenedPanel(props: { workspaceSlug: string } = { workspaceSlug: "loregarden" }) {
+  const rendered = render(<TerminalPanel {...props} />);
+  letSocketOpen();
+  return rendered;
+}
+
 beforeEach(() => {
+  jest.useFakeTimers();
   opened.length = 0;
   layOut(800, 400);
   // The first fit is deferred to a frame; run it synchronously here.
@@ -72,23 +85,28 @@ beforeEach(() => {
   };
 });
 
+afterEach(() => {
+  jest.restoreAllMocks();
+  jest.useRealTimers();
+});
+
 describe("TerminalPanel", () => {
   it("connects to the terminal socket for the workspace it was given", () => {
-    render(<TerminalPanel workspaceSlug="loregarden" />);
+    renderOpenedPanel();
 
     expect(opened).toHaveLength(1);
     expect(opened[0].url).toBe("ws://127.0.0.1:8000/terminal/loregarden");
   });
 
   it("does not render fake window controls", () => {
-    render(<TerminalPanel workspaceSlug="loregarden" />);
+    renderOpenedPanel();
 
     expect(document.querySelector(".terminal-lights")).not.toBeInTheDocument();
     expect(document.querySelector(".terminal-panel-bar")).not.toBeInTheDocument();
   });
 
   it("tells the shell its size once the socket is actually open", () => {
-    render(<TerminalPanel workspaceSlug="loregarden" />);
+    renderOpenedPanel();
 
     // The first fit happens while the socket is still CONNECTING, so the size
     // is dropped. Without a re-sync on open the shell keeps its default 80x24
@@ -105,7 +123,7 @@ describe("TerminalPanel", () => {
   });
 
   it("closes the socket on unmount so the server reaps the shell", () => {
-    const { unmount } = render(<TerminalPanel workspaceSlug="loregarden" />);
+    const { unmount } = renderOpenedPanel();
 
     unmount();
 
@@ -113,8 +131,17 @@ describe("TerminalPanel", () => {
     expect(opened[0].closed).toBe(true);
   });
 
+  it("does not open and then close a socket when React discards the first dev render", () => {
+    const { unmount } = render(<TerminalPanel workspaceSlug="loregarden" />);
+
+    unmount();
+    letSocketOpen();
+
+    expect(opened).toHaveLength(0);
+  });
+
   it("explains an ended session and offers a new shell rather than a blank pane", () => {
-    render(<TerminalPanel workspaceSlug="loregarden" />);
+    renderOpenedPanel();
 
     act(() => {
       opened[0].onclose?.({ code: 1008, reason: "Unknown workspace" } as CloseEvent);
@@ -125,7 +152,7 @@ describe("TerminalPanel", () => {
   });
 
   it("starts a genuinely new socket when asked, since the old shell is gone", () => {
-    render(<TerminalPanel workspaceSlug="loregarden" />);
+    renderOpenedPanel();
 
     act(() => {
       opened[0].onclose?.({ code: 1006, reason: "" } as CloseEvent);
@@ -133,6 +160,7 @@ describe("TerminalPanel", () => {
     act(() => {
       screen.getByRole("button", { name: "Start a new shell" }).click();
     });
+    letSocketOpen();
 
     expect(opened).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Start a new shell" })).not.toBeInTheDocument();
@@ -141,7 +169,7 @@ describe("TerminalPanel", () => {
 
 describe("re-fitting when the surface changes size", () => {
   it("watches the element xterm is mounted into", () => {
-    const { container } = render(<TerminalPanel workspaceSlug="loregarden" />);
+    const { container } = renderOpenedPanel();
 
     expect(observed).toHaveLength(1);
     expect(observed[0].target).toBe(container.querySelector(".terminal-panel-surface"));
@@ -151,7 +179,7 @@ describe("re-fitting when the surface changes size", () => {
     // Asserted here because ResizeObserver cannot be exercised in the preview
     // browser — it delivers no callbacks there, not even the initial one — so
     // the wiring is pinned where it can be checked deterministically.
-    render(<TerminalPanel workspaceSlug="loregarden" />);
+    renderOpenedPanel();
     act(() => {
       opened[0].readyState = 1;
       opened[0].onopen?.();
@@ -175,7 +203,8 @@ describe("re-fitting when the surface changes size", () => {
       }
     };
 
-    render(<TerminalPanel workspaceSlug="loregarden" />).unmount();
+    const rendered = renderOpenedPanel();
+    rendered.unmount();
 
     expect(disconnects).toHaveLength(1);
   });
@@ -189,7 +218,7 @@ describe("a surface the browser has not laid out yet", () => {
     // what shipped: on first paint with the dock already open, the prompt came
     // back one or two characters per line.
     layOut(0, 0);
-    render(<TerminalPanel workspaceSlug="loregarden" />);
+    renderOpenedPanel();
 
     act(() => {
       opened[0].readyState = 1;
@@ -202,7 +231,7 @@ describe("a surface the browser has not laid out yet", () => {
 
   it("fits once the box has a size", () => {
     layOut(0, 0);
-    render(<TerminalPanel workspaceSlug="loregarden" />);
+    renderOpenedPanel();
     act(() => {
       opened[0].readyState = 1;
       opened[0].onopen?.();
@@ -225,7 +254,7 @@ describe("a surface the browser has not laid out yet", () => {
       return 1;
     });
 
-    render(<TerminalPanel workspaceSlug="loregarden" />);
+    renderOpenedPanel();
 
     expect(frames).toHaveLength(1);
     expect(opened[0].sent).toHaveLength(0);

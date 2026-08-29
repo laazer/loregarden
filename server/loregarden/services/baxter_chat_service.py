@@ -36,6 +36,7 @@ from loregarden.models.domain import (
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
 )
+from loregarden.models.domain.chat_primitives import TodoListPart
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.agent_turn_runner import (
     AgentTurnRequest,
@@ -45,7 +46,7 @@ from loregarden.services.agent_turn_runner import (
     run_agent_turn,
 )
 from loregarden.services.approval_views import approval_to_view
-from loregarden.services.chat_primitives import load_parts_json
+from loregarden.services.chat_primitives import load_parts_json, parse_primitive_parts
 from loregarden.services.cli_agent_runner import stub_response
 from loregarden.services.cli_settings import (
     VALID_CLI_ADAPTERS,
@@ -85,11 +86,55 @@ DEFAULT_BAXTER_CHAT_USER_PROMPT = (
 # Posted by the chat UI Run button on an agent execution plan. Must stay in sync
 # with ``agentPlanExecuteMessage`` in the client TodoListPrimitive.
 AGENT_PLAN_EXECUTE_PREFIX = "Execute this agent execution plan now."
+MAX_AGENT_PLAN_ATTEMPTS = 4
+_AGENT_PLAN_ID_PATTERN = re.compile(r'plan_id\s+["\']([^"\']+)["\']')
 
 
 def is_agent_plan_execute_message(content: str) -> bool:
     """True when the operator pressed Run on an agent ``todo_list`` plan."""
     return content.lstrip().startswith(AGENT_PLAN_EXECUTE_PREFIX)
+
+
+def _agent_plan_id(content: str) -> str:
+    match = _AGENT_PLAN_ID_PATTERN.search(content)
+    return match.group(1) if match else ""
+
+
+def _agent_plan_reply_complete(reply: str, plan_id: str) -> bool | None:
+    """Return completion, continuation, or operator-input state for a plan reply.
+
+    ``None`` means the agent emitted a QA card and therefore needs the operator
+    before it can continue. A missing plan card is incomplete: without the
+    structured checklist the server cannot safely infer completion from prose.
+    """
+    matching_plan: TodoListPart | None = None
+    for part in parse_primitive_parts(reply):
+        if part.primitive == "qa":
+            return None
+        if part.primitive == "todo_list" and part.owner == "agent":
+            if not plan_id or part.plan_id == plan_id:
+                matching_plan = part
+    if matching_plan is None or not matching_plan.items:
+        return False
+    return all(item.checked for item in matching_plan.items)
+
+
+def _agent_plan_continuation_prompt(prompt: str, reply: str, plan_id: str) -> str:
+    plan_label = f'plan_id "{plan_id}"' if plan_id else "the active agent plan"
+    return "\n".join(
+        [
+            prompt,
+            "",
+            "## Execution continuation",
+            f"The previous attempt returned before {plan_label} was verifiably complete.",
+            "Continue working now. Do not merely describe the remaining work. End only by",
+            "emitting the matching todo_list with every item checked, or a qa card that",
+            "records the concrete blocker, required approval, or operator input.",
+            "",
+            "Previous attempt reply:",
+            _clip(reply),
+        ]
+    )
 
 
 def _clip(text: str, limit: int = MAX_MESSAGE_CHARS) -> str:
@@ -646,8 +691,11 @@ def build_baxter_chat_prompt(
             "  with tools on whatever CLI they selected — do not only restate",
             "  the plan, and do not claim you need Claude.",
             "  Re-emit the plan (same `plan_id`) only when step state actually",
-            "  changed; once every step is checked stop emitting it and report",
-            "  the outcome in prose.",
+            "  changed. When the final item completes, emit the matching plan",
+            "  once with every item checked, then report the outcome in prose.",
+            "  Do not end an execution turn while actionable items remain.",
+            "  Stop only after all items are checked, or after emitting a `qa`",
+            "  card for a concrete blocker, required approval, or operator input.",
             "- To ask the operator before proceeding, emit `qa`.",
             "- After creating a ticket via MCP, emit `ticket` with the real returned id.",
             "",
@@ -699,6 +747,7 @@ def invoke_baxter_chat_model(
         wants_execute=is_agent_plan_execute_message(message),
         require_operator_run=True,
     )
+    interactive = intent == "execute"
 
     prompt = build_baxter_chat_prompt(
         workspace=workspace,
@@ -707,30 +756,47 @@ def invoke_baxter_chat_model(
         approvals=_pending_approvals(session, workspace.id),
         tickets=_active_tickets(session, workspace.id),
         references=resolve_references(session, message),
-        interactive=intent == "execute",
+        interactive=interactive,
         approval_bridge=caps.permission_bridge,
         skill_name=skill_name,
     )
-    result = run_agent_turn(
-        AgentTurnRequest(
-            session=session,
-            workspace=workspace,
-            prompt=prompt,
-            profile=BAXTER_CHAT_CLI_PROFILE,
-            agent=agent,
-            intent=intent,
-            adapter=selected,
-            user_prompt=DEFAULT_BAXTER_CHAT_USER_PROMPT,
-            turn_id=turn_id,
-            stage_key=HOME_CHAT_STAGE_KEY,
-            agent_id=TRIAGE_AGENT_ID,
-            manage_run=intent == "execute",
-            workspace_stage_key=HOME_CHAT_STAGE_KEY,
-            claude_model_env="LOREGARDEN_BAXTER_CHAT_CLAUDE_MODEL",
-            conflict_error=lambda msg: BaxterChatConflictError(
-                f"{TRIAGE_AGENT_NAME} is still working on the previous message — wait for it to finish."
-            ),
-            track_workflow_stage=False,
-        )
+    request = AgentTurnRequest(
+        session=session,
+        workspace=workspace,
+        prompt=prompt,
+        profile=BAXTER_CHAT_CLI_PROFILE,
+        agent=agent,
+        intent=intent,
+        adapter=selected,
+        user_prompt=DEFAULT_BAXTER_CHAT_USER_PROMPT,
+        turn_id=turn_id,
+        stage_key=HOME_CHAT_STAGE_KEY,
+        agent_id=TRIAGE_AGENT_ID,
+        manage_run=interactive,
+        workspace_stage_key=HOME_CHAT_STAGE_KEY,
+        claude_model_env="LOREGARDEN_BAXTER_CHAT_CLAUDE_MODEL",
+        conflict_error=lambda msg: BaxterChatConflictError(
+            f"{TRIAGE_AGENT_NAME} is still working on the previous message — wait for it to finish."
+        ),
+        track_workflow_stage=False,
     )
-    return result.reply
+    result = run_agent_turn(request)
+    if not interactive or not is_agent_plan_execute_message(message):
+        return result.reply
+
+    plan_id = _agent_plan_id(message)
+    for _attempt in range(1, MAX_AGENT_PLAN_ATTEMPTS):
+        completion = _agent_plan_reply_complete(result.reply, plan_id)
+        if completion is True or completion is None:
+            return result.reply
+        request = replace(
+            request,
+            prompt=_agent_plan_continuation_prompt(prompt, result.reply, plan_id),
+        )
+        result = run_agent_turn(request)
+
+    if _agent_plan_reply_complete(result.reply, plan_id) is not False:
+        return result.reply
+    raise RuntimeError(
+        f"Agent execution plan did not reach completion after {MAX_AGENT_PLAN_ATTEMPTS} attempts"
+    )
