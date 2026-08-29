@@ -149,6 +149,7 @@ def _args_for(
     memory_id: str,
     stage_key: str,
     prereq_id: str,
+    optional_stage_key: str,
 ) -> dict | None:
     """Minimal well-formed arguments per tool, mirroring each schema's `required`."""
     ws = "loregarden"
@@ -246,7 +247,8 @@ def _args_for(
         "loregarden_complete_orchestration": {"run_id": run_id},
         "loregarden_start_stage": {"run_id": run_id, "stage_key": stage_key},
         "loregarden_complete_stage": {"run_id": run_id, "stage_key": stage_key},
-        "loregarden_skip_stage": {"run_id": run_id, "stage_key": stage_key},
+        # Only an optional stage may be skipped; a required one is refused by design.
+        "loregarden_skip_stage": {"run_id": run_id, "stage_key": optional_stage_key},
     }
     return table.get(tool)
 
@@ -267,6 +269,9 @@ def test_every_advertised_tool_is_callable(client: TestClient):
     run_id = run.get("id", "")
     assert run_id, f"start_orchestration returned no run id: {run}"
     stage_key = run.get("current_stage_key") or "triage"
+    detail = client.get(f"/api/tickets/{ticket_id}").json()
+    optional_stage_key = next((s["key"] for s in detail.get("stages", []) if s.get("optional")), "")
+    assert optional_stage_key, "seed workflow has no optional stage for skip_stage to skip"
 
     # create_memory_relation needs real node ids; make one to point at.
     mem = _call(
@@ -339,7 +344,16 @@ def test_every_advertised_tool_is_callable(client: TestClient):
     for tool in ordered:
         if tool not in advertised:
             continue
-        args = _args_for(tool, ticket_id, external_id, run_id, memory_id, stage_key, prereq_id)
+        args = _args_for(
+            tool,
+            ticket_id,
+            external_id,
+            run_id,
+            memory_id,
+            stage_key,
+            prereq_id,
+            optional_stage_key,
+        )
         if args is None:
             failures.append(f"{tool}: no args defined in the smoke table")
             continue

@@ -46,11 +46,41 @@ def parse_stage_map(
     return {s.key: by_key.get(s.key, StageStatus.PENDING) for s in ordered}
 
 
-def serialize_stage_map(stage_map: dict[str, StageStatus], stages: list[WorkflowStageDef]) -> str:
+def parse_stage_notes(instance: WorkflowInstance) -> dict[str, str]:
+    """Per-stage notes recorded alongside the statuses, keyed by stage key.
+
+    Notes are why a stage ended up where it did — chiefly why it was pruned to
+    WONT_DO. They live in the same rows as the statuses, so any writer that
+    reserialises the map has to carry them forward or they are lost; that is why
+    `serialize_stage_map` takes them as a required argument.
+    """
+    raw = json.loads(instance.stages_json or "[]")
+    return {item["key"]: item.get("note", "") for item in raw if item.get("note")}
+
+
+def serialize_stage_map(
+    stage_map: dict[str, StageStatus],
+    stages: list[WorkflowStageDef],
+    *,
+    notes: dict[str, str],
+) -> str:
+    """Render the stage map back to `stages_json`.
+
+    `notes` is required rather than defaulted: it used to be absent entirely,
+    so every status write silently erased the notes `build_stage_views` reads.
+    Callers preserving existing notes pass `parse_stage_notes(instance)`.
+    """
     ordered = sorted(stages, key=lambda s: s.order)
-    return json.dumps(
-        [{"key": s.key, "status": stage_map[s.key].value} for s in ordered if s.key in stage_map]
-    )
+    payload: list[dict[str, str]] = []
+    for stage in ordered:
+        if stage.key not in stage_map:
+            continue
+        row = {"key": stage.key, "status": stage_map[stage.key].value}
+        note = notes.get(stage.key, "")
+        if note:
+            row["note"] = note
+        payload.append(row)
+    return json.dumps(payload)
 
 
 def _stage_resolved(status: StageStatus) -> bool:
@@ -164,7 +194,7 @@ def reconcile_workflow_state(
     ticket.updated_at = datetime.now(timezone.utc)
 
     instance.current_stage_key = current_key
-    instance.stages_json = serialize_stage_map(stage_map, stages)
+    instance.stages_json = serialize_stage_map(stage_map, stages, notes=parse_stage_notes(instance))
     instance.updated_at = datetime.now(timezone.utc)
 
     if current_key:
@@ -189,12 +219,26 @@ def set_stage_status(
     stages: list[WorkflowStageDef],
     stage_key: str,
     status: StageStatus,
+    *,
+    note: str | None = None,
 ) -> dict[str, StageStatus]:
+    """Set one stage's status, optionally recording why.
+
+    `note=None` leaves any existing note alone; a string replaces it, and `""`
+    clears it. The note is what the workflow pane shows next to a pruned stage,
+    so a WONT_DO written without one reads as an unexplained gap.
+    """
     stage_map = parse_stage_map(instance, stages)
     if stage_key not in stage_map:
         raise ValueError(f"Unknown stage key: {stage_key}")
     stage_map[stage_key] = status
-    instance.stages_json = serialize_stage_map(stage_map, stages)
+    notes = parse_stage_notes(instance)
+    if note is not None:
+        if note:
+            notes[stage_key] = note
+        else:
+            notes.pop(stage_key, None)
+    instance.stages_json = serialize_stage_map(stage_map, stages, notes=notes)
     reconcile_workflow_state(ticket, instance, stages, persist=False)
     return stage_map
 
@@ -208,8 +252,7 @@ def build_stage_views(
 ) -> list[WorkflowStageView]:
     reconcile_workflow_state(ticket, instance, stages, persist=False, owns_state=owns_state)
     stage_map = parse_stage_map(instance, stages)
-    raw = json.loads(instance.stages_json or "[]")
-    note_by_key = {item["key"]: item.get("note", "") for item in raw}
+    note_by_key = parse_stage_notes(instance)
     views: list[WorkflowStageView] = []
     for stage in sorted(stages, key=lambda s: s.order):
         views.append(

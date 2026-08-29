@@ -20,6 +20,7 @@ from loregarden.services.studio_routing import (
 )
 from loregarden.services.workflow_state import (
     parse_stage_map,
+    parse_stage_notes,
     reconcile_workflow_state,
     serialize_stage_map,
     set_stage_status,
@@ -157,7 +158,9 @@ def _record_passed_over(
         )
         changed = True
     if changed:
-        instance.stages_json = serialize_stage_map(stage_map, stages)
+        instance.stages_json = serialize_stage_map(
+            stage_map, stages, notes=parse_stage_notes(instance)
+        )
     return stage_map
 
 
@@ -272,7 +275,9 @@ def apply_stage_route(
             from_key=from_key,
             to_key=plan.to_key,
         )
-        instance.stages_json = serialize_stage_map(stage_map, stages)
+        instance.stages_json = serialize_stage_map(
+            stage_map, stages, notes=parse_stage_notes(instance)
+        )
         ticket.workflow_stage_key = plan.to_key
         ticket.workflow_stage_status = StageStatus.PENDING
         if misroute_reason:

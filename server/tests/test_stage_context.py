@@ -265,3 +265,57 @@ def test_no_brief_section_when_the_template_wrote_none():
     text = build_orchestration_context(ticket=ticket, run=run, stage_def=stage, stages=[stage])
 
     assert "What this workflow wants from this stage" not in text
+
+
+def _pruning_stages() -> list[WorkflowStageDef]:
+    return [
+        WorkflowStageDef(key="implement", name="Implement", agent_id="dev", order=1),
+        WorkflowStageDef(key="review", name="Review", agent_id="reviewer", order=2),
+        WorkflowStageDef(key="playtest", name="Playtest", agent_id="qa", order=3, optional=True),
+        WorkflowStageDef(key="done", name="Done", order=4, terminal=True, optional=True),
+    ]
+
+
+def _run_and_ticket(stage_key: str) -> tuple[Ticket, AgentRun]:
+    ticket = Ticket(
+        external_id="200-prune-context",
+        title="Prune context",
+        workspace_id="ws",
+        workflow_stage_key=stage_key,
+    )
+    run = AgentRun(
+        run_code="run_prune",
+        ticket_id="ticket",
+        workspace_id="ws",
+        agent_id="dev",
+        skill_name="",
+        stage_key=stage_key,
+    )
+    return ticket, run
+
+
+def test_context_offers_the_downstream_stages_an_agent_may_prune():
+    """An affordance nothing names is one no agent uses.
+
+    `loregarden_skip_stage` refuses every required stage, so without the key
+    list a caller can only guess — and most guesses are refused.
+    """
+    stages = _pruning_stages()
+    ticket, run = _run_and_ticket("implement")
+
+    text = build_orchestration_context(ticket=ticket, run=run, stage_def=stages[0], stages=stages)
+
+    assert "won't-do" in text
+    assert "`playtest` (Playtest)" in text
+    # Required stages, and the terminal stage, are not on offer.
+    assert "`review`" not in text.split("### Stages you may declare won't-do")[1]
+    assert "`done`" not in text.split("### Stages you may declare won't-do")[1]
+
+
+def test_context_omits_the_pruning_section_when_nothing_downstream_is_prunable():
+    stages = _pruning_stages()
+    ticket, run = _run_and_ticket("playtest")
+
+    text = build_orchestration_context(ticket=ticket, run=run, stage_def=stages[2], stages=stages)
+
+    assert "Stages you may declare won't-do" not in text

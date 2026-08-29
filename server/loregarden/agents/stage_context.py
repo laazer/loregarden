@@ -5,7 +5,7 @@ from __future__ import annotations
 from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef
 from loregarden.services.compatibility_posture import ResolvedPosture
 from loregarden.services.rework_feedback import render_rework_feedback
-from loregarden.services.studio_routing import is_agentless_stage
+from loregarden.services.studio_routing import is_agentless_stage, is_prunable_stage
 from sqlmodel import Session
 
 #: Stage types whose agent authors the code — the ones that can still build
@@ -100,6 +100,26 @@ def build_orchestration_context(
             "to the immediately preceding stage instead. Use `null` if none applies.",
             "",
             ", ".join(f"`{key}`" for key in upstream),
+        ]
+
+    # An affordance nothing mentions is one no agent uses: skip_stage exists,
+    # but without the key list a caller has to guess which stages it may prune,
+    # and every guess at a required stage is refused.
+    ordered = sorted(stages or [], key=lambda s: s.order)
+    keys = [stage.key for stage in ordered]
+    downstream = ordered[keys.index(stage_key) + 1 :] if stage_key in keys else []
+    prunable = [stage for stage in downstream if is_prunable_stage(stage)]
+    if prunable:
+        lines += [
+            "",
+            "### Stages you may declare won't-do",
+            "These later stages are optional for this workflow. If this ticket plainly does not "
+            "need one — a frontend review on a change that touches no client code — call "
+            "`loregarden_skip_stage` with the stage key and a reason, and it will not run. Skip "
+            "only what the work does not need; if you are unsure, leave it and let it run. Every "
+            "other stage is required and the call will be refused.",
+            "",
+            ", ".join(f"`{stage.key}` ({stage.name})" for stage in prunable),
         ]
 
     brief = (stage_def.stage_brief if stage_def else "").strip()

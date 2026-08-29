@@ -639,12 +639,19 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": McpTool.SKIP_STAGE,
-        "description": "Mark a stage as won't do.",
+        "description": (
+            "Mark a stage this ticket does not need as won't do, so the workflow never runs "
+            "it. Only stages the workflow template marks optional can be skipped, and only "
+            "before they run — the error names the ones this workflow offers."
+        ),
         "inputSchema": _tool_schema(
             properties={
                 "run_id": _string_prop("Orchestration run UUID."),
-                "stage_key": _string_prop("Workflow stage key."),
-                "reason": _string_prop("Optional skip reason."),
+                "stage_key": _string_prop("Workflow stage key to skip."),
+                "reason": _string_prop(
+                    "Why this ticket does not need the stage. Recorded on the stage and shown "
+                    "in the workflow pane; a skip with no reason reads as an unexplained gap."
+                ),
             },
             required=["run_id", "stage_key"],
         ),

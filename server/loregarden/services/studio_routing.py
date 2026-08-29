@@ -255,6 +255,28 @@ def is_terminal_stage(stage: WorkflowStageDef) -> bool:
     return bool(stage.terminal) or stage.key == TERMINAL_STAGE_KEY
 
 
+def is_prunable_stage(stage: WorkflowStageDef) -> bool:
+    """Whether a run may declare this stage won't-do while the workflow is live.
+
+    The template stays static; what a run gets to decide is whether a stage the
+    template already marked `optional` applies to *this* ticket. That is the
+    whole of "pseudo-dynamic": pruning is offered per stage by the author, not
+    claimed per run by the agent. A required stage is not prunable — otherwise
+    an implementer could mark its own downstream review won't-do and the ticket
+    would derive DONE, because `_derive_ticket_state` counts WONT_DO as
+    resolved. To make a stage prunable, mark it optional in the template.
+
+    The terminal stage is never prunable: pruning it removes the only stage that
+    ends the workflow.
+    """
+    return bool(stage.optional) and not is_terminal_stage(stage)
+
+
+def prunable_stage_keys(stages: list[WorkflowStageDef]) -> list[str]:
+    """Keys of every prunable stage, in template order."""
+    return [s.key for s in sorted(stages, key=lambda s: s.order) if is_prunable_stage(s)]
+
+
 def find_terminal_stage(stages: list[WorkflowStageDef]) -> WorkflowStageDef | None:
     """First stage by order that ends the workflow, or None."""
     for stage in sorted(stages, key=lambda s: s.order):

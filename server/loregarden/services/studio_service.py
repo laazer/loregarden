@@ -169,8 +169,11 @@ MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
     StudioMcpToolGuide(
         name="loregarden_skip_stage",
         description="Mark an optional stage as won't do.",
-        when_to_use="Orchestrator when skipping optional stages per workflow rules.",
-        example='tools/call loregarden_skip_stage {"run_id": "<orch run id>", "stage_key": "approval", "reason": "Auto-approved"}',
+        when_to_use=(
+            "When a stage the template marks optional does not apply to this ticket — a "
+            "frontend review on a backend-only change. Required stages are refused."
+        ),
+        example='tools/call loregarden_skip_stage {"run_id": "<orch run id>", "stage_key": "frontend_review", "reason": "No client/ files touched"}',
         orchestrator_only=True,
         stage_agent=False,
     ),
