@@ -20,6 +20,7 @@ import { useParams } from "react-router-dom";
 import { useViewLayoutWrite } from "../../hooks/useViewLayoutEdit";
 import { asJson } from "../../lib/viewLayouts";
 import { useSidebarWorkspaceSlug } from "../../state/SidebarWorkspaceContext";
+import { paneSettings } from "./paneChrome";
 import { PrimitivePicker } from "./PrimitivePicker";
 import "./paneChrome.css";
 import { ContainerPrimitiveHost } from "./primitives/registry";
@@ -78,7 +79,7 @@ export function ContainerPane({
   const pickPrimitive = useViewLayoutWrite(slug, viewId);
 
   const stored = asJson(container);
-  const settings = asJson(stored?.settings) ?? {};
+  const settings = paneSettings(container);
 
   if (typeof settings.primitive_id !== "string") {
     return (

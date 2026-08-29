@@ -58,7 +58,12 @@ import { assertServerAcceptableLayout } from "../../../test/viewLayoutContract";
 import { NOT_A_NUMBER, initialDraft, readDraft } from "../paneSettingsDraft";
 import { PANE_SETTINGS_LABEL } from "../paneSettingsLabel";
 import { PaneSettingsEditor } from "../PaneSettingsEditor";
-import { containerWithSettings, newContainerFor } from "../primitives/registry";
+import {
+  CONTAINER_PRIMITIVES,
+  composeSettings,
+  containerWithSettings,
+  newContainerFor,
+} from "../primitives/registry";
 import type { RegisteredPrimitive, SettingsField } from "../primitives/types";
 
 jest.mock("../../../lib/viewsApi", () => ({
@@ -180,6 +185,56 @@ describe("AC1/AC3 — the editor is reached from the pane and generated from the
       expect.stringMatching(new RegExp(`^${ticket.id}-help$`)),
     );
     expect(screen.getByText("The ticket whose stage visits this pane lists.")).toBeInTheDocument();
+  });
+
+  it("opens on the values already stored, not on the schema's defaults", async () => {
+    // The gap that made this whole suite look better than it was: every other
+    // test opens the editor on a `newContainerFor` container, whose stored
+    // values ARE the schema defaults — so "seeded from stored" and "seeded from
+    // default" are indistinguishable in all of them, and a `draftValue` that
+    // ignored the container entirely passed 247 tests.
+    //
+    // It is not a cosmetic bug. `containerWithSettings` composes the container
+    // whole, so a form that opened on defaults would blank every field the user
+    // did not retype the moment they saved.
+    const user = userEvent.setup();
+    const configured: Json = {
+      kind: "panel",
+      settings: { primitive_id: "run_ledger", ticket_id: "t-1", live: true },
+    };
+    const { container } = renderGrid(leafLayout(configured));
+    await screen.findByTestId("view-host");
+    await openSettings(container, user);
+
+    expect(screen.getByLabelText("Ticket")).toHaveValue("t-1");
+    // The checkbox's *displayed* state, which nothing else asserts: a
+    // permanently-unchecked box still reports `true` from its first click, so a
+    // write-only toggle satisfies every save test while being impossible to
+    // switch off.
+    expect(screen.getByLabelText("Poll while the ticket is running")).toBeChecked();
+  });
+
+  it("keeps the fields the user did not touch when it saves", async () => {
+    // The consequence of replace-whole, stated as a test rather than trusted:
+    // editing one field must not blank the others.
+    const user = userEvent.setup();
+    const configured: Json = {
+      kind: "panel",
+      settings: { primitive_id: "run_ledger", ticket_id: "t-1", live: true },
+    };
+    const { container } = renderGrid(leafLayout(configured));
+    await screen.findByTestId("view-host");
+    await openSettings(container, user);
+
+    await user.click(screen.getByLabelText("Poll while the ticket is running"));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
+    expect(settingsOf(lastLayout(), "c-seed")).toEqual({
+      primitive_id: "run_ledger",
+      ticket_id: "t-1",
+      live: false,
+    });
   });
 
   it("writes the edited values into the view record", async () => {
@@ -512,7 +567,7 @@ describe("AC3 — a primitive the editor has never seen needs no change to it", 
   };
 
   /** The shipped editor, in the page's own shell, over a loaded view record. */
-  function renderNovelEditor(stored: Json) {
+  function renderNovelEditor(stored: Json, onDone: () => void = () => {}) {
     const client = testClient();
     const record = viewOf(leafLayout(stored));
     // The write composes from the cache and refuses a view that is not in it,
@@ -531,7 +586,7 @@ describe("AC3 — a primitive the editor has never seen needs no change to it", 
                     containerId="c-seed"
                     container={stored}
                     primitive={novelPrimitive}
-                    onDone={() => {}}
+                    onDone={onDone}
                   />
                 }
               />
@@ -573,21 +628,48 @@ describe("AC3 — a primitive the editor has never seen needs no change to it", 
     expect(mockUpdateView).not.toHaveBeenCalled();
   });
 
-  it("cannot store through a primitive the registry does not hold", async () => {
+  it("keeps the form open and says so when the write never leaves", async () => {
     // Worth pinning rather than working around: the write composes its
     // container in the registry, so an id the registry cannot resolve writes
     // nothing at all — the same refusal `newContainerFor` makes for a stale
-    // pick. It is also why the number *values* are asserted against
-    // `readDraft` below rather than through this form: no registered primitive
-    // declares a number field, so there is no registered path to drive.
+    // pick. `useViewLayoutEdit` drops a write the same way when the workspace
+    // has not resolved yet and `slug` is still "".
+    //
+    // The first version of this test asserted only that no PATCH was sent,
+    // which pinned the *silence* as correct: the panel closed, the draft was
+    // discarded, and a save that went nowhere looked exactly like one that
+    // worked. What the operator is owed is the form they typed into, still
+    // open, saying it did not save.
     const user = userEvent.setup();
-    renderNovelEditor(novelContainer());
+    const onDone = jest.fn();
+    renderNovelEditor(novelContainer(), onDone);
 
     await user.type(screen.getByLabelText("Name"), "board");
     await user.click(screen.getByRole("button", { name: "Save" }));
     await settle();
 
     expect(mockUpdateView).not.toHaveBeenCalled();
+    // Not dismissed, so the typing survives and can be retried.
+    expect(onDone).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Name")).toHaveValue("board");
+    expect(screen.getByRole("alert")).toHaveTextContent(/could not be saved/i);
+  });
+
+});
+
+describe("every registered primitive can actually be configured", () => {
+  it("declares at least one settings field", () => {
+    // The invariant `Unconfigured`'s copy leans on. It says "Open Pane settings
+    // in this pane's header", and the header hides that control for a primitive
+    // whose schema is empty — so a future primitive with no fields would
+    // reintroduce the exact bug 554 removed: copy naming a control that is not
+    // on screen. Asserted here because the copy cannot assert it about itself.
+    for (const entry of CONTAINER_PRIMITIVES) {
+      expect({ id: entry.id, fields: entry.settingsFields.length > 0 }).toEqual({
+        id: entry.id,
+        fields: true,
+      });
+    }
   });
 });
 
@@ -597,6 +679,60 @@ describe("containerWithSettings — the one place a container is composed", () =
       kind: "panel",
       settings: { primitive_id: "run_ledger", ticket_id: "t-1", live: false },
     });
+  });
+
+  it("defines a field key that Object.prototype would have swallowed", () => {
+    // Through `composeSettings`, not through `containerWithSettings`: no
+    // registered primitive declares a `__proto__` field, so this rule has no
+    // reachable path through the registry lookup and would otherwise be
+    // asserted nowhere. A first attempt checked `Object.fromEntries` on a
+    // literal, which is a tautology — the mutation that put plain assignment
+    // back survived it.
+    //
+    // The bug it guards: `settings["__proto__"] = x` hits `Object.prototype`'s
+    // setter, is silently discarded, and the declared field never reaches the
+    // wire with no error anywhere. `constructor` is an ordinary own property
+    // and always worked, which is why testing only that one proved nothing.
+    const fields: SettingsField[] = [
+      { key: "__proto__", kind: "string", label: "Proto", default: "" },
+      { key: "constructor", kind: "string", label: "Ctor", default: "" },
+    ];
+    const composed = composeSettings(
+      fields,
+      new Map([
+        ["__proto__", "board"],
+        ["constructor", "ledger"],
+      ]),
+      "novel",
+    );
+
+    expect(Object.hasOwn(composed, "__proto__")).toBe(true);
+    // Serialised, because reaching the wire is the claim — a key that is an own
+    // property but not enumerable would still be lost in the PATCH.
+    //
+    // The expectation is built with `fromEntries` for the same reason the code
+    // is: `{ __proto__: "board" }` in a literal sets the *prototype* and
+    // declares no own key, so a literal here quietly expects the bug. The first
+    // version of this assertion did exactly that and failed against correct
+    // code.
+    expect(JSON.parse(JSON.stringify(composed))).toEqual(
+      Object.fromEntries([
+        ["__proto__", "board"],
+        ["constructor", "ledger"],
+        ["primitive_id", "novel"],
+      ]),
+    );
+  });
+
+  it("lets no declared field overwrite the primitive id", () => {
+    // The id is the container's other record of the same decision the `kind`
+    // carries; a field keyed `primitive_id` winning would store a container
+    // `ContainerPrimitiveHost` cannot mount.
+    const fields: SettingsField[] = [
+      { key: "primitive_id", kind: "string", label: "Id", default: "" },
+    ];
+    const composed = composeSettings(fields, new Map([["primitive_id", "attacker"]]), "novel");
+    expect(composed.primitive_id).toBe("novel");
   });
 
   it("writes nothing for a primitive this build does not have", () => {
