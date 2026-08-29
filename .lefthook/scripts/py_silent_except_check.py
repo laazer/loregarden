@@ -57,8 +57,10 @@ if str(_LEFTHOOK_SCRIPTS) not in sys.path:
 
 from precommit_git_diff import (  # noqa: E402 - sys.path is set up just above
     STAGED,
-    GitScopeError,
+    UnexaminableError,
+    UnexaminableFileError,
     git_repo_root,
+    read_source_text,
     resolve_gate_scope,
 )
 from py_organization_check import python_files_in_scope  # noqa: E402 - same
@@ -160,12 +162,17 @@ def _line_waives(lines: list[str], lineno: int) -> bool:
 
 def violations_in(path: Path) -> list[tuple[int, str]]:
     """(line, what-was-caught) for every silent broad catch in the file."""
+    source = read_source_text(path)
     try:
-        source = path.read_text(encoding="utf-8")
         tree = ast.parse(source)
-    except (OSError, SyntaxError):
-        # Unreadable or mid-edit file: ruff and the test suite will speak up.
-        return []
+    except SyntaxError as exc:
+        # "Ruff will speak up" was an assumption about a *different* run. This
+        # one graded the file and found nothing, which is not the same as the
+        # file being clean, so it says so instead of returning an empty list.
+        raise UnexaminableFileError(
+            f"{path}:{exc.lineno}: this run could not parse it, so it cannot be "
+            f"reported clean ({exc.msg})"
+        ) from exc
 
     lines = source.splitlines()
     found: list[tuple[int, str]] = []
@@ -255,8 +262,9 @@ def main(argv: list[str]) -> int:
     invocation = parse_argv(argv)
     try:
         return _check(invocation)
-    except GitScopeError as exc:
-        # A scope the gate could not resolve is not a scope it examined.
+    except UnexaminableError as exc:
+        # One handler for the one invariant: a scope this run could not resolve,
+        # and a file it could not read, are both things it did not examine.
         print(f"{invocation.label}: cannot determine what to examine: {exc}")
         return 1
 

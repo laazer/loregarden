@@ -352,10 +352,17 @@ def test_tests_are_exempt(tmp_path):
     assert checker.main([str(path)]) == 0
 
 
-def test_syntax_error_is_not_a_violation(tmp_path):
-    """A mid-edit file is ruff's problem, not this gate's."""
+def test_a_file_this_gate_cannot_parse_is_not_reported_clean(tmp_path):
+    """A "ruff will speak up" assumption was about a *different* run.
+
+    Returning no violations for an unparseable file made "I could not examine
+    it" and "I examined it and it is clean" the same answer, and the gate exited
+    0 either way. It is unexaminable, and this run has to say so.
+    """
     path = _write(tmp_path, "def f(:\n")
-    assert checker.violations_in(path) == []
+    with pytest.raises(checker.UnexaminableFileError):
+        checker.violations_in(path)
+    assert checker.main([str(path)]) == 1
 
 
 # --------------------------------------------------------------------------- #

@@ -37,9 +37,11 @@ if str(_LEFTHOOK_SCRIPTS) not in sys.path:
 
 from precommit_git_diff import (
     STAGED,
-    GitScopeError,
+    UnexaminableError,
+    UnexaminableFileError,
     git_repo_root,
     located_path,
+    read_source_text,
     repo_relative_posix,
     resolve_gate_scope,
 )
@@ -191,14 +193,10 @@ def check_file(
 ) -> List[str]:
     errors: List[str] = []
 
-    if not py_file.exists():
-        return errors
-
-    try:
-        content = py_file.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        errors.append(f"{py_file}: not valid UTF-8 text")
-        return errors
+    # Missing, unreadable or undecodable raises out of here rather than
+    # returning an empty error list: "I found nothing wrong" and "I never read
+    # it" are the same value, and the caller took it the first way every time.
+    content = read_source_text(py_file)
 
     lines = content.count("\n") + (0 if content.endswith("\n") else 1)
     # Whole-file caps only fire when this diff makes the file net longer — a
@@ -549,12 +547,14 @@ def python_files_in_scope(
 
 
 def _read_and_parse(py_file: Path) -> Optional[Tuple[str, ast.AST]]:
-    if not py_file.exists():
-        return None
-    try:
-        source = py_file.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        return None
+    """Source and AST for a file this run grades; ``None`` only for bad syntax.
+
+    A read failure raises (see `read_source_text`). A `SyntaxError` is the one
+    case where ``None`` is honest: `check_file` reports it as a violation of its
+    own on the very same file, so the run already fails loudly and this caller
+    has nothing further to add.
+    """
+    source = read_source_text(py_file)
     try:
         return source, ast.parse(source, filename=str(py_file))
     except SyntaxError:
@@ -605,6 +605,7 @@ def build_repo_catalogs(
     still the type the rest of the commit should be using.
     """
     changed_set = {p.resolve() for p in changed_files if p.exists()}
+    unreadable: List[str] = []
     catalog: Dict[Tuple[str, ...], List[Tuple[str, str, int]]] = {}
     enum_catalog: Dict[str, Dict[str, str]] = {}
     enum_density: Dict[str, int] = {}
@@ -617,7 +618,15 @@ def build_repo_catalogs(
                 if not filename.endswith(".py"):
                     continue
                 py_file = Path(dirpath) / filename
-                parsed = _read_and_parse(py_file)
+                try:
+                    parsed = _read_and_parse(py_file)
+                except UnexaminableFileError as exc:
+                    # Not a file this run grades — it is background the DRY and
+                    # enum catalogs are built from — so it cannot make the run
+                    # report a violation clean. It can still weaken a DRY match,
+                    # so it is reported rather than dropped.
+                    unreadable.append(str(exc))
+                    continue
                 if parsed is None:
                     continue
                 source, tree = parsed
@@ -630,6 +639,8 @@ def build_repo_catalogs(
                     continue
                 for key, func_name, lineno, _end in function_keys_from_tree(tree, source):
                     catalog.setdefault(key, []).append((py_file.as_posix(), func_name, lineno))
+    for detail in unreadable:
+        print(f"note: catalog skipped an unreadable file, DRY matches may be short: {detail}")
     enum_home = max(enum_density, key=lambda path: enum_density[path], default="")
     return RepoCatalogs(catalog, enum_catalog, enum_home)
 
@@ -699,8 +710,10 @@ def main(argv: List[str]) -> int:
     invocation = parse_argv(argv)
     try:
         return _check(invocation)
-    except GitScopeError as exc:
-        # A scope the gate could not resolve is not a scope it examined.
+    except UnexaminableError as exc:
+        # One handler for the one invariant: a scope this run could not resolve,
+        # and a file it could not read, are both things it did not examine — and
+        # neither may leave by the success exit.
         print(f"{invocation.label}: cannot determine what to examine: {exc}")
         return 1
 

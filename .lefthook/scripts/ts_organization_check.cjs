@@ -206,12 +206,113 @@ function errorNarrowingErrors(filePath, ast, lines, added, repoRoot) {
 }
 
 /**
+ * This run could not examine something it was asked to grade.
+ *
+ * **The invariant of every gate here: a gate may not report success over
+ * anything it did not actually read.** Both ways of failing it live under this
+ * one type and leave through one handler, so a third way inherits the
+ * behaviour instead of becoming the next silent pass. Mirrors
+ * `UnexaminableError` in precommit_git_diff.py.
+ */
+class UnexaminableError extends Error {}
+
+/**
  * A scope git could not resolve — an unresolvable `--base` exits 128 with an
  * empty stdout, indistinguishable from a clean diff. Swallowing it let this
  * gate report a pass over a scope it never resolved; mirrors
  * precommit_git_diff.py's `GitScopeError`.
  */
-class GitScopeError extends Error {}
+class GitScopeError extends UnexaminableError {}
+
+/**
+ * A file this run was told to grade but could not read or parse — missing (a
+ * cone sparse-checkout, a `skip-worktree` entry whose file was removed),
+ * unreadable, or unparseable. `existsSync` + `continue` treated every one of
+ * those exactly like a file that graded clean: `examined 1 file(s)` +
+ * `checks passed.` + exit 0, over a violation sitting in the commit.
+ * Mirrors `UnexaminableFileError` in precommit_git_diff.py.
+ */
+class UnexaminableFileError extends UnexaminableError {}
+
+/** git's C-quoting escapes, as `quote_c_style` writes them. */
+const C_ESCAPES = { a: 7, b: 8, f: 12, n: 10, r: 13, t: 9, v: 11, "\\": 92, '"': 34 };
+
+/**
+ * One git-printed path token as a real path; mirrors `decode_git_path` in
+ * precommit_git_diff.py, and see that docstring for why decoding beats `-z`.
+ *
+ * `core.quotePath` is git's default, so `src/bäd.ts` arrives from `--name-only`
+ * as `"src/b\303\244d.ts"`. Consumed raw it is not a path: it fails the
+ * `\.tsx?$` filter and is dropped, which made the *printed file count* wrong —
+ * a two-file diff announced `examined 1 file(s)` and passed over the one it
+ * never saw.
+ */
+function decodeGitPath(token) {
+  if (token.length < 2 || !token.startsWith('"') || !token.endsWith('"')) return token;
+  const body = token.slice(1, -1);
+  const bytes = [];
+  let i = 0;
+  while (i < body.length) {
+    const char = body[i];
+    if (char !== "\\") {
+      bytes.push(...Buffer.from(char, "utf8"));
+      i += 1;
+      continue;
+    }
+    i += 1;
+    const escape = body[i];
+    if (escape === undefined) {
+      throw new GitScopeError(`git printed a malformed quoted path: ${token}`);
+    }
+    if (Object.prototype.hasOwnProperty.call(C_ESCAPES, escape)) {
+      bytes.push(C_ESCAPES[escape]);
+      i += 1;
+      continue;
+    }
+    const octal = body.slice(i, i + 3);
+    if (!/^[0-7]{3}$/.test(octal)) {
+      throw new GitScopeError(`git printed a malformed quoted path: ${token}`);
+    }
+    bytes.push(parseInt(octal, 8));
+    i += 3;
+  }
+  return Buffer.from(bytes).toString("utf8");
+}
+
+/**
+ * Every path in a git command's path-per-line output, decoded. No `.trim()`:
+ * git quotes anything that would make a line ambiguous, so what is left is
+ * literal, and trimming corrupted a path with a trailing space.
+ */
+function decodedGitPaths(out) {
+  return out.split("\n").filter(Boolean).map(decodeGitPath);
+}
+
+/**
+ * The text of a file this gate is about to grade, or a loud failure. Never
+ * null: the caller cannot tell "nothing wrong here" from "I never read it",
+ * and it took the first reading every time.
+ */
+function readSource(filePath) {
+  try {
+    return fs.readFileSync(filePath, "utf8");
+  } catch (err) {
+    throw new UnexaminableFileError(
+      `${filePath}: this run could not read it, so it cannot be reported clean (${err.message})`,
+    );
+  }
+}
+
+/** The AST of a file this gate grades. A file it cannot parse is not a file it cleared. */
+function parseGradedFile(filePath, content) {
+  const ast = parseFile(filePath, content);
+  if (ast === null) {
+    throw new UnexaminableFileError(
+      `${filePath}: this run could not parse it, so it cannot be reported clean`,
+    );
+  }
+  return ast;
+}
 
 /** Scopes a caller may ask for; mirrors precommit_git_diff.py's `DIFF_SCOPES`. */
 const DIFF_SCOPES = ["staged", "worktree", "branch"];
@@ -361,10 +462,7 @@ function hasHead(repoRoot) {
 }
 
 function untrackedPaths(repoRoot) {
-  return git(["ls-files", "--others", "--exclude-standard"], repoRoot)
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
+  return decodedGitPaths(git(["ls-files", "--others", "--exclude-standard"], repoRoot));
 }
 
 /**
@@ -385,7 +483,7 @@ function changedPaths(repoRoot, diffScope, baseRef) {
     ["diff", ...scopeArgs(diffScope, baseRef), "--name-only", "--diff-filter=ACMR", "--"],
     repoRoot,
   );
-  const paths = out.split("\n").map((l) => l.trim()).filter(Boolean);
+  const paths = decodedGitPaths(out);
   if (UNTRACKED_SCOPES.includes(diffScope)) paths.push(...untrackedPaths(repoRoot));
   return [...new Set(paths)];
 }
@@ -561,7 +659,7 @@ function undiffablePaths(repoRoot, diffScope, baseRef) {
       .split("\n")
       .map((line) => line.split("\t"))
       .filter((parts) => parts.length === 3 && (parts[0] === "-" || parts[1] === "-"))
-      .map((parts) => path.resolve(repoRoot, parts[2])),
+      .map((parts) => path.resolve(repoRoot, decodeGitPath(parts[2]))),
   );
 }
 
@@ -632,8 +730,8 @@ function checkFile(filePath, content, lines, { added, netGrowing, repoRoot }) {
     });
   }
 
-  const ast = parseFile(filePath, content);
-  if (ast) {
+  const ast = parseGradedFile(filePath, content);
+  {
     fileErrors.push(...errorNarrowingErrors(filePath, ast, lines, added, repoRoot));
     const functions = extractFunctions(ast, lines);
     const seen = new Map();
@@ -688,8 +786,13 @@ function buildCatalog(changedSet, repoRoot) {
             if (!catalog.has(fn.key)) catalog.set(fn.key, []);
             catalog.get(fn.key).push({ file: full, name: fn.name, line: fn.line });
           }
-        } catch {
-          // skip
+        } catch (err) {
+          // Background for the DRY catalog, not a file this run grades, so it
+          // cannot make the run report a violation clean. It can still weaken a
+          // DRY match, so it is reported rather than dropped.
+          console.error(
+            `note: catalog skipped an unreadable file, so DRY matches may be incomplete: ${full}: ${err.message}`,
+          );
         }
       }
     }
@@ -700,8 +803,7 @@ function buildCatalog(changedSet, repoRoot) {
 
 function crossDryErrors(filePath, content, lines, catalog) {
   const fileErrors = [];
-  const ast = parseFile(filePath, content);
-  if (!ast) return fileErrors;
+  const ast = parseGradedFile(filePath, content);
   for (const fn of extractFunctions(ast, lines)) {
     const matches = catalog.get(fn.key);
     if (!matches || matches.length === 0) continue;
@@ -766,8 +868,7 @@ function run({ files, repoRoot, diffScope, baseRef, label }) {
   const catalog = buildCatalog(changedSet, repoRoot);
 
   for (const filePath of args) {
-    if (!fs.existsSync(filePath)) continue;
-    const content = fs.readFileSync(filePath, "utf8");
+    const content = readSource(filePath);
     const lines = content.split("\n");
     const { added, addedCount, deletedCount } = touched(filePath, lines.length);
     const netGrowing = addedCount > deletedCount;
@@ -793,8 +894,9 @@ const invocation = parseArgv(process.argv.slice(2));
 try {
   process.exit(run(invocation));
 } catch (err) {
-  if (!(err instanceof GitScopeError)) throw err;
-  // A scope the gate could not resolve is not a scope it examined.
+  if (!(err instanceof UnexaminableError)) throw err;
+  // One handler for the one invariant: a scope this run could not resolve, and
+  // a file it could not read, are both things it did not examine.
   console.error(`${invocation.label}: cannot determine what to examine: ${err.message}`);
   process.exit(1);
 }

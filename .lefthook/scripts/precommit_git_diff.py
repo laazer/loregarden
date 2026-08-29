@@ -58,7 +58,18 @@ def scrubbed_git_env() -> Dict[str, str]:
     return env
 
 
-class GitScopeError(RuntimeError):
+class UnexaminableError(RuntimeError):
+    """This run could not examine something it was asked to grade.
+
+    **The invariant of every gate in this directory: a gate may not report
+    success over anything it did not actually read.** Both ways of failing that
+    live under this one type, and every gate turns it into the same loud
+    non-zero exit — so a *third* way of not-reading a file inherits the
+    behaviour instead of becoming the next silent pass.
+    """
+
+
+class GitScopeError(UnexaminableError):
     """git could not answer what this run should examine.
 
     An unresolvable ``--base`` makes ``git diff`` exit 128 with nothing on
@@ -66,6 +77,95 @@ class GitScopeError(RuntimeError):
     let a gate report a pass over a scope it never resolved, so the failure is
     raised instead and the gates turn it into a loud non-zero exit.
     """
+
+
+class UnexaminableFileError(UnexaminableError):
+    """A file this run was told to grade but could not read or parse.
+
+    Missing (a cone sparse-checkout, a ``skip-worktree`` entry whose file was
+    removed), unreadable, or not UTF-8. Every one of those used to fall out of
+    the read as ``None`` and be handled exactly like a file that parsed clean:
+    ``examined 1 file(s)`` + ``checks passed.`` + exit 0, over a violation
+    sitting in the commit. A file that cannot be examined is not clean — it is
+    unexaminable, and the run has to say so and fail.
+    """
+
+
+#: git's C-quoting escapes, as `quote_c_style` writes them.
+_C_ESCAPES = {"a": 7, "b": 8, "f": 12, "n": 10, "r": 13, "t": 9, "v": 11, "\\": 92, '"': 34}
+_OCTAL_DIGITS = "01234567"
+
+
+def decode_git_path(token: str) -> str:
+    """One git-printed path token as a real path.
+
+    ``core.quotePath`` is on by default, so every porcelain command that prints
+    paths — ``diff --name-only``, ``diff --numstat``, ``ls-files``, and the
+    ``+++ b/`` header inside a diff — emits a path with a non-ASCII or control
+    byte as a C-quoted literal: ``src/pkg/bäd.py`` arrives as
+    ``"src/pkg/b\\303\\244d.py"``. Consumed raw, that literal is not a path: its
+    suffix is ``.py"``, so the language filter drops it and the gate reports
+    ``examined 0 file(s)``, exit 0, over a real committed violation — and where
+    it was one file of several, the printed count was wrong too.
+
+    Decoded here rather than sidestepped with ``-z`` because the ``+++ b/``
+    header is inside diff *text* and has no NUL-delimited form: ``-z`` would fix
+    three call sites and leave the fourth, which is how this class of bug keeps
+    coming back. One decoder on every path boundary is one mechanism, and it
+    also makes the quoting do its job — a newline inside a path stays escaped,
+    so splitting git's output into lines remains correct.
+    """
+    if len(token) < 2 or not token.startswith('"') or not token.endswith('"'):
+        return token
+    body = token[1:-1]
+    out = bytearray()
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if char != "\\":
+            out.extend(char.encode("utf-8"))
+            index += 1
+            continue
+        index += 1
+        if index >= len(body):
+            raise GitScopeError(f"git printed a malformed quoted path: {token!r}")
+        escape = body[index]
+        if escape in _C_ESCAPES:
+            out.append(_C_ESCAPES[escape])
+            index += 1
+            continue
+        octal = body[index : index + 3]
+        if len(octal) != 3 or any(digit not in _OCTAL_DIGITS for digit in octal):
+            raise GitScopeError(f"git printed a malformed quoted path: {token!r}")
+        out.append(int(octal, 8))
+        index += 3
+    return out.decode("utf-8", errors="surrogateescape")
+
+
+def decoded_git_paths(out: str) -> List[str]:
+    """Every path in a git command's path-per-line output, decoded.
+
+    No ``.strip()``: git quotes anything that would make a line ambiguous, so
+    what is left is literal — and stripping it corrupted a path with a trailing
+    space into one that matches nothing.
+    """
+    return [decode_git_path(line) for line in out.splitlines() if line]
+
+
+def read_source_text(path: Path) -> str:
+    """The text of a file a gate is about to grade, or a loud failure.
+
+    Never ``None``. The caller has no way to tell a ``None`` meaning "nothing
+    wrong here" from one meaning "I never read it", and it took the first
+    reading every time.
+    """
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise UnexaminableFileError(
+            f"{path}: this run could not read it, so it cannot be reported clean "
+            f"({type(exc).__name__}: {exc})"
+        ) from exc
 
 
 def git_repo_root() -> Optional[Path]:
@@ -163,7 +263,7 @@ def git_untracked_paths(repo: Path) -> List[str]:
     scoping it out would report a clean pass over the only new file in the run.
     """
     out = _git(["ls-files", "--others", "--exclude-standard"], repo)
-    return [line.strip() for line in out.splitlines() if line.strip()]
+    return decoded_git_paths(out)
 
 
 def git_has_head(repo: Path) -> bool:
@@ -192,7 +292,7 @@ def git_changed_paths(repo: Path, diff_scope: str = STAGED, base_ref: str = "mai
     out = _run_git(
         [*_scope_args(diff_scope, base_ref), "--name-only", "--diff-filter=ACMR", "--"], repo
     )
-    paths = [line.strip() for line in out.splitlines() if line.strip()]
+    paths = decoded_git_paths(out)
     if diff_scope in _UNTRACKED_SCOPES:
         paths.extend(git_untracked_paths(repo))
     return sorted(set(paths))
@@ -381,10 +481,7 @@ def all_line_numbers(path: Path) -> Set[int]:
     What a file with no diff to scope against is graded on: an untracked file
     is new in its entirety, so every line in it is part of this change.
     """
-    try:
-        return set(range(1, len(path.read_text(encoding="utf-8").splitlines()) + 1))
-    except (OSError, UnicodeDecodeError):
-        return set()
+    return set(range(1, len(read_source_text(path).splitlines()) + 1))
 
 
 def located_path(path: Path) -> Path:
@@ -562,9 +659,14 @@ def parse_staged_additions(diff: str) -> Dict[str, List[Tuple[int, str]]]:
             current_file = None
             i += 1
             continue
-        if line.startswith("+++ b/"):
-            name = line[6:].strip()
-            current_file = None if name == "/dev/null" else name
+        if line.startswith("+++ "):
+            # The quoting wraps the *whole* operand, prefix included:
+            # `+++ "b/src/pkg/b\303\244d.py"`. Matching on a literal `+++ b/`
+            # therefore missed every non-ASCII path outright — the file got no
+            # entry here, so its touched-line set came back empty and every
+            # violation in it was filtered out of a passing run.
+            name = decode_git_path(line[4:])
+            current_file = name[2:] if name.startswith("b/") else None
             i += 1
             continue
         if line.startswith("@@ "):
@@ -633,7 +735,7 @@ def git_diff_numstat(
         parts = line.split("\t")
         if len(parts) != 3:
             continue
-        added, deleted, path = parts
+        added, deleted, path = parts[0], parts[1], decode_git_path(parts[2])
         if added == "-" or deleted == "-":
             undiffable.add(path)
             continue

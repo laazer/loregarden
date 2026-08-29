@@ -862,3 +862,78 @@ def test_a_symlinked_source_file_is_still_graded(
 
     assert result.returncode == 1, _out(result)
     assert "linked.py" in _out(result)
+
+
+# --------------------------------------------------------------------------- #
+# The paths git prints, and the files behind them
+# --------------------------------------------------------------------------- #
+
+
+def _non_ascii_sibling(relpath: str) -> str:
+    """`src/pkg/new_mod.py` -> `src/pkg/bäd.py`, keeping the gate's own language."""
+    path = Path(relpath)
+    return (path.parent / f"bäd{path.suffix}").as_posix()
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_a_non_ascii_path_is_decoded_rather_than_consumed_quoted(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """`core.quotePath` is git's default, and the quoted literal is not a path.
+
+    `git diff --name-only` prints `src/pkg/bäd.py` as `"src/pkg/b\\303\\244d.py"`.
+    Used as a relpath, its suffix is `.py"`, so the language filter dropped it:
+    `examined 0 file(s)`, exit 0, over a committed violation.
+    """
+    target = _non_ascii_sibling(relpath)
+    _commit_agent_work(repo, target, body)
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    assert result.returncode == 1, _out(result)
+    assert Path(target).name in _out(result), _out(result)
+    _assert_no_vacuous_pass(result)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_the_examined_count_includes_the_non_ascii_paths(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """AC2: the count has to be the number of files the gate read.
+
+    A diff of one non-ASCII and one plain file announced `examined 1 file(s)` —
+    the quoted path was filtered out before the count was taken, so the number
+    itself under-reported, and the file it named was never graded.
+    """
+    _commit_agent_work(repo, relpath, body)
+    _commit_agent_work(repo, _non_ascii_sibling(relpath), body)
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    match = EXAMINED_RE.search(_out(result))
+    assert match is not None, _out(result)
+    assert int(match.group(1)) == 2, _out(result)
+    assert result.returncode == 1, _out(result)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_a_path_git_lists_but_the_worktree_lacks_is_not_reported_clean(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """A file the run could not read is unexaminable, not clean.
+
+    `skip-worktree` plus `rm` is one route to it (a cone sparse-checkout is
+    another): the path stays in the diff, so it is counted and graded, but the
+    read came back empty-handed and every gate treated that exactly like a file
+    that parsed clean — `examined 1 file(s)`, `checks passed.`, exit 0, over the
+    violation still sitting in the commit.
+    """
+    _commit_agent_work(repo, relpath, body)
+    _git(repo, "update-index", "--skip-worktree", relpath)
+    (repo / relpath).unlink()
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    assert result.returncode == 1, _out(result)
+    assert "could not read it" in _out(result), _out(result)
+    assert "passed" not in _out(result), _out(result)

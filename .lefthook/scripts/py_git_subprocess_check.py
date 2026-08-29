@@ -26,6 +26,16 @@ import ast
 import sys
 from pathlib import Path
 
+_LEFTHOOK_SCRIPTS = Path(__file__).resolve().parent
+if str(_LEFTHOOK_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_LEFTHOOK_SCRIPTS))
+
+from precommit_git_diff import (  # noqa: E402 - sys.path is set up just above
+    UnexaminableError,
+    UnexaminableFileError,
+    read_source_text,
+)
+
 # Commands that resolve a repository through git's environment.
 _GUARDED_COMMANDS: frozenset[str] = frozenset({"git", "gh"})
 
@@ -120,11 +130,15 @@ def _has_explicit_env(node: ast.Call) -> bool:
 
 
 def violations_in(path: Path) -> list[tuple[int, str, str]]:
+    source = read_source_text(path)
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-    except (OSError, SyntaxError):
-        # Unreadable or mid-edit file: ruff and the test suite will speak up.
-        return []
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        # A file this gate could not parse is not a file it cleared.
+        raise UnexaminableFileError(
+            f"{path}:{exc.lineno}: this run could not parse it, so it cannot be "
+            f"reported clean ({exc.msg})"
+        ) from exc
 
     found: list[tuple[int, str, str]] = []
     for node in ast.walk(tree):
@@ -141,6 +155,14 @@ def violations_in(path: Path) -> list[tuple[int, str, str]]:
 
 
 def main(argv: list[str]) -> int:
+    try:
+        return _check(argv)
+    except UnexaminableError as exc:
+        print(f"pre-commit: cannot determine what to examine: {exc}")
+        return 1
+
+
+def _check(argv: list[str]) -> int:
     failures: list[str] = []
 
     for raw in argv:
