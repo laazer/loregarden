@@ -138,6 +138,22 @@ inferring your outcome from prose or exit code alone.
 
 Field rules:
 - `status`: `pass` if this stage's work is complete and correct; `fail` or `needs_rework` if it is not (e.g. static QA found real violations, a reviewer rejected the diff, tests could not be made to pass); `blocked` if you cannot proceed at all (e.g. missing credentials, an ambiguous requirement only a human can resolve) — unlike `fail`/`needs_rework`, this halts the ticket for human review rather than rerouting for automatic rework. Work that a **different agent** must do is **not** `blocked` — it is `needs_rework` with a reroute. In particular, if you are a scope-limited implementer (e.g. the frontend implementer, restricted to `client/**`) and the ticket needs changes in another agent's area (e.g. `server/**`), do the part inside your own scope, then report `needs_rework` and hand the rest off — do not report `blocked`. Loregarden already routes a cross-scope write denial to the agent that owns that path; reserve `blocked` for something no agent can advance without a human.
+- **Reject only for an unmet acceptance criterion.** `fail` and `needs_rework` mean *this
+  ticket's stated criteria are not satisfied yet*. They do not mean "I found something real".
+  Before rejecting, name the acceptance criterion your finding makes false, and put it in
+  `unmet_criteria`. If you cannot name one, the work in front of you is done and your finding
+  is a **new ticket** — file it with `loregarden_create_ticket` and report `pass`, saying in
+  your response what you filed and why it did not block.
+
+  This is the difference between a review that converges and one that does not. A defect
+  *family* — "the gate can be made to examine nothing", "the parser mishandles some inputs" —
+  has as many instances as the input space has corners, and a reviewer asked "is there another
+  instance?" will always find one. That question has no terminating answer, so it must not
+  gate a ticket. Ship the invariant the criteria asked for, file the enumeration, and let the
+  next ticket carry it. A real case: one ticket met all four of its criteria at its third
+  round and was then rerouted three more times on genuine new findings, none of which any
+  criterion covered.
+
 - `confidence`: your honest confidence (0.0–1.0) that `status` is correct. Do not default to 1.0 — if you are uncertain, say so.
 - `reroute_to_stage`: when `status` is `fail` or `needs_rework` and you know which upstream stage should redo the work, name its stage key **exactly as it appears in the "Valid `reroute_to_stage` values for this workflow" list in your run context** — do not guess or invent a plausible-sounding key, and do not use a stage's display name. A key that isn't in that list is discarded, and the rework falls back to the immediately preceding stage — which is rarely where you wanted it. Use `null` if you don't know or none applies: the orchestrator will then fall back to the workflow template's rework route, or the immediately preceding stage. Ignored when `status` is `blocked`.
 - `reroute_context`: when rerouting, a specific, actionable description of what the target stage missed or must fix. This is delivered to that stage's agent as prior-stage feedback — write it for that reader, not for a human audit log. When `status` is `blocked`, use this field instead to explain the blocker for the human who picks this up.

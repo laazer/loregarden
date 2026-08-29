@@ -188,6 +188,35 @@ No inline `err instanceof Error ? err.message : "…"` ternary either — that n
 status line the ternary discards. The `ts-organization` gate enforces it on staged lines;
 `// ts-org: allow-instanceof` waives one. Type guards inside a helper stay legal.
 
+## Knowing when a ticket is done
+
+A ticket is done when its **acceptance criteria** are met — not when reviewers stop finding
+things. Those are different conditions, and conflating them is how a ticket runs six implement
+rounds.
+
+- **A reject needs a named unmet criterion.** `fail`/`needs_rework` asserts that a stated
+  criterion is false. A reviewer who finds a genuine defect that no criterion covers should
+  **file a ticket and pass**, saying what it filed. If `unmet_criteria` comes back empty on a
+  reject, that is the signal the ticket is finished and the finding is new scope.
+- **Honour the loop cap.** `MAX_REWORK_REROUTES = 3` in `services/rework_feedback.py` blocks a
+  ticket that has bounced to the same stage three times. It is a durable, deliberate safeguard.
+  `loregarden_requeue_ticket` can clear it, and the reason string should name the unmet
+  criterion that justifies another round. "The reviewers found more real defects" is not that
+  reason — it is the thing the cap exists to stop.
+- **Budget rounds when the ticket starts, not mid-flight.** Decide up front how many implement
+  rounds a ticket gets. Sunk cost is loudest at round four, which is exactly when the decision
+  is worst.
+- **A defect family is not a ticket.** "The gate can be made to examine nothing" has as many
+  instances as git has ways to produce odd output. Sequential review rounds are the wrong
+  instrument for a search space: each round finds one more and none of them converge. Ship the
+  invariant, add a property-based or conformance test that generates the space, file the
+  enumeration, and stop. Three consecutive framings of a fix being falsified by the next review
+  is evidence about the method, not a reason for a fourth framing.
+
+Recorded because it happened: ticket 546 met all four of its acceptance criteria at its third
+round, then ran three further implement rounds on real findings that no criterion covered. The
+work was good and the defects were real; the rounds should have been tickets.
+
 ## Workflow discipline
 
 - **The orchestrator commits the entire working tree.** Anything uncommitted when a stage
