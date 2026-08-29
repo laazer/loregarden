@@ -112,14 +112,6 @@
   margin: 0;
 }
 
-/* The picker replaces the stack in place, so the pane must be able to scroll
-   it in a short pane rather than clip it. */
-.pane-empty-picker {
-  width: 100%;
-  max-width: 420px;
-  text-align: left;
-}
-
 /* ── The primitive picker ────────────────────────────────────────────────
    One column of option rows rather than a wrapping strip of pills: the rows
    have room for the primitive's category, which is the only thing that tells
@@ -210,23 +202,17 @@
   color: var(--txl);
 }
 
-/* The picker panel a pane header opens — a sibling of the header row, never a
-   child of it, because on a canvas the row is the drag handle. */
-.pane-picker-panel {
-  padding: 8px;
-  border-bottom: 1px solid var(--bd);
-  background: var(--bg1);
-}
-
-/* Both header panels shrink and scroll rather than overflow.
+/* The settings panel shrinks and scrolls rather than overflowing.
    The leaf a pane is drawn in is a flex column with `overflow: hidden`, so a
    panel taller than a short pane is *clipped* — the settings form lost its Save
    button in a 148px pane, with no scrollbar to say so. A flex child refuses to
    shrink below its content until `min-height: 0` says otherwise; that plus its
    own scroll container is the whole fix, and it needs no pane height to be
-   asserted anywhere. The picker panel takes it too: it sits in the same slot
-   under the same header and clips on the same arithmetic. */
-.pane-picker-panel,
+   asserted anywhere.
+
+   The picker used to share this rule. It is a dialog now (557) — sixteen
+   options never fit under a header — so it is styled from the app's `.modal-*`
+   classes and has left this file entirely. */
 .pane-settings-panel {
   min-height: 0;
   overflow-y: auto;
@@ -411,4 +397,44 @@
 .pane-unconfigured-hint b {
   color: var(--txm);
   font-weight: 500;
+}
+
+/* ── A chat primitive drawn as a pane (557) ──────────────────────────────
+   The fill-and-scroll box every adapted chat card is mounted in. It lives here
+   rather than in `index.css` for the reason stated at the top of this file:
+   the suites that pin pane sizing walk `components/views/` and parse what they
+   find, so a rule moved out would still render and stop being checked.
+
+   A chat card was laid out for a thread's reading measure — it has no height of
+   its own and expects room below it. The box asserts no height either; it fills
+   the pane, and `min-height: 0` is what lets it shrink below the card so the
+   overflow becomes a scrollbar instead of a clip. */
+.pane-chat-primitive {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 8px;
+}
+
+/* One chat rule does assert a height: the workflow graph's ReactFlow canvas is
+   280px in `chat/primitives/PrimitiveCard.css`, which is taller than a small
+   pane and is the one card that would push its own scrollbar on every pane.
+   Shortened here, scoped to the pane, rather than edited there — that
+   stylesheet is the thread's, and a thread has the room.
+
+   It stays a *definite* height, and that is the whole point of this rule
+   rather than an accident of taste. Written as `height: auto; min-height:
+   180px` — which is what "assert no height" would suggest — ReactFlow's own
+   root is a `height: 100%` child of an auto-height box, so it resolves to
+   zero: the card drew a 180px empty rectangle with ten nodes translated
+   outside it. Seen in a browser; the graph mounts, `fitView` runs, and every
+   jsdom assertion about it passes at 0px either way. The chain from this box
+   down to the canvas runs through two auto-height elements the chat stylesheet
+   owns, so a percentage cannot reach the pane's height, and a definite value
+   here is the only thing that gives the canvas a box to fit into. */
+.pane-chat-primitive .lg-primitive-workflow-flow {
+  height: 180px;
 }

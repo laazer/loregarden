@@ -799,8 +799,8 @@ describe("readDraft — what a draft settles as", () => {
   });
 });
 
-describe("the header's panels survive a pane too short to hold them", () => {
-  it("declares the panels as scroll containers that may shrink", () => {
+describe("the header's settings panel survives a pane too short to hold it", () => {
+  it("declares the panel as a scroll container that may shrink", () => {
     /**
      * Structural, and it says so: jsdom has no layout engine, so "the Save
      * button is off the bottom of a 148px pane" is not a question that can be
@@ -817,7 +817,11 @@ describe("the header's panels survive a pane too short to hold them", () => {
     const path: typeof import("path") = jest.requireActual("path");
     const css = fs.readFileSync(path.resolve(__dirname, "../paneChrome.css"), "utf8");
 
-    for (const panel of ["pane-settings-panel", "pane-picker-panel"]) {
+    // `pane-picker-panel` was checked here too until 557 made the picker a
+    // dialog. It no longer exists, and a loop over a class no stylesheet
+    // declares asserts nothing — the modal's own overflow is pinned by
+    // `primitivePickerModal.test`, against the classes it actually uses.
+    for (const panel of ["pane-settings-panel"]) {
       const declared: Record<string, string> = {};
       for (const [, selector, body] of css
         .replace(/\/\*[\s\S]*?\*\//g, "")

@@ -482,14 +482,18 @@ describe("AC4 — contents are chosen and changed through the registry picker", 
     // Every option comes from the registry, so a picker offering a hardcoded
     // subset fails here rather than three renames later. `button[…]`, not
     // `[…]`: `ContainerPrimitiveHost` puts `data-primitive-id` on the pane it
-    // mounts too, so the bare selector counts the configured pane as a fourth
+    // mounts too, so the bare selector counts the configured pane as one more
     // option and this assertion would be off by one against a correct picker.
+    //
+    // Queried from the document rather than from the grid: 557 made the picker
+    // a dialog portalled to `document.body`, because a `position: fixed` panel
+    // inside 442's zoomed canvas would be scaled and offset with it.
     await waitFor(() =>
-      expect(container.querySelectorAll("button[data-primitive-id]").length).toBe(
+      expect(document.querySelectorAll("button[data-primitive-id]").length).toBe(
         CONTAINER_PRIMITIVES.length,
       ),
     );
-    const option = container.querySelector<HTMLElement>('button[data-primitive-id="web_embed"]');
+    const option = document.querySelector<HTMLElement>('button[data-primitive-id="web_embed"]');
     expect(option).not.toBeNull();
     await user.click(option as HTMLElement);
 

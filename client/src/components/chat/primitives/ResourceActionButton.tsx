@@ -9,6 +9,7 @@ import {
   type ArtifactTab,
 } from "../../../lib/useAppNavigation";
 import { useUiStore } from "../../../state/uiStore";
+import { useResourceNavigation } from "./resourceNavigation";
 
 function ArrowIcon() {
   return (
@@ -37,6 +38,14 @@ function ResourceActionButton({
   compact?: boolean;
   children?: ReactNode;
 }) {
+  // Every button built here leaves the current screen. On a surface with
+  // nowhere to go — a Flex View pane, whose route is the composed view itself —
+  // that is a control that would tear down every other pane to show one ticket.
+  // Gated here rather than in each of the seven exports below, so none of them
+  // can forget it and a new one inherits the behaviour. See `resourceNavigation`.
+  const canNavigate = useResourceNavigation();
+  if (!canNavigate) return null;
+
   return (
     <button
       type="button"

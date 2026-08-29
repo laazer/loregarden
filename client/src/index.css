@@ -5475,3 +5475,32 @@ button {
   font-size: 12px;
   line-height: 1.45;
 }
+
+/* ── One category of the primitive picker dialog (557) ───────────────────
+   `.primitive-picker` lives in `views/paneChrome.css` and declares
+   `min-height: 0`, because a flex child that refuses to shrink is what
+   overflows a small pane. Inside `.modal-body` — itself a flex column — that
+   permission is the bug instead: each list shrank to nothing and its option
+   rows painted over the next group's heading. The group takes its natural
+   height and does not shrink; the dialog's body is the thing that scrolls. */
+.primitive-picker-group {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  gap: 6px;
+}
+
+.primitive-picker-group .primitive-picker {
+  flex: none;
+  min-height: auto;
+}
+
+/* The row's category is its disambiguator in a flat list — which is what the
+   picker was before this dialog existed, and still is for a caller that hands
+   it one ungrouped set. Under a heading that already says "Repository", a row
+   reading "Branch History / REPOSITORY" says it twice, so the group hides the
+   copy it made redundant. The name is not lost to a screen reader either: the
+   list it sits in is labelled with the same category. */
+.primitive-picker-group .primitive-option-category {
+  display: none;
+}
