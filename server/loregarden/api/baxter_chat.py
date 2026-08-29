@@ -182,8 +182,6 @@ def stop_baxter_chat_turn(
     """Stop the in-flight turn so the composer unlocks immediately."""
     workspace = _workspace(session, slug)
     chat_session = _chat_session(session, workspace.id, session_id)
-    settled = cancel_baxter_chat_turn(session, chat_session)
-    if not settled:
-        raise HTTPException(409, "No Baxter turn is in flight on this conversation.")
+    cancel_baxter_chat_turn(session, chat_session)
     session.refresh(chat_session)
     return chat_session_snapshot(session, chat_session)

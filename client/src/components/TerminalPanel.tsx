@@ -79,7 +79,7 @@ export function TerminalPanel({ workspaceSlug }: TerminalPanelProps) {
     };
 
     const typed = term.onData((data) => socket.send(data));
-    socket.open();
+    const openSocket = window.setTimeout(() => socket.open(), 0);
     // Fit on the next frame, not in this one. Measuring in the same tick the
     // mount is created reads a box the browser has not laid out yet: on first
     // paint with the dock already open that produced a 2-column terminal that
@@ -90,6 +90,7 @@ export function TerminalPanel({ workspaceSlug }: TerminalPanelProps) {
     observer.observe(mount);
 
     return () => {
+      window.clearTimeout(openSocket);
       cancelAnimationFrame(firstFit);
       observer.disconnect();
       typed.dispose();

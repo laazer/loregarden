@@ -17,7 +17,7 @@ import fs from "fs";
 import path from "path";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 
 import { api } from "../../../api/client";
 import type { LedgerVisit } from "../../../api/types";
@@ -112,9 +112,18 @@ function renderHost(containerId: string, settings: Record<string, unknown>) {
   );
 }
 
+function renderOpenedTerminalHost(containerId: string, settings: Record<string, unknown>) {
+  const rendered = renderHost(containerId, settings);
+  act(() => jest.runOnlyPendingTimers());
+  return rendered;
+}
+
 describe("AC3 — a terminal primitive renders a working shell via TerminalPanel", () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
   it("opens a shell for the workspace named in settings", () => {
-    renderHost("c1", { primitive_id: "terminal", workspace_slug: "loregarden" });
+    renderOpenedTerminalHost("c1", { primitive_id: "terminal", workspace_slug: "loregarden" });
 
     expect(opened).toHaveLength(1);
     expect(opened[0].url).toMatch(/\/terminal\/loregarden$/);
@@ -123,14 +132,14 @@ describe("AC3 — a terminal primitive renders a working shell via TerminalPanel
   });
 
   it("takes the workspace from settings and nowhere else", () => {
-    renderHost("c1", { primitive_id: "terminal", workspace_slug: "blobert" });
+    renderOpenedTerminalHost("c1", { primitive_id: "terminal", workspace_slug: "blobert" });
     expect(opened[0].url).toMatch(/\/terminal\/blobert$/);
   });
 
   it("reaps its shell when the container goes away", () => {
     // AC3's "the container owns one shell": unmounting the container must end
     // it, or a closed pane leaves a live shell on the server.
-    const { unmount } = renderHost("c1", {
+    const { unmount } = renderOpenedTerminalHost("c1", {
       primitive_id: "terminal",
       workspace_slug: "loregarden",
     });
@@ -144,7 +153,10 @@ describe("AC3 — a terminal primitive renders a working shell via TerminalPanel
     // pane appears. Framing a resize into a CONNECTING socket throws
     // InvalidStateError and takes the pane down with it, so the readyState
     // guard has to survive being wrapped as a primitive.
-    renderHost("c1", { primitive_id: "terminal", workspace_slug: "loregarden" });
+    renderOpenedTerminalHost("c1", {
+      primitive_id: "terminal",
+      workspace_slug: "loregarden",
+    });
     const socket = opened[0];
     expect(socket.readyState).not.toBe(FakeSocket.OPEN);
     expect(socket.sent).toEqual([]);
@@ -160,7 +172,10 @@ describe("AC3 — a terminal primitive renders a working shell via TerminalPanel
     // This is the half that is observable: a collapsed pane is an ordinary
     // state, and fitting it pins the shell to a 2-column geometry that nothing
     // re-measures away.
-    renderHost("c1", { primitive_id: "terminal", workspace_slug: "loregarden" });
+    renderOpenedTerminalHost("c1", {
+      primitive_id: "terminal",
+      workspace_slug: "loregarden",
+    });
     const socket = opened[0];
     socket.connect();
     socket.sent.length = 0;
@@ -171,7 +186,10 @@ describe("AC3 — a terminal primitive renders a working shell via TerminalPanel
   });
 
   it("re-fits when its container is resized (AC8's reflow half, for the terminal)", () => {
-    renderHost("c1", { primitive_id: "terminal", workspace_slug: "loregarden" });
+    renderOpenedTerminalHost("c1", {
+      primitive_id: "terminal",
+      workspace_slug: "loregarden",
+    });
     const socket = opened[0];
     socket.connect();
     socket.sent.length = 0;

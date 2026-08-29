@@ -31,13 +31,13 @@
 .terminal-panel-surface {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 6px 8px;
 }
 
-/* xterm sizes itself to its container, which needs a height to size against. */
-.terminal-panel-surface .xterm,
-.terminal-panel-surface .xterm-viewport {
+/* FitAddon subtracts padding from xterm itself, not from its parent. Keeping
+   the inset here prevents it from fitting a final row below the visible box. */
+.terminal-panel-surface .xterm {
   height: 100%;
+  padding: 6px 8px;
 }
 
 .terminal-panel-ended {
@@ -50,4 +50,8 @@
   background: #111820;
   font-size: 11px;
   color: #9fb0c0;
+}
+
+.copilot-dock-terminal .xterm-screen {
+  height: 28vh !important;
 }

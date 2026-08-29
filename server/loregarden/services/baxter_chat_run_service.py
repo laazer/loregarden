@@ -249,11 +249,6 @@ def cancel_baxter_chat_turn(
     composer busy flag key on). Then asks any matching workspace ``AgentRun`` to
     stop cooperatively so an interactive Claude turn does not keep burning tokens.
     """
-    pending = latest_pending_turn(session, chat_session.id)
-    if not pending:
-        return None
-
-    settled = _settle(session, pending.id, content=message, status="failed")
     run = find_active_workspace_chat_run(
         session, chat_session.workspace_id, stage_key=HOME_CHAT_STAGE_KEY
     )
@@ -264,4 +259,10 @@ def cancel_baxter_chat_turn(
             # Already cancelling or no longer in flight — the pending row is what
             # unlocks the composer; the run flag is best-effort.
             pass
+
+    pending = latest_pending_turn(session, chat_session.id)
+    if not pending:
+        return None
+
+    settled = _settle(session, pending.id, content=message, status="failed")
     return settled

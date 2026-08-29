@@ -1,5 +1,7 @@
 """Home Baxter chat API — persisted sessions, turns, and the approval bridge."""
 
+import json
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
@@ -338,9 +340,38 @@ def test_stop_settles_pending_turn_and_unlocks_composer(client: TestClient):
     assert body["active_turn_id"] is None
     assert "stopped" in body["messages"][-1]["content"].lower()
 
-    # Idempotent refusal once nothing is in flight.
+    # Idempotent once nothing is in flight: a stale client snapshot may still
+    # show Stop, and that click must refresh it back to idle rather than fail.
     again = client.post(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/stop")
-    assert again.status_code == 409
+    assert again.status_code == 200
+    assert again.json()["run_status"] == "idle"
+
+
+def test_stop_cancels_orphaned_home_chat_run_without_pending_message(
+    client: TestClient, db_session: Session
+):
+    workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+    session_id = _new_session(client)
+    run = AgentRun(
+        run_code="run_orphan_home_chat",
+        ticket_id=None,
+        workspace_id=workspace.id,
+        agent_id="triage",
+        stage_key=HOME_CHAT_STAGE_KEY,
+        status=RunStatus.RUNNING,
+    )
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+
+    res = client.post(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/stop")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["run_status"] == "idle"
+    assert body["active_turn_id"] is None
+    db_session.refresh(run)
+    assert run.cancel_requested_at is not None
 
 
 def test_stop_does_not_let_late_complete_overwrite_cancelled_turn(client: TestClient):
@@ -439,11 +470,17 @@ def test_baxter_chat_execute_plan_uses_selected_codex_writable(
     captured: dict[str, object] = {}
 
     def fake_oneshot(profile, *, workspace, prompt, read_only=False, run_id="", **_kwargs):
+        changed_file = Path(workspace.repo_path) / "home-chat-change.txt"
+        changed_file.write_text("updated by Baxter\n", encoding="utf-8")
         captured["prompt"] = prompt
         captured["read_only"] = read_only
         captured["adapter"] = workspace.cli_adapter
         captured["run_id"] = run_id
-        return "ran the plan on codex"
+        captured["changed_file"] = changed_file
+        return """ran the plan on codex
+```loregarden
+{"primitive":"todo_list","owner":"agent","plan_id":"write-plan","items":[{"id":"api","text":"Add history API","checked":true}]}
+```"""
 
     def fail_bridge(*_args, **_kwargs):
         raise AssertionError("Codex execute-plan must not use the Claude permission bridge")
@@ -474,7 +511,8 @@ def test_baxter_chat_execute_plan_uses_selected_codex_writable(
         json={
             "content": (
                 f"{baxter_chat_service.AGENT_PLAN_EXECUTE_PREFIX} "
-                "Complete each unchecked step using tools.\n"
+                "Complete each unchecked step using tools. As you finish steps, re-emit the "
+                'same todo_list with plan_id "write-plan" and checked:true.\n'
                 "Plan: Agent execution plan\n"
                 "- [ ] Add history API (id: api)"
             )
@@ -482,13 +520,18 @@ def test_baxter_chat_execute_plan_uses_selected_codex_writable(
     )
     assert res.status_code == 202
     snapshot = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").json()
-    assert snapshot["messages"][-1]["content"] == "ran the plan on codex"
+    assert snapshot["messages"][-1]["content"].startswith("ran the plan on codex")
     assert snapshot["adapter_capabilities"]["adapter"] == "codex"
     assert snapshot["adapter_capabilities"]["plan_execute"] is True
     assert snapshot["adapter_capabilities"]["permission_bridge"] is False
     assert captured["read_only"] is False
     assert captured["adapter"] == "codex"
     assert captured["run_id"]
+    workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+    assert workspace is not None
+    changed_file = Path(str(captured["changed_file"]))
+    assert changed_file.read_text(encoding="utf-8") == "updated by Baxter\n"
+    assert changed_file.parent == Path(workspace.repo_path)
     prompt = str(captured["prompt"])
     assert "real tool access" in prompt
     assert "selected CLI" in prompt
@@ -498,6 +541,83 @@ def test_baxter_chat_execute_plan_uses_selected_codex_writable(
     assert run is not None
     assert run.stage_key == HOME_CHAT_STAGE_KEY
     assert run.status == RunStatus.SUCCEEDED
+
+
+def test_baxter_chat_execute_plan_continues_until_all_four_steps_complete(
+    client: TestClient, monkeypatch
+):
+    from loregarden.services import agent_turn_runner, baxter_chat_service
+
+    prompts: list[str] = []
+
+    def plan_reply(checked: int) -> str:
+        items = [
+            {
+                "id": item_id,
+                "text": text,
+                "checked": index < checked,
+            }
+            for index, (item_id, text) in enumerate(
+                [
+                    ("trace", "Trace the return"),
+                    ("loop", "Continue execution"),
+                    ("termination", "Enforce termination"),
+                    ("regression", "Run regression"),
+                ]
+            )
+        ]
+        return (
+            "progress\n```loregarden\n"
+            + json.dumps(
+                {
+                    "primitive": "todo_list",
+                    "owner": "agent",
+                    "plan_id": "four-step-plan",
+                    "items": items,
+                }
+            )
+            + "\n```"
+        )
+
+    replies = iter([plan_reply(3), plan_reply(4)])
+
+    def fake_oneshot(_profile, *, prompt, read_only=False, **_kwargs):
+        assert read_only is False
+        prompts.append(prompt)
+        return next(replies)
+
+    monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
+    monkeypatch.setattr(baxter_chat_service, "resolve_effective_adapter", lambda **_: "codex")
+    monkeypatch.setattr(agent_turn_runner, "resolve_effective_adapter", lambda **_: "codex")
+    monkeypatch.setattr(agent_turn_runner, "run_cli_agent_turn", fake_oneshot)
+
+    session_id = _new_session(client)
+    res = client.post(
+        f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/messages",
+        json={
+            "content": (
+                f"{baxter_chat_service.AGENT_PLAN_EXECUTE_PREFIX} Complete each unchecked "
+                'step using tools. Re-emit the same todo_list with plan_id "four-step-plan".\n'
+                "Plan: Four steps\n"
+                "- [ ] Trace the return (id: trace)\n"
+                "- [ ] Continue execution (id: loop)\n"
+                "- [ ] Enforce termination (id: termination)\n"
+                "- [ ] Run regression (id: regression)"
+            )
+        },
+    )
+
+    assert res.status_code == 202
+    snapshot = client.get(f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}").json()
+    assert snapshot["run_status"] == "idle"
+    assert len(prompts) == 2
+    assert "Execution continuation" not in prompts[0]
+    assert "Execution continuation" in prompts[1]
+    assert 'plan_id "four-step-plan"' in prompts[1]
+    final_plan = next(
+        part for part in snapshot["messages"][-1]["parts"] if part["primitive"] == "todo_list"
+    )
+    assert all(item["checked"] for item in final_plan["items"])
 
 
 def test_baxter_chat_interactive_creates_workspace_scoped_run(
