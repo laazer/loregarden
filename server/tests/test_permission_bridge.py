@@ -1532,3 +1532,157 @@ def test_permission_bridge_workspace_scoped_approval_has_no_ticket(tmp_path):
         assert approval.kind == ApprovalKind.CLI_PERMISSION
         assert approval.stage_key == HOME_CHAT_STAGE_KEY
         assert "Home chat" in approval.impact
+
+
+def _home_chat_bridge_run(
+    tmp_path, session, workspace, tool_name, tool_input, *, wait_for_approval=None
+):
+    from loregarden.agents.cli_adapters import build_interactive_invocation
+    from loregarden.agents.executors.permission_bridge import HOME_CHAT_STAGE_KEY
+    from loregarden.models.domain import AgentRun, RunStatus
+
+    run = AgentRun(
+        run_code=f"run_home_{tool_name.lower()}_{id(tool_input)}",
+        ticket_id=None,
+        workspace_id=workspace.id,
+        agent_id="triage",
+        stage_key=HOME_CHAT_STAGE_KEY,
+        status=RunStatus.RUNNING,
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+
+    repo = tmp_path / "repo"
+    repo.mkdir(exist_ok=True)
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("home chat prompt", encoding="utf-8")
+    invocation = build_interactive_invocation(
+        adapter="claude",
+        prompt_file=prompt_file,
+        workspace_root=repo,
+    )
+    tool_line = json.dumps(
+        {
+            "type": "control_request",
+            "request_id": "perm_home_cli",
+            "request": {
+                "subtype": "can_use_tool",
+                "tool_name": tool_name,
+                "tool_input": tool_input,
+            },
+        }
+    )
+    result_line = json.dumps(
+        {"type": "result", "session_id": "sess_home_cli", "subtype": "success"}
+    )
+    captured: dict[str, _FakeProc] = {}
+
+    def fake_spawn(*_args, **_kwargs):
+        captured["proc"] = _FakeProc([tool_line, result_line])
+        return captured["proc"]
+
+    kwargs = {}
+    if wait_for_approval is not None:
+        kwargs["wait_for_approval"] = wait_for_approval
+    result = PermissionBridgeRunner(session, track_workflow_stage=False).run(
+        run_id=run.id,
+        workspace=workspace,
+        invocation=invocation,
+        prompt="home chat prompt",
+        timeout_seconds=30,
+        spawn_process=fake_spawn,
+        **kwargs,
+    )
+    return run.id, result, captured["proc"]
+
+
+def test_permission_bridge_home_chat_auto_approves_write(tmp_path):
+    from loregarden.models.domain import Approval, RunStatus, Workspace
+    from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        workspace = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+        run_id, result, proc = _home_chat_bridge_run(
+            tmp_path,
+            session,
+            workspace,
+            "Write",
+            {"file_path": "server/foo.py", "content": "x = 1\n"},
+        )
+        assert result.status == RunStatus.SUCCEEDED
+        writes = "".join(proc.stdin.writes)
+        assert '"behavior": "allow"' in writes
+        assert session.exec(select(Approval).where(Approval.run_id == run_id)).first() is None
+
+
+def test_permission_bridge_home_chat_auto_approves_git_commit(tmp_path):
+    from loregarden.models.domain import Approval, RunStatus, Workspace
+    from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        workspace = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+        run_id, result, proc = _home_chat_bridge_run(
+            tmp_path,
+            session,
+            workspace,
+            "Bash",
+            {"command": "git add -A && git commit -m 'home chat fix'"},
+        )
+        assert result.status == RunStatus.SUCCEEDED
+        writes = "".join(proc.stdin.writes)
+        assert '"behavior": "allow"' in writes
+        assert session.exec(select(Approval).where(Approval.run_id == run_id)).first() is None
+
+
+def test_permission_bridge_home_chat_gates_force_push(tmp_path):
+    from loregarden.models.domain import Approval, RunStatus, Workspace
+    from loregarden.services.orchestration import ApprovalService
+    from loregarden.services.seed import seed_database
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from sqlmodel.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_database(session)
+        workspace = session.exec(select(Workspace).where(Workspace.slug == "loregarden")).first()
+
+        def fake_wait(approval_id, **_kwargs):
+            ApprovalService(session).resolve(approval_id, approved=True)
+            return ApprovalResolution(approved=True)
+
+        run_id, result, _proc = _home_chat_bridge_run(
+            tmp_path,
+            session,
+            workspace,
+            "Bash",
+            {"command": "git push --force origin HEAD"},
+            wait_for_approval=fake_wait,
+        )
+        assert result.status == RunStatus.SUCCEEDED
+        approval = session.exec(select(Approval).where(Approval.run_id == run_id)).first()
+        assert approval is not None
+        assert approval.tool_name == "Bash"

@@ -39,7 +39,8 @@ def test_resolve_chat_intent_uses_capabilities_not_adapter_names():
     assert resolve_chat_intent("lmstudio") == "execute"
     assert resolve_chat_intent("local") == "advisory"
 
-    # Home chat: oneshot adapters stay advisory until Run (no inbox path).
+    # Home chat used to keep oneshot adapters advisory until Run. The flag
+    # still works for a surface that wants that; Home itself no longer sets it.
     assert resolve_chat_intent("claude", require_operator_run=True) == "execute"
     assert resolve_chat_intent("codex", require_operator_run=True) == "advisory"
     assert resolve_chat_intent("codex", require_operator_run=True, wants_execute=True) == "execute"

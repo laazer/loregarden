@@ -32,6 +32,7 @@ from loregarden.agents.executors.tool_auto_approve import (  # noqa: F401
     is_ask_user_question,
     is_auto_approved_cli_tool,
     is_auto_approved_mcp_tool,
+    is_chat_auto_approved_cli_tool,
     is_orchestrated_agent_denied_mcp_tool,
     validate_question_answers,
 )
@@ -422,6 +423,21 @@ def _check_cancel(run_id: str, proc: Any, state: _LoopState) -> BridgeResult | N
         stderr="Cancelled by operator",
         session_id=state.session_id,
     )
+
+
+def _cli_auto_approve(
+    tool_name: str, tool_input: dict[str, Any], *, interactive: bool
+) -> tuple[str, str] | None:
+    """Decision + log label when a CLI tool skips the inbox, else None.
+
+    WebFetch/WebSearch always. File writes and ordinary git only on interactive
+    chat — stage runs still prompt for those.
+    """
+    if is_auto_approved_cli_tool(tool_name):
+        return DECISION_READ_ONLY_CLI, "read-only"
+    if interactive and is_chat_auto_approved_cli_tool(tool_name, tool_input):
+        return DECISION_ALLOWLIST, "chat"
+    return None
 
 
 class PermissionBridgeRunner:
@@ -1027,11 +1043,17 @@ class PermissionBridgeRunner:
                 streamer.set_live("Agent running…")
             return True
 
-        if is_auto_approved_cli_tool(tool_name):
+        cli_auto = _cli_auto_approve(
+            tool_name,
+            tool_input,
+            interactive=not self.track_workflow_stage and not question,
+        )
+        if cli_auto:
+            decision, label = cli_auto
             self._send_response(proc, build_control_response(request_id=request_id, approved=True))
-            self._record(ctx.agent_id, scope, run_id, tool_name, DECISION_READ_ONLY_CLI)
+            self._record(ctx.agent_id, scope, run_id, tool_name, decision)
             if streamer:
-                streamer.append("TOOL", f"Auto-approved read-only: {tool_name}", force=True)
+                streamer.append("TOOL", f"Auto-approved {label}: {tool_name}", force=True)
                 streamer.set_live("Agent running…")
             return True
 

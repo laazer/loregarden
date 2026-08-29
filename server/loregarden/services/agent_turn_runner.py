@@ -137,9 +137,10 @@ def resolve_chat_intent(
 ) -> TurnIntent:
     """Decide advisory vs execute from adapter capabilities — never by adapter name.
 
-    Ticket-scoped surfaces leave ``require_operator_run=False`` so any execute-capable
-    adapter (bridge or writable oneshot) acts. Home chat sets it so oneshot adapters
-    without an inbox approval path stay advisory until the operator presses Run.
+    Ticket-scoped surfaces and Home / chat-page Baxter leave
+    ``require_operator_run=False`` so any execute-capable adapter (bridge or
+    writable oneshot) acts. Pass True only when a surface must stay advisory
+    until the operator presses Run (no inbox path *and* writes not wanted).
     """
     caps = adapter_capabilities(adapter)
     if not (caps.permission_bridge or caps.plan_execute):
