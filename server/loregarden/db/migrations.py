@@ -25,6 +25,7 @@ from loregarden.db.migration_utils import (
     table_columns,
     table_exists,
 )
+from loregarden.db.migrations_agent_grants import m_agent_tool_grants
 from loregarden.db.migrations_chat import (
     m_baxter_chat_runtime,
     m_baxter_chat_tables,
@@ -1342,6 +1343,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     # the numbers were never in doubt, only which branch landed first.
     ("0098_view_viewport", m_view_viewport),
     ("0099_memory_briefings_table", m_memory_briefings_table),
+    ("0100_agent_tool_grants", m_agent_tool_grants),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

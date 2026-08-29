@@ -20,7 +20,14 @@ import re
 from dataclasses import dataclass, replace
 from datetime import datetime
 
+from loregarden.agents.chat_role_prompt import (
+    AGENT_PLAN_EXECUTE_PREFIX,
+    chat_posture_blocks,
+    chat_role_blocks,
+    chat_ui_primitives_blocks,
+)
 from loregarden.agents.executors.permission_bridge import HOME_CHAT_STAGE_KEY
+from loregarden.agents.prompt_blocks import raw_block
 from loregarden.agents.registry import get_agent
 from loregarden.models.domain import (
     AgentRun,
@@ -28,6 +35,7 @@ from loregarden.models.domain import (
     ApprovalStatus,
     BaxterChatMessage,
     BaxterChatSession,
+    ChatSurface,
     OrchestrationRun,
     RunStatus,
     Ticket,
@@ -56,6 +64,7 @@ from loregarden.services.cli_settings import (
     validated_effort_pins,
 )
 from loregarden.services.run_concurrency import find_active_workspace_chat_run
+from loregarden.services.studio_service import build_studio_prompt_sections
 from loregarden.services.triage_service import (
     TRIAGE_AGENT_ID,
     TRIAGE_AGENT_NAME,
@@ -83,9 +92,8 @@ DEFAULT_BAXTER_CHAT_USER_PROMPT = (
     "concrete next steps over generic advice."
 )
 
-# Posted by the chat UI Run button on an agent execution plan. Must stay in sync
-# with ``agentPlanExecuteMessage`` in the client TodoListPrimitive.
-AGENT_PLAN_EXECUTE_PREFIX = "Execute this agent execution plan now."
+# AGENT_PLAN_EXECUTE_PREFIX now lives in agents.chat_role_prompt, beside the UI
+# primitives block that interpolates it, and is imported above.
 MAX_AGENT_PLAN_ATTEMPTS = 4
 _AGENT_PLAN_ID_PATTERN = re.compile(r'plan_id\s+["\']([^"\']+)["\']')
 
@@ -574,11 +582,19 @@ def build_baxter_chat_prompt(
     latest_user_message: str,
     approvals: list[Approval],
     tickets: list[Ticket],
+    agent: dict | None = None,
     references: ResolvedReferences | None = None,
     interactive: bool = False,
     approval_bridge: bool = False,
     skill_name: str = "",
 ) -> str:
+    """Assemble one Home chat turn's system prompt.
+
+    ``agent`` is the resolved agent config; its ``role_body`` is what an operator
+    edits in Studio, and rendering it here is what makes that editor mean
+    something on this rail. The caller passes it rather than the builder looking
+    it up, so the builder stays pure and testable.
+    """
     sections = [
         "# Baxter — Home chat",
         "",
@@ -589,49 +605,22 @@ def build_baxter_chat_prompt(
     # It leads the prompt: a skill is instructions for *how* to do the work, so
     # it has to be read before the request it applies to.
     sections.extend(skill_prompt_block(skill_name, get_skill(skill_name) or ""))
-    if interactive:
-        sections.extend(
-            [
-                "You have real tool access in this workspace — file read/write, git, shell, and "
-                "the Loregarden MCP tools where the runtime supports them.",
-                "Investigate before answering: read code, run tests, reproduce failures.",
-                "When you find an actionable fix, make it directly rather than only describing it.",
-                "Git is in scope when the operator asks — status, diff, add, commit, and push of "
-                "the current branch. Destructive git (force-push, reset --hard, deleting a "
-                "branch) still goes through the approval inbox.",
-                "This channel is not scoped to a work item, so no ticket is implied — name the "
-                "ticket explicitly on any MCP call that needs one.",
-            ]
+    sections.extend(chat_role_blocks(agent or {}, surface=ChatSurface.HOME))
+    sections.append("")
+    sections.extend(
+        chat_posture_blocks(
+            surface=ChatSurface.HOME,
+            interactive=interactive,
+            approval_bridge=approval_bridge,
         )
-        if approval_bridge:
-            sections.append(
-                "Destructive or high-risk actions route through Loregarden's approval prompt "
-                "automatically — request them when needed rather than avoiding the work."
-            )
-        else:
-            sections.append(
-                "This turn runs on the operator's selected CLI (not a Claude-only bridge). "
-                "Workspace writes are enabled; stay inside the repo and prefer reversible changes."
-            )
-        sections.append("")
-    else:
-        sections.extend(
-            [
-                "You are advisory only in this channel — you cannot write to the repo, and "
-                "must not claim to have executed tools or changed it.",
-                # The workspace checkout is not the control plane. An agent that goes
-                # looking for Loregarden's records on this filesystem finds nothing and
-                # invents a path that sounds right, which is what happened here.
-                "Loregarden's tickets, runs, and approvals live in the control plane's own "
-                "database, not in this workspace's files. Never grep, `rg`, `find`, or guess "
-                "at file paths to locate them — no such files exist here.",
-                "Every id in the operator's message has already been resolved for you under "
-                "Resolved references. If you need more than that, call the Loregarden MCP "
-                "tools, which stay available on this read-only turn. If a lookup is genuinely "
-                "unavailable to you, say so plainly rather than inventing a way to do it.",
-                "",
-            ]
+    )
+    if not interactive:
+        sections.append(
+            "Every id in the operator's message has already been resolved for you under "
+            "Resolved references."
         )
+    sections.append("")
+    sections.extend(raw_block(build_studio_prompt_sections(agent or {})))
     sections.append("## Live snapshot")
     if approvals:
         sections.append(f"Pending approvals ({len(approvals)}):")
@@ -660,51 +649,8 @@ def build_baxter_chat_prompt(
             role = message.role if message.role in {"user", "assistant"} else "user"
             sections.append(f"{role}: {_clip(message.content)}")
 
-    sections.extend(
-        [
-            "",
-            "## Latest operator message",
-            _clip(latest_user_message),
-            "",
-            "## Chat UI primitives",
-            "When a live card helps more than prose, emit a fenced `loregarden` JSON",
-            "block with a `primitive` field. Prefer thin refs (ticket_id, agent_id).",
-            "Kinds: thinking, ticket, ticket_workflow, parent_ticket, ticket_list,",
-            "status_column, kanban, filterable_kanban, agent, workflow, gate,",
-            "terminal, edit, calendar, calendar_event, workspace, todo_list,",
-            "branch_history, commit, qa, giphy.",
-            "Rules:",
-            "- Never invent ticket/agent ids. Only reference ids from Active tickets",
-            "  or Resolved references above, or ids returned by MCP after you",
-            "  create/look them up.",
-            "- `ticket` / `ticket_list` / `kanban` cards are for existing tickets only.",
-            '- Agent execution plan (`todo_list`, owner "agent"): only when you are',
-            "  about to do multi-step work in this workspace and the operator has",
-            "  not started it yet. Never for a question, an explanation, a status",
-            "  answer, a single step, or work already finished — answer those in",
-            "  prose. Do not fake a ticket card for unfiled work either.",
-            "- One plan per thread. Give it a stable `plan_id` and reuse that exact",
-            "  id every time you re-emit it; the UI replaces the old card in place,",
-            "  so a new id (or a missing one) leaves a duplicate stale card behind.",
-            '  Example: ```loregarden\\n{"primitive":"todo_list","owner":"agent",'
-            '"plan_id":"history-api","title":"Agent execution plan",'
-            '"items":[{"id":"api","text":"Add history API","checked":false}]}\\n```',
-            "- The UI shows Run on that card. When the operator sends",
-            f'  "{AGENT_PLAN_EXECUTE_PREFIX}…", do the unchecked steps',
-            "  with tools on whatever CLI they selected — do not only restate",
-            "  the plan, and do not claim you need Claude.",
-            "  Re-emit the plan (same `plan_id`) only when step state actually",
-            "  changed. When the final item completes, emit the matching plan",
-            "  once with every item checked, then report the outcome in prose.",
-            "  Do not end an execution turn while actionable items remain.",
-            "  Stop only after all items are checked, or after emitting a `qa`",
-            "  card for a concrete blocker, required approval, or operator input.",
-            "- To ask the operator before proceeding, emit `qa`.",
-            "- After creating a ticket via MCP, emit `ticket` with the real returned id.",
-            "",
-            "Reply as Baxter. Keep it concise.",
-        ]
-    )
+    sections.extend(["", "## Latest operator message", _clip(latest_user_message)])
+    sections.extend(chat_ui_primitives_blocks())
     return "\n".join(sections)
 
 
@@ -759,6 +705,7 @@ def invoke_baxter_chat_model(
         latest_user_message=message,
         approvals=_pending_approvals(session, workspace.id),
         tickets=_active_tickets(session, workspace.id),
+        agent=agent,
         references=resolve_references(session, message),
         interactive=interactive,
         approval_bridge=caps.permission_bridge,
@@ -779,6 +726,7 @@ def invoke_baxter_chat_model(
         manage_run=interactive,
         workspace_stage_key=HOME_CHAT_STAGE_KEY,
         claude_model_env="LOREGARDEN_BAXTER_CHAT_CLAUDE_MODEL",
+        surface=ChatSurface.HOME,
         conflict_error=lambda msg: BaxterChatConflictError(
             f"{TRIAGE_AGENT_NAME} is still working on the previous message — wait for it to finish."
         ),

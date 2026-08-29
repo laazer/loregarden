@@ -6,10 +6,13 @@ import type { McpPolicy, McpServerView, McpTelemetry, StudioAgent } from "../../
  * The shape of the answer is not symmetric, and the page would lie if it drew
  * it as though it were:
  *
- * - **Registered servers** are composed into every agent's `--mcp-config`
- *   wholesale (`mcp_registry.cli_server_entries`). There is no per-agent grant,
- *   so every MCP-enabled agent reaches every enabled server, with every tool.
- * - **Loregarden's own server** is the one that *is* scoped: an agent's
+ * - **Registered servers** are composed into an agent's `--mcp-config` from
+ *   `mcp_registry.cli_server_entries`. By default that is every enabled server
+ *   with every tool; an agent whose Studio tool grants name specific servers
+ *   gets only those. The grant is Claude-only — no other adapter receives the
+ *   server list as argv — so a grant configured elsewhere is reported as
+ *   ineffective rather than applied.
+ * - **Loregarden's own server** is scoped per agent regardless: an agent's
  *   `mcp_tools` becomes `--tools`, so different agents genuinely see different
  *   tools.
  *

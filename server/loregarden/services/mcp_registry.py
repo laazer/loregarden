@@ -92,6 +92,16 @@ def list_servers(session: Session) -> list[McpServer]:
     return list(session.exec(select(McpServer).order_by(McpServer.name)).all())
 
 
+def registered_mcp_server_names(session: Session) -> frozenset[str]:
+    """Names of the servers an agent grant could actually match.
+
+    Enabled only, matching ``cli_server_entries`` — a disabled server is parked,
+    and granting one should read as "matches nothing" rather than as working.
+    Resolve this once per request and pass it down; it is a whole-table read.
+    """
+    return frozenset(server.name for server in list_servers(session) if server.enabled)
+
+
 def create_server(session: Session, body: McpServerCreate) -> McpServer:
     _validate(
         name=body.name,

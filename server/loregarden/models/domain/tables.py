@@ -777,6 +777,10 @@ class StudioAgent(SQLModel, table=True):
     mcp_tools_json: str = "[]"
     gate_checks_json: str = "[]"
     handoff_checks_json: str = "[]"
+    # StudioAgentToolGrants: which tools this agent may reach at all, as opposed
+    # to mcp_tools_json (which Loregarden tools it is offered) and the
+    # auto-approve policy (which of them run unattended).
+    tool_grants_json: str = "{}"
     # Current head version; every edit bumps this and appends a StudioAgentVersion.
     version: int = Field(default=1)
     # True for seeded (registry-origin) agents; a provenance badge, not an edit gate.

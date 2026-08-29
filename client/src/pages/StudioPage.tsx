@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   type StudioAgent,
+  type StudioAgentToolGrants,
   type StudioGateCheck,
   type StudioHandoffCheck,
   type StudioWorkflow,
@@ -16,6 +17,7 @@ import { AgentVersionHistory } from "../components/studio/AgentVersionHistory";
 import { PageTopbar } from "../components/TopbarPageSlot";
 import { McpToolGuideSection } from "../components/studio/McpToolGuideSection";
 import { GateHandoffEditor } from "../components/studio/GateHandoffEditor";
+import { ToolAccessSection } from "../components/studio/ToolAccessSection";
 import { StudioDescribeBar } from "../components/studio/StudioDescribeBar";
 import { TicketStudioPanel } from "../components/studio/TicketStudioPanel";
 import { WorkflowPreviewPanel } from "../components/studio/WorkflowPreviewPanel";
@@ -48,6 +50,12 @@ const EMPTY_AGENT = {
   mcp_tools: [] as string[],
   gate_checks: [] as StudioGateCheck[],
   handoff_checks: [] as StudioHandoffCheck[],
+  tool_grants: {
+    posture: "inherit",
+    allowed_tools: [],
+    disallowed_tools: [],
+    mcp_servers: [],
+  } as StudioAgentToolGrants,
 };
 
 function agentCategory(agent: StudioAgent): { label: string; className: string } {
@@ -95,6 +103,9 @@ export function StudioPage() {
 
   const mcpGuides = useQuery({ queryKey: ["studio-mcp-tool-guides"], queryFn: api.studioMcpToolGuides });
   const studioDefaults = useQuery({ queryKey: ["studio-defaults"], queryFn: api.studioDefaults });
+  // Names the tool-access panel offers as server grants; the server warns
+  // separately when a stored grant names one that is gone.
+  const mcpServers = useQuery({ queryKey: ["mcp-servers"], queryFn: api.mcpServers });
   const agents = useQuery({ queryKey: ["studio-agents"], queryFn: api.studioAgents });
   const workflows = useQuery({ queryKey: ["studio-workflows"], queryFn: api.studioWorkflows });
   const skills = useQuery({ queryKey: ["agent-skills"], queryFn: api.skills });
@@ -313,6 +324,7 @@ export function StudioPage() {
       mcp_tools: agent.mcp_tools,
       gate_checks: agent.gate_checks,
       handoff_checks: agent.handoff_checks,
+      tool_grants: agent.tool_grants,
     });
   }, [selectedAgentSlug, agents.data, isAgentReadOnly]);
 
@@ -411,6 +423,7 @@ export function StudioPage() {
       mcp_tools: agent.mcp_tools,
       gate_checks: agent.gate_checks,
       handoff_checks: agent.handoff_checks,
+      tool_grants: agent.tool_grants,
     });
   };
 
@@ -819,6 +832,15 @@ export function StudioPage() {
                   </div>
                 </div>
               ) : null}
+
+              {!isAgentReadOnly && (
+                <ToolAccessSection
+                  grants={agentDraft.tool_grants}
+                  warnings={selectedAgent?.tool_grant_warnings ?? []}
+                  servers={mcpServers.data?.filter((s) => s.enabled).map((s) => s.name) ?? []}
+                  onChange={(tool_grants) => setAgentDraft({ ...agentDraft, tool_grants })}
+                />
+              )}
 
               {!isAgentReadOnly && (
                 <div className="studio-card">

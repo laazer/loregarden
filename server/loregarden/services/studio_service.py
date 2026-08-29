@@ -4,18 +4,17 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from loregarden.agents.mcp_context import select_transport_blocks
 from loregarden.agents.registry import AGENTS
 from loregarden.agents.registry import list_agents as list_builtin_agents
+from loregarden.agents.tool_grants import parse_tool_grants
 from loregarden.config import settings
 from loregarden.core.workflow_loader import write_template_version
 from loregarden.mcp.tool_ids import (
     MEMORY_DEFAULT_MCP_TOOLS,
-    STAGE_DEFAULT_MCP_TOOLS,
     mcp_tool_values,
 )
 from loregarden.models.domain import (
@@ -48,7 +47,22 @@ from loregarden.models.domain import (
     WorkflowTemplate,
     WorkflowTemplateVersion,
 )
+from loregarden.services.mcp_registry import registered_mcp_server_names
 from loregarden.services.skill_service import SkillService
+from loregarden.services.studio_agent_config import (
+    default_mcp_tools,
+    ensure_studio_role_preamble,
+    frontmatter_bool,
+    load_role_body,
+    parse_markdown_frontmatter,
+    resolve_studio_mcp_tools,
+    strip_markdown_frontmatter,
+)
+from loregarden.services.studio_agent_views import (
+    agent_snapshot_view,
+    agent_view,
+    builtin_agent_view,
+)
 from loregarden.services.studio_generation import (
     build_agent_generate_prompt,
     build_workflow_generate_prompt,
@@ -62,46 +76,6 @@ from loregarden.services.studio_routing import SKIP_CONDITIONS, TERMINAL_STAGE_K
 from loregarden.services.workflow_service import WorkflowService
 from loregarden.skills.registry import list_skills
 from sqlmodel import Session, select
-
-STUDIO_ROLE_PREAMBLE = """**Loregarden MCP:** Use MCP tools per `agent_context/agents/common_assets/loregarden_mcp_v1.md` for ticket workflow state.
-
-**Memory protocol:** Read `agent_context/agents/common_assets/memory_protocol_v1.md` — use MCP for memory, learnings, and blog posts (Obsidian + SQLite graph); always pass `workspace_slug`; never write vault or SQLite files directly.
-"""
-
-
-def _merge_tool_lists(*groups: list[str]) -> list[str]:
-    seen: set[str] = set()
-    out: list[str] = []
-    for group in groups:
-        for name in group:
-            if name not in seen:
-                seen.add(name)
-                out.append(name)
-    return out
-
-
-def default_mcp_tools() -> list[str]:
-    return _merge_tool_lists(
-        mcp_tool_values(STAGE_DEFAULT_MCP_TOOLS),
-        mcp_tool_values(MEMORY_DEFAULT_MCP_TOOLS),
-    )
-
-
-def _resolve_studio_mcp_tools(raw_tools: list[str] | None, *, mcp_enabled: bool) -> list[str]:
-    if not mcp_enabled:
-        return []
-    base = raw_tools if raw_tools else default_mcp_tools()
-    return _merge_tool_lists(base, mcp_tool_values(MEMORY_DEFAULT_MCP_TOOLS))
-
-
-def _ensure_studio_role_preamble(role_body: str) -> str:
-    body = (role_body or "").strip()
-    if "memory_protocol_v1.md" in body:
-        return body
-    if body:
-        return f"{STUDIO_ROLE_PREAMBLE}\n{body}"
-    return STUDIO_ROLE_PREAMBLE.strip()
-
 
 DEFAULT_HANDOFF_CHECKS = [
     StudioHandoffCheck(
@@ -269,78 +243,18 @@ MCP_TOOL_GUIDES: list[StudioMcpToolGuide] = [
 ]
 
 
-_FRONTMATTER_RE = re.compile(r"^---\s*\n.*?\n---\s*(?:\n|$)", re.DOTALL)
-
-
-def parse_markdown_frontmatter(text: str) -> dict[str, str]:
-    body = (text or "").lstrip("\ufeff")
-    if not body.startswith("---"):
-        return {}
-    match = _FRONTMATTER_RE.match(body)
-    if not match:
-        return {}
-    block = match.group(0)
-    inner = block.strip().removeprefix("---").removesuffix("---").strip()
-    result: dict[str, str] = {}
-    for line in inner.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or ":" not in stripped:
-            continue
-        key, _, value = stripped.partition(":")
-        result[key.strip()] = value.strip()
-    return result
-
-
-def _frontmatter_bool(value: str | None) -> bool | None:
-    if value is None:
-        return None
-    normalized = value.strip().lower()
-    if normalized in {"true", "yes", "1"}:
-        return True
-    if normalized in {"false", "no", "0"}:
-        return False
-    return None
-
-
-def strip_markdown_frontmatter(text: str) -> str:
-    """Remove YAML frontmatter — `---` fences break markdown preview (setext headings)."""
-    body = (text or "").lstrip("\ufeff")
-    if not body.startswith("---"):
-        return text
-    match = _FRONTMATTER_RE.match(body)
-    if not match:
-        return text
-    return body[match.end() :].lstrip("\n")
-
-
-def _parse_json_list(raw: str, model_cls):
-    data = json.loads(raw or "[]")
-    return [model_cls.model_validate(item) for item in data]
-
-
-def load_role_body(role_file: str) -> tuple[str, str]:
-    if not role_file:
-        return "", ""
-    path = settings.agent_context_dir / role_file
-    if not path.is_file():
-        return "", role_file
-    text = path.read_text(encoding="utf-8")
-    # Prefer the frontmatter `description:`; otherwise the first prose line of the
-    # body (frontmatter fences stripped so `---` never becomes the description).
-    description = parse_markdown_frontmatter(text).get("description", "")
-    if not description:
-        for line in strip_markdown_frontmatter(text).splitlines():
-            stripped = line.strip()
-            if stripped and not stripped.startswith("#"):
-                description = stripped[:240]
-                break
-    return text, description
-
-
 logger = logging.getLogger(__name__)
 
-# Fields captured verbatim in each StudioAgentVersion snapshot. Must match the
-# migration backfill (0022) so restore round-trips cleanly.
+# Fields captured verbatim in each StudioAgentVersion snapshot. Matches the
+# migration backfill (0022) for the columns that existed then; later columns are
+# snapshotted going forward only, and a restore of an older snapshot resets them
+# to their default rather than carrying the current value forward (see
+# `restore_agent_version`).
+#
+# Together with _SNAPSHOT_EXCLUDED_FIELDS this must cover every column on
+# StudioAgent — test_studio_agent_snapshot asserts the partition, so a new
+# column fails the build until someone decides which side it belongs on. Left to
+# memory, an omission here loses that column on every restore with no error.
 _AGENT_SNAPSHOT_FIELDS = (
     "slug",
     "name",
@@ -354,12 +268,72 @@ _AGENT_SNAPSHOT_FIELDS = (
     "mcp_tools_json",
     "gate_checks_json",
     "handoff_checks_json",
+    "tool_grants_json",
     "built_in",
 )
+
+# Identity and bookkeeping — deliberately NOT snapshotted. `id` identifies the
+# row a restore writes back to; `version` / `created_at` / `updated_at` are the
+# history's own metadata, and restoring them would rewrite the history instead
+# of appending to it.
+_SNAPSHOT_EXCLUDED_FIELDS = ("id", "version", "created_at", "updated_at")
 
 
 def _agent_snapshot(agent: StudioAgent) -> dict:
     return agent.model_dump(include=set(_AGENT_SNAPSHOT_FIELDS))
+
+
+#: ``StudioAgentUpdate`` field -> ``StudioAgent`` column. A table rather than a
+#: chain of ``if`` statements: each new editable field was another branch, and
+#: the branch count is what the complexity gate measures. Adding a field is one
+#: row here, not one branch in the updater.
+_AGENT_UPDATE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("name", "name"),
+    ("description", "description"),
+    ("role_body", "role_body"),
+    ("adapter", "adapter"),
+    ("default_model", "default_model"),
+    ("timeout", "timeout"),
+    ("default_skill", "default_skill"),
+    ("mcp_enabled", "mcp_enabled"),
+    ("mcp_tools", "mcp_tools_json"),
+    ("gate_checks", "gate_checks_json"),
+    ("handoff_checks", "handoff_checks_json"),
+    ("tool_grants", "tool_grants_json"),
+)
+
+#: Columns stored as a JSON blob. ``model_dump`` has already turned any nested
+#: model into plain data by the time these are written, so one dumps() covers
+#: lists of checks and the grants object alike.
+_AGENT_JSON_COLUMNS = frozenset(
+    {"mcp_tools_json", "gate_checks_json", "handoff_checks_json", "tool_grants_json"}
+)
+
+_AGENT_STRIPPED_COLUMNS = frozenset({"name", "description"})
+
+
+def _agent_update_values(body: StudioAgentUpdate) -> dict[str, object]:
+    """Column -> value for the fields this update actually supplied.
+
+    ``exclude_none`` is the "field omitted" test: a PATCH that leaves a field out
+    must not overwrite it. ``change_note`` is absent from the table on purpose —
+    it belongs to the version entry, not the agent row.
+    """
+    provided = body.model_dump(exclude_none=True)
+    values: dict[str, object] = {}
+    for field, column in _AGENT_UPDATE_COLUMNS:
+        if field not in provided:
+            continue
+        value = provided[field]
+        if column in _AGENT_JSON_COLUMNS:
+            values[column] = json.dumps(value)
+        elif column in _AGENT_STRIPPED_COLUMNS:
+            values[column] = str(value).strip()
+        elif column == "role_body":
+            values[column] = ensure_studio_role_preamble(str(value))
+        else:
+            values[column] = value
+    return values
 
 
 def _write_agent_version(
@@ -384,18 +358,38 @@ def seed_builtin_agents(session: Session) -> list[str]:
     the slugs newly seeded.
     """
     existing = {a.slug for a in session.exec(select(StudioAgent)).all()}
+    # Distinguishes "this root has no agent assets" from "an asset it declares
+    # is missing" — see the role-body guard below.
+    has_agent_context = settings.agent_context_dir.is_dir()
     seeded: list[str] = []
     for slug, cfg in AGENTS.items():
         if slug in existing:
             continue
         role_file = str(cfg.get("role_file", ""))
         role_body, excerpt = load_role_body(role_file)
-        if not role_body:
+        if role_file and not role_body:
+            # The role body is what a chat rail renders as its identity, so an
+            # empty seed produces an agent that answers with no character and no
+            # rules — indistinguishable, from the outside, from a working one.
+            #
+            # A *missing agent_context tree* is a different situation and an
+            # expected one: initialising a database for a root that has no
+            # agent assets yet (`init_db` does this, and says so for skills
+            # too). There is nothing to read, so seed the row and warn.
+            # A tree that exists but lacks a role file its own registry
+            # declares is a broken checkout — fail rather than ship the
+            # lobotomised agent.
+            if has_agent_context:
+                raise ValueError(
+                    f"Built-in agent {slug!r} declares role_file {role_file!r}, but it is "
+                    f"missing or empty under {settings.agent_context_dir}. Seeding it would "
+                    "create an agent with no role instructions."
+                )
             logger.warning(
-                "seed_builtin_agents: role file missing/empty for agent %r (%s); "
-                "seeding with an empty role body",
+                "seed_builtin_agents: no agent_context tree at %s; seeding %r with an empty "
+                "role body. Chat rails will render no role for it until the assets exist.",
+                settings.agent_context_dir,
                 slug,
-                role_file,
             )
         agent = StudioAgent(
             id=str(uuid4()),
@@ -424,83 +418,6 @@ def seed_builtin_agents(session: Session) -> list[str]:
     if seeded:
         session.commit()
     return seeded
-
-
-def _agent_view(agent: StudioAgent) -> StudioAgentView:
-    raw_tools = json.loads(agent.mcp_tools_json or "[]")
-    return StudioAgentView(
-        id=agent.id,
-        slug=agent.slug,
-        name=agent.name,
-        description=agent.description,
-        role_body=_ensure_studio_role_preamble(agent.role_body),
-        role_file="",
-        adapter=agent.adapter,
-        default_model=agent.default_model,
-        timeout=agent.timeout,
-        default_skill=agent.default_skill,
-        mcp_enabled=agent.mcp_enabled,
-        mcp_tools=_resolve_studio_mcp_tools(raw_tools, mcp_enabled=agent.mcp_enabled),
-        gate_checks=_parse_json_list(agent.gate_checks_json, StudioGateCheck),
-        handoff_checks=_parse_json_list(agent.handoff_checks_json, StudioHandoffCheck),
-        built_in=agent.built_in,
-        read_only=False,
-        version=agent.version,
-        created_at=agent.created_at,
-        updated_at=agent.updated_at,
-    )
-
-
-def _agent_snapshot_view(agent: StudioAgent, snap: dict) -> StudioAgentView:
-    """Render a historical agent snapshot (read-only) for the version-detail view."""
-    mcp_enabled = bool(snap.get("mcp_enabled", True))
-    raw_tools = json.loads(snap.get("mcp_tools_json") or "[]")
-    return StudioAgentView(
-        id=agent.id,
-        slug=snap.get("slug", agent.slug),
-        name=snap.get("name", ""),
-        description=snap.get("description", ""),
-        role_body=_ensure_studio_role_preamble(snap.get("role_body", "")),
-        role_file="",
-        adapter=snap.get("adapter", "claude"),
-        default_model=snap.get("default_model", ""),
-        timeout=int(snap.get("timeout", 600)),
-        default_skill=snap.get("default_skill", ""),
-        mcp_enabled=mcp_enabled,
-        mcp_tools=_resolve_studio_mcp_tools(raw_tools, mcp_enabled=mcp_enabled),
-        gate_checks=_parse_json_list(snap.get("gate_checks_json", "[]"), StudioGateCheck),
-        handoff_checks=_parse_json_list(snap.get("handoff_checks_json", "[]"), StudioHandoffCheck),
-        built_in=bool(snap.get("built_in", False)),
-        read_only=True,
-        created_at=agent.created_at,
-        updated_at=agent.updated_at,
-    )
-
-
-def _builtin_agent_view(agent_id: str, cfg: dict) -> StudioAgentView:
-    now = datetime.now(timezone.utc)
-    role_file = str(cfg.get("role_file", ""))
-    role_body, excerpt = load_role_body(role_file)
-    return StudioAgentView(
-        id=agent_id,
-        slug=agent_id,
-        name=str(cfg.get("name", agent_id)),
-        description=excerpt or "Built-in registry agent",
-        role_body=role_body,
-        role_file=role_file,
-        adapter=str(cfg.get("adapter", "claude")),
-        default_model=str(cfg.get("default_model", "")),
-        timeout=int(cfg.get("timeout", 600)),
-        default_skill="",
-        mcp_enabled=True,
-        mcp_tools=tool_names(),
-        gate_checks=[],
-        handoff_checks=[],
-        built_in=True,
-        read_only=True,
-        created_at=now,
-        updated_at=now,
-    )
 
 
 def _workflow_view(session: Session, workflow: StudioWorkflow) -> StudioWorkflowView:
@@ -600,14 +517,16 @@ def studio_agent_config(session: Session, agent_id: str) -> dict | None:
 def _studio_agent_dict(agent: StudioAgent) -> dict:
     raw_tools = json.loads(agent.mcp_tools_json or "[]")
     return {
+        "slug": agent.slug,
+        "tool_grants": parse_tool_grants(agent.tool_grants_json),
         "name": agent.name,
-        "role_body": _ensure_studio_role_preamble(agent.role_body),
+        "role_body": ensure_studio_role_preamble(agent.role_body),
         "adapter": agent.adapter,
         "default_model": agent.default_model,
         "timeout": agent.timeout,
         "default_skill": agent.default_skill,
         "mcp_enabled": agent.mcp_enabled,
-        "mcp_tools": _resolve_studio_mcp_tools(raw_tools, mcp_enabled=agent.mcp_enabled),
+        "mcp_tools": resolve_studio_mcp_tools(raw_tools, mcp_enabled=agent.mcp_enabled),
         "gate_checks": json.loads(agent.gate_checks_json or "[]"),
         "handoff_checks": json.loads(agent.handoff_checks_json or "[]"),
         "studio": True,
@@ -672,12 +591,12 @@ def _preview_agent_cfg(body: StudioAgentPreviewRequest) -> dict:
     tools = body.mcp_tools or (default_mcp_tools() if body.mcp_enabled else [])
     return {
         "name": body.name,
-        "role_body": _ensure_studio_role_preamble(body.role_body),
+        "role_body": ensure_studio_role_preamble(body.role_body),
         "adapter": body.adapter,
         "timeout": body.timeout,
         "default_skill": body.default_skill,
         "mcp_enabled": body.mcp_enabled,
-        "mcp_tools": _resolve_studio_mcp_tools(tools, mcp_enabled=body.mcp_enabled),
+        "mcp_tools": resolve_studio_mcp_tools(tools, mcp_enabled=body.mcp_enabled),
         "gate_checks": [item.model_dump() for item in body.gate_checks],
         "handoff_checks": [item.model_dump() for item in body.handoff_checks],
     }
@@ -686,14 +605,14 @@ def _preview_agent_cfg(body: StudioAgentPreviewRequest) -> dict:
 def preview_agent_markdown(body: StudioAgentPreviewRequest) -> StudioAgentPreview:
     cfg = _preview_agent_cfg(body)
     role_frontmatter = parse_markdown_frontmatter(body.role_body)
-    role_body = _ensure_studio_role_preamble(strip_markdown_frontmatter(body.role_body)).strip()
+    role_body = ensure_studio_role_preamble(strip_markdown_frontmatter(body.role_body)).strip()
     metadata = StudioAgentPreviewProfile(
         description=role_frontmatter.get("description") or body.description.strip(),
         model=role_frontmatter.get("model") or "",
         provider=body.adapter or "claude",
         default_skill=body.default_skill or "",
         timeout=body.timeout,
-        always_apply=_frontmatter_bool(role_frontmatter.get("alwaysApply")),
+        always_apply=frontmatter_bool(role_frontmatter.get("alwaysApply")),
     )
     section_names: list[str] = ["header", "role"]
     parts = [
@@ -913,9 +832,19 @@ class StudioService:
             raise ValueError("Could not parse workflow draft from assistant response")
         return generated
 
+    def _registered_servers(self) -> frozenset[str]:
+        """The registry read every agent view needs, done once per operation."""
+        return registered_mcp_server_names(self.session)
+
+    def _agent_view_with_warnings(self, agent: StudioAgent) -> StudioAgentView:
+        return agent_view(agent, registered_servers=self._registered_servers())
+
     def list_agents(self, *, include_builtin: bool = True) -> list[StudioAgentView]:
+        # Resolved once for the whole list rather than per row — the warnings
+        # need it, and a per-agent lookup would turn one query into N.
+        registered = self._registered_servers()
         custom = [
-            _agent_view(agent)
+            agent_view(agent, registered_servers=registered)
             for agent in self.session.exec(select(StudioAgent).order_by(StudioAgent.name)).all()
         ]
         if not include_builtin:
@@ -925,16 +854,16 @@ class StudioService:
         for item in list_builtin_agents():
             if item["id"] in builtin_ids:
                 continue
-            merged.append(_builtin_agent_view(item["id"], item))
+            merged.append(builtin_agent_view(item["id"], item, registered_servers=registered))
         return sorted(merged, key=lambda item: (not item.built_in, item.name.lower()))
 
     def get_agent(self, slug: str) -> StudioAgentView | None:
         agent = self.session.exec(select(StudioAgent).where(StudioAgent.slug == slug)).first()
         if agent:
-            return _agent_view(agent)
+            return self._agent_view_with_warnings(agent)
         cfg = AGENTS.get(slug)
         if cfg:
-            return _builtin_agent_view(slug, cfg)
+            return builtin_agent_view(slug, cfg, registered_servers=self._registered_servers())
         return None
 
     def create_agent(self, body: StudioAgentCreate) -> StudioAgentView:
@@ -951,7 +880,7 @@ class StudioService:
             slug=slug,
             name=body.name.strip(),
             description=body.description.strip(),
-            role_body=_ensure_studio_role_preamble(body.role_body),
+            role_body=ensure_studio_role_preamble(body.role_body),
             adapter=body.adapter or "claude",
             default_model=body.default_model,
             timeout=body.timeout,
@@ -960,6 +889,7 @@ class StudioService:
             mcp_tools_json=json.dumps(mcp_tools),
             gate_checks_json=json.dumps([item.model_dump() for item in body.gate_checks]),
             handoff_checks_json=json.dumps([item.model_dump() for item in handoffs]),
+            tool_grants_json=body.tool_grants.model_dump_json(),
             version=1,
             built_in=False,
             created_at=now,
@@ -970,37 +900,15 @@ class StudioService:
         _write_agent_version(self.session, agent, created_by="studio-ui")
         self.session.commit()
         self.session.refresh(agent)
-        return _agent_view(agent)
+        return self._agent_view_with_warnings(agent)
 
     def update_agent(self, slug: str, body: StudioAgentUpdate) -> StudioAgentView:
         agent = self.session.exec(select(StudioAgent).where(StudioAgent.slug == slug)).first()
         if not agent:
             raise ValueError(f"Studio agent not found: {slug}")
-        if body.name is not None:
-            agent.name = body.name.strip()
-        if body.description is not None:
-            agent.description = body.description.strip()
-        if body.role_body is not None:
-            agent.role_body = _ensure_studio_role_preamble(body.role_body)
-        if body.adapter is not None:
-            agent.adapter = body.adapter
-        if body.default_model is not None:
-            agent.default_model = body.default_model
-        if body.timeout is not None:
-            agent.timeout = body.timeout
         if body.default_skill is not None:
             _validate_default_skill(body.default_skill)
-            agent.default_skill = body.default_skill
-        if body.mcp_enabled is not None:
-            agent.mcp_enabled = body.mcp_enabled
-        if body.mcp_tools is not None:
-            agent.mcp_tools_json = json.dumps(body.mcp_tools)
-        if body.gate_checks is not None:
-            agent.gate_checks_json = json.dumps([item.model_dump() for item in body.gate_checks])
-        if body.handoff_checks is not None:
-            agent.handoff_checks_json = json.dumps(
-                [item.model_dump() for item in body.handoff_checks]
-            )
+        agent.sqlmodel_update(_agent_update_values(body))
         agent.updated_at = datetime.now(timezone.utc)
         agent.version += 1
         self.session.add(agent)
@@ -1010,7 +918,7 @@ class StudioService:
         )
         self.session.commit()
         self.session.refresh(agent)
-        return _agent_view(agent)
+        return self._agent_view_with_warnings(agent)
 
     def delete_agent(self, slug: str) -> None:
         agent = self.session.exec(select(StudioAgent).where(StudioAgent.slug == slug)).first()
@@ -1082,7 +990,9 @@ class StudioService:
             created_by=row.created_by,
             change_note=row.change_note,
             created_at=row.created_at,
-            snapshot=_agent_snapshot_view(agent, snap),
+            snapshot=agent_snapshot_view(
+                agent, snap, registered_servers=self._registered_servers()
+            ),
         )
 
     def restore_agent_version(self, slug: str, version: int) -> StudioAgentView:
@@ -1098,22 +1008,52 @@ class StudioService:
         if not row:
             raise ValueError(f"Version {version} not found for agent {slug}")
         snap = json.loads(row.snapshot_json or "{}")
-        restored = {
-            field: snap[field]
+        # A snapshot older than a column simply lacks its key. Carrying the
+        # current value forward would leave a "restored" agent silently holding
+        # settings that version never had — for tool grants that means a policy
+        # outliving the restore that was supposed to undo it. Reset to the
+        # column default instead, and report which fields that touched.
+        # Read defaults off the field definitions rather than an instance: a
+        # required column (``name``) is simply unset on a bare StudioAgent, so
+        # instantiating one and dumping it silently omits those keys.
+        defaults = {
+            field: StudioAgent.model_fields[field].get_default(call_default_factory=True)
             for field in _AGENT_SNAPSHOT_FIELDS
-            if field != "slug" and field in snap
         }
+        current = agent.model_dump()
+        reset_fields = [
+            field
+            for field in _AGENT_SNAPSHOT_FIELDS
+            if field != "slug" and field not in snap and current[field] != defaults[field]
+        ]
+        restored = {
+            field: snap.get(field, defaults[field])
+            for field in _AGENT_SNAPSHOT_FIELDS
+            if field != "slug"
+        }
+        if reset_fields:
+            logger.info(
+                "restore of agent %r to v%s predates %s; reset to defaults",
+                slug,
+                version,
+                ", ".join(reset_fields),
+            )
         agent.sqlmodel_update(restored)
         agent.version += 1
         agent.updated_at = datetime.now(timezone.utc)
         self.session.add(agent)
         self.session.flush()
-        _write_agent_version(
-            self.session, agent, created_by="studio-ui", change_note=f"Restored from v{version}"
-        )
+        note = f"Restored from v{version}"
+        if reset_fields:
+            # Carried in the change note rather than a log line alone: the
+            # version history is where an operator looks to understand what a
+            # restore did, and a settings reset they cannot see is the kind of
+            # quiet change that gets discovered weeks later.
+            note += f" (v{version} predates {', '.join(reset_fields)}; reset to defaults)"
+        _write_agent_version(self.session, agent, created_by="studio-ui", change_note=note)
         self.session.commit()
         self.session.refresh(agent)
-        return _agent_view(agent)
+        return self._agent_view_with_warnings(agent)
 
     def list_workflows(self) -> list[StudioWorkflowView]:
         custom = [

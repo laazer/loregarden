@@ -579,3 +579,71 @@ class MemoryBriefingAssembly(str, Enum):
 
     DISPATCH = "dispatch"
     RENDER = "render"
+
+
+class ChatSurface(StrEnum):
+    """An operator-facing chat rail.
+
+    Home and ticket triage are the same agent answering in two places; the
+    surface is what tells a shared prompt block which one it is rendering for.
+    Branch triage and Ticket Studio are declared but not yet routed through the
+    shared blocks — they adopt them by passing their own member.
+    """
+
+    HOME = "home"
+    TICKET_TRIAGE = "ticket_triage"
+    BRANCH_TRIAGE = "branch_triage"
+    TICKET_STUDIO = "ticket_studio"
+
+
+class CliTool(StrEnum):
+    """A CLI agent's built-in tools, spelled exactly as the CLI reports them.
+
+    Parallel to ``loregarden.mcp.tool_ids``, which owns the Loregarden MCP tool
+    names. These are the ones named in a Claude ``--allowedTools`` list and in a
+    permission prompt's ``tool_name``. Policy groupings over this vocabulary
+    live in ``loregarden.agents.cli_tool_ids``; the names themselves live here
+    because API schemas reference them and models must not import agents.
+    """
+
+    READ = "Read"
+    WRITE = "Write"
+    EDIT = "Edit"
+    BASH = "Bash"
+    GLOB = "Glob"
+    GREP = "Grep"
+    WEB_FETCH = "WebFetch"
+    WEB_SEARCH = "WebSearch"
+    TASK = "Task"
+    TODO_WRITE = "TodoWrite"
+    ASK_USER_QUESTION = "AskUserQuestion"
+    NOTEBOOK_EDIT = "NotebookEdit"
+
+
+class ToolPosture(StrEnum):
+    """How an agent's tool access is decided.
+
+    ``INHERIT`` is the default and means "whatever the runtime offers" — the
+    behaviour every agent had before grants existed, so an un-configured agent
+    is unaffected. ``ALLOWLIST`` narrows to a derived set; ``UNRESTRICTED`` is
+    an explicit opt-out that reads differently from a default in the UI.
+    """
+
+    INHERIT = "inherit"
+    ALLOWLIST = "allowlist"
+    UNRESTRICTED = "unrestricted"
+
+
+class ToolGrantWarningCode(StrEnum):
+    """Why an agent's configured tool grants may not do what they look like.
+
+    A grant that quietly has no effect is the failure this vocabulary exists to
+    prevent: every code here names a case where the Studio control would
+    otherwise accept a setting and change nothing.
+    """
+
+    ADAPTER_IGNORES_GRANTS = "adapter_ignores_grants"
+    AUTO_APPROVED_EXCLUDED = "auto_approved_excluded"
+    ALL_MCP_EXCLUDED = "all_mcp_excluded"
+    EMPTY_ALLOWLIST = "empty_allowlist"
+    UNKNOWN_MCP_SERVER = "unknown_mcp_server"

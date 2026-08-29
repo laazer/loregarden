@@ -12,8 +12,10 @@ from loregarden.agents.mcp_context import (
     resolve_api_base_url,
     resolve_mcp_url,
 )
+from loregarden.agents.tool_grants import claude_tool_flags
 from loregarden.config import settings
-from loregarden.models.domain import CliAdapter
+from loregarden.models.domain import ChatSurface, CliAdapter
+from loregarden.models.domain.schemas import StudioAgentToolGrants
 from loregarden.services.cli_settings import (
     adapter_model_pins_apply,
     apply_cursor_effort,
@@ -178,6 +180,11 @@ def build_interactive_invocation(
     partial_messages: bool = False,
     db_session=None,
     orchestrated: bool = True,
+    tool_grants: StudioAgentToolGrants | None = None,
+    mcp_tools: Sequence[str] = (),
+    mcp_enabled: bool = True,
+    surface: ChatSurface = ChatSurface.HOME,
+    agent_slug: str = "",
 ) -> CliInvocation:
     """A headless `claude` session with permission prompts routed through Loregarden.
 
@@ -223,7 +230,22 @@ def build_interactive_invocation(
         _append_claude_effort_flag(argv, claude_effort)
         if resume_session_id:
             argv.extend(["--resume", resume_session_id])
-        append_mcp_cli_args(argv, adapter="claude", session=db_session, orchestrated=orchestrated)
+        argv.extend(
+            claude_tool_flags(
+                tool_grants,
+                mcp_tools=list(mcp_tools),
+                mcp_enabled=mcp_enabled,
+                surface=surface,
+                agent_slug=agent_slug,
+            )
+        )
+        append_mcp_cli_args(
+            argv,
+            adapter="claude",
+            session=db_session,
+            orchestrated=orchestrated,
+            granted_servers=(list(tool_grants.mcp_servers) or None) if tool_grants else None,
+        )
         return CliInvocation(
             argv=argv,
             interactive=True,
@@ -775,46 +797,58 @@ def _claude_triage_invocation(
     read_only: bool,
     extra_dirs: Sequence[Path | str],
     stream_json: bool,
+    tool_flags: Sequence[str] = (),
+    granted_servers: Sequence[str] | None = None,
+    db_session=None,
 ) -> CliInvocation:
     """Claude's one-shot chat invocation — see ``build_triage_invocation``.
 
     Falls back to `haiku` rather than the workspace pin: a chat turn is short and
     latency-visible, and the caller has not asked for stage-grade reasoning.
+
+    This path runs with no permission bridge on the other end, so ``tool_flags``
+    is the *only* thing that can constrain what the turn reaches — which is why
+    the flags are threaded here as well as into the interactive builder.
     """
     triage_model = os.environ.get("LOREGARDEN_TRIAGE_CLAUDE_MODEL", "").strip() or model or "haiku"
-    argv = [
-        _bin("claude", "LOREGARDEN_CLAUDE_BIN"),
-        "-p",
-        "--output-format",
-        "stream-json" if stream_json else "text",
-        "--permission-mode",
-        (
-            "plan"
-            if read_only
-            else os.environ.get("LOREGARDEN_TRIAGE_PERMISSION_MODE", "bypassPermissions")
-        ),
-        "--append-system-prompt-file",
-        str(prompt_file),
-        triage_user_prompt,
-    ]
-    for extra in extra_dirs:
-        argv.extend(["--add-dir", str(extra)])
-    argv.extend(
-        [
-            "--append-system-prompt-file",
-            str(prompt_file),
-            triage_user_prompt,
-        ]
-    )
+    argv = [_bin("claude", "LOREGARDEN_CLAUDE_BIN"), "-p"]
     if stream_json:
         # `--verbose` is required alongside stream-json for `-p`, and partial
         # messages are the whole point: without them a thinking block lands
         # finished, which is not streaming.
-        argv[2:2] = ["--verbose", "--include-partial-messages"]
+        argv.extend(["--verbose", "--include-partial-messages"])
+    argv.extend(
+        [
+            "--output-format",
+            "stream-json" if stream_json else "text",
+            "--permission-mode",
+            (
+                "plan"
+                if read_only
+                else os.environ.get("LOREGARDEN_TRIAGE_PERMISSION_MODE", "bypassPermissions")
+            ),
+            "--append-system-prompt-file",
+            str(prompt_file),
+            # The bare positional stays ahead of the flag block below. Claude's
+            # parser resolves --mcp-config's value to whichever bare positional
+            # comes *last* in argv, so a prompt appended after it is mistaken for
+            # the config path (same ordering as _claude_terminal_handoff_invocation).
+            triage_user_prompt,
+        ]
+    )
+    for extra in extra_dirs:
+        argv.extend(["--add-dir", str(extra)])
     _append_model_flag(argv, triage_model)
     _append_claude_effort_flag(argv, effort)
+    argv.extend(tool_flags)
     # Chat/studio oneshot — not a pipeline stage. Keep create_ticket open.
-    append_mcp_cli_args(argv, adapter="claude", orchestrated=False)
+    append_mcp_cli_args(
+        argv,
+        adapter="claude",
+        session=db_session,
+        orchestrated=False,
+        granted_servers=granted_servers,
+    )
     return CliInvocation(
         argv=argv,
         use_prompt_file=True,
@@ -839,6 +873,11 @@ def build_triage_invocation(
     read_only: bool = False,
     extra_dirs: Sequence[Path | str] = (),
     stream_json: bool = False,
+    tool_grants: StudioAgentToolGrants | None = None,
+    mcp_tools: Sequence[str] = (),
+    mcp_enabled: bool = True,
+    surface: ChatSurface = ChatSurface.HOME,
+    db_session=None,
 ) -> CliInvocation:
     """One-shot, non-interactive CLI for the triage chat channel.
 
@@ -898,6 +937,16 @@ def build_triage_invocation(
             read_only=read_only,
             extra_dirs=extra_dirs,
             stream_json=stream_json,
+            tool_flags=claude_tool_flags(
+                tool_grants,
+                mcp_tools=list(mcp_tools),
+                mcp_enabled=mcp_enabled,
+                surface=surface,
+                interactive=not read_only,
+                agent_slug=agent_id,
+            ),
+            granted_servers=(list(tool_grants.mcp_servers) or None) if tool_grants else None,
+            db_session=db_session,
         )
 
     if selected == CliAdapter.CURSOR:

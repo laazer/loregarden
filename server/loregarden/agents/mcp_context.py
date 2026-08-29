@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -155,7 +156,10 @@ def loregarden_mcp_server_entry(*, orchestrated: bool = False) -> dict[str, Any]
 
 
 def loregarden_mcp_cli_config_json(
-    session: Session | None = None, *, orchestrated: bool = False
+    session: Session | None = None,
+    *,
+    orchestrated: bool = False,
+    granted_servers: Sequence[str] | None = None,
 ) -> str:
     """Claude Code `--mcp-config` payload (full settings shape with mcpServers).
 
@@ -171,13 +175,28 @@ def loregarden_mcp_cli_config_json(
     supervises (see `execute_tool`'s docstring in `mcp/tools.py`) — set it only for
     invocations built by `agents.cli_adapters.resolve_cli_invocation`, never for a
     human terminal handoff or Ticket Studio chat.
+
+    ``granted_servers`` restricts the registered servers to an agent's own grant.
+    ``None`` means every enabled server, which is what every caller did before
+    per-agent grants existed and what stage runs still do.
     """
     servers: dict[str, dict] = {}
     if session is not None:
         try:
-            servers.update(cli_server_entries(session))
+            registered = cli_server_entries(session)
         except Exception:  # noqa: BLE001 - a bad registry must not stop a run
             logger.warning("Could not read the MCP registry; using loregarden only", exc_info=True)
+            registered = {}
+        if granted_servers is not None:
+            allowed = set(granted_servers)
+            dropped = sorted(set(registered) - allowed)
+            if dropped:
+                # An agent narrowed to a server set the operator can see in
+                # Studio; say which ones this run will not reach, because the
+                # subprocess itself reports nothing about a server it never got.
+                logger.info("MCP servers withheld by agent grant: %s", ", ".join(dropped))
+            registered = {name: entry for name, entry in registered.items() if name in allowed}
+        servers.update(registered)
     servers[MCP_SERVER_NAME] = loregarden_mcp_server_entry(orchestrated=orchestrated)
     return json.dumps({"mcpServers": servers})
 
@@ -243,12 +262,16 @@ def append_mcp_cli_args(
     adapter: str,
     session: Session | None = None,
     orchestrated: bool = False,
+    granted_servers: Sequence[str] | None = None,
 ) -> None:
     """Inject Loregarden MCP into headless Claude/Cursor/Codex agent subprocesses.
 
     ``orchestrated=True`` marks pipeline stage runs (denies create_ticket at the
     MCP dispatch layer). Chat surfaces — triage, Home, branch triage, Ticket
     Studio — must pass ``orchestrated=False`` so interactive MCP stays open.
+
+    ``granted_servers`` is an agent's per-agent server grant; only the claude
+    adapter can express it, because only claude receives the server list as argv.
 
     opencode is absent by design: it has no MCP flag, so its config rides in the
     subprocess environment instead — see ``mcp_cli_env``.
@@ -259,7 +282,12 @@ def append_mcp_cli_args(
         return
     if adapter == "claude":
         argv.extend(
-            ["--mcp-config", loregarden_mcp_cli_config_json(session, orchestrated=orchestrated)]
+            [
+                "--mcp-config",
+                loregarden_mcp_cli_config_json(
+                    session, orchestrated=orchestrated, granted_servers=granted_servers
+                ),
+            ]
         )
     elif adapter == "cursor" and "--approve-mcps" not in argv:
         argv.append("--approve-mcps")
