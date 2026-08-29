@@ -91,6 +91,13 @@ export function HomePage() {
   const ticketsLoading = ticketsQ.isLoading || (ticketsQ.isFetching && !ticketsQ.data);
   // Named for what it is: recent runs. "Activity" now means ticket activity.
   const recentRuns = (runsQ.data ?? []).slice(0, 8);
+  // Only covers active tickets, since that's what the page already fetches —
+  // a run against a ticket that's since finished just falls back to its id.
+  const ticketTitleById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of tickets) map.set(t.id, t.title);
+    return map;
+  }, [tickets]);
 
   const status = statusQ.data;
   const summaryLine = useMemo(() => {
@@ -230,18 +237,41 @@ export function HomePage() {
           <p className="home-empty">No recent runs.</p>
         ) : (
           <ul className="home-activity-list">
-            {recentRuns.map((run) => (
-              <li key={run.id} className="home-activity-item">
-                <span className={`home-run-status home-run-status--${run.status}`}>{run.status}</span>
-                <span className="home-activity-main">
-                  <span className="home-activity-agent">{run.agent_id || "agent"}</span>
-                  <span className="home-activity-stage">{run.stage_key || run.run_code || run.id.slice(0, 8)}</span>
-                </span>
-                <span className="home-activity-cmd" title={run.command}>
-                  {run.command || "—"}
-                </span>
-              </li>
-            ))}
+            {recentRuns.map((run) => {
+              const ticketTitle = run.ticket_id ? ticketTitleById.get(run.ticket_id) : undefined;
+              const content = (
+                <>
+                  <span className={`home-run-status home-run-status--${run.status}`}>{run.status}</span>
+                  <span className="home-activity-main">
+                    <span className="home-activity-agent">{run.agent_id || "agent"}</span>
+                    <span className="home-activity-stage">
+                      {run.stage_key || run.run_code || run.id.slice(0, 8)}
+                    </span>
+                    {run.ticket_id && (
+                      <span className="home-activity-ticket">{ticketTitle || `Ticket ${run.ticket_id.slice(0, 8)}`}</span>
+                    )}
+                  </span>
+                  <span className="home-activity-cmd" title={run.command}>
+                    {run.command || "—"}
+                  </span>
+                </>
+              );
+              return (
+                <li key={run.id} className="home-activity-item">
+                  {run.ticket_id ? (
+                    <button
+                      type="button"
+                      className="home-activity-row"
+                      onClick={() => navigate(ticketPath(run.ticket_id as string))}
+                    >
+                      {content}
+                    </button>
+                  ) : (
+                    <span className="home-activity-row home-activity-row--static">{content}</span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

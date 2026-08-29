@@ -334,13 +334,35 @@
 }
 
 .home-activity-item {
+  border-top: 1px solid var(--bd);
+}
+
+.home-activity-row {
   display: grid;
   grid-template-columns: 88px minmax(120px, 1fr) minmax(0, 2fr);
   gap: 12px;
   align-items: center;
+  width: 100%;
   padding: 9px 4px;
-  border-top: 1px solid var(--bd);
   font-size: 12.5px;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+button.home-activity-row {
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+button.home-activity-row:hover {
+  background: var(--bg2);
+}
+
+.home-activity-row--static {
+  cursor: default;
 }
 
 .home-run-status {
@@ -385,6 +407,14 @@
   font-size: 11px;
 }
 
+.home-activity-ticket {
+  color: var(--txm);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .home-activity-cmd {
   color: var(--txm);
   font-family: var(--mono);
@@ -407,7 +437,7 @@
     grid-template-columns: 1fr;
   }
 
-  .home-activity-item {
+  .home-activity-row {
     grid-template-columns: 72px 1fr;
   }
 

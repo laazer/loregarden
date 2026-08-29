@@ -163,6 +163,7 @@ export const api = {
       {
         id: string;
         run_code: string;
+        ticket_id?: string;
         status: string;
         command: string;
         agent_id: string;
