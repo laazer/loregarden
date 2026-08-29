@@ -1266,6 +1266,13 @@ class StudioService:
                     "gate_commands": list(stage.gate_commands),
                     "gate_required": stage.gate_required,
                     "model": stage.model,
+                    # Same lesson as `terminal` / `skip_when` above: a field left
+                    # out here is dropped from the published template. These three
+                    # are live — `required_evidence` is what makes the implement
+                    # and verify stages prove their work.
+                    "required_evidence": list(stage.required_evidence),
+                    "checklist": list(stage.checklist),
+                    "stage_brief": stage.stage_brief,
                 }
             )
 

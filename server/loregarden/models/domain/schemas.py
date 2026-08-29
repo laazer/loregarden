@@ -884,6 +884,13 @@ class StudioWorkflowStage(SQLModel):
     parallel_agents: list[ParallelAgentSpec] = Field(default_factory=list)
     gate_commands: list[str] = Field(default_factory=list)
     model: str = ""
+    # Carried so a publish round-trips them. A field WorkflowStageDef has and this
+    # model does not is silently dropped the first time a template is published
+    # from Studio — which is how `terminal` and `skip_when` were once lost, and
+    # how a live template's evidence gates would be.
+    required_evidence: list[str] = Field(default_factory=list)
+    checklist: list[str] = Field(default_factory=list)
+    stage_brief: str = ""
 
 
 class StudioWorkflowCreate(SQLModel):
