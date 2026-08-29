@@ -93,9 +93,9 @@ def test_the_gap_between_two_stages_does_not_lose_the_lane(db_session, ticket):
     db_session.commit()
 
     stage = begin_external_stage(db_session, orch_run)
-    assert stage.agent_run_id, "expected a real stage to be checked out"
+    assert stage.runs, "expected a real stage to be checked out"
 
-    run = db_session.get(AgentRun, stage.agent_run_id)
+    run = db_session.get(AgentRun, stage.runs[0].agent_run_id)
     finish_external_stage(db_session, run, transcript="done")
     db_session.refresh(orch_run)
 

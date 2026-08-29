@@ -16,10 +16,13 @@ from loregarden.models.domain.enums import (
     CycleStatus,
     EventType,
     ExternalHarness,
+    MemoryBriefingAssembly,
+    MemoryBriefingOutcome,
     OrchestrationDriver,
     OrchestrationRunStatus,
     QueueOperationType,
     QueuePosition,
+    ReferencePageKind,
     RunStatus,
     SidebarEntryKind,
     StageFanoutAttemptStatus,
@@ -349,6 +352,26 @@ class AgentRun(SQLModel, table=True):
     # a table cycle it cannot order ("unresolvable cycles between tables
     # agent_runs, worktrees"). The worktree side owns the constraint.
     worktree_id: str | None = Field(default=None, index=True)
+    # What this run cost, and what it was charged against. See
+    # `schemas.RunUsage`, which is how these six are read and written, and
+    # `agents.run_usage` for each CLI's dialect.
+    #
+    # All nullable with no default on purpose: NULL means *nobody measured it*,
+    # which is not zero. Every row written before 0095 has no usage data and
+    # never will, a local adapter reports none, and a run killed mid-flight may
+    # never print its usage block. SUM skips NULL and COUNT(col) counts only the
+    # measured rows, so an unmeasured run drops out of a cost aggregate instead
+    # of quietly deflating it — see `services.run_token_usage`.
+    input_tokens: int | None = Field(default=None)
+    output_tokens: int | None = Field(default=None)
+    cache_read_tokens: int | None = Field(default=None)
+    cache_write_tokens: int | None = Field(default=None)
+    # The model and reasoning effort actually *applied*, not the pin that was
+    # configured. Effort resolves per adapter (see `services.cli_settings`) and
+    # a CLI picks its own default when nothing is pinned, so the configured
+    # value answers a different question than this one.
+    model: str | None = Field(default=None)
+    effort: str | None = Field(default=None)
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
@@ -511,6 +534,90 @@ class McpToolCall(SQLModel, table=True):
     #: How the call was resolved — see services.tool_telemetry.DECISIONS.
     decision: str = ""
     decision_ms: int = 0
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
+class ReferencePage(SQLModel, table=True):
+    """Global fetch-through cache for reference MCP tools.
+
+    One row per normalized URL. 173's service owns fetch, SSRF, and TTL;
+    this table is only the durable shape those later tickets write into.
+    """
+
+    __tablename__ = "reference_pages"
+    __table_args__ = (UniqueConstraint("url", name="ix_reference_pages_url"),)
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    url: str
+    title: str = ""
+    content_markdown: str = ""
+    etag: str = ""
+    last_modified: str = ""
+    #: page / index / catalog — raw DevDocs JSON rows ride the same cache.
+    kind: ReferencePageKind = Field(
+        default=ReferencePageKind.PAGE,
+        sa_column=_str_enum_column(ReferencePageKind, ReferencePageKind.PAGE),
+    )
+    content_chars: int = 0
+    hit_count: int = 0
+    fetched_at: datetime = Field(default_factory=utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class MemoryBriefing(SQLModel, table=True):
+    """One inherited-wisdom assembly, as it actually behaved.
+
+    Written once per stage-prompt build from the single seam in
+    `agents/executors/cli.py`. `outcome` is stored, never re-derived: an
+    aggregate that reclassifies these rows in SQL is a second classifier, and
+    the drift between the two shows up as summary numbers that disagree with
+    the rows they claim to summarise.
+
+    On a SKIPPED row — a verify assembly, which deliberately carries no
+    briefing — every counter is a placeholder zero, never a measurement.
+    `store_states_json` is `'{}'` there for the same reason: no store was
+    consulted, so recording three of them as anything would be a measurement
+    nobody took.
+
+    No unique constraint on `run_id`: supervised dispatch and
+    `render_stage_prompt` both assemble a prompt, so two rows for one run is a
+    live path rather than a double write.
+    """
+
+    __tablename__ = "memory_briefings"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    run_id: str = Field(foreign_key="agent_runs.id", index=True)
+    #: Nullable because `AgentRun.ticket_id` is: a workspace-scoped run has no
+    #: ticket, and a NOT NULL column here would make the telemetry write raise
+    #: on a path it must never fail.
+    ticket_id: str | None = Field(default=None, foreign_key="tickets.id", index=True)
+    workspace_id: str = Field(foreign_key="workspaces.id", index=True)
+    stage_key: str = ""
+    assembly_source: MemoryBriefingAssembly = Field(
+        default=MemoryBriefingAssembly.DISPATCH,
+        sa_column=_str_enum_column(MemoryBriefingAssembly, MemoryBriefingAssembly.DISPATCH),
+    )
+    #: No default. The caller always classifies; a default would let an
+    #: unclassified row read as a healthy bucket.
+    outcome: MemoryBriefingOutcome = Field(sa_column=_str_enum_column(MemoryBriefingOutcome))
+    #: `_injected`, not `_found`: both counters are capped (6 checkpoints, 5
+    #: learnings), so they plateau. The saturation flags are what stop a flat
+    #: five reading as a healthy corpus.
+    checkpoints_injected: int = 0
+    learnings_injected: int = 0
+    checkpoints_saturated: bool = False
+    learnings_saturated: bool = False
+    query_had_terms: bool = False
+    chars_injected: int = 0
+    pre_truncation_chars: int = 0
+    truncated: bool = False
+    #: JSON object keyed by the three real `MemoryStoreKind` values, each
+    #: mapping to a `MemoryStoreState` value.
+    store_states_json: str = "{}"
+    #: Sorted, comma-joined `f"{store}:{ExcName}"` tokens; `''` when none.
+    store_errors: str = ""
+    elapsed_ms: int = 0
     created_at: datetime = Field(default_factory=utcnow, index=True)
 
 
@@ -1275,6 +1382,12 @@ class View(SQLModel, table=True):
     #: A validated `view_layout.ViewLayout`, serialized. Never written unparsed:
     #: a malformed layout is a view that cannot be opened to be repaired.
     layout_json: str = "{}"
+    #: A validated `view_viewport.ViewViewport`, serialized — where the view was
+    #: last looked at. Its own column rather than a key in the layout: a pan or a
+    #: zoom step writes here without touching the capped layout column, and the
+    #: two are independently settable. `'{}'` means no stored position, which is
+    #: a legal state and what every view composed before 480 holds.
+    viewport_json: str = "{}"
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

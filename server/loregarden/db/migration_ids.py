@@ -111,6 +111,13 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0090_agent_run_process_identity",
     "0091_sidebar_entry_pinned",
     "0092_structured_ticket_ids",
+    "0093_repin_terminal_less_instances",
+    "0094_repin_unregistered_skill_instances",
+    "0095_reference_pages_table",
+    "0096_agent_run_token_usage",
+    "0097_unique_ticket_number",
+    "0098_view_viewport",
+    "0099_memory_briefings_table",
 )
 
 

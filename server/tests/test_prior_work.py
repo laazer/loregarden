@@ -1,6 +1,8 @@
 """Recall of what was already attempted on tickets like this one (Cat F)."""
 
-from loregarden.models.domain import Ticket, TicketState, WorkItemType, Workspace
+from datetime import datetime, timezone
+
+from loregarden.models.domain import Artifact, Ticket, TicketState, WorkItemType, Workspace
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.prior_work import search_prior_work
 from sqlmodel import Session, SQLModel, create_engine
@@ -80,6 +82,80 @@ def test_errors_surface_before_successes(tmp_path):
     hits = search_prior_work(session, "route smart import selection", workspace_slug="ws")
     kinds = [a["kind"] for a in hits[0]["artifacts"]]
     assert kinds[0] == "error"
+
+
+def _add_artifact(session, ticket_id, *, kind, title, created_at):
+    session.add(Artifact(ticket_id=ticket_id, kind=kind, title=title, created_at=created_at))
+    session.commit()
+
+
+def test_mixed_naive_and_aware_artifact_timestamps_do_not_raise(tmp_path):
+    """Live DBs mix offset-naive and offset-aware created_at on one ticket."""
+    session = _session(tmp_path)
+    ticket = _ticket(session, "462-mixed", "search prior work datetime mix")
+    _add_artifact(
+        session,
+        ticket.id,
+        kind="diff",
+        title="the change",
+        created_at=datetime(2026, 8, 1, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    _add_artifact(
+        session,
+        ticket.id,
+        kind="error",
+        title="gate failed",
+        created_at=datetime(2026, 8, 2, 12, 0, 0),
+    )
+
+    hits = search_prior_work(session, "search prior work datetime mix", workspace_slug="ws")
+    assert hits[0]["external_id"] == "462-mixed"
+    kinds = [a["kind"] for a in hits[0]["artifacts"]]
+    assert kinds[0] == "error"
+
+
+def test_all_aware_errors_keep_older_first(tmp_path):
+    session = _session(tmp_path)
+    ticket = _ticket(session, "462-aware", "all aware artifact timestamps")
+    _add_artifact(
+        session,
+        ticket.id,
+        kind="error",
+        title="newer error",
+        created_at=datetime(2026, 8, 3, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    _add_artifact(
+        session,
+        ticket.id,
+        kind="error",
+        title="older error",
+        created_at=datetime(2026, 8, 1, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    hits = search_prior_work(session, "all aware artifact timestamps", workspace_slug="ws")
+    titles = [a["title"] for a in hits[0]["artifacts"]]
+    assert titles[:2] == ["older error", "newer error"]
+
+
+def test_all_naive_errors_keep_older_first(tmp_path):
+    session = _session(tmp_path)
+    ticket = _ticket(session, "462-naive", "all naive artifact timestamps")
+    _add_artifact(
+        session,
+        ticket.id,
+        kind="error",
+        title="newer error",
+        created_at=datetime(2026, 8, 3, 12, 0, 0),
+    )
+    _add_artifact(
+        session,
+        ticket.id,
+        kind="error",
+        title="older error",
+        created_at=datetime(2026, 8, 1, 12, 0, 0),
+    )
+    hits = search_prior_work(session, "all naive artifact timestamps", workspace_slug="ws")
+    titles = [a["title"] for a in hits[0]["artifacts"]]
+    assert titles[:2] == ["older error", "newer error"]
 
 
 def test_ranking_prefers_the_closer_match(tmp_path):

@@ -1,0 +1,47 @@
+import type { Approval } from "../api/client";
+
+/**
+ * Whether an approval asks a human to verify something, rather than to wave a
+ * tool call through.
+ *
+ * A stage sign-off carries the acceptance criteria the human reads before
+ * approving; a testing checklist is the same ask arriving on any kind. Both
+ * deserve the full-width Approvals tab — a permission prompt does not.
+ */
+export function hasHumanCriteria(approval: Approval): boolean {
+  return approval.kind === "workflow_gate" || Boolean(approval.checklist?.length);
+}
+
+/** The gate brief's own heading for the criteria it restates from the ticket. */
+const CRITERIA_HEADING = /^\s*#{0,6}\s*\**acceptance criteria\**\s*:?\s*$/im;
+
+/**
+ * A gate's impact ends by restating the ticket's acceptance criteria, which is
+ * right in the inbox — the card is all the reader has — and redundant in the
+ * Approvals tab, which lists those criteria above the card. Drops that trailing
+ * section so the tab shows them once.
+ *
+ * Returns the impact unchanged when the heading is absent: the brief is written
+ * by an agent, so its shape is a convention, not a guarantee, and dropping the
+ * only copy would be worse than showing two.
+ */
+export function impactWithoutCriteria(impact: string): string {
+  const match = CRITERIA_HEADING.exec(impact);
+  if (!match) return impact;
+  return impact.slice(0, match.index).trimEnd();
+}
+
+/**
+ * Whether a gate's checklist already carries every acceptance criterion.
+ *
+ * The server expands `{{acceptance_criteria}}` into one "Play-test by hand —
+ * <criterion>" item each, so the checklist is the criteria in the form you can
+ * actually work through. When it covers them all, a separate list of the same
+ * text is the redundant copy — not the checklist, which is the useful one.
+ */
+export function checklistCoversCriteria(checklist: string[], criteria: string[]): boolean {
+  const items = checklist.map((item) => item.trim()).filter(Boolean);
+  const wanted = criteria.map((criterion) => criterion.trim()).filter(Boolean);
+  if (wanted.length === 0 || items.length === 0) return false;
+  return wanted.every((criterion) => items.some((item) => item.endsWith(criterion)));
+}

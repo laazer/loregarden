@@ -143,25 +143,27 @@ def verify_code_map(repo_root: Path) -> list[MapDrift]:
     return drift
 
 
-def render_code_map(repo_root: Path, *, max_chars: int = 4000) -> str:
-    """The map as a prompt block, or "" when the repo has none.
+def code_map_reference(repo_root: Path) -> str:
+    """A prompt block pointing at the map, or "" when the repo has none.
 
-    Structure first, then where to look — an agent needs the shape of the repo
-    before the index into it.
+    The map used to be inlined into every stage prompt — the same few thousand
+    characters re-sent to every stage of every ticket, describing a file sitting
+    in the agent's own working directory. Naming the file costs a fraction of
+    that and reaches the same content, and unlike an inlined excerpt it cannot
+    go stale against the copy on disk or be silently truncated.
+
+    Emitted only when the file is really there, so the prompt never sends an
+    agent to a path this workspace does not have.
     """
     source = repo_root / MAP_FILENAME
     if not source.is_file():
         return ""
     text = source.read_text(encoding="utf-8")
-
-    tree = structure_tree(text)
-    lookup = _section(text, _LOOKUP_HEADING).strip()
-    if not tree and not lookup:
+    if not structure_tree(text) and not _section(text, _LOOKUP_HEADING).strip():
         return ""
-
-    parts: list[str] = []
-    if tree:
-        parts += ["### Repository structure", "```", tree, "```"]
-    if lookup:
-        parts += ["", "### Where to look", lookup]
-    return "\n".join(parts)[:max_chars]
+    return (
+        f"`{MAP_FILENAME}`, in the root of the tree you are working in, is this repo's own "
+        "map of itself: a structure tree under `## STRUCTURE`, and a task-to-file index "
+        f"under `## WHERE TO LOOK`. Read it before searching for where something lives — "
+        "it is parsed and drift-checked against the code, so it is not a stale comment."
+    )

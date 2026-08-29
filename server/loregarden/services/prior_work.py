@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-from loregarden.models.domain import Artifact, Ticket, TicketState, Workspace
+from loregarden.models.domain import Artifact, Ticket, TicketState, Workspace, comparable_utc
 from sqlmodel import Session, select
 
 MAX_RESULTS = 5
@@ -77,7 +77,7 @@ def _artifact_digest(session: Session, ticket_id: str) -> list[dict[str, str]]:
     eventually went right.
     """
     rows = session.exec(select(Artifact).where(Artifact.ticket_id == ticket_id)).all()
-    rows = sorted(rows, key=lambda a: (a.kind != "error", a.created_at))
+    rows = sorted(rows, key=lambda a: (a.kind != "error", comparable_utc(a.created_at)))
     return [
         {"kind": a.kind, "title": a.title or "", "evidence_kind": a.evidence_kind or ""}
         for a in rows[:_MAX_ARTIFACTS]
@@ -103,9 +103,7 @@ def search_prior_work(
     if not wanted:
         return []
 
-    statement = select(Ticket).where(
-        Ticket.state.in_([TicketState.DONE, TicketState.WONT_DO])  # type: ignore[attr-defined]
-    )
+    statement = select(Ticket).where(Ticket.state.in_([TicketState.DONE, TicketState.WONT_DO]))
     if workspace_slug.strip():
         workspace = session.exec(
             select(Workspace).where(Workspace.slug == workspace_slug.strip())

@@ -29,12 +29,29 @@ export type SidebarEntryKind = "page" | "view";
  */
 export type ViewLayout = Record<string, unknown>;
 
+/**
+ * Where the view was last looked at, validated server-side and stored in its own
+ * column. `{}` means no stored position — a legal state, and what every view
+ * composed before 480 holds. Read as an opaque object for the same reason the
+ * layout is: `canvasViewport` owns turning it into pan and zoom, and does it
+ * totally, so a record the server widens later cannot break a canvas.
+ */
+export type ViewViewport = Record<string, unknown>;
+
+/** The body that stores one: three finite numbers, none of them optional. */
+export interface ViewViewportPatch {
+  pan_x: number;
+  pan_y: number;
+  zoom: number;
+}
+
 export interface ViewSummary {
   id: string;
   kind: ViewKind;
   title: string;
   icon: string;
   layout: ViewLayout;
+  viewport: ViewViewport;
   created_at: string;
   updated_at: string;
 }
@@ -57,6 +74,12 @@ export interface ViewPatch {
   title?: string;
   icon?: string;
   layout?: ViewLayout;
+  /**
+   * Independently settable: a patch carrying only this leaves the layout exactly
+   * as it was, which is what lets a pan be written at gesture rate without
+   * racing a deliberate layout edit through one field.
+   */
+  viewport?: ViewViewportPatch;
 }
 
 /**

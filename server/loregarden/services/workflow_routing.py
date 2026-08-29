@@ -105,7 +105,7 @@ def _advance_past_skipped(
     """Walk forward past stages whose `skip_when` this ticket already satisfies.
 
     Returns the settled plan and the keys passed over. Those must be recorded
-    WONT_DO by the caller: _next_executable_stage scans for any PENDING stage, so
+    WONT_DO by the caller: next_executable_stage scans for any PENDING stage, so
     steering the cursor past one is not enough to keep it from running.
 
     Only forward moves skip — rework must land on the stage it was sent back to.

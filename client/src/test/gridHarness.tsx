@@ -1,15 +1,16 @@
 /**
- * The flex-grid page under test: its fixtures, its fake server, and the DOM
- * contract its specs read it back through.
+ * The flex-grid page under test: its fixtures and the DOM contract its specs
+ * read it back through.
+ *
+ * Everything a view-page harness has regardless of what it renders — the fake
+ * server, the provider tree, the jsdom stubs, the readers for what was written —
+ * is `viewHarness`, shared with `canvasHarness` and re-exported here so a spec
+ * has one import.
  *
  * Extracted because more than one spec file drives this page — what the grid
  * *does* (`ViewPageGrid.test.tsx`) and what happens when its writes race
  * something (`ViewPageGridRaces.test.tsx`) — and a harness copied into both is
  * two chances for a fixture to drift from the contract it stands in for.
- *
- * Each spec file still declares its own `jest.mock("../../lib/viewsApi", …)`:
- * the call is hoisted per module and the registry is per file, so the mocked
- * `fetchView`/`updateView` this module imports are that file's own.
  *
  * ## The DOM contract these tests hold the renderer to
  *
@@ -35,62 +36,45 @@
  *     answer to AC7 ("does not send pointer events to the container beneath"),
  *     and it is a pointer-event API.
  *
- * ## What jsdom cannot be asked
- *
- * There is no layout engine here: every `getBoundingClientRect` is zero-sized
- * unless stubbed, and nothing reflows when a flex-grow changes. So no test
- * measures a pane in pixels. `RECT` stubs one fixed 1000x800 box for every
- * element, which is what makes a drag's arithmetic exercisable at all — the
- * renderer must derive its new fractions from a measured rect, and with a
- * 1000px-wide split a pointer at clientX 700 is the 0.7 mark. What is asserted
- * is the *stored* consequence of a drag and what the tree renders from it; that
- * the browser then paints those fractions is flexbox's job.
+ * What jsdom cannot be asked of any of this is `viewHarness`'s header: nothing
+ * reflows, so no test below measures a pane in pixels. What is asserted is the
+ * *stored* consequence of a drag and what the tree renders from it.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import type { QueryClient } from "@tanstack/react-query";
 
-import { fetchView, updateView, type ViewSummary } from "../lib/viewsApi";
-import { ViewPage } from "../pages/ViewPage";
-import { SidebarWorkspaceProvider } from "../state/SidebarWorkspaceContext";
-import { useToastStore } from "../state/toastStore";
+import type { ViewSummary } from "../lib/viewsApi";
+import {
+  drag,
+  panelContainer,
+  pointerDown as pressPointer,
+  pointerMove as movePointer,
+  pointerUp as releasePointer,
+  renderView,
+  viewRoute,
+  type Json,
+} from "./viewHarness";
 
-export type Json = Record<string, unknown>;
+export {
+  POINTER_ID,
+  RECT,
+  SLUG,
+  containersOf,
+  installViewHarness as installGridHarness,
+  lastLayout,
+  mockFetchView,
+  mockUpdateView,
+  panelContainer,
+  setMeasuredRect,
+  settle,
+  storePatch,
+  storedView,
+  terminalContainer,
+  testClient,
+  type Json,
+} from "./viewHarness";
 
-export const SLUG = "loregarden";
-
-export const mockFetchView = fetchView as jest.MockedFunction<typeof fetchView>;
-export const mockUpdateView = updateView as jest.MockedFunction<typeof updateView>;
-
-/** One fixed box for every element, so drag arithmetic has something to divide by. */
-export const RECT: DOMRect = {
-  x: 0,
-  y: 0,
-  left: 0,
-  top: 0,
-  right: 1000,
-  bottom: 800,
-  width: 1000,
-  height: 800,
-  toJSON: () => ({}),
-} as DOMRect;
-
-/**
- * jsdom implements no `PointerEvent`, and RTL's `fireEvent.pointerDown` falls
- * back to a bare `Event` when the constructor is missing — which silently drops
- * `clientX`, making every drag below a drag to the origin. The subclass is the
- * smallest thing that carries coordinates and a pointer id.
- */
-class FakePointerEvent extends MouseEvent {
-  readonly pointerId: number;
-  constructor(type: string, init: PointerEventInit = {}) {
-    super(type, init);
-    this.pointerId = init.pointerId ?? 1;
-  }
-}
-
-export const POINTER_ID = 7;
+const VIEW_ID = "v-grid";
 
 /**
  * The thinnest pane AC9 is willing to call usable, in pixels of `RECT`'s track.
@@ -109,14 +93,6 @@ export const MIN_PANE_PX = 24;
 // whatever object it is given, so a shared literal would let one test's in-place
 // edit corrupt the next test's input.
 // ---------------------------------------------------------------------------
-
-export const panelContainer = (): Json => ({ kind: "panel", settings: {} });
-
-/** A terminal that is actually configured — `newContainerFor` leaves the slug empty. */
-export const terminalContainer = (): Json => ({
-  kind: "terminal",
-  settings: { primitive_id: "terminal", workspace_slug: SLUG },
-});
 
 export const leafLayout = (container: Json = panelContainer()): Json => ({
   kind: "flex_grid",
@@ -261,113 +237,25 @@ export function tallLayout(panes: number): Json {
 
 export function viewOf(layout: Json): ViewSummary {
   return {
-    id: "v-grid",
+    id: VIEW_ID,
     kind: "flex_grid",
     title: "Build Board",
     icon: "",
     layout,
+    // A grid arranges itself to the pane it is drawn in, so it has no pan or
+    // zoom to remember: its stored viewport is always the absent one.
+    viewport: {},
     created_at: "2026-08-01T00:00:00",
     updated_at: "2026-08-01T00:00:00",
   };
 }
 
-/** The record the fake server holds; PATCHes land in it, so a reload sees them. */
-let stored: ViewSummary;
-
-/**
- * What a read issued now would resolve with.
- *
- * A getter rather than the binding itself, because the fake server *replaces*
- * the record on every PATCH — a test holding the old object is holding the
- * layout from before that write, which is exactly what a stale read carries.
- */
-export function storedView(): ViewSummary {
-  return stored;
-}
-
-/**
- * Apply a PATCH body to the fake server's record, and return the result.
- *
- * For the tests that replace `updateView` with a deferred promise: the record
- * has to change when the request is *made*, as the server's would, not when the
- * test chooses to resolve it.
- */
-export function storePatch(patch: unknown): ViewSummary {
-  stored = { ...stored, ...(patch as Partial<ViewSummary>) };
-  return stored;
-}
-
-export function testClient(): QueryClient {
-  return new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false, retryDelay: 0 } },
-  });
-}
-
 export function gridRoute(client: QueryClient) {
-  return (
-    <QueryClientProvider client={client}>
-      <SidebarWorkspaceProvider slug={SLUG}>
-        <MemoryRouter initialEntries={["/view/v-grid"]}>
-          <Routes>
-            <Route path="/view/:viewId" element={<ViewPage />} />
-          </Routes>
-        </MemoryRouter>
-      </SidebarWorkspaceProvider>
-    </QueryClientProvider>
-  );
+  return viewRoute(VIEW_ID, client);
 }
 
 export function renderGrid(layout: Json, client?: QueryClient) {
-  stored = viewOf(layout);
-  return render(gridRoute(client ?? testClient()));
-}
-
-export async function settle() {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-}
-
-/**
- * The fake server, the stubbed rect and the fake `PointerEvent`, installed for
- * a whole spec file.
- *
- * Called at module scope, so the `beforeEach` it registers runs before each
- * test's own — which is what lets a test override `fetchView` for one case
- * without leaking it into the next.
- */
-let rectSpy: jest.SpyInstance;
-
-/** What every element measures from here on — the viewport, effectively. */
-export function setMeasuredRect(rect: DOMRect): void {
-  rectSpy.mockReturnValue(rect);
-}
-
-export function installGridHarness(): void {
-
-  beforeAll(() => {
-    (globalThis as unknown as { PointerEvent: unknown }).PointerEvent = FakePointerEvent;
-    // jsdom has neither; a renderer that captures the pointer would otherwise die
-    // on `undefined is not a function` rather than fail the assertion that wants it.
-    Element.prototype.setPointerCapture = function setPointerCapture() {};
-    Element.prototype.releasePointerCapture = function releasePointerCapture() {};
-  });
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    useToastStore.getState().clear();
-    rectSpy = jest.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue(RECT);
-    mockFetchView.mockImplementation(async () => stored);
-    mockUpdateView.mockImplementation(async (_slug, _viewId, patch) => {
-      stored = { ...stored, ...(patch as Partial<ViewSummary>) };
-      return stored;
-    });
-  });
-
-  afterEach(() => {
-    rectSpy.mockRestore();
-  });
+  return renderView(viewOf(layout), client);
 }
 
 // ---------------------------------------------------------------------------
@@ -399,23 +287,12 @@ export function divider(root: HTMLElement, splitId: string, gap = 0): HTMLElemen
   return found;
 }
 
-/** The layout of the most recent PATCH. */
-export function lastLayout(): Json {
-  const calls = mockUpdateView.mock.calls;
-  if (calls.length === 0) throw new Error("No layout was written");
-  return (calls[calls.length - 1][2] as { layout: Json }).layout;
-}
-
-export function containersOf(layout: Json): Record<string, Json> {
-  return layout.containers as Record<string, Json>;
-}
-
 export function childrenOf(node: Json): Json[] {
   return node.children as Json[];
 }
 
 // ---------------------------------------------------------------------------
-// Driving a divider
+// Driving a divider — one axis at a time, since a divider only moves along one.
 // ---------------------------------------------------------------------------
 
 type Axis = "x" | "y";
@@ -424,28 +301,25 @@ export function at(axis: Axis, value: number): { clientX: number; clientY: numbe
   return axis === "x" ? { clientX: value, clientY: 400 } : { clientX: 500, clientY: value };
 }
 
+function point(axis: Axis, value: number): [number, number] {
+  const { clientX, clientY } = at(axis, value);
+  return [clientX, clientY];
+}
+
 /** Returns false when the handler called `preventDefault` — AC7's text-selection half. */
 export function pointerDown(el: HTMLElement, axis: Axis, value: number): boolean {
-  return fireEvent.pointerDown(el, {
-    pointerId: POINTER_ID,
-    button: 0,
-    buttons: 1,
-    ...at(axis, value),
-  });
+  return pressPointer(el, ...point(axis, value));
 }
 
 export function pointerMove(el: HTMLElement, axis: Axis, value: number) {
-  fireEvent.pointerMove(el, { pointerId: POINTER_ID, buttons: 1, ...at(axis, value) });
+  movePointer(el, ...point(axis, value));
 }
 
 export function pointerUp(el: HTMLElement, axis: Axis, value: number) {
-  fireEvent.pointerUp(el, { pointerId: POINTER_ID, buttons: 0, ...at(axis, value) });
+  releasePointer(el, ...point(axis, value));
 }
 
 /** A whole drag: press, two moves, release. */
 export function dragDivider(el: HTMLElement, axis: Axis, from: number, to: number) {
-  pointerDown(el, axis, from);
-  pointerMove(el, axis, (from + to) / 2);
-  pointerMove(el, axis, to);
-  pointerUp(el, axis, to);
+  drag(el, point(axis, from), point(axis, to));
 }

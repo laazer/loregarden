@@ -6,6 +6,11 @@ import json
 import re
 
 from loregarden.agents.registry import get_agent
+from loregarden.core.workflow_terminal import (  # noqa: F401 — re-exported for existing import sites
+    TERMINAL_STAGE_KEY,
+    find_terminal_stage,
+    is_terminal_stage,
+)
 from loregarden.models.domain import ClassifyRoute, Ticket, WorkflowStageDef
 
 _SPECIALTY_SYNONYMS: dict[str, list[str]] = {
@@ -229,10 +234,21 @@ def _resolve_next_agent_override(ticket: Ticket, stage: WorkflowStageDef) -> tup
 
 
 VERIFY_STAGE_TYPE = "verify"
+PARALLEL_STAGE_TYPE = "parallel"
 
 # The agent a verify stage runs when the template names none. Kept separate from
 # the reviewers: a reviewer reads the change, a verifier has to exercise it.
 DEFAULT_VERIFIER_AGENT = "verifier"
+
+
+def is_parallel_stage(stage: WorkflowStageDef) -> bool:
+    """Whether this stage fans out to ``parallel_agents`` instead of one agent.
+
+    Every driver has to ask this before checking a stage out: a parallel stage
+    has no single agent to resolve, so the members in ``stage.parallel_agents``
+    are the unit of work. See ``services.parallel_stage``.
+    """
+    return stage.stage_type == PARALLEL_STAGE_TYPE
 
 
 def is_agentless_stage(stage: WorkflowStageDef) -> bool:
@@ -240,19 +256,6 @@ def is_agentless_stage(stage: WorkflowStageDef) -> bool:
     if stage.stage_type in {"classify", "gate", "parallel", VERIFY_STAGE_TYPE}:
         return False
     return not (stage.agent_id or "").strip()
-
-
-TERMINAL_STAGE_KEY = "done"
-
-
-def is_terminal_stage(stage: WorkflowStageDef) -> bool:
-    """Whether reaching this stage ends the workflow.
-
-    The `terminal` flag is authoritative; `key == "done"` remains a fallback so
-    templates authored before the flag — including version-pinned instances —
-    keep terminating.
-    """
-    return bool(stage.terminal) or stage.key == TERMINAL_STAGE_KEY
 
 
 def is_prunable_stage(stage: WorkflowStageDef) -> bool:
@@ -275,14 +278,6 @@ def is_prunable_stage(stage: WorkflowStageDef) -> bool:
 def prunable_stage_keys(stages: list[WorkflowStageDef]) -> list[str]:
     """Keys of every prunable stage, in template order."""
     return [s.key for s in sorted(stages, key=lambda s: s.order) if is_prunable_stage(s)]
-
-
-def find_terminal_stage(stages: list[WorkflowStageDef]) -> WorkflowStageDef | None:
-    """First stage by order that ends the workflow, or None."""
-    for stage in sorted(stages, key=lambda s: s.order):
-        if is_terminal_stage(stage):
-            return stage
-    return None
 
 
 # Conditions a stage may declare via `skip_when`. Deliberately a closed, named
@@ -372,7 +367,9 @@ def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[st
         return resolve_classify_route(ticket, stage)
     if stage.stage_type == "gate":
         return stage.agent_id or "gatekeeper", stage.skill_name or ""
-    if stage.stage_type == "parallel":
+    if is_parallel_stage(stage):
+        # No single agent to resolve — the members live in `parallel_agents`,
+        # and fanning them out is the driver's job (services.parallel_stage).
         return "", ""
     if stage.stage_type == VERIFY_STAGE_TYPE:
         return stage.agent_id or DEFAULT_VERIFIER_AGENT, stage.skill_name or ""

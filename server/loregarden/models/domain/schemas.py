@@ -334,28 +334,47 @@ class ExternalHarnessPromptView(SQLModel):
     prompt: str
 
 
-class ExternalStageView(SQLModel):
-    """A stage checked out to an external harness, with the prompt to run it.
+class ExternalStageRunView(SQLModel):
+    """One runnable member of a stage checked out to an external harness.
 
-    ``agent_run_id`` is empty for a stage that runs no agent — a human approval
-    gate, or the terminal stage that finalized the workflow. ``message`` says
-    which, so the harness stops instead of inventing work.
+    A sequential stage yields exactly one of these; a parallel stage yields one
+    per member of ``parallel_agents``, each with its own run, agent, skill and
+    prompt. Every member shares ``repo_path`` — the tree is resolved once,
+    before any of them start, so concurrent members cannot end up in different
+    checkouts.
     """
 
     agent_run_id: str = ""
     run_code: str = ""
-    stage_key: str = ""
-    stage_name: str = ""
     agent_id: str = ""
     skill_name: str = ""
     prompt: str = ""
     repo_path: str = ""
     started_at: datetime | None = None
+
+
+class ExternalStageView(SQLModel):
+    """A stage checked out to an external harness, with the prompts to run it.
+
+    ``runs`` is empty for a stage that runs nothing — a human approval gate, the
+    terminal stage that finalized the workflow, or a blocked workflow.
+    ``message`` says which, so the harness stops instead of inventing work.
+    """
+
+    stage_key: str = ""
+    stage_name: str = ""
+    parallel: bool = False
+    runs: list[ExternalStageRunView] = Field(default_factory=list)
     message: str = ""
 
 
 class ExternalStageResultView(SQLModel):
-    """What one external stage cost, and where the workflow went next."""
+    """What one external stage member cost, and where the workflow went next.
+
+    A parallel stage settles one member per call: ``workflow_stage_status``
+    stays RUNNING until the last outstanding member is handed back, and
+    ``stage_finalized`` says whether this call was that last one.
+    """
 
     agent_run_id: str
     stage_key: str
@@ -368,6 +387,43 @@ class ExternalStageResultView(SQLModel):
     ticket_state: TicketState
     blocking_issues: str = ""
     workflow_finished: bool = False
+    stage_finalized: bool = True
+    outstanding_members: int = 0
+
+
+class RunUsage(SQLModel):
+    """What one agent run consumed, and under what model and effort.
+
+    Every field defaults to ``None``, which means *nobody measured it* — never
+    zero. A CLI that printed no usage block, an adapter with no usage surface,
+    and a harness that declined to report all leave the field unset, so a run
+    of unknown cost can never be summed in as a free one. Only figures an
+    executor actually read are stored.
+
+    ``input_tokens`` counts tokens billed at the full input rate. Cache reads
+    and cache writes are priced differently and are recorded on their own, so
+    the three are disjoint and their sum is the run's whole input context. Each
+    adapter's own dialect is normalized to that in ``agents.run_usage``.
+    """
+
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    model: str | None = None
+    effort: str | None = None
+
+    def measured(self) -> bool:
+        """Whether any token figure was reported at all."""
+        return any(
+            value is not None
+            for value in (
+                self.input_tokens,
+                self.output_tokens,
+                self.cache_read_tokens,
+                self.cache_write_tokens,
+            )
+        )
 
 
 class CompleteStageRequest(SQLModel):

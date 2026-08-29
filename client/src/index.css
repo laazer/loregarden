@@ -3962,7 +3962,7 @@ button {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(520px, 94vw);
+  width: min(640px, 94vw);
   max-height: 88vh;
   z-index: 41;
   background: var(--bg1);
@@ -4499,6 +4499,107 @@ button {
   color: var(--txm);
   margin-top: 6px;
   font-family: var(--mono);
+}
+
+/* A long approval clamps in the rail; the fade says there is more below. */
+.approval-card-body--clamped {
+  position: relative;
+  overflow: hidden;
+}
+
+.approval-card-body--clamped::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 56px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0), var(--bg2));
+}
+
+.approval-card-expand {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  border-top: 1px solid var(--bd);
+  background: transparent;
+  color: var(--ac2);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+
+.approval-card-expand:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/*
+ * Approving with a route-back sends the ticket to an earlier stage, so the
+ * toggle cannot sit in the same column of checkboxes as the testing checklist
+ * — that list is headed "notes only", and this box is not a note.
+ */
+.approval-rework {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--bg3);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.approval-rework--on {
+  border-color: rgba(229, 167, 44, 0.45);
+  background: rgba(229, 167, 44, 0.07);
+}
+
+.approval-rework-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--aml);
+}
+
+/*
+ * The approval card rounds its own corners with overflow: hidden, so in a flex
+ * column it would rather be clipped than overflow — the modal body then has
+ * nothing to scroll and the criteria below the fold are simply gone. Let the
+ * card keep its full height and give the scroll back to the body.
+ */
+.approval-detail-body > * {
+  flex-shrink: 0;
+}
+
+.approvals-view-criteria {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--txl);
+}
+
+.approvals-view-scope-hint {
+  font-size: 10.5px;
+  color: var(--txm);
+  margin-bottom: 4px;
+  font-family: var(--mono);
+}
+
+.approvals-view-error {
+  font-size: 11.5px;
+  color: var(--rdl);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(240, 96, 63, 0.08);
+  border: 1px solid rgba(240, 96, 63, 0.25);
 }
 
 .inbox-notification-link {

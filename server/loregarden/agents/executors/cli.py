@@ -15,13 +15,14 @@ from loregarden.agents.cli_adapters import (
 from loregarden.agents.evidence_context import build_evidence_ledger
 from loregarden.agents.executors.launch_gate import MAX_HOLD_SECONDS, acquire_launch_slot
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
-from loregarden.agents.inherited_wisdom import build_inherited_wisdom
+from loregarden.agents.inherited_wisdom import InheritedWisdom, build_inherited_wisdom
 from loregarden.agents.mcp_context import (
     build_mcp_run_context,
     load_loregarden_mcp_doc,
     load_memory_protocol_doc,
     load_stage_report_contract_doc,
     load_ui_primitives_doc,
+    resolve_control_plane_transport,
 )
 from loregarden.agents.plan_context import (
     SYNTHESIS_SKILL,
@@ -29,11 +30,14 @@ from loregarden.agents.plan_context import (
     build_plan_synthesis_context,
 )
 from loregarden.agents.registry import get_agent
+from loregarden.agents.run_usage import parse_run_usage
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.agents.verify_context import build_verify_context
 from loregarden.models.domain import (
     AgentRun,
+    CliAdapter,
     DoctorStatus,
+    MemoryBriefingAssembly,
     RunStatus,
     Ticket,
     WorkflowStageDef,
@@ -43,10 +47,11 @@ from loregarden.services.cli_settings import (
     WorkspaceRuntimeSettings,
     adapter_model_pins_apply,
     get_ticket_orchestration_runtime,
+    resolve_effective_adapter,
     resolve_model_for_adapter,
     weak_mcp_model_warning,
 )
-from loregarden.services.code_map import render_code_map
+from loregarden.services.code_map import code_map_reference
 from loregarden.services.compatibility_posture import resolve_compatibility_posture
 from loregarden.services.doctor import park_for_environment, preflight_run, preflight_summary
 from loregarden.services.evidence import FULL_SUITE_EVIDENCE_KIND
@@ -59,6 +64,7 @@ from loregarden.services.handoff_boundary import (
     verdict_proceeds,
     verify_run_boundary,
 )
+from loregarden.services.memory_briefing_telemetry import record_briefing
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.process_identity import record_process_identity
 from loregarden.services.run_cancellation import cancel_requested
@@ -186,7 +192,15 @@ class CliAgentExecutor:
             return parked
 
         try:
-            prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace, stage_def)
+            prompt = self._build_prompt(
+                ticket,
+                run,
+                agent,
+                agent_context_dir,
+                workspace,
+                stage_def,
+                assembly_source=MemoryBriefingAssembly.DISPATCH,
+            )
         except SkillNotFoundError as exc:
             return self.orchestration.complete_run(
                 run,
@@ -283,6 +297,7 @@ class CliAgentExecutor:
 
                 streamer.finalize(status=status, stderr=stderr)
                 self._record_changed_paths(run, repo_root, paths_before)
+                self._record_usage(run, stdout=stdout, invocation=invocation)
                 artifacts = self._build_context_artifact(ticket, run, status)
                 completed = self.orchestration.complete_run(
                     run,
@@ -298,6 +313,7 @@ class CliAgentExecutor:
                 return self._complete_timed_out_run(
                     run,
                     exc,
+                    invocation=invocation,
                     fallback_timeout=timeout,
                     repo_root=repo_root,
                     paths_before=paths_before,
@@ -318,6 +334,7 @@ class CliAgentExecutor:
         run: AgentRun,
         exc: subprocess.TimeoutExpired,
         *,
+        invocation: CliInvocation,
         fallback_timeout: int,
         repo_root: Path,
         paths_before: set[str],
@@ -335,10 +352,14 @@ class CliAgentExecutor:
         msg = agent_timeout_message(exc.timeout or fallback_timeout)
         streamer.finalize(status=RunStatus.FAILED, stderr=msg)
         self._record_changed_paths(run, repo_root, paths_before)
+        # TimeoutExpired.output is bytes | str | None — a foreign union, not a schema.
+        output = exc.output
+        partial_stdout = output if isinstance(output, str) else ""  # py-org: allow-isinstance
+        self._record_usage(run, stdout=partial_stdout, invocation=invocation)
         return self.orchestration.complete_run(
             run,
             status=RunStatus.FAILED,
-            stdout=exc.output if isinstance(exc.output, str) else "",
+            stdout=partial_stdout,
             stderr=msg,
             advance_workflow=advance_workflow,
         )
@@ -374,7 +395,15 @@ class CliAgentExecutor:
             ensure_ticket_branch(repo_root, ticket)
 
         stage_def = self._resolve_stage_def(ticket, run)
-        prompt = self._build_prompt(ticket, run, agent, agent_context_dir, workspace, stage_def)
+        prompt = self._build_prompt(
+            ticket,
+            run,
+            agent,
+            agent_context_dir,
+            workspace,
+            stage_def,
+            assembly_source=MemoryBriefingAssembly.RENDER,
+        )
         return prompt, repo_root
 
     def prepare_terminal_handoff(
@@ -736,6 +765,62 @@ class CliAgentExecutor:
             "or scoped one."
         )
 
+    def _inherited_context(
+        self,
+        ticket: Ticket,
+        run: AgentRun,
+        workspace: Workspace,
+        *,
+        is_verify: bool,
+        assembly_source: MemoryBriefingAssembly,
+    ) -> str:
+        """The inherited-wisdom block, and THE single recording point for its telemetry.
+
+        Every briefing assembly is recorded here, including the verify case,
+        which records a SKIPPED row: a verify stage really did assemble a prompt
+        and deliberately carried no briefing, and writing nothing would make it
+        indistinguishable from a run whose telemetry write silently failed.
+
+        Do not assemble a briefing anywhere else in the prompt blocks. The
+        aggregate over `memory_briefings` is denominated over runs precisely so
+        that a seam which stopped recording shows up as a hole; a second,
+        unrecorded assembly reopens the blindness this exists to close.
+
+        Ticket 178 (the observed-outcome ladder) attaches its surfaced-learning
+        rows here, by foreign-keying the `memory_briefings.id` that
+        `record_briefing` returns. That work extends `record_briefing`'s
+        signature and body — not this file, which only has to keep calling it
+        once per assembly.
+
+        Note for whoever extends the figures: `RECALL_CANDIDATE_CAP`
+        (`services/memory_store.py`) is a second, still-unreported truncation
+        bound. The `truncated` flag covers the prompt-character cap only, not a
+        vault that has outgrown the candidate budget.
+
+        Never raises — `record_briefing` swallows its own failures, and this
+        method adds no guard of its own.
+        """
+        if is_verify:
+            record_briefing(
+                self.session,
+                run,
+                ticket,
+                InheritedWisdom.not_attempted(),
+                skipped=True,
+                assembly_source=assembly_source,
+            )
+            return ""
+        result = build_inherited_wisdom(ticket, workspace.slug)
+        record_briefing(
+            self.session,
+            run,
+            ticket,
+            result,
+            skipped=False,
+            assembly_source=assembly_source,
+        )
+        return result.text
+
     def _build_prompt(
         self,
         ticket: Ticket,
@@ -744,6 +829,8 @@ class CliAgentExecutor:
         agent_context_dir: Path,
         workspace: Workspace,
         stage_def: WorkflowStageDef | None,
+        *,
+        assembly_source: MemoryBriefingAssembly,
     ) -> str:
         # The tree this run will work in — the ticket's worktree once it has
         # one. A prompt built from the shared checkout would describe a repo
@@ -776,10 +863,24 @@ class CliAgentExecutor:
             posture=resolve_compatibility_posture(self.session, ticket, workspace),
             session=self.session,
         )
-        mcp_context = build_mcp_run_context(
-            ticket=ticket, run=run, workspace=workspace, stage_def=stage_def
+        # Resolved from the wiring this run will actually get, not from the kind
+        # of run it is: the prompt has to describe the channel the agent has.
+        transport = resolve_control_plane_transport(
+            run=run,
+            adapter=resolve_effective_adapter(
+                agent_adapter=agent.get("adapter", "local"),
+                workspace=workspace,
+                ticket_adapter=get_ticket_orchestration_runtime(ticket).cli_adapter,
+            ),
         )
-        mcp_doc = load_loregarden_mcp_doc(agent_context_dir)
+        mcp_context = build_mcp_run_context(
+            ticket=ticket,
+            run=run,
+            workspace=workspace,
+            stage_def=stage_def,
+            transport=transport,
+        )
+        mcp_doc = load_loregarden_mcp_doc(agent_context_dir, transport=transport)
         memory_doc = load_memory_protocol_doc(agent_context_dir)
         ui_primitives_doc = load_ui_primitives_doc(agent_context_dir)
         stage_report_doc = load_stage_report_contract_doc(agent_context_dir)
@@ -820,7 +921,9 @@ class CliAgentExecutor:
             # a verifier that agrees because it was told to proves nothing.
             _titled_block(
                 "## Inherited context (already decided — do not re-derive)",
-                "" if is_verify else build_inherited_wisdom(ticket, workspace.slug),
+                self._inherited_context(
+                    ticket, run, workspace, is_verify=is_verify, assembly_source=assembly_source
+                ),
             ),
             _titled_block(
                 "## Claim under review",
@@ -838,15 +941,18 @@ class CliAgentExecutor:
                 "## Plans to reconcile",
                 build_plan_synthesis_context(self.session, ticket) if is_synthesis else "",
             ),
-            # Before the role, so an agent knows the shape of the repo before it
-            # is told its job. The implementers run on cursor, which does not
-            # pick up CLAUDE.md the way Claude Code does, so without this they
-            # rediscover the layout by grepping on every run.
-            _titled_block("## Repository map", render_code_map(repo_root)),
+            # Before the role, so an agent knows where the shape of the repo is
+            # written down before it is told its job. A pointer rather than the
+            # map itself: the file is in the tree this run is standing in, and
+            # inlining it re-sent the same few thousand characters to every
+            # stage of every ticket. Named explicitly because the implementers
+            # run on cursor, which does not pick up CLAUDE.md the way Claude
+            # Code does.
+            _titled_block("## Repository map", code_map_reference(repo_root)),
             skill_prompt_block(skill_name, skill_body),
             _titled_block("## Agent Role", role_body),
-            _raw_block(build_studio_prompt_sections(agent)),
-            _titled_block("## Loregarden MCP module", mcp_doc, cap=12000),
+            _raw_block(build_studio_prompt_sections(agent, transport=transport)),
+            _titled_block("## Loregarden control-plane module", mcp_doc, cap=12000),
             _titled_block("## Memory protocol module", memory_doc, cap=8000),
             _titled_block("## Chat UI primitives", ui_primitives_doc, cap=6000),
             [
@@ -871,6 +977,29 @@ class CliAgentExecutor:
         if not touched:
             return
         run.changed_paths_json = json.dumps(touched)
+        self.session.add(run)
+        self.session.commit()
+
+    def _record_usage(self, run: AgentRun, *, stdout: str, invocation: CliInvocation) -> None:
+        """Store what this run consumed, and what it was charged against.
+
+        Two sources, in that order of authority. The CLI's own usage event is
+        what the provider billed, so it wins; the invocation's pins are the
+        fallback for the model and effort, and are all there is for an adapter
+        that reports no usage at all.
+
+        Anything neither source knows is left NULL. A killed run, an adapter
+        with no usage surface and a stream that ended before its usage event
+        all land here, and every one of them is *unmeasured* — writing a zero
+        would put them in a cost average as free work.
+        """
+        usage = parse_run_usage(stdout, adapter=CliAdapter(invocation.adapter))
+        run.input_tokens = usage.input_tokens
+        run.output_tokens = usage.output_tokens
+        run.cache_read_tokens = usage.cache_read_tokens
+        run.cache_write_tokens = usage.cache_write_tokens
+        run.model = usage.model or invocation.model or None
+        run.effort = usage.effort or invocation.effort or None
         self.session.add(run)
         self.session.commit()
 

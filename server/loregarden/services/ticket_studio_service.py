@@ -598,6 +598,16 @@ def build_studio_prompt(
                 "the next person the same look)",
                 "Reject parts we already have. Check this repo first and say so in `fit` "
                 "when something duplicates existing code.",
+                "Reuse before you port. Find the module here that already does the nearest "
+                "thing — a service, a model, a client component — and name it in `fit` as what "
+                "the work would extend. A finding that rebuilds a primitive we own is a defect, "
+                "not a finding.",
+                "Carry only what the brief needs. A capability the reference repo is proud of, "
+                "that nothing in the brief asks for, is a `skip` — say so and move on.",
+                "For anything worth having, say in `risks` whether we take it as a dependency "
+                "or own it in-house, and why. Own what is strategic to control or cheap to "
+                "maintain; depend on what is large, well-maintained, and not our differentiator. "
+                "Do not default to building because building is more interesting.",
                 "Order findings by value to this project, highest first. Ten sharp findings "
                 "beat forty shallow ones.",
                 "Output JSON with `summary`, `clarifying_questions` (usually empty), and "

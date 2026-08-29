@@ -27,7 +27,7 @@
  *     holding, and the panes on screen are rendered from it.
  */
 
-import { asJson, freshId } from "./viewLayouts";
+import { MAX_CONTAINERS, MAX_LAYOUT_NODES, asJson, emptyContainer, freshId } from "./viewLayouts";
 import type { ViewLayout } from "./viewsApi";
 
 type Json = Record<string, unknown>;
@@ -38,15 +38,13 @@ type Json = Record<string, unknown>;
  */
 export const MAX_SPLIT_DEPTH = 32;
 
-/** `ContainerRegistry`'s `max_length`. One container per pane, so: panes. */
-export const MAX_CONTAINERS = 256;
-
 /**
- * `_StructureWalk.claim_node`'s ceiling, counting leaves and splits alike — so a
- * grid runs out of nodes before it runs out of containers only in a tree that is
- * mostly interior splits.
+ * The layout-wide ceilings, re-exported from `viewLayouts` where both
+ * arrangements read them: one container per pane, so `MAX_CONTAINERS` is panes,
+ * and `MAX_LAYOUT_NODES` counts leaves and splits alike — a grid runs out of
+ * nodes before containers only in a tree that is mostly interior splits.
  */
-export const MAX_LAYOUT_NODES = 512;
+export { MAX_CONTAINERS, MAX_LAYOUT_NODES };
 
 /** The server's `SplitOrientation`. Not `row`/`column`, which is a 422. */
 export type SplitOrientation = "horizontal" | "vertical";
@@ -67,11 +65,6 @@ export interface GridSplit {
 }
 
 export type GridNodeModel = GridLeaf | GridSplit;
-
-/** The container a freshly opened pane holds: no `primitive_id`, so it prompts. */
-function emptyContainer(): Json {
-  return { kind: "panel", settings: {} };
-}
 
 function containersOf(layout: ViewLayout): Json {
   return asJson(layout.containers) ?? {};

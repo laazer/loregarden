@@ -1,6 +1,12 @@
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.agents.stage_context import build_orchestration_context, gate_prep_target
-from loregarden.models.domain import AgentRun, Ticket, WorkflowStageDef, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    MemoryBriefingAssembly,
+    Ticket,
+    WorkflowStageDef,
+    Workspace,
+)
 from loregarden.services.seed import seed_database
 from loregarden.services.workspace_paths import resolve_agent_context_dir
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -97,6 +103,7 @@ def test_cli_prompt_includes_orchestration_context():
             resolve_agent_context_dir(workspace),
             workspace,
             stage_def,
+            assembly_source=MemoryBriefingAssembly.DISPATCH,
         )
         assert "Loregarden run context (authoritative for this run)" in prompt
         assert "STATIC_QA" in prompt
@@ -160,12 +167,13 @@ def test_inherited_context_section_reaches_the_stage_prompt(tmp_path, monkeypatc
             resolve_agent_context_dir(workspace),
             workspace,
             executor._resolve_stage_def(ticket, run),
+            assembly_source=MemoryBriefingAssembly.DISPATCH,
         )
 
     assert "## Inherited context (already decided — do not re-derive)" in prompt
     assert "streams stdout line-by-line" in prompt
     # Sits with the ticket's own context, ahead of the reference modules.
-    assert prompt.index("Inherited context") < prompt.index("## Loregarden MCP module")
+    assert prompt.index("Inherited context") < prompt.index("## Loregarden control-plane module")
     assert prompt.index("## Acceptance Criteria") < prompt.index("Inherited context")
 
 

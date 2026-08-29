@@ -23,7 +23,14 @@ from loregarden.models.domain import (
 from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.worktree_lifecycle import reconcile_worktrees, release_ticket_worktree
 from sqlmodel import Session
-from tests.worktree_helpers import make_repo
+from tests.worktree_helpers import git, make_repo
+
+
+def _commit_in(path: Path, name: str = "work.txt") -> None:
+    """Put a commit on the worktree's branch — the thing that outlives removal."""
+    (path / name).write_text("real work\n")
+    git(path, "add", "-A")
+    git(path, "commit", "-q", "-m", "work")
 
 
 @pytest.fixture(name="session")
@@ -80,8 +87,11 @@ def _row(session, ticket):
 
 
 def test_finishing_a_ticket_removes_its_worktree(session, workspace):
+    """The intended path: the work is committed to the branch, so only the
+    checkout is thrown away and the commits stay in the object store."""
     ticket = _ticket(session, workspace)
     path = _tree_for(session, workspace, ticket)
+    _commit_in(path)
     ticket.state = TicketState.DONE
     session.add(ticket)
     session.commit()
@@ -130,12 +140,72 @@ def test_startup_settles_a_row_whose_directory_is_gone(session, workspace):
 def test_startup_removes_the_tree_of_a_ticket_that_finished(session, workspace):
     ticket = _ticket(session, workspace)
     path = _tree_for(session, workspace, ticket)
+    _commit_in(path)
     ticket.state = TicketState.DONE
     session.add(ticket)
     session.commit()
 
     assert reconcile_worktrees(session) == 1
     assert not path.exists()
+
+
+def test_a_tracked_modification_is_never_deleted(session, workspace):
+    """The untracked case has a sibling: an agent editing a file that already
+    existed leaves nothing new on disk to notice, only a changed one."""
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    _commit_in(path)
+    (path / "seed.txt").write_text("edited, never committed\n")
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    assert release_ticket_worktree(session, ticket) is False
+    assert (path / "seed.txt").read_text() == "edited, never committed\n"
+
+
+def test_untracked_work_survives_a_repo_that_hides_untracked_files(session, workspace):
+    """`status.showUntrackedFiles=no` turns a bare `--porcelain` into a rubber
+    stamp: git reports a clean tree while the agent's new files sit in it."""
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    _commit_in(path)
+    git(path, "config", "status.showUntrackedFiles", "no")
+    (path / "brand-new.py").write_text("never committed\n")
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    assert release_ticket_worktree(session, ticket) is False
+    assert (path / "brand-new.py").exists()
+
+
+def test_a_branch_with_nothing_committed_is_never_retired(session, workspace):
+    """The external-harness shape: the tree is clean because nothing was ever
+    written back, and the branch carries no commits, so the object store would
+    hold nothing after the checkout went. Refuse rather than assume."""
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    assert release_ticket_worktree(session, ticket) is False
+    assert path.is_dir()
+    assert _row(session, ticket).state == WorktreeState.ACTIVE.value
+
+
+def test_startup_keeps_a_finished_tickets_tree_when_nothing_was_committed(session, workspace):
+    """Reconciliation retires on the same signal and needs the same proof."""
+    ticket = _ticket(session, workspace)
+    path = _tree_for(session, workspace, ticket)
+    ticket.state = TicketState.DONE
+    session.add(ticket)
+    session.commit()
+
+    assert reconcile_worktrees(session) == 0
+    assert path.is_dir()
+    assert _row(session, ticket).state == WorktreeState.ACTIVE.value
 
 
 def test_startup_leaves_a_live_ticket_alone_so_the_resume_finds_its_work(session, workspace):

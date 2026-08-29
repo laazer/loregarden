@@ -7,9 +7,9 @@
  * — a cold mount derives everything from the id.
  *
  * The arrangement renderers are `components/views/FlexGridSurface` (440, nested
- * resizable splits) and the canvas below (442, still a walk that puts each item
- * where its layout says). What lives here is the seam they hang off — the host
- * element carrying the view's identity, and the dispatch on the loaded kind. The
+ * resizable splits) and `components/views/CanvasSurface` (442, free placement on
+ * a pannable, zoomable surface). What lives here is the seam they hang off — the
+ * host element carrying the view's identity, and the dispatch on the loaded kind. The
  * pane itself, and the write a pick makes, are `components/views/ContainerPane`:
  * a grid leaf and a canvas item both draw one.
  *
@@ -39,57 +39,15 @@ import { Link, useParams } from "react-router-dom";
 
 import { ApiError } from "../api/http";
 import { PaneSkeleton } from "../components/ui/PaneSkeleton";
-import { ContainerPane } from "../components/views/ContainerPane";
+import { CanvasSurface } from "../components/views/CanvasSurface";
 import { FlexGridSurface } from "../components/views/FlexGridSurface";
 import { readGridTree } from "../lib/gridLayout";
 import { asJson } from "../lib/viewLayouts";
-import { fetchView, viewsKeys } from "../lib/viewsApi";
+import { fetchView, viewsKeys, type ViewViewport } from "../lib/viewsApi";
 import { useSidebarWorkspace } from "../state/SidebarWorkspaceContext";
 import { describeError } from "../state/toastStore";
 
 type Json = Record<string, unknown>;
-
-function CanvasSurface({ layout }: { layout: Json }) {
-  const containers = asJson(layout.containers) ?? {};
-  const items = Array.isArray(layout.items) ? layout.items : [];
-
-  return (
-    <div style={{ position: "relative", flex: "1 1 0", minHeight: 0, overflow: "auto" }}>
-      {/* An empty canvas is a legitimate stored state — it is what New View →
-          Canvas creates — and drawing it as literally nothing leaves the user on
-          a blank screen with no text, no control and no way to tell a new view
-          from a broken one. The affordance that fills it is 442's. */}
-      {items.length === 0 ? (
-        <div className="queue-page-empty" data-testid="view-canvas-empty">
-          <p style={{ maxWidth: 520 }}>
-            This canvas is empty. Drop a container onto it to get started.
-          </p>
-        </div>
-      ) : null}
-      {items.map((raw, index) => {
-        const item = asJson(raw);
-        const containerId = typeof item?.container_id === "string" ? item.container_id : "";
-        if (item === undefined || containerId === "") return null;
-        const key = typeof item.id === "string" ? item.id : String(index);
-        return (
-          <div
-            key={key}
-            style={{
-              position: "absolute",
-              left: Number(item.x) || 0,
-              top: Number(item.y) || 0,
-              width: Number(item.width) || 0,
-              height: Number(item.height) || 0,
-              display: "flex",
-            }}
-          >
-            <ContainerPane containerId={containerId} container={containers[containerId]} />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 function ViewNotFound() {
   return (
@@ -186,16 +144,37 @@ export function ViewPage() {
       {/* Keyed by the view: the pane components carry a layout write of their
           own, and reusing one across two views hands a pending write the
           identity of a view it was never issued against. */}
-      <ViewSurface key={loaded.id} kind={loaded.kind} layout={layout} />
+      <ViewSurface
+        key={loaded.id}
+        kind={loaded.kind}
+        layout={layout}
+        viewport={loaded.viewport}
+      />
     </div>
   );
 }
 
-function ViewSurface({ kind, layout }: { kind: string; layout: Json | undefined }) {
+function ViewSurface({
+  kind,
+  layout,
+  viewport,
+}: {
+  kind: string;
+  layout: Json | undefined;
+  // Only the canvas has one. The grid arranges itself to the pane it is drawn
+  // in, so there is no pan or zoom for it to remember.
+  viewport: ViewViewport;
+}) {
   if (layout === undefined) {
     return <ViewUndrawable reason="Its stored layout is missing or is not a layout." />;
   }
-  if (kind === "canvas") return <CanvasSurface layout={layout} />;
+  // The canvas takes the layout unparsed, and deliberately has no undrawable
+  // state of its own: an empty canvas is a legitimate stored layout, and a single
+  // item the client cannot read is dropped rather than allowed to blank a surface
+  // full of good ones. The grid below is the opposite case — a tree it cannot
+  // read leaves it with nothing at all to draw — which is why only that one is
+  // parsed here.
+  if (kind === "canvas") return <CanvasSurface layout={layout} viewport={viewport} />;
   if (kind === "flex_grid") {
     // Parsed here rather than inside the renderer, because "this grid has no
     // readable arrangement" is one of the undrawable states this page owns — a

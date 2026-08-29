@@ -24,6 +24,7 @@ from collections.abc import Callable
 from loregarden.models.domain import SidebarEntry, View
 from loregarden.models.domain.enums import SidebarEntryKind, utcnow
 from loregarden.models.domain.view_layout import CanvasLayout, FlexGridLayout, layout_payload
+from loregarden.models.domain.view_viewport import ViewViewport, viewport_payload
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import StaleDataError
@@ -70,10 +71,14 @@ class SidebarContentionError(ValueError):
 def _serialized_layout(layout: ViewLayoutModel) -> str:
     """The layout as the string that goes in the column, refused if oversized.
 
-    Encoding is fallible independently of validation: ``settings`` is an open
-    mapping, so a value that validated fine can still be something ``json``
-    cannot write. Both failures are the request's fault, so both are a
-    ``ValueError`` the API answers with a 4xx rather than a traceback.
+    Encoding is fallible independently of validation, though no longer because
+    of ``settings``: ``ViewContainer`` now refuses a value ``json`` cannot write
+    (444). What still reaches here is depth — the dump of a *whole* layout runs
+    deeper than the settings-only dump the validator did, and pydantic's
+    serializer gives up around 250 levels, which is how a nesting the validator
+    accepted still fails to encode. Both that and the byte cap are the request's
+    fault, so both are a ``ValueError`` the API answers with a 4xx rather than a
+    traceback.
     """
     try:
         encoded = json.dumps(layout_payload(layout))
@@ -97,6 +102,11 @@ def view_payload(view: View) -> dict:
         "title": view.title,
         "icon": view.icon,
         "layout": json.loads(view.layout_json),
+        # An empty object is the absent viewport: this view has no stored
+        # position, and the canvas opens at its default rather than at the
+        # origin. Sent as itself rather than omitted, so a client never has to
+        # tell "no viewport" from "a field this build does not serve".
+        "viewport": json.loads(view.viewport_json),
         "created_at": view.created_at.isoformat(),
         "updated_at": view.updated_at.isoformat(),
     }
@@ -295,8 +305,14 @@ def update_view(
     title: str | None = None,
     icon: str | None = None,
     layout: ViewLayoutModel | None = None,
+    viewport: ViewViewport | None = None,
 ) -> View | None:
     """Apply the fields that were sent, leaving the omitted ones alone.
+
+    The layout and the viewport are independent halves of that: a pan writes the
+    viewport and leaves the arrangement exactly as it was, and a split writes the
+    arrangement and leaves the user looking where they were looking. That is why
+    they are two columns and why neither branch below touches the other's.
 
     ``None`` when the view was deleted between the read and this write: the
     staged UPDATE then matches no rows and SQLAlchemy raises ``StaleDataError``.
@@ -310,6 +326,11 @@ def update_view(
         # leaves the view exactly as it was rather than half-updated.
         view.layout_json = _serialized_layout(layout)
         view.kind = layout.kind
+    if viewport is not None:
+        # Three bounded floats, so there is no size limit to enforce and nothing
+        # here that `json` can refuse — unlike a layout, whose open `settings`
+        # mapping is why `_serialized_layout` exists.
+        view.viewport_json = json.dumps(viewport_payload(viewport))
     if title is not None:
         view.title = title
     if icon is not None:

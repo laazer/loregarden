@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from loregarden.db.session import get_session
+from loregarden.services.memory_briefing_telemetry import MemoryBriefingStats, briefing_stats
 from loregarden.services.memory_config import (
     apply_memory_config,
     current_memory_config,
@@ -6,6 +8,7 @@ from loregarden.services.memory_config import (
 )
 from loregarden.services.memory_store import AgentMemoryService
 from pydantic import BaseModel, Field
+from sqlmodel import Session
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 
@@ -33,6 +36,25 @@ def _memory_config_response() -> dict:
 @router.get("/status")
 def memory_status(workspace_slug: str = "") -> dict:
     return AgentMemoryService.from_settings().status(workspace_slug=workspace_slug)
+
+
+@router.get("/briefings")
+def memory_briefings(
+    window_days: int = Query(default=7, ge=1, le=365),
+    session: Session = Depends(get_session),
+) -> MemoryBriefingStats:
+    """Briefing health over recent runs — built / empty / errored / absent.
+
+    Denominated over `agent_runs`, not over briefing rows, so a recording seam
+    that silently stopped writing reads as holes rather than as the last healthy
+    numbers forever. `started_at IS NOT NULL` excludes runs that never reached
+    prompt assembly; it is not exact — a run that died between `started_at` and
+    the prompt build still counts as a hole, which errs toward reporting a hole
+    that is not one, the safe direction for a health signal.
+
+    An empty window is zeros with null timestamps, never a 404.
+    """
+    return briefing_stats(session, window_days=window_days)
 
 
 @router.get("/config")

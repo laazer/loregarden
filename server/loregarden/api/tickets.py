@@ -44,6 +44,7 @@ from loregarden.models.domain import (
     Workspace,
     WorkspaceRuntimeSettings,
     WorkspaceRuntimeUpdate,
+    comparable_utc,
 )
 from loregarden.services import btw_service
 from loregarden.services.acceptance_criteria import load_criteria, serialize_criteria
@@ -242,7 +243,9 @@ def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:
         elif art.kind == "pr":
             grouped["pr"] = content
     if error_artifacts:
-        latest_error = sorted(error_artifacts, key=lambda a: -a.created_at.timestamp())[0]
+        latest_error = sorted(
+            error_artifacts, key=lambda a: comparable_utc(a.created_at), reverse=True
+        )[0]
         error_content = json.loads(latest_error.content_json or "{}")
         message = error_content.get("message")
         if isinstance(message, str):

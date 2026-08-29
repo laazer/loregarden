@@ -189,7 +189,13 @@ class ConflictDetectorService:
 
             return len(lines_with_code) < 5
 
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "Conflict simplicity check failed for %s in %s: %s",
+                file_path,
+                worktree_path,
+                exc,
+            )
             return False
 
     async def get_conflict_details(

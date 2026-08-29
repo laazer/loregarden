@@ -1,6 +1,7 @@
 /**
- * The Tabs section's write affordances: New View, and the rename / duplicate /
- * delete trio on a row.
+ * The sidebar's write affordances: the New View flow — reached from the footer's
+ * New tab control since 473 moved it out of the Tabs section head — and the
+ * rename / duplicate / delete trio on a row.
  *
  * `AppSidebar` exists (434), so these failures are a missing button and a
  * missing `createView`, not a missing module. Rename and the active-tab
@@ -133,6 +134,7 @@ const views = (): ViewSummary[] => [
     title: "Build Board",
     icon: "",
     layout: gridLayout(),
+    viewport: {},
     created_at: "2026-08-01T00:00:00",
     updated_at: "2026-08-01T00:00:00",
   },
@@ -142,6 +144,7 @@ const views = (): ViewSummary[] => [
     title: "Sketch Surface",
     icon: "",
     layout: { kind: "canvas", containers: {}, items: [] },
+    viewport: {},
     created_at: "2026-08-01T00:00:00",
     updated_at: "2026-08-01T00:00:00",
   },
@@ -157,6 +160,7 @@ const created = (): ViewSummary => ({
   // grid. A fixture the server could never send teaches the implementation the
   // wrong shape for the thing it is about to render.
   layout: seededGridLayout(),
+  viewport: {},
   created_at: "2026-08-14T00:00:00",
   updated_at: "2026-08-14T00:00:00",
 });
@@ -215,12 +219,18 @@ async function renderLoadedSidebar(path = "/", client?: QueryClient) {
   return utils;
 }
 
-/** The Tabs section — the one AC5 names, as opposed to Pinned Tabs. */
-function tabsSection(): HTMLElement {
-  // An exact match, so the "Pinned Tabs" heading above it is not a candidate.
-  const section = screen.getByText("Tabs").closest(".app-sidebar-section");
-  if (!section) throw new Error("No Tabs section in the sidebar");
-  return section as HTMLElement;
+/**
+ * The footer pair — where 473 moved the create affordance.
+ *
+ * It used to live in the Tabs section head. Creating and pinning are the two
+ * ways a tab appears, so they are drawn side by side in the footer instead.
+ */
+function footerControls(): HTMLElement {
+  const controls = screen
+    .getByRole("button", { name: /new tab/i })
+    .closest(".app-sidebar-footer-controls");
+  if (!controls) throw new Error("No footer controls in the sidebar");
+  return controls as HTMLElement;
 }
 
 /**
@@ -244,7 +254,7 @@ function control(name: RegExp, scope?: HTMLElement): HTMLElement {
 
 /** Open the New View form and fill it in, leaving submission to the caller. */
 async function openNewView(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(within(tabsSection()).getByRole("button", { name: /new view/i }));
+  await user.click(within(footerControls()).getByRole("button", { name: /new tab/i }));
   return await screen.findByRole("dialog");
 }
 
@@ -321,10 +331,16 @@ describe("AC2 (regression, 434) — a view route highlights its own Tabs entry",
 });
 
 describe("AC5 — New View picks a kind, names it, creates it and lands on it", () => {
-  it("offers the affordance in the Tabs section", async () => {
+  it("offers the affordance in the footer, beside Pin tab", async () => {
     await renderLoadedSidebar();
 
-    expect(within(tabsSection()).getByRole("button", { name: /new view/i })).toBeInTheDocument();
+    // 473 moved it out of the Tabs section head. Asserting only that a button
+    // exists somewhere would pass with it left where it was.
+    expect(within(footerControls()).getByRole("button", { name: /new tab/i })).toBeInTheDocument();
+    // The head, not the whole section: the rows below it carry their own
+    // controls, and those are not what moved.
+    const head = screen.getByText("Tabs").closest(".app-sidebar-section-head");
+    expect(within(head as HTMLElement).queryByRole("button")).toBeNull();
   });
 
   it("does not offer it when there is no workspace to create in", async () => {
@@ -341,7 +357,9 @@ describe("AC5 — New View picks a kind, names it, creates it and lands on it", 
     await settle();
 
     expect(screen.getByText("Tabs")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /new view/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /new tab/i })).toBeNull();
+    // Pin writes to the same unresolved path, so it is gated with it.
+    expect(screen.queryByRole("button", { name: /pin tab/i })).toBeNull();
     expect(mockCreateView).not.toHaveBeenCalled();
   });
 

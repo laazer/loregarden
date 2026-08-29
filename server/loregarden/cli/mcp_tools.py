@@ -23,6 +23,9 @@ from typing import Any
 
 from loregarden.cli.errors import UsageError
 from loregarden.db import session as db_session
+from loregarden.db.migrations import MIGRATIONS
+from loregarden.db.migrations_runner import unknown_migration_ids
+from loregarden.mcp.tool_ids import READ_ONLY_MCP_TOOLS, McpTool
 from loregarden.mcp.tools import TOOL_DEFINITIONS, execute_tool
 from sqlmodel import Session
 
@@ -152,8 +155,48 @@ def _format_tool_schema(tool: dict[str, Any]) -> str:
     return json.dumps(payload, indent=2)
 
 
-def _run_tool(name: str, arguments: dict[str, Any], *, orchestrated: bool) -> str:
+def _is_read_only(name: str) -> bool:
+    """Whether `name` only reads. An unrecognised name is treated as a write."""
+    try:
+        return McpTool(name) in READ_ONLY_MCP_TOOLS
+    except ValueError:
+        return False
+
+
+def refuse_stale_write(name: str, *, allow_stale: bool) -> None:
+    """Refuse a write from a build older than the database it would write to.
+
+    Reading from a database migrated by newer code is survivable; writing to it
+    is not. A build that predates a column writes rows without it and they look
+    fine — 38 tickets were once created this way, each carrying the default
+    `ticket_number = 0`, which silently broke id resolution for all of them and
+    set up a collision with the next ticket the real application would issue.
+
+    The drift was detectable the whole time: the runner logs it on every startup.
+    Logging it left the decision to whoever read the scrollback, so this is the
+    same fact with the decision made.
+    """
+    if allow_stale or _is_read_only(name):
+        return
+    unknown = unknown_migration_ids(db_session.engine, {mid for mid, _ in MIGRATIONS})
+    if not unknown:
+        return
+    raise UsageError(
+        f"Refusing to run {name}: this build does not know "
+        f"{len(unknown)} migration(s) already applied to the database "
+        f"({', '.join(unknown[:3])}"
+        + (", …" if len(unknown) > 3 else "")
+        + "). Writing from a build older than the database produces rows the "
+        "current code cannot spell. Update this checkout, or pass --allow-stale "
+        "if you have confirmed the write is unaffected."
+    )
+
+
+def _run_tool(
+    name: str, arguments: dict[str, Any], *, orchestrated: bool, allow_stale: bool = False
+) -> str:
     db_session.init_db()
+    refuse_stale_write(name, allow_stale=allow_stale)
     with Session(db_session.engine) as session:
         return execute_tool(session, name, arguments, orchestrated=orchestrated)
 
@@ -181,6 +224,11 @@ def register(sub: argparse._SubParsersAction) -> None:
         dest="json_args",
         metavar="JSON",
         help="Arguments as a JSON object; `-` reads stdin, `@path` reads a file.",
+    )
+    call_parser.add_argument(
+        "--allow-stale",
+        action="store_true",
+        help="Permit a write even when the database carries migrations this build lacks.",
     )
     call_parser.add_argument(
         "--orchestrated",
@@ -235,4 +283,9 @@ def _run_describe(args: argparse.Namespace) -> str:
 def _run_call(args: argparse.Namespace) -> str:
     tool = _tool_def(args.tool)
     arguments = build_arguments(tool, json_arg=args.json_args, pairs=args.args)
-    return _run_tool(tool["name"], arguments, orchestrated=args.orchestrated)
+    return _run_tool(
+        tool["name"],
+        arguments,
+        orchestrated=args.orchestrated,
+        allow_stale=args.allow_stale,
+    )

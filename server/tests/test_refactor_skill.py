@@ -7,7 +7,14 @@ import pytest
 from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.config import settings
 from loregarden.db.migrations import apply_migrations
-from loregarden.models.domain import AgentRun, ClassifyRoute, Ticket, WorkflowStageDef, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    ClassifyRoute,
+    MemoryBriefingAssembly,
+    Ticket,
+    WorkflowStageDef,
+    Workspace,
+)
 from loregarden.services.seed import seed_database
 from loregarden.services.skill_service import parse_skill_markdown
 from loregarden.services.studio_routing import resolve_classify_route
@@ -151,6 +158,7 @@ def _prompt_for_skill(skill_name: str) -> str:
             resolve_agent_context_dir(workspace),
             workspace,
             executor._resolve_stage_def(ticket, run),
+            assembly_source=MemoryBriefingAssembly.DISPATCH,
         )
 
 

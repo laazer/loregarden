@@ -5,20 +5,25 @@
 #
 # Adapted from the blobert project's lefthook setup, retargeted at loregarden's
 # single Python root (server/) and React/oxlint client (client/), and scoped to
-# match .github/workflows/ci.yml exactly so pre-push failures predict CI failures.
+# match .github/workflows/ci.yml — with one deliberate exception: pre-push runs
+# only the tests the pushed commits reach (see below).
 #
 # pre-commit — format first (priority 100), then parallel checks (priority 1):
 #   - format-staged: ruff format/fix (Python); oxlint --fix (client)
-#   - py-review / py-pylint / py-complexity / py-organization / …
+#   - py-review / py-pylint / py-complexity / py-organization / py-silent-except / …
 #   - py-mypy: mypy on staged server Python (skips tests + migrations)
 #   - client-lint / client-dup (jscpd) / ts-organization
 #
 # Lefthook runs equal-priority commands in parallel; higher priority finishes
 # first so format can restage before lint/org see the tree.
 #
-# pre-push — full suites, mirrors CI jobs (parallel: true):
-#   - server-tests: ruff check, ruff format --check, pytest -q -n auto (server/)
-#   - client-tests: oxlint, tsc -b, jest (client/)
+# pre-push — the CI jobs, with the test runners narrowed (parallel: true):
+#   - server-tests: ruff check, ruff format --check (full), then pytest on the
+#     test files that reach the pushed changes through the import graph
+#   - client-tests: oxlint, tsc -b (full), then jest --changedSince
+#   - Both fall back to the full suite for any change they cannot map, and CI
+#     still runs everything on every PR — a green push predicts CI, it no longer
+#     proves it. LOREGARDEN_FULL_TESTS=1 runs the full suites here.
 #   - Opt-out: LEFTHOOK=0 skips all hooks; LEFTHOOK_EXCLUDE=<command> skips one command
 #
 # Requires:
@@ -59,6 +64,11 @@ pre-commit:
       priority: 1
       glob: "server/**/*.py"
       run: bash .lefthook/scripts/detect-defensive-normalization.sh {staged_files}
+    py-silent-except:
+      name: Python silently-caught exceptions
+      priority: 1
+      glob: "server/**/*.py"
+      run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_silent_except_check.py {staged_files}
     py-git-subprocess:
       name: Python git subprocess routing (GIT_DIR safety)
       priority: 1
@@ -89,10 +99,10 @@ pre-push:
   parallel: true
   commands:
     server-tests:
-      name: Server tests (ruff + pytest, mirrors CI)
+      name: Server tests (ruff full + pytest on reached tests)
       glob: "server/**/*.py"
       run: bash .lefthook/scripts/server-tests.sh
     client-tests:
-      name: Client tests (oxlint + tsc + jest, mirrors CI)
+      name: Client tests (oxlint + tsc full + jest --changedSince)
       glob: "client/**/*.{ts,tsx,js,jsx,json}"
       run: bash .lefthook/scripts/client-tests.sh

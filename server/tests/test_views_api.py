@@ -1349,3 +1349,263 @@ def test_deleting_a_pinned_views_tab_still_deletes_the_view(client: TestClient):
 
     assert client.delete(f"{VIEWS}/{view['id']}").status_code == 200
     assert _entries(client) == []
+
+
+# --- non-finite numbers in settings (444) --------------------------------
+
+
+def _raw_json(client: TestClient, method: str, url: str, body: str):
+    """A body carrying the ``Infinity``/``NaN`` literals.
+
+    ``json.dumps`` refuses to write them, so the request cannot be built with
+    ``json=``. ``json.loads`` — which is what parses the request server-side —
+    accepts them, which is exactly how one reaches the layout model in
+    production.
+    """
+    return client.request(method, url, content=body, headers={"content-type": "application/json"})
+
+
+def _layout_with_settings(raw_settings: str) -> str:
+    return (
+        '{"kind": "flex_grid",'
+        f' "containers": {{"c1": {{"kind": "panel", "settings": {raw_settings}}}}},'
+        ' "root": {"node": "leaf", "id": "n1", "size": 1.0, "container_id": "c1"}}'
+    )
+
+
+@pytest.mark.parametrize(
+    "raw_settings",
+    [
+        pytest.param('{"zoom": Infinity}', id="infinity"),
+        pytest.param('{"zoom": -Infinity}', id="negative infinity"),
+        pytest.param('{"zoom": NaN}', id="nan"),
+        pytest.param('{"camera": {"zoom": Infinity}}', id="nested"),
+        pytest.param('{"stops": [0.5, Infinity]}', id="inside a list"),
+    ],
+)
+def test_creating_a_view_with_a_non_finite_setting_is_refused(
+    client: TestClient, raw_settings: str
+):
+    """Before this rule the POST returned 201 and stored ``{"zoom": null}``: the
+    dump to JSON coerced the value before the byte cap or ``json.dumps`` saw it,
+    so nothing downstream had a chance to object. The client got a 201 for a
+    write that silently was not the one it made."""
+    body = f'{{"title": "Board", "icon": "grid", "layout": {_layout_with_settings(raw_settings)}}}'
+
+    res = _raw_json(client, "POST", VIEWS, body)
+
+    assert res.status_code == 422, res.text
+    assert client.get(VIEWS).json() == []
+
+
+def test_the_refusal_renders_a_422_body_rather_than_a_500(client: TestClient):
+    """The echoed ``input`` is the settings map that could not be written back,
+    so the error body is the one place this rejection could still become a 500.
+    The path a client acts on survives."""
+    layout = _layout_with_settings('{"z": NaN}')
+    body = f'{{"title": "Board", "icon": "grid", "layout": {layout}}}'
+
+    res = _raw_json(client, "POST", VIEWS, body)
+
+    assert res.status_code == 422
+    locations = [error["loc"] for error in res.json()["detail"]]
+    assert any("settings" in location for location in locations), res.text
+
+
+def test_updating_a_view_with_a_non_finite_setting_is_refused(client: TestClient):
+    """The rule lives on the layout model, which both routes validate through,
+    so PATCH inherits it without a second copy of the check — and the stored
+    layout is left exactly as it was."""
+    created = _create_view(client, "Board")
+    before = client.get(f"{VIEWS}/{created['id']}").json()["layout"]
+
+    layout = _layout_with_settings('{"zoom": Infinity}')
+
+    res = _raw_json(client, "PATCH", f"{VIEWS}/{created['id']}", f'{{"layout": {layout}}}')
+
+    assert res.status_code == 422, res.text
+    assert client.get(f"{VIEWS}/{created['id']}").json()["layout"] == before
+
+
+def test_a_finite_settings_value_still_round_trips_through_the_api(client: TestClient):
+    """The narrowing is number handling only. Keys the server has no vocabulary
+    for — the registry's business, not the control plane's — come back
+    byte-identical, numbers included.
+
+    Asserted on the response *bytes* rather than on the parsed mapping, because
+    the damage this rule exists to catch is at that level: parsed-dict equality
+    cannot see a value re-encoded on the way through, and a `null` where a
+    number went in is only one of the ways that shows up.
+    """
+    settings = {"primitive_id": "some.registry.id", "zoom": 1.5, "offset": -0.25, "steps": 3}
+    layout = _grid_layout(
+        containers={"c1": {"kind": ContainerKind.PANEL.value, "settings": settings}}
+    )
+
+    created = _create_view(client, "Board", layout=layout)
+
+    fetched = client.get(f"{VIEWS}/{created['id']}")
+    assert json.dumps(settings, separators=(",", ":")) in fetched.text
+    assert fetched.json()["layout"]["containers"]["c1"]["settings"] == settings
+
+
+# --- The stored viewport (480) -----------------------------------------------
+#
+# Pan and zoom live in their own column beside the layout, and the two are
+# independently settable. That independence is the point of the column: a
+# viewport changes on every pan and every zoom step, and folding it into the
+# capped, whole-layout column would put a scroll gesture and a deliberate
+# arrangement edit through one write.
+
+
+def _viewport(pan_x: float = 320.0, pan_y: float = 180.0, zoom: float = 1.5) -> dict:
+    return {"pan_x": pan_x, "pan_y": pan_y, "zoom": zoom}
+
+
+def _stored_viewport(client: TestClient, view_id: str) -> dict:
+    return client.get(f"{VIEWS}/{view_id}").json()["viewport"]
+
+
+def test_a_new_view_has_no_stored_position(client: TestClient):
+    """An empty object, not a viewport of zeroes: the canvas opens at its own
+    default rather than at the origin at a zoom of 0."""
+    created = _create_view(client, "Sketch", layout=_canvas_layout())
+
+    assert created["viewport"] == {}
+    assert _stored_viewport(client, created["id"]) == {}
+
+
+def test_a_viewport_is_read_back_unchanged(client: TestClient):
+    created = _create_view(client, "Sketch", layout=_canvas_layout())
+
+    res = client.patch(f"{VIEWS}/{created['id']}", json={"viewport": _viewport()})
+
+    assert res.status_code == 200, res.text
+    assert res.json()["viewport"] == _viewport()
+    assert _stored_viewport(client, created["id"]) == _viewport()
+    # And in the list route, which is how the sidebar and a cold open read it.
+    assert client.get(VIEWS).json()[0]["viewport"] == _viewport()
+
+
+def test_a_viewport_only_update_leaves_the_layout_alone(client: TestClient):
+    """The half a pan depends on: panning must not rewrite the arrangement."""
+    created = _create_view(client, "Sketch", layout=_canvas_layout())
+
+    res = client.patch(f"{VIEWS}/{created['id']}", json={"viewport": _viewport()})
+
+    assert res.status_code == 200, res.text
+    body = client.get(f"{VIEWS}/{created['id']}").json()
+    assert body["layout"] == _canvas_layout()
+    assert body["title"] == "Sketch"
+    assert body["kind"] == ViewKind.CANVAS.value
+
+
+def test_a_layout_only_update_leaves_the_viewport_alone(client: TestClient):
+    """And the other half: splitting a pane must not move the user's eye."""
+    created = _create_view(client, "Sketch", layout=_canvas_layout())
+    client.patch(f"{VIEWS}/{created['id']}", json={"viewport": _viewport()})
+
+    edited = _grid_layout()
+    res = client.patch(f"{VIEWS}/{created['id']}", json={"layout": edited})
+
+    assert res.status_code == 200, res.text
+    body = client.get(f"{VIEWS}/{created['id']}").json()
+    assert body["layout"] == edited
+    assert body["viewport"] == _viewport()
+
+
+def test_a_title_only_update_leaves_the_viewport_alone(client: TestClient):
+    """PATCH is true-partial across every field, not only the two new ones."""
+    created = _create_view(client, "Sketch", layout=_canvas_layout())
+    client.patch(f"{VIEWS}/{created['id']}", json={"viewport": _viewport()})
+
+    res = client.patch(f"{VIEWS}/{created['id']}", json={"title": "Renamed"})
+
+    assert res.status_code == 200, res.text
+    assert res.json()["title"] == "Renamed"
+    assert _stored_viewport(client, created["id"]) == _viewport()
+
+
+@pytest.mark.parametrize(
+    "viewport",
+    [
+        pytest.param({"pan_x": 0.0, "pan_y": 0.0, "zoom": 0.0}, id="zoom-of-zero"),
+        pytest.param({"pan_x": 0.0, "pan_y": 0.0, "zoom": -1.0}, id="negative-zoom"),
+        pytest.param({"pan_x": 0.0, "pan_y": 0.0, "zoom": 1e9}, id="zoom-past-the-ceiling"),
+        pytest.param({"pan_x": 1e12, "pan_y": 0.0, "zoom": 1.0}, id="pan-past-the-canvas"),
+        pytest.param({"pan_x": 0.0, "pan_y": -1e12, "zoom": 1.0}, id="pan-before-the-canvas"),
+        pytest.param({"zoom": 1.0}, id="a-zoom-with-no-pan"),
+        pytest.param({"pan_x": 0.0, "pan_y": 0.0}, id="a-pan-with-no-zoom"),
+        pytest.param({"panX": 0.0, "panY": 0.0, "zoom": 1.0}, id="the-clients-own-spelling"),
+        pytest.param(
+            {"pan_x": 0.0, "pan_y": 0.0, "zoom": 1.0, "rotation": 90.0}, id="an-extra-key"
+        ),
+        pytest.param({"pan_x": "far", "pan_y": 0.0, "zoom": 1.0}, id="a-pan-that-is-not-a-number"),
+    ],
+)
+def test_a_malformed_viewport_is_refused_and_stores_nothing(client: TestClient, viewport: dict):
+    """Every one of these is a viewport that renders nothing, or one whose
+    fields disagree with what the client will read back.
+
+    A zoom of 0 collapses the surface; a pan past the canvas coordinate bounds
+    addresses a point no item can occupy; a partial body would store a pan of 0
+    the client never asked for; a body spelled ``panX`` would be accepted and
+    then read back as no viewport at all. Each is refused, and the stored value
+    is asserted afterwards because a rejection that half-wrote is worse than the
+    request it refused.
+    """
+    created = _create_view(client, "Sketch", layout=_canvas_layout())
+    # Seeded through the real route and asserted, so "writes nothing" is a claim
+    # about a value that was actually there. Against an empty column the check
+    # passes for a refusal that wipes the stored viewport as readily as for one
+    # that leaves it alone.
+    seeded = client.patch(f"{VIEWS}/{created['id']}", json={"viewport": _viewport()})
+    assert seeded.status_code == 200, seeded.text
+
+    res = client.patch(f"{VIEWS}/{created['id']}", json={"viewport": viewport})
+
+    assert 400 <= res.status_code < 500, res.text
+    assert _stored_viewport(client, created["id"]) == _viewport()
+
+
+@pytest.mark.parametrize("literal", ["Infinity", "-Infinity", "NaN"])
+def test_a_non_finite_viewport_number_is_a_4xx_not_a_500(client: TestClient, literal: str):
+    """The bug 444 was about, in the field that is most exposed to it.
+
+    ``json.loads`` accepts these literals, and pydantic would coerce a
+    non-finite float to ``null`` on the way back out — so the write would
+    succeed and the client would read back a viewport it never sent.
+    """
+    created = _create_view(client, "Sketch", layout=_canvas_layout())
+    seeded = client.patch(f"{VIEWS}/{created['id']}", json={"viewport": _viewport()})
+    assert seeded.status_code == 200, seeded.text
+    body = f'{{"viewport": {{"pan_x": {literal}, "pan_y": 0.0, "zoom": 1.0}}}}'
+
+    res = _raw_json(client, "PATCH", f"{VIEWS}/{created['id']}", body)
+
+    assert res.status_code == 422, res.text
+    assert _stored_viewport(client, created["id"]) == _viewport()
+
+
+def test_a_viewport_survives_a_round_trip_at_the_bounds(client: TestClient):
+    """The edges are storable, not merely un-refused: a client that clamps to a
+    bound must not have its clamped value rejected on the way in."""
+    created = _create_view(client, "Sketch", layout=_canvas_layout())
+    extreme = {"pan_x": 10_000_000.0, "pan_y": -10_000_000.0, "zoom": 100.0}
+
+    res = client.patch(f"{VIEWS}/{created['id']}", json={"viewport": extreme})
+
+    assert res.status_code == 200, res.text
+    assert _stored_viewport(client, created["id"]) == extreme
+
+
+def test_a_grid_view_can_carry_a_viewport_too(client: TestClient):
+    """Nothing here is canvas-only. The column is on ``views``, and refusing a
+    grid's viewport would be the store enforcing a rule about which renderer
+    happens to use the field today."""
+    created = _create_view(client, "Board")
+
+    res = client.patch(f"{VIEWS}/{created['id']}", json={"viewport": _viewport()})
+
+    assert res.status_code == 200, res.text
+    assert _stored_viewport(client, created["id"]) == _viewport()

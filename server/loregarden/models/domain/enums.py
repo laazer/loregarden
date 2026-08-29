@@ -37,6 +37,18 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def comparable_utc(value: datetime) -> datetime:
+    """One instant for ordering, whether SQLite returned naive or aware.
+
+    Naive values are UTC: that is how ``utcnow`` writes, and how SQLite
+    round-trips an aware datetime by dropping tzinfo. Comparing the raw
+    column raises TypeError once a ticket mixes both.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 class TicketState(str, Enum):
     BACKLOG = "backlog"
     IN_PROGRESS = "in_progress"
@@ -95,6 +107,23 @@ class CliAdapter(str, Enum):
     CODEX = "codex"
     LMSTUDIO = "lmstudio"
     OPENCODE = "opencode"
+
+
+class ControlPlaneTransport(str, Enum):
+    """How a run actually reaches Loregarden — the channel its prompt must describe.
+
+    Not a preference and not a pin: it is resolved from the wiring the control
+    plane performed for that run. ``MCP`` means this process attached its MCP
+    server to the agent's session, so native tools exist. ``CLI`` means it did
+    not, and the agent's way in is ``scripts/loregarden-cli.sh mcp call``, which
+    runs the same tools in-process against the database.
+
+    A prompt rendered for the wrong one is not merely verbose — it instructs the
+    agent in a protocol it does not have.
+    """
+
+    MCP = "mcp"
+    CLI = "cli"
 
 
 class CompatibilityPosture(str, Enum):
@@ -477,3 +506,76 @@ class SidebarEntryKind(str, Enum):
 
     VIEW = "view"
     PAGE = "page"
+
+
+class ReferencePageKind(str, Enum):
+    """What a cached reference document is, from the fetcher's point of view.
+
+    Raw DevDocs JSON rows ride the same cache as rendered pages; the kind is
+    how a later reader tells them apart without sniffing the body.
+    """
+
+    PAGE = "page"
+    INDEX = "index"
+    CATALOG = "catalog"
+
+
+class MemoryBriefingOutcome(str, Enum):
+    """What one inherited-wisdom assembly actually did.
+
+    The distinction the whole briefing-telemetry ticket turns on is
+    ``STORE_ERROR``/``NO_STORE`` versus ``EMPTY``: a vault that would not open
+    and a vault that opened and held nothing produce the same empty prompt
+    section, and collapsing them is how retrieval stayed dead for a month
+    without anyone noticing.
+    """
+
+    BUILT = "built"
+    EMPTY = "empty"
+    STORE_ERROR = "store_error"
+    NO_STORE = "no_store"
+    SKIPPED = "skipped"
+
+
+class MemoryStoreKind(str, Enum):
+    """The stores a briefing reads, plus the factory that builds them.
+
+    ``CHECKPOINTS``, ``VAULT`` and ``GRAPH`` are real stores and are the only
+    keys ever present in ``store_states_json``. ``SERVICE`` is the store-factory
+    pseudo-store: it appears only in ``store_errors``, when
+    ``AgentMemoryService.from_settings()`` itself raised and no store was ever
+    reached.
+    """
+
+    CHECKPOINTS = "checkpoints"
+    VAULT = "vault"
+    GRAPH = "graph"
+    SERVICE = "service"
+
+
+class MemoryStoreState(str, Enum):
+    """What one store *was* during an assembly — never what its row count implies.
+
+    ``NOT_QUERIED`` is load-bearing. ``recall_related`` returns before touching
+    either recall store when the query tokenises to no terms, so neither READ
+    (nothing was read) nor UNCONFIGURED (the store exists) is true of it. It
+    never contributes to ``STORE_ERROR`` and never counts as READ.
+    """
+
+    READ = "read"
+    UNCONFIGURED = "unconfigured"
+    ERRORED = "errored"
+    NOT_QUERIED = "not_queried"
+
+
+class MemoryBriefingAssembly(str, Enum):
+    """Which prompt-assembly path built a briefing.
+
+    ``DISPATCH`` is supervised dispatch; ``RENDER`` is ``render_stage_prompt``,
+    which the terminal handoff also goes through. Two assemblies for one run is
+    a live path, and without this a legitimate pair is indistinguishable from a
+    double write.
+    """
+
+    DISPATCH = "dispatch"
+    RENDER = "render"

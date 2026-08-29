@@ -31,6 +31,7 @@ from loregarden.mcp.ticket_ops_tools import (
 )
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.mcp.tool_registry import EXTENDED_TOOLS
+from loregarden.mcp.tool_schemas import boolean_prop as _boolean_prop
 from loregarden.mcp.tool_schemas import enum_string_prop as _enum_string_prop
 from loregarden.mcp.tool_schemas import integer_prop as _integer_prop
 from loregarden.mcp.tool_schemas import string_prop as _string_prop
@@ -167,6 +168,20 @@ def _coerce_tags(args: dict[str, Any], payload: dict[str, Any]) -> None:
         payload["tags"] = [str(t).strip() for t in tags if str(t).strip()]
 
 
+def _normalize_upsert_memory_args(args: dict[str, Any]) -> dict[str, Any]:
+    payload = {
+        "title": _coerce_string(args.get("title"), field="title"),
+        "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
+    }
+    for field in ("node_id", "body", "ticket_id"):
+        if args.get(field) is not None:
+            payload[field] = _coerce_optional_string(args.get(field))
+    if args.get("discredited") is not None:
+        payload["discredited"] = _coerce_optional_bool(args.get("discredited"))
+    _coerce_tags(args, payload)
+    return payload
+
+
 def _normalize_memory_tool_args(name: str, args: dict[str, Any]) -> dict[str, Any] | None:
     """Normalize arguments for loregarden's memory/learnings/blog-post/checkpoint
     tools. Returns None if `name` isn't one of these (caller falls through)."""
@@ -183,15 +198,7 @@ def _normalize_memory_tool_args(name: str, args: dict[str, Any]) -> dict[str, An
         return payload
 
     if name == "loregarden_upsert_memory":
-        payload = {
-            "title": _coerce_string(args.get("title"), field="title"),
-            "workspace_slug": _coerce_string(args.get("workspace_slug"), field="workspace_slug"),
-        }
-        for field in ("node_id", "body", "ticket_id"):
-            if args.get(field) is not None:
-                payload[field] = _coerce_optional_string(args.get(field))
-        _coerce_tags(args, payload)
-        return payload
+        return _normalize_upsert_memory_args(args)
 
     if name == "loregarden_upsert_blog_post":
         payload = {
@@ -911,6 +918,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "workspace_slug": _string_prop(
                     "Workspace slug (required — scopes note and graph DB)."
                 ),
+                "discredited": _boolean_prop(
+                    "If true, keep the node but drop it from every memory read path. "
+                    "Set false to restore it. Omit to leave the existing flag unchanged."
+                ),
             },
             required=["title", "workspace_slug"],
         ),
@@ -1112,6 +1123,7 @@ def _execute_memory_tool(name: str, arguments: dict[str, Any]) -> str | None:
             tags=arguments.get("tags"),
             ticket_id=arguments.get("ticket_id", ""),
             workspace_slug=arguments["workspace_slug"],
+            discredited=arguments.get("discredited"),
         )
         return json.dumps(result, indent=2)
 

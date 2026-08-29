@@ -65,6 +65,19 @@ interface LayoutWrite {
 }
 
 /**
+ * What the write settled as: the newest record, and whether a request was made
+ * for it.
+ *
+ * `written` exists so the success path can tell a PATCH the server applied from
+ * an edit that asked for nothing — the two need the same record and opposite
+ * cache handling, and a bare `ViewSummary` cannot say which happened.
+ */
+interface WriteResult {
+  record: ViewSummary;
+  written: boolean;
+}
+
+/**
  * The queue a view's layout writes share.
  *
  * Per view, so two views are not serialized against each other, and stable for
@@ -84,13 +97,16 @@ function scopeFor(slug: string, viewId: string): string {
  * the layout whole, and two unserialized writes make the later one revert the
  * earlier.
  */
-export function useViewLayoutEdit(slug: string, viewId: string): (edit: LayoutEdit) => void {
+export function useViewLayoutEdit(
+  slug: string,
+  viewId: string,
+): (edit: LayoutEdit, onSettled?: () => void) => void {
   const qc = useQueryClient();
 
   const write = useMutation({
     meta: { errorTitle: "Update view" },
     scope: { id: scopeFor(slug, viewId) },
-    mutationFn: (vars: LayoutWrite) => {
+    mutationFn: async (vars: LayoutWrite): Promise<WriteResult> => {
       const key = viewsKeys.view(vars.slug, vars.viewId);
       const current = qc.getQueryData<ViewSummary>(key);
       // The view left the cache while this write waited its turn — deleted in
@@ -101,9 +117,26 @@ export function useViewLayoutEdit(slug: string, viewId: string): (edit: LayoutEd
       }
       // The edit reads the cache's layout and returns a new one; nothing here
       // mutates the record react-query is holding and the panes are drawn from.
-      return updateView(vars.slug, vars.viewId, { layout: vars.edit(current.layout) });
+      const next = vars.edit(current.layout);
+      // An edit that hands its input straight back asked for nothing. The canvas
+      // reaches this constantly — raising a container to the front on every click,
+      // and the front-most container is the one clicked most — and without this
+      // each of those clicks is a PATCH that stores the layout it already has.
+      // Identity, not deep equality: an edit that rebuilt an equal layout still
+      // decided to write, and only the caller that returned `layout` untouched is
+      // saying it did not.
+      //
+      // Reported rather than faked. Handing `current` back as though the server
+      // had answered would run the whole of `onSuccess` — which cancels every
+      // in-flight read of this view and refetches the sidebar's view list — so a
+      // click that sent no request would still cost two, which is the opposite of
+      // the point.
+      if (next === current.layout) return { record: current, written: false };
+      return { record: await updateView(vars.slug, vars.viewId, { layout: next }), written: true };
     },
-    onSuccess: (updated, vars) => {
+    onSuccess: ({ record, written }, vars) => {
+      // Nothing was sent, so nothing about the cache is stale.
+      if (!written) return;
       const key = viewsKeys.view(vars.slug, vars.viewId);
       // Every read of this view still in flight is discarded first, because all
       // of them were issued before the server applied this PATCH and any of them
@@ -118,16 +151,27 @@ export function useViewLayoutEdit(slug: string, viewId: string): (edit: LayoutEd
       // The server's record, not a refetch: the write already returned it. Under
       // the key this write's own variables name — not the one the page happens
       // to be showing now.
-      qc.setQueryData(key, updated);
+      //
+      // Every field of it *except* the viewport, which this write did not set
+      // and is not authoritative about: a pan that committed between this
+      // PATCH's commit and its response landing is already in the cache, and
+      // the record in hand still carries the position from before it.
+      // `cancelQueries` above cancels reads, not the sibling mutation.
+      qc.setQueryData<ViewSummary>(key, (previous) =>
+        previous === undefined ? record : { ...record, viewport: previous.viewport },
+      );
       qc.invalidateQueries({ queryKey: viewsKeys.views(vars.slug) });
     },
   });
 
   const mutate = write.mutate;
   return useCallback(
-    (edit: LayoutEdit) => {
+    (edit: LayoutEdit, onSettled?: () => void) => {
       if (slug === "" || viewId === "") return;
-      mutate({ slug, viewId, edit });
+      // `onSettled` fires however the write finished, and it fires for the
+      // refused ones too — which is what a caller drawing an optimistic draft
+      // needs, since a draft dropped only on success outlives every failure.
+      mutate({ slug, viewId, edit }, onSettled === undefined ? undefined : { onSettled });
     },
     [mutate, slug, viewId],
   );
