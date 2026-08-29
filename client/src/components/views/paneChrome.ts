@@ -15,6 +15,7 @@
 
 import { asJson } from "../../lib/viewLayouts";
 import { getPrimitive } from "./primitives/registry";
+import type { RegisteredPrimitive } from "./primitives/types";
 
 /**
  * The class a compact icon-only button carries.
@@ -34,6 +35,21 @@ export const ICON_BUTTON = "btn-secondary btn-compact btn-icon-only";
  * one is reworded.
  */
 export const EMPTY_PANE_TITLE = "Empty pane";
+
+/**
+ * The registry entry a stored container names, when this build still has one.
+ *
+ * `undefined` covers three different panes that a header treats the same way:
+ * one that has not picked a primitive yet, one whose stored id is not a string,
+ * and one written by a build that had a primitive this one does not. None of
+ * them has a name to show or a schema to edit.
+ */
+export function panePrimitive(container: unknown): RegisteredPrimitive | undefined {
+  const settings = asJson(asJson(container)?.settings) ?? {};
+  const primitiveId = settings.primitive_id;
+  if (typeof primitiveId !== "string" || primitiveId === "") return undefined;
+  return getPrimitive(primitiveId);
+}
 
 /**
  * What a header calls this pane: the registry's name for what it holds.

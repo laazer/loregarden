@@ -38,7 +38,7 @@ export const terminalPrimitive = definePrimitive<TerminalSettings>({
     // No slug means no shell to open. Starting one against an empty workspace
     // would spawn a session the operator did not ask for and cannot reach.
     if (settings.workspaceSlug === "") {
-      return <Unconfigured>Pick a workspace for this terminal in its settings.</Unconfigured>;
+      return <Unconfigured>This terminal has no workspace yet.</Unconfigured>;
     }
     return <TerminalPanel workspaceSlug={settings.workspaceSlug} />;
   },

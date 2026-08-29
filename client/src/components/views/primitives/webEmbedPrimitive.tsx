@@ -46,7 +46,7 @@ export const webEmbedPrimitive = definePrimitive<WebEmbedSettings>({
     // An empty URL is the same "not configured yet" state every other primitive
     // has, and says so in the same words the others do.
     if (settings.url.trim() === "") {
-      return <Unconfigured>Set an http or https URL for this embed.</Unconfigured>;
+      return <Unconfigured>This embed has no URL yet.</Unconfigured>;
     }
 
     // A refusal is not that state: it echoes back the text that was refused, so

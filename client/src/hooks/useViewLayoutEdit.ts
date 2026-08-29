@@ -41,7 +41,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
-import { newContainerFor } from "../components/views/primitives/registry";
+import {
+  containerWithSettings,
+  newContainerFor,
+} from "../components/views/primitives/registry";
+import type { ViewContainer } from "../components/views/primitives/types";
 import { asJson } from "../lib/viewLayouts";
 import { updateView, viewsKeys, type ViewLayout, type ViewSummary } from "../lib/viewsApi";
 
@@ -100,7 +104,7 @@ function scopeFor(slug: string, viewId: string): string {
 export function useViewLayoutEdit(
   slug: string,
   viewId: string,
-): (edit: LayoutEdit, onSettled?: () => void) => void {
+): (edit: LayoutEdit, onSettled?: () => void) => boolean {
   const qc = useQueryClient();
 
   const write = useMutation({
@@ -167,35 +171,96 @@ export function useViewLayoutEdit(
   const mutate = write.mutate;
   return useCallback(
     (edit: LayoutEdit, onSettled?: () => void) => {
-      if (slug === "" || viewId === "") return;
+      // No identity, no write — a pane mounted before the workspace list has
+      // resolved has `slug === ""`. Reported rather than dropped in silence:
+      // a caller that closes a form on the strength of this call needs to know
+      // the difference between "sent" and "never left the building", or a
+      // discarded edit looks exactly like a saved one.
+      if (slug === "" || viewId === "") return false;
       // `onSettled` fires however the write finished, and it fires for the
       // refused ones too — which is what a caller drawing an optimistic draft
       // needs, since a draft dropped only on success outlives every failure.
       mutate({ slug, viewId, edit }, onSettled === undefined ? undefined : { onSettled });
+      return true;
     },
     [mutate, slug, viewId],
   );
 }
 
-export function useViewLayoutWrite(
+/**
+ * Store `container` under `containerId`, replacing whatever was there.
+ *
+ * *Replacing*, never merging, and both writers below depend on it: a container's
+ * `kind` and its `settings.primitive_id` are two records of one decision, and
+ * `ContainerPrimitiveHost` refuses to mount a container where they disagree. A
+ * pick merged into the placeholder leaves `kind: "panel"` behind; a settings
+ * edit merged into the stored container does the same the moment the primitive
+ * under it changed. Composing the whole container in the registry and dropping
+ * it in here is what makes that unrepresentable rather than merely avoided.
+ *
+ * `undefined` — an id the registry does not know, from a stale option or a build
+ * that dropped the primitive — writes nothing. Posting it would be a 422.
+ *
+ * Returns whether a write was actually dispatched. Both ways of writing
+ * nothing are silent otherwise, and a caller that dismisses its form on this
+ * call would leave the user looking at a pane that did not change, with no
+ * toast and no error — a discarded edit wearing the face of a saved one.
+ */
+function useContainerReplace(
   slug: string,
   viewId: string,
-): (containerId: string, primitiveId: string) => void {
+): (containerId: string, container: ViewContainer | undefined) => boolean {
   const edit = useViewLayoutEdit(slug, viewId);
 
   return useCallback(
-    (containerId: string, primitiveId: string) => {
-      const container = newContainerFor(primitiveId);
-      // The registry does not know this id — a stale option, or a build that
-      // dropped the primitive. Posting `undefined` would be a 422.
-      if (container === undefined) return;
-      edit((layout) => {
+    (containerId: string, container: ViewContainer | undefined) => {
+      if (container === undefined) return false;
+      return edit((layout) => {
         const containers = asJson(layout.containers) ?? {};
-        // The pick *replaces* the container: a primitive merged into the
-        // placeholder leaves the old `kind` behind, which the host refuses.
         return { ...layout, containers: { ...containers, [containerId]: container } };
       });
     },
     [edit],
+  );
+}
+
+/** A container choosing its primitive: the schema's defaults, stamped with its kind. */
+export function useViewLayoutWrite(
+  slug: string,
+  viewId: string,
+): (containerId: string, primitiveId: string) => void {
+  const replace = useContainerReplace(slug, viewId);
+
+  return useCallback(
+    (containerId: string, primitiveId: string) => {
+      // The pick has nothing to keep open and nothing to tell: its panel closes
+      // on the click itself, and a refused pick leaves the pane exactly as the
+      // user still sees it. The settings editor does have a form to hold, which
+      // is why that one reads the answer.
+      replace(containerId, newContainerFor(primitiveId));
+    },
+    [replace],
+  );
+}
+
+/**
+ * A container's settings being edited (554).
+ *
+ * The same write as a pick, through the same per-view queue, because it is the
+ * same PATCH: the layout is replaced whole, and a settings write racing a split
+ * would otherwise revert it. Deliberately *not* a second mutation — 438 shipped
+ * a Critical where a second layout write read its identity from a render closure
+ * and overwrote a different view's record.
+ */
+export function useContainerSettingsWrite(
+  slug: string,
+  viewId: string,
+): (containerId: string, primitiveId: string, values: ReadonlyMap<string, unknown>) => boolean {
+  const replace = useContainerReplace(slug, viewId);
+
+  return useCallback(
+    (containerId: string, primitiveId: string, values: ReadonlyMap<string, unknown>) =>
+      replace(containerId, containerWithSettings(primitiveId, values)),
+    [replace],
   );
 }

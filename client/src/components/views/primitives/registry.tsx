@@ -32,26 +32,48 @@ export function getPrimitive(id: string): RegisteredPrimitive | undefined {
 }
 
 /**
- * The container a picked primitive id becomes.
+ * The container a primitive id and a set of field values become.
  *
  * Turning an id into a container means knowing four things about 433's wire
  * model — that a container is `{kind, settings}` with no id of its own, that
  * `primitive_id` lives *inside* `settings`, that `kind` is the entry's
- * `containerKind`, and that the rest of `settings` starts at the schema's
- * declared defaults. The picker (this ticket), the settings editor (438), the
- * grid (440) and the canvas (442) all need that, and four copies of it is four
- * chances to store a container the host then refuses. It lives here instead.
+ * `containerKind`, and that `settings` carries exactly the schema's declared
+ * keys. The picker, the settings editor (554), the grid (440) and the canvas
+ * (442) all need that, and four copies of it is four chances to store a
+ * container the host then refuses.
+ *
+ * It builds the container **whole** rather than merging into a stored one, and
+ * that is the point rather than a detail: `ContainerPrimitiveHost` refuses a
+ * container whose `kind` disagrees with its `primitive_id`, so an edit that
+ * patched `settings` underneath a stale `kind` would render a placeholder. A
+ * container composed here always stamps the `kind` its primitive belongs to.
+ * It also carries no key the schema does not declare — a field removed from a
+ * primitive leaves no orphan value behind for the next reader to puzzle over.
+ *
+ * `values` is a `Map`, not an object, for the reason stated above: a key
+ * reaching this function is compared against declared field keys, and `"key" in
+ * plainObject` answers `true` for `constructor` and `__proto__`.
  *
  * Returns `undefined` for an id the registry does not know, on the same
  * reasoning as `getPrimitive`: the caller's id can come from stored text.
  */
-export function newContainerFor(primitiveId: string): ViewContainer | undefined {
+export function containerWithSettings(
+  primitiveId: string,
+  values: ReadonlyMap<string, unknown>,
+): ViewContainer | undefined {
   const entry = getPrimitive(primitiveId);
   if (entry === undefined) return undefined;
 
   const settings: Record<string, unknown> = { primitive_id: entry.id };
-  for (const field of entry.settingsFields) settings[field.key] = field.default;
+  for (const field of entry.settingsFields) {
+    settings[field.key] = values.has(field.key) ? values.get(field.key) : field.default;
+  }
   return { kind: entry.containerKind, settings };
+}
+
+/** The container a freshly picked primitive becomes: its schema's defaults. */
+export function newContainerFor(primitiveId: string): ViewContainer | undefined {
+  return containerWithSettings(primitiveId, new Map());
 }
 
 /**
