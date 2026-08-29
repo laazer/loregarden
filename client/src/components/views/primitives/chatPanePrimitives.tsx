@@ -52,6 +52,7 @@ import {
   settingCount,
   settingString,
 } from "./chatPanePrimitive";
+import { TICKET_STATE_LABELS } from "../../../lib/ticketStates";
 import type { RegisteredPrimitive } from "./types";
 
 /**
@@ -70,6 +71,18 @@ function settingList(raw: Record<string, unknown>, key: string): string[] {
 
 /** The help line every comma-list field carries, so the format is said once. */
 const LIST_HELP = "Comma-separated. Leave empty for the default.";
+
+/**
+ * The same, for the two fields whose entries come from a closed set.
+ *
+ * `SettingsField` has no list kind, so `statuses` and `filters` stay text while
+ * every other identifier field became a `choice` — which left them the only
+ * fields asking for values with nothing on screen naming them. Spelling the
+ * states out is the cheap half of what a multi-select would give, and it is
+ * derived from `TICKET_STATE_LABELS` rather than typed out, so a state added or
+ * renamed cannot leave this line describing the old vocabulary.
+ */
+const STATE_LIST_HELP = `One or more of ${Object.keys(TICKET_STATE_LABELS).join(", ")}. ${LIST_HELP}`;
 
 /**
  * The stored value of `key`, or `fallback` when it is blank.
@@ -94,7 +107,8 @@ const ticketPanePrimitive = defineChatPanePrimitive({
   settingsFields: [
     {
       key: "ticket_id",
-      kind: "string",
+      kind: "choice",
+      source: "ticket",
       label: "Ticket",
       default: "",
       help: "The ticket this card shows, by id or external id.",
@@ -114,7 +128,8 @@ const ticketWorkflowPanePrimitive = defineChatPanePrimitive({
   settingsFields: [
     {
       key: "ticket_id",
-      kind: "string",
+      kind: "choice",
+      source: "ticket",
       label: "Ticket",
       default: "",
       help: "The ticket whose stage timeline this pane draws.",
@@ -137,7 +152,8 @@ const parentTicketPanePrimitive = defineChatPanePrimitive({
   settingsFields: [
     {
       key: "ticket_id",
-      kind: "string",
+      kind: "choice",
+      source: "ticket",
       label: "Parent ticket",
       default: "",
       help: "The parent whose children this pane lists beneath it.",
@@ -160,7 +176,8 @@ const ticketListPanePrimitive = defineChatPanePrimitive({
   settingsFields: [
     {
       key: "parent_ticket_id",
-      kind: "string",
+      kind: "choice",
+      source: "ticket",
       label: "Parent ticket",
       default: "",
       help: "List this parent's children. Leave empty for the whole ticket tree.",
@@ -198,7 +215,8 @@ const gatePanePrimitive = defineChatPanePrimitive({
   settingsFields: [
     {
       key: "ticket_id",
-      kind: "string",
+      kind: "choice",
+      source: "ticket",
       label: "Ticket",
       default: "",
       help: "The ticket whose gate this pane watches.",
@@ -234,7 +252,8 @@ const statusColumnPanePrimitive = defineChatPanePrimitive({
   settingsFields: [
     {
       key: "status",
-      kind: "string",
+      kind: "choice",
+      source: "ticket_state",
       label: "Status",
       default: "in_progress",
       help: "The ticket state this column shows — backlog, in_progress, blocked, done, wont_do.",
@@ -273,7 +292,7 @@ const kanbanPanePrimitive = defineChatPanePrimitive({
       kind: "string",
       label: "Columns",
       default: "",
-      help: `Ticket states, in order. ${LIST_HELP}`,
+      help: `Ticket states, in order. ${STATE_LIST_HELP}`,
     },
     {
       key: "ticket_ids",
@@ -307,14 +326,14 @@ const filterableKanbanPanePrimitive = defineChatPanePrimitive({
       kind: "string",
       label: "Columns",
       default: "",
-      help: `Ticket states, in order. ${LIST_HELP}`,
+      help: `Ticket states, in order. ${STATE_LIST_HELP}`,
     },
     {
       key: "filters",
       kind: "string",
       label: "Filter toggles",
       default: "",
-      help: `Which states get a toggle. ${LIST_HELP}`,
+      help: `Which states get a toggle. ${STATE_LIST_HELP}`,
     },
     {
       key: "ticket_ids",
@@ -349,7 +368,8 @@ const agentPanePrimitive = defineChatPanePrimitive({
   settingsFields: [
     {
       key: "slug",
-      kind: "string",
+      kind: "choice",
+      source: "agent",
       label: "Agent",
       default: "",
       help: "The agent slug this pane previews, e.g. frontend_implementer.",
@@ -369,7 +389,8 @@ const workflowPanePrimitive = defineChatPanePrimitive({
   settingsFields: [
     {
       key: "workflow_slug",
-      kind: "string",
+      kind: "choice",
+      source: "workflow",
       label: "Workflow",
       default: "",
       help: "The workflow template slug whose stage graph this pane draws.",
@@ -394,7 +415,8 @@ const workspacePanePrimitive = defineChatPanePrimitive({
   settingsFields: [
     {
       key: "workspace_slug",
-      kind: "string",
+      kind: "choice",
+      source: "workspace",
       label: "Workspace",
       default: "",
       help: "The workspace this card summarises.",
@@ -418,7 +440,8 @@ const branchHistoryPanePrimitive = defineChatPanePrimitive({
   settingsFields: [
     {
       key: "workspace_slug",
-      kind: "string",
+      kind: "choice",
+      source: "workspace",
       label: "Workspace",
       default: "",
       help: "The workspace whose repository holds the branch.",
@@ -466,7 +489,8 @@ const commitPanePrimitive = defineChatPanePrimitive({
   settingsFields: [
     {
       key: "workspace_slug",
-      kind: "string",
+      kind: "choice",
+      source: "workspace",
       label: "Workspace",
       default: "",
       help: "The workspace whose repository holds the commit.",

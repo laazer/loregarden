@@ -31,8 +31,36 @@ export function containerKindOf(value: unknown): ContainerKind | undefined {
   return CONTAINER_KINDS.find((kind) => kind === value);
 }
 
-/** The input kinds a settings editor knows how to render. */
-export type SettingsFieldKind = "string" | "number" | "boolean";
+/**
+ * The input kinds a settings editor knows how to render.
+ *
+ * Values first, type derived — the same shape as `CONTAINER_KINDS` above, and
+ * for the same reason: a reader checking a kind against the vocabulary tests
+ * membership of this list instead of re-spelling the literals, which is a copy
+ * no compiler keeps in step.
+ */
+export const SETTINGS_FIELD_KINDS = ["string", "number", "boolean", "choice"] as const;
+
+export type SettingsFieldKind = (typeof SETTINGS_FIELD_KINDS)[number];
+
+/**
+ * The sets a `choice` field can offer, as a closed vocabulary.
+ *
+ * A field names a source rather than carrying options of its own, for the same
+ * reason the registry exists: the primitive declaring "this is a workspace
+ * slug" should not also have to know how workspaces are fetched, and twelve
+ * copies of that knowledge is twelve chances for one to go stale. The loaders
+ * are in `usePaneSettingsChoices`, once.
+ */
+export const CHOICE_SOURCES = [
+  "workspace",
+  "ticket",
+  "agent",
+  "workflow",
+  "ticket_state",
+] as const;
+
+export type ChoiceSource = (typeof CHOICE_SOURCES)[number];
 
 interface SettingsFieldBase {
   /** Wire key inside the container's `settings` map — snake_case, per 433. */
@@ -54,7 +82,15 @@ interface SettingsFieldBase {
 export type SettingsField =
   | (SettingsFieldBase & { kind: "string"; default: string })
   | (SettingsFieldBase & { kind: "number"; default: number })
-  | (SettingsFieldBase & { kind: "boolean"; default: boolean });
+  | (SettingsFieldBase & { kind: "boolean"; default: boolean })
+  /**
+   * A string whose value names something the app can list. It stores exactly
+   * what a `string` field stores — the wire is unchanged and no `parseSettings`
+   * moves — so `source` buys an operator the list without costing the primitive
+   * anything. It is not a constraint: an unlisted value is still storable, on
+   * the same reasoning that keeps the editor from validating slugs.
+   */
+  | (SettingsFieldBase & { kind: "choice"; default: string; source: ChoiceSource });
 
 /**
  * A primitive's parsed settings: an open, JSON-shaped map.

@@ -37,6 +37,7 @@ import {
   getPrimitive,
   newContainerFor,
 } from "../primitives/registry";
+import { CHOICE_SOURCES, SETTINGS_FIELD_KINDS } from "../primitives/types";
 import type { ContainerKind } from "../primitives/types";
 
 /**
@@ -131,7 +132,11 @@ describe("AC1 — a typed registry maps ids to display metadata, a settings sche
       for (const field of entry.settingsFields) {
         expect(field.key).toMatch(/^[a-z][a-z0-9_]*$/);
         expect(field.label.length).toBeGreaterThan(0);
-        expect(["string", "number", "boolean"]).toContain(field.kind);
+        // Read from the vocabulary rather than restated: this assertion used
+        // to name three kinds, so adding a fourth failed a test that had no
+        // opinion about it.
+        expect(SETTINGS_FIELD_KINDS).toContain(field.kind);
+        if (field.kind === "choice") expect(CHOICE_SOURCES).toContain(field.source);
         expect(field).toHaveProperty("default");
       }
     }

@@ -25,7 +25,8 @@ export const terminalPrimitive = definePrimitive<TerminalSettings>({
   settingsFields: [
     {
       key: "workspace_slug",
-      kind: "string",
+      kind: "choice",
+      source: "workspace",
       label: "Workspace",
       default: "",
       help: "The workspace whose shell this pane opens.",
