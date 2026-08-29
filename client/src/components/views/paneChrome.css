@@ -218,6 +218,20 @@
   background: var(--bg1);
 }
 
+/* Both header panels shrink and scroll rather than overflow.
+   The leaf a pane is drawn in is a flex column with `overflow: hidden`, so a
+   panel taller than a short pane is *clipped* — the settings form lost its Save
+   button in a 148px pane, with no scrollbar to say so. A flex child refuses to
+   shrink below its content until `min-height: 0` says otherwise; that plus its
+   own scroll container is the whole fix, and it needs no pane height to be
+   asserted anywhere. The picker panel takes it too: it sits in the same slot
+   under the same header and clips on the same arithmetic. */
+.pane-picker-panel,
+.pane-settings-panel {
+  min-height: 0;
+  overflow-y: auto;
+}
+
 /* ── The canvas empty state ──────────────────────────────────────────────
    Laid over the viewport and transparent to the pointer, so a double-click
    still places a container through it. The card itself is the only thing that
@@ -270,3 +284,129 @@
   padding: 1px 5px;
 }
 
+
+/* ── The pane settings editor (554) ──────────────────────────────────────
+   A panel below the header row, on exactly the terms the picker panel above
+   is on: a *sibling* of the row and never a child of it, because on a canvas
+   that row is the drag handle and a press inside it that missed a control
+   would begin a move. It is also why this is not a popover — a popover needs
+   a pixel position, and a pane asserts no size to position against.
+
+   The inputs use the app's own `.input` and `.field-label`, which 556 gave a
+   definition beside the six feature-scoped copies that had grown up instead
+   of one. A seventh copy for this panel is the bug 555 was, rewritten. */
+.pane-settings-panel {
+  padding: 8px;
+  border-bottom: 1px solid var(--bd);
+  background: var(--bg1);
+}
+
+.pane-settings {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pane-settings-field {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* `.field-label` carries a bottom margin, which an inline element discards.
+   Making it a block is layout for this panel, not a second field treatment. */
+.pane-settings-field .field-label {
+  display: block;
+}
+
+/* The box and its name on one line: a checkbox's label is its hit area, so it
+   sits beside the control rather than above it like a text field's does. */
+.pane-settings-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pane-settings-check label {
+  font-size: 11.5px;
+  color: var(--txm);
+  font-weight: 500;
+  cursor: pointer;
+  min-width: 0;
+}
+
+/* Sized and tinted exactly as the client's other checkboxes are. There is
+   deliberately no bare `input {}` rule anywhere in this app — one would reach
+   every checkbox, radio and search box at once — so a scoped rule is the
+   convention here, not a seventh copy of the field treatment. */
+.pane-settings-check input {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--ac);
+  cursor: pointer;
+}
+
+.pane-settings-help {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--txl);
+}
+
+/* A refusal is not a hint, and must not read as one. */
+.pane-settings-error {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--red);
+}
+
+.pane-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ── A primitive with nothing to show yet ────────────────────────────────
+   Two lines: what is missing, then where to fix it. The second names the
+   header control by the constant the header itself labels it with. */
+.pane-unconfigured {
+  display: flex;
+  /* Fills the pane so the centring below is true rather than declared: the
+     host is a flex column, and a child that does not grow sits at its top. */
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  padding: 16px;
+}
+
+.pane-unconfigured-lead,
+.pane-unconfigured-hint {
+  margin: 0;
+  max-width: 34ch;
+  line-height: 1.5;
+}
+
+.pane-unconfigured-lead {
+  font-size: 12.5px;
+  color: var(--txm);
+}
+
+.pane-unconfigured-hint {
+  font-size: 11.5px;
+  color: var(--txl);
+}
+
+.pane-unconfigured-hint b {
+  color: var(--txm);
+  font-weight: 500;
+}

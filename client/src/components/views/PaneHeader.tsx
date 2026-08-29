@@ -44,8 +44,10 @@
 
 import { useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
-import { EMPTY_PANE_TITLE, ICON_BUTTON, paneTitle } from "./paneChrome";
+import { EMPTY_PANE_TITLE, ICON_BUTTON, paneTitle, panePrimitive } from "./paneChrome";
 import "./paneChrome.css";
+import { PaneSettingsEditor } from "./PaneSettingsEditor";
+import { PANE_SETTINGS_LABEL } from "./paneSettingsLabel";
 import { PrimitivePicker } from "./PrimitivePicker";
 
 type PaneRowPointerHandler = (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -112,7 +114,23 @@ export function PaneHeader({
   drag?: PaneDragHandle;
 }) {
   const [picking, setPicking] = useState(false);
+  const [editing, setEditing] = useState(false);
   const title = paneTitle(container);
+  const primitive = panePrimitive(container);
+  // No control where there is nothing to configure: a pane that has not picked
+  // a primitive yet, one whose primitive this build no longer has, and one whose
+  // schema declares no fields. Each would open a form with no inputs in it,
+  // which is a control that says a pane is configurable when it is not — the
+  // exact lie 554 exists to remove from the empty-pane copy.
+  const configurable = primitive !== undefined && primitive.settingsFields.length > 0;
+
+  // The two panels are one panel's worth of room, and both are opened from the
+  // same two-button zone: leaving one open behind the other stacks two forms
+  // under a header two buttons wide.
+  function openPanel(next: "settings" | "picker" | "none") {
+    setEditing(next === "settings");
+    setPicking(next === "picker");
+  }
 
   return (
     <>
@@ -129,8 +147,21 @@ export function PaneHeader({
         <span className={`pane-header-title${title === EMPTY_PANE_TITLE ? " is-empty" : ""}`}>
           {title}
         </span>
-        {/* Zone 2 — contents. A settings control joins this zone, ahead of the
-            picker; see the module docstring. */}
+        {/* Zone 2 — contents: settings, then the picker. Both edit what the pane
+            holds; neither is passed in by an arrangement. See the docstring. */}
+        {configurable ? (
+          <button
+            type="button"
+            className={ICON_BUTTON}
+            {...{ [actionAttribute]: "pane-settings" }}
+            aria-label={PANE_SETTINGS_LABEL}
+            title={PANE_SETTINGS_LABEL}
+            aria-expanded={editing}
+            onClick={() => openPanel(editing ? "none" : "settings")}
+          >
+            <span aria-hidden="true">⚙</span>
+          </button>
+        ) : null}
         <button
           type="button"
           className={ICON_BUTTON}
@@ -138,7 +169,7 @@ export function PaneHeader({
           aria-label="Change contents"
           title="Change contents"
           aria-expanded={picking}
-          onClick={() => setPicking((open) => !open)}
+          onClick={() => openPanel(picking ? "none" : "picker")}
         >
           <span aria-hidden="true">⇄</span>
         </button>
@@ -146,6 +177,20 @@ export function PaneHeader({
         {/* Zone 3 — arrangement. The arrangement's own controls. */}
         {buttons}
       </div>
+      {editing && primitive !== undefined ? (
+        <div className="pane-settings-panel">
+          {/* Keyed by the primitive: a pick made while the editor was open is a
+              different schema, and a form that kept its draft across that would
+              be holding one primitive's values against another's fields. */}
+          <PaneSettingsEditor
+            key={primitive.id}
+            containerId={containerId}
+            container={container}
+            primitive={primitive}
+            onDone={() => setEditing(false)}
+          />
+        </div>
+      ) : null}
       {picking ? (
         <div className="pane-picker-panel">
           <PrimitivePicker

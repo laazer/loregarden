@@ -45,7 +45,7 @@ export const runLedgerPrimitive = definePrimitive<RunLedgerSettings>({
     // `api.ticketLedger("")` asks for a ticket that cannot exist; a container
     // the operator has only just dropped in has no ticket yet.
     if (settings.ticketId === "") {
-      return <Unconfigured>Pick a ticket for this run ledger in its settings.</Unconfigured>;
+      return <Unconfigured>This run ledger has no ticket yet.</Unconfigured>;
     }
     return <RunLedgerPanel ticketId={settings.ticketId} isActive={settings.live} />;
   },
