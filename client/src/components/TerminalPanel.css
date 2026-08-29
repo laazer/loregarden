@@ -51,3 +51,7 @@
   font-size: 11px;
   color: #9fb0c0;
 }
+
+.xterm-screen {
+  height: 28vh !important;
+}
