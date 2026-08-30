@@ -29,22 +29,23 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 _LEFTHOOK_SCRIPTS = Path(__file__).resolve().parent
 if str(_LEFTHOOK_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_LEFTHOOK_SCRIPTS))
 
 from precommit_git_diff import (
-    DIFF_SCOPES,
+    DEFAULT_BASE_REF,
     STAGED,
-    WORKTREE,
-    git_changed_paths,
-    git_diff_cached,
-    git_diff_numstat,
+    UnexaminableError,
+    UnexaminableFileError,
     git_repo_root,
-    git_untracked_paths,
-    parse_staged_additions,
+    located_path,
+    parse_python_source,
+    read_source_text,
+    repo_relative_posix,
+    resolve_gate_scope,
 )
 from py_string_vocab import collect_enum_members, string_vocabulary_errors
 
@@ -194,14 +195,10 @@ def check_file(
 ) -> List[str]:
     errors: List[str] = []
 
-    if not py_file.exists():
-        return errors
-
-    try:
-        content = py_file.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        errors.append(f"{py_file}: not valid UTF-8 text")
-        return errors
+    # Missing, unreadable or undecodable raises out of here rather than
+    # returning an empty error list: "I found nothing wrong" and "I never read
+    # it" are the same value, and the caller took it the first way every time.
+    content = read_source_text(py_file)
 
     lines = content.count("\n") + (0 if content.endswith("\n") else 1)
     # Whole-file caps only fire when this diff makes the file net longer — a
@@ -214,7 +211,7 @@ def check_file(
         )
 
     try:
-        tree = ast.parse(content, filename=str(py_file))
+        tree = parse_python_source(content, py_file)
     except SyntaxError as exc:
         errors.append(f"{py_file}:{exc.lineno}: syntax error during organization checks: {exc.msg}")
         return errors
@@ -510,15 +507,58 @@ def python_source_root(repo_root: Path, changed_files: Optional[List[Path]] = No
     return roots[0] if len(roots) == 1 else repo_root
 
 
+#: The gate scripts themselves, which live outside every Python source root a
+#: workspace has. Without this the source-root confinement exempts exactly the
+#: code that enforces these rules: an agent editing a gate mid-stage has that
+#: edit graded by nothing, one directory over from the hole this all closes.
+#: Pre-commit already reaches them through lefthook's own glob.
+_GATE_SCRIPT_DIR_PARTS = (".lefthook", "scripts")
+
+
+def _is_gate_script(py_file: Path, repo: Path) -> bool:
+    try:
+        rel = located_path(py_file).relative_to(repo.resolve())
+    except ValueError:
+        return False
+    return rel.parts[: len(_GATE_SCRIPT_DIR_PARTS)] == _GATE_SCRIPT_DIR_PARTS
+
+
+def python_files_in_scope(
+    repo: Optional[Path], candidates: Sequence[Path], discovered: bool = True
+) -> List[Path]:
+    """The Python files a gate should read, from a run's candidate paths.
+
+    A ``discovered`` list came from a diff, so it is confined to the repo's own
+    Python source root — mirroring the lefthook glob, without which a gate
+    grades build tooling and AST-walking scripts by rules written for
+    application code. The gate scripts are the one exception: see
+    ``_is_gate_script``. An explicit list was already scoped by its caller.
+
+    Shared by every Python gate: this filter decides half of whether a run
+    examined anything, so it does not get reimplemented per gate.
+    """
+    python = [path for path in candidates if path.suffix == ".py"]
+    if repo is None or not discovered:
+        return python
+    source_root = python_source_root(repo).resolve()
+    return [
+        path
+        for path in python
+        if source_root in located_path(path).parents or _is_gate_script(path, repo)
+    ]
+
+
 def _read_and_parse(py_file: Path) -> Optional[Tuple[str, ast.AST]]:
-    if not py_file.exists():
-        return None
+    """Source and AST for a file this run grades; ``None`` only for bad syntax.
+
+    A read failure raises (see `read_source_text`). A `SyntaxError` is the one
+    case where ``None`` is honest: `check_file` reports it as a violation of its
+    own on the very same file, so the run already fails loudly and this caller
+    has nothing further to add.
+    """
+    source = read_source_text(py_file)
     try:
-        source = py_file.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        return None
-    try:
-        return source, ast.parse(source, filename=str(py_file))
+        return source, parse_python_source(source, py_file)
     except SyntaxError:
         return None
 
@@ -567,6 +607,7 @@ def build_repo_catalogs(
     still the type the rest of the commit should be using.
     """
     changed_set = {p.resolve() for p in changed_files if p.exists()}
+    unreadable: List[str] = []
     catalog: Dict[Tuple[str, ...], List[Tuple[str, str, int]]] = {}
     enum_catalog: Dict[str, Dict[str, str]] = {}
     enum_density: Dict[str, int] = {}
@@ -579,7 +620,15 @@ def build_repo_catalogs(
                 if not filename.endswith(".py"):
                     continue
                 py_file = Path(dirpath) / filename
-                parsed = _read_and_parse(py_file)
+                try:
+                    parsed = _read_and_parse(py_file)
+                except UnexaminableFileError as exc:
+                    # Not a file this run grades — it is background the DRY and
+                    # enum catalogs are built from — so it cannot make the run
+                    # report a violation clean. It can still weaken a DRY match,
+                    # so it is reported rather than dropped.
+                    unreadable.append(str(exc))
+                    continue
                 if parsed is None:
                     continue
                 source, tree = parsed
@@ -587,11 +636,13 @@ def build_repo_catalogs(
                 collect_enum_members(tree, enum_catalog)
                 added_members = sum(len(v) for v in enum_catalog.values()) - before
                 if added_members > 0:
-                    enum_density[_repo_relative_posix(py_file, root.resolve())] = added_members
+                    enum_density[repo_relative_posix(py_file, root.resolve())] = added_members
                 if py_file.resolve() in changed_set:
                     continue
                 for key, func_name, lineno, _end in function_keys_from_tree(tree, source):
                     catalog.setdefault(key, []).append((py_file.as_posix(), func_name, lineno))
+    for detail in unreadable:
+        print(f"note: catalog skipped an unreadable file, DRY matches may be short: {detail}")
     enum_home = max(enum_density, key=lambda path: enum_density[path], default="")
     return RepoCatalogs(catalog, enum_catalog, enum_home)
 
@@ -617,22 +668,6 @@ def codebase_dry_errors(
     return errors
 
 
-def _repo_relative_posix(py_file: Path, repo: Optional[Path]) -> str:
-    if repo is None:
-        return py_file.as_posix()
-    try:
-        return py_file.resolve().relative_to(repo).as_posix()
-    except ValueError:
-        return py_file.as_posix()
-
-
-def _all_line_numbers(path: Path) -> Set[int]:
-    try:
-        return set(range(1, len(path.read_text(encoding="utf-8").splitlines()) + 1))
-    except (OSError, UnicodeDecodeError):
-        return set()
-
-
 @dataclass(frozen=True)
 class Invocation:
     """How this run was asked to scope itself.
@@ -653,7 +688,7 @@ def parse_argv(argv: List[str]) -> Invocation:
     files: List[Path] = []
     repo_arg: Optional[str] = None
     diff_scope = STAGED
-    base_ref = "main"
+    base_ref = DEFAULT_BASE_REF
     rest = argv[1:]
     index = 0
     while index < len(rest):
@@ -668,8 +703,6 @@ def parse_argv(argv: List[str]) -> Invocation:
             if arg.endswith(".py"):
                 files.append(Path(arg))
             index += 1
-    if diff_scope not in DIFF_SCOPES:
-        diff_scope = STAGED
     repo = Path(repo_arg).resolve() if repo_arg else git_repo_root()
     label = "pre-commit" if diff_scope == STAGED and repo_arg is None else "gate"
     return Invocation(files, repo, diff_scope, base_ref, label)
@@ -677,55 +710,40 @@ def parse_argv(argv: List[str]) -> Invocation:
 
 def main(argv: List[str]) -> int:
     invocation = parse_argv(argv)
-    repo = invocation.repo
-    candidates = invocation.files
-    if not candidates and repo is not None:
-        # Gate mode: no explicit file list, so the diff itself says what to read.
-        # Scoped to the repo's Python source root, mirroring the lefthook glob —
-        # otherwise the gate grades build tooling and AST-walking scripts by rules
-        # written for application code.
-        source_root = python_source_root(repo).resolve()
-        candidates = [
-            path
-            for path in (
-                repo / rel
-                for rel in git_changed_paths(repo, invocation.diff_scope, invocation.base_ref)
-                if rel.endswith(".py")
-            )
-            if source_root in path.resolve().parents
-        ]
+    try:
+        return _check(invocation)
+    except UnexaminableError as exc:
+        # One handler for the one invariant: a scope this run could not resolve,
+        # and a file it could not read, are both things it did not examine — and
+        # neither may leave by the success exit.
+        print(f"{invocation.label}: cannot determine what to examine: {exc}")
+        return 1
+
+
+def _check(invocation: Invocation) -> int:
+    run = resolve_gate_scope(
+        label=invocation.label,
+        repo=invocation.repo,
+        diff_scope=invocation.diff_scope,
+        base_ref=invocation.base_ref,
+        explicit_files=invocation.files,
+        select=python_files_in_scope,
+    )
+    candidates = run.files
     if not candidates:
         return 0
 
-    additions_map: dict[str, Set[int]] = {}
-    numstat_map: Dict[str, Tuple[int, int]] = {}
-    untracked: Set[str] = set()
-    if repo is not None:
-        diff = git_diff_cached(repo, invocation.diff_scope, invocation.base_ref)
-        additions_map = {
-            path: {ln for ln, _ in items} for path, items in parse_staged_additions(diff).items()
-        }
-        numstat_map = git_diff_numstat(repo, invocation.diff_scope, invocation.base_ref)
-        if invocation.diff_scope == WORKTREE:
-            untracked = set(git_untracked_paths(repo))
-
     touched_map: Dict[Path, Optional[Set[int]]] = {}
     all_errors: List[str] = []
-    catalogs = build_repo_catalogs(candidates, repo)
+    catalogs = build_repo_catalogs(candidates, run.repo)
     for path in candidates:
-        rel = _repo_relative_posix(path, repo)
-        touched: Optional[Set[int]] = additions_map.get(rel, set()) if repo is not None else None
-        if rel in untracked:
-            # Nothing in the diff to scope against: the whole file is new.
-            touched = _all_line_numbers(path)
+        touched = run.touched_lines(path)
         touched_map[path] = touched
-        added, deleted = numstat_map.get(rel, (0, 0))
-        net_growing = added > deleted
         all_errors.extend(
             check_file(
                 path,
                 touched_lines=touched,
-                net_growing=net_growing,
+                net_growing=run.net_growing(path),
                 catalogs=catalogs,
             )
         )

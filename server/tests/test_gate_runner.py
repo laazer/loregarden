@@ -1,4 +1,6 @@
+import os
 import stat
+import sys
 import textwrap
 from unittest.mock import patch
 
@@ -441,6 +443,33 @@ def test_run_transition_gates_blank_and_whitespace_only_commands_do_not_crash(se
 
     assert result.ok
     assert result.outcome == "skipped"
+
+
+def test_gate_commands_do_not_inherit_an_ambient_git_dir(session, tmp_path):
+    """GIT_DIR overrides `cwd`, so an inherited one aims a gate at another repo.
+
+    Every transition gate resolves the scope it examines through git against the
+    workspace it was handed. Under an ambient GIT_DIR — anything nested in a git
+    hook, or a push from a worktree — git answers for that other repository
+    instead: the gate finds nothing of this workspace, examines zero files and
+    exits 0, which the orchestrator reads as a pass over unread work.
+    """
+    probe = tmp_path / "refuse_git_dir.py"
+    probe.write_text("import os, sys\nsys.exit(1 if 'GIT_DIR' in os.environ else 0)\n")
+    ws = Workspace(slug="demo", name="Demo", repo_path=str(tmp_path))
+    ticket = Ticket(id="tid", external_id="M88-11", workspace_id="ws", title="Test")
+    profile = OrchestrationProfile(
+        slug="demo",
+        gates=GatesConfig(enabled=True, commands=[f"{sys.executable} {probe}"]),
+    )
+
+    with patch.dict(os.environ, {"GIT_DIR": str(tmp_path / "elsewhere/.git")}):
+        result = run_transition_gates(
+            session, profile, ws, ticket, from_stage="implement", to_stage="review"
+        )
+
+    assert result.ok, result.message
+    assert result.outcome == GateOutcome.PASSED
 
 
 def test_gates_can_run_false_when_only_blank_commands_configured(tmp_path):

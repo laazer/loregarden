@@ -49,22 +49,23 @@ import ast
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence
 
 _LEFTHOOK_SCRIPTS = Path(__file__).resolve().parent
 if str(_LEFTHOOK_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_LEFTHOOK_SCRIPTS))
 
 from precommit_git_diff import (  # noqa: E402 - sys.path is set up just above
-    DIFF_SCOPES,
+    DEFAULT_BASE_REF,
     STAGED,
-    WORKTREE,
-    git_changed_paths,
-    git_diff_cached,
+    UnexaminableError,
+    UnexaminableFileError,
     git_repo_root,
-    git_untracked_paths,
-    parse_staged_additions,
+    parse_python_source,
+    read_source_text,
+    resolve_gate_scope,
 )
-from py_organization_check import python_source_root  # noqa: E402 - same
+from py_organization_check import python_files_in_scope  # noqa: E402 - same
 
 # Catching these catches programmer errors too, so a silent body hides anything.
 _BROAD_EXCEPTIONS: frozenset[str] = frozenset({"Exception", "BaseException"})
@@ -163,12 +164,17 @@ def _line_waives(lines: list[str], lineno: int) -> bool:
 
 def violations_in(path: Path) -> list[tuple[int, str]]:
     """(line, what-was-caught) for every silent broad catch in the file."""
+    source = read_source_text(path)
     try:
-        source = path.read_text(encoding="utf-8")
-        tree = ast.parse(source)
-    except (OSError, SyntaxError):
-        # Unreadable or mid-edit file: ruff and the test suite will speak up.
-        return []
+        tree = parse_python_source(source, path)
+    except SyntaxError as exc:
+        # "Ruff will speak up" was an assumption about a *different* run. This
+        # one graded the file and found nothing, which is not the same as the
+        # file being clean, so it says so instead of returning an empty list.
+        raise UnexaminableFileError(
+            f"{path}:{exc.lineno}: this run could not parse it, so it cannot be "
+            f"reported clean ({exc.msg})"
+        ) from exc
 
     lines = source.splitlines()
     found: list[tuple[int, str]] = []
@@ -225,7 +231,7 @@ def parse_argv(argv: list[str]) -> Invocation:
     files: list[Path] = []
     repo_arg: str | None = None
     diff_scope = STAGED
-    base_ref = "main"
+    base_ref = DEFAULT_BASE_REF
     index = 0
     while index < len(argv):
         arg = argv[index]
@@ -239,73 +245,48 @@ def parse_argv(argv: list[str]) -> Invocation:
             if arg.endswith(".py"):
                 files.append(Path(arg))
             index += 1
-    if diff_scope not in DIFF_SCOPES:
-        diff_scope = STAGED
     repo = Path(repo_arg).resolve() if repo_arg else git_repo_root()
     label = "pre-commit" if diff_scope == STAGED and repo_arg is None else "gate"
     return Invocation(files, repo, diff_scope, base_ref, label)
 
 
-def _gate_candidates(invocation: Invocation, repo: Path) -> list[Path]:
-    """Changed Python files under the repo's own source root.
+def _graded_files(repo: Path | None, candidates: Sequence[Path], discovered: bool) -> list[Path]:
+    """The Python files in scope that this gate has an opinion about.
 
-    Mirrors the lefthook glob: without it the gate grades build tooling and
-    AST-walking scripts — this file included — by rules written for application
-    code.
+    The language and source-root filtering is shared with the organization
+    gate; the exemptions are this gate's own.
     """
-    source_root = python_source_root(repo).resolve()
-    changed = (
-        repo / rel
-        for rel in git_changed_paths(repo, invocation.diff_scope, invocation.base_ref)
-        if rel.endswith(".py")
-    )
-    return [path for path in changed if source_root in path.resolve().parents]
-
-
-def _all_line_numbers(path: Path) -> set[int]:
-    try:
-        return set(range(1, len(path.read_text(encoding="utf-8").splitlines()) + 1))
-    except (OSError, UnicodeDecodeError):
-        return set()
-
-
-def _repo_relative_posix(path: Path, repo: Path | None) -> str:
-    if repo is None:
-        return path.as_posix()
-    try:
-        return path.resolve().relative_to(repo).as_posix()
-    except ValueError:
-        return path.as_posix()
+    in_scope = python_files_in_scope(repo, candidates, discovered)
+    return [path for path in in_scope if not _is_exempt(path)]
 
 
 def main(argv: list[str]) -> int:
     invocation = parse_argv(argv)
-    repo = invocation.repo
-    candidates = invocation.files
-    if not candidates and repo is not None:
-        # Gate mode: no explicit file list, so the diff itself says what to read.
-        candidates = _gate_candidates(invocation, repo)
-    candidates = [path for path in candidates if path.suffix == ".py" and not _is_exempt(path)]
+    try:
+        return _check(invocation)
+    except UnexaminableError as exc:
+        # One handler for the one invariant: a scope this run could not resolve,
+        # and a file it could not read, are both things it did not examine.
+        print(f"{invocation.label}: cannot determine what to examine: {exc}")
+        return 1
+
+
+def _check(invocation: Invocation) -> int:
+    run = resolve_gate_scope(
+        label=invocation.label,
+        repo=invocation.repo,
+        diff_scope=invocation.diff_scope,
+        base_ref=invocation.base_ref,
+        explicit_files=invocation.files,
+        select=_graded_files,
+    )
+    candidates = run.files
     if not candidates:
         return 0
 
-    additions_map: dict[str, set[int]] = {}
-    untracked: set[str] = set()
-    if repo is not None:
-        diff = git_diff_cached(repo, invocation.diff_scope, invocation.base_ref)
-        additions_map = {
-            path: {ln for ln, _ in items} for path, items in parse_staged_additions(diff).items()
-        }
-        if invocation.diff_scope == WORKTREE:
-            untracked = set(git_untracked_paths(repo))
-
     failures: list[str] = []
     for path in candidates:
-        rel = _repo_relative_posix(path, repo)
-        touched: set[int] | None = additions_map.get(rel, set()) if repo is not None else None
-        if rel in untracked:
-            # Nothing in the diff to scope against: the whole file is new.
-            touched = _all_line_numbers(path)
+        touched = run.touched_lines(path)
         for lineno, caught in violations_in(path):
             if touched is not None and lineno not in touched:
                 continue

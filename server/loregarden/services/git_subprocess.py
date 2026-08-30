@@ -33,17 +33,27 @@ GIT_LOCATION_ENV_VARS = (
     "GIT_COMMON_DIR",
     "GIT_NAMESPACE",
     "GIT_PREFIX",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CONFIG_COUNT",
 )
+
+#: Ad-hoc config git reads from `GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>` pairs,
+#: counted by `GIT_CONFIG_COUNT`. One pair setting `core.attributesFile` can mark
+#: sources `-diff`, which empties a diff while `--name-only` still lists the file
+#: — the environment reaching the hole a committed `.gitattributes` opens.
+GIT_CONFIG_ENV_PREFIXES = ("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
 
 
 def scrubbed_git_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
-    """`env` (default: the ambient environment) minus git's repo bindings.
+    """`env` (default: the ambient environment) minus git's repo bindings and config.
 
     Exposed separately because tools that shell out to git themselves — `gh`, for
     one — inherit the same bindings and need the same treatment.
     """
     base = dict(os.environ if env is None else env)
     for name in GIT_LOCATION_ENV_VARS:
+        base.pop(name, None)
+    for name in [n for n in base if n.startswith(GIT_CONFIG_ENV_PREFIXES)]:
         base.pop(name, None)
     return base
 

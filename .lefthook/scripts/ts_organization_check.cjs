@@ -205,30 +205,303 @@ function errorNarrowingErrors(filePath, ast, lines, added, repoRoot) {
   return found;
 }
 
+/**
+ * This run could not examine something it was asked to grade.
+ *
+ * **The invariant of every gate here: a gate may not report success over
+ * anything it did not actually read.** Both ways of failing it live under this
+ * one type and leave through one handler, so a third way inherits the
+ * behaviour instead of becoming the next silent pass. Mirrors
+ * `UnexaminableError` in precommit_git_diff.py.
+ */
+class UnexaminableError extends Error {}
+
+/**
+ * A scope git could not resolve — an unresolvable `--base` exits 128 with an
+ * empty stdout, indistinguishable from a clean diff. Swallowing it let this
+ * gate report a pass over a scope it never resolved; mirrors
+ * precommit_git_diff.py's `GitScopeError`.
+ */
+class GitScopeError extends UnexaminableError {}
+
+/**
+ * A file this run was told to grade but could not read or parse — missing (a
+ * cone sparse-checkout, a `skip-worktree` entry whose file was removed),
+ * unreadable, or unparseable. `existsSync` + `continue` treated every one of
+ * those exactly like a file that graded clean: `examined 1 file(s)` +
+ * `checks passed.` + exit 0, over a violation sitting in the commit.
+ * Mirrors `UnexaminableFileError` in precommit_git_diff.py.
+ */
+class UnexaminableFileError extends UnexaminableError {}
+
+/** git's C-quoting escapes, as `quote_c_style` writes them. */
+const C_ESCAPES = { a: 7, b: 8, f: 12, n: 10, r: 13, t: 9, v: 11, "\\": 92, '"': 34 };
+
+/**
+ * One git-printed path token as a real path; mirrors `decode_git_path` in
+ * precommit_git_diff.py, and see that docstring for why decoding beats `-z`.
+ *
+ * `core.quotePath` is git's default, so `src/bäd.ts` arrives from `--name-only`
+ * as `"src/b\303\244d.ts"`. Consumed raw it is not a path: it fails the
+ * `\.tsx?$` filter and is dropped, which made the *printed file count* wrong —
+ * a two-file diff announced `examined 1 file(s)` and passed over the one it
+ * never saw.
+ */
+function decodeGitPath(token) {
+  if (token.length < 2 || !token.startsWith('"') || !token.endsWith('"')) return token;
+  const body = token.slice(1, -1);
+  const bytes = [];
+  let i = 0;
+  while (i < body.length) {
+    const char = body[i];
+    if (char !== "\\") {
+      bytes.push(...Buffer.from(char, "utf8"));
+      i += 1;
+      continue;
+    }
+    i += 1;
+    const escape = body[i];
+    if (escape === undefined) {
+      throw new GitScopeError(`git printed a malformed quoted path: ${token}`);
+    }
+    if (Object.prototype.hasOwnProperty.call(C_ESCAPES, escape)) {
+      bytes.push(C_ESCAPES[escape]);
+      i += 1;
+      continue;
+    }
+    const octal = body.slice(i, i + 3);
+    if (!/^[0-7]{3}$/.test(octal)) {
+      throw new GitScopeError(`git printed a malformed quoted path: ${token}`);
+    }
+    bytes.push(parseInt(octal, 8));
+    i += 3;
+  }
+  return Buffer.from(bytes).toString("utf8");
+}
+
+/**
+ * Every path in a git command's path-per-line output, decoded. No `.trim()`:
+ * git quotes anything that would make a line ambiguous, so what is left is
+ * literal, and trimming corrupted a path with a trailing space.
+ */
+function decodedGitPaths(out) {
+  return out.split("\n").filter(Boolean).map(decodeGitPath);
+}
+
+/**
+ * The text of a file this gate is about to grade, or a loud failure. Never
+ * null: the caller cannot tell "nothing wrong here" from "I never read it",
+ * and it took the first reading every time.
+ */
+function readSource(filePath) {
+  try {
+    return fs.readFileSync(filePath, "utf8");
+  } catch (err) {
+    throw new UnexaminableFileError(
+      `${filePath}: this run could not read it, so it cannot be reported clean (${err.message})`,
+    );
+  }
+}
+
+/** The AST of a file this gate grades. A file it cannot parse is not a file it cleared. */
+function parseGradedFile(filePath, content) {
+  const ast = parseFile(filePath, content);
+  if (ast === null) {
+    throw new UnexaminableFileError(
+      `${filePath}: this run could not parse it, so it cannot be reported clean`,
+    );
+  }
+  return ast;
+}
+
+/** Scopes a caller may ask for; mirrors precommit_git_diff.py's `DIFF_SCOPES`. */
+const DIFF_SCOPES = ["staged", "worktree", "branch"];
+/** Scopes whose file list must include untracked files; mirrors `_UNTRACKED_SCOPES`. */
+const UNTRACKED_SCOPES = ["worktree", "since"];
+
+/**
+ * Git exports these into hooks and everything they spawn, and they **override
+ * `cwd`** — a gate invoked with `--repo <workspace>` from a context that has
+ * GIT_DIR set reads the *other* repository, finds nothing, and reports a pass.
+ * Mirrors `GIT_LOCATION_ENV_VARS` in precommit_git_diff.py.
+ */
+const GIT_LOCATION_ENV_VARS = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_COMMON_DIR",
+  "GIT_NAMESPACE",
+  "GIT_PREFIX",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_CONFIG_COUNT",
+];
+
+/**
+ * Ad-hoc config git reads from `GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>` pairs,
+ * counted by `GIT_CONFIG_COUNT`. One pair setting `core.attributesFile` can mark
+ * sources `-diff`, emptying a diff while `--name-only` still lists the file.
+ * Mirrors `GIT_CONFIG_ENV_PREFIXES` in precommit_git_diff.py.
+ */
+const GIT_CONFIG_ENV_PREFIXES = ["GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"];
+
+function scrubbedGitEnv() {
+  const env = { ...process.env };
+  for (const name of GIT_LOCATION_ENV_VARS) delete env[name];
+  for (const name of Object.keys(env)) {
+    if (GIT_CONFIG_ENV_PREFIXES.some((prefix) => name.startsWith(prefix))) delete env[name];
+  }
+  return env;
+}
+
 function git(args, cwd) {
   try {
     return execFileSync("git", args, {
       cwd,
+      env: scrubbedGitEnv(),
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
-  } catch {
-    return "";
+  } catch (err) {
+    const detail = String(err.stderr || err.stdout || err.message).trim();
+    throw new GitScopeError(`\`git ${args.join(" ")}\` failed in ${cwd}: ${detail}`);
   }
 }
 
-/** git-diff selector per scope; mirrors precommit_git_diff.py's `_scope_args`. */
+/** The base a gate falls back to when its caller named none. */
+const DEFAULT_BASE_REF = "main";
+
+/** Trunk names tried when `DEFAULT_BASE_REF` names nothing; `origin/HEAD` first. */
+const TRUNK_REF_CANDIDATES = ["master", "trunk", "develop"];
+
+/**
+ * Refuse a ref git would read as an option — `--base --output=/tmp/x` reached
+ * `git diff` as a flag, wrote a file outside the repository, and returned a
+ * zero-file exit 0. Mirrors precommit_git_diff.py's `_validated_ref`.
+ */
+function validatedRef(ref) {
+  if (ref.startsWith("-")) {
+    throw new GitScopeError(`base ref "${ref}" looks like an option, not a revision`);
+  }
+  return ref;
+}
+
+/**
+ * git-diff selector per scope; mirrors precommit_git_diff.py's `_scope_args`.
+ * `since` is not a scope a caller may ask for: it is the resolved form of
+ * `worktree`, an already-resolved merge base compared against the working tree.
+ */
 function scopeArgs(diffScope, baseRef) {
   if (diffScope === "worktree") return ["HEAD"];
-  if (diffScope === "branch") return [`${baseRef}...HEAD`];
+  if (diffScope === "branch") return [`${validatedRef(baseRef)}...HEAD`];
+  if (diffScope === "since") return [validatedRef(baseRef)];
   return ["--cached"];
 }
 
+/** The commit this branch forked from, or null when `baseRef` is unknown. */
+function mergeBase(repoRoot, baseRef) {
+  try {
+    return (
+      execFileSync("git", ["merge-base", validatedRef(baseRef), "HEAD"], {
+        cwd: repoRoot,
+        env: scrubbedGitEnv(),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim() || null
+    );
+  } catch (err) {
+    if (err instanceof GitScopeError) throw err;
+    // Unknown is a real answer: not every workspace calls its trunk `main`, and
+    // both callers of this either name the unresolved ref or raise.
+    return null;
+  }
+}
+
+/**
+ * True when `ref` names a commit. Separates the two failures `git merge-base`
+ * reports with the same exit status — a ref that does not exist, and a ref that
+ * exists but shares no history with HEAD. Mirrors precommit_git_diff.py's
+ * `git_rev_exists`.
+ */
+function revExists(repoRoot, ref) {
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", `${validatedRef(ref)}^{commit}`], {
+      cwd: repoRoot,
+      env: scrubbedGitEnv(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return true;
+  } catch (err) {
+    if (err instanceof GitScopeError) throw err;
+    return false;
+  }
+}
+
+/** The trunk `origin/HEAD` names (e.g. `origin/master`), or null. */
+function originHead(repoRoot) {
+  try {
+    return (
+      execFileSync("git", ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], {
+        cwd: repoRoot,
+        env: scrubbedGitEnv(),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim() || null
+    );
+  } catch (err) {
+    if (err instanceof GitScopeError) throw err;
+    return null;
+  }
+}
+
+/**
+ * `baseRef`, or this repository's actual trunk when nobody named one. Mirrors
+ * precommit_git_diff.py's `effective_base_ref`: a repository on `master` — what
+ * a bare `git init` still produces wherever `init.defaultBranch` is unset —
+ * resolved the default to nothing, degraded, and then failed every stage
+ * transition over a trunk name rather than over any code. Only the default is
+ * substituted; an explicit `--base` gets that ref or a loud failure.
+ */
+function effectiveBaseRef(repoRoot, baseRef) {
+  if (baseRef !== DEFAULT_BASE_REF || revExists(repoRoot, baseRef)) return baseRef;
+  for (const candidate of [originHead(repoRoot), ...TRUNK_REF_CANDIDATES]) {
+    if (candidate && candidate !== baseRef && revExists(repoRoot, candidate)) return candidate;
+  }
+  return baseRef;
+}
+
+/**
+ * The empty tree's hash as this repository spells it; diffing against it yields
+ * everything, which is the branch diff of a branch sharing no commit with its
+ * base. Mirrors precommit_git_diff.py's `git_empty_tree`.
+ */
+function emptyTree(repoRoot) {
+  return git(["hash-object", "-t", "tree", "/dev/null"], repoRoot).trim();
+}
+
+/**
+ * False in a repository with no commits yet — an unborn HEAD. `git diff HEAD`
+ * cannot resolve there, but a brand-new workspace is not a scope the gate
+ * failed to resolve: every file in it is untracked. Mirrors
+ * precommit_git_diff.py's `git_has_head`.
+ */
+function hasHead(repoRoot) {
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", "HEAD"], {
+      cwd: repoRoot,
+      env: scrubbedGitEnv(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function untrackedPaths(repoRoot) {
-  return git(["ls-files", "--others", "--exclude-standard"], repoRoot)
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
+  return decodedGitPaths(git(["ls-files", "--others", "--exclude-standard"], repoRoot));
 }
 
 /**
@@ -236,23 +509,284 @@ function untrackedPaths(repoRoot) {
  * Untracked files are included under `worktree` for the same reason the Python
  * gate includes them: a new file an agent just wrote is the least reviewed code
  * in the change, and `git diff` never lists it.
+ *
+ * Every path, not just the TypeScript ones — `resolveScope` needs to know
+ * whether the *tree* is clean, and a run that only touched Python is not a
+ * clean tree.
  */
 function changedPaths(repoRoot, diffScope, baseRef) {
+  if (diffScope === "worktree" && !hasHead(repoRoot)) {
+    return [...new Set(untrackedPaths(repoRoot))];
+  }
   const out = git(
-    ["diff", ...scopeArgs(diffScope, baseRef), "--name-only", "--diff-filter=ACMR"],
+    ["diff", ...scopeArgs(diffScope, baseRef), "--name-only", "--diff-filter=ACMR", "--"],
     repoRoot,
   );
-  const paths = out.split("\n").map((l) => l.trim()).filter(Boolean);
-  if (diffScope === "worktree") paths.push(...untrackedPaths(repoRoot));
-  return [...new Set(paths)].filter((p) => /\.(ts|tsx)$/.test(p));
+  const paths = decodedGitPaths(out);
+  if (UNTRACKED_SCOPES.includes(diffScope)) paths.push(...untrackedPaths(repoRoot));
+  return [...new Set(paths)];
+}
+
+/** How a scope reads in the `examined N file(s) — …` line. */
+function describeScope(diffScope, baseRef) {
+  if (diffScope === "worktree") return "worktree changes vs HEAD";
+  if (diffScope === "branch") return `branch diff ${baseRef}...HEAD`;
+  if (diffScope === "since") return `worktree and branch changes since ${baseRef}`;
+  return "staged changes";
+}
+
+/**
+ * What this run should examine, and never "nothing" — mirrors
+ * precommit_git_diff.py's `resolve_scope`. A driver that commits the ticket
+ * worktree to satisfy the worktree-retire guard empties the `HEAD` diff, so
+ * `worktree` resolves to the merge base instead: one diff carrying the branch's
+ * commits *and* whatever is still uncommitted. The two are not alternatives —
+ * consulting the branch only when the whole tree happened to be clean left one
+ * stray untracked file able to hide the committed change again.
+ */
+function resolveScope(repoRoot, diffScope, requestedBaseRef) {
+  const baseRef = effectiveBaseRef(repoRoot, requestedBaseRef);
+  if (diffScope !== "worktree") {
+    return {
+      diffScope,
+      baseRef,
+      paths: changedPaths(repoRoot, diffScope, baseRef),
+      description: describeScope(diffScope, baseRef),
+      includesUntracked: false,
+    };
+  }
+  if (!hasHead(repoRoot)) {
+    return {
+      diffScope,
+      baseRef,
+      paths: changedPaths(repoRoot, "worktree", baseRef),
+      description: "worktree changes (no commits yet)",
+      includesUntracked: true,
+    };
+  }
+  const base = mergeBase(repoRoot, baseRef);
+  if (base === null && revExists(repoRoot, baseRef)) {
+    // The ref resolves; the histories are disjoint (orphan branch, re-inited
+    // repo, shallow clone). Every commit on this branch is unshared, so the
+    // branch diff is the whole tree. Refusing to run here blocked every stage
+    // transition in such a workspace. Mirrors precommit_git_diff.py.
+    const root = emptyTree(repoRoot);
+    return {
+      diffScope: "since",
+      baseRef: root,
+      paths: changedPaths(repoRoot, "since", root),
+      description: `whole branch and worktree (no common ancestor with "${baseRef}")`,
+      includesUntracked: true,
+    };
+  }
+  if (base === null) {
+    // Degraded, not resolved: this scope cannot see the branch's commits, so
+    // `resolveGateScope` refuses to call it a pass if it grades nothing.
+    return {
+      diffScope: "worktree",
+      baseRef,
+      paths: changedPaths(repoRoot, "worktree", baseRef),
+      description:
+        `worktree changes vs HEAD (base "${baseRef}" did not resolve; ` +
+        "branch commits not examined)",
+      includesUntracked: true,
+      degraded: true,
+    };
+  }
+  return {
+    diffScope: "since",
+    baseRef: base,
+    paths: changedPaths(repoRoot, "since", base),
+    description: describeScope("since", baseRef),
+    includesUntracked: true,
+  };
+}
+
+/**
+ * Resolve, filter, count, announce and diff — the whole preamble, once, so no
+ * gate can omit one of the steps and report a pass over files it never read.
+ * The returned `touched(filePath, lineCount)` answers with the *resolved*
+ * scope: a gate reaching for the requested one instead prints a credible file
+ * count over an empty touched-line set. Mirrors precommit_git_diff.py's
+ * `resolve_gate_scope` / `GateRun`.
+ */
+function resolveGateScope({ label, repoRoot, diffScope, baseRef, files, select }) {
+  if (!DIFF_SCOPES.includes(diffScope)) {
+    // Coercing an unrecognised `--scope` to `staged` made a typo examine the
+    // index — empty at a stage transition — and exit 0 over a committed
+    // violation. Mirrors precommit_git_diff.py's `resolve_gate_scope`.
+    throw new GitScopeError(
+      `unknown scope "${diffScope}"; expected one of ${DIFF_SCOPES.join(", ")}`,
+    );
+  }
+  // An explicit file list (lefthook) means the caller already scoped this run.
+  const scope =
+    files.length > 0
+      ? {
+          diffScope,
+          baseRef,
+          paths: [],
+          description: describeScope(diffScope, baseRef),
+          // Derived, not assumed: an explicitly named untracked file under
+          // `--scope worktree` has no diff to read, and calling it tracked left
+          // its whole contents ungraded while Python graded them.
+          includesUntracked: UNTRACKED_SCOPES.includes(diffScope),
+          degraded: false,
+        }
+      : resolveScope(repoRoot, diffScope, baseRef);
+  const discovered = files.length === 0;
+  const candidates = discovered ? scope.paths.map((rel) => path.resolve(repoRoot, rel)) : files;
+  const graded = select(candidates, discovered);
+  if (scope.degraded && graded.length === 0) {
+    // The fallback is only tolerable while it still has something to grade.
+    // With nothing left, this run read none of the branch's commits and none of
+    // the working tree either: exiting 0 would report a pass over a scope that
+    // was never resolved.
+    throw new GitScopeError(
+      `base ref "${scope.baseRef}" did not resolve, so this run fell back to ` +
+        "worktree changes vs HEAD and found nothing to grade: the branch's " +
+        "commits went unread",
+    );
+  }
+  // Counted after filtering, always: the number has to be the number of files
+  // the gate read, or it is one more thing that looks like a pass over work.
+  console.log(`${label}: examined ${graded.length} file(s) — ${scope.description}`);
+  if (discovered && hasHead(repoRoot)) announceUngradedSubmodules(label, repoRoot, scope);
+  const untracked = new Set(
+    scope.includesUntracked && graded.length > 0
+      ? untrackedPaths(repoRoot).map((p) => path.resolve(repoRoot, p))
+      : [],
+  );
+  const undiffable =
+    graded.length > 0
+      ? undiffablePaths(repoRoot, scope.diffScope, scope.baseRef)
+      : new Set();
+  const touched = (filePath, lineCount) => {
+    const abs = path.resolve(filePath);
+    // Changed, but git would not say where: there is no smaller honest answer
+    // than the whole file, and the empty set is what let `-diff` pass everything.
+    if (undiffable.has(abs) && !untracked.has(abs)) return wholeFile(lineCount);
+    return stagedAdditions(
+      path.relative(repoRoot, abs),
+      repoRoot,
+      scope.diffScope,
+      scope.baseRef,
+      untracked.has(abs),
+      lineCount,
+    );
+  };
+  return { scope, files: graded, touched };
+}
+
+/** `git diff --raw` spells a gitlink — a submodule pointer — with this mode. */
+const GITLINK_MODE = "160000";
+
+/**
+ * Say out loud that a submodule bump went ungraded.
+ *
+ * `--name-only` lists the gitlink like any other path, the language filter
+ * drops it (it is a directory), and the run prints `examined 0 file(s)` and
+ * exits 0 over a change nobody read. A gate cannot grade another repository,
+ * and failing on every pointer move would block transitions for reasons
+ * unrelated to code quality — but silently exiting 0 is the one option this
+ * ticket exists to remove. Mirrors `announce_ungraded_submodules`.
+ */
+function announceUngradedSubmodules(label, repoRoot, scope) {
+  const out = git(
+    ["diff", ...scopeArgs(scope.diffScope, scope.baseRef), "--raw", "--"],
+    repoRoot,
+  );
+  const found = new Set();
+  for (const line of out.split("\n")) {
+    if (!line.startsWith(":")) continue;
+    const [head, ...rest] = line.split("\t");
+    if (rest.length === 0) continue;
+    const modes = head.slice(1).split(/\s+/).slice(0, 2);
+    if (!modes.includes(GITLINK_MODE)) continue;
+    found.add(decodeGitPath(rest[rest.length - 1]));
+  }
+  if (found.size === 0) return;
+  const names = [...found].sort();
+  console.log(
+    `${label}: not examined — ${names.length} submodule(s) changed ` +
+      `(${names.join(", ")}); gate their own repository there`,
+  );
+}
+
+function wholeFile(lineCount) {
+  const added = new Set();
+  for (let i = 1; i <= lineCount; i += 1) added.add(i);
+  return { added, addedCount: lineCount, deletedCount: 0 };
+}
+
+/**
+ * Absolute paths git reports as changed but produces no hunk for — graded whole.
+ *
+ * Two ways in, one meaning. `--numstat` writes `-\t-\tpath` for a diff git
+ * itself declines: a real binary, or a path a `.gitattributes` entry marks
+ * `-diff`/`binary`. But a `diff=<driver>` naming a command that prints nothing,
+ * and a `filter=` that cleans a file to empty, suppress the diff with real
+ * counts still reported — the marker never fires, `stagedAdditions` fell
+ * through its `if (!diff)` to an empty added-set, and the gate printed a
+ * plausible count and a pass over a committed violation. So the diff text is
+ * asked directly: *did you emit a `+++ b/<path>` header for this path*. That
+ * question has one answer for every way of suppressing a diff, including the
+ * next one.
+ *
+ * Non-zero counts are the discriminator: a mode-only `chmod` reports `0\t0` and
+ * legitimately has no hunk, so it stays out. Mirrors `DiffNumstat.undiffable`
+ * plus `suppressed_diff_paths` in precommit_git_diff.py; two git calls for the
+ * whole run.
+ */
+function undiffablePaths(repoRoot, diffScope, baseRef) {
+  const out = git(["diff", ...scopeArgs(diffScope, baseRef), "--numstat", "--"], repoRoot);
+  const suppressed = new Set();
+  const counted = new Map();
+  for (const line of out.split("\n")) {
+    const parts = line.split("\t");
+    if (parts.length !== 3) continue;
+    const rel = decodeGitPath(parts[2]);
+    if (parts[0] === "-" || parts[1] === "-") {
+      suppressed.add(path.resolve(repoRoot, rel));
+      continue;
+    }
+    counted.set(rel, Number(parts[0]) + Number(parts[1]));
+  }
+  const diff = git(
+    ["diff", ...scopeArgs(diffScope, baseRef), "--no-color", "-U0", "--"],
+    repoRoot,
+  );
+  const headers = new Set(
+    diff
+      .split("\n")
+      .filter((line) => line.startsWith("+++ "))
+      .map((line) => decodeGitPath(line.slice(4)))
+      .filter((name) => name.startsWith("b/"))
+      .map((name) => name.slice(2)),
+  );
+  for (const [rel, changed] of counted) {
+    if (changed > 0 && !headers.has(rel)) suppressed.add(path.resolve(repoRoot, rel));
+  }
+  // A path this scope *adds* is new in its entirety, exactly like an untracked
+  // one. Normally a no-op — every line of an added file is a `+` line anyway —
+  // which is why it is safe, and why it is asked separately: a `filter=` whose
+  // clean step empties the blob commits the file with no content, so `--numstat`
+  // says `0\t0` and the diff carries no hunk while the file on disk (the one
+  // this gate reads) is full of code. Counts alone cannot tell that from a
+  // mode-only `chmod`; "it is new, so all of it is new" can. Mirrors
+  // `git_added_paths` in precommit_git_diff.py.
+  const added = git(
+    ["diff", ...scopeArgs(diffScope, baseRef), "--name-only", "--diff-filter=A", "--"],
+    repoRoot,
+  );
+  for (const rel of decodedGitPaths(added)) suppressed.add(path.resolve(repoRoot, rel));
+  return suppressed;
 }
 
 function stagedAdditions(repoRel, repoRoot, diffScope, baseRef, isUntracked, lineCount) {
   if (isUntracked) {
     // Nothing to diff against: the whole file is new.
-    const added = new Set();
-    for (let i = 1; i <= lineCount; i += 1) added.add(i);
-    return { added, addedCount: lineCount, deletedCount: 0 };
+    return wholeFile(lineCount);
   }
   const diff = git(
     ["diff", ...scopeArgs(diffScope, baseRef), "--no-color", "-U0", "--", repoRel],
@@ -316,8 +850,8 @@ function checkFile(filePath, content, lines, { added, netGrowing, repoRoot }) {
     });
   }
 
-  const ast = parseFile(filePath, content);
-  if (ast) {
+  const ast = parseGradedFile(filePath, content);
+  {
     fileErrors.push(...errorNarrowingErrors(filePath, ast, lines, added, repoRoot));
     const functions = extractFunctions(ast, lines);
     const seen = new Map();
@@ -372,8 +906,13 @@ function buildCatalog(changedSet, repoRoot) {
             if (!catalog.has(fn.key)) catalog.set(fn.key, []);
             catalog.get(fn.key).push({ file: full, name: fn.name, line: fn.line });
           }
-        } catch {
-          // skip
+        } catch (err) {
+          // Background for the DRY catalog, not a file this run grades, so it
+          // cannot make the run report a violation clean. It can still weaken a
+          // DRY match, so it is reported rather than dropped.
+          console.error(
+            `note: catalog skipped an unreadable file, so DRY matches may be incomplete: ${full}: ${err.message}`,
+          );
         }
       }
     }
@@ -384,8 +923,7 @@ function buildCatalog(changedSet, repoRoot) {
 
 function crossDryErrors(filePath, content, lines, catalog) {
   const fileErrors = [];
-  const ast = parseFile(filePath, content);
-  if (!ast) return fileErrors;
+  const ast = parseGradedFile(filePath, content);
   for (const fn of extractFunctions(ast, lines)) {
     const matches = catalog.get(fn.key);
     if (!matches || matches.length === 0) continue;
@@ -404,68 +942,81 @@ function parseArgv(argv) {
   const files = [];
   let repoArg = null;
   let diffScope = "staged";
-  let baseRef = "main";
+  let baseRef = DEFAULT_BASE_REF;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === "--repo" && argv[i + 1]) repoArg = argv[(i += 1)];
     else if (argv[i] === "--scope" && argv[i + 1]) diffScope = argv[(i += 1)];
     else if (argv[i] === "--base" && argv[i + 1]) baseRef = argv[(i += 1)];
     else if (/\.(ts|tsx)$/.test(argv[i])) files.push(argv[i]);
   }
-  if (!["staged", "worktree", "branch"].includes(diffScope)) diffScope = "staged";
   const repoRoot = repoArg ? path.resolve(repoArg) : process.cwd();
   const label = diffScope === "staged" && !repoArg ? "pre-commit" : "gate";
   return { files, repoRoot, diffScope, baseRef, label };
 }
 
-const { files, repoRoot, diffScope, baseRef, label } = parseArgv(process.argv.slice(2));
-
-// Gate mode: no explicit list, so the diff says what to read — confined to the
-// repo's TypeScript source root, mirroring the lefthook glob.
-const sourceRoot = tsSourceRoot(repoRoot);
-const args =
-  files.length > 0
-    ? files
-    : changedPaths(repoRoot, diffScope, baseRef)
-        .map((rel) => path.resolve(repoRoot, rel))
-        .filter((full) => full.startsWith(`${sourceRoot}${path.sep}`));
-
-if (args.length === 0) {
-  process.exit(0);
+/**
+ * The TypeScript files this gate grades. A `discovered` list came from a diff,
+ * so it is confined to the repo's own source root — mirroring the lefthook
+ * glob, so the gate does not judge build tooling by rules written for
+ * application code. An explicit list was already scoped by its caller, and
+ * narrowing it again would silently drop files that caller meant to have
+ * graded.
+ */
+function tsFilesInScope(repoRoot, candidates, discovered) {
+  const sourceRoot = tsSourceRoot(repoRoot);
+  return candidates.filter(
+    (candidate) =>
+      /\.(ts|tsx)$/.test(candidate) &&
+      (!discovered || path.resolve(repoRoot, candidate).startsWith(`${sourceRoot}${path.sep}`)),
+  );
 }
 
-const untracked = new Set(
-  diffScope === "worktree" ? untrackedPaths(repoRoot).map((p) => path.resolve(repoRoot, p)) : [],
-);
-const changedSet = new Set(args.map((a) => path.resolve(a)));
-const catalog = buildCatalog(changedSet, repoRoot);
-
-for (const filePath of args) {
-  if (!fs.existsSync(filePath)) continue;
-  const content = fs.readFileSync(filePath, "utf8");
-  const lines = content.split("\n");
-  const repoRel = path.relative(repoRoot, path.resolve(filePath));
-  const { added, addedCount, deletedCount } = stagedAdditions(
-    repoRel,
+function run({ files, repoRoot, diffScope, baseRef, label }) {
+  const { files: args, touched } = resolveGateScope({
+    label,
     repoRoot,
     diffScope,
     baseRef,
-    untracked.has(path.resolve(filePath)),
-    lines.length,
-  );
-  const netGrowing = addedCount > deletedCount;
-  errors.push(...checkFile(filePath, content, lines, { added, netGrowing, repoRoot }));
-  if (!isTestFile(filePath)) {
-    errors.push(...crossDryErrors(filePath, content, lines, catalog));
+    files,
+    select: (candidates, discovered) => tsFilesInScope(repoRoot, candidates, discovered),
+  });
+  if (args.length === 0) {
+    return 0;
   }
+
+  const changedSet = new Set(args.map((a) => path.resolve(a)));
+  const catalog = buildCatalog(changedSet, repoRoot);
+
+  for (const filePath of args) {
+    const content = readSource(filePath);
+    const lines = content.split("\n");
+    const { added, addedCount, deletedCount } = touched(filePath, lines.length);
+    const netGrowing = addedCount > deletedCount;
+    errors.push(...checkFile(filePath, content, lines, { added, netGrowing, repoRoot }));
+    if (!isTestFile(filePath)) {
+      errors.push(...crossDryErrors(filePath, content, lines, catalog));
+    }
+  }
+
+  if (errors.length > 0) {
+    console.error(`${label}: TypeScript organization check failed:`);
+    for (const err of errors) {
+      console.error(` - ${err}`);
+    }
+    return 1;
+  }
+
+  console.log(`${label}: TypeScript organization checks passed.`);
+  return 0;
 }
 
-if (errors.length > 0) {
-  console.error(`${label}: TypeScript organization check failed:`);
-  for (const err of errors) {
-    console.error(` - ${err}`);
-  }
+const invocation = parseArgv(process.argv.slice(2));
+try {
+  process.exit(run(invocation));
+} catch (err) {
+  if (!(err instanceof UnexaminableError)) throw err;
+  // One handler for the one invariant: a scope this run could not resolve, and
+  // a file it could not read, are both things it did not examine.
+  console.error(`${invocation.label}: cannot determine what to examine: ${err.message}`);
   process.exit(1);
 }
-
-console.log(`${label}: TypeScript organization checks passed.`);
-process.exit(0);

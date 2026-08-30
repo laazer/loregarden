@@ -12,6 +12,7 @@ from pathlib import Path
 
 from loregarden.config import settings
 from loregarden.models.domain import GateOutcome, Ticket, WorkflowStageDef, Workspace
+from loregarden.services.git_subprocess import scrubbed_git_env
 from loregarden.services.handoff_store import HANDOFF_SCRATCH_SUBDIR, export_for_gate
 from loregarden.services.orchestration_profile import GatesConfig, OrchestrationProfile
 from loregarden.services.ticket_worktree import resolve_ticket_root
@@ -139,6 +140,11 @@ def _run_command(command: str, cwd: Path) -> GateRunResult:
         completed = subprocess.run(
             argv,
             cwd=cwd,
+            # GIT_DIR and friends override `cwd`, and every transition gate
+            # resolves its own scope through git against the workspace it was
+            # handed. An inherited binding aims them at another repository,
+            # where they examine nothing and exit 0 — a pass over unread work.
+            env=scrubbed_git_env(),
             capture_output=True,
             text=True,
             timeout=GATE_TIMEOUT_SECONDS,

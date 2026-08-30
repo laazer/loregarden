@@ -8,6 +8,7 @@ These pin the parts that make one script serve both.
 
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -41,7 +42,10 @@ def _git(repo: Path, *args: str) -> None:
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    _git(tmp_path, "init", "-q", ".")
+    # `-b main`: the gate's default base ref is `main`, and a machine whose
+    # init.defaultBranch is `master` would otherwise hand these tests a base
+    # that does not resolve.
+    _git(tmp_path, "init", "-q", "-b", "main", ".")
     _git(tmp_path, "config", "user.email", "t@example.com")
     _git(tmp_path, "config", "user.name", "t")
     return tmp_path
@@ -67,8 +71,15 @@ def test_repo_and_scope_flags_are_gate_mode():
     assert inv.files == []
 
 
-def test_unknown_scope_falls_back_to_staged():
-    assert checker.parse_argv(["prog", "--scope", "nonsense"]).diff_scope == "staged"
+def test_unknown_scope_is_carried_through_to_be_refused_not_coerced():
+    """Coercing a typo'd `--scope` to `staged` examined the index and exited 0.
+
+    At a stage transition the index is empty, so `--scope wortree` read nothing
+    over a committed violation. `parse_argv` now reports what it was given and
+    `resolve_gate_scope` raises on it — see
+    `test_gate_scope_visibility.py::test_an_unrecognised_scope_is_refused_...`.
+    """
+    assert checker.parse_argv(["prog", "--scope", "nonsense"]).diff_scope == "nonsense"
 
 
 def test_branch_scope_takes_a_base_ref():
@@ -164,7 +175,14 @@ def test_worktree_scope_reads_untracked_files(repo: Path):
     assert "brand_new.py" in result.stdout
 
 
-def test_clean_worktree_passes(repo: Path):
+def test_clean_worktree_with_nothing_on_the_branch_reports_zero_files(repo: Path):
+    """Nothing edited and nothing on the branch: the gate graded nothing.
+
+    That does not block the transition — a stage that changes no code is
+    legitimate — but it must not be reported in the same words as a run that
+    read files and found them clean. Exit code 0 alone is what let a committed
+    stage look like a reviewed one.
+    """
     src = repo / "src" / "pkg"
     src.mkdir(parents=True)
     (src / "mod.py").write_text("x = 1\n")
@@ -173,6 +191,8 @@ def test_clean_worktree_passes(repo: Path):
 
     result = _run_gate(repo)
     assert result.returncode == 0
+    assert re.search(r"examined\s+0\s+file", result.stdout), result.stdout
+    assert "passed" not in result.stdout.lower()
 
 
 def test_repo_without_python_is_a_no_op(repo: Path):
