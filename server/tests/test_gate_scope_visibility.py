@@ -147,8 +147,14 @@ def _require_ts_parser() -> None:
 
 
 def _run_gate(
-    gate: list[str], repo: Path, *extra: str, scope: str = "worktree"
+    gate: list[str], repo: Path, *extra: str, scope: str = "worktree", timeout: float | None = None
 ) -> subprocess.CompletedProcess:
+    """Run a gate against `repo`.
+
+    `timeout` is for the cases where hanging *is* the failure: a gate that
+    follows a graded path into a character device never returns, and without a
+    bound the test does not fail, it stops the suite.
+    """
     if gate is TS_ORGANIZATION_GATE:
         _require_ts_parser()
     return subprocess.run(
@@ -156,6 +162,7 @@ def _run_gate(
         capture_output=True,
         text=True,
         env=_scrubbed_env(),
+        timeout=timeout,
     )
 
 
@@ -900,24 +907,36 @@ def test_an_explicitly_named_untracked_file_is_graded_whole(
     assert Path(relpath).name in _out(result)
 
 
-#: A symlinked source whose target is a *repository* file, per language. The
-#: link sits in the language's source root; the file it points at sits at the
-#: repo root, outside that root, so it is reached only through the link.
+#: The sentence every `UnexaminableFileError` ends with. A gate that refused a
+#: file prints it; a gate that graded one never does. Asserting its *absence*
+#: is how a positive control tells "graded and found a violation" apart from
+#: "refused, exit 1, file named" — which are otherwise the same three
+#: observations, and which is exactly how a guard that refuses everything
+#: passes for a guard that refuses escapes.
+REFUSAL_SENTENCE = "cannot be reported clean"
+
+#: A symlinked source whose target is a *repository* file, per language, with
+#: the line its violation sits on. The link sits in the language's source root;
+#: the file it points at sits at the repo root, outside that root, so it is
+#: reached only through the link.
 IN_REPO_SYMLINK_GATES = [
-    pytest.param(PY_ORGANIZATION_GATE, "src/pkg/linked.py", PY_ORGANIZATION_VIOLATION, id="py-org"),
+    pytest.param(
+        PY_ORGANIZATION_GATE, "src/pkg/linked.py", PY_ORGANIZATION_VIOLATION, 3, id="py-org"
+    ),
     pytest.param(
         PY_SILENT_EXCEPT_GATE,
         "src/pkg/linked.py",
         PY_SILENT_EXCEPT_VIOLATION,
+        5,
         id="py-silent-except",
     ),
-    pytest.param(TS_ORGANIZATION_GATE, "client/src/linked.ts", TS_VIOLATION, id="ts-org"),
+    pytest.param(TS_ORGANIZATION_GATE, "client/src/linked.ts", TS_VIOLATION, 2, id="ts-org"),
 ]
 
 
-@pytest.mark.parametrize(("gate", "relpath", "body"), IN_REPO_SYMLINK_GATES)
+@pytest.mark.parametrize(("gate", "relpath", "body", "violation_line"), IN_REPO_SYMLINK_GATES)
 def test_a_symlinked_source_file_is_still_graded(
-    repo: Path, gate: list[str], relpath: str, body: str
+    repo: Path, gate: list[str], relpath: str, body: str, violation_line: int
 ) -> None:
     """The positive control, and the one that keeps the escape guard a guard.
 
@@ -930,6 +949,13 @@ def test_a_symlinked_source_file_is_still_graded(
     symlink passes every hostile case in this file and turns a safety check into
     the outage it was meant to prevent, so a link whose target is inside the
     repository must still be read and still be graded.
+
+    Exit 1 and the file's name are not enough to say that: a refusal produces
+    both. What only a graded run produces is the violation's *line number* —
+    the gate had to read and parse the file to find it — and what only a
+    refused run produces is `REFUSAL_SENTENCE`. Both are asserted, so an
+    implementation that refuses the link instead of reading it fails here
+    rather than passing as a stricter gate.
     """
     link = repo / relpath
     real = repo / f"linked_target{link.suffix}"
@@ -939,7 +965,8 @@ def test_a_symlinked_source_file_is_still_graded(
     result = _run_gate(gate, repo, "--base", "main")
 
     assert result.returncode == 1, _out(result)
-    assert link.name in _out(result), _out(result)
+    assert f"{link.name}:{violation_line}:" in _out(result), _out(result)
+    assert REFUSAL_SENTENCE not in _out(result), _out(result)
 
 
 #: The same three gates over a link whose target is *outside* the repository,
@@ -980,6 +1007,136 @@ def test_a_source_symlinked_out_of_the_repository_is_refused(
     assert "passed" not in _out(result), _out(result)
     assert Path(relpath).name in _out(result), _out(result)
     assert str(outside.resolve()) in _out(result), _out(result)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), OUT_OF_REPO_SYMLINK_GATES)
+def test_a_committed_symlink_out_of_the_repository_is_refused(
+    repo: Path, gate: list[str], relpath: str, body: str, tmp_path_factory
+) -> None:
+    """AC1 at the *other* read site: a tracked escape, not an untracked one.
+
+    Each gate reads a graded file through two doors. An untracked path has no
+    diff to scope against, so its whole content counts as touched and it goes
+    through `all_line_numbers`; a tracked path skips that and is read by the
+    gate's own body — `violations_in`, `_read_and_parse`. The sibling test
+    above plants an untracked link, so an implementation that guards only
+    `all_line_numbers` satisfies it while the door every committed file comes
+    through stays open. That is the majority door: at a stage transition the
+    driver has already committed.
+    """
+    outside = tmp_path_factory.mktemp("outside") / f"target{Path(relpath).suffix}"
+    outside.write_text(body)
+    (repo / relpath).symlink_to(outside)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "agent work")
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    assert result.returncode != 0, _out(result)
+    assert "passed" not in _out(result), _out(result)
+    assert str(outside.resolve()) in _out(result), _out(result)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), OUT_OF_REPO_SYMLINK_GATES)
+def test_an_explicitly_listed_symlink_out_of_the_repository_is_refused(
+    repo: Path, gate: list[str], relpath: str, body: str, tmp_path_factory
+) -> None:
+    """AC1 on the pre-commit surface, where lefthook hands the files over.
+
+    The carve-out this ticket needs (see
+    `test_an_explicitly_listed_file_outside_the_repository_is_still_graded`)
+    is about *where the listed path is*, not about whether the gate discovered
+    it. Keying it off `discovered` instead is the same amount of code and
+    removes the guard from every pre-commit run, which is where a symlink
+    escape is most likely to be committed in the first place: lefthook passes
+    `{staged_files}`, so nothing on that surface is ever discovered.
+
+    The link's own path is inside the repository here, exactly as git spells
+    it in the index. Only its target leaves.
+    """
+    outside = tmp_path_factory.mktemp("outside") / f"target{Path(relpath).suffix}"
+    outside.write_text(body)
+    link = repo / relpath
+    link.symlink_to(outside)
+
+    result = _run_gate(gate, repo, str(link))
+
+    assert result.returncode != 0, _out(result)
+    assert "passed" not in _out(result), _out(result)
+    assert str(outside.resolve()) in _out(result), _out(result)
+
+
+#: The Python gates only. The `.cjs` gate cannot reach its read for a path
+#: outside the repository at all — `git diff -- <abs path outside>` fails first
+#: with "is outside repository", so the run is already a loud refusal on `main`
+#: and there is no decision left for this ticket to make there.
+EXPLICIT_OUTSIDE_GATES = [
+    pytest.param(PY_ORGANIZATION_GATE, "mod.py", id="py-org"),
+    pytest.param(PY_SILENT_EXCEPT_GATE, "mod.py", id="py-silent-except"),
+]
+
+
+@pytest.mark.parametrize(("gate", "name"), EXPLICIT_OUTSIDE_GATES)
+def test_an_explicitly_listed_file_outside_the_repository_is_still_graded(
+    repo: Path, gate: list[str], name: str, tmp_path_factory
+) -> None:
+    """The decision this ticket has to make, pinned rather than left to the suite.
+
+    `Invocation.repo` is never absent: `parse_argv` falls back to
+    `git_repo_root()`, so a gate handed `/tmp/x.py` and no `--repo` resolves
+    `repo` to whatever checkout the process happens to sit in, and the file it
+    was *told* to grade is outside it. An unconditional "refuse anything that
+    resolves outside `repo`" therefore refuses every explicitly listed path
+    outside the checkout, and `test_silent_except_gate.py`'s
+    `checker.main([str(path)]) == 0` — a real gate run over a real fixture —
+    starts failing. Making the suite green by relaxing that test would trade a
+    guard for an outage.
+
+    The refusal is for a path that *presents itself as a repository file* and
+    reads content from somewhere else. A path the caller named outright makes
+    no such claim: the caller scoped this run, which is the same reason
+    `resolve_gate_scope` does not narrow an explicit list to the source root.
+    So the boundary is crossed only when the listed path is inside `repo` and
+    its target is not.
+
+    Asserted on the refusal channel rather than the exit code: this file grades
+    clean, so exit 0 alone would also be satisfied by a gate that refused it
+    and then somehow exited 0, and by one that dropped it unexamined.
+    """
+    outside = tmp_path_factory.mktemp("caller_scoped") / name
+    outside.write_text("y = 2\n")
+
+    result = _run_gate(gate, repo, str(outside))
+
+    assert result.returncode == 0, _out(result)
+    assert REFUSAL_SENTENCE not in _out(result), _out(result)
+    match = EXAMINED_RE.search(_out(result))
+    assert match is not None, _out(result)
+    assert int(match.group(1)) == 1, _out(result)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), OUT_OF_REPO_SYMLINK_GATES)
+def test_a_source_symlinked_to_a_device_is_refused_by_every_gate(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """AC4: the whole rule crosses to the `.cjs`, not just the outside-repo half.
+
+    The Python gates have refused a non-regular target since 546; the `.cjs`
+    `readSource` is still a bare `readFileSync`, so this same fixture makes it
+    read `/dev/zero` until the host gives out — verified: it does not return.
+    A mirror that gains only the outside-repo check satisfies every other AC4
+    assertion in this file while leaving that open, so the non-regular half is
+    pinned on all three gates rather than only in the Python unit tests.
+
+    `timeout` is the assertion: no exit code distinguishes a gate that hangs.
+    """
+    os.symlink("/dev/zero", repo / relpath)
+
+    result = _run_gate(gate, repo, "--base", "main", timeout=60)
+
+    assert result.returncode != 0, _out(result)
+    assert "passed" not in _out(result), _out(result)
+    assert Path(relpath).name in _out(result), _out(result)
 
 
 # --------------------------------------------------------------------------- #
@@ -1507,3 +1664,95 @@ def test_a_repository_reached_through_a_symlink_still_grades_its_own_files(tmp_p
     linked_root.symlink_to(real_root, target_is_directory=True)
 
     assert diff.read_source_text(linked_root / "src" / "mod.py", repo=linked_root) == "import os\n"
+
+
+def test_a_repository_reached_through_a_symlink_still_catches_an_escape(tmp_path):
+    """The other half of the macOS row: an unresolved root must not disable the check.
+
+    `test_a_repository_reached_through_a_symlink_still_grades_its_own_files`
+    only pins that a symlinked root does not refuse its own files, and an
+    implementation that compares against an *unresolved* root satisfies it — by
+    concluding the file is not in the repository at all and skipping the check.
+    Passing and not-checking are the same observation there, which is the shape
+    this whole file exists to keep apart.
+
+    Same fixture, escape added. The refusal has to survive the symlinked
+    prefix, or the guard is off for every macOS checkout and every agent
+    worktree under a linked home — which is to say off in exactly the
+    environments it was written for.
+    """
+    diff = _load_script("precommit_git_diff")
+    real_root = tmp_path / "real_repo"
+    (real_root / "src").mkdir(parents=True)
+    linked_root = tmp_path / "linked_repo"
+    linked_root.symlink_to(real_root, target_is_directory=True)
+    outside = tmp_path / "elsewhere" / "target.py"
+    outside.parent.mkdir()
+    outside.write_text("x = 1\n", encoding="utf-8")
+    (real_root / "src" / "linked.py").symlink_to(outside)
+
+    with pytest.raises(diff.UnexaminableFileError) as excinfo:
+        diff.read_source_text(linked_root / "src" / "linked.py", repo=linked_root)
+
+    assert str(outside.resolve()) in str(excinfo.value)
+
+
+def test_a_sibling_directory_sharing_the_repositorys_prefix_is_outside_it(tmp_path):
+    """AC1: containment is a path-component question, not a string one.
+
+    `str(target).startswith(str(repo))` is the cheapest way to write this check
+    and it is wrong by one character: `/w/repo` is a prefix of
+    `/w/repo-vendor/x.py`, so a link into the sibling directory beside a
+    checkout — where a workspace's vendored or generated trees usually sit —
+    reads as inside the repository and is graded clean. `relative_to` and
+    `is_relative_to` both answer on components and get this right; nothing else
+    in this file would notice the difference.
+    """
+    diff = _load_script("precommit_git_diff")
+    repo_root = tmp_path / "repo"
+    (repo_root / "src").mkdir(parents=True)
+    sibling = tmp_path / "repo-vendor"
+    sibling.mkdir()
+    outside = sibling / "target.py"
+    outside.write_text("x = 1\n", encoding="utf-8")
+    link = repo_root / "src" / "linked.py"
+    link.symlink_to(outside)
+
+    with pytest.raises(diff.UnexaminableFileError) as excinfo:
+        diff.read_source_text(link, repo=repo_root)
+
+    assert str(outside.resolve()) in str(excinfo.value)
+
+
+def test_a_path_the_caller_named_outside_the_repository_still_reads(tmp_path):
+    """The unit half of the explicitly-listed decision; see the gate test of the
+    same name for why it is this way round.
+
+    Nothing here presents itself as a repository file: the caller handed over
+    an absolute path that is plainly elsewhere. Refusing it would refuse every
+    fixture `test_silent_except_gate.py` grades, and a gate that cannot be
+    pointed at a file is not a stricter gate.
+    """
+    diff = _load_script("precommit_git_diff")
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    outside = tmp_path / "elsewhere.py"
+    outside.write_text("x = 1\n", encoding="utf-8")
+
+    assert diff.read_source_text(outside, repo=repo_root) == "x = 1\n"
+
+
+def test_a_run_outside_any_checkout_grades_what_it_is_handed(tmp_path):
+    """AC1: `repo=None` is "there is no boundary", not "refuse everything".
+
+    `Invocation.repo` is `Optional[Path]` because `git_repo_root()` returns
+    `None` outside a checkout, and `resolve_gate_scope` already has an answer
+    for that case. `None` has to reach `read_source_text` explicitly — the
+    keyword stays required, so no caller opts out by forgetting — and mean the
+    only thing it can mean: there is no repository to be outside of.
+    """
+    diff = _load_script("precommit_git_diff")
+    loose = tmp_path / "loose.py"
+    loose.write_text("x = 1\n", encoding="utf-8")
+
+    assert diff.read_source_text(loose, repo=None) == "x = 1\n"
