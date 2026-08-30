@@ -5,12 +5,19 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+from loregarden.agents.chat_role_prompt import (
+    chat_posture_blocks,
+    chat_role_blocks,
+    chat_ui_primitives_blocks,
+)
 from loregarden.agents.mcp_context import build_mcp_triage_context
+from loregarden.agents.prompt_blocks import raw_block
 from loregarden.agents.registry import get_agent
 from loregarden.models.domain import (
     AgentRun,
     Approval,
     ApprovalStatus,
+    ChatSurface,
     RunStatus,
     Ticket,
     TriageMessage,
@@ -25,6 +32,7 @@ from loregarden.services.agent_turn_runner import (
     resolve_chat_intent,
 )
 from loregarden.services.approval_views import approval_to_view
+from loregarden.services.chat_mode import resolve_chat_mode
 from loregarden.services.chat_primitives import load_parts_json, parts_json_for_reply
 from loregarden.services.chat_thinking import ChatTurnThinkingSink
 from loregarden.services.cli_agent_runner import (
@@ -41,6 +49,7 @@ from loregarden.services.cli_settings import (
 )
 from loregarden.services.gate_checklist import expand_gate_checklist_for_ticket
 from loregarden.services.hierarchy_service import collect_ticket_scope_ids
+from loregarden.services.studio_service import build_studio_prompt_sections
 from sqlmodel import Session, col, select
 
 TRIAGE_AGENT_ID = "triage"
@@ -167,6 +176,7 @@ def triage_snapshot(session: Session, ticket: Ticket) -> dict:
         "recent_approvals": recent,
         "adapter_capabilities": capabilities.as_dict(),
         "chat_intent": intent,
+        "chat_mode": resolve_chat_mode(capabilities.adapter).as_dict(),
         "messages": [
             {
                 "id": msg.id,
@@ -245,7 +255,13 @@ def invoke_triage_model(
         raise ValueError("Ticket workspace not found")
 
     history = list_triage_messages(session, ticket.id)
-    prompt = build_triage_prompt(ticket, history, latest_user_message, session=session)
+    prompt = build_triage_prompt(
+        ticket,
+        history,
+        latest_user_message,
+        session=session,
+        agent=get_agent(TRIAGE_AGENT_ID) or {},
+    )
     effective = apply_triage_runtime_overrides(workspace, ticket)
     # The run is the turn here — `triage_run_status` publishes this same id as
     # `active_run_id`, which is what the panel watches.
@@ -325,39 +341,22 @@ def build_gate_triage_sections(session: Session, ticket: Ticket) -> list[str]:
     return sections
 
 
-def build_advisory_sections(advisory_reason: str) -> list[str]:
-    """What to tell a rail that has no tools this turn.
-
-    A one-shot advisory turn ends with its reply: there is no later message in
-    which announced work happens. An answer opening "I'll check X, then I'll do
-    Y" therefore reads to the operator as a promise that was silently dropped —
-    which is what made this rail feel broken rather than merely limited.
-    """
-    sections = [
-        "You are advisory only in this channel — you have no tools. Do not claim to have "
-        "executed tools or changed the repo.",
-        "Do not announce work you are about to do — no 'I'll check…', 'I'll inspect…', "
-        "'let me look at…'. This reply is the whole turn; nothing runs after it. "
-        "Answer from what you already have.",
-        "When the operator asks for an action you cannot take, say so in one line and "
-        "name who or what can take it — do not narrate an attempt.",
-    ]
-    if advisory_reason:
-        # Naming the cause turns "I can't do that" into something the operator
-        # can act on, and stops the model inventing a reason of its own.
-        sections.append(f"Why this channel is advisory: {advisory_reason}")
-    return sections
-
-
 def build_triage_prompt(
     ticket: Ticket,
     history: list[TriageMessage],
     latest_user_message: str,
     *,
     session: Session,
+    agent: dict | None = None,
     interactive: bool = False,
     advisory_reason: str = "",
 ) -> str:
+    """Assemble one ticket-triage turn's system prompt.
+
+    Shares its identity, posture and UI-primitives blocks with Home chat — same
+    agent, same rules, one copy. What stays local is this rail's own data: the
+    ticket, its criteria, its gate and its runs.
+    """
     workspace = session.get(Workspace, ticket.workspace_id)
     ac = json.loads(ticket.acceptance_criteria_json or "[]")
 
@@ -368,26 +367,19 @@ def build_triage_prompt(
         .limit(5)
     ).all()
 
-    sections = [
-        "# Loregarden ticket triage",
-        "You are Baxter, the operator's triage assistant for this work item.",
-        "Help clarify requirements, interpret agent output, suggest next workflow steps, and answer questions.",
-    ]
-    if interactive:
-        sections.extend(
-            [
-                "You have real tool access in this workspace — file read/write, Bash, and the Loregarden MCP tools.",
-                "Investigate proactively: read code, run tests/lints, and reproduce failures before answering.",
-                "When you find an actionable fix, make it directly rather than only describing it.",
-                "Ask the operator a clarifying question (via AskUserQuestion) whenever the ticket, "
-                "acceptance criteria, or a requested change is ambiguous — do not guess on anything "
-                "consequential or hard to reverse.",
-                "Destructive or high-risk actions still route through Loregarden's approval prompt "
-                "automatically — request them when needed rather than avoiding the work.",
-            ]
+    sections = ["# Loregarden ticket triage"]
+    sections.extend(chat_role_blocks(agent or {}, surface=ChatSurface.TICKET_TRIAGE))
+    sections.append("")
+    sections.extend(
+        chat_posture_blocks(
+            surface=ChatSurface.TICKET_TRIAGE,
+            interactive=interactive,
+            # This rail's interactive turns run behind the permission bridge.
+            approval_bridge=interactive,
+            advisory_reason=advisory_reason,
         )
-    else:
-        sections.extend(build_advisory_sections(advisory_reason))
+    )
+    sections.extend(raw_block(build_studio_prompt_sections(agent or {})))
     sections.extend(build_gate_triage_sections(session, ticket))
     sections.append("")
     if workspace:
@@ -438,5 +430,6 @@ def build_triage_prompt(
                 content = content[:MAX_TRIAGE_MESSAGE_CHARS] + "…"
             sections.append(f"{speaker}: {content}")
 
-    sections.extend(["", "## Latest operator message", latest_user_message, "", "Reply concisely."])
+    sections.extend(["", "## Latest operator message", latest_user_message])
+    sections.extend(chat_ui_primitives_blocks())
     return "\n".join(sections)

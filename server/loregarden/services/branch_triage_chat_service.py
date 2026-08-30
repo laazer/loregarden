@@ -16,15 +16,14 @@ from loregarden.models.domain import (
 )
 from loregarden.services.agent_turn_runner import (
     AgentTurnRequest,
-    adapter_capabilities,
-    chat_advisory_reason,
-    resolve_chat_intent,
+    TurnIntent,
     run_agent_turn,
 )
 from loregarden.services.branch_triage_service import (
     branch_triage_snapshot,
     resolve_branch_checkout,
 )
+from loregarden.services.chat_mode import resolve_chat_mode
 from loregarden.services.chat_primitives import load_parts_json
 from loregarden.services.cli_agent_runner import stub_response
 from loregarden.services.cli_settings import resolve_effective_adapter
@@ -127,6 +126,17 @@ def branch_chat_snapshot(session: Session, workspace: Workspace, branch: str) ->
     messages = list_branch_triage_messages(session, workspace.id, branch)
     run_status, active_turn_id = branch_triage_run_status(session, workspace.id, branch)
     capabilities, intent = resolve_chat_capabilities(ticket.triage_runtime_json if ticket else "")
+    # The checkout gate is knowable here, so the snapshot resolves it rather than
+    # letting the UI promise a rail that will run read-only. The run-id gate is
+    # not: there is no turn yet to have (or lack) a run.
+    agent = get_agent(TRIAGE_AGENT_ID) or {}
+    effective = apply_triage_runtime_overrides(workspace, ticket) if ticket else workspace
+    mode = resolve_chat_mode(
+        resolve_effective_adapter(
+            agent_adapter=agent.get("adapter", "claude"), workspace=effective
+        ),
+        branch_checked_out=resolve_branch_checkout(workspace, branch) is not None,
+    )
     return {
         "workspace_id": workspace.id,
         "branch": branch,
@@ -143,11 +153,12 @@ def branch_chat_snapshot(session: Session, workspace: Workspace, branch: str) ->
             for msg in messages
         ],
         "runtime": _runtime_for_branch(session, workspace, ticket).model_dump(),
-        # Adapter-level only. A turn can still drop to advisory for reasons the
-        # snapshot cannot know — the branch is not checked out, or the turn has no
-        # run id for the bridge to attach approvals to — and says so in its reply.
         "adapter_capabilities": capabilities.as_dict(),
         "chat_intent": intent,
+        # Adapter capability *and* the checkout gate. The one case this still
+        # cannot see is a turn that arrives without a run id for the bridge —
+        # there is no turn yet — and that turn says so in its own reply.
+        "chat_mode": mode.as_dict(),
         "run_status": run_status,
         "active_turn_id": active_turn_id,
     }
@@ -265,25 +276,16 @@ def invoke_branch_triage_model(
         agent_adapter=agent.get("adapter", "claude"),
         workspace=effective_workspace,
     )
-    caps = adapter_capabilities(selected)
     checkout_root = resolve_branch_checkout(workspace, branch)
-    # Capability map decides whether the adapter can execute; a missing checkout
-    # is the only extra gate (writes need a worktree).
-    intent = resolve_chat_intent(selected)
-    advisory_reason = ""
-    if checkout_root is None:
-        intent = "advisory"
-        advisory_reason = (
-            f"Branch {branch!r} is not checked out in a worktree. Check it out before asking "
-            "Baxter to modify it."
-        )
-    elif intent == "advisory":
-        advisory_reason = chat_advisory_reason(selected)
-    elif caps.permission_bridge and not run_id:
-        intent = "advisory"
-        advisory_reason = (
-            "This turn has no AgentRun id, so the permission bridge cannot attach approvals."
-        )
+    # One resolver decides the mode here and on the snapshot, so what the pill
+    # promised and what this turn does cannot disagree.
+    mode = resolve_chat_mode(
+        selected,
+        branch_checked_out=checkout_root is not None,
+        has_run_for_approvals=bool(run_id),
+    )
+    intent: TurnIntent = "execute" if mode.can_act else "advisory"
+    advisory_reason = f"{mode.reason} {mode.advice}".strip() if mode.reason else ""
 
     prompt = build_branch_triage_prompt(
         workspace,

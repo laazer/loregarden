@@ -20,9 +20,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
-from loregarden.agents.cli_adapters import build_interactive_invocation
+from loregarden.agents.cli_adapters import build_interactive_invocation, permission_bypass_enabled
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
-from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace
+from loregarden.agents.tool_grants import agent_tool_grants
+from loregarden.models.domain import AgentRun, ChatSurface, RunStatus, Ticket, Workspace
 from loregarden.services.chat_thinking import ChatTurnThinkingSink
 from loregarden.services.cli_agent_runner import (
     CliAgentProfile,
@@ -56,6 +57,11 @@ class AdapterCapabilities:
     plan_execute: bool
     stream_thinking: bool
     steer: bool
+    #: True when this adapter *has* a write path but only reaches it with
+    #: permission bypass on. Lets a caller tell "cannot write at all" from
+    #: "could write, but is not permitted to" without checking adapter names —
+    #: two states that read identically as `plan_execute=False`.
+    requires_permission_bypass: bool = False
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -63,6 +69,7 @@ class AdapterCapabilities:
             "permission_bridge": self.permission_bridge,
             "inbox_approvals": self.inbox_approvals,
             "plan_execute": self.plan_execute,
+            "requires_permission_bypass": self.requires_permission_bypass,
             "stream_thinking": self.stream_thinking,
             "steer": self.steer,
         }
@@ -88,6 +95,23 @@ def adapter_capabilities(adapter: str) -> AdapterCapabilities:
             plan_execute=True,
             stream_thinking=True,
             steer=False,
+        )
+    if selected == "opencode":
+        # opencode writes during stage runs, so it is not incapable — but its
+        # permission prompts have no headless surface, so a write only lands
+        # when `--auto` is passed, which is gated on permission bypass. Saying
+        # plan_execute=True with bypass off would promise a turn that then has
+        # every edit denied inside itself.
+        return AdapterCapabilities(
+            adapter=selected,
+            permission_bridge=False,
+            inbox_approvals=False,
+            plan_execute=permission_bypass_enabled(),
+            # Its `--format json` events are parsed for the run log, but the
+            # thinking sink has no opencode reader — claimed only when proven.
+            stream_thinking=False,
+            steer=False,
+            requires_permission_bypass=True,
         )
     if selected in {"codex", "lmstudio"}:
         return AdapterCapabilities(
@@ -193,6 +217,9 @@ class AgentTurnRequest:
     track_workflow_stage: bool = False
     adapter: str = ""
     """Pre-resolved adapter. When set, the runner does not re-resolve."""
+    surface: ChatSurface = ChatSurface.HOME
+    """Which operator rail this turn is for — selects the shared prompt blocks
+    and labels the tool-grant log line."""
 
 
 @dataclass
@@ -290,6 +317,11 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
                 db_session=request.session,
                 # Chat surfaces — not pipeline stages. Keep interactive MCP open.
                 orchestrated=False,
+                tool_grants=agent_tool_grants(request.agent),
+                mcp_tools=list(request.agent.get("mcp_tools") or []),
+                mcp_enabled=bool(request.agent.get("mcp_enabled", True)),
+                surface=request.surface,
+                agent_slug=request.agent.get("slug") or request.agent_id,
             )
             bridge_kwargs: dict = {
                 "run_id": run.id,
@@ -354,6 +386,7 @@ def _run_oneshot(request: AgentTurnRequest, *, read_only: bool) -> tuple[str, st
             read_only=read_only,
             thinking_sink=thinking,
             workspace_root=request.workspace_root,
+            surface=request.surface,
         )
     except Exception as exc:
         if run is not None and request.manage_run:

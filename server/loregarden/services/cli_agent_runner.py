@@ -28,8 +28,9 @@ from pathlib import Path
 
 from loregarden.agents.cli_adapters import build_triage_invocation, invocation_env
 from loregarden.agents.registry import get_agent
+from loregarden.agents.tool_grants import agent_tool_grants
 from loregarden.config import settings
-from loregarden.models.domain import Workspace
+from loregarden.models.domain import ChatSurface, Workspace
 from loregarden.services.cli_output import extract_triage_reply
 from loregarden.services.run_stream_sink import RunStreamSink
 from loregarden.services.subprocess_lines import SubprocessLineReader
@@ -140,6 +141,7 @@ def run_cli_agent_turn(
     extra_dirs: Sequence[Path | str] = (),
     thinking_sink: RunStreamSink | None = None,
     workspace_root: Path | None = None,
+    surface: ChatSurface = ChatSurface.HOME,
 ) -> str:
     """Run one turn to completion and return the assistant's reply.
 
@@ -189,6 +191,10 @@ def run_cli_agent_turn(
             read_only=read_only,
             extra_dirs=extra_dirs,
             stream_json=thinking_sink is not None,
+            tool_grants=agent_tool_grants(agent),
+            mcp_tools=list(agent.get("mcp_tools") or []),
+            mcp_enabled=bool(agent.get("mcp_enabled", True)),
+            surface=surface,
         )
         proc = subprocess.Popen(
             invocation.argv,

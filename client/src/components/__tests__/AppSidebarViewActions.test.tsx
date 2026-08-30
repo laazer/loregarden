@@ -49,6 +49,16 @@ import { assertServerAcceptableLayout } from "../../test/viewLayoutContract";
 import { AppSidebar } from "../AppSidebar";
 import { RouterBridgeSync } from "../RouterBridgeSync";
 
+// Every test here drives the UI through `userEvent`, whose interaction chains
+// are event-loop bound rather than CPU bound. On a loaded machine — the
+// pre-push hook runs this suite alongside a full pytest run — those chains
+// routinely pass jest's default 5s budget and the file's first timeout
+// cascades into "unable to find an element" for every test after it. The work
+// still completes (this file runs in ~9s idle, ~45s loaded), so the budget is
+// what is wrong, not the tests.
+jest.setTimeout(20_000);
+
+
 jest.mock("../../lib/viewsApi", () => ({
   ...jest.requireActual("../../lib/viewsApi"),
   fetchViews: jest.fn(),

@@ -16,7 +16,14 @@ from datetime import datetime, timezone
 
 from loregarden.agents.registry import get_agent
 from loregarden.db.session import engine
-from loregarden.models.domain import AgentRun, RunStatus, Ticket, TriageMessage, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    ChatSurface,
+    RunStatus,
+    Ticket,
+    TriageMessage,
+    Workspace,
+)
 from loregarden.services.agent_turn_runner import (
     AgentTurnRequest,
     chat_advisory_reason,
@@ -146,6 +153,7 @@ class TriageTurnExecutor:
             history,
             latest_user_message,
             session=self.session,
+            agent=agent,
             interactive=intent == "execute",
             advisory_reason=chat_advisory_reason(selected),
         )
@@ -165,6 +173,7 @@ class TriageTurnExecutor:
                     ticket=ticket if intent == "execute" else None,
                     claude_model_env="LOREGARDEN_TRIAGE_CLAUDE_MODEL",
                     track_workflow_stage=False,
+                    surface=ChatSurface.TICKET_TRIAGE,
                 )
             )
             self._finish(

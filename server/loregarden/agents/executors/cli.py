@@ -29,6 +29,12 @@ from loregarden.agents.plan_context import (
     build_plan_context,
     build_plan_synthesis_context,
 )
+from loregarden.agents.prompt_blocks import (
+    AGENT_ROLE_HEADING,
+    ROLE_BODY_CAP,
+    raw_block,
+    titled_block,
+)
 from loregarden.agents.registry import get_agent
 from loregarden.agents.run_usage import parse_run_usage
 from loregarden.agents.stage_context import build_orchestration_context
@@ -98,21 +104,6 @@ logger = logging.getLogger(__name__)
 # green result as commit-scoped evidence. Consumers reuse that via the general
 # evidence ledger (build_evidence_ledger), so only the producer is keyed on skill.
 _FULL_SUITE_SKILL = "run_tests"
-
-
-def _titled_block(title: str, body: str, *, cap: int = 0) -> list[str]:
-    """A titled prompt block, or nothing when the body is empty.
-
-    The leading blank line lives here so callers only declare order.
-    """
-    if not body:
-        return []
-    return ["", title, body[:cap] if cap else body]
-
-
-def _raw_block(body: str) -> list[str]:
-    """An untitled prompt block that supplies its own headings."""
-    return ["", body] if body else []
 
 
 class CliAgentExecutor:
@@ -839,7 +830,7 @@ class CliAgentExecutor:
         # Role body comes from the agent config (DB-backed studio agent, or the
         # registry fallback which loads it in get_agent). The executor no longer
         # reads role_file from the workspace filesystem — the DB is authoritative.
-        role_body = (agent.get("role_body") or "")[:12000]
+        role_body = (agent.get("role_body") or "")[:ROLE_BODY_CAP]
 
         stage_skill = (run.skill_name or "").strip()
         default_skill = (agent.get("default_skill") or "").strip()
@@ -913,31 +904,31 @@ class CliAgentExecutor:
             ],
             # High in the prompt: these govern whether the agent runs or re-runs
             # work, so they must land before the role text that tells it to.
-            _titled_block("## Full test suite", full_suite_note),
-            _titled_block("## Already-established evidence (reuse, don't redo)", evidence_ledger),
+            titled_block("## Full test suite", full_suite_note),
+            titled_block("## Already-established evidence (reuse, don't redo)", evidence_ledger),
             # A verifier is deliberately starved of inherited context. Handing it
             # the prior stage's settled decisions ("do not re-derive") would make
             # it a reader of that reasoning rather than an independent check, and
             # a verifier that agrees because it was told to proves nothing.
-            _titled_block(
+            titled_block(
                 "## Inherited context (already decided — do not re-derive)",
                 self._inherited_context(
                     ticket, run, workspace, is_verify=is_verify, assembly_source=assembly_source
                 ),
             ),
-            _titled_block(
+            titled_block(
                 "## Claim under review",
                 build_verify_context(self.session, ticket, workspace) if is_verify else "",
             ),
             # Alongside inherited context, and withheld from a verifier for the
             # same reason: the plan is the reasoning a verifier must not inherit.
-            _titled_block(
+            titled_block(
                 "## Plan (settled by the plan stage)",
                 "" if is_verify else build_plan_context(self.session, ticket, run.stage_key),
             ),
             # The synthesizer gets the lanes instead of the settled plan — there
             # is no settled plan yet, producing it is the job.
-            _titled_block(
+            titled_block(
                 "## Plans to reconcile",
                 build_plan_synthesis_context(self.session, ticket) if is_synthesis else "",
             ),
@@ -948,13 +939,13 @@ class CliAgentExecutor:
             # stage of every ticket. Named explicitly because the implementers
             # run on cursor, which does not pick up CLAUDE.md the way Claude
             # Code does.
-            _titled_block("## Repository map", code_map_reference(repo_root)),
+            titled_block("## Repository map", code_map_reference(repo_root)),
             skill_prompt_block(skill_name, skill_body),
-            _titled_block("## Agent Role", role_body),
-            _raw_block(build_studio_prompt_sections(agent, transport=transport)),
-            _titled_block("## Loregarden control-plane module", mcp_doc, cap=12000),
-            _titled_block("## Memory protocol module", memory_doc, cap=8000),
-            _titled_block("## Chat UI primitives", ui_primitives_doc, cap=6000),
+            titled_block(AGENT_ROLE_HEADING, role_body),
+            raw_block(build_studio_prompt_sections(agent, transport=transport)),
+            titled_block("## Loregarden control-plane module", mcp_doc, cap=12000),
+            titled_block("## Memory protocol module", memory_doc, cap=8000),
+            titled_block("## Chat UI primitives", ui_primitives_doc, cap=6000),
             [
                 "",
                 "## Permission policy",
@@ -962,7 +953,7 @@ class CliAgentExecutor:
                 "Do not bypass workspace permission checks.",
             ],
             # Last, because it governs the last thing the agent emits.
-            _titled_block("## Stage report contract", stage_report_doc),
+            titled_block("## Stage report contract", stage_report_doc),
         ]
         return "\n".join(line for block in blocks for line in block)
 

@@ -2326,6 +2326,32 @@ textarea::placeholder {
   background: var(--ac);
 }
 
+/* The fix affordance inside the chat-mode pill. Deliberately quiet: the badge
+   is a status first, and the button only appears for causes the server marked
+   remediable. */
+.app-action-bar-pill-fix {
+  margin-left: 6px;
+  padding: 0 6px;
+  height: 16px;
+  border: 1px solid var(--bd);
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font-size: 10.5px;
+  line-height: 14px;
+  cursor: pointer;
+}
+
+.app-action-bar-pill-fix:hover {
+  background: var(--bg2);
+  border-color: var(--ac);
+}
+
+.app-action-bar-pill-fix:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 1px;
+}
+
 .app-action-bar-pill--waiting {
   background: rgba(229, 167, 44, 0.14);
   border-color: rgba(229, 167, 44, 0.28);

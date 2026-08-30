@@ -70,6 +70,8 @@ export function studioAgent(overrides: Partial<StudioAgent> = {}): StudioAgent {
     mcp_tools: [],
     gate_checks: [],
     handoff_checks: [],
+    tool_grants: { posture: "inherit", allowed_tools: [], disallowed_tools: [], mcp_servers: [] },
+    tool_grant_warnings: [],
     built_in: true,
     created_at: "2026-07-20T00:00:00",
     updated_at: "2026-07-20T00:00:00",

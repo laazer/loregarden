@@ -172,11 +172,15 @@ def test_invocation_env_overlays_rather_than_replaces_the_environment(tmp_path):
 
 
 def test_permission_bypass_is_opt_in(tmp_path, monkeypatch):
+    """`--auto` is opencode's own flag (opencode.ai/docs/cli). These assertions
+    named Claude Code's `--dangerously-skip-permissions` until it was noticed
+    that opencode has no such flag — so the bypass never took, and the tests
+    were green because they agreed with the bug."""
     monkeypatch.delenv("LOREGARDEN_ALLOW_PERMISSION_BYPASS", raising=False)
-    assert "--dangerously-skip-permissions" not in _stage_invocation(tmp_path, _workspace()).argv
+    assert "--auto" not in _stage_invocation(tmp_path, _workspace()).argv
 
     monkeypatch.setenv("LOREGARDEN_ALLOW_PERMISSION_BYPASS", "1")
-    assert "--dangerously-skip-permissions" in _stage_invocation(tmp_path, _workspace()).argv
+    assert "--auto" in _stage_invocation(tmp_path, _workspace()).argv
 
 
 def test_read_only_triage_never_skips_permissions(tmp_path, monkeypatch):
@@ -193,7 +197,7 @@ def test_read_only_triage_never_skips_permissions(tmp_path, monkeypatch):
         read_only=True,
     )
 
-    assert "--dangerously-skip-permissions" not in invocation.argv
+    assert "--auto" not in invocation.argv
 
 
 def test_terminal_handoff_attaches_the_prompt_file_and_carries_its_env(tmp_path):

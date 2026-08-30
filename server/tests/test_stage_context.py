@@ -113,14 +113,16 @@ def test_prompt_block_order_is_declarative(tmp_path):
     """The prompt is assembled from ordered blocks (S2), each dropping out when
     empty, so a new section is one entry rather than another conditional threaded
     through the assembly."""
-    from loregarden.agents.executors.cli import _raw_block, _titled_block
+    # The helpers moved to agents.prompt_blocks so the chat rails render a role
+    # body the same way a stage does; the block contract is unchanged.
+    from loregarden.agents.prompt_blocks import raw_block, titled_block
 
-    assert _titled_block("## T", "") == []
-    assert _titled_block("## T", "body") == ["", "## T", "body"]
+    assert titled_block("## T", "") == []
+    assert titled_block("## T", "body") == ["", "## T", "body"]
     # The cap applies to the body, never to the title.
-    assert _titled_block("## T", "abcdef", cap=3) == ["", "## T", "abc"]
-    assert _raw_block("") == []
-    assert _raw_block("body") == ["", "body"]
+    assert titled_block("## T", "abcdef", cap=3) == ["", "## T", "abc"]
+    assert raw_block("") == []
+    assert raw_block("body") == ["", "body"]
 
 
 def test_inherited_context_section_reaches_the_stage_prompt(tmp_path, monkeypatch):

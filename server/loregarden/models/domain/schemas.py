@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from loregarden.models.domain.enums import (
+    CliTool,
     DoctorCheck,
     DoctorStatus,
     EventType,
@@ -15,6 +16,8 @@ from loregarden.models.domain.enums import (
     TicketActivity,
     TicketState,
     TicketStudioSessionStatus,
+    ToolGrantWarningCode,
+    ToolPosture,
     WorkItemType,
 )
 from pydantic import ConfigDict
@@ -713,6 +716,34 @@ class StudioHandoffCheck(SQLModel):
     prompt: str = ""
 
 
+class StudioAgentToolGrants(SQLModel):
+    """What tools an agent may reach, beyond which of them run unattended.
+
+    Distinct from the auto-approve policy in ``services.tool_policy``: that
+    answers "may this run without asking", this answers "is this offered at
+    all". A tool withheld here never reaches the permission bridge, so it
+    produces no approval row and no telemetry — which is why the default is
+    ``INHERIT`` and why ``analyze_tool_grants`` exists to say what a narrowing
+    would cost.
+
+    ``mcp_servers`` names registered servers; empty means every enabled one,
+    which is the behaviour that predates this model.
+    """
+
+    posture: ToolPosture = ToolPosture.INHERIT
+    allowed_tools: list[CliTool] = Field(default_factory=list)
+    disallowed_tools: list[CliTool] = Field(default_factory=list)
+    mcp_servers: list[str] = Field(default_factory=list)
+
+
+class ToolGrantWarning(SQLModel):
+    """A configured grant that will not do what it looks like it does."""
+
+    code: ToolGrantWarningCode
+    message: str
+    tools: list[str] = Field(default_factory=list)
+
+
 class StudioAgentCreate(SQLModel):
     slug: str
     name: str
@@ -726,6 +757,7 @@ class StudioAgentCreate(SQLModel):
     mcp_tools: list[str] = Field(default_factory=list)
     gate_checks: list[StudioGateCheck] = Field(default_factory=list)
     handoff_checks: list[StudioHandoffCheck] = Field(default_factory=list)
+    tool_grants: StudioAgentToolGrants = Field(default_factory=StudioAgentToolGrants)
 
 
 class StudioAgentUpdate(SQLModel):
@@ -740,6 +772,7 @@ class StudioAgentUpdate(SQLModel):
     mcp_tools: list[str] | None = None
     gate_checks: list[StudioGateCheck] | None = None
     handoff_checks: list[StudioHandoffCheck] | None = None
+    tool_grants: StudioAgentToolGrants | None = None
     change_note: str | None = None
 
 
@@ -758,6 +791,11 @@ class StudioAgentView(SQLModel):
     mcp_tools: list[str]
     gate_checks: list[StudioGateCheck]
     handoff_checks: list[StudioHandoffCheck]
+    tool_grants: StudioAgentToolGrants
+    # Required, not defaulted: an empty list must mean "checked, nothing wrong",
+    # never "nobody computed this". A default here would let a view built by a
+    # forgetful call site report a clean bill of health it never established.
+    tool_grant_warnings: list[ToolGrantWarning]
     built_in: bool = False
     read_only: bool = False
     version: int = 1

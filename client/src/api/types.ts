@@ -678,7 +678,10 @@ export type {
   Approval,
   BaxterChatSessionSummary,
   BaxterChatSnapshot,
+  ChatAdvisoryCause,
   ChatIntent,
+  ChatMode,
+  ChatModeName,
   TriageMessage,
   TriageRunStatus,
   TriageSendResult,
@@ -711,11 +714,31 @@ export interface StudioAgent {
   mcp_tools: string[];
   gate_checks: StudioGateCheck[];
   handoff_checks: StudioHandoffCheck[];
+  tool_grants: StudioAgentToolGrants;
+  /** Ways the configured grants will not take effect. Empty means checked and clean. */
+  tool_grant_warnings: ToolGrantWarning[];
   built_in: boolean;
   read_only?: boolean;
   version?: number;
   created_at: string;
   updated_at: string;
+}
+
+/** How an agent's tool access is decided. Mirrors the server `ToolPosture` enum. */
+export type ToolPosture = "inherit" | "allowlist" | "unrestricted";
+
+export interface StudioAgentToolGrants {
+  posture: ToolPosture;
+  allowed_tools: string[];
+  disallowed_tools: string[];
+  /** Registered MCP server names; empty grants every enabled server. */
+  mcp_servers: string[];
+}
+
+export interface ToolGrantWarning {
+  code: string;
+  message: string;
+  tools: string[];
 }
 
 export interface StudioAgentVersion {
