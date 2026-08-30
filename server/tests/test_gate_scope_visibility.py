@@ -397,6 +397,66 @@ def test_an_unresolvable_base_with_a_stray_file_still_fails_loudly(
 
 
 @pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_a_master_trunk_workspace_is_graded_against_its_own_trunk(
+    tmp_path: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """No `--base` is passed in production, and not every trunk is called `main`.
+
+    `git init` still produces `master` wherever `init.defaultBranch` is unset —
+    CI images, fresh containers, any machine whose owner never set it. The
+    default base then resolved to nothing, the run degraded to worktree-vs-HEAD,
+    and a gate with nothing left to grade raised over a *trunk name* while the
+    branch's committed violation went unread. Detecting the trunk is what makes
+    this repository gradable at all.
+    """
+    _git(tmp_path, "init", "-q", "-b", "master", ".")
+    _git(tmp_path, "config", "user.email", "t@example.com")
+    _git(tmp_path, "config", "user.name", "t")
+    for base in ("src/pkg/base.py", "client/src/base.ts"):
+        (tmp_path / base).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / base).write_text("export const x = 1;\n" if base.endswith(".ts") else "x = 1\n")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "base")
+    _git(tmp_path, "checkout", "-q", "-b", "ticket-branch")
+    _commit_agent_work(tmp_path, relpath, body)
+
+    result = _run_gate(gate, tmp_path)
+
+    assert result.returncode == 1, _out(result)
+    assert Path(relpath).name in _out(result), _out(result)
+    assert "did not resolve" not in _out(result), _out(result)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
+def test_a_master_trunk_workspace_with_nothing_to_grade_still_passes(
+    tmp_path: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """The CI-only failure this pair was written for, in its passing half.
+
+    The same degradation turned "this change touches nothing I grade" into a
+    hard failure: two silent-except gate tests — an untracked file outside the
+    source root, and an untracked test file — passed on a machine configured for
+    `main` and failed on CI, over a trunk name neither test mentions.
+    """
+    _git(tmp_path, "init", "-q", "-b", "master", ".")
+    _git(tmp_path, "config", "user.email", "t@example.com")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "src" / "pkg").mkdir(parents=True)
+    (tmp_path / "src" / "pkg" / "base.py").write_text("x = 1\n")
+    (tmp_path / "client" / "src").mkdir(parents=True)
+    (tmp_path / "client" / "src" / "base.ts").write_text("export const x = 1;\n")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "base")
+    # Outside every gate's source root: the file the gates must ignore.
+    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools" / Path(relpath).name).write_text(body)
+
+    result = _run_gate(gate, tmp_path)
+
+    assert result.returncode == 0, _out(result)
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), TRANSITION_GATES)
 def test_an_ambient_git_dir_does_not_redirect_the_gate(
     repo: Path, gate: list[str], relpath: str, body: str, tmp_path_factory: pytest.TempPathFactory
 ) -> None:

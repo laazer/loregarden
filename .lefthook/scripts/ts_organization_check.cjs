@@ -368,6 +368,12 @@ function git(args, cwd) {
   }
 }
 
+/** The base a gate falls back to when its caller named none. */
+const DEFAULT_BASE_REF = "main";
+
+/** Trunk names tried when `DEFAULT_BASE_REF` names nothing; `origin/HEAD` first. */
+const TRUNK_REF_CANDIDATES = ["master", "trunk", "develop"];
+
 /**
  * Refuse a ref git would read as an option — `--base --output=/tmp/x` reached
  * `git diff` as a flag, wrote a file outside the repository, and returned a
@@ -430,6 +436,39 @@ function revExists(repoRoot, ref) {
     if (err instanceof GitScopeError) throw err;
     return false;
   }
+}
+
+/** The trunk `origin/HEAD` names (e.g. `origin/master`), or null. */
+function originHead(repoRoot) {
+  try {
+    return (
+      execFileSync("git", ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], {
+        cwd: repoRoot,
+        env: scrubbedGitEnv(),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim() || null
+    );
+  } catch (err) {
+    if (err instanceof GitScopeError) throw err;
+    return null;
+  }
+}
+
+/**
+ * `baseRef`, or this repository's actual trunk when nobody named one. Mirrors
+ * precommit_git_diff.py's `effective_base_ref`: a repository on `master` — what
+ * a bare `git init` still produces wherever `init.defaultBranch` is unset —
+ * resolved the default to nothing, degraded, and then failed every stage
+ * transition over a trunk name rather than over any code. Only the default is
+ * substituted; an explicit `--base` gets that ref or a loud failure.
+ */
+function effectiveBaseRef(repoRoot, baseRef) {
+  if (baseRef !== DEFAULT_BASE_REF || revExists(repoRoot, baseRef)) return baseRef;
+  for (const candidate of [originHead(repoRoot), ...TRUNK_REF_CANDIDATES]) {
+    if (candidate && candidate !== baseRef && revExists(repoRoot, candidate)) return candidate;
+  }
+  return baseRef;
 }
 
 /**
@@ -505,7 +544,8 @@ function describeScope(diffScope, baseRef) {
  * consulting the branch only when the whole tree happened to be clean left one
  * stray untracked file able to hide the committed change again.
  */
-function resolveScope(repoRoot, diffScope, baseRef) {
+function resolveScope(repoRoot, diffScope, requestedBaseRef) {
+  const baseRef = effectiveBaseRef(repoRoot, requestedBaseRef);
   if (diffScope !== "worktree") {
     return {
       diffScope,
@@ -902,7 +942,7 @@ function parseArgv(argv) {
   const files = [];
   let repoArg = null;
   let diffScope = "staged";
-  let baseRef = "main";
+  let baseRef = DEFAULT_BASE_REF;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === "--repo" && argv[i + 1]) repoArg = argv[(i += 1)];
     else if (argv[i] === "--scope" && argv[i + 1]) diffScope = argv[(i += 1)];

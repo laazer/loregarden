@@ -257,6 +257,16 @@ DIFF_SCOPES = (STAGED, WORKTREE, BRANCH)
 _UNTRACKED_SCOPES = (WORKTREE, SINCE)
 
 
+#: The base every gate falls back to when its caller named none. Only this
+#: value is subject to trunk detection — see `effective_base_ref`.
+DEFAULT_BASE_REF = "main"
+
+#: Trunk names to try when `DEFAULT_BASE_REF` names nothing in a repository.
+#: `origin/HEAD` is consulted first; these are the fallbacks for a checkout
+#: with no remote, which is what an agent worktree and a test fixture are.
+_TRUNK_REF_CANDIDATES = ("master", "trunk", "develop")
+
+
 def _validated_ref(ref: str) -> str:
     """Refuse a ref git would read as an option.
 
@@ -450,6 +460,50 @@ def git_merge_base(repo: Path, base_ref: str) -> Optional[str]:
     return proc.stdout.strip() or None
 
 
+def git_origin_head(repo: Path) -> Optional[str]:
+    """The trunk ``origin/HEAD`` names, e.g. ``origin/master``, or None.
+
+    The remote's own answer rather than a guess, so it is asked before the
+    candidate names below.
+    """
+    proc = subprocess.run(
+        ["git", "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+        cwd=repo,
+        env=scrubbed_git_env(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip() or None
+
+
+def effective_base_ref(repo: Path, base_ref: str) -> str:
+    """``base_ref``, or this repository's actual trunk when nobody named one.
+
+    Every gate defaults to `DEFAULT_BASE_REF` because most workspaces use it,
+    not because a caller asked for it. In a repository whose trunk is
+    ``master`` — git's default before 2.28, and still what a bare ``git init``
+    produces wherever ``init.defaultBranch`` is unset, including CI images —
+    that default resolves to nothing: the run degrades to worktree-vs-HEAD and
+    then refuses to call itself a pass, so *every* stage transition fails over
+    a trunk name rather than over any code. Detecting the trunk is the fix; the
+    degraded path stays for the case where there is genuinely no trunk to find.
+
+    Only the default is substituted. A caller that passed ``--base`` gets that
+    ref or a loud failure — silently grading against a different base than the
+    one asked for is the same class of bug the scope work exists to close.
+    """
+    if base_ref != DEFAULT_BASE_REF or git_rev_exists(repo, base_ref):
+        return base_ref
+    candidates = [ref for ref in (git_origin_head(repo), *_TRUNK_REF_CANDIDATES) if ref]
+    for candidate in candidates:
+        if candidate != base_ref and git_rev_exists(repo, candidate):
+            return candidate
+    return base_ref
+
+
 def resolve_scope(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") -> ResolvedScope:
     """Work out what a gate run should examine, and never let that be "nothing".
 
@@ -467,12 +521,13 @@ def resolve_scope(repo: Path, diff_scope: str = STAGED, base_ref: str = "main") 
     unrelated tracked file, put the committed change back out of view while the
     gate printed a plausible count and a pass.
 
-    When ``base_ref`` names nothing (a workspace whose trunk is not ``main``),
-    there is no branch diff to union in: the run degrades to ``HEAD``, says so
-    in the scope line, and is marked ``degraded`` so `resolve_gate_scope` can
-    refuse to call it a pass if the narrower scope leaves this gate with
-    nothing to grade.
+    When ``base_ref`` still names nothing after `effective_base_ref` has looked
+    for the repository's real trunk, there is no branch diff to union in: the
+    run degrades to ``HEAD``, says so in the scope line, and is marked
+    ``degraded`` so `resolve_gate_scope` can refuse to call it a pass if the
+    narrower scope leaves this gate with nothing to grade.
     """
+    base_ref = effective_base_ref(repo, base_ref)
     if diff_scope != WORKTREE:
         return ResolvedScope(
             diff_scope,

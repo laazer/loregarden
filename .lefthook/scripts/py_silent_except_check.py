@@ -56,6 +56,7 @@ if str(_LEFTHOOK_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_LEFTHOOK_SCRIPTS))
 
 from precommit_git_diff import (  # noqa: E402 - sys.path is set up just above
+    DEFAULT_BASE_REF,
     STAGED,
     UnexaminableError,
     UnexaminableFileError,
@@ -230,7 +231,7 @@ def parse_argv(argv: list[str]) -> Invocation:
     files: list[Path] = []
     repo_arg: str | None = None
     diff_scope = STAGED
-    base_ref = "main"
+    base_ref = DEFAULT_BASE_REF
     index = 0
     while index < len(argv):
         arg = argv[index]
