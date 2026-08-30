@@ -46,6 +46,7 @@ from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.run_service import (
     settle_expired_agent_runs,
     settle_expired_orchestration_leases,
+    settle_orphaned_agent_runs,
     settle_stranded_stages,
 )
 from loregarden.services.ticket_rollup import reconcile_all_parents
@@ -84,6 +85,7 @@ def _reconcile_lanes(session: Session) -> object:
 #: just died. Only the first can be told the truth by a run that is still working.
 PERIODIC_STEPS: tuple[SweepStep, ...] = (
     SweepStep("settle_expired_agent_runs", settle_expired_agent_runs),
+    SweepStep("settle_orphaned_agent_runs", settle_orphaned_agent_runs),
     SweepStep("settle_expired_orchestration_leases", _settle_leases),
     SweepStep("settle_stranded_stages", settle_stranded_stages),
     SweepStep("reconcile_lanes", _reconcile_lanes),

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from loregarden.core.event_bus import event_bus
 from loregarden.core.state_machine import StateMachine
 from loregarden.models.domain import (
+    AgentRun,
     Approval,
     ApprovalKind,
     ApprovalStatus,
@@ -18,6 +19,7 @@ from loregarden.models.domain import (
     ExternalHarness,
     OrchestrationRun,
     OrchestrationRunStatus,
+    RunStatus,
     StageStatus,
     Ticket,
     TicketState,
@@ -27,6 +29,8 @@ from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.run_concurrency import find_active_orchestration_run
+from loregarden.services.run_interruption import ORPHAN_OF_TERMINAL_ORCH_MESSAGE
+from loregarden.services.run_lease import SUPERVISED
 from loregarden.services.studio_routing import is_prunable_stage, prunable_stage_keys
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.ticket_ids import resolve as resolve_external_id
@@ -34,7 +38,7 @@ from loregarden.services.ticket_state_service import choose
 from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from loregarden.services.worktree_lifecycle import release_ticket_worktree
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 
 def _orch_code() -> str:
@@ -172,14 +176,32 @@ class OrchestrationCallbackService:
 
         Callers mutate the ticket first and let the commit here carry it; the
         run's own terminal fields are set here so no caller can set a status
-        without the release.
+        without the release. In-flight child agent runs are failed in the same
+        turn: leaving them ``RUNNING`` is how a finished ticket kept a Running
+        badge on the home board after its lane was already empty.
         """
         run.status = status
         run.error_message = message[:2000]
         run.finished_at = datetime.now(timezone.utc)
         self.session.add(run)
         self.session.commit()
+        self._fail_in_flight_children(run)
         self._release_execution_lane(run)
+
+    def _fail_in_flight_children(self, orch_run: OrchestrationRun) -> None:
+        """Fail leftover agent runs so they stop reading as live work."""
+        children = self.session.exec(
+            select(AgentRun)
+            .where(AgentRun.orchestration_run_id == orch_run.id)
+            .where(col(AgentRun.status).in_(list(SUPERVISED)))
+        ).all()
+        for child in children:
+            self.orch.complete_run(
+                child,
+                status=RunStatus.FAILED,
+                stderr=ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
+                advance_workflow=False,
+            )
 
     def abandon_claim(self, run: OrchestrationRun, *, message: str) -> None:
         """Fail a claim nothing will adopt, so it stops looking live.
