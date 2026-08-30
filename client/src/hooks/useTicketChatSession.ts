@@ -43,6 +43,7 @@ export function useTicketChatSession(ticketId: string | undefined): ChatSession 
     // warned "advisory" and then took it back on load would be worse than
     // silence.
     canAct: (triage.data?.chat_intent ?? "execute") === "execute",
+    chatMode: triage.data?.chat_mode,
     isLoading: triage.isLoading,
     loadError: triage.isError,
     error: sendMessage.isError

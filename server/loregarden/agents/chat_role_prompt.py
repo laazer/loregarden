@@ -79,8 +79,17 @@ def chat_advisory_blocks(advisory_reason: str = "") -> list[str]:
     ]
     if advisory_reason:
         # Naming the cause turns "I can't do that" into something the operator
-        # can act on, and stops the model inventing a reason of its own.
-        sections.append(f"Why this channel is advisory: {advisory_reason}")
+        # can act on, and stops the model inventing a reason of its own. The
+        # same sentence is on the snapshot behind the mode indicator, so asking
+        # Baxter and reading the badge give one answer, not two.
+        sections.extend(
+            [
+                f"Why this channel is advisory: {advisory_reason}",
+                "If the operator asks why you cannot act, or how to let you, answer with "
+                "exactly that reason and that remedy. Do not speculate past it, and do not "
+                "offer a workaround it does not name.",
+            ]
+        )
     return sections
 
 

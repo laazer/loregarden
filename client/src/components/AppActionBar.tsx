@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../api/client";
@@ -13,8 +13,11 @@ import {
   quickPrompts as promptsFor,
 } from "../lib/dockChatPrompts";
 import { useUiStore, type UtilityDockEdge } from "../state/uiStore";
+import { checkoutBranchTriage } from "../lib/branchTriageApi";
+import { describeError } from "../state/toastStore";
 import { formatLogExcerpt } from "../utils/logExcerpt";
 import { BaxterAvatar } from "./chat/BaxterAvatar";
+import { ChatModePill, type ChatModeFix } from "./ChatModePill";
 import { ComposerCommandMenu } from "./chat/ComposerCommandMenu";
 import { ComposerNotes } from "./chat/ComposerNotes";
 import { TriageModelModal } from "./TriageModelModal";
@@ -47,7 +50,34 @@ export function AppActionBar() {
   const [draft, setDraft] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
   const [attachLogs, setAttachLogs] = useState(false);
+  const qc = useQueryClient();
   const [modelModalOpen, setModelModalOpen] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  // The badge only offers a fix for causes the server marked remediable, so
+  // each branch here has something real to do. Anything else is reported, not
+  // offered — a fix button that cannot fix is worse than no button.
+  const applyChatModeFix = useCallback(
+    (fix: ChatModeFix) => {
+      if (fix === "runtime") {
+        setModelModalOpen(true);
+        return;
+      }
+      if (fix === "checkout" && terminal.workspaceSlug && branch) {
+        setCheckoutError(null);
+        checkoutBranchTriage(terminal.workspaceSlug, branch)
+          .then(() => {
+            // The mode is server-resolved, so re-reading the snapshot is what
+            // flips the badge — nothing here decides it locally.
+            qc.invalidateQueries({ queryKey: ["branch-triage-chat"] });
+            qc.invalidateQueries({ queryKey: ["branch-triage"] });
+          })
+          .catch((err) => setCheckoutError(describeError(err, "Could not check out the branch")));
+      }
+    },
+    [branch, qc, terminal.workspaceSlug],
+  );
+
 
   // Same key the dashboard and the terminal target use, so the log lines to
   // attach cost no extra request.
@@ -321,16 +351,21 @@ export function AppActionBar() {
         </span>
       ) : null}
 
-      {/* An aside is read-only by definition, so this would be noise there. */}
-      {session && !session.canAct && !asideMode ? (
-        <span
-          className="app-action-bar-pill"
-          title={
-            "Baxter can only answer in this conversation — the adapter behind it has no " +
-            "way to run tools, so it cannot read code, edit files, or change the ticket."
-          }
-        >
-          advisory
+      {/* Always on: "can act" is as worth knowing as "cannot", and a badge that
+          only appears on failure reads as "still loading" the rest of the time.
+          Suppressed for an aside, which carries its own label above. */}
+      <ChatModePill
+        mode={session?.chatMode}
+        canAct={session?.canAct}
+        asideMode={asideMode}
+        onFix={applyChatModeFix}
+      />
+
+      {/* A fix that failed must say so here: the badge would otherwise stay
+          advisory with no indication the button did anything. */}
+      {checkoutError ? (
+        <span className="app-action-bar-pill app-action-bar-pill--error" title={checkoutError}>
+          checkout failed
         </span>
       ) : null}
 

@@ -647,3 +647,47 @@ class ToolGrantWarningCode(StrEnum):
     ALL_MCP_EXCLUDED = "all_mcp_excluded"
     EMPTY_ALLOWLIST = "empty_allowlist"
     UNKNOWN_MCP_SERVER = "unknown_mcp_server"
+
+
+class ChatMode(StrEnum):
+    """Whether a chat rail's next turn can change anything.
+
+    The operator-facing counterpart of ``TurnIntent``: the same two states, but
+    published on a snapshot so the UI can say which one it is *before* a message
+    is sent, rather than after the reply comes back read-only.
+    """
+
+    ACT = "act"
+    ADVISORY = "advisory"
+
+
+class ChatAdvisoryCause(StrEnum):
+    """Why a rail cannot act. One member per real cause, not a catch-all.
+
+    A single "advisory" bit told an operator that something was wrong and
+    nothing about what — and two of these causes were decided per turn and never
+    reached the snapshot at all, so the UI could promise a rail could act and
+    then run it read-only. Each member carries a distinct remediation; see
+    ``services.chat_mode``.
+    """
+
+    #: The resolved adapter has neither a permission bridge nor a writable
+    #: oneshot path (opencode, local, or an unrecognised id).
+    ADAPTER_CANNOT_EXECUTE = "adapter_cannot_execute"
+    #: The adapter has a write path but only reaches it with permission bypass
+    #: on. Distinct from ADAPTER_CANNOT_EXECUTE: the tool is capable, the
+    #: configuration is not letting it, and those need different advice.
+    ADAPTER_NEEDS_PERMISSION_BYPASS = "adapter_needs_permission_bypass"
+    #: Branch triage on a branch with no worktree. Writes need somewhere to land.
+    BRANCH_NOT_CHECKED_OUT = "branch_not_checked_out"
+    #: A bridge-capable turn with no AgentRun to hang approvals on. Internal —
+    #: the operator cannot fix this one, so the UI says so rather than
+    #: suggesting a knob that will not help.
+    NO_RUN_FOR_APPROVALS = "no_run_for_approvals"
+    #: A surface that is read-only by construction rather than by capability:
+    #: diff review and the branch-triage message path both answer from the
+    #: record. Not a fault, and not something to fix.
+    SURFACE_IS_READ_ONLY = "surface_is_read_only"
+    #: A BTW aside — answered by an observer reading the run's log. Read-only by
+    #: design, and the one advisory state that is working as intended.
+    ASIDE_OBSERVER = "aside_observer"

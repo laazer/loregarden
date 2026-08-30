@@ -628,7 +628,9 @@ describe("advisory rails", () => {
     expect(screen.getByText("advisory")).toBeInTheDocument();
   });
 
-  it("stays quiet when the conversation can act", () => {
+  it("says the conversation can act rather than going quiet", () => {
+    // The badge is persistent on purpose: an absent badge reads as "still
+    // loading", so "can act" is stated as plainly as "advisory".
     mockResolver.mockReturnValue(
       bind({ session: session({ canAct: true }), label: "Ticket triage" }),
     );
@@ -636,5 +638,6 @@ describe("advisory rails", () => {
     renderBar();
 
     expect(screen.queryByText("advisory")).not.toBeInTheDocument();
+    expect(screen.getByText("can act")).toBeInTheDocument();
   });
 });

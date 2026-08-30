@@ -225,6 +225,7 @@ export function useBaxterChatSession(workspaceSlug: string): BaxterChatSessionBi
     isBusy: isRunStatusBusy(snapshot.data?.run_status) || sendMessage.isPending,
     activeTurnId: snapshot.data?.active_turn_id ?? null,
     canAct,
+    chatMode: snapshot.data?.chat_mode,
     isLoading: enabled && snapshot.isLoading,
     // A missing thread is recovered from above, so it is not a load failure.
     loadError:

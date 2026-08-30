@@ -32,6 +32,7 @@ from loregarden.services.agent_turn_runner import (
     resolve_chat_intent,
 )
 from loregarden.services.approval_views import approval_to_view
+from loregarden.services.chat_mode import resolve_chat_mode
 from loregarden.services.chat_primitives import load_parts_json, parts_json_for_reply
 from loregarden.services.chat_thinking import ChatTurnThinkingSink
 from loregarden.services.cli_agent_runner import (
@@ -175,6 +176,7 @@ def triage_snapshot(session: Session, ticket: Ticket) -> dict:
         "recent_approvals": recent,
         "adapter_capabilities": capabilities.as_dict(),
         "chat_intent": intent,
+        "chat_mode": resolve_chat_mode(capabilities.adapter).as_dict(),
         "messages": [
             {
                 "id": msg.id,

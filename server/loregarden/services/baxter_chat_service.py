@@ -54,6 +54,7 @@ from loregarden.services.agent_turn_runner import (
     run_agent_turn,
 )
 from loregarden.services.approval_views import approval_to_view
+from loregarden.services.chat_mode import resolve_chat_mode
 from loregarden.services.chat_primitives import load_parts_json, parse_primitive_parts
 from loregarden.services.cli_agent_runner import stub_response
 from loregarden.services.cli_settings import (
@@ -500,6 +501,7 @@ def chat_session_snapshot(session: Session, chat_session: BaxterChatSession) -> 
         "pending_approvals": list_home_chat_pending_approvals(session, chat_session),
         "runtime": parse_runtime_settings(chat_session.runtime_json).model_dump(),
         "adapter_capabilities": caps,
+        "chat_mode": resolve_chat_mode(str(caps.get("adapter", "claude"))).as_dict(),
         "run_status": run_status,
         "active_turn_id": active_turn_id,
         "created_at": chat_session.created_at.isoformat(),

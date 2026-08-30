@@ -1,4 +1,5 @@
 import type { ChatMessageView } from "../components/chat/chatUtils";
+import type { ChatMode } from "../api/client";
 
 export type ChatSessionKind =
   | "ticket-triage"
@@ -49,6 +50,13 @@ export interface ChatSession {
    * asked for something it silently cannot do.
    */
   canAct: boolean;
+  /**
+   * Why this rail is in the mode it is, and what would change it.
+   *
+   * Undefined only for a snapshot that predates the field. `canAct` remains the
+   * boolean the UI branches on; this carries what to *say* about it.
+   */
+  chatMode?: ChatMode;
   /** First load only — distinct from `isBusy`, which means the agent is working. */
   isLoading: boolean;
   /** Last send failure, already formatted for display, or null. */

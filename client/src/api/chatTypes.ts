@@ -72,6 +72,7 @@ export interface BaxterChatSnapshot {
   runtime: WorkspaceRuntimeSettings;
   /** What the selected adapter can do — same matrix for every chat surface. */
   adapter_capabilities?: AdapterCapabilities;
+  chat_mode?: ChatMode;
   run_status: TriageRunStatus;
   active_turn_id: string | null;
   created_at: string;
@@ -86,6 +87,8 @@ export interface AdapterCapabilities {
   permission_bridge: boolean;
   inbox_approvals: boolean;
   plan_execute: boolean;
+  /** Has a write path, but only reaches it with permission bypass on. */
+  requires_permission_bypass?: boolean;
   stream_thinking: boolean;
   steer: boolean;
 }
@@ -98,6 +101,39 @@ export interface AdapterCapabilities {
  */
 export type ChatIntent = "advisory" | "execute";
 
+/** Whether the next turn on this rail can change anything. */
+export type ChatModeName = "act" | "advisory";
+
+/**
+ * Why a rail cannot act. One member per real cause — see `services/chat_mode`.
+ *
+ * `aside_observer` and `surface_is_read_only` are not faults: they are rails
+ * that answer from the record on purpose, and the UI labels them rather than
+ * offering a fix.
+ */
+export type ChatAdvisoryCause =
+  | "adapter_cannot_execute"
+  | "adapter_needs_permission_bypass"
+  | "branch_not_checked_out"
+  | "no_run_for_approvals"
+  | "surface_is_read_only"
+  | "aside_observer";
+
+/**
+ * The mode of the rail's next turn, with the reason and the way out.
+ *
+ * Resolved by the same server function the turn itself uses, so the badge
+ * cannot promise something the turn will not do.
+ */
+export interface ChatMode {
+  mode: ChatModeName;
+  cause: ChatAdvisoryCause | null;
+  reason: string;
+  advice: string;
+  /** Whether the operator can clear this themselves. */
+  remediable: boolean;
+}
+
 export interface TriageSnapshot {
   pending_approvals: Approval[];
   recent_approvals: Approval[];
@@ -105,6 +141,7 @@ export interface TriageSnapshot {
   runtime: WorkspaceRuntimeSettings;
   adapter_capabilities?: AdapterCapabilities;
   chat_intent?: ChatIntent;
+  chat_mode?: ChatMode;
   run_status: TriageRunStatus;
   active_run_id: string | null;
 }
