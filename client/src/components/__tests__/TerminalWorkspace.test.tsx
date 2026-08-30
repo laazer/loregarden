@@ -1,4 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
+// Rendered through the shared helper because these surfaces now carry
+// `AddToTabMenu`, which lists the operator's tabs and therefore needs a
+// QueryClient. Aliased to `render` so every existing call site reads the
+// same; the provider is the only thing that changed.
+import { renderWithRouter as render } from "../../test/renderWithRouter";
 
 import { TerminalWorkspace } from "../TerminalWorkspace";
 

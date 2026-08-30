@@ -7,7 +7,12 @@
  * itself: each slot shows its own queue, and adding commits rather than stages.
  */
 
-import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, screen, fireEvent, waitFor, within } from '@testing-library/react';
+// Rendered through the shared helper because these surfaces now carry
+// `AddToTabMenu`, which lists the operator's tabs and therefore needs a
+// QueryClient. Aliased to `render` so every existing call site reads the
+// same; the provider is the only thing that changed.
+import { renderWithRouter as render } from '../../test/renderWithRouter';
 import { ParallelQueueVisualization } from '../ParallelQueueVisualization';
 import { api } from '../../api/client';
 import { useQueueStatus, type QueueStatusValue } from '../../state/QueueStatusContext';

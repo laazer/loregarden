@@ -20,6 +20,7 @@ import {
 } from "../lib/ticketStates";
 import { useUiStore } from "../state/uiStore";
 import "./HomePage.css";
+import { AddToTabMenu } from "../components/AddToTabMenu";
 
 const HERO_CHIPS = [
   "What should we ship today?",
@@ -334,6 +335,14 @@ function StatusCard({
         <h2>Board status</h2>
         <div className="home-card-head-meta">
           <span className="home-card-count">{open === null ? "…" : `${open} open`}</span>
+          {/* The board this card summarises is the Kanban pane, whole. No
+              settings to carry: an unfiltered board is what this card is. */}
+          <AddToTabMenu
+            primitiveId="chat_kanban"
+            values={new Map()}
+            title="Board"
+            label="Add the board to a tab"
+          />
           <button type="button" className="home-card-action home-card-action--inline" onClick={onAction}>
             Open Console
           </button>

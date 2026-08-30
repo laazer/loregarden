@@ -280,6 +280,69 @@ export function splitLeaf(
 }
 
 /**
+ * Whether `container` is a pane nobody has chosen contents for yet.
+ *
+ * The absence of `primitive_id` is what makes a pane render its picker prompt,
+ * so an empty pane is the one place a new primitive can land without adding a
+ * pane at all.
+ */
+function isUnconfigured(container: unknown): boolean {
+  const settings = asJson(asJson(container)?.settings);
+  return settings === undefined || typeof settings.primitive_id !== "string";
+}
+
+/**
+ * Add `container` to the grid as a pane of its own.
+ *
+ * Two shapes, and the first is the one that makes this feel right rather than
+ * merely correct: a view whose whole layout is one **empty** pane has that pane
+ * *filled* instead of split. A freshly created tab is exactly that layout, so
+ * "add this board to a new tab" would otherwise open a tab holding the board
+ * beside an empty pane the operator never asked for.
+ *
+ * Otherwise the root is wrapped in a row split and the new pane takes half. Not
+ * a descent to find the "best" leaf: which pane a new one should sit beside is a
+ * judgement the operator makes by dragging, and a rule that guessed would be
+ * wrong silently. The root is the one position that is never a surprise.
+ *
+ * Throws on the server's ceilings for the same reason `splitLeaf` does — a
+ * refusal the operator sees, rather than a PATCH that comes back 400 as a
+ * silent autosave.
+ */
+export function appendPane(layout: ViewLayout, container: Json): ViewLayout {
+  const tree = requireTree(layout);
+  const containers = containersOf(layout);
+
+  if (tree.node === "leaf" && isUnconfigured(containers[tree.container_id])) {
+    return storeTree(layout, tree, { ...containers, [tree.container_id]: container });
+  }
+
+  if (Object.keys(containers).length + 1 > MAX_CONTAINERS) {
+    throw new Error(`A view cannot hold more than ${MAX_CONTAINERS} panes.`);
+  }
+  // One pane added at the root adds two nodes: the split that now stands where
+  // the root stood, and the leaf it opens.
+  if (countNodes(tree) + 2 > MAX_LAYOUT_NODES) {
+    throw new Error(`A view cannot hold more than ${MAX_LAYOUT_NODES} layout nodes.`);
+  }
+
+  const addedContainerId = freshId("c");
+  const root: GridNodeModel = {
+    node: "split",
+    id: freshId("n"),
+    // `storeTree` stamps the root at exactly 1.0; this is the value in flight.
+    size: tree.size,
+    // Side by side. The server's vocabulary, not CSS's — `row` is a 422.
+    orientation: "horizontal",
+    children: [
+      { ...tree, size: 0.5 },
+      { node: "leaf", id: freshId("n"), size: 0.5, container_id: addedContainerId },
+    ],
+  };
+  return storeTree(layout, root, { ...containers, [addedContainerId]: container });
+}
+
+/**
  * The split without the leaf `nodeId`, or `undefined` when removing it empties
  * the split entirely.
  *

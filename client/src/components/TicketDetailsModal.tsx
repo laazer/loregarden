@@ -7,6 +7,7 @@ import { TicketDependencies } from './TicketDependencies';
 import { TicketRelations } from './TicketRelations';
 import { STATE_LABELS } from './UpdateStateModal';
 import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
+import { AddToTabMenu } from './AddToTabMenu';
 
 const STATE_OPTIONS = Object.keys(STATE_LABELS) as TicketState[];
 const PRIORITY_OPTIONS = [1, 2, 3] as const;
@@ -205,6 +206,18 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
             )}
             <p id="modal-description" className="modal-subtitle">{asDisplayString(ticket?.external_id)}</p>
           </div>
+          {ticket ? (
+            /* The ticket card and its run ledger are both panes of exactly this
+               ticket, and this modal is the one place that already has its id.
+               The external id is the tab's name: `lg-flex-views-561` is what an
+               operator recognises in a tab list, not "Ticket". */
+            <AddToTabMenu
+              primitiveId="chat_ticket"
+              values={new Map([['ticket_id', ticket.external_id || ticket.id]])}
+              title={ticket.external_id || ticket.title}
+              label="Add this ticket to a tab"
+            />
+          ) : null}
           <IconCloseButton onClick={onClose} disabled={isSaving} aria-label="Close ticket details" />
         </div>
 

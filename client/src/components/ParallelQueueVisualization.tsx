@@ -25,6 +25,7 @@
 
 import { useMemo, useState } from 'react';
 import { IconCloseButton } from './IconCloseButton';
+import { AddToTabMenu } from './AddToTabMenu';
 import { OverflowMenu, OverflowMenuItem } from './OverflowMenu';
 import { QueueSlotTicketPicker } from './QueueSlotTicketPicker';
 import { QueueAddToLaneModal, type QueueAddRequest } from './QueueAddToLaneModal';
@@ -510,6 +511,16 @@ export function ParallelQueueVisualization() {
               >
                 {lane.running ? runStatusLabel(lane.running.status) : 'available'}
               </span>
+              {/* The lane pane draws exactly this lane. Offering it here is the
+                  whole of `primitiveHomes`: the page that already has the slot
+                  number on screen is the page that should not make anyone type
+                  it. */}
+              <AddToTabMenu
+                primitiveId="queue_lane"
+                values={new Map([['slot', String(lane.slot_number)]])}
+                title={`Lane ${lane.slot_number}`}
+                label={`Add lane ${lane.slot_number} to a tab`}
+              />
               {lane.running ? (
                 <LaneTicketMenu
                   label={
