@@ -9,6 +9,7 @@ import { PageTopbar } from "../components/TopbarPageSlot";
 import { fetchBranchTriage } from "../lib/branchTriageApi";
 import { useUiStore } from "../state/uiStore";
 import "../components/BranchTriagePanel.css";
+import { AddToTabMenu } from "../components/AddToTabMenu";
 
 type BranchTriageTab = "triage" | "diff";
 
@@ -153,6 +154,23 @@ export function BranchTriagePage() {
               >
                 Diff with reviews
               </button>
+              {selectedBranch === null || activeSlug === null ? null : (
+                /* Both repository primitives take a workspace *and* a branch,
+                   and this is the one page that has both selected at once —
+                   which is exactly the pair the branch history pane refuses to
+                   render without. */
+                <AddToTabMenu
+                  primitiveId="chat_branch_history"
+                  values={
+                    new Map([
+                      ["workspace_slug", activeSlug],
+                      ["branch", selectedBranch],
+                    ])
+                  }
+                  title={selectedBranch}
+                  label={`Add ${selectedBranch} history to a tab`}
+                />
+              )}
             </div>
 
             <div className="branch-triage-layout">

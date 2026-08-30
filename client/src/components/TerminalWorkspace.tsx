@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { TerminalPanel } from "./TerminalPanel";
 import "./TerminalWorkspace.css";
+import { AddToTabMenu } from "./AddToTabMenu";
 
 interface TerminalWorkspaceProps {
   workspaceSlug: string;
@@ -195,6 +196,15 @@ export function TerminalWorkspace({
           >
             <SplitIcon />
           </button>
+          {/* A terminal pane opens a shell in one workspace, which is the one
+              thing this toolbar has and the pane's settings otherwise ask an
+              operator to type. */}
+          <AddToTabMenu
+            primitiveId="terminal"
+            values={new Map([["workspace_slug", workspaceSlug]])}
+            title={`${workspaceSlug} shell`}
+            label="Add a shell for this workspace to a tab"
+          />
         </div>
       </header>
 

@@ -348,6 +348,52 @@ export function addItem(layout: ViewLayout, x: number, y: number): ViewLayout {
   return storeItems(layout, [...items, placed], { ...containers, [containerId]: emptyContainer() });
 }
 
+/**
+ * The offset a cascade step moves a placed item by.
+ *
+ * Enough that the new card's header clears the one under it, so a canvas built
+ * by adding from elsewhere in the app reads as a stack rather than as one card.
+ */
+const CASCADE_STEP = 32;
+
+/**
+ * Place `container` on the canvas, cascading clear of what is already there.
+ *
+ * The canvas has no "next slot": an item is placed at a coordinate, and every
+ * item added from outside the canvas would otherwise land at the same one and
+ * hide the last. Cascading by item count is the cheapest rule that keeps each
+ * addition visible, and `clampGeometry` keeps the cascade inside the surface
+ * rather than walking off it on the fiftieth card.
+ *
+ * The grid's counterpart fills an empty pane rather than adding one; a canvas
+ * has no empty item to fill, so there is no such case here.
+ */
+export function appendItem(layout: ViewLayout, container: Json): ViewLayout {
+  const items = readCanvasItems(layout);
+  const containers = containersOf(layout);
+  if (Object.keys(containers).length + 1 > MAX_CONTAINERS) {
+    throw new Error(`A view cannot hold more than ${MAX_CONTAINERS} containers.`);
+  }
+  if (items.length + 1 > MAX_LAYOUT_NODES) {
+    throw new Error(`A view cannot hold more than ${MAX_LAYOUT_NODES} layout nodes.`);
+  }
+
+  const containerId = freshId("c");
+  const offset = items.length * CASCADE_STEP;
+  const placed: CanvasItemModel = {
+    id: freshId("i"),
+    container_id: containerId,
+    ...clampGeometry({
+      x: offset,
+      y: offset,
+      width: DEFAULT_ITEM_WIDTH,
+      height: DEFAULT_ITEM_HEIGHT,
+    }),
+    z_index: topZ(items),
+  };
+  return storeItems(layout, [...items, placed], { ...containers, [containerId]: container });
+}
+
 /** Move `itemId` so its top-left corner sits at `x`, `y`. */
 export function moveItem(layout: ViewLayout, itemId: string, x: number, y: number): ViewLayout {
   const items = readCanvasItems(layout);

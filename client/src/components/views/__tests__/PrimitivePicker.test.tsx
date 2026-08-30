@@ -116,7 +116,19 @@ describe("AC2 — the dispatcher is the only door to a concrete primitive", () =
     // choice, so this does not demand a `*Primitive.tsx` naming scheme or a
     // flat directory — it takes every module under `primitives/` that is not
     // one of the shared pieces the rest of the app is *allowed* to import.
-    const SHARED = ["registry", "types", "definePrimitive", "excludedPanels", "embedUrl", "index"];
+    // `primitiveHomes` joins the shared list on the same footing as
+    // `excludedPanels`: metadata *about* primitives, importing no component and
+    // holding no rendering. `AddToTabMenu` reads it to decide which surfaces
+    // may offer a primitive at all, which is a question outside this directory.
+    const SHARED = [
+      "registry",
+      "types",
+      "definePrimitive",
+      "excludedPanels",
+      "embedUrl",
+      "primitiveHomes",
+      "index",
+    ];
     const primitiveModules: string[] = [];
     const collect = (dir: string) => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
