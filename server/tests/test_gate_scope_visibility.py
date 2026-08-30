@@ -900,28 +900,86 @@ def test_an_explicitly_named_untracked_file_is_graded_whole(
     assert Path(relpath).name in _out(result)
 
 
-@pytest.mark.parametrize(
-    "gate", [PY_ORGANIZATION_GATE, PY_SILENT_EXCEPT_GATE], ids=["py-org", "py-silent-except"]
-)
-def test_a_symlinked_source_file_is_still_graded(
-    repo: Path, gate: list[str], tmp_path: Path
-) -> None:
-    """`resolve()` followed a symlinked module out of the source root.
+#: A symlinked source whose target is a *repository* file, per language. The
+#: link sits in the language's source root; the file it points at sits at the
+#: repo root, outside that root, so it is reached only through the link.
+IN_REPO_SYMLINK_GATES = [
+    pytest.param(PY_ORGANIZATION_GATE, "src/pkg/linked.py", PY_ORGANIZATION_VIOLATION, id="py-org"),
+    pytest.param(
+        PY_SILENT_EXCEPT_GATE,
+        "src/pkg/linked.py",
+        PY_SILENT_EXCEPT_VIOLATION,
+        id="py-silent-except",
+    ),
+    pytest.param(TS_ORGANIZATION_GATE, "client/src/linked.ts", TS_VIOLATION, id="ts-org"),
+]
 
-    The scope filter resolved each candidate before asking whether it sat under
-    the repo's Python root, so a file linked into `src/` resolved to wherever it
-    really lives, failed the test, and was dropped: `examined 0 file(s)`, exit 0,
-    no degraded warning. Resolving the file's *directory* still normalises the
-    symlinked prefix a checkout can sit behind without following the file.
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), IN_REPO_SYMLINK_GATES)
+def test_a_symlinked_source_file_is_still_graded(
+    repo: Path, gate: list[str], relpath: str, body: str
+) -> None:
+    """The positive control, and the one that keeps the escape guard a guard.
+
+    `resolve()` once followed a symlinked module out of the source root: a file
+    linked into `src/` resolved to wherever it really lives, failed the
+    source-root test, and was dropped — `examined 0 file(s)`, exit 0, no
+    degraded warning. Resolving the file's *directory* fixed that.
+
+    It is now also the control on the escape guard. A guard that refuses every
+    symlink passes every hostile case in this file and turns a safety check into
+    the outage it was meant to prevent, so a link whose target is inside the
+    repository must still be read and still be graded.
     """
-    real = tmp_path.parent / "linked_module.py"
-    real.write_text(PY_ORGANIZATION_VIOLATION + PY_SILENT_EXCEPT_VIOLATION)
-    (repo / "src" / "pkg" / "linked.py").symlink_to(real)
+    link = repo / relpath
+    real = repo / f"linked_target{link.suffix}"
+    real.write_text(body)
+    link.symlink_to(real)
 
     result = _run_gate(gate, repo, "--base", "main")
 
     assert result.returncode == 1, _out(result)
-    assert "linked.py" in _out(result)
+    assert link.name in _out(result), _out(result)
+
+
+#: The same three gates over a link whose target is *outside* the repository,
+#: with content that would grade clean. Clean on purpose: the refusal has to
+#: come from where the target resolves, not from what it happens to contain.
+OUT_OF_REPO_SYMLINK_GATES = [
+    pytest.param(PY_ORGANIZATION_GATE, "src/pkg/linked.py", "y = 2\n", id="py-org"),
+    pytest.param(PY_SILENT_EXCEPT_GATE, "src/pkg/linked.py", "y = 2\n", id="py-silent-except"),
+    pytest.param(
+        TS_ORGANIZATION_GATE, "client/src/linked.ts", "export const y = 2;\n", id="ts-org"
+    ),
+]
+
+
+@pytest.mark.parametrize(("gate", "relpath", "body"), OUT_OF_REPO_SYMLINK_GATES)
+def test_a_source_symlinked_out_of_the_repository_is_refused(
+    repo: Path, gate: list[str], relpath: str, body: str, tmp_path_factory
+) -> None:
+    """AC1 + AC4: every gate refuses a graded path that leaves the repository.
+
+    `located_path` keeps the relpath git printed, so the link stays gradeable
+    and the read follows it wherever it goes — out of the tree the caller
+    scoped, into a file nothing in this repository governs. Reporting that
+    clean is the vacuous pass in its most misleading form: the gate names a
+    repository file and clears content that is not in the repository.
+
+    AC4 is the parametrisation itself. The Python gates and the `.cjs` gate
+    share the rule, so one list drives all three and a mirror that drifts fails
+    here rather than in whichever workspace hits it first.
+    """
+    outside = tmp_path_factory.mktemp("outside") / f"target{Path(relpath).suffix}"
+    outside.write_text(body)
+    (repo / relpath).symlink_to(outside)
+
+    result = _run_gate(gate, repo, "--base", "main")
+
+    assert result.returncode != 0, _out(result)
+    assert "passed" not in _out(result), _out(result)
+    assert Path(relpath).name in _out(result), _out(result)
+    assert str(outside.resolve()) in _out(result), _out(result)
 
 
 # --------------------------------------------------------------------------- #
@@ -1321,7 +1379,7 @@ def test_a_symlinked_source_is_refused_rather_than_followed(tmp_path):
     os.symlink("/dev/zero", tmp_path / "leak.py")
 
     with pytest.raises(diff.UnexaminableFileError) as excinfo:
-        diff.read_source_text(tmp_path / "leak.py")
+        diff.read_source_text(tmp_path / "leak.py", repo=tmp_path)
 
     assert "not a regular file" in str(excinfo.value)
 
@@ -1339,7 +1397,7 @@ def test_a_broken_symlink_names_the_file_instead_of_raising_oserror(tmp_path):
     os.symlink(tmp_path / "gone.py", tmp_path / "broken.py")
 
     with pytest.raises(diff.UnexaminableFileError) as excinfo:
-        diff.read_source_text(tmp_path / "broken.py")
+        diff.read_source_text(tmp_path / "broken.py", repo=tmp_path)
 
     assert "broken.py" in str(excinfo.value)
 
@@ -1351,7 +1409,7 @@ def test_an_oversized_file_is_refused_rather_than_read_whole(tmp_path):
     big.write_bytes(b"# padding\n" * ((diff.MAX_SOURCE_BYTES // 10) + 1))
 
     with pytest.raises(diff.UnexaminableFileError) as excinfo:
-        diff.read_source_text(big)
+        diff.read_source_text(big, repo=tmp_path)
 
     assert "grading limit" in str(excinfo.value)
 
@@ -1362,4 +1420,90 @@ def test_an_ordinary_source_file_still_reads(tmp_path):
     ok = tmp_path / "ok.py"
     ok.write_text("import os\n\n\ndef f():\n    return os.sep\n", encoding="utf-8")
 
-    assert diff.read_source_text(ok).startswith("import os")
+    assert diff.read_source_text(ok, repo=tmp_path).startswith("import os")
+
+
+def test_read_source_text_has_no_default_repository(tmp_path):
+    """AC1: `repo` is required and keyword-only, so nobody can opt out of the check.
+
+    A default would let a caller that never passed one read exactly as before,
+    and "nobody passed it" would be indistinguishable from "nothing to check" —
+    the defect shape this family is made of. Positional passing is refused too:
+    the second argument to a reader is not obviously a repository root, and a
+    caller that guesses wrong silently widens the boundary.
+    """
+    diff = _load_script("precommit_git_diff")
+    ok = tmp_path / "ok.py"
+    ok.write_text("x = 1\n", encoding="utf-8")
+
+    with pytest.raises(TypeError):
+        diff.read_source_text(ok)
+    with pytest.raises(TypeError):
+        diff.read_source_text(ok, tmp_path)
+
+
+def test_a_symlink_out_of_the_repo_names_the_path_and_its_target(tmp_path):
+    """AC1: the message carries both halves, because either alone is unactionable.
+
+    The path as git spells it is the only handle the reader has on the diff;
+    the resolved target is the only thing that explains why a file that looks
+    like source was refused. A refusal naming one of the two sends the reader
+    looking for a file that reads fine.
+    """
+    diff = _load_script("precommit_git_diff")
+    repo_root = tmp_path / "repo"
+    (repo_root / "src").mkdir(parents=True)
+    outside = tmp_path / "elsewhere" / "target.py"
+    outside.parent.mkdir()
+    outside.write_text("x = 1\n", encoding="utf-8")
+    link = repo_root / "src" / "linked.py"
+    link.symlink_to(outside)
+
+    with pytest.raises(diff.UnexaminableFileError) as excinfo:
+        diff.read_source_text(link, repo=repo_root)
+
+    message = str(excinfo.value)
+    assert str(link) in message, message
+    assert str(outside.resolve()) in message, message
+    assert "cannot be reported clean" in message, message
+
+
+def test_a_symlink_inside_the_repo_still_reads(tmp_path):
+    """AC1's positive control at the unit: the guard refuses targets, not links.
+
+    Without this a guard that raises on every symlink satisfies every other
+    assertion here. That is not a stricter gate, it is an outage: a workspace
+    that links a module into its source root would be unable to transition a
+    stage at all.
+    """
+    diff = _load_script("precommit_git_diff")
+    repo_root = tmp_path / "repo"
+    (repo_root / "src").mkdir(parents=True)
+    real = repo_root / "vendored.py"
+    real.write_text("import os\n", encoding="utf-8")
+    link = repo_root / "src" / "linked.py"
+    link.symlink_to(real)
+
+    assert diff.read_source_text(link, repo=repo_root) == "import os\n"
+
+
+def test_a_repository_reached_through_a_symlink_still_grades_its_own_files(tmp_path):
+    """AC1: both sides are resolved, or a macOS checkout refuses everything it owns.
+
+    The target is compared resolved. If the repository root it is compared
+    against is not, a checkout reached through a symlinked prefix — `/var` ->
+    `/private/var` on macOS, which is where `tmp_path` itself lives, and every
+    agent worktree under a linked home — puts *every* file it owns outside its
+    own root. The gate then refuses the whole tree and blocks every stage
+    transition, and the same code passes wherever the prefix happens to be
+    real. A platform-dependent path bug in 546 passed on macOS and failed only
+    in CI; this is written so the mirror image of it cannot pass here either.
+    """
+    diff = _load_script("precommit_git_diff")
+    real_root = tmp_path / "real_repo"
+    (real_root / "src").mkdir(parents=True)
+    (real_root / "src" / "mod.py").write_text("import os\n", encoding="utf-8")
+    linked_root = tmp_path / "linked_repo"
+    linked_root.symlink_to(real_root, target_is_directory=True)
+
+    assert diff.read_source_text(linked_root / "src" / "mod.py", repo=linked_root) == "import os\n"
