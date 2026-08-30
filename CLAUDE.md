@@ -81,6 +81,32 @@ Three traps that have produced confidently wrong conclusions:
 When a query result would change your recommendation, exercise the real code path against the
 real data before you rely on it. Prefer a runnable check over a plausible reading.
 
+## Diagnose intermittent failures; do not re-roll them
+
+A test that fails under the hook and passes on its own is a *diagnosis task*, not a dice roll.
+Retrying a push, or rerunning a suite hoping for green, is the two most expensive minutes an
+agent can spend — and giving up after the retries fail is worse, because the cause was
+discoverable the whole time.
+
+Work it in this order:
+
+1. **Find the first failure, not the loudest one.** A cascade dominates the output. One run here
+   showed 54 "unable to find an element" errors and 4 timeouts; the 54 were downstream of the
+   first timeout corrupting that file's harness state. Counting symptoms picked the wrong
+   suspect. Read the first `●` in each failing file.
+2. **Read the failure's own words.** `Exceeded timeout of 5000 ms` names its cause. Do not
+   theorise past a message that is already specific.
+3. **Look for a quantity that separates pass from fail.** Wall-clock, worker count, ordering,
+   `--changedSince` base. Here `client-tests` passed at 310s and failed at 323s / 369s / 442s —
+   that correlation *is* the evidence, and it arrived faster than any of the retries.
+4. **Rule out your own change with an import path, not a feeling.** "Unrelated" means the failing
+   file cannot reach what you edited. Check it: `grep -rl <module> client/src`.
+5. **Distinguish slow from hung.** A file that completes in 45s under load and 9s idle has a
+   budget problem. One that never returns has a deadlock. Only the first is fixed by a timeout.
+
+State what you could not determine. "It passed on retry" is not a diagnosis, and reporting it as
+one hides a defect that will resurface on someone else's branch.
+
 ## Agent Checkpoints (Autopilot / Autonomous Agents)
 
 When running unattended and you hit a decision a human would normally make — an ambiguous
@@ -242,8 +268,35 @@ work was good and the defects were real; the rounds should have been tickets.
 
 - Use `task dev` / `task server` / `task client`. Do not start servers ad-hoc.
 
+## A gate you tripped is yours to fix
+
+The gates encode the standards this repo has decided on. Tripping one is not an obstacle between
+you and your change — it *is* part of your change. Fix the cause and move on; do not ask which
+gate to skip, and never reach for `--no-verify`, `LEFTHOOK=0`, or `LEFTHOOK_EXCLUDE` (a
+`PreToolUse` hook denies the first of these outright).
+
+This includes the case that feels unfair: **a file already over a limit before you touched it.**
+The size, complexity and organization gates run on the whole staged file, not on your diff, so
+editing one line of a 1673-line component makes its 1200-line cap yours to satisfy. That is
+deliberate — it is how a file that has been growing unchecked finally gets split, and the person
+who touched it next is the one holding the context to do it. Extract the cohesive piece, keep
+state where it is, let `tsc`/`pytest` prove the seam, and say in the PR why an unrelated-looking
+refactor is in the diff.
+
+Two failure modes to avoid when fixing:
+
+- **Do not trade one gate for another.** A `getattr`/`setattr` table that satisfies the
+  complexity gate trips the organization gate. Reach for the structured API instead
+  (`model_dump(exclude_none=True)` into `sqlmodel_update`).
+- **Run the gate directly rather than through a commit.** `.lefthook/scripts/*` take a
+  `--scope worktree` flag, and `loregarden_check_organization` answers before you spend a commit
+  finding out.
+
 ## Anti-patterns
 
 See `AGENTS.md` → *Anti-patterns* for the table with evidence. The short version: no report
 markdown, no ticket-file hunting, no editing v1 YAML expecting an effect, no ticket IDs in
 filenames, no defensive normalization, no hand-edits during an orchestration.
+
+Two more, from the sections above: **no retrying a failing push in place of diagnosing it**, and
+**no asking which gate to skip** — a gate your change trips is part of your change.
