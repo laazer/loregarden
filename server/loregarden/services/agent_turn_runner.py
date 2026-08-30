@@ -20,7 +20,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
-from loregarden.agents.cli_adapters import build_interactive_invocation
+from loregarden.agents.cli_adapters import build_interactive_invocation, permission_bypass_enabled
 from loregarden.agents.executors.permission_bridge import PermissionBridgeRunner
 from loregarden.agents.tool_grants import agent_tool_grants
 from loregarden.models.domain import AgentRun, ChatSurface, RunStatus, Ticket, Workspace
@@ -57,6 +57,11 @@ class AdapterCapabilities:
     plan_execute: bool
     stream_thinking: bool
     steer: bool
+    #: True when this adapter *has* a write path but only reaches it with
+    #: permission bypass on. Lets a caller tell "cannot write at all" from
+    #: "could write, but is not permitted to" without checking adapter names —
+    #: two states that read identically as `plan_execute=False`.
+    requires_permission_bypass: bool = False
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -64,6 +69,7 @@ class AdapterCapabilities:
             "permission_bridge": self.permission_bridge,
             "inbox_approvals": self.inbox_approvals,
             "plan_execute": self.plan_execute,
+            "requires_permission_bypass": self.requires_permission_bypass,
             "stream_thinking": self.stream_thinking,
             "steer": self.steer,
         }
@@ -89,6 +95,23 @@ def adapter_capabilities(adapter: str) -> AdapterCapabilities:
             plan_execute=True,
             stream_thinking=True,
             steer=False,
+        )
+    if selected == "opencode":
+        # opencode writes during stage runs, so it is not incapable — but its
+        # permission prompts have no headless surface, so a write only lands
+        # when `--auto` is passed, which is gated on permission bypass. Saying
+        # plan_execute=True with bypass off would promise a turn that then has
+        # every edit denied inside itself.
+        return AdapterCapabilities(
+            adapter=selected,
+            permission_bridge=False,
+            inbox_approvals=False,
+            plan_execute=permission_bypass_enabled(),
+            # Its `--format json` events are parsed for the run log, but the
+            # thinking sink has no opencode reader — claimed only when proven.
+            stream_thinking=False,
+            steer=False,
+            requires_permission_bypass=True,
         )
     if selected in {"codex", "lmstudio"}:
         return AdapterCapabilities(

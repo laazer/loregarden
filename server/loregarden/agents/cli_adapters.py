@@ -554,8 +554,14 @@ def _opencode_invocation(
     # opencode's own permission prompts have no headless surface: unanswered,
     # every write becomes a denial the agent reports as a failed stage. Read-only
     # callers get the CLI's defaults instead, which is what "ask" means here.
+    #
+    # `--auto` is opencode's flag for this (opencode.ai/docs/cli). It is NOT
+    # `--dangerously-skip-permissions`, which belongs to Claude Code and which
+    # this passed until now — an unknown flag to `opencode run`, so the bypass
+    # never took and every write met a prompt nobody could answer. Explicit
+    # deny rules still apply under `--auto`.
     if not read_only and permission_bypass_enabled():
-        argv.append("--dangerously-skip-permissions")
+        argv.append("--auto")
     extra = os.environ.get("LOREGARDEN_OPENCODE_ARGS")
     if extra:
         argv[2:2] = shlex.split(extra)
