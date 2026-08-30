@@ -1756,3 +1756,24 @@ def test_a_run_outside_any_checkout_grades_what_it_is_handed(tmp_path):
     loose.write_text("x = 1\n", encoding="utf-8")
 
     assert diff.read_source_text(loose, repo=None) == "x = 1\n"
+
+
+def test_a_symlink_cycle_is_refused_through_the_one_channel(tmp_path):
+    """ELOOP raises `RuntimeError`, which is not an `OSError`.
+
+    `Path.resolve` raises `RuntimeError` on a symlink cycle. Catching only
+    `OSError` let it escape the `UnexaminableError` channel entirely: the
+    organization gate's DRY catalog walks the whole source root, so one committed
+    cycle anywhere under it took the gate down with a traceback even when every
+    listed file was clean. Never a false pass — but a repository's own contents
+    blocking every stage transition, which is the other way a gate stops being
+    useful. The TypeScript gate already handled it; this pins the Python side.
+    """
+    diff = _load_script("precommit_git_diff")
+    os.symlink(tmp_path / "b.py", tmp_path / "a.py")
+    os.symlink(tmp_path / "a.py", tmp_path / "b.py")
+
+    with pytest.raises(diff.UnexaminableFileError) as excinfo:
+        diff.read_source_text(tmp_path / "a.py", repo=tmp_path)
+
+    assert "a.py" in str(excinfo.value)

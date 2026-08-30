@@ -189,7 +189,13 @@ def read_source_text(path: Path, *, repo: Optional[Path]) -> str:
     """
     try:
         real = path.resolve(strict=True)
-    except OSError as exc:
+    except (OSError, RuntimeError) as exc:
+        # RuntimeError, not only OSError: `Path.resolve` raises it on a symlink
+        # cycle (ELOOP). Catching OSError alone let one committed cycle anywhere
+        # under the source root take down a gate with a traceback, even when
+        # every listed file was clean — the catalog walk reaches it. The
+        # TypeScript gate already handled this; this is the Python side matching.
+        #
         # Same sentence as the read failure below, deliberately: a path that
         # cannot be resolved and one that cannot be opened are the same fact to
         # every caller, and a listed-but-absent file reaches this branch first
@@ -224,7 +230,12 @@ def read_source_text(path: Path, *, repo: Optional[Path]) -> str:
             f"(resolves to {real}), so it cannot be graded and cannot be reported clean"
         )
     try:
-        return path.read_text(encoding="utf-8")
+        # `real`, not `path`: every check above validated the resolved target,
+        # and reading the unresolved path re-follows the link. If it is rewritten
+        # in between, the bytes graded are not the bytes checked and the leak,
+        # the hang and the size cap all come back. The TypeScript gate reads its
+        # resolved path already.
+        return real.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         raise UnexaminableFileError(
             f"{path}: this run could not read it, so it cannot be reported clean "
