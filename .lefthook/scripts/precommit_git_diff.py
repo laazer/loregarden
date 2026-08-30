@@ -159,7 +159,7 @@ def decoded_git_paths(out: str) -> List[str]:
 MAX_SOURCE_BYTES = 8 * 1024 * 1024
 
 
-def read_source_text(path: Path) -> str:
+def read_source_text(path: Path, *, repo: Optional[Path]) -> str:
     """The text of a file a gate is about to grade, or a loud failure.
 
     Never ``None``. The caller has no way to tell a ``None`` meaning "nothing
@@ -173,6 +173,19 @@ def read_source_text(path: Path) -> str:
     /dev/zero`` never returns and allocates until the host gives out, and a
     broken link raises out of the middle of the walk. Neither is a thing to
     report clean, and neither is a thing to read.
+
+    ``repo`` is required and keyword-only, and ``None`` — "this run has no
+    repository, so there is no boundary" — has to be passed on purpose. A
+    default would let a caller that never passed one read exactly as before,
+    and "nobody passed it" would be indistinguishable from "nothing to check".
+
+    The boundary is crossed only when the *listed* path is inside ``repo`` and
+    its target is not: that is a path presenting itself as a repository file
+    while reading content the repository does not contain. A path the caller
+    named outright makes no such claim — it scoped the run — which is the same
+    reason `resolve_gate_scope` does not narrow an explicit list to the source
+    root. Refusing those instead would refuse every fixture a gate is pointed
+    at directly, which is an outage, not a stricter gate.
     """
     try:
         real = path.resolve(strict=True)
@@ -190,6 +203,20 @@ def read_source_text(path: Path) -> str:
             f"{path}: not a regular file (resolves to {real}), so it cannot be graded "
             "and cannot be reported clean"
         )
+    if repo is not None:
+        # Both sides resolved. A checkout reached through a symlinked prefix —
+        # macOS `/var` -> `/private/var`, every agent worktree under a linked
+        # home — otherwise puts every file it owns outside its own root, and an
+        # unresolved root does not merely refuse: it concludes the listed path
+        # is not in the repository either and skips the check entirely.
+        # `is_relative_to`, not `str.startswith`: `/w/repo` is a string prefix
+        # of `/w/repo-vendor/x.py`, which is where vendored trees sit.
+        root = repo.resolve()
+        if located_path(path).is_relative_to(root) and not real.is_relative_to(root):
+            raise UnexaminableFileError(
+                f"{path}: resolves to {real}, outside the repository at {root}, so it "
+                "cannot be graded and cannot be reported clean"
+            )
     size = real.stat().st_size
     if size > MAX_SOURCE_BYTES:
         raise UnexaminableFileError(
@@ -596,13 +623,13 @@ def examined_line(label: str, count: int, description: str) -> str:
 GateFileSelector = Callable[[Optional[Path], Sequence[Path], bool], List[Path]]
 
 
-def all_line_numbers(path: Path) -> Set[int]:
+def all_line_numbers(path: Path, *, repo: Optional[Path]) -> Set[int]:
     """Every line of ``path``, as a touched-line set.
 
     What a file with no diff to scope against is graded on: an untracked file
     is new in its entirety, so every line in it is part of this change.
     """
-    return set(range(1, len(read_source_text(path).splitlines()) + 1))
+    return set(range(1, len(read_source_text(path, repo=repo).splitlines()) + 1))
 
 
 def located_path(path: Path) -> Path:
@@ -686,7 +713,7 @@ class GateRun:
             # would not say where, so there is no smaller honest answer than
             # the whole file. Returning the empty set instead is what let a
             # `.gitattributes` `-diff` entry pass every violation in the repo.
-            return all_line_numbers(path)
+            return all_line_numbers(path, repo=self.repo)
         return self.additions.get(rel, set())
 
     def net_growing(self, path: Path) -> bool:
