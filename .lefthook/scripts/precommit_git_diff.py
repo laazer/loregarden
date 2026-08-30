@@ -153,13 +153,49 @@ def decoded_git_paths(out: str) -> List[str]:
     return [decode_git_path(line) for line in out.splitlines() if line]
 
 
+#: A source file larger than this is not graded. No hand-written module comes
+#: near it; a path that does is a device, a stream, or a mistake, and reading it
+#: to the end is how a gate stops being a gate.
+MAX_SOURCE_BYTES = 8 * 1024 * 1024
+
+
 def read_source_text(path: Path) -> str:
     """The text of a file a gate is about to grade, or a loud failure.
 
     Never ``None``. The caller has no way to tell a ``None`` meaning "nothing
     wrong here" from one meaning "I never read it", and it took the first
     reading every time.
+
+    A graded path is checked before it is opened, because ``located_path``
+    deliberately resolves only the parent: a symlinked module keeps the relpath
+    git used, which is what makes it gradeable at all. The file itself is still
+    a symlink, so opening it follows the link wherever it goes — ``src/x.py ->
+    /dev/zero`` never returns and allocates until the host gives out, and a
+    broken link raises out of the middle of the walk. Neither is a thing to
+    report clean, and neither is a thing to read.
     """
+    try:
+        real = path.resolve(strict=True)
+    except OSError as exc:
+        # Same sentence as the read failure below, deliberately: a path that
+        # cannot be resolved and one that cannot be opened are the same fact to
+        # every caller, and a listed-but-absent file reaches this branch first
+        # now that the target is checked before the open.
+        raise UnexaminableFileError(
+            f"{path}: this run could not read it, so it cannot be reported clean "
+            f"({type(exc).__name__}: {exc})"
+        ) from exc
+    if not real.is_file():
+        raise UnexaminableFileError(
+            f"{path}: not a regular file (resolves to {real}), so it cannot be graded "
+            "and cannot be reported clean"
+        )
+    size = real.stat().st_size
+    if size > MAX_SOURCE_BYTES:
+        raise UnexaminableFileError(
+            f"{path}: {size} bytes exceeds the {MAX_SOURCE_BYTES}-byte grading limit "
+            f"(resolves to {real}), so it cannot be graded and cannot be reported clean"
+        )
     try:
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:

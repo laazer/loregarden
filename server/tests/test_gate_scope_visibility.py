@@ -1245,3 +1245,61 @@ def test_all_three_gates_agree_on_verdict_and_count(repo: Path, mutate) -> None:
     returncode, examined = next(iter(set(verdicts.values())))
     assert returncode == 1, verdicts
     assert examined is not None and examined >= 1, verdicts
+
+
+def test_a_symlinked_source_is_refused_rather_than_followed(tmp_path):
+    """A graded path that is not a regular file is unexaminable, not clean.
+
+    `located_path` resolves only the parent on purpose, so a symlinked module
+    keeps the relpath git used and stays gradeable. That leaves the file itself
+    a symlink, and opening it follows the link: `src/x.py -> /dev/zero` never
+    returns and allocates until the host gives out, which in orchestration is
+    bounded only by the 300s gate timeout — a gate that stops being a gate. The
+    check belongs at the read, where the target is known.
+    """
+    diff = _load_script("precommit_git_diff")
+    os.symlink("/dev/zero", tmp_path / "leak.py")
+
+    with pytest.raises(diff.UnexaminableFileError) as excinfo:
+        diff.read_source_text(tmp_path / "leak.py")
+
+    assert "not a regular file" in str(excinfo.value)
+
+
+def test_a_broken_symlink_names_the_file_instead_of_raising_oserror(tmp_path):
+    """A dangling link must arrive through the one channel, not as a traceback.
+
+    Before the check it raised a bare `FileNotFoundError` out of the middle of
+    the walk, which blocks every stage transition without naming what is wrong —
+    loud, but unactionable, and it bypasses the `UnexaminableError` channel that
+    is supposed to be the single place a gate decides about a file it could not
+    examine.
+    """
+    diff = _load_script("precommit_git_diff")
+    os.symlink(tmp_path / "gone.py", tmp_path / "broken.py")
+
+    with pytest.raises(diff.UnexaminableFileError) as excinfo:
+        diff.read_source_text(tmp_path / "broken.py")
+
+    assert "broken.py" in str(excinfo.value)
+
+
+def test_an_oversized_file_is_refused_rather_than_read_whole(tmp_path):
+    """No hand-written module approaches the cap; a path that does is not source."""
+    diff = _load_script("precommit_git_diff")
+    big = tmp_path / "huge.py"
+    big.write_bytes(b"# padding\n" * ((diff.MAX_SOURCE_BYTES // 10) + 1))
+
+    with pytest.raises(diff.UnexaminableFileError) as excinfo:
+        diff.read_source_text(big)
+
+    assert "grading limit" in str(excinfo.value)
+
+
+def test_an_ordinary_source_file_still_reads(tmp_path):
+    """The positive control: the guard must not refuse real source."""
+    diff = _load_script("precommit_git_diff")
+    ok = tmp_path / "ok.py"
+    ok.write_text("import os\n\n\ndef f():\n    return os.sep\n", encoding="utf-8")
+
+    assert diff.read_source_text(ok).startswith("import os")
