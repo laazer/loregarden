@@ -2,6 +2,16 @@
 
 Loregarden is an Agent SDLC IDE: a local control plane for orchestrating multi-agent software development. It tracks work as tickets in SQLite, runs agents through configurable pipelines, isolates concurrent work in Git worktrees, surfaces approval prompts in an inbox, and exposes the same workflow tools over MCP.
 
+## Screenshots
+
+| Home board | Parallel execution queue |
+|---|---|
+| ![Home board](docs/screenshots/home.png) | ![Parallel execution queue](docs/screenshots/queue.png) |
+
+| Agent Studio | Ticket console (diff, workspace tree) |
+|---|---|
+| ![Agent Studio](docs/screenshots/agent-studio.png) | ![Ticket console](docs/screenshots/console.png) |
+
 ## Architecture
 
 | Layer | Stack | Role |
@@ -147,6 +157,14 @@ Live workflow templates and agent definitions are editable, versioned database r
 
 For contributors and coding agents, [AGENTS.md](AGENTS.md) is the repository map and [CLAUDE.md](CLAUDE.md) is the operating manual. Do not use `agent_context/agents/readme.md` as current contributor guidance.
 
+## More docs
+
+- [AGENTS.md](AGENTS.md) — repository map and code layout
+- [CLAUDE.md](CLAUDE.md) — operating manual for coding agents working in this repo
+- [docs/tauri.md](docs/tauri.md) — desktop backend lifecycle and packaging
+- [docs/ci-setup.md](docs/ci-setup.md) — CI configuration
+- [docs/AUDIT.md](docs/AUDIT.md) — architecture/security audit notes
+
 ## License
 
-See [LICENSE](LICENSE).
+AGPL-3.0. See [LICENSE](LICENSE). If you run a modified version of Loregarden as a network service, the AGPL requires you to make the corresponding source available to users of that service.
