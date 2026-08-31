@@ -26,6 +26,7 @@ from loregarden.services.orchestration_profile import resolve_orchestration_prof
 from loregarden.services.run_concurrency import orchestration_lease_expired
 from loregarden.services.run_interruption import (
     INTERRUPTED_RUN_MESSAGE,
+    ORPHAN_OF_TERMINAL_ORCH_MESSAGE,
     STRANDED_STAGE_MESSAGE,
 )
 from loregarden.services.run_lease import (
@@ -382,6 +383,50 @@ def settle_expired_agent_runs(
             run.last_seen_at or run.started_at or run.created_at,
         )
         OrchestrationService(session).complete_run(run, status=RunStatus.FAILED, stderr=message)
+        settled.append(run)
+    return settled
+
+
+#: An orchestration still claiming a lane. Children of anything else are residue.
+_LIVE_ORCHESTRATION_STATUSES = (
+    OrchestrationRunStatus.QUEUED,
+    OrchestrationRunStatus.RUNNING,
+)
+
+
+def settle_orphaned_agent_runs(
+    session: Session, *, message: str = ORPHAN_OF_TERMINAL_ORCH_MESSAGE
+) -> list[AgentRun]:
+    """Fail in-flight agent runs whose parent orchestration is already terminal.
+
+    External-harness children do not renew a lease, so ``settle_expired_agent_runs``
+    spares them forever. When the parent has already failed, succeeded, blocked,
+    or cancelled, those rows are not work in flight — they are the leftover
+    ``RUNNING`` that made a finished ticket look busy on the home board.
+    ``advance_workflow=False``: the orchestration already made the ticket's
+    decision; failing residue must not take a second pass at the stage.
+    """
+    candidates = session.exec(
+        select(AgentRun)
+        .where(col(AgentRun.status).in_(list(SUPERVISED)))
+        .where(col(AgentRun.orchestration_run_id).is_not(None))
+    ).all()
+
+    settled: list[AgentRun] = []
+    for run in candidates:
+        parent = session.get(OrchestrationRun, run.orchestration_run_id)
+        if parent is None or parent.status in _LIVE_ORCHESTRATION_STATUSES:
+            continue
+        logger.warning(
+            "Settling agent run %s (ticket %s): parent orchestration %s is %s",
+            run.run_code,
+            run.ticket_id,
+            parent.run_code,
+            parent.status.value,
+        )
+        OrchestrationService(session).complete_run(
+            run, status=RunStatus.FAILED, stderr=message, advance_workflow=False
+        )
         settled.append(run)
     return settled
 

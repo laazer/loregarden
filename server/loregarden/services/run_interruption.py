@@ -13,6 +13,10 @@ STRANDED_STAGE_MESSAGE = (
     "stage was settled). Re-run the stage to continue."
 )
 
+ORPHAN_OF_TERMINAL_ORCH_MESSAGE = (
+    "Parent orchestration is already terminal; this run was left in flight."
+)
+
 INTERRUPTION_MESSAGES = frozenset({INTERRUPTED_RUN_MESSAGE, STRANDED_STAGE_MESSAGE})
 
 

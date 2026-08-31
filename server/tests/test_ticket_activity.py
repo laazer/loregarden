@@ -41,16 +41,40 @@ def _ticket(session: Session, ws: Workspace, code: str, state: TicketState) -> T
     return ticket
 
 
-def _agent_run(session: Session, ticket: Ticket, status: RunStatus) -> AgentRun:
+def _agent_run(
+    session: Session,
+    ticket: Ticket,
+    status: RunStatus,
+    *,
+    code: str | None = None,
+    agent_id: str = "backend_implementer",
+    orchestration_run_id: str | None = None,
+) -> AgentRun:
     run = AgentRun(
-        run_code=f"run-{ticket.external_id}",
+        run_code=code or f"run-{ticket.external_id}",
         ticket_id=ticket.id,
         workspace_id=ticket.workspace_id,
-        agent_id="backend_implementer",
+        agent_id=agent_id,
+        status=status,
+        orchestration_run_id=orchestration_run_id,
+    )
+    session.add(run)
+    session.commit()
+    return run
+
+
+def _orch(
+    session: Session, ticket: Ticket, status: OrchestrationRunStatus, *, code: str
+) -> OrchestrationRun:
+    run = OrchestrationRun(
+        run_code=code,
+        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id,
         status=status,
     )
     session.add(run)
     session.commit()
+    session.refresh(run)
     return run
 
 
@@ -146,19 +170,93 @@ def test_running_wins_over_a_queued_follow_up(db_session):
 def test_a_running_orchestration_counts_even_without_an_agent_run(db_session):
     ws = _workspace(db_session)
     ticket = _ticket(db_session, ws, "ORCH-1", TicketState.IN_PROGRESS)
+    _orch(db_session, ticket, OrchestrationRunStatus.RUNNING, code="orch-1")
+
+    activity = classify_ticket_activity(db_session, [ticket.id])
+
+    assert activity[ticket.id] == TicketActivity.RUNNING
+
+
+def test_orphan_agent_runs_under_a_failed_orchestration_are_idle(db_session):
+    """The board-vs-queue lie: reviewers still RUNNING after the orch failed."""
+    ws = _workspace(db_session)
+    ticket = _ticket(db_session, ws, "ORPHAN-1", TicketState.IN_PROGRESS)
+    orch = _orch(db_session, ticket, OrchestrationRunStatus.FAILED, code="orch-dead")
+    for i, agent_id in enumerate(("architecture_reviewer", "static_qa", "security_reviewer")):
+        _agent_run(
+            db_session,
+            ticket,
+            RunStatus.RUNNING,
+            code=f"run-orphan-{i}",
+            agent_id=agent_id,
+            orchestration_run_id=orch.id,
+        )
+
+    activity = classify_ticket_activity(db_session, [ticket.id])
+
+    assert activity[ticket.id] == TicketActivity.IDLE
+
+
+def test_agent_runs_under_a_live_orchestration_are_running(db_session):
+    """Parallel reviewers on a live orch are one running ticket, not idle."""
+    ws = _workspace(db_session)
+    ticket = _ticket(db_session, ws, "FANOUT-1", TicketState.IN_PROGRESS)
+    orch = _orch(db_session, ticket, OrchestrationRunStatus.RUNNING, code="orch-live")
+    _agent_run(
+        db_session,
+        ticket,
+        RunStatus.RUNNING,
+        code="run-fanout-a",
+        agent_id="architecture_reviewer",
+        orchestration_run_id=orch.id,
+    )
+    _agent_run(
+        db_session,
+        ticket,
+        RunStatus.RUNNING,
+        code="run-fanout-b",
+        agent_id="static_qa",
+        orchestration_run_id=orch.id,
+    )
+
+    activity = classify_ticket_activity(db_session, [ticket.id])
+
+    assert activity[ticket.id] == TicketActivity.RUNNING
+
+
+def test_an_awaiting_run_under_a_failed_orchestration_is_idle(db_session):
+    ws = _workspace(db_session)
+    ticket = _ticket(db_session, ws, "ORPHAN-WAIT", TicketState.IN_PROGRESS)
+    orch = _orch(db_session, ticket, OrchestrationRunStatus.FAILED, code="orch-wait-dead")
+    _agent_run(
+        db_session,
+        ticket,
+        RunStatus.AWAITING_PERMISSION,
+        orchestration_run_id=orch.id,
+    )
+
+    activity = classify_ticket_activity(db_session, [ticket.id])
+
+    assert activity[ticket.id] == TicketActivity.IDLE
+
+
+def test_an_active_lane_entry_under_a_failed_orchestration_is_idle(db_session):
+    ws = _workspace(db_session)
+    ticket = _ticket(db_session, ws, "ORPHAN-Q", TicketState.IN_PROGRESS)
+    orch = _orch(db_session, ticket, OrchestrationRunStatus.FAILED, code="orch-q-dead")
     db_session.add(
-        OrchestrationRun(
-            run_code="orch-1",
-            ticket_id=ticket.id,
+        QueuedRun(
             workspace_id=ws.id,
-            status=OrchestrationRunStatus.RUNNING,
+            ticket_id=ticket.id,
+            status=QueuePosition.ACTIVE,
+            orchestration_run_id=orch.id,
         )
     )
     db_session.commit()
 
     activity = classify_ticket_activity(db_session, [ticket.id])
 
-    assert activity[ticket.id] == TicketActivity.RUNNING
+    assert activity[ticket.id] == TicketActivity.IDLE
 
 
 def test_unknown_ids_are_absent_rather_than_guessed(db_session):
