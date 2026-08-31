@@ -604,10 +604,9 @@ def build_studio_prompt(
                 "not a finding.",
                 "Carry only what the brief needs. A capability the reference repo is proud of, "
                 "that nothing in the brief asks for, is a `skip` — say so and move on.",
-                "For anything worth having, say in `risks` whether we take it as a dependency "
-                "or own it in-house, and why. Own what is strategic to control or cheap to "
-                "maintain; depend on what is large, well-maintained, and not our differentiator. "
-                "Do not default to building because building is more interesting.",
+                "We build what we keep. A finding is a pattern to reimplement here on our own "
+                "components — not a dependency to take on. Say in `risks` what porting it costs "
+                "us to own, not whether to own it.",
                 "Order findings by value to this project, highest first. Ten sharp findings "
                 "beat forty shallow ones.",
                 "Output JSON with `summary`, `clarifying_questions` (usually empty), and "
