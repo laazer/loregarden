@@ -456,7 +456,10 @@ def normalize_tool_arguments(name: str, arguments: Any) -> dict[str, Any]:
 
     if name == "loregarden_update_ticket":
         return normalize_update_ticket_args(
-            args, coerce_string=_coerce_string, coerce_string_list=_coerce_string_list
+            args,
+            coerce_string=_coerce_string,
+            coerce_string_list=_coerce_string_list,
+            coerce_int=_coerce_optional_int,
         )
 
     if name == "loregarden_create_ticket":
@@ -741,9 +744,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": McpTool.UPDATE_TICKET,
         "description": (
-            "Update ticket state or content (state, title, description, acceptance "
-            "criteria). Supply at least one field besides ticket_id. Acceptance "
-            "criteria belong here — never append them to the description."
+            "Update ticket state or content (state, title, description, priority, "
+            "acceptance criteria, tags). Supply at least one field besides ticket_id. "
+            "Acceptance criteria belong here — never append them to the description."
         ),
         "inputSchema": _tool_schema(
             properties={
@@ -754,6 +757,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 ),
                 "title": _string_prop("New ticket title."),
                 "description": _string_prop("New ticket description (replaces the existing one)."),
+                "priority": {
+                    "type": "integer",
+                    "description": "New priority, 1-3 (1 is highest).",
+                },
                 "acceptance_criteria": {
                     "type": "array",
                     "description": (
