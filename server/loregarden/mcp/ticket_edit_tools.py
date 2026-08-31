@@ -166,6 +166,12 @@ def _collect_update_fields(ticket: Ticket, arguments: dict[str, Any]) -> dict[st
     if "tags" in arguments:
         fields["tags"] = normalize_tags(arguments["tags"])
 
+    if "priority" in arguments:
+        priority = arguments["priority"]
+        if priority < 1 or priority > 3:
+            raise ValueError(f"Invalid priority {priority}: must be in [1, 3]")
+        fields["priority"] = priority
+
     return fields
 
 
@@ -180,7 +186,7 @@ def update_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
     if not fields:
         raise ValueError(
             "Nothing to update — supply at least one of: state, title, "
-            "description, acceptance_criteria, tags."
+            "description, priority, acceptance_criteria, tags."
         )
 
     OrchestrationService(session).update_ticket_manual(ticket, UpdateTicketRequest(**fields))
@@ -243,7 +249,7 @@ def execute_ticket_edit_tool(
 
 
 def normalize_update_ticket_args(
-    args: dict[str, Any], *, coerce_string, coerce_string_list
+    args: dict[str, Any], *, coerce_string, coerce_string_list, coerce_int
 ) -> dict:
     """Whitelist for loregarden_update_ticket.
 
@@ -261,4 +267,6 @@ def normalize_update_ticket_args(
     for field in ("acceptance_criteria", "tags"):
         if args.get(field) is not None:
             payload[field] = coerce_string_list(args.get(field), field=field)
+    if args.get("priority") is not None:
+        payload["priority"] = coerce_int(args.get("priority"), field="priority")
     return payload
