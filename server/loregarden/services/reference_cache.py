@@ -23,6 +23,15 @@ what makes "never raises" honest. `error` is always present (`""` on success),
 (an empty extraction is `extraction_failed`), and `stale_error` is the single
 deliberate case with both a body and an error.
 
+The absence of a traceback is nevertheless structural rather than a list of
+caught types. Enumerating types is what let a remote `charset=utf-9000` raise
+`LookupError` straight out of both entry points. Now every path — validation,
+fetch, decode, extraction, *and* persistence — runs inside
+`_fetch_through_cache`, whose guard converts anything the narrow handlers below
+it missed into an `internal_error` payload after logging the exception type and
+the URL. `internal_error` is its own kind rather than another `fetch_error`
+because the two ask for different responses: retry the URL, versus fix us.
+
 Tests inject an `httpx.MockTransport` through the keyword-only `transport=`
 seam. That departs from the repo's `patch("httpx.post")` habit deliberately:
 faking the client would make the test simulate the redirect loop it exists to
@@ -73,6 +82,12 @@ _PAGE_ACCEPT_TYPES = (
     "text/markdown",
 )
 _MARKDOWN_OUTPUT = "markdown"
+#: What a body is decoded as when the remote names no usable charset.
+_DEFAULT_ENCODING = "utf-8"
+#: One byte, enough to make a codec prove it decodes bytes to text. An empty
+#: `bytes` returns `""` without consulting the codec at all, so it proves
+#: nothing.
+_ENCODING_PROBE = b" "
 #: How much of the body to inspect when deciding whether it is a fragment.
 _FRAGMENT_PROBE_BYTES = 2048
 
@@ -273,6 +288,32 @@ def _classify_response(
     return None
 
 
+def _usable_encoding(label: str) -> str:
+    """`label` if bytes can actually be decoded with it, otherwise `utf-8`.
+
+    `httpx.Response.charset_encoding` is whatever the remote server wrote in
+    its `Content-Type`, so it is attacker-supplied: `charset=utf-9000` makes
+    `bytes.decode` raise `LookupError`, and so does `charset=base64`, which
+    names a real codec that is not a *text* codec. Neither is an `httpx` error,
+    so neither was caught anywhere.
+
+    The probe is a decode rather than a `codecs.lookup`, because lookup accepts
+    `base64`/`hex`/`rot13` and only the decode path rejects them. One byte is
+    enough — an empty `bytes` short-circuits before the codec is consulted.
+
+    Validating here rather than catching downstream is the point: the decode in
+    `_read_body` cannot raise at all.
+    """
+    if not label:
+        return _DEFAULT_ENCODING
+    try:
+        _ENCODING_PROBE.decode(label, errors="replace")
+    except (LookupError, ValueError, UnicodeError) as exc:
+        logger.info("reference fetch ignoring unusable charset %r: %s", label, exc)
+        return _DEFAULT_ENCODING
+    return label
+
+
 def _read_body(response: httpx.Response, max_bytes: int) -> _HopResult:
     """Stream the body with a running counter, aborting past `max_bytes`."""
     chunks: list[bytes] = []
@@ -287,7 +328,9 @@ def _read_body(response: httpx.Response, max_bytes: int) -> _HopResult:
         chunks.append(chunk)
     return _HopResult(
         status=response.status_code,
-        body=b"".join(chunks).decode(response.charset_encoding or "utf-8", errors="replace"),
+        body=b"".join(chunks).decode(
+            _usable_encoding(response.charset_encoding or ""), errors="replace"
+        ),
         content_type=response.headers.get("content-type", "").split(";")[0].strip().lower(),
         etag=response.headers.get("etag", ""),
         last_modified=response.headers.get("last-modified", ""),
@@ -320,6 +363,16 @@ def _fetch_once(
     except httpx.HTTPError as exc:
         logger.warning("reference fetch failed for %s: %s", url, exc)
         return _failed(ReferenceFetchError.FETCH_ERROR, f"could not fetch {url} ({exc})")
+    except Exception as exc:  # noqa: BLE001 - see below
+        # Enumerating exception types here is what let the charset LookupError
+        # out. Anything a transport, a codec or this module can raise while a
+        # body is being streamed is converted rather than propagated, and it is
+        # INTERNAL_ERROR rather than FETCH_ERROR because we did not anticipate
+        # it: "retry the URL" is the wrong advice for our own bug.
+        logger.exception("reference fetch raised an unhandled %s for %s", type(exc).__name__, url)
+        return _failed(
+            ReferenceFetchError.INTERNAL_ERROR, f"unhandled {type(exc).__name__} fetching {url}"
+        )
 
 
 def _fetch_with_redirects(
@@ -537,6 +590,20 @@ def _resolve_result(
     return _row_payload(stored, ReferenceCacheOutcome.MISS, "", max_chars)
 
 
+def _rollback_quietly(session: Session) -> None:
+    """Leave the caller's Session usable after a write we could not finish.
+
+    A failed `commit` leaves the transaction in a state where every later
+    statement raises, so a payload-returning failure would still poison the
+    caller. The rollback itself is best-effort — if even that fails there is
+    nothing further to do but say so.
+    """
+    try:
+        session.rollback()
+    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+        logger.warning("reference cache could not roll back: %s: %s", type(exc).__name__, exc)
+
+
 def _fetch_through_cache(
     session: Session,
     url: str,
@@ -548,7 +615,54 @@ def _fetch_through_cache(
     max_chars: int,
     transport: httpx.BaseTransport | None,
 ) -> dict:
-    """The one path both public entry points take. Never raises."""
+    """The boundary both public entry points sit on. Never raises.
+
+    "Never raises" is a property of *this function*, not a claim about the
+    functions under it: validation, fetch, decode, extraction and persistence
+    each keep their own narrow handlers, and whatever still escapes them lands
+    here as an `INTERNAL_ERROR` payload with its type and URL logged. That is
+    what makes AC3 structural — a new call site added below cannot quietly
+    reintroduce an escape, and the guard is not inert, so a swallowed failure
+    is still a visible one.
+    """
+    normalized = url.strip()
+    try:
+        return _fetch_through_cache_uncaught(
+            session,
+            url,
+            kind=kind,
+            accept_types=accept_types,
+            extract=extract,
+            refresh=refresh,
+            max_chars=max_chars,
+            transport=transport,
+        )
+    except Exception as exc:  # noqa: BLE001 - the AC3 boundary; see docstring
+        logger.exception(
+            "reference cache raised an unhandled %s for %s", type(exc).__name__, normalized
+        )
+        _rollback_quietly(session)
+        return _failure_payload(
+            normalized,
+            _describe(
+                ReferenceFetchError.INTERNAL_ERROR,
+                f"unhandled {type(exc).__name__} handling {normalized}",
+            ),
+        )
+
+
+def _fetch_through_cache_uncaught(
+    session: Session,
+    url: str,
+    *,
+    kind: ReferencePageKind,
+    accept_types: tuple[str, ...],
+    extract: bool,
+    refresh: bool,
+    max_chars: int,
+    transport: httpx.BaseTransport | None,
+) -> dict:
+    """The cache path itself. May raise; `_fetch_through_cache` is its boundary."""
     normalized = normalize_reference_url(url)
     reason = validate_reference_url(normalized)
     if reason:

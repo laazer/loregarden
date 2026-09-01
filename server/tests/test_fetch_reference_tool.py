@@ -54,6 +54,7 @@ from loregarden.models.domain.enums import (
 )
 from loregarden.models.domain.tables import ReferencePage
 from loregarden.services import reference_cache
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, select
 
 RESOLVER = "loregarden.services.reference_cache.socket.getaddrinfo"
@@ -731,6 +732,162 @@ def test_no_public_entry_point_raises(session, resolver):
                 transport=transport2,
             )
         )
+
+
+# --------------------------------------------------------------------------
+# AC3 — the escapes an enumerated `except` list let through
+#
+# Each of these three raised out of a public entry point before the boundary
+# guard existed, and none of them is an `httpx` error, which is why catching
+# `TimeoutException`/`HTTPError` never saw them. Asserting "no exception" is
+# not enough — five wrong implementations once passed this file — so each
+# asserts the payload's *kind*, and `_assert_kind` also pins that the error
+# names no other kind.
+# --------------------------------------------------------------------------
+
+
+class _Boom(Exception):
+    """Deliberately not an `httpx` error, and not a `LookupError` either."""
+
+
+def test_a_charset_the_remote_invented_is_ignored_not_raised(session, resolver):
+    """`charset` comes from the remote `Content-Type`, so `utf-9000` is a crash
+    primitive any reachable server holds.
+
+    The assertion is that the page still *succeeds* — falling back to utf-8
+    beats both raising and turning a perfectly readable body into a failure —
+    so this fails against an implementation that merely catches the
+    `LookupError` downstream as well as against one that does not catch it.
+    """
+    _, transport = _transport(
+        lambda _r: httpx.Response(
+            200,
+            headers={"content-type": "text/html; charset=utf-9000"},
+            content=HTML_PAGE,
+        )
+    )
+
+    payload = reference_cache.fetch_reference(
+        session, "https://docs.example/guide", transport=transport
+    )
+
+    assert payload["error"] == "", payload
+    assert payload["cache"] == ReferenceCacheOutcome.MISS
+    assert "map() method" in payload["markdown"]
+    _assert_self_classifying(payload)
+
+
+def test_a_charset_naming_a_non_text_codec_is_ignored_not_raised(session, resolver):
+    """`base64` is a real codec that `codecs.lookup` accepts and `bytes.decode`
+    refuses — so a label check that only looks it up still raises."""
+    _, transport = _transport(
+        lambda _r: httpx.Response(
+            200,
+            headers={"content-type": "text/html; charset=base64"},
+            content=HTML_PAGE,
+        )
+    )
+
+    payload = reference_cache.fetch_reference(
+        session, "https://docs.example/guide", transport=transport
+    )
+
+    assert payload["error"] == "", payload
+    assert "map() method" in payload["markdown"]
+
+
+def test_a_non_httpx_exception_mid_body_becomes_an_internal_error_payload(session, resolver):
+    """The wider half of the same root cause: the headers pass every gate and
+    the failure happens while the body is being streamed."""
+
+    def erupt():
+        yield b"<html><body><main><p>partial"
+        raise _Boom("the transport came apart mid-body")
+
+    _, transport = _transport(lambda _r: httpx.Response(200, headers=HTML_HEADERS, content=erupt()))
+
+    payload = reference_cache.fetch_reference(
+        session, "https://docs.example/guide", transport=transport
+    )
+
+    _assert_kind(payload, ReferenceFetchError.INTERNAL_ERROR)
+    assert payload["cache"] == ReferenceCacheOutcome.MISS
+    assert payload["markdown"] == ""
+    assert _get_row(session, "https://docs.example/guide") is None
+    _assert_self_classifying(payload)
+
+
+def test_a_non_httpx_exception_mid_body_still_serves_a_stale_copy(session, resolver):
+    """Why the conversion happens at `_fetch_once` and not only at the boundary.
+
+    The outer guard alone would make every payload well-formed while quietly
+    throwing away a cached copy we could still serve: converting the exception
+    into a hop result keeps the failure inside the cache layer, where
+    stale-if-error lives. Delete the `_fetch_once` handler and this is the
+    assertion that notices.
+    """
+
+    def erupt():
+        yield b"<html><body><main><p>partial"
+        raise _Boom("the transport came apart mid-body")
+
+    _add_row(session, "https://docs.example/stale", age_seconds=_stale_age())
+    _, transport = _transport(lambda _r: httpx.Response(200, headers=HTML_HEADERS, content=erupt()))
+
+    payload = reference_cache.fetch_reference(
+        session, "https://docs.example/stale", transport=transport
+    )
+
+    assert payload["cache"] == ReferenceCacheOutcome.STALE_ERROR
+    assert payload["markdown"] == "# cached\n\nstored body text."
+    _assert_kind(payload, ReferenceFetchError.INTERNAL_ERROR)
+    _assert_self_classifying(payload)
+
+
+def test_a_failing_commit_becomes_an_internal_error_payload(session, resolver):
+    """Persistence is inside the promise too: the fetch and the extraction both
+    succeeded, and the database is what would not take it."""
+    _, transport = _transport(_ok_html)
+    failure = OperationalError("INSERT INTO referencepage", {}, _Boom("disk I/O error"))
+
+    with (
+        patch.object(session, "commit", side_effect=failure),
+        patch.object(session, "rollback", wraps=session.rollback) as rollback,
+    ):
+        payload = reference_cache.fetch_reference(
+            session, "https://docs.example/guide", transport=transport
+        )
+
+    _assert_kind(payload, ReferenceFetchError.INTERNAL_ERROR)
+    assert payload["cache"] == ReferenceCacheOutcome.MISS
+    assert payload["markdown"] == ""
+    _assert_self_classifying(payload)
+    # A returned payload is not enough on its own: a real failed commit leaves
+    # the transaction in a state where every later statement raises, so a
+    # caller handed a tidy failure dict would still find its Session poisoned.
+    assert rollback.called, "the boundary must leave the caller's Session usable"
+
+
+def test_an_internal_error_is_distinguishable_from_a_remote_failure(session, resolver):
+    """The reason `INTERNAL_ERROR` is its own kind rather than a third spelling
+    of `FETCH_ERROR`: a caller deciding whether to retry the URL must be able to
+    tell "the remote misbehaved" from "we have a bug"."""
+
+    def erupt():
+        yield b"<html><body>"
+        raise _Boom("ours")
+
+    _, ours = _transport(lambda _r: httpx.Response(200, headers=HTML_HEADERS, content=erupt()))
+    _, theirs = _transport(
+        lambda request: (_ for _ in ()).throw(httpx.ConnectError("refused", request=request))
+    )
+
+    internal = reference_cache.fetch_reference(session, "https://docs.example/a", transport=ours)
+    remote = reference_cache.fetch_reference(session, "https://docs.example/b", transport=theirs)
+
+    assert internal["error"] != remote["error"]
+    _assert_kind(internal, ReferenceFetchError.INTERNAL_ERROR)
+    _assert_kind(remote, ReferenceFetchError.FETCH_ERROR)
 
 
 # --------------------------------------------------------------------------

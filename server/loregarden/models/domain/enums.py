@@ -559,6 +559,12 @@ class ReferenceFetchError(StrEnum):
     TOO_MANY_REDIRECTS = "too_many_redirects"
     #: Transport failure, timeout, or an HTTP error status.
     FETCH_ERROR = "fetch_error"
+    #: An exception no path in the cache anticipated — a bug here, or an
+    #: environment failure (the database refusing a commit) rather than the
+    #: remote misbehaving. Kept distinct from ``FETCH_ERROR`` deliberately:
+    #: flattening the two tells a caller to retry the URL when the thing that
+    #: broke was us.
+    INTERNAL_ERROR = "internal_error"
 
 
 class MemoryBriefingOutcome(str, Enum):
