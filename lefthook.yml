@@ -24,6 +24,13 @@
 #   - Both fall back to the full suite for any change they cannot map, and CI
 #     still runs everything on every PR — a green push predicts CI, it no longer
 #     proves it. LOREGARDEN_FULL_TESTS=1 runs the full suites here.
+#   - They run one after the other, NOT in parallel. server-tests is an xdist
+#     run that takes every core it can get; jest sharing those cores with it
+#     lost roughly 2x on wall-clock, and the stress tests that inherit jest's
+#     default 5000 ms timeout then failed on time rather than on behaviour —
+#     rejecting pushes whose diff never touched the client. Sequential costs a
+#     few minutes; the parallel version cost a false failure per push under
+#     load. See lg-workflow-integrity-621.
 #   - Opt-out: LEFTHOOK=0 skips all hooks; LEFTHOOK_EXCLUDE=<command> skips one command
 #
 # Requires:
@@ -102,7 +109,9 @@ pre-commit:
       run: bash .lefthook/scripts/ts-organization.sh {staged_files}
 
 pre-push:
-  parallel: true
+  # Deliberately sequential — see the note above. Do not restore `parallel: true`
+  # without capping both runners' worker counts so they fit on the box together.
+  parallel: false
   commands:
     server-tests:
       name: Server tests (ruff full + pytest on reached tests)
