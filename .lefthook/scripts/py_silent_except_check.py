@@ -49,7 +49,7 @@ import ast
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Optional, Sequence
 
 _LEFTHOOK_SCRIPTS = Path(__file__).resolve().parent
 if str(_LEFTHOOK_SCRIPTS) not in sys.path:
@@ -162,9 +162,14 @@ def _line_waives(lines: list[str], lineno: int) -> bool:
     return False
 
 
-def violations_in(path: Path) -> list[tuple[int, str]]:
-    """(line, what-was-caught) for every silent broad catch in the file."""
-    source = read_source_text(path)
+def violations_in(path: Path, *, repo: Optional[Path]) -> list[tuple[int, str]]:
+    """(line, what-was-caught) for every silent broad catch in the file.
+
+    ``repo`` is the boundary `read_source_text` grades against, required and
+    keyword-only for the same reason it is there: a default would let this read
+    site drop the check while the other one kept it.
+    """
+    source = read_source_text(path, repo=repo)
     try:
         tree = parse_python_source(source, path)
     except SyntaxError as exc:
@@ -287,7 +292,7 @@ def _check(invocation: Invocation) -> int:
     failures: list[str] = []
     for path in candidates:
         touched = run.touched_lines(path)
-        for lineno, caught in violations_in(path):
+        for lineno, caught in violations_in(path, repo=run.repo):
             if touched is not None and lineno not in touched:
                 continue
             failures.append(

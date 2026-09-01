@@ -126,13 +126,13 @@ def f():
 @pytest.mark.parametrize("name", sorted(FLAGGED))
 def test_flags_unscrubbed_git_calls(tmp_path, name):
     path = _write(tmp_path, FLAGGED[name])
-    assert checker.violations_in(path), f"{name} should be flagged"
+    assert checker.violations_in(path, repo=None), f"{name} should be flagged"
 
 
 @pytest.mark.parametrize("name", sorted(ALLOWED))
 def test_leaves_correct_calls_alone(tmp_path, name):
     path = _write(tmp_path, ALLOWED[name])
-    assert checker.violations_in(path) == [], f"{name} should not be flagged"
+    assert checker.violations_in(path, repo=None) == [], f"{name} should not be flagged"
 
 
 def test_main_exits_nonzero_on_violation(tmp_path, capsys):
@@ -165,5 +165,5 @@ def test_the_helper_itself_is_exempt():
 def test_real_services_are_clean():
     """The invariant holds across the actual server tree, not just fixtures."""
     services = Path(__file__).resolve().parents[1] / "loregarden"
-    offenders = [str(py) for py in services.rglob("*.py") if checker.violations_in(py)]
+    offenders = [str(py) for py in services.rglob("*.py") if checker.violations_in(py, repo=None)]
     assert offenders == []

@@ -192,13 +192,15 @@ def check_file(
     touched_lines: Optional[Set[int]] = None,
     net_growing: bool = False,
     catalogs: Optional["RepoCatalogs"] = None,
+    *,
+    repo: Optional[Path],
 ) -> List[str]:
     errors: List[str] = []
 
     # Missing, unreadable or undecodable raises out of here rather than
     # returning an empty error list: "I found nothing wrong" and "I never read
     # it" are the same value, and the caller took it the first way every time.
-    content = read_source_text(py_file)
+    content = read_source_text(py_file, repo=repo)
 
     lines = content.count("\n") + (0 if content.endswith("\n") else 1)
     # Whole-file caps only fire when this diff makes the file net longer — a
@@ -548,7 +550,7 @@ def python_files_in_scope(
     ]
 
 
-def _read_and_parse(py_file: Path) -> Optional[Tuple[str, ast.AST]]:
+def _read_and_parse(py_file: Path, *, repo: Optional[Path]) -> Optional[Tuple[str, ast.AST]]:
     """Source and AST for a file this run grades; ``None`` only for bad syntax.
 
     A read failure raises (see `read_source_text`). A `SyntaxError` is the one
@@ -556,16 +558,18 @@ def _read_and_parse(py_file: Path) -> Optional[Tuple[str, ast.AST]]:
     own on the very same file, so the run already fails loudly and this caller
     has nothing further to add.
     """
-    source = read_source_text(py_file)
+    source = read_source_text(py_file, repo=repo)
     try:
         return source, parse_python_source(source, py_file)
     except SyntaxError:
         return None
 
 
-def function_keys_for_file(py_file: Path) -> List[Tuple[Tuple[str, ...], str, int, int]]:
+def function_keys_for_file(
+    py_file: Path, *, repo: Optional[Path]
+) -> List[Tuple[Tuple[str, ...], str, int, int]]:
     """Returns (body_key, name, lineno, end_lineno) for eligible functions in a file."""
-    parsed = _read_and_parse(py_file)
+    parsed = _read_and_parse(py_file, repo=repo)
     if parsed is None:
         return []
     source, tree = parsed
@@ -621,7 +625,7 @@ def build_repo_catalogs(
                     continue
                 py_file = Path(dirpath) / filename
                 try:
-                    parsed = _read_and_parse(py_file)
+                    parsed = _read_and_parse(py_file, repo=repo_root)
                 except UnexaminableFileError as exc:
                     # Not a file this run grades — it is background the DRY and
                     # enum catalogs are built from — so it cannot make the run
@@ -651,11 +655,13 @@ def codebase_dry_errors(
     changed_files: List[Path],
     catalog: Dict[Tuple[str, ...], List[Tuple[str, str, int]]],
     touched_map: Dict[Path, Optional[Set[int]]],
+    *,
+    repo: Optional[Path],
 ) -> List[str]:
     errors: List[str] = []
     for py_file in changed_files:
         touched = touched_map.get(py_file)
-        for key, func_name, lineno, end_lineno in function_keys_for_file(py_file):
+        for key, func_name, lineno, end_lineno in function_keys_for_file(py_file, repo=repo):
             if not _span_touched(lineno, end_lineno, touched):
                 continue
             matches = catalog.get(key, [])
@@ -745,9 +751,10 @@ def _check(invocation: Invocation) -> int:
                 touched_lines=touched,
                 net_growing=run.net_growing(path),
                 catalogs=catalogs,
+                repo=run.repo,
             )
         )
-    all_errors.extend(codebase_dry_errors(candidates, catalogs.duplicates, touched_map))
+    all_errors.extend(codebase_dry_errors(candidates, catalogs.duplicates, touched_map, repo=run.repo))
 
     if all_errors:
         print(f"{invocation.label}: Python organization check failed:")

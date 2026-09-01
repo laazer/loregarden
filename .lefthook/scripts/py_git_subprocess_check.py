@@ -25,6 +25,7 @@ Usage: py_git_subprocess_check.py [staged files...]
 import ast
 import sys
 from pathlib import Path
+from typing import Optional
 
 _LEFTHOOK_SCRIPTS = Path(__file__).resolve().parent
 if str(_LEFTHOOK_SCRIPTS) not in sys.path:
@@ -33,6 +34,7 @@ if str(_LEFTHOOK_SCRIPTS) not in sys.path:
 from precommit_git_diff import (  # noqa: E402 - sys.path is set up just above
     UnexaminableError,
     UnexaminableFileError,
+    git_repo_root,
     read_source_text,
 )
 
@@ -129,8 +131,8 @@ def _has_explicit_env(node: ast.Call) -> bool:
     return any(kw.arg == "env" for kw in node.keywords)
 
 
-def violations_in(path: Path) -> list[tuple[int, str, str]]:
-    source = read_source_text(path)
+def violations_in(path: Path, *, repo: Optional[Path]) -> list[tuple[int, str, str]]:
+    source = read_source_text(path, repo=repo)
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
@@ -164,12 +166,16 @@ def main(argv: list[str]) -> int:
 
 def _check(argv: list[str]) -> int:
     failures: list[str] = []
+    # This gate takes a bare file list — lefthook's staged files — and has no
+    # `GateRun` to carry the repository, so it asks for the boundary itself.
+    # `None` outside a checkout, which is the only honest answer there.
+    repo = git_repo_root()
 
     for raw in argv:
         path = Path(raw)
         if path.suffix != ".py" or _is_exempt(path):
             continue
-        for lineno, command, spawn in violations_in(path):
+        for lineno, command, spawn in violations_in(path, repo=repo):
             failures.append(f"   {path}:{lineno}: subprocess.{spawn}([{command!r}, ...]) — no env=")
 
     if not failures:

@@ -176,13 +176,13 @@ def f():
 @pytest.mark.parametrize("name", sorted(FLAGGED))
 def test_flags_silent_broad_catches(tmp_path, name):
     path = _write(tmp_path, FLAGGED[name])
-    assert checker.violations_in(path), f"{name} should be flagged"
+    assert checker.violations_in(path, repo=None), f"{name} should be flagged"
 
 
 @pytest.mark.parametrize("name", sorted(ALLOWED))
 def test_leaves_visible_failures_alone(tmp_path, name):
     path = _write(tmp_path, ALLOWED[name])
-    assert checker.violations_in(path) == [], f"{name} should not be flagged"
+    assert checker.violations_in(path, repo=None) == [], f"{name} should not be flagged"
 
 
 @pytest.fixture
@@ -361,7 +361,7 @@ def test_a_file_this_gate_cannot_parse_is_not_reported_clean(tmp_path):
     """
     path = _write(tmp_path, "def f(:\n")
     with pytest.raises(checker.UnexaminableFileError):
-        checker.violations_in(path)
+        checker.violations_in(path, repo=None)
     assert checker.main([str(path)]) == 1
 
 
@@ -407,6 +407,8 @@ def test_real_services_are_clean():
     """The invariant holds across the actual server tree, not just fixtures."""
     services = Path(__file__).resolve().parents[1] / "loregarden"
     offenders = [
-        f"{py}:{lineno}" for py in services.rglob("*.py") for lineno, _ in checker.violations_in(py)
+        f"{py}:{lineno}"
+        for py in services.rglob("*.py")
+        for lineno, _ in checker.violations_in(py, repo=None)
     ]
     assert offenders == []

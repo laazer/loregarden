@@ -39,7 +39,7 @@ def _length_errors(path: Path) -> list[str]:
     # the file, so a shrinking edit to an over-cap file stays allowed.
     return [
         err
-        for err in checker.check_file(path, touched_lines=set(), net_growing=True)
+        for err in checker.check_file(path, touched_lines=set(), net_growing=True, repo=None)
         if "module is" in err
     ]
 
@@ -82,4 +82,4 @@ def test_production_file_under_the_cap_is_clean(tmp_path):
 
 def test_shrinking_an_over_cap_file_is_allowed(tmp_path):
     path = _write(tmp_path, "loregarden/services/big.py", checker.MAX_FILE_LINES + 50)
-    assert checker.check_file(path, touched_lines=set(), net_growing=False) == []
+    assert checker.check_file(path, touched_lines=set(), net_growing=False, repo=None) == []

@@ -289,13 +289,66 @@ function decodedGitPaths(out) {
 }
 
 /**
+ * A source file larger than this is not graded. Mirrors `MAX_SOURCE_BYTES` in
+ * precommit_git_diff.py: no hand-written module comes near it, and a path that
+ * does is a device, a stream, or a mistake.
+ */
+const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
+
+/**
  * The text of a file this gate is about to grade, or a loud failure. Never
  * null: the caller cannot tell "nothing wrong here" from "I never read it",
  * and it took the first reading every time.
+ *
+ * The same rule as `read_source_text` in precommit_git_diff.py, in the same
+ * order: resolve, refuse a non-regular target, refuse a target that leaves the
+ * repository, cap the size, then read. A bare `readFileSync` follows a
+ * committed `src/x.ts -> /dev/zero` until the host gives out, and reads and
+ * reports on a file the repository does not contain — one gate refusing that
+ * while its mirror does not is a rule that exists only in one language.
+ *
+ * The boundary is crossed only when the *listed* path is inside `repoRoot` and
+ * its target is not; a path the caller named outright scoped the run itself.
+ * Both sides are real-pathed, or a checkout behind a symlinked prefix (macOS
+ * `/var` -> `/private/var`) has the check silently skipped for every file.
  */
-function readSource(filePath) {
+function readSource(filePath, repoRoot) {
+  let real;
+  let stat;
   try {
-    return fs.readFileSync(filePath, "utf8");
+    real = fs.realpathSync(filePath);
+    stat = fs.statSync(real);
+  } catch (err) {
+    throw new UnexaminableFileError(
+      `${filePath}: this run could not read it, so it cannot be reported clean (${err.message})`,
+    );
+  }
+  if (!stat.isFile()) {
+    throw new UnexaminableFileError(
+      `${filePath}: not a regular file (resolves to ${real}), so it cannot be graded and cannot be reported clean`,
+    );
+  }
+  if (repoRoot) {
+    const root = fs.realpathSync(repoRoot);
+    // The listed path with its *directory* resolved but not the file itself —
+    // `locatedPath` in precommit_git_diff.py, and for the same reason.
+    const located = path.join(fs.realpathSync(path.dirname(filePath)), path.basename(filePath));
+    // Component containment, not `startsWith`: `/w/repo` is a string prefix of
+    // `/w/repo-vendor/x.ts`, which is where vendored trees sit.
+    const inside = (candidate) => candidate === root || candidate.startsWith(root + path.sep);
+    if (inside(located) && !inside(real)) {
+      throw new UnexaminableFileError(
+        `${filePath}: resolves to ${real}, outside the repository at ${root}, so it cannot be graded and cannot be reported clean`,
+      );
+    }
+  }
+  if (stat.size > MAX_SOURCE_BYTES) {
+    throw new UnexaminableFileError(
+      `${filePath}: ${stat.size} bytes exceeds the ${MAX_SOURCE_BYTES}-byte grading limit (resolves to ${real}), so it cannot be graded and cannot be reported clean`,
+    );
+  }
+  try {
+    return fs.readFileSync(real, "utf8");
   } catch (err) {
     throw new UnexaminableFileError(
       `${filePath}: this run could not read it, so it cannot be reported clean (${err.message})`,
@@ -988,7 +1041,7 @@ function run({ files, repoRoot, diffScope, baseRef, label }) {
   const catalog = buildCatalog(changedSet, repoRoot);
 
   for (const filePath of args) {
-    const content = readSource(filePath);
+    const content = readSource(filePath, repoRoot);
     const lines = content.split("\n");
     const { added, addedCount, deletedCount } = touched(filePath, lines.length);
     const netGrowing = addedCount > deletedCount;
