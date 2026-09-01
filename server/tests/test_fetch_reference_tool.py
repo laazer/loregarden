@@ -28,6 +28,14 @@ as the single deliberate both-non-empty case.
 
 **AC4 — no engine binding at import.**
 
+**616 — the module owns none of the transaction it is handed.** The last
+section adds what 616 makes true: the service neither commits nor rolls back
+the caller's Session, its own writes unwind independently, and markup that
+defeats extraction is `extraction_failed` rather than `internal_error`. Those
+tests use a row the *caller* owns and has not committed as their instrument,
+because "the caller's work survived" alone does not separate a SAVEPOINT from
+a service that simply commits everything.
+
 Contract this file pins, beyond the ticket description:
 
 - `error` on a failure payload **contains** the failure kind's enum value, so a
@@ -39,6 +47,7 @@ Contract this file pins, beyond the ticket description:
 
 import ast
 import socket
+from contextlib import nullcontext
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -50,6 +59,7 @@ from loregarden.models.domain.enums import (
     ReferenceCacheOutcome,
     ReferenceFetchError,
     ReferencePageKind,
+    comparable_utc,
     utcnow,
 )
 from loregarden.models.domain.tables import ReferencePage
@@ -844,28 +854,29 @@ def test_a_non_httpx_exception_mid_body_still_serves_a_stale_copy(session, resol
     _assert_self_classifying(payload)
 
 
-def test_a_failing_commit_becomes_an_internal_error_payload(session, resolver):
+def test_a_failing_write_becomes_an_internal_error_payload(session, resolver):
     """Persistence is inside the promise too: the fetch and the extraction both
-    succeeded, and the database is what would not take it."""
-    _, transport = _transport(_ok_html)
-    failure = OperationalError("INSERT INTO referencepage", {}, _Boom("disk I/O error"))
+    succeeded, and the database is what would not take it.
 
-    with (
-        patch.object(session, "commit", side_effect=failure),
-        patch.object(session, "rollback", wraps=session.rollback) as rollback,
-    ):
-        payload = reference_cache.fetch_reference(
-            session, "https://docs.example/guide", transport=transport
-        )
+    Rewritten for 616. It patched `session.commit` and asserted
+    `rollback.called` — both spellings of a contract the module no longer has:
+    it does not commit the caller's Session, so patching `commit` injects
+    nothing, and rolling the caller back is now the defect rather than the
+    remedy. What survives is the half worth keeping: a write the database
+    refuses is still an `INTERNAL_ERROR` payload rather than an exception. The
+    caller's transaction is left exactly as found — including left needing its
+    own rollback, which is the caller's call to make and not ours.
+    """
+    _, transport = _transport(_ok_html)
+    url = "https://docs.example/guide"
+
+    with _write_fails(session, url):
+        payload = reference_cache.fetch_reference(session, url, transport=transport)
 
     _assert_kind(payload, ReferenceFetchError.INTERNAL_ERROR)
     assert payload["cache"] == ReferenceCacheOutcome.MISS
     assert payload["markdown"] == ""
     _assert_self_classifying(payload)
-    # A returned payload is not enough on its own: a real failed commit leaves
-    # the transaction in a state where every later statement raises, so a
-    # caller handed a tidy failure dict would still find its Session poisoned.
-    assert rollback.called, "the boundary must leave the caller's Session usable"
 
 
 def test_an_internal_error_is_distinguishable_from_a_remote_failure(session, resolver):
@@ -1011,6 +1022,419 @@ def test_unextractable_body_yields_empty_pair():
     assert reference_cache._extract_markdown(
         "<html><body></body></html>", "text/html", "https://docs.example/x"
     ) == ("", "")
+
+
+# --------------------------------------------------------------------------
+# 616 — the module is handed a Session and owns none of its transaction
+#
+# Every test in this section puts a row the CALLER owns, and has not committed,
+# into the Session before calling the service. That row is the instrument: a
+# rollback destroys it, a commit makes it durable, and a SAVEPOINT leaves it
+# exactly as it was. One sentinel therefore separates all three, which is why
+# "the caller's work survived" is never asserted on its own here — a service
+# that commits everything also leaves the row alive.
+#
+# The service's own row is the second instrument, and it is the one a partial
+# fix loses: nesting the writes without ever unwinding them satisfies every
+# caller-side assertion while leaving a half-written cache row behind.
+# --------------------------------------------------------------------------
+
+CALLER_URL = "https://caller.example/unrelated-pending-work"
+
+#: Deeply nested markup, served through the real transport. `trafilatura`
+#: 2.2.0 does not in fact raise on it — it returns `None`, which is already
+#: `extraction_failed` — so the tests that need a *raise* inject it at the
+#: library boundary below. The markup is still real, and still travels the
+#: whole fetch/decode path, because the extraction call is the only thing
+#: standing in for a version or an input that does raise.
+NESTED_MARKUP = (
+    "<html><head><title>nested</title></head><body><main>"
+    + "<div>" * 4000
+    + "<p>the deepest paragraph in a document built to exhaust a recursive parser.</p>"
+    + "</div>" * 4000
+    + "</main></body></html>"
+).encode("utf-8")
+
+
+def _pending_caller_work(session):
+    """Work the caller has in flight in its own Session and has not committed."""
+    row = ReferencePage(
+        url=CALLER_URL, title="caller work", content_markdown="the caller's own row"
+    )
+    session.add(row)
+    return row
+
+
+def _durable_urls(engine) -> set[str]:
+    """The URLs a *different* connection can see — that is, what is committed.
+
+    Read on its own Session deliberately: the caller's own Session would show
+    its uncommitted rows too, and could not tell "still pending" from "someone
+    committed my transaction out from under me".
+    """
+    with Session(engine) as other:
+        return set(other.exec(select(ReferencePage.url)).all())
+
+
+def _durable_row(engine, url):
+    """A snapshot of the committed row for `url`, or None — read off-Session.
+
+    Every mutable field a write site touches is in it, so "nothing of ours
+    landed" is checked as an equality against the pre-call snapshot rather than
+    as mere absence. `_serve_hit` and `_revalidated` update a row that already
+    exists, so absence proves nothing there.
+    """
+    with Session(engine) as other:
+        row = other.exec(select(ReferencePage).where(ReferencePage.url == url)).first()
+        if row is None:
+            return None
+        return (
+            row.title,
+            row.content_markdown,
+            row.content_chars,
+            row.etag,
+            row.last_modified,
+            row.hit_count,
+            comparable_utc(row.fetched_at),
+        )
+
+
+def _write_fails(session, url):
+    """Fail the service's own write to `url`, and nothing else.
+
+    Patching `session.flush` outright is not enough: SQLAlchemy autoflushes on
+    every query, so a blanket failure fires on the service's first *read* and
+    never reaches a write at all. This delegates to the real flush unless the
+    Session is holding the service's own row for `url`, which keeps the
+    caller's unrelated work flushing normally and makes the failure a
+    persistence failure rather than a read failure.
+    """
+    real_flush = session.flush
+
+    def flush(objects=None):
+        ours = [obj for obj in (*session.new, *session.dirty) if getattr(obj, "url", None) == url]
+        if ours:
+            raise OperationalError("INSERT INTO reference_pages", {}, _Boom("disk I/O error"))
+        return real_flush(objects)
+
+    return patch.object(session, "flush", side_effect=flush)
+
+
+def _extraction_raises():
+    """`trafilatura.extract` raising the way hostile markup can make it raise."""
+    return patch.object(
+        reference_cache.trafilatura,
+        "extract",
+        side_effect=RecursionError("maximum recursion depth exceeded"),
+    )
+
+
+def test_hostile_markup_never_touches_the_callers_pending_work(session, isolated_db, resolver):
+    """616 AC1, and the ticket's second reproduction: a remote page destroyed
+    the caller's uncommitted row.
+
+    `_extract_markdown` holds no handler of its own, so whatever the extractor
+    raises reaches the boundary — which rolls the caller's Session back on
+    every escape, not only on the failed commit its docstring describes. The
+    trigger is page content, so this is remotely reachable.
+    """
+    _, transport = _transport(
+        lambda _r: httpx.Response(200, headers=HTML_HEADERS, content=NESTED_MARKUP)
+    )
+    _pending_caller_work(session)
+    outer = session.get_transaction()
+
+    with _extraction_raises():
+        payload = reference_cache.fetch_reference(
+            session, "https://docs.example/guide", transport=transport
+        )
+
+    assert CALLER_URL not in _durable_urls(isolated_db), "the caller's work was committed for it"
+    assert _get_row(session, CALLER_URL) is not None, "the caller's work was rolled back"
+    assert session.get_transaction() is outer, "the caller's transaction was ended"
+    _assert_self_classifying(payload)
+
+    session.commit()
+    assert CALLER_URL in _durable_urls(isolated_db)
+
+
+def test_markup_that_makes_extraction_raise_is_extraction_failed(session, resolver):
+    """616 AC2. A page we could not read is the page's problem, not ours.
+
+    `internal_error` tells the caller to stop retrying this URL and come fix
+    us; `extraction_failed` tells it the truth. The distinction only exists if
+    `_extract_markdown` handles the raise where it happens.
+    """
+    _, transport = _transport(
+        lambda _r: httpx.Response(200, headers=HTML_HEADERS, content=NESTED_MARKUP)
+    )
+
+    with _extraction_raises():
+        payload = reference_cache.fetch_reference(
+            session, "https://docs.example/guide", transport=transport
+        )
+
+    _assert_kind(payload, ReferenceFetchError.EXTRACTION_FAILED)
+    assert payload["cache"] == ReferenceCacheOutcome.MISS
+    assert payload["markdown"] == ""
+    assert _get_row(session, "https://docs.example/guide") is None, "an unreadable page was cached"
+    _assert_self_classifying(payload)
+
+
+def test_a_title_we_could_not_read_does_not_throw_away_the_body(session, resolver):
+    """626. A page whose metadata parse raises is still cached, and once.
+
+    Sharing one handler between `extract` and `extract_metadata` discarded a
+    body already in hand, so the page was never cached and every call re-fetched
+    it — request amplification a hostile page can aim, since the metadata parse
+    runs on markup the remote controls. The request count is the instrument: a
+    cached page is fetched once however many times it is asked for.
+    """
+    url = "https://docs.example/guide"
+    requests, transport = _transport(_ok_html)
+
+    with patch.object(
+        reference_cache.trafilatura,
+        "extract_metadata",
+        side_effect=RecursionError("maximum recursion depth exceeded"),
+    ):
+        first = reference_cache.fetch_reference(session, url, transport=transport)
+        second = reference_cache.fetch_reference(session, url, transport=transport)
+
+    assert first["error"] == "", first
+    assert first["markdown"] != "", "the extracted body was thrown away with the title"
+    assert first["title"] == "", first
+    _assert_self_classifying(first)
+    assert second["cache"] == ReferenceCacheOutcome.HIT, second
+    assert len(requests) == 1, f"the page was re-fetched {len(requests)} times instead of cached"
+
+
+def test_nested_markup_that_extracts_to_nothing_is_extraction_failed(session, resolver):
+    """The same classification without any injected failure — a guard, not a
+    discriminator: it passes today and must keep passing. It is here because it
+    is the *only* behaviour real nested markup produces at trafilatura 2.2.0,
+    which is why the two tests above inject the raise rather than provoke it."""
+    _, transport = _transport(
+        lambda _r: httpx.Response(200, headers=HTML_HEADERS, content=b"<html><body></body></html>")
+    )
+
+    payload = reference_cache.fetch_reference(
+        session, "https://docs.example/guide", transport=transport
+    )
+
+    _assert_kind(payload, ReferenceFetchError.EXTRACTION_FAILED)
+    _assert_self_classifying(payload)
+
+
+@pytest.mark.parametrize("outcome", ["hit", "revalidated", "miss", "extraction_raise"])
+def test_no_outcome_commits_or_rolls_back_the_callers_session(
+    outcome, session, isolated_db, resolver
+):
+    """616 AC3, swept over every path that reaches a write site.
+
+    Three of the four commit today, so the assertion that discriminates is not
+    "the caller's row survived" — it does — but that it is *still uncommitted*
+    when the call returns. The identity of the outer `SessionTransaction` is
+    the second half: both a commit and a rollback end it and autobegin another,
+    so an unchanged object means neither happened.
+    """
+    url = "https://docs.example/guide"
+    extraction = nullcontext()
+    if outcome == "hit":
+        _add_row(session, url)
+        _, transport = _transport(_refuse)
+    elif outcome == "revalidated":
+        _add_row(session, url, age_seconds=_stale_age(), etag='"v1"')
+        _, transport = _transport(lambda _r: httpx.Response(304, headers={"ETag": '"v1"'}))
+    else:
+        _, transport = _transport(_ok_html)
+        if outcome == "extraction_raise":
+            extraction = _extraction_raises()
+
+    _pending_caller_work(session)
+    outer = session.get_transaction()
+
+    with extraction:
+        payload = reference_cache.fetch_reference(session, url, transport=transport)
+
+    _assert_self_classifying(payload)
+    assert CALLER_URL not in _durable_urls(isolated_db), "the caller's work was committed for it"
+    assert _get_row(session, CALLER_URL) is not None, "the caller's work was rolled back"
+    assert session.get_transaction() is outer, "the caller's transaction was ended"
+
+    session.commit()
+    assert CALLER_URL in _durable_urls(isolated_db), "the caller could no longer commit its work"
+
+
+@pytest.mark.parametrize("site", ["miss", "hit", "revalidated"])
+def test_a_write_that_fails_partway_leaves_no_half_written_row(
+    site, session, isolated_db, resolver
+):
+    """The trap, and the direction a partial fix loses — at every write site.
+
+    Both instruments at once. A fix that nests the writes but never unwinds
+    them satisfies every caller-side assertion in this section while leaving
+    the row it was half way through writing pending in the caller's Session —
+    the caller's own commit, the very commit AC3 exists to protect, then
+    inserts it. Data loss traded for data corruption, so the assertions run in
+    both directions: the caller's work survives *and* nothing of ours does.
+
+    Parametrized over all three sites deliberately. Mutation showed that with
+    only the `miss` case, a fix that nests `_store` and leaves `_serve_hit` or
+    `_revalidated` on a bare `flush` survives the whole file: the other tests
+    reach those two sites only on the success path, where a flat write and a
+    released SAVEPOINT are indistinguishable. A bare `flush` that raises
+    deactivates the caller's transaction, so the damage is the same denial of
+    data 616 exists to stop — the caller's later `commit()` cannot land.
+    """
+    url = "https://docs.example/guide"
+    if site == "hit":
+        _add_row(session, url)
+        _, transport = _transport(_refuse)
+    elif site == "revalidated":
+        _add_row(session, url, age_seconds=_stale_age(), etag='"v1"')
+        _, transport = _transport(lambda _r: httpx.Response(304, headers={"ETag": '"v2"'}))
+    else:
+        _, transport = _transport(_ok_html)
+
+    before = _durable_row(isolated_db, url)
+    _pending_caller_work(session)
+    outer = session.get_transaction()
+
+    with _write_fails(session, url):
+        payload = reference_cache.fetch_reference(session, url, transport=transport)
+
+    _assert_kind(payload, ReferenceFetchError.INTERNAL_ERROR)
+    _assert_self_classifying(payload)
+    assert CALLER_URL not in _durable_urls(isolated_db), "the caller's work was committed for it"
+    assert _get_row(session, CALLER_URL) is not None, "the caller's work was rolled back"
+    assert session.get_transaction() is outer, "the caller's transaction was ended"
+
+    session.commit()
+    assert CALLER_URL in _durable_urls(isolated_db), "the caller could no longer commit its work"
+    assert _durable_row(isolated_db, url) == before, "a write that failed was committed anyway"
+
+
+def _seed_committed(engine, url, **fields):
+    """Put a committed row in the database without touching the caller's Session.
+
+    `_add_row` commits on the Session it is given, which would emit the very
+    `BEGIN` the tests below exist to do without.
+    """
+    with Session(engine) as other:
+        _add_row(other, url, **fields)
+
+
+def _fresh_caller_transport(site, isolated_db):
+    """`(transport, url)` for one write site, with a caller that has only read."""
+    url = "https://docs.example/guide"
+    if site == "hit":
+        _seed_committed(isolated_db, url)
+        _, transport = _transport(_refuse)
+    elif site == "revalidated":
+        _seed_committed(isolated_db, url, age_seconds=_stale_age(), etag='"v1"')
+        _, transport = _transport(lambda _r: httpx.Response(304, headers={"ETag": '"v2"'}))
+    else:
+        _, transport = _transport(_ok_html)
+    return transport, url
+
+
+@pytest.mark.parametrize("site", ["miss", "hit", "revalidated"])
+def test_the_service_write_unwinds_from_a_caller_that_has_only_read(site, isolated_db, resolver):
+    """616 AC3 in the caller shape `get_session()` actually hands every request.
+
+    Every other test in this section arrives with a flushed row of the caller's
+    own. On pysqlite that flush is what emits the `BEGIN` a SAVEPOINT has to be
+    nested inside; without it `SAVEPOINT` *is* the outermost transaction and
+    `RELEASE` commits it. So the service commits the caller's Session again — by
+    a new route — and every one of those tests passes anyway. That is why this
+    one adds no pending work of its own: the caller only reads, exactly as
+    `db/session.py`'s `Session(engine)` hands it over.
+
+    `session.in_transaction()` cannot discriminate here, though it looks like it
+    should: it is already True at the write site, autobegun by the service's own
+    `_find_row` SELECT. A caller rollback that fails to discard the service's
+    write does discriminate, so that is the instrument.
+    """
+    transport, url = _fresh_caller_transport(site, isolated_db)
+    before = _durable_row(isolated_db, url)
+
+    with Session(isolated_db) as caller:
+        assert not caller.in_transaction(), "the caller must start the way get_session() hands it"
+        payload = reference_cache.fetch_reference(caller, url, transport=transport)
+        _assert_self_classifying(payload)
+        assert payload["error"] == "", payload
+        assert _get_row(caller, url) is not None, "the service's write never landed at all"
+        caller.rollback()
+
+    assert _durable_row(isolated_db, url) == before, (
+        "the service's write survived the caller's rollback — it committed the caller's Session"
+    )
+
+
+@pytest.mark.parametrize("site", ["miss", "hit", "revalidated"])
+def test_a_read_only_caller_that_commits_still_gets_the_cache_write(site, isolated_db, resolver):
+    """The other direction, so the test above cannot be passed by writing nothing.
+
+    Same caller shape; the caller commits instead of rolling back, and the
+    service's write must then be durable.
+    """
+    transport, url = _fresh_caller_transport(site, isolated_db)
+    before = _durable_row(isolated_db, url)
+
+    with Session(isolated_db) as caller:
+        payload = reference_cache.fetch_reference(caller, url, transport=transport)
+        _assert_self_classifying(payload)
+        caller.commit()
+
+    after = _durable_row(isolated_db, url)
+    assert after is not None, "the caller committed and the cache row is not there"
+    assert after != before, "the caller committed and nothing of the service's write landed"
+
+
+def test_a_concurrent_insert_of_the_same_url_is_absorbed(session, isolated_db, resolver):
+    """The `IntegrityError` race, which moves from `commit` to `flush`.
+
+    Ticket 173's handler exists for a real window: another caller inserts the
+    same URL between our read and our write, and the unique index is the
+    arbiter. Today the violation surfaces from `commit`; under a SAVEPOINT it
+    surfaces from `flush`, and the recovery is to unwind the nested
+    transaction and re-read — not to roll the caller back, which is what makes
+    this the delicate site. Ticket 173's AC3 stays in force: nothing escapes.
+
+    The window is opened by making the first `_find_row` report nothing while
+    the row is really there. Two connections cannot stage this against SQLite:
+    the caller's pending write holds the write lock, so the competing commit
+    dies with "database is locked" instead of racing.
+    """
+    url = "https://docs.example/guide"
+    winner_markdown = "# winner\n\nthe row the unique index kept."
+    _add_row(session, url, markdown=winner_markdown, age_seconds=_stale_age())
+    real_find_row = reference_cache._find_row
+    reads: list[str] = []
+
+    def find_row(session_arg, url_arg):
+        reads.append(url_arg)
+        return None if len(reads) == 1 else real_find_row(session_arg, url_arg)
+
+    _pending_caller_work(session)
+    outer = session.get_transaction()
+    _, transport = _transport(_ok_html)
+
+    with patch.object(reference_cache, "_find_row", side_effect=find_row):
+        payload = reference_cache.fetch_reference(session, url, transport=transport)
+
+    _assert_self_classifying(payload)
+    assert ReferenceFetchError.INTERNAL_ERROR.value not in payload["error"], payload
+    assert payload["markdown"] == winner_markdown, "the loser did not re-read the kept row"
+    assert session.get_transaction() is outer, "the caller's transaction was ended"
+    assert _get_row(session, CALLER_URL) is not None, "the caller's work was rolled back"
+
+    session.commit()
+    with Session(isolated_db) as other:
+        kept = other.exec(select(ReferencePage).where(ReferencePage.url == url)).all()
+    assert len(kept) == 1
+    assert kept[0].content_markdown == winner_markdown
 
 
 # --------------------------------------------------------------------------

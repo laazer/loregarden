@@ -44,6 +44,9 @@ The module binds no engine and holds no module-level state — the caller's
 import ipaddress
 import logging
 import socket
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -59,6 +62,7 @@ from loregarden.models.domain.enums import (
 )
 from loregarden.models.domain.tables import ReferencePage
 from pydantic import BaseModel
+from sqlalchemy import Connection
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -226,23 +230,46 @@ def _extract_markdown(body: str, content_type: str, url: str) -> tuple[str, str]
     """`(markdown, title)` for one document; `("", "")` when nothing extracts.
 
     Non-HTML types are already text and pass straight through.
+
+    Markup we could not read is the *page's* failure, so anything the extractor
+    raises on it is caught here and reported as "nothing extracted". Letting it
+    reach the AC3 boundary instead would label a hostile remote document an
+    `internal_error`, telling the caller to stop retrying the URL and come fix
+    us. The two trafilatura calls get *separate* handlers, because they do not
+    mean the same thing: `extract` raising means there is no text, but
+    `extract_metadata` raising only means there is no title. Sharing one handler
+    threw away a body we had already extracted, so the page was never cached and
+    every call re-fetched it — an amplifier a hostile page could aim (626).
     """
     if "html" not in content_type:
         return body, ""
     document, wrapped = _wrap_fragment(body)
-    markdown = trafilatura.extract(
-        document,
-        url=url,
-        output_format=_MARKDOWN_OUTPUT,
-        include_links=True,
-        include_formatting=True,
-        include_tables=True,
-        include_comments=False,
-        favor_recall=wrapped,
-    )
+    try:
+        markdown = trafilatura.extract(
+            document,
+            url=url,
+            output_format=_MARKDOWN_OUTPUT,
+            include_links=True,
+            include_formatting=True,
+            include_tables=True,
+            include_comments=False,
+            favor_recall=wrapped,
+        )
+    except Exception as exc:  # noqa: BLE001 - the page's markup, not our bug; reported below
+        logger.warning("reference extraction failed for %s: %s: %s", url, type(exc).__name__, exc)
+        return "", ""
     if not markdown:
         return "", ""
-    metadata = trafilatura.extract_metadata(document)
+    try:
+        metadata = trafilatura.extract_metadata(document)
+    except Exception as exc:  # noqa: BLE001 - a missing title is not a failed extraction
+        logger.warning(
+            "reference metadata failed for %s: %s: %s — keeping the extracted body",
+            url,
+            type(exc).__name__,
+            exc,
+        )
+        metadata = None
     title = (metadata.title if metadata is not None else None) or ""
     return markdown, title
 
@@ -484,6 +511,46 @@ def _row_payload(
 # ---------------------------------------------------------------------------
 
 
+def _driver_transaction_open(connection: Connection) -> bool:
+    """Whether the *DBAPI* connection — not SQLAlchemy — has a transaction open.
+
+    The attribute is pysqlite's, and so is the problem: it is the driver
+    SQLAlchemy runs in a mode where neither a SELECT nor a SAVEPOINT emits a
+    `BEGIN`. `db/session.py` binds SQLite everywhere, and a driver without the
+    attribute would fail loudly on this line rather than quietly commit the
+    caller's Session — the right way round for a probe this one depends on.
+    """
+    driver: sqlite3.Connection = connection.connection.driver_connection
+    return driver.in_transaction
+
+
+@contextmanager
+def _cache_write(session: Session) -> Iterator[None]:
+    """Run the cache's own writes so that only they unwind.
+
+    `session.begin_nested()` on its own is not enough, and the tests could not
+    see it. pysqlite emits no `BEGIN` for a SELECT or for `SAVEPOINT` itself, so
+    with a caller that has only read — the state `get_session()` hands every
+    request — the SAVEPOINT *is* the outermost transaction and `RELEASE` commits
+    it. That is tickets 608/610's "the module commits the caller's Session"
+    defect through a new mechanism.
+
+    `session.in_transaction()` cannot tell the two callers apart: it is already
+    True by this point, autobegun by the cache's own `_find_row` SELECT. The
+    driver connection can, so we ask it, and start the outer transaction the
+    savepoint needs when nobody else has.
+
+    We open that transaction and never end it: committing or rolling back a
+    Session we were handed is exactly what this module must not do. The caller
+    owns both ends, as it already did for a write of its own.
+    """
+    connection = session.connection()
+    if not _driver_transaction_open(connection):
+        connection.exec_driver_sql("BEGIN")
+    with session.begin_nested():
+        yield
+
+
 def _find_row(session: Session, url: str) -> ReferencePage | None:
     return session.exec(select(ReferencePage).where(ReferencePage.url == url)).first()
 
@@ -494,9 +561,10 @@ def _is_fresh(row: ReferencePage) -> bool:
 
 
 def _serve_hit(session: Session, row: ReferencePage, max_chars: int) -> dict:
-    row.hit_count += 1
-    session.add(row)
-    session.commit()
+    with _cache_write(session):
+        row.hit_count += 1
+        session.add(row)
+        session.flush()
     session.refresh(row)
     return _row_payload(row, ReferenceCacheOutcome.HIT, "", max_chars)
 
@@ -513,20 +581,21 @@ def _store(
 ) -> ReferencePage | None:
     """Insert or update the cached copy. None means the write did not land."""
     target = row if row is not None else ReferencePage(url=url)
-    target.title = title
-    target.content_markdown = markdown
-    target.content_chars = len(markdown)
-    target.etag = result.etag
-    target.last_modified = result.last_modified
-    target.kind = kind
-    target.fetched_at = utcnow()
-    session.add(target)
     try:
-        session.commit()
+        with _cache_write(session):
+            target.title = title
+            target.content_markdown = markdown
+            target.content_chars = len(markdown)
+            target.etag = result.etag
+            target.last_modified = result.last_modified
+            target.kind = kind
+            target.fetched_at = utcnow()
+            session.add(target)
+            session.flush()
     except IntegrityError as exc:
         # Another caller inserted this URL between our read and our write. The
-        # unique index is the arbiter; re-read and use whatever it kept.
-        session.rollback()
+        # unique index is the arbiter; the SAVEPOINT this raised out of is
+        # already unwound by the `with`, so re-read and use whatever it kept.
         logger.info("reference cache insert raced for %s: %s", url, exc)
         return _find_row(session, url)
     session.refresh(target)
@@ -549,13 +618,14 @@ def _revalidated(
             url,
             _describe(ReferenceFetchError.FETCH_ERROR, f"{url} answered 304 with nothing cached"),
         )
-    if result.etag:
-        row.etag = result.etag
-    if result.last_modified:
-        row.last_modified = result.last_modified
-    row.fetched_at = utcnow()
-    session.add(row)
-    session.commit()
+    with _cache_write(session):
+        if result.etag:
+            row.etag = result.etag
+        if result.last_modified:
+            row.last_modified = result.last_modified
+        row.fetched_at = utcnow()
+        session.add(row)
+        session.flush()
     session.refresh(row)
     return _row_payload(row, ReferenceCacheOutcome.REVALIDATED, "", max_chars)
 
@@ -590,20 +660,6 @@ def _resolve_result(
     return _row_payload(stored, ReferenceCacheOutcome.MISS, "", max_chars)
 
 
-def _rollback_quietly(session: Session) -> None:
-    """Leave the caller's Session usable after a write we could not finish.
-
-    A failed `commit` leaves the transaction in a state where every later
-    statement raises, so a payload-returning failure would still poison the
-    caller. The rollback itself is best-effort — if even that fails there is
-    nothing further to do but say so.
-    """
-    try:
-        session.rollback()
-    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
-        logger.warning("reference cache could not roll back: %s: %s", type(exc).__name__, exc)
-
-
 def _fetch_through_cache(
     session: Session,
     url: str,
@@ -624,6 +680,11 @@ def _fetch_through_cache(
     what makes AC3 structural — a new call site added below cannot quietly
     reintroduce an escape, and the guard is not inert, so a swallowed failure
     is still a visible one.
+
+    This boundary does not touch the caller's transaction. Every write below it
+    happens inside a SAVEPOINT that unwinds on the way out, so there is nothing
+    of ours left pending for a rollback here to clean up — and a rollback here
+    would discard the caller's own uncommitted work, which is not ours to end.
     """
     normalized = url.strip()
     try:
@@ -641,7 +702,6 @@ def _fetch_through_cache(
         logger.exception(
             "reference cache raised an unhandled %s for %s", type(exc).__name__, normalized
         )
-        _rollback_quietly(session)
         return _failure_payload(
             normalized,
             _describe(
