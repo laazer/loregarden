@@ -28,13 +28,17 @@ from __future__ import annotations
 
 import json
 
-from loregarden.models.domain import Artifact, Ticket
+from loregarden.models.domain import Artifact, ReworkArtifactKind, Ticket
 from sqlmodel import Session, select
 
 # Feedback context, not a failure — kept off the Errors tab. The re-run agent's
 # context is assembled from these; the human-facing error artifact that
 # ``record_blocking_issue`` already files is a separate, unchanged concern.
-REWORK_FEEDBACK_KIND = "context"
+#
+# A dedicated kind, not the shared ``context`` bucket it used until migration
+# 0103 backfilled these rows. Both readers below filter on it, so it is the one
+# seam between what this module writes and what it counts.
+REWORK_FEEDBACK_KIND = ReworkArtifactKind.FEEDBACK
 
 # Reroute a single target stage this many times without the work sticking, and
 # the next rejection blocks for a human instead of bouncing again. Mirrors the

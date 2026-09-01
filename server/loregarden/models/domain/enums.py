@@ -323,6 +323,20 @@ class StageBudgetArtifactKind(StrEnum):
     RETRY_BLOCK = "stage_retry_block"
 
 
+class ReworkArtifactKind(StrEnum):
+    """The `artifacts.kind` values the rework-feedback ledger owns.
+
+    Its own kind rather than `context`, which it shared until migration 0103.
+    Sharing made the ledger unqueryable: the count of reroutes for a target
+    stage *is* the loop metric `MAX_REWORK_REROUTES` caps, and asking for it
+    returned either zero (`kind='rework_feedback'`) or sixteen hundred rows of
+    unrelated run context. See `services.rework_feedback`.
+    """
+
+    #: One row per reroute, carrying that round's full fix direction.
+    FEEDBACK = "rework_feedback"
+
+
 class DispatchSurface(StrEnum):
     """Where a stage dispatch was asked for.
 

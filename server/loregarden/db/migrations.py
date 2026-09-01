@@ -68,6 +68,7 @@ from loregarden.db.migrations_queue import (
 )
 from loregarden.db.migrations_reference import m_reference_pages_table
 from loregarden.db.migrations_retry_block import m_backfill_stage_retry_block
+from loregarden.db.migrations_rework_kind import m_rework_feedback_kind
 from loregarden.db.migrations_run_usage import m_agent_run_token_usage
 from loregarden.db.migrations_skills import m_skill_versioning
 from loregarden.db.migrations_stage_fanout import m_stage_fanout_groups
@@ -1348,6 +1349,7 @@ MIGRATIONS: list[tuple[str, Migration]] = [
     ("0100_agent_tool_grants", m_agent_tool_grants),
     ("0101_lane_entry_force", m_lane_entry_force),
     ("0102_backfill_stage_retry_block", m_backfill_stage_retry_block),
+    ("0103_rework_feedback_kind", m_rework_feedback_kind),
 ]
 
 assert_migration_ids_are_sound([migration_id for migration_id, _ in MIGRATIONS])

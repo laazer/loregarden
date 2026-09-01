@@ -160,5 +160,17 @@ def test_the_backfill_marks_only_the_blocks_the_breaker_stranded():
 
 
 def test_the_backfill_is_registered_after_the_migration_it_unblocks():
+    """Registered in both lists — the only fact here that is local to 0101.
+
+    This asserted `MIGRATIONS[-1] == MIGRATION_ID` until 0103 was appended,
+    which is not "registered" but "nothing may ever follow me": a property of
+    the moment it shipped rather than of the migration. The registry-wide
+    invariants are somebody else's job and already done better —
+    `test_migration_ids.py` checks the two lists match, with a message telling
+    you to append the id, and `assert_migration_ids_are_sound` rejects both a
+    duplicate id and a renamed shipped one. Restating either here would only
+    add a second place to break, with a worse error, whenever an unrelated
+    migration is appended.
+    """
     assert MIGRATION_ID in SHIPPED_MIGRATION_IDS
-    assert [migration_id for migration_id, _ in M.MIGRATIONS][-1] == MIGRATION_ID
+    assert MIGRATION_ID in [migration_id for migration_id, _ in M.MIGRATIONS]
