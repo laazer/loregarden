@@ -1,5 +1,5 @@
 /* Baxter avatar — head (chat profile) or full body spritesheet (animations).
-   Full sheet: 4×4 @ 1024×1024 (256 tiles) — walk · fetch · sleep · curl */
+   Full sheet: 4×4 @ 1024×1024 (256 tiles) — walk · fetch · sleep · running */
 
 .baxter-avatar {
   --baxter-w: 48px;
@@ -34,7 +34,7 @@
   inset: 0;
   background-image: var(--baxter-head);
   background-repeat: no-repeat;
-  background-size: contain;
+  background-size: 86% 86%;
   background-position: center;
   transform-origin: 50% 80%;
   pointer-events: none;
@@ -189,7 +189,7 @@
   }
 }
 
-/* Row 4: curl */
+/* Row 4: running */
 @keyframes baxter-hover {
   0%,
   100% {
