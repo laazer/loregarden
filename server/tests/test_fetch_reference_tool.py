@@ -59,6 +59,7 @@ from loregarden.models.domain.enums import (
     ReferenceCacheOutcome,
     ReferenceFetchError,
     ReferencePageKind,
+    comparable_utc,
     utcnow,
 )
 from loregarden.models.domain.tables import ReferencePage
@@ -1075,6 +1076,29 @@ def _durable_urls(engine) -> set[str]:
         return set(other.exec(select(ReferencePage.url)).all())
 
 
+def _durable_row(engine, url):
+    """A snapshot of the committed row for `url`, or None — read off-Session.
+
+    Every mutable field a write site touches is in it, so "nothing of ours
+    landed" is checked as an equality against the pre-call snapshot rather than
+    as mere absence. `_serve_hit` and `_revalidated` update a row that already
+    exists, so absence proves nothing there.
+    """
+    with Session(engine) as other:
+        row = other.exec(select(ReferencePage).where(ReferencePage.url == url)).first()
+        if row is None:
+            return None
+        return (
+            row.title,
+            row.content_markdown,
+            row.content_chars,
+            row.etag,
+            row.last_modified,
+            row.hit_count,
+            comparable_utc(row.fetched_at),
+        )
+
+
 def _write_fails(session, url):
     """Fail the service's own write to `url`, and nothing else.
 
@@ -1214,8 +1238,11 @@ def test_no_outcome_commits_or_rolls_back_the_callers_session(
     assert CALLER_URL in _durable_urls(isolated_db), "the caller could no longer commit its work"
 
 
-def test_a_write_that_fails_partway_leaves_no_half_written_row(session, isolated_db, resolver):
-    """The trap, and the direction a partial fix loses.
+@pytest.mark.parametrize("site", ["miss", "hit", "revalidated"])
+def test_a_write_that_fails_partway_leaves_no_half_written_row(
+    site, session, isolated_db, resolver
+):
+    """The trap, and the direction a partial fix loses — at every write site.
 
     Both instruments at once. A fix that nests the writes but never unwinds
     them satisfies every caller-side assertion in this section while leaving
@@ -1223,9 +1250,26 @@ def test_a_write_that_fails_partway_leaves_no_half_written_row(session, isolated
     the caller's own commit, the very commit AC3 exists to protect, then
     inserts it. Data loss traded for data corruption, so the assertions run in
     both directions: the caller's work survives *and* nothing of ours does.
+
+    Parametrized over all three sites deliberately. Mutation showed that with
+    only the `miss` case, a fix that nests `_store` and leaves `_serve_hit` or
+    `_revalidated` on a bare `flush` survives the whole file: the other tests
+    reach those two sites only on the success path, where a flat write and a
+    released SAVEPOINT are indistinguishable. A bare `flush` that raises
+    deactivates the caller's transaction, so the damage is the same denial of
+    data 616 exists to stop — the caller's later `commit()` cannot land.
     """
     url = "https://docs.example/guide"
-    _, transport = _transport(_ok_html)
+    if site == "hit":
+        _add_row(session, url)
+        _, transport = _transport(_refuse)
+    elif site == "revalidated":
+        _add_row(session, url, age_seconds=_stale_age(), etag='"v1"')
+        _, transport = _transport(lambda _r: httpx.Response(304, headers={"ETag": '"v2"'}))
+    else:
+        _, transport = _transport(_ok_html)
+
+    before = _durable_row(isolated_db, url)
     _pending_caller_work(session)
     outer = session.get_transaction()
 
@@ -1234,13 +1278,13 @@ def test_a_write_that_fails_partway_leaves_no_half_written_row(session, isolated
 
     _assert_kind(payload, ReferenceFetchError.INTERNAL_ERROR)
     _assert_self_classifying(payload)
+    assert CALLER_URL not in _durable_urls(isolated_db), "the caller's work was committed for it"
     assert _get_row(session, CALLER_URL) is not None, "the caller's work was rolled back"
     assert session.get_transaction() is outer, "the caller's transaction was ended"
 
     session.commit()
-    durable = _durable_urls(isolated_db)
-    assert CALLER_URL in durable, "the caller could no longer commit its work"
-    assert url not in durable, "a write that failed was committed anyway"
+    assert CALLER_URL in _durable_urls(isolated_db), "the caller could no longer commit its work"
+    assert _durable_row(isolated_db, url) == before, "a write that failed was committed anyway"
 
 
 def test_a_concurrent_insert_of_the_same_url_is_absorbed(session, isolated_db, resolver):
