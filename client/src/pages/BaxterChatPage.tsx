@@ -21,6 +21,7 @@ import { takeHomeBaxterPrompt } from "../lib/homeBaxter";
 import { useUiStore } from "../state/uiStore";
 import { formatApprovalResolveError } from "../utils/approvalErrors";
 import "./BaxterChatPage.css";
+import { AddToTabMenu } from "../components/AddToTabMenu";
 
 /**
  * Everything a composer needs for `/` and `@` except its own draft.
@@ -510,6 +511,24 @@ export function BaxterChatPage() {
           </div>
 
           {sendError}
+          {chat.sessionId ? (
+            /* The conversation on screen, as a pane. Offered where the thread
+               is chosen rather than on Home, which holds one but does not pick
+               it — and only once there is a thread to send anywhere. */
+            <div className="baxter-chat-send-to-tab">
+              <AddToTabMenu
+                primitiveId="chat_session"
+                values={
+                  new Map([
+                    ["workspace_slug", workspaceSlug],
+                    ["session_id", chat.sessionId],
+                  ])
+                }
+                title={chat.title || "Conversation"}
+                label="Add this conversation to a tab"
+              />
+            </div>
+          ) : null}
           <BaxterReplyDock
             onSend={(text) => void respond(text)}
             onStop={() => void chat.stop().catch(() => undefined)}

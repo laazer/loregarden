@@ -657,3 +657,10 @@
   font-size: 12px;
   line-height: 1.45;
 }
+
+/* The send-to-tab control sits with the composer, right-aligned above it. */
+.baxter-chat-send-to-tab {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 4px 4px;
+}

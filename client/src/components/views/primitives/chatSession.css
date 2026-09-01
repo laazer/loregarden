@@ -1,0 +1,51 @@
+/*
+ * The conversation pane's own frame.
+ *
+ * No fixed heights and no viewport units: `containerPrimitives.smallSize` scans
+ * every stylesheet under `views/` for them, and a pane is whatever size the
+ * grid or the canvas made it. The thread scrolls; the composer does not move.
+ */
+
+.chat-session-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  gap: 8px;
+  padding: 8px;
+}
+
+.chat-session-thread {
+  display: flex;
+  flex-direction: column;
+  /* The one that matters: a flex child defaults to `min-height: auto` and
+     refuses to shrink, which is what pushes a composer out of a short pane. */
+  min-height: 0;
+  min-width: 0;
+  flex: 1 1 0;
+  overflow: auto;
+}
+
+/*
+ * A short pane is mostly composer without this.
+ *
+ * Measured in a browser, which is the only place it is visible: at a pane 179px
+ * tall the thread had 45px and the composer 110px — one message and a text box.
+ * The composer's dock styling is sized for a page footer, where 110px is right;
+ * in a pane it has to yield. Relative units, so the box still grows with the
+ * type scale rather than being pinned to a number.
+ */
+[data-pane-tier="compact"] .chat-session-pane {
+  gap: 4px;
+  padding: 4px;
+}
+
+[data-pane-tier="compact"] .chat-session-pane .lg-chat-composer {
+  padding: 4px 6px;
+}
+
+[data-pane-tier="compact"] .chat-session-pane .lg-chat-composer-input {
+  min-height: 2.1em;
+}

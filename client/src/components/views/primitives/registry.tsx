@@ -17,6 +17,7 @@ import type { CSSProperties } from "react";
 import { PaneSizeContext, paneTierFor, type PaneSize } from "../paneSize";
 import { CHAT_PANE_PRIMITIVES } from "./chatPanePrimitives";
 import { PrimitiveErrorBoundary } from "./PrimitiveErrorBoundary";
+import { chatSessionPrimitive } from "./chatSessionPrimitive";
 import { queueLanePrimitive } from "./queueLanePrimitive";
 import { runLedgerPrimitive } from "./runLedgerPrimitive";
 import { terminalPrimitive } from "./terminalPrimitive";
@@ -32,6 +33,7 @@ export const CONTAINER_PRIMITIVES: RegisteredPrimitive[] = [
   terminalPrimitive,
   runLedgerPrimitive,
   queueLanePrimitive,
+  chatSessionPrimitive,
   ...CHAT_PANE_PRIMITIVES,
   webEmbedPrimitive,
 ];
