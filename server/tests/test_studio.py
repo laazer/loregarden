@@ -791,3 +791,66 @@ def test_workflow_rejects_classify_branch_to_unknown_stage():
 
     stages[0].classify_routes[0].to_stage = "implement"
     _validate_stage_route_targets(stages)  # valid target: no raise
+
+
+def test_workflow_rejects_a_classify_route_only_list_order_can_choose():
+    """A route selectable by nothing is chosen by position, which is not a rule.
+
+    `_select_classify_route` chooses three ways: content scoring on specialties
+    or languages, the pin when it names exactly one route, or the route marked
+    `default`. A route with none of those is reachable only by being first in the
+    list — and "whichever is first" is the failure that sent 471 live tickets
+    down a docs shortcut they had nothing to do with.
+    """
+    import pytest
+    from loregarden.models.domain import StudioWorkflowStage
+    from loregarden.services.studio_service import _validate_classify_routes_are_selectable
+
+    stages = [
+        StudioWorkflowStage(
+            key="triage",
+            name="Triage",
+            stage_type="classify",
+            order=1,
+            classify_routes=[
+                ClassifyRoute(agent_id="backend_implementer", to_stage=""),
+                ClassifyRoute(agent_id="frontend_implementer", to_stage=""),
+            ],
+        ),
+    ]
+    with pytest.raises(ValueError, match="list position"):
+        _validate_classify_routes_are_selectable(stages)
+
+    # Either way of making it choosable is enough.
+    stages[0].classify_routes[0].specialties = ["backend"]
+    stages[0].classify_routes[1].default = True
+    _validate_classify_routes_are_selectable(stages)
+
+
+def test_two_routes_may_share_an_agent_and_differ_in_branch():
+    """Deliberately allowed, and the live triage stage depends on it.
+
+    The scoper triages everything, and typo/docs work skips ahead to test-design.
+    A pin cannot say which of the two it meant, so `_select_classify_route`
+    declines to let it steer there — the template is fine, and rejecting it would
+    delete a working shortcut to fix a bug that lives in the matching, not here.
+    """
+    from loregarden.models.domain import StudioWorkflowStage
+    from loregarden.services.studio_service import _validate_classify_routes_are_selectable
+
+    stages = [
+        StudioWorkflowStage(
+            key="triage",
+            name="Triage",
+            stage_type="classify",
+            order=1,
+            classify_routes=[
+                ClassifyRoute(
+                    agent_id="ticket_scoper", specialties=["docs"], to_stage="test-design"
+                ),
+                ClassifyRoute(agent_id="ticket_scoper", default=True, to_stage=""),
+            ],
+        ),
+        StudioWorkflowStage(key="test-design", name="Design Tests", agent_id="td", order=2),
+    ]
+    _validate_classify_routes_are_selectable(stages)
