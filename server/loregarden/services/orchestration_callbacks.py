@@ -15,6 +15,7 @@ from loregarden.models.domain import (
     ApprovalKind,
     ApprovalStatus,
     Artifact,
+    DispatchSurface,
     EventType,
     ExternalHarness,
     OrchestrationRun,
@@ -31,6 +32,10 @@ from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.run_interruption import ORPHAN_OF_TERMINAL_ORCH_MESSAGE
 from loregarden.services.run_lease import SUPERVISED
+from loregarden.services.stage_retry_budget import (
+    DispatchOrigin,
+    guard_standalone_stage_dispatch,
+)
 from loregarden.services.studio_routing import is_prunable_stage, prunable_stage_keys
 from loregarden.services.ticket_discovery import looks_like_ticket_uuid
 from loregarden.services.ticket_ids import resolve as resolve_external_id
@@ -336,6 +341,7 @@ class OrchestrationCallbackService:
         *,
         stage_key: str,
         agent_id: str = "",
+        force: bool = False,
     ) -> Ticket:
         self.touch_lease(orch_run)
         instance, stages = self.orch._resolve_stages(ticket)
@@ -348,6 +354,24 @@ class OrchestrationCallbackService:
         stage_map = parse_stage_map(instance, stages)
         if stage_map.get(stage_key) == StageStatus.WONT_DO:
             raise ValueError(f"Stage '{stage_key}' is marked won't do")
+
+        # This path never reaches `start_run` and creates no AgentRun, so it is
+        # counted by neither the orchestrator loop nor the run seam: it needs its
+        # own check site. Before the first write, or a refusal would leave the
+        # stage RUNNING with nothing behind it — and on this path there is no
+        # AgentRun to make that visible.
+        guard_standalone_stage_dispatch(
+            self.session,
+            ticket,
+            stage_key,
+            stage_already_running=stage_map.get(stage_key) == StageStatus.RUNNING,
+            force=force,
+            origin=DispatchOrigin(
+                surface=DispatchSurface.MCP,
+                orchestration_run_id=orch_run.id,
+                agent_id=agent_id,
+            ),
+        )
 
         set_stage_status(ticket, instance, stages, stage_key, StageStatus.RUNNING)
         if agent_id:

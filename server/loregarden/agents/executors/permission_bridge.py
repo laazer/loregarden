@@ -34,6 +34,7 @@ from loregarden.agents.executors.tool_auto_approve import (  # noqa: F401
     is_auto_approved_mcp_tool,
     is_chat_auto_approved_cli_tool,
     is_orchestrated_agent_denied_mcp_tool,
+    orchestrated_denied_mcp_arguments,
     validate_question_answers,
 )
 from loregarden.agents.registry import get_agent
@@ -987,11 +988,19 @@ class PermissionBridgeRunner:
         if (
             bare_mcp
             and self.track_workflow_stage
-            and is_orchestrated_agent_denied_mcp_tool(tool_name)
+            and (
+                is_orchestrated_agent_denied_mcp_tool(tool_name)
+                or any(tool_input.get(a) for a in orchestrated_denied_mcp_arguments(tool_name))
+            )
         ):
             # Checked first, ahead of every approval path including the human
             # inbox — an orchestrated stage agent must never be able to spawn
-            # tickets mid-run, not even with a click. See ORCHESTRATED_DENIED_MCP_TOOLS.
+            # tickets mid-run, not even with a click. See ORCHESTRATED_DENIED_MCP_TOOLS,
+            # and ORCHESTRATED_DENIED_MCP_ARGUMENTS for the tools where only one
+            # argument is off limits (`start_stage(force=…)` clears the retry
+            # budget that stopped the caller). `mcp.tools.execute_tool` refuses
+            # both again server-side; this is the early, attributable denial, not
+            # the only one, since a direct `/mcp` POST never comes through here.
             # Interactive contexts (Ticket Studio chat, a human's terminal session)
             # construct PermissionBridgeRunner with track_workflow_stage=False and
             # fall through to the normal approval gate below instead.

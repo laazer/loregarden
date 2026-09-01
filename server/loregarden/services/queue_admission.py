@@ -175,6 +175,7 @@ class QueueAdmissionService:
         auto_approve: bool = False,
         preferred_slot: int | None = None,
         timeout_seconds: int | None = None,
+        force: bool = False,
     ) -> Reservation:
         """A slot to run one stage in, or a place in line.
 
@@ -190,6 +191,7 @@ class QueueAdmissionService:
             stop_at_stage_key=None,
             preferred_slot=preferred_slot,
             timeout_seconds=timeout_seconds,
+            force=force,
         )
 
     # ---- internals -----------------------------------------------------
@@ -206,6 +208,7 @@ class QueueAdmissionService:
         driver: str = "",
         max_stages: int | None = None,
         timeout_seconds: int | None = None,
+        force: bool = False,
     ) -> Reservation:
         self.lanes.slots.initialize_slots()
 
@@ -239,6 +242,7 @@ class QueueAdmissionService:
             driver=driver,
             max_stages=max_stages,
             timeout_seconds=timeout_seconds,
+            force=force,
         )
         position = result.get("position")
         logger.info(

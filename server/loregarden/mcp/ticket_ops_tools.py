@@ -176,8 +176,9 @@ def _requeue_ticket(session: Session, svc, arguments: dict[str, Any]) -> str:
             state=TicketState(arguments.get("state") or TicketState.BACKLOG.value),
         ),
     )
-    # `refresh_stage_retry_budget` only clears blocking text that names the retry
-    # budget; a requeue clears the block whatever it said, and says who did it.
+    # `refresh_stage_retry_budget` only clears blocking text when this breaker's
+    # own structural mark is on the stage; a requeue clears the block whatever
+    # wrote it, and says who did it.
     orch.refresh_stage_retry_budget(ticket, stage_key)
     ticket.blocking_issues = ""
     ticket.next_status = ""

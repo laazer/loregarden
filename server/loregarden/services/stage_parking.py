@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from loregarden.models.domain import AgentRun, Approval, Ticket
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-from loregarden.services.stage_retry_budget import clear_stage_dispatches
+from loregarden.services.stage_retry_budget import refund_stage_dispatch_budget
 from sqlmodel import Session
 
 
@@ -42,5 +42,5 @@ def park_stage(
         impact=impact,
         level="high",
     )
-    clear_stage_dispatches(session, ticket.id, run.stage_key)
+    refund_stage_dispatch_budget(session, ticket.id, run.stage_key)
     return approval

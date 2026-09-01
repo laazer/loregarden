@@ -119,6 +119,8 @@ SHIPPED_MIGRATION_IDS: tuple[str, ...] = (
     "0098_view_viewport",
     "0099_memory_briefings_table",
     "0100_agent_tool_grants",
+    "0101_lane_entry_force",
+    "0102_backfill_stage_retry_block",
 )
 
 

@@ -44,6 +44,7 @@ def run_admitted(
     start: Callable[[], Any],
     driver: str = "",
     max_stages: int | None = None,
+    force: bool = False,
 ) -> tuple[Reservation, Any]:
     """Reserve, run `start`, and release the slot if it raised.
 
@@ -54,7 +55,7 @@ def run_admitted(
     """
     admission = QueueAdmissionService(session)
     reservation = (
-        admission.reserve_stage(ticket, stage_key=stage_key)
+        admission.reserve_stage(ticket, stage_key=stage_key, force=force)
         if stage_key is not None
         # Carried for the parked case only: an entry is the whole record of the
         # ask by the time a lane reaches it, and a dropped override is a
