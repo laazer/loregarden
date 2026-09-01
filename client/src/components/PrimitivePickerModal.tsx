@@ -127,7 +127,7 @@ export function PrimitivePickerModal({
               {legend}
             </h2>
             <p className="modal-subtitle">
-              Every primitive this build can put in a pane. You can change it later.
+              Every widget this build can put in a pane. You can change it later.
             </p>
           </div>
           <IconCloseButton onClick={onClose} />

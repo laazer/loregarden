@@ -226,7 +226,7 @@ export function ContainerPrimitiveHost({
     // view down with an exception.
     return (
       <Placeholder containerId={containerId} reason="true">
-        This container asks for a primitive this build does not have.
+        This container asks for a widget this build does not have.
       </Placeholder>
     );
   }

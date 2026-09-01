@@ -39,7 +39,7 @@ const SYNTHETIC = definePrimitive<{ label: string }>({
 function open(props: Partial<React.ComponentProps<typeof PrimitivePickerModal>> = {}) {
   return render(
     <PrimitivePickerModal
-      legend="Choose a primitive"
+      legend="Choose a widget"
       onPick={noop}
       onClose={noop}
       {...props}
@@ -75,7 +75,7 @@ describe("AC4 — the picker is a dialog", () => {
      */
     const { container } = render(
       <div style={{ transform: "scale(0.6)" }}>
-        <PrimitivePickerModal legend="Choose a primitive" onPick={noop} onClose={noop} />
+        <PrimitivePickerModal legend="Choose a widget" onPick={noop} onClose={noop} />
       </div>,
     );
     const dialog = screen.getByRole("dialog");

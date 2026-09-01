@@ -217,7 +217,7 @@ async function settle() {
 function promptIn(root: HTMLElement, containerId: string): HTMLElement {
   const pane = root.querySelector<HTMLElement>(`[data-container-id="${containerId}"]`);
   if (pane === null) throw new Error(`No pane for ${containerId}`);
-  return within(pane).getByRole("button", { name: /primitive/i });
+  return within(pane).getByRole("button", { name: /widget/i });
 }
 
 /**
@@ -400,7 +400,7 @@ describe("AC6 — a new flex grid opens on a container asking for a primitive", 
     // straight to the host produces that placeholder — on screen, and not a
     // prompt.
     expect(container.querySelector("[data-primitive-unknown]")).toBeNull();
-    expect(screen.getByRole("button", { name: /primitive/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /widget/i })).toBeInTheDocument();
   });
 
   it("reaches the registry-derived picker from that prompt", async () => {
@@ -408,7 +408,7 @@ describe("AC6 — a new flex grid opens on a container asking for a primitive", 
     const { container } = renderRoute("/view/v-grid");
     await screen.findByTestId("view-host");
 
-    await user.click(screen.getByRole("button", { name: /primitive/i }));
+    await user.click(screen.getByRole("button", { name: /widget/i }));
 
     await primitiveOption(container, "terminal");
     // Derived from the registry rather than authored here, so a picker offering
@@ -420,7 +420,7 @@ describe("AC6 — a new flex grid opens on a container asking for a primitive", 
     const user = userEvent.setup();
     const { container } = renderRoute("/view/v-grid");
     await screen.findByTestId("view-host");
-    await user.click(screen.getByRole("button", { name: /primitive/i }));
+    await user.click(screen.getByRole("button", { name: /widget/i }));
 
     await user.click(await primitiveOption(container, "terminal"));
 
@@ -461,7 +461,7 @@ describe("AC6 — a new flex grid opens on a container asking for a primitive", 
     const before = emptyGridLayout();
     const { container } = renderRoute("/view/v-grid");
     await screen.findByTestId("view-host");
-    await user.click(screen.getByRole("button", { name: /primitive/i }));
+    await user.click(screen.getByRole("button", { name: /widget/i }));
     await user.click(await primitiveOption(container, "terminal"));
 
     await waitFor(() => expect(mockUpdateView).toHaveBeenCalledTimes(1));
@@ -478,7 +478,7 @@ describe("AC6 — a new flex grid opens on a container asking for a primitive", 
 
     const { container } = renderRoute("/view/v-grid");
     await screen.findByTestId("view-host");
-    await user.click(screen.getByRole("button", { name: /primitive/i }));
+    await user.click(screen.getByRole("button", { name: /widget/i }));
     await user.click(await primitiveOption(container, "terminal"));
 
     // The pane goes through the host's dispatch, which stamps the id it
@@ -656,7 +656,7 @@ describe("one view's surface does not follow the user into the next", () => {
     // B is unconfigured, so it opens on the prompt — not on A's open picker,
     // which would offer to configure a container B has never heard of.
     expect(container.querySelector("[data-primitive-id]")).toBeNull();
-    expect(within(pane as HTMLElement).getByRole("button", { name: /primitive/i })).toBeVisible();
+    expect(within(pane as HTMLElement).getByRole("button", { name: /widget/i })).toBeVisible();
   });
 });
 
