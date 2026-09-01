@@ -520,6 +520,53 @@ class ReferencePageKind(str, Enum):
     CATALOG = "catalog"
 
 
+class ReferenceCacheOutcome(StrEnum):
+    """Where a reference payload's body came from.
+
+    Present on *every* payload the fetch-through cache returns, failures
+    included: without it a served-stale copy — a body and an error together —
+    cannot be told apart from a success, and ``STALE_ERROR`` is the single
+    deliberate case where both are non-empty.
+    """
+
+    #: Fetched over the network this call, or fetched and failed with nothing
+    #: cached to fall back on. ``error`` discriminates the two.
+    MISS = "miss"
+    #: Served from a row still inside the TTL; no request was made.
+    HIT = "hit"
+    #: A conditional GET answered 304; the stored body stands, its age is reset.
+    REVALIDATED = "revalidated"
+    #: The refresh failed and a stale row was served instead of nothing.
+    STALE_ERROR = "stale_error"
+
+
+class ReferenceFetchError(StrEnum):
+    """Why a reference fetch produced no fresh body.
+
+    A payload's ``error`` contains exactly one of these values plus whatever
+    detail the reason carries, so a caller can classify a failure without
+    parsing prose — and so a string naming every kind at once classifies
+    nothing and fails its assertion.
+    """
+
+    #: The URL, or a redirect hop, failed the SSRF guard.
+    BLOCKED = "blocked"
+    UNSUPPORTED_CONTENT_TYPE = "unsupported_content_type"
+    TOO_LARGE = "too_large"
+    #: The body arrived but extraction produced nothing; never cached, because
+    #: caching an empty page would serve emptiness for a whole TTL.
+    EXTRACTION_FAILED = "extraction_failed"
+    TOO_MANY_REDIRECTS = "too_many_redirects"
+    #: Transport failure, timeout, or an HTTP error status.
+    FETCH_ERROR = "fetch_error"
+    #: An exception no path in the cache anticipated — a bug here, or an
+    #: environment failure (the database refusing a commit) rather than the
+    #: remote misbehaving. Kept distinct from ``FETCH_ERROR`` deliberately:
+    #: flattening the two tells a caller to retry the URL when the thing that
+    #: broke was us.
+    INTERNAL_ERROR = "internal_error"
+
+
 class MemoryBriefingOutcome(str, Enum):
     """What one inherited-wisdom assembly actually did.
 
