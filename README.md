@@ -109,6 +109,9 @@ An installed package exposes the same interface as `loregarden mcp ...` and `lor
 
 ## Desktop app
 
+> [!WARNING]
+> The desktop app is under active development and not yet working. Use the browser IDE (`task dev`) instead.
+
 Loregarden ships as a Tauri desktop app using the same React frontend and FastAPI backend:
 
 ```bash
