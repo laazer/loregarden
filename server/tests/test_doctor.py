@@ -251,6 +251,28 @@ def test_checks_do_not_write_to_the_repository(session, workspace, repo):
     assert git(repo, "status", "--porcelain").stdout == ""
 
 
+def test_the_one_check_that_writes_leaves_the_git_directory_as_it_found_it(
+    session, workspace, repo
+):
+    """The exception, asserted rather than excluded.
+
+    `check_git_writable` has to write: `os.access` reports the mode bits, and the
+    failure it exists to catch is a sandbox that denies the write while the bits
+    still allow it. So the invariant it must hold is not "never writes" but
+    "leaves nothing behind" — and the test above cannot say so, because it
+    excludes `.git` from its comparison and `git status` never reports anything
+    inside it. Asserted here directly, or the probe could leak forever unseen.
+    """
+    git_dir = repo / ".git"
+    before = sorted(p.relative_to(git_dir) for p in git_dir.rglob("*"))
+
+    run_checks(session, workspace, repo)
+
+    after = sorted(p.relative_to(git_dir) for p in git_dir.rglob("*"))
+    assert after == before
+    assert not list(git_dir.glob(".loregarden-write-probe*"))
+
+
 def test_no_finding_leaks_a_credential_value(session, workspace, repo, monkeypatch):
     """Presence is the answer; the value is never read back out."""
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-secret-do-not-print")

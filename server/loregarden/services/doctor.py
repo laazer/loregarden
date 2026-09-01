@@ -6,20 +6,36 @@ next person would remember. That is the part worth replacing: the knowledge is
 mechanical, the diagnosis is a shell command, and the remediation is one line.
 Prose telling an agent to remember something is the weakest possible enforcement.
 
-Two rules hold for every check. None of them writes to the repository, fetches
+Two rules hold for every check. None of them changes the repository, fetches
 from a remote, or reads the value of a credential — a diagnostic that changes
 what it is diagnosing is not one. And none of them raises: an exception inside a
 check becomes a FAIL for that check alone, because a doctor that dies on its
 first surprise is worse than no doctor.
+
+One check writes, and the rule above says "changes" rather than "writes" because
+of it. `check_git_writable` cannot answer its question by reading: `os.access`
+reports the mode bits, and the failure it exists to catch is a sandbox that
+denies the write while the mode bits still allow it. So it writes a uniquely
+named probe inside the git directory and removes it in the same call, leaving
+the repository as it found it. `tests/test_doctor.py` asserts that absence
+directly rather than excluding the git directory from scrutiny.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shlex
+import shutil
 from collections.abc import Callable
 from pathlib import Path
+from uuid import uuid4
 
+from loregarden.agents.mcp_context import (
+    STAGE_REPORT_SECTION_TITLE,
+    WORKFLOW_ENFORCEMENT_DOC_REL,
+    load_stage_report_contract_doc,
+)
 from loregarden.config import resolved_database_path, settings
 from loregarden.models.domain import (
     AgentRun,
@@ -32,7 +48,9 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS, run_git
+from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.stage_parking import park_stage
+from loregarden.services.workspace_paths import resolve_agent_context_dir
 from sqlmodel import Session, select
 
 #: Checks cheap and decisive enough to run before every agent dispatch. The rest
@@ -48,9 +66,29 @@ from sqlmodel import Session, select
 #: lines later, which fails the run with a precise git message; parking on it
 #: instead replaces that message with an approval a human has to clear, and turns
 #: every not-yet-a-repo workspace into a stalled ticket.
+#: STAGE_REPORT_CONTRACT and GIT_WRITABLE are here on the same test
+#: REPO_HAS_COMMIT fails: nothing downstream reports them well. An empty
+#: contract is reported nowhere at all — the stage just fails on a report it was
+#: never told how to write. An unwritable git directory is not discovered until
+#: commit time, after the whole run has been spent.
+#:
+#: GATE_COMMANDS_RESOLVE is deliberately absent, for REPO_HAS_COMMIT's reason:
+#: `gate_runner` already turns an exec failure into `GateOutcome.UNAVAILABLE`
+#: carrying the OS error and the command, and parking would replace that precise
+#: message with an approval someone has to clear.
+#:
+#: TOOLCHAIN_INSTALLED is absent for a harder reason: it cannot tell a toolchain
+#: a run needs from one it does not, and parking on the difference is worse than
+#: not asking. Loregarden's own root `package.json` is the Tauri desktop host —
+#: devDependencies only, never installed for an agent run, with the real
+#: `node_modules` under `client/`. The check reads that as a missing toolchain
+#: and would park every dispatch in this very workspace. It stays valuable on
+#: demand, where a human reads the finding and knows which manifests matter.
 DISPATCH_PREFLIGHT_CHECKS = (
     DoctorCheck.GIT_CORE_BARE,
     DoctorCheck.GIT_ENV_LEAK,
+    DoctorCheck.STAGE_REPORT_CONTRACT,
+    DoctorCheck.GIT_WRITABLE,
 )
 
 
@@ -270,6 +308,193 @@ def check_git_portability(session: Session, workspace: Workspace, repo_root: Pat
     return _ok(DoctorCheck.GIT_PORTABILITY, f"Branch is {state.value}.")
 
 
+def check_stage_report_contract(
+    session: Session, workspace: Workspace, repo_root: Path
+) -> DoctorFinding:
+    """The stage-report contract reaches the agent's prompt with content in it.
+
+    `load_stage_report_contract_doc` returns "" for two unrelated reasons and
+    says nothing about either: the workflow-enforcement doc is absent from this
+    workspace's agent_context, or the doc is there but its STAGE REPORT CONTRACT
+    section title never matched. Either way the prompt is assembled with an
+    empty contract, the agent is never told how to write its report, and every
+    stage in the workspace fails on a report it could not have produced.
+
+    This is the check with the clearest claim on running before dispatch:
+    nothing downstream reports it at all. The failure surfaces as unparseable
+    output several minutes and one agent turn later, naming the report rather
+    than the missing instructions.
+    """
+    contract = load_stage_report_contract_doc(resolve_agent_context_dir(workspace))
+    if contract.strip():
+        return _ok(
+            DoctorCheck.STAGE_REPORT_CONTRACT,
+            f"Stage-report contract is {len(contract)} characters.",
+        )
+    return DoctorFinding(
+        check=DoctorCheck.STAGE_REPORT_CONTRACT,
+        status=DoctorStatus.FAIL,
+        finding=("The stage-report contract is empty, so agents are given no report format."),
+        remediation=(
+            f"Check {WORKFLOW_ENFORCEMENT_DOC_REL} exists under this workspace's "
+            f"agent_context and still carries its '{STAGE_REPORT_SECTION_TITLE}' section."
+        ),
+    )
+
+
+#: What a declared toolchain requires before an agent can use it, as
+#: (manifest, installed directory). Derived from the tree rather than assumed:
+#: hardcoding `node_modules` and `.venv` would be loregarden's own shape imposed
+#: on every workspace, and a repo with no `package.json` is not missing one.
+_TOOLCHAIN_REQUIREMENTS: tuple[tuple[str, str], ...] = (
+    ("package.json", "node_modules"),
+    ("pyproject.toml", ".venv"),
+)
+
+
+def check_toolchain_installed(
+    session: Session, workspace: Workspace, repo_root: Path
+) -> DoctorFinding:
+    """A toolchain the execution tree declares but has not installed.
+
+    Checked against `repo_root`, which is the tree the agent will actually run
+    in — a per-ticket worktree, not the shared checkout. That distinction is the
+    whole point: a worktree is created empty of ignored directories, so
+    `node_modules` and `.venv` are exactly what it lacks while the checkout
+    beside it has both.
+
+    ON DEMAND ONLY, not a dispatch check. A manifest does not tell you whether
+    the run needs what it declares. Loregarden's own root `package.json` is the
+    Tauri desktop host with devDependencies it never installs, while the real
+    `node_modules` sits under `client/` — so this reports a missing toolchain for
+    a tree that is working perfectly, and parking on it would stop every dispatch
+    in this workspace. A human reading the finding knows which manifests matter;
+    the preflight does not.
+    """
+    missing = [
+        installed
+        for manifest, installed in _TOOLCHAIN_REQUIREMENTS
+        if (repo_root / manifest).is_file() and not (repo_root / installed).is_dir()
+    ]
+    if not missing:
+        return _ok(DoctorCheck.TOOLCHAIN_INSTALLED, "Declared toolchains are installed.")
+    return DoctorFinding(
+        check=DoctorCheck.TOOLCHAIN_INSTALLED,
+        status=DoctorStatus.FAIL,
+        finding=f"{repo_root} declares a toolchain it has not installed: {', '.join(missing)}.",
+        remediation=(
+            "Install them in this tree, not the shared checkout — a worktree does not "
+            "inherit ignored directories (npm ci / uv sync, as the manifest requires)."
+        ),
+    )
+
+
+def check_git_writable(session: Session, workspace: Workspace, repo_root: Path) -> DoctorFinding:
+    """The git directory the run must write to accepts a write.
+
+    Asked by writing rather than by reading a permission bit: the case this
+    exists for is a sandbox that denies the write while the mode bits still say
+    it is allowed, which is how agents produced work they could never stage.
+    """
+    proc = run_git(
+        ["rev-parse", "--git-dir"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return _ok(DoctorCheck.GIT_WRITABLE, "No git directory to write to.")
+    git_dir = Path(proc.stdout.strip())
+    if not git_dir.is_absolute():
+        git_dir = repo_root / git_dir
+
+    # Unique per call. Parallel stages fan out against one ticket's worktree, so
+    # a fixed name lets one run's unlink race another's write — and the
+    # FileNotFoundError that follows is an OSError, which this would report as an
+    # unwritable git directory and park a run whose tree was perfectly fine.
+    probe = git_dir / f".loregarden-write-probe-{os.getpid()}-{uuid4().hex}"
+    try:
+        probe.write_text("probe", encoding="utf-8")
+        probe.unlink()
+    except OSError as error:
+        return DoctorFinding(
+            check=DoctorCheck.GIT_WRITABLE,
+            status=DoctorStatus.FAIL,
+            finding=f"The git directory {git_dir} is not writable: {error}.",
+            remediation=(
+                "Grant the agent write access to it. Work produced without it cannot be "
+                "staged or committed, and the failure surfaces at commit time instead."
+            ),
+        )
+    return _ok(DoctorCheck.GIT_WRITABLE, f"{git_dir} is writable.")
+
+
+def check_gate_commands_resolve(
+    session: Session, workspace: Workspace, repo_root: Path
+) -> DoctorFinding:
+    """Every configured transition-gate command names something that resolves.
+
+    A path with a separator in it is resolved against `repo_root` — the tree the
+    agent runs in, not the shared checkout, which is how three hooks reported a
+    missing file that was never missing. A bare name is resolved on PATH, because
+    that is what a shell does with one; note this is the doctor process's PATH,
+    which is not always the PATH the agent's shell will have.
+
+    Only the executable is resolved, not the arguments: the rest of the command
+    line is the gate's own business, and a check that tried to validate it would
+    be guessing at shell semantics it does not own.
+
+    DELIBERATELY NOT IN `DISPATCH_PREFLIGHT_CHECKS`, for the reason that constant
+    gives for excluding REPO_HAS_COMMIT: `gate_runner` already catches OSError at
+    exec time and reports `GateOutcome.UNAVAILABLE` with the OS error and the
+    command, which is a better message than an approval a human has to clear.
+    This earns its place as an on-demand check — knowing before a run starts that
+    a gate cannot start — not as a park.
+
+    WHAT IT DOES NOT CATCH, stated because the ticket's motivating case is one of
+    them: a gate script that starts fine and then mis-resolves paths internally.
+    Blobert's `asset_python.sh` fell back to a `cd` that re-resolved relative
+    script paths, so three hooks reported a missing file that was never missing —
+    the executable resolved, and this check would have passed it. Catching that
+    needs the gate to run, which a read-only preflight must not do.
+    """
+    gates = resolve_orchestration_profile(workspace).gates
+    configured = [command for command in gates.commands if command.strip()]
+    if gates.transition_script.strip():
+        configured.append(gates.transition_script)
+    if not configured:
+        return _ok(DoctorCheck.GATE_COMMANDS_RESOLVE, "No gate commands configured.")
+
+    unresolved: list[str] = []
+    for command in configured:
+        parts = shlex.split(command)
+        if not parts:
+            continue
+        executable = parts[0]
+        if "/" in executable:
+            if not (repo_root / executable).exists():
+                unresolved.append(executable)
+        elif shutil.which(executable, path=os.environ.get("PATH", "")) is None:
+            unresolved.append(executable)
+
+    if not unresolved:
+        return _ok(
+            DoctorCheck.GATE_COMMANDS_RESOLVE,
+            f"All {len(configured)} gate command(s) resolve from {repo_root}.",
+        )
+    return DoctorFinding(
+        check=DoctorCheck.GATE_COMMANDS_RESOLVE,
+        status=DoctorStatus.FAIL,
+        finding=f"Gate command(s) do not resolve from {repo_root}: {', '.join(unresolved)}.",
+        remediation=(
+            "Point them at a path that exists in the tree the agent runs in, or install "
+            "the executable. A gate that cannot start reports a missing file that is "
+            "usually present somewhere else."
+        ),
+    )
+
+
 CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] = {
     DoctorCheck.GIT_CORE_BARE: check_git_core_bare,
     DoctorCheck.GIT_ENV_LEAK: check_git_env_leak,
@@ -278,6 +503,10 @@ CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] =
     DoctorCheck.BACKEND_RELOAD_SENTINEL: check_backend_reload_sentinel,
     DoctorCheck.CLI_CREDENTIALS: check_cli_credentials,
     DoctorCheck.GIT_PORTABILITY: check_git_portability,
+    DoctorCheck.STAGE_REPORT_CONTRACT: check_stage_report_contract,
+    DoctorCheck.TOOLCHAIN_INSTALLED: check_toolchain_installed,
+    DoctorCheck.GIT_WRITABLE: check_git_writable,
+    DoctorCheck.GATE_COMMANDS_RESOLVE: check_gate_commands_resolve,
 }
 
 
