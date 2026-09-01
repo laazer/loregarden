@@ -11,6 +11,11 @@ import pathlib
 import subprocess
 from pathlib import Path
 
+from loregarden.agents.mcp_context import (
+    STAGE_REPORT_SECTION_TITLE,
+    WORKFLOW_ENFORCEMENT_DOC_REL,
+)
+
 
 def git(cwd: Path | str, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
@@ -62,11 +67,6 @@ def seed_stage_report_contract(repo_root) -> None:
     blobert 0-vs-3303 measurement). A fixture repo without it is not a neutral
     fixture — it is a workspace that could not actually run.
     """
-    from loregarden.agents.mcp_context import (
-        STAGE_REPORT_SECTION_TITLE,
-        WORKFLOW_ENFORCEMENT_DOC_REL,
-    )
-
     path = pathlib.Path(repo_root) / "agent_context" / WORKFLOW_ENFORCEMENT_DOC_REL
     path.parent.mkdir(parents=True, exist_ok=True)
     divider = "-" * 30

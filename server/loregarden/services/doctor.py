@@ -6,11 +6,19 @@ next person would remember. That is the part worth replacing: the knowledge is
 mechanical, the diagnosis is a shell command, and the remediation is one line.
 Prose telling an agent to remember something is the weakest possible enforcement.
 
-Two rules hold for every check. None of them writes to the repository, fetches
+Two rules hold for every check. None of them changes the repository, fetches
 from a remote, or reads the value of a credential — a diagnostic that changes
 what it is diagnosing is not one. And none of them raises: an exception inside a
 check becomes a FAIL for that check alone, because a doctor that dies on its
 first surprise is worse than no doctor.
+
+One check writes, and the rule above says "changes" rather than "writes" because
+of it. `check_git_writable` cannot answer its question by reading: `os.access`
+reports the mode bits, and the failure it exists to catch is a sandbox that
+denies the write while the mode bits still allow it. So it writes a uniquely
+named probe inside the git directory and removes it in the same call, leaving
+the repository as it found it. `tests/test_doctor.py` asserts that absence
+directly rather than excluding the git directory from scrutiny.
 """
 
 from __future__ import annotations
@@ -21,6 +29,7 @@ import shlex
 import shutil
 from collections.abc import Callable
 from pathlib import Path
+from uuid import uuid4
 
 from loregarden.agents.mcp_context import (
     STAGE_REPORT_SECTION_TITLE,
@@ -400,7 +409,11 @@ def check_git_writable(session: Session, workspace: Workspace, repo_root: Path) 
     if not git_dir.is_absolute():
         git_dir = repo_root / git_dir
 
-    probe = git_dir / ".loregarden-write-probe"
+    # Unique per call. Parallel stages fan out against one ticket's worktree, so
+    # a fixed name lets one run's unlink race another's write — and the
+    # FileNotFoundError that follows is an OSError, which this would report as an
+    # unwritable git directory and park a run whose tree was perfectly fine.
+    probe = git_dir / f".loregarden-write-probe-{os.getpid()}-{uuid4().hex}"
     try:
         probe.write_text("probe", encoding="utf-8")
         probe.unlink()
@@ -420,12 +433,13 @@ def check_git_writable(session: Session, workspace: Workspace, repo_root: Path) 
 def check_gate_commands_resolve(
     session: Session, workspace: Workspace, repo_root: Path
 ) -> DoctorFinding:
-    """Every configured transition-gate command resolves from `repo_root`.
+    """Every configured transition-gate command names something that resolves.
 
-    A gate command names an executable, and the directory it is resolved from
-    decides whether a relative path finds it. Resolving from the shared checkout
-    while the agent runs in a worktree is how three hooks reported a missing
-    file that was never missing.
+    A path with a separator in it is resolved against `repo_root` — the tree the
+    agent runs in, not the shared checkout, which is how three hooks reported a
+    missing file that was never missing. A bare name is resolved on PATH, because
+    that is what a shell does with one; note this is the doctor process's PATH,
+    which is not always the PATH the agent's shell will have.
 
     Only the executable is resolved, not the arguments: the rest of the command
     line is the gate's own business, and a check that tried to validate it would
