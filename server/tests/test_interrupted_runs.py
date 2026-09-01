@@ -13,6 +13,7 @@ from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
+from loregarden.services.run_interruption import SUPERSEDED_RUN_MESSAGE
 from loregarden.services.run_service import (
     INTERRUPTED_RUN_MESSAGE,
     STRANDED_STAGE_MESSAGE,
@@ -77,7 +78,7 @@ def test_a_real_restart_casualty_is_still_told_a_restart_happened(isolated_db):
 
         session.refresh(stuck)
         assert INTERRUPTED_RUN_MESSAGE in stuck.stderr
-        assert "supersede" not in stuck.stderr.lower(), (
+        assert SUPERSEDED_RUN_MESSAGE not in stuck.stderr, (
             "the boot sweep blamed a re-checkout; nothing checked this stage out again"
         )
 

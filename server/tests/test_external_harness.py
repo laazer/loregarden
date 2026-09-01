@@ -35,7 +35,10 @@ from loregarden.services.external_harness import (
     start_external_orchestration,
 )
 from loregarden.services.orchestration import OrchestrationService
-from loregarden.services.run_interruption import INTERRUPTED_RUN_MESSAGE
+from loregarden.services.run_interruption import (
+    INTERRUPTED_RUN_MESSAGE,
+    SUPERSEDED_RUN_MESSAGE,
+)
 from loregarden.services.run_service import (
     fail_interrupted_orchestration_runs,
     fail_interrupted_runs,
@@ -235,12 +238,16 @@ def test_a_superseded_predecessor_is_not_blamed_on_a_server_reload(db_session: S
     assert successor.runs[0].agent_run_id != predecessor.id
     db_session.refresh(predecessor)
     reason = predecessor.stderr or ""
-    assert "supersede" in reason.lower(), (
-        f"the superseded run says {reason!r}; nothing restarted, so the message must "
-        "name the re-checkout that claimed it"
+    # Equality against the constant, not a substring of it: no production code
+    # reads a word out of this text — `blocked_by_interruption` compares the
+    # whole string against `INTERRUPTION_MESSAGES` — so pinning the wording
+    # would fail on a reword that changed nothing, and would pass a message that
+    # merely happened to contain "supersede".
+    assert reason == SUPERSEDED_RUN_MESSAGE, (
+        f"the superseded run says {reason!r}; nothing restarted, so it must carry "
+        "the message that names the re-checkout that claimed it"
     )
     assert reason != INTERRUPTED_RUN_MESSAGE
-    assert "reload" not in reason.lower()
 
 
 def test_a_superseded_predecessor_is_still_settled(db_session: Session):
