@@ -181,6 +181,28 @@ def _drop_markers(
     return len(rows)
 
 
+def _drop_latest_marker(
+    session: Session,
+    ticket_id: str,
+    kind: StageBudgetArtifactKind,
+    title: str,
+) -> int:
+    """Delete the most recently written marker, or nothing if there are none.
+
+    The counter is one row per dispatch pass and the rows carry no run id, so
+    "the charge this pass made" can only be identified as the newest one. That
+    is exact for the caller that has one: a refund happens inside the pass it is
+    refunding, before any later pass can add a row.
+    """
+    rows = _markers(session, ticket_id, kind, title)
+    if not rows:
+        return 0
+    newest = max(rows, key=lambda row: (row.created_at, row.id))
+    session.delete(newest)
+    session.commit()
+    return 1
+
+
 def record_stage_dispatch(session: Session, ticket_id: str, stage_key: str) -> None:
     """Record one dispatch pass of ``stage_key`` for ``ticket_id``.
 
@@ -221,19 +243,29 @@ def clear_stage_dispatches(session: Session, ticket_id: str, stage_key: str) -> 
 
 
 def refund_stage_dispatch_budget(session: Session, ticket_id: str, stage_key: str) -> None:
-    """Put this stage back exactly as the breaker had never seen it.
+    """Hand back the one dispatch this pass charged, and nothing else.
 
-    `clear_stage_dispatches` drops the counter and the reroute ledger but leaves
-    the `stage_retry_block` mark standing, which is right where the caller has
-    just read that mark to decide the reset was owed
-    (`refresh_stage_retry_budget` clears it itself, in that order). It is wrong
-    for a caller that is simply handing the budget back: a stranded mark is read
-    by `blocked_on_stage_retry_budget` as *this breaker's* block the next time
-    the stage is blocked for anything at all, and earns a reset nobody asked
-    for — the same free reset the prose fallback used to hand out, arriving
-    through a stale row instead of a phrase.
+    One pass, one row. A park is not an attempt at the work — the boundary check
+    and the environment preflight both refuse before any agent runs — so the
+    charge that pass made comes back. What must NOT come back is every earlier
+    attempt: this used to call `clear_stage_dispatches`, which drops the whole
+    counter, so a stage with four real failed attempts was returned to zero by a
+    single park. A stage that alternates a genuine attempt with a park would
+    then never reach its budget at all, and the breaker this module exists to be
+    could not fire — the same unbounded redispatch the standalone path was
+    missing a counter for, arriving through the refund instead.
+
+    The reroute exemption is left alone for the same reason. It is a separate
+    grant, spent on a scope-denial handoff, and a park did not spend it.
+
+    The `stage_retry_block` mark IS dropped. `clear_stage_dispatches` leaves it
+    standing, which is right for `refresh_stage_retry_budget` — that caller has
+    just read the mark to decide the reset was owed and clears it itself, in
+    that order — and wrong here: a stranded mark is read by
+    `blocked_on_stage_retry_budget` as *this breaker's* block the next time the
+    stage is blocked for anything at all, and earns a reset nobody asked for.
     """
-    clear_stage_dispatches(session, ticket_id, stage_key)
+    _drop_latest_marker(session, ticket_id, _DISPATCH_KIND, _dispatch_title(stage_key))
     _drop_markers(session, ticket_id, _RETRY_BLOCK_KIND, _block_title(stage_key))
 
 

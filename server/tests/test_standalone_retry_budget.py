@@ -1689,7 +1689,7 @@ def test_a_recent_run_with_no_renewer_still_groups_its_members_into_one_pass(
     assert count_stage_dispatches(db_session, ticket.id, "review") == BUDGET
 
 
-# -- Parking a stage refunds the whole budget, marker included ----------------
+# -- Parking a stage refunds one pass, and the block mark with it -------------
 
 
 def test_parking_a_stage_clears_the_retry_block_mark_with_the_counter(
@@ -1722,5 +1722,56 @@ def test_parking_a_stage_clears_the_retry_block_mark_with_the_counter(
         impact="Switch the worktree back and release this stage.",
     )
 
-    assert count_stage_dispatches(db_session, ticket.id, "review") == 0
+    # One pass back, not the whole history — see the regression below.
+    assert count_stage_dispatches(db_session, ticket.id, "review") == BUDGET - 1
     assert blocked_on_stage_retry_budget(db_session, ticket, "review") is False
+
+
+def test_a_park_refunds_one_dispatch_and_not_the_whole_counter(db_session: Session):
+    """A park must not hand back attempts it never made.
+
+    `park_stage` called `clear_stage_dispatches`, which drops every dispatch
+    marker for the stage. So a stage that had genuinely failed four times and
+    then hit one environment preflight went back to zero. A stage alternating a
+    real attempt with a park would never reach its budget, and the breaker could
+    not fire — the same unbounded redispatch this whole module exists to stop,
+    arriving through the refund rather than through a missing counter.
+
+    Nothing caught this: the counter really was reset, the ticket really was
+    parked, and every assertion about the park passed. It took reading the
+    refund against what a refund means.
+    """
+    ticket = _build_ticket(db_session)
+    for _ in range(4):
+        record_stage_dispatch(db_session, ticket.id, "review")
+    run = make_agent_run(
+        db_session,
+        workspace_id=ticket.workspace_id,
+        ticket_id=ticket.id,
+        stage_key="review",
+        status=RunStatus.RUNNING,
+    )
+
+    park_stage(
+        db_session,
+        run=run,
+        ticket=ticket,
+        title="Checkout is on the wrong branch",
+        impact="Switch the worktree back and release this stage.",
+    )
+
+    # The parked pass's charge, and only it.
+    assert count_stage_dispatches(db_session, ticket.id, "review") == 3
+
+    # And the breaker still converges: three more parks do not buy an escape,
+    # because each hands back only what its own pass charged.
+    for _ in range(3):
+        record_stage_dispatch(db_session, ticket.id, "review")
+        park_stage(
+            db_session,
+            run=run,
+            ticket=ticket,
+            title="Checkout is on the wrong branch",
+            impact="Switch the worktree back and release this stage.",
+        )
+    assert count_stage_dispatches(db_session, ticket.id, "review") == 3
