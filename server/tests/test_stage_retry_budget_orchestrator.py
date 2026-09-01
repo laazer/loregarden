@@ -411,6 +411,12 @@ def test_re_running_a_blocked_stage_refreshes_its_retry_budget(db_session: Sessi
     Ticket 105's breaker holds across orchestration runs until a human
     intervenes. Starting a stage (the Re-run button) is that intervention —
     without a refresh, the next start blocks immediately on the same counter.
+
+    The counter reads 1, not 0, afterwards: the start that cleared the block is
+    itself a dispatch, and it is the first of the new budget. Reading 0 would
+    hand the operator six further dispatches before the next refusal instead of
+    the five the budget says — the standalone path counts every dispatch it
+    makes, including this one.
     """
     from loregarden.agents.executors.cli import CliAgentExecutor
     from loregarden.services.orchestration import OrchestrationService
@@ -435,7 +441,7 @@ def test_re_running_a_blocked_stage_refreshes_its_retry_budget(db_session: Sessi
     orch = OrchestrationService(db_session)
     run = orch.start_run(ticket, stage_key="script_review", agent_id="static_qa")
     db_session.refresh(ticket)
-    assert count_stage_dispatches(db_session, ticket.id, "script_review") == 0
+    assert count_stage_dispatches(db_session, ticket.id, "script_review") == 1
     assert ticket.state == TicketState.IN_PROGRESS
     assert ticket.blocking_issues == ""
     assert run.stage_key == "script_review"

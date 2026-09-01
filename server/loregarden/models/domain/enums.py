@@ -305,6 +305,58 @@ class BoundaryVerdict(str, Enum):
     REPO_CHANGED = "repo_changed"
 
 
+class StageBudgetArtifactKind(StrEnum):
+    """The `artifacts.kind` values the stage retry breaker owns.
+
+    Dedicated kinds so none of them ever collides with a diff/log/test/evidence
+    artifact, and separate from each other so the audit rows never inflate or
+    deflate the counter itself. See `services.stage_retry_budget`.
+    """
+
+    #: The counter. One row per dispatch pass.
+    DISPATCH = "stage_dispatch"
+    #: One row per dispatch forced past an exhausted budget, with attribution.
+    DISPATCH_OVERRIDE = "stage_dispatch_override"
+    #: One row per free dispatch the scope-denial reroute exemption granted.
+    DISPATCH_REROUTE = "stage_dispatch_reroute"
+    #: The structural mark that this breaker is why the ticket is blocked.
+    RETRY_BLOCK = "stage_retry_block"
+
+
+class ReworkArtifactKind(StrEnum):
+    """The `artifacts.kind` values the rework-feedback ledger owns.
+
+    Its own kind rather than `context`, which it shared until migration 0103.
+    Sharing made the ledger unqueryable: the count of reroutes for a target
+    stage *is* the loop metric `MAX_REWORK_REROUTES` caps, and asking for it
+    returned either zero (`kind='rework_feedback'`) or sixteen hundred rows of
+    unrelated run context. See `services.rework_feedback`.
+    """
+
+    #: One row per reroute, carrying that round's full fix direction.
+    FEEDBACK = "rework_feedback"
+
+
+class DispatchSurface(StrEnum):
+    """Where a stage dispatch was asked for.
+
+    Recorded on the audit row a forced dispatch writes (`stage_retry_budget`),
+    so a human click past an exhausted retry budget and an agent's own
+    `loregarden_start_stage` are not byte-identical after the fact.
+    """
+
+    #: A REST caller — the Dashboard's "Run stage" button, or an operator's curl.
+    HTTP = "http"
+    #: MCP `loregarden_start_stage`.
+    MCP = "mcp"
+    #: A queue lane promoting a parked stage entry.
+    QUEUE = "queue"
+    #: `POST /stage-fanout` — one deliberate decision, N attempts.
+    FANOUT = "fanout"
+    #: The automatic conflict-resolution re-dispatch.
+    CONFLICT = "conflict"
+
+
 class StageFanoutGroupStatus(str, Enum):
     OPEN = "open"
     SETTLING = "settling"

@@ -13,6 +13,7 @@ from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
+from loregarden.services.run_interruption import SUPERSEDED_RUN_MESSAGE
 from loregarden.services.run_service import (
     INTERRUPTED_RUN_MESSAGE,
     STRANDED_STAGE_MESSAGE,
@@ -52,6 +53,34 @@ def test_fail_interrupted_runs_marks_orphans_failed(isolated_db):
         assert INTERRUPTED_RUN_MESSAGE in stuck.stderr
         session.refresh(ticket)
         assert ticket.workflow_stage_status == StageStatus.BLOCKED
+
+
+def test_a_real_restart_casualty_is_still_told_a_restart_happened(isolated_db):
+    """The supersession message must be a second message, not a rename of this one.
+
+    The cheapest way to stop a superseded run reading as a reload is to reword
+    INTERRUPTED_RUN_MESSAGE, which passes every supersession test and then tells
+    genuine boot-sweep casualties — the unscoped reap below, which runs at
+    startup with no re-checkout anywhere near it — that they were superseded by
+    a re-checkout that never happened.
+    """
+    with Session(isolated_db) as session:
+        seed_database(session)
+        ticket = session.exec(
+            select(Ticket).where(Ticket.legacy_external_id == "03-wire-cli-agent-runner")
+        ).first()
+        stuck = OrchestrationService(session).start_run(ticket, stage_key="testing")
+        stuck.status = RunStatus.RUNNING
+        session.add(stuck)
+        session.commit()
+
+        assert [run.id for run in fail_interrupted_runs(session)] == [stuck.id]
+
+        session.refresh(stuck)
+        assert INTERRUPTED_RUN_MESSAGE in stuck.stderr
+        assert SUPERSEDED_RUN_MESSAGE not in stuck.stderr, (
+            "the boot sweep blamed a re-checkout; nothing checked this stage out again"
+        )
 
 
 def test_interrupted_triage_turn_replies_instead_of_blocking_the_ticket(isolated_db):

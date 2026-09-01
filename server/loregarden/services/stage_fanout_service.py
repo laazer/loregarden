@@ -36,6 +36,7 @@ from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.db.session import engine
 from loregarden.models.domain import (
     AgentRun,
+    DispatchSurface,
     RunStatus,
     StageFanoutAttempt,
     StageFanoutAttemptStatus,
@@ -55,6 +56,7 @@ from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import resolve_orchestration_profile
 from loregarden.services.stage_report import parse_stage_report
+from loregarden.services.stage_retry_budget import charge_fanout_dispatch
 from loregarden.services.ticket_worktree import resolve_ticket_root
 from loregarden.services.workspace_paths import resolve_workspace_root
 from loregarden.services.worktree_service import WorktreeService
@@ -147,6 +149,13 @@ def launch_fanout(
         )
 
     group = groups.create_group(session, ticket.id, stage_key, attempt_count)
+    # One dispatch for the whole fan-out, charged before any attempt launches.
+    # `charge_fanout_dispatch` carries the whole policy — one and not N, up
+    # front, and never refused — so it is a stated decision rather than a bare
+    # counter poke in a module that does not own the counter. The group is
+    # created first: the attempts below reach the standalone guard with it open,
+    # which is how they are grouped into this one pass instead of charged again.
+    charge_fanout_dispatch(session, ticket.id, stage_key)
     # The stage is not "running" in the ordinary sense — no single run owns it —
     # but leaving it pending would let the orchestrator dispatch it underneath
     # the fan-out.
@@ -166,6 +175,7 @@ def launch_fanout(
             agent_id=agent_id or None,
             skill_name=skill_name or None,
             auto_approve=auto_approve,
+            dispatch_surface=DispatchSurface.FANOUT,
         )
         worktree = service.create_worktree(
             workspace_id=ticket.workspace_id,

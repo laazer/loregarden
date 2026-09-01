@@ -1335,6 +1335,12 @@ class QueuedRun(SQLModel, table=True):
     max_stages: int | None = None
     #: Max seconds each agent run in this orchestration may take. Null = agent default.
     timeout_seconds: int | None = None
+    #: Spend one dispatch past an exhausted stage retry budget when this entry
+    #: starts. Carried for the same reason the overrides above are: the decision
+    #: was made when the request was filed, and a lane reaching the entry hours
+    #: later has no other record of it. Without this the refusal simply fired
+    #: again at promotion, into `dispatch_stage`'s warning log.
+    force: bool = False
     status: QueuePosition = Field(
         default=QueuePosition.QUEUED,
         sa_column=_str_enum_column(QueuePosition, QueuePosition.QUEUED, index=True),

@@ -37,6 +37,7 @@ from datetime import datetime, timezone
 
 from loregarden.db.session import engine
 from loregarden.models.domain import AgentRun, RunStatus
+from loregarden.services.run_lease import pid_alive, run_has_renewer
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -92,14 +93,49 @@ def is_draining() -> bool:
 
 
 def in_flight_runs(session: Session) -> list[AgentRun]:
-    """Agent runs that have not reached a terminal status.
+    """Agent runs this process must wait on before it may exit.
 
     Queued runs are not counted: nothing has started them, so there is nothing
     to wait for, and they keep their place for the next process.
+
+    Neither is a run this process cannot judge — no *live* pid on this host and
+    no lease renewer. Its RUNNING row says nothing about work happening here: an
+    externally-harnessed stage lives in somebody else's terminal and routinely
+    outlives the window by hours, so waiting on it spends the whole timeout and
+    then warns about work that was never ours. The pid is asked separately from
+    the renewer, rather than folded into an `external_harness is not None`
+    exclusion, because a recorded pid settles the question whatever the run's
+    kind — that exclusion would drop the one external run whose process this
+    machine can actually see.
+
+    `stage_retry_budget._is_live_dispatch_evidence` uses the same two primitives
+    to a different end, and this is not that question. It gates on
+    `agent_run_lease_expired` first and puts a ceiling on the no-renewer case,
+    because a run it wrongly calls live is an unbounded bypass. This asks no
+    lease question at all and fails *open* for a renewer kind: a CLI run left
+    RUNNING by an earlier crashed boot has a renewer and no pid, so it is
+    counted and can spend the whole window, where that predicate would call it
+    dead. Waiting on a run that has already stopped costs a slow shutdown; not
+    waiting on one that is still working loses its output.
+
+    A recorded pid settles it *both ways*, which is why `pid_alive` is asked
+    rather than `handoff_pid is not None`. A pid that is gone is the strongest
+    evidence there is that nothing is running, and counting it spends the whole
+    window on a dead process — the opposite of what the pid was recorded for.
+
+    What the timeout warning may therefore promise: everything counted here is
+    either a run the unscoped `fail_interrupted_runs` will claim on the next
+    boot, or a run with a live pid on this host — an externally-harnessed stage
+    genuinely working, which the boot sweep deliberately exempts and
+    `settle_expired_agent_runs` settles through the lease once that pid goes
+    away. Nothing counted here is left with no path to settlement.
     """
-    return list(
-        session.exec(select(AgentRun).where(col(AgentRun.status).in_(list(IN_FLIGHT)))).all()
-    )
+    running = session.exec(select(AgentRun).where(col(AgentRun.status).in_(list(IN_FLIGHT)))).all()
+    return [
+        run
+        for run in running
+        if run_has_renewer(run) or (run.handoff_pid is not None and pid_alive(run.handoff_pid))
+    ]
 
 
 def wait_for_quiescence(*, timeout_seconds: float, poll_seconds: float = 0.25) -> DrainReport:
@@ -141,8 +177,9 @@ def wait_for_quiescence(*, timeout_seconds: float, poll_seconds: float = 0.25) -
         logger.info("Drain: all %d run(s) landed in %.1fs", started_with, waited)
     else:
         logger.warning(
-            "Drain: window closed after %.1fs with %d run(s) still in flight; "
-            "they will be settled by the interruption path",
+            "Drain: window closed after %.1fs with %d supervised run(s) still in "
+            "flight; recovery will settle them — the next boot's interruption "
+            "sweep, or the lease for a harness still holding a live process here",
             waited,
             remaining,
         )

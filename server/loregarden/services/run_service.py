@@ -9,6 +9,7 @@ from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.db.session import engine
 from loregarden.models.domain import (
     AgentRun,
+    DispatchSurface,
     OrchestrationDriver,
     OrchestrationRun,
     OrchestrationRunStatus,
@@ -610,6 +611,8 @@ class RunService:
         stage_key: str | None = None,
         auto_approve: bool = False,
         timeout_seconds: int | None = None,
+        force: bool = False,
+        dispatch_surface: DispatchSurface = DispatchSurface.HTTP,
     ) -> AgentRun:
         """Create a run and mark the stage running; CLI executes in a background task."""
         target_key = stage_key or ticket.workflow_stage_key
@@ -623,6 +626,8 @@ class RunService:
             stage_key=stage_key,
             auto_approve=auto_approve,
             timeout_override_seconds=timeout_seconds,
+            force=force,
+            dispatch_surface=dispatch_surface,
         )
         self.session.refresh(ticket)
         return run
@@ -634,8 +639,14 @@ class RunService:
         stage_key: str | None = None,
         auto_approve: bool = False,
         timeout_seconds: int | None = None,
+        force: bool = False,
+        dispatch_surface: DispatchSurface = DispatchSurface.HTTP,
     ) -> AgentRun | None:
-        """Start an agent CLI run, or enter a human approval gate for agentless stages."""
+        """Start an agent CLI run, or enter a human approval gate for agentless stages.
+
+        ``force`` spends one dispatch past an exhausted stage retry budget — the
+        deliberate human re-run the breaker is not meant to stop.
+        """
         from loregarden.services.studio_routing import is_agentless_stage
 
         template = self.orchestration.get_template_for_ticket(ticket)
@@ -664,7 +675,12 @@ class RunService:
             return None
 
         return self.start_run_async(
-            ticket, stage_key=stage_key, auto_approve=auto_approve, timeout_seconds=timeout_seconds
+            ticket,
+            stage_key=stage_key,
+            auto_approve=auto_approve,
+            timeout_seconds=timeout_seconds,
+            force=force,
+            dispatch_surface=dispatch_surface,
         )
 
     def list_runs(

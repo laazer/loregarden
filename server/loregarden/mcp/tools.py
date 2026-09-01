@@ -7,7 +7,10 @@ from typing import Any
 
 from sqlmodel import Session
 
-from loregarden.agents.executors.permission_bridge import is_orchestrated_agent_denied_mcp_tool
+from loregarden.agents.executors.tool_auto_approve import (
+    reject_orchestrated_argument_denial,
+    reject_orchestrated_tool_denial,
+)
 from loregarden.mcp.admission import (
     queued_response,
     run_admitted,
@@ -321,6 +324,7 @@ def _normalize_stage_scoped(name: str, args: dict[str, Any]) -> dict[str, Any]:
     }
     if name == "loregarden_start_stage":
         payload["agent_id"] = _coerce_optional_string(args.get("agent_id"))
+        payload["force"] = _coerce_optional_bool(args.get("force"))
     if name == "loregarden_complete_stage":
         payload["next_agent"] = _coerce_optional_string(args.get("next_agent"))
         payload["next_stage_key"] = _coerce_optional_string(args.get("next_stage_key"))
@@ -623,6 +627,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "run_id": _string_prop("Orchestration run UUID."),
                 "stage_key": _string_prop("Workflow stage key."),
                 "agent_id": _string_prop("Optional agent id override."),
+                "force": _boolean_prop(
+                    "Dispatch the stage even though it has reached its retry budget. "
+                    "The override is recorded."
+                ),
             },
             required=["run_id", "stage_key"],
         ),
@@ -1283,14 +1291,11 @@ def execute_tool(
     for exactly that reason. That gap is recorded debt (a9-create-ticket-mcp-tool),
     pending a2-per-agent-server-policy's real per-agent x per-server policy table.
     """
-    if orchestrated and is_orchestrated_agent_denied_mcp_tool(name):
-        raise ValueError(
-            f"{name} is not available to orchestrated pipeline agents (interim policy, "
-            "a9-create-ticket-mcp-tool). Use the REST API or an interactive session instead."
-        )
+    reject_orchestrated_tool_denial(name, orchestrated=orchestrated)
 
     svc = OrchestrationCallbackService(session)
     arguments = normalize_tool_arguments(name, arguments)
+    reject_orchestrated_argument_denial(name, arguments, orchestrated=orchestrated)
 
     table_handler = EXTENDED_TOOLS.get(name)
     if table_handler is not None:
@@ -1379,11 +1384,13 @@ def execute_tool(
             session,
             ticket,
             stage_key=arguments["stage_key"],
+            force=bool(arguments.get("force")),
             start=lambda: svc.start_stage(
                 run,
                 ticket,
                 stage_key=arguments["stage_key"],
                 agent_id=arguments.get("agent_id", ""),
+                force=bool(arguments.get("force")),
             ),
         )
         if not reservation.admitted:

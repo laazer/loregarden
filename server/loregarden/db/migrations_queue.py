@@ -220,3 +220,28 @@ def m_orchestration_timeout_override(conn: Connection) -> None:
                 ),
             },
         )
+
+
+def m_lane_entry_force(conn: Connection) -> None:
+    """Carry a deliberate retry-budget override across the wait.
+
+    `force` on a stage start spends one dispatch past an exhausted stage retry
+    budget. It is a decision a human made about *this* start, and until now it
+    died at the lane door: admission parked the request without it, so when the
+    lane reached the entry the dispatch was refused all over again — and the
+    refusal was swallowed by `dispatch_stage`'s `except ValueError`, which logs
+    and returns None. The override vanished silently, exactly like the driver
+    and stage-cap overrides that `m_lane_entry_run_options` fixed.
+
+    0 means "no override was asked for", which is what every entry written
+    before this column meant.
+    """
+    if not table_exists(conn, "queued_runs"):
+        return
+    add_columns_if_missing(
+        conn,
+        "queued_runs",
+        {
+            "force": "ALTER TABLE queued_runs ADD COLUMN force INTEGER NOT NULL DEFAULT 0",
+        },
+    )

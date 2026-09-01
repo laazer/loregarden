@@ -9,6 +9,7 @@ from typing import Any
 from loregarden.mcp.tool_ids import (
     ARGUMENT_GATED_MCP_TOOLS,
     AUTO_APPROVED_MCP_TOOLS,
+    ORCHESTRATED_DENIED_MCP_ARGUMENTS,
     ORCHESTRATED_DENIED_MCP_TOOLS,
     TICKET_SCOPED_MCP_TOOLS,
     McpTool,
@@ -289,6 +290,54 @@ def is_orchestrated_agent_denied_mcp_tool(tool_name: str) -> bool:
         bare = tool_name
     tool = McpTool.try_parse(bare)
     return tool in ORCHESTRATED_DENIED_MCP_TOOLS if tool else False
+
+
+def orchestrated_denied_mcp_arguments(tool_name: str) -> frozenset[str]:
+    """Argument names an orchestrated pipeline agent may not set on `tool_name`.
+
+    Empty for every tool with no argument-level restriction. Accepts the same
+    bare-or-prefixed forms as `is_orchestrated_agent_denied_mcp_tool`.
+    """
+    bare = bare_mcp_tool_name(tool_name)
+    if bare is None:
+        bare = tool_name
+    tool = McpTool.try_parse(bare)
+    if tool is None:
+        return frozenset()
+    return ORCHESTRATED_DENIED_MCP_ARGUMENTS.get(tool, frozenset())
+
+
+def reject_orchestrated_tool_denial(name: str, *, orchestrated: bool) -> None:
+    """Refuse a whole tool an orchestrated agent may not call at all."""
+    if orchestrated and is_orchestrated_agent_denied_mcp_tool(name):
+        raise ValueError(
+            f"{name} is not available to orchestrated pipeline agents (interim policy, "
+            "a9-create-ticket-mcp-tool). Use the REST API or an interactive session instead."
+        )
+
+
+def reject_orchestrated_argument_denial(
+    name: str, arguments: dict[str, Any], *, orchestrated: bool
+) -> None:
+    """Refuse an argument an orchestrated agent may not set on a tool it may call.
+
+    Checked here rather than only in the permission bridge. The bridge blanket-
+    approves every non-denied tool on an `auto_approve` run — writing no
+    `approvals` row, so the call leaves no audit trace — and a direct `/mcp` POST
+    never reaches the bridge at all. A stage agent able to set `force` on
+    `start_stage` could clear the retry budget that just stopped it and loop
+    forever. A human on the HTTP path, which is never `orchestrated`, keeps the
+    override.
+    """
+    if not orchestrated:
+        return
+    for argument in sorted(orchestrated_denied_mcp_arguments(name)):
+        if arguments.get(argument):
+            raise ValueError(
+                f"{name} may not be called with {argument}={arguments[argument]!r} by an "
+                "orchestrated pipeline agent: it would clear the circuit breaker that "
+                "stopped this stage. Ask a human to force it."
+            )
 
 
 def enrich_mcp_tool_input(

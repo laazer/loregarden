@@ -7,6 +7,7 @@ never touches the lane queue — it spawns nothing on this machine.
 """
 
 import json
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
@@ -34,6 +35,10 @@ from loregarden.services.external_harness import (
     start_external_orchestration,
 )
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.run_interruption import (
+    INTERRUPTED_RUN_MESSAGE,
+    SUPERSEDED_RUN_MESSAGE,
+)
 from loregarden.services.run_service import (
     fail_interrupted_orchestration_runs,
     fail_interrupted_runs,
@@ -193,6 +198,181 @@ def test_the_restart_reapers_leave_external_runs_alone(db_session: Session):
     db_session.refresh(orch_run)
     assert run.status == RunStatus.RUNNING
     assert orch_run.status == OrchestrationRunStatus.RUNNING
+
+
+def _checked_out_external_run(session: Session) -> tuple[Ticket, OrchestrationRun, AgentRun]:
+    """One external-harness stage, checked out and still RUNNING."""
+    ticket = _ticket(session)
+    orch_run = start_external_orchestration(session, ticket, harness=ExternalHarness.CLAUDE_CODE)
+    stage = begin_external_stage(session, orch_run)
+    run = session.get(AgentRun, stage.runs[0].agent_run_id)
+    assert run.status == RunStatus.RUNNING
+    return ticket, orch_run, run
+
+
+def _park_stage(session: Session, ticket: Ticket, stage_key: str, status: StageStatus) -> None:
+    """Move the stage cursor off RUNNING, so the next checkout is a fresh attempt."""
+    instance, _ = OrchestrationService(session).ensure_workflow_instance(ticket)
+    _, stages = resolve_ticket_stages(session, ticket)
+    set_stage_status(ticket, instance, stages, stage_key, status)
+    session.add(ticket)
+    session.add(instance)
+    session.commit()
+
+
+def test_a_superseded_predecessor_is_not_blamed_on_a_server_reload(db_session: Session):
+    """No restart happened, so the run must not be told one did.
+
+    A fresh checkout of a stage whose previous run is still RUNNING supersedes
+    that run — `start_run_async`'s ticket+stage-scoped reap claims external runs
+    deliberately. The forensics on this ticket show the predecessor's
+    `finished_at` equal to the successor's `created_at` to the second, with
+    lifetimes of 8 and 17 seconds: a supersession wearing a reload's message.
+    """
+    ticket, orch_run, predecessor = _checked_out_external_run(db_session)
+    _park_stage(db_session, ticket, predecessor.stage_key, StageStatus.BLOCKED)
+
+    successor = begin_external_stage(db_session, orch_run, stage_key=predecessor.stage_key)
+
+    assert successor.runs
+    assert successor.runs[0].agent_run_id != predecessor.id
+    db_session.refresh(predecessor)
+    reason = predecessor.stderr or ""
+    # Equality against the constant, not a substring of it: no production code
+    # reads a word out of this text — `blocked_by_interruption` compares the
+    # whole string against `INTERRUPTION_MESSAGES` — so pinning the wording
+    # would fail on a reword that changed nothing, and would pass a message that
+    # merely happened to contain "supersede".
+    assert reason == SUPERSEDED_RUN_MESSAGE, (
+        f"the superseded run says {reason!r}; nothing restarted, so it must carry "
+        "the message that names the re-checkout that claimed it"
+    )
+    assert reason != INTERRUPTED_RUN_MESSAGE
+
+
+def test_a_superseded_predecessor_is_still_settled(db_session: Session):
+    """The trap in the obvious fix, pinned.
+
+    `run_has_renewer` is False for an external run, so `settle_expired_agent_runs`
+    never judges one and `complete_orchestration` does not settle child runs.
+    This reap is the only thing that terminates an abandoned external run:
+    deleting it to silence the false label would strand the row at RUNNING
+    forever, holding every future drain open and reading as a live agent.
+    """
+    ticket, orch_run, predecessor = _checked_out_external_run(db_session)
+    _park_stage(db_session, ticket, predecessor.stage_key, StageStatus.BLOCKED)
+
+    begin_external_stage(db_session, orch_run, stage_key=predecessor.stage_key)
+
+    db_session.refresh(predecessor)
+    assert predecessor.status not in (RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION), (
+        "the superseded run was left in flight — nothing else will ever settle an "
+        "external-harness run"
+    )
+    assert predecessor.finished_at is not None
+
+
+def test_resuming_a_single_agent_stage_does_not_reap_the_run_it_resumes(db_session: Session):
+    """The guard the parallel path already has (`_begin_parallel_stage`).
+
+    A stage still RUNNING that is checked out again is being *re-served*, not
+    restarted: the run the harness is asking about is the one it already holds.
+    Reaping it kills live work and hands the harness a second run for a stage
+    that can only have one.
+    """
+    _ticket_row, orch_run, run = _checked_out_external_run(db_session)
+
+    resumed = begin_external_stage(db_session, orch_run, stage_key=run.stage_key)
+
+    db_session.refresh(run)
+    assert run.status == RunStatus.RUNNING, (
+        f"a resume settled the run it was resuming as {run.status}: {run.stderr!r}"
+    )
+    assert not run.stderr
+    in_flight = db_session.exec(
+        select(AgentRun).where(
+            AgentRun.ticket_id == run.ticket_id,
+            AgentRun.stage_key == run.stage_key,
+            AgentRun.status == RunStatus.RUNNING,
+        )
+    ).all()
+    assert len(in_flight) == 1, (
+        "a resume created a second in-flight run for a single-agent stage; the "
+        "parallel path re-serves the member already in flight instead"
+    )
+    assert resumed.runs and resumed.runs[0].agent_run_id == run.id
+
+
+def test_a_resume_never_adopts_a_run_this_process_supervises(db_session: Session):
+    """A resume may only re-serve a run the harness path already owns.
+
+    Stamping `external_harness` onto a supervised run double-books it: the
+    control plane's own thread is still working it, while the harness has been
+    handed the same run to work as well. It also strands it — `run_has_renewer`
+    flips to False, so `settle_expired_agent_runs` stops judging it, and with no
+    `handoff_pid` the drain filter stops counting it too.
+    """
+    ticket = _ticket(db_session)
+    supervised = OrchestrationService(db_session).start_run(ticket)
+    assert supervised.status == RunStatus.RUNNING
+    assert supervised.external_harness is None
+    stage_key = supervised.stage_key
+    assert OrchestrationService(db_session).stage_status(ticket, stage_key) == StageStatus.RUNNING
+
+    orch_run = start_external_orchestration(db_session, ticket, harness=ExternalHarness.CLAUDE_CODE)
+    view = begin_external_stage(db_session, orch_run, stage_key=stage_key)
+
+    db_session.refresh(supervised)
+    assert supervised.external_harness is None, (
+        "a resume claimed a run this process supervises; nothing settles a run "
+        "once it reads as externally harnessed"
+    )
+    assert [r.agent_run_id for r in view.runs] != [supervised.id], (
+        "the harness was handed the run the control plane is already working"
+    )
+    assert supervised.status not in (RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION), (
+        f"the superseded supervised run was left in flight as {supervised.status}"
+    )
+
+
+def test_a_resume_leaves_no_sibling_run_in_flight(db_session: Session):
+    """Whatever a resume does not adopt has to be settled.
+
+    Nothing else ever settles an external run: the unscoped sweep exempts them,
+    `run_has_renewer` is False, and with no `handoff_pid` the lease never
+    expires. A sibling left RUNNING by a resume is stuck at RUNNING forever.
+    """
+    ticket, orch_run, first = _checked_out_external_run(db_session)
+    sibling = AgentRun(
+        run_code=f"{first.run_code}-sib",
+        ticket_id=first.ticket_id,
+        workspace_id=first.workspace_id,
+        orchestration_run_id=first.orchestration_run_id,
+        agent_id=first.agent_id,
+        external_harness=first.external_harness,
+        stage_key=first.stage_key,
+        status=RunStatus.RUNNING,
+        started_at=datetime.now(timezone.utc),
+    )
+    db_session.add(sibling)
+    db_session.commit()
+
+    begin_external_stage(db_session, orch_run, stage_key=first.stage_key)
+
+    db_session.refresh(first)
+    db_session.refresh(sibling)
+    left_running = [
+        run
+        for run in (first, sibling)
+        if run.status in (RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION)
+    ]
+    assert not left_running, (
+        "a resume left an in-flight run on a single-agent stage; a run it did "
+        "not adopt has no path to settlement — the unscoped sweep exempts "
+        "external runs, run_has_renewer is False for them, and with no pid the "
+        "lease never expires. Ambiguity must settle every candidate, not all "
+        "but one."
+    )
 
 
 def test_finishing_a_run_no_harness_checked_out_is_refused(db_session: Session):

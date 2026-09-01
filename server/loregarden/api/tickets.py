@@ -65,6 +65,7 @@ from loregarden.services.run_cancellation import request_cancel, request_orchest
 from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.run_ledger import ledger_payload
 from loregarden.services.run_service import RunService, schedule_agent_run, schedule_orchestration
+from loregarden.services.stage_retry_budget import StageRetryBudgetExceeded
 from loregarden.services.ticket_activity import (
     activity_for,
     classify_ticket_activity,
@@ -948,6 +949,7 @@ def start_run(
         auto_approve=body.auto_approve,
         preferred_slot=body.slot_number,
         timeout_seconds=body.timeout_seconds,
+        force=body.force,
     )
     if not reservation.admitted:
         session.refresh(ticket)
@@ -962,7 +964,14 @@ def start_run(
             stage_key=body.stage_key,
             auto_approve=body.auto_approve,
             timeout_seconds=body.timeout_seconds,
+            force=body.force,
         )
+    except StageRetryBudgetExceeded as exc:
+        reservation.release()
+        # 409, not 400: the request is well formed and the stage is startable —
+        # it is the ticket's state that refuses, and the caller can retry the
+        # identical request with force=true.
+        raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         reservation.release()
         raise HTTPException(400, str(exc)) from exc
@@ -1056,7 +1065,10 @@ def build_terminal_handoff_command(
             stage_key=body.stage_key,
             auto_approve=body.auto_approve,
             timeout_seconds=body.timeout_seconds,
+            force=body.force,
         )
+    except StageRetryBudgetExceeded as exc:
+        raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     if not run:

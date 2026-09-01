@@ -338,6 +338,22 @@ class ParallelRunService:
             repo_root,
             max_attempts=config.max_conflict_resolve_attempts,
         )
+        if report and not report.resolution_attempted:
+            # The resolver would have been a standalone dispatch of a stage that
+            # has already spent its retry budget, so it was refused. Reported as
+            # a failure, never raised: `on_parallel_run_complete` frees the slot
+            # on this branch, and an exception here would skip that and strand
+            # it.
+            return {
+                **result.as_dict(),
+                "ok": False,
+                "worktree_id": worktree.id,
+                "conflict_files": worktree.conflict_files,
+                "message": (
+                    f"Merge conflicts in {len(report.conflicting_files)} files; the stage is at "
+                    "its retry budget, so no resolver was dispatched"
+                ),
+            }
         if report:
             return {
                 **result.as_dict(),

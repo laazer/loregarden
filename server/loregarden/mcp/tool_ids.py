@@ -168,6 +168,23 @@ ORCHESTRATED_DENIED_MCP_TOOLS: frozenset[McpTool] = frozenset(
     }
 )
 
+#: Arguments an orchestrated pipeline agent may not set, keyed by tool.
+#:
+#: `start_stage` itself stays available — a stage agent starting the next stage
+#: is ordinary pipeline work. Its `force` argument is not: it clears the stage
+#: retry budget's refusal, which is the circuit breaker that exists to stop the
+#: very agent making the call from redispatching its own stage forever. Denying
+#: the whole tool would break the pipeline; denying the argument closes the loop.
+#:
+#: Enforced in `mcp.tools.execute_tool`, not only in the permission bridge: the
+#: bridge blanket-approves every non-denied tool on an `auto_approve` run and
+#: writes no `approvals` row while doing it, and a direct `/mcp` POST never
+#: reaches the bridge at all.
+ORCHESTRATED_DENIED_MCP_ARGUMENTS: dict[McpTool, frozenset[str]] = {
+    McpTool.START_STAGE: frozenset({"force"}),
+}
+
+
 # Ticket-scoped chat enrichment: fill ticket_id when the open work item is known.
 TICKET_SCOPED_MCP_TOOLS: frozenset[McpTool] = frozenset(
     {

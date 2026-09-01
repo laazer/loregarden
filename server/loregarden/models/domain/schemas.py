@@ -301,6 +301,10 @@ class StartRunRequest(SQLModel):
     #: The lane to run in. None means any — the pool picks. A debug run spends
     #: the same machine capacity as any other, so it waits its turn like one.
     slot_number: int | None = None
+    #: Dispatch the stage even though it has reached its retry budget. The
+    #: breaker exists to stop a stage redispatching itself, not to stop a human
+    #: deliberately re-running one; the override is recorded.
+    force: bool = False
 
 
 class HandoffCheckinRequest(SQLModel):

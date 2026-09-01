@@ -8,6 +8,11 @@ INTERRUPTED_RUN_MESSAGE = (
     "Re-run the stage to continue."
 )
 
+SUPERSEDED_RUN_MESSAGE = (
+    "Agent run superseded by a fresh checkout of the same stage. Nothing "
+    "restarted — a later attempt claimed the stage while this run still held it."
+)
+
 STRANDED_STAGE_MESSAGE = (
     "Stage was left running with no agent run behind it (the run ended before its "
     "stage was settled). Re-run the stage to continue."
@@ -17,6 +22,13 @@ ORPHAN_OF_TERMINAL_ORCH_MESSAGE = (
     "Parent orchestration is already terminal; this run was left in flight."
 )
 
+#: Messages that mark a ticket as blocked by an *artifact* of this process
+#: rather than by a real failure, so recovery may re-run the stage unprompted.
+#: ``SUPERSEDED_RUN_MESSAGE`` is deliberately absent: a superseded run is
+#: replaced in the same breath by the checkout that claimed its stage, which
+#: clears the blocking text on its way to RUNNING. There is nothing left for
+#: recovery to resume, and treating it as resumable would re-dispatch a stage
+#: somebody is already holding.
 INTERRUPTION_MESSAGES = frozenset({INTERRUPTED_RUN_MESSAGE, STRANDED_STAGE_MESSAGE})
 
 

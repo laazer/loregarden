@@ -143,6 +143,7 @@ class QueueLaneService:
         driver: str = "",
         max_stages: int | None = None,
         timeout_seconds: int | None = None,
+        force: bool = False,
     ) -> dict:
         """Put a ticket in a lane, starting it if the lane is idle.
 
@@ -184,6 +185,7 @@ class QueueLaneService:
             driver=driver or "",
             max_stages=max_stages,
             timeout_seconds=timeout_seconds,
+            force=force,
         )
         self.session.add(entry)
         self.session.commit()

@@ -13,6 +13,7 @@ from loregarden.models.domain import (
     Approval,
     ApprovalKind,
     ApprovalStatus,
+    DispatchSurface,
     EventType,
     OrchestrationRun,
     RunStatus,
@@ -40,7 +41,14 @@ from loregarden.services.run_completion import (
 from loregarden.services.run_concurrency import find_active_orchestration_run
 from loregarden.services.run_log_stream import bootstrap_run_log
 from loregarden.services.scheduling import schedule_orchestration
-from loregarden.services.stage_retry_budget import clear_stage_dispatches
+from loregarden.services.stage_retry_budget import (
+    DispatchOrigin,
+    blocked_on_stage_retry_budget,
+    clear_stage_dispatches,
+    clear_stage_retry_block,
+    commit_standalone_stage_dispatch,
+    evaluate_standalone_stage_dispatch,
+)
 from loregarden.services.studio_routing import (
     find_terminal_stage,
     is_agentless_stage,
@@ -498,18 +506,26 @@ class OrchestrationService:
             payload={"state": ticket.state.value, "manual": True},
         )
 
-    def refresh_stage_retry_budget(self, ticket: Ticket, stage_key: str) -> None:
+    def refresh_stage_retry_budget(
+        self, ticket: Ticket, stage_key: str, *, clear_dispatches: bool = True
+    ) -> None:
         """Give a continued / human-reset stage a full dispatch budget again.
 
         The circuit breaker persists ``stage_dispatch`` artifacts across runs.
         Continuing a failed or blocked stage without wiping that counter makes
         the next start re-block immediately on the same exhausted budget.
+
+        ``clear_dispatches=False`` clears the stale blocking state without
+        touching the counter, for a caller that has to unblock a ticket the
+        breaker did not block.
         """
         if not stage_key:
             return
-        clear_stage_dispatches(self.session, ticket.id, stage_key)
-        if "retry budget" in (ticket.blocking_issues or "").lower():
+        if clear_dispatches:
+            clear_stage_dispatches(self.session, ticket.id, stage_key)
+        if blocked_on_stage_retry_budget(self.session, ticket, stage_key):
             ticket.blocking_issues = ""
+            clear_stage_retry_block(self.session, ticket.id, stage_key)
         if ticket.state == TicketState.BLOCKED and not ticket.state_locked:
             choose(self.session, ticket, TicketState.IN_PROGRESS, actor="human", emit=False)
             ticket.next_status = ""
@@ -536,13 +552,46 @@ class OrchestrationService:
         if auto_state:
             self._reconcile_workflow(ticket, instance, stages)
 
+    def _stage_start_clears_budget(
+        self,
+        ticket: Ticket,
+        target_key: str,
+        stage_map: dict[str, StageStatus],
+    ) -> bool:
+        """Whether `_prepare_stage_start` is about to hand this stage a fresh
+        dispatch budget — a re-entry of a stage *this breaker* blocked.
+
+        Read separately from the write so `start_run` can settle the retry
+        budget before `_prepare_stage_start` mutates anything: the dispatch that
+        clears the block is the first of the new budget, not a refusal.
+
+        The same answer for an orchestrated start as for a standalone one. It
+        was once unconditional for the orchestrated path, on the premise that
+        reaching BLOCKED is a human act — but `loregarden_block_ticket` is
+        granted to every agent and is not denied under orchestration, so an
+        agent at its budget can block itself (`callbacks.block_ticket` sets
+        ticket *and* stage BLOCKED) and restart orchestration to wipe the
+        counter that was bounding it. Only the breaker's own block earns a
+        reset, whoever asks for the start.
+        """
+        if ticket.state != TicketState.BLOCKED and stage_map.get(target_key) != StageStatus.BLOCKED:
+            return False
+        return blocked_on_stage_retry_budget(self.session, ticket, target_key)
+
     def _prepare_stage_start(
         self,
         ticket: Ticket,
         target_key: str,
         stage_map: dict[str, StageStatus],
+        *,
+        clear_budget: bool,
     ) -> None:
-        """Clear stale blocking text and restore budget when re-entering a blocked stage."""
+        """Clear stale blocking text and restore budget when re-entering a blocked stage.
+
+        ``clear_budget`` is decided by the caller, *before* this runs: the
+        blocking text is one of the inputs to that decision and the first thing
+        this method erases.
+        """
         # Starting a stage is a fresh attempt — drop any stale blocking message
         # left over from a prior failure. Without this, a stage that was left
         # PENDING (not BLOCKED) after an earlier failure elsewhere carries its
@@ -556,7 +605,14 @@ class OrchestrationService:
         # members and self-reroutes would wipe the counter the breaker just
         # recorded for this pass.
         if ticket.state == TicketState.BLOCKED or stage_map.get(target_key) == StageStatus.BLOCKED:
-            self.refresh_stage_retry_budget(ticket, target_key)
+            # Only the breaker's own block earns a fresh counter, on every path.
+            # A stage blocked for another reason — an interrupted run, a failing
+            # gate, an agent's own `loregarden_block_ticket` — is still unblocked
+            # here, but keeps its dispatch count: wiping it would make the
+            # counter unable to accumulate across exactly the re-runs it exists
+            # to bound. See `_stage_start_clears_budget` for why the orchestrated
+            # path no longer resets unconditionally.
+            self.refresh_stage_retry_budget(ticket, target_key, clear_dispatches=clear_budget)
 
     def advance_stage(self, ticket: Ticket) -> Ticket:
         if ticket.state == TicketState.WONT_DO:
@@ -863,6 +919,8 @@ class OrchestrationService:
         skill_name: str | None = None,
         auto_approve: bool = False,
         timeout_override_seconds: int | None = None,
+        force: bool = False,
+        dispatch_surface: DispatchSurface = DispatchSurface.HTTP,
     ) -> AgentRun:
         template = self.get_template_for_ticket(ticket)
         if not template:
@@ -872,10 +930,55 @@ class OrchestrationService:
         instance = target.instance
         target_key = target.target_key
 
-        self._prepare_stage_start(ticket, target_key, target.stage_map)
-
+        # Both refusals are settled before a single write. `_prepare_stage_start`
+        # clears blocking text and can flip the ticket to IN_PROGRESS, and a
+        # guard that raised after it returned a 409 having already erased the
+        # operator's blocking diagnosis and left the ticket started.
         if ticket.state in StateMachine.TERMINAL_TICKET_STATES:
             raise ValueError(f"Cannot start run for ticket in state: {ticket.state.value}")
+
+        # Read before `_prepare_stage_start`, which erases the blocking text this
+        # decision is partly read from.
+        budget_reset_pending = self._stage_start_clears_budget(ticket, target_key, target.stage_map)
+
+        # A dispatch with no orchestration run behind it was counted by nobody:
+        # the orchestrator loop records its own pass through
+        # `enforce_stage_retry_budget` before it ever calls here, so recording
+        # again for an orchestrated run would cost every pass two attempts and
+        # halve the budget.
+        decision = None
+        if not orchestration_run_id:
+            decision = evaluate_standalone_stage_dispatch(
+                self.session,
+                ticket,
+                target_key,
+                stage_already_running=target.stage_map.get(target_key) == StageStatus.RUNNING,
+                force=force,
+                # `_prepare_stage_start` below may hand this stage a fresh
+                # budget. When it will, this dispatch is the first of that new
+                # budget rather than one refused against the old one.
+                budget_reset_pending=budget_reset_pending,
+            )
+
+        self._prepare_stage_start(
+            ticket,
+            target_key,
+            target.stage_map,
+            clear_budget=budget_reset_pending,
+        )
+
+        # After the reset, so a cleared counter is refilled by this dispatch.
+        if decision is not None:
+            commit_standalone_stage_dispatch(
+                self.session,
+                ticket.id,
+                target_key,
+                decision,
+                origin=DispatchOrigin(
+                    surface=dispatch_surface,
+                    agent_id=agent_id or ticket.next_agent,
+                ),
+            )
 
         if ticket.state == TicketState.BACKLOG:
             self.start_ticket(ticket)

@@ -28,9 +28,11 @@ run anything (see `start_lane_head`).
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from loregarden.models.domain import (
     AgentRun,
+    DispatchSurface,
     OrchestrationDriver,
     OrchestrationRun,
     QueuedRun,
@@ -65,9 +67,21 @@ class LaneDispatch:
                 stage_key=entry.stage_key or None,
                 auto_approve=entry.auto_approve,
                 timeout_override_seconds=entry.timeout_seconds,
+                # The entry is the only record of the ask by the time the lane
+                # reaches it. A `force` dropped here would be re-refused by the
+                # stage retry budget and vanish into the warning below.
+                force=entry.force,
+                dispatch_surface=DispatchSurface.QUEUE,
             )
         except ValueError as exc:
             logger.warning("Lane stage dispatch failed for ticket %s: %s", ticket.id, exc)
+            # Written onto the entry, not only logged: the lane card is where an
+            # operator finds out their stage never started, and a refusal that
+            # only reaches the server log is a silent failure.
+            entry.failure_reason = str(exc)
+            entry.last_failed_at = datetime.now(timezone.utc)
+            self.session.add(entry)
+            self.session.commit()
             return None
 
         schedule_agent_run(run.id)
