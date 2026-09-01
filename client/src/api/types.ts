@@ -39,7 +39,10 @@ export interface TicketSummary {
   /** Free-form labels. Empty when the ticket is untagged. */
   tags?: string[];
   child_count: number;
-  next_agent?: string;
+  /** The agent this ticket's current stage would dispatch, derived server-side.
+   *  Not the `next_agent` pin: that is empty for most of a ticket's life, so
+   *  reading it as a standing fact showed a stale agent or none at all. */
+  current_stage_agent?: string;
   activity?: TicketActivity;
   stages?: WorkflowStageView[];
 }
@@ -137,7 +140,7 @@ export interface TicketDetail extends TicketSummary {
   related?: TicketDependencyRef[];
   revision: number;
   last_updated_by: string;
-  next_agent: string;
+  current_stage_agent: string;
   next_status: string;
   blocking_issues: string;
   state_locked: boolean;

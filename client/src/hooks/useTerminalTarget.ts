@@ -51,7 +51,7 @@ export function useTerminalTarget(): TerminalTarget {
   }
 
   if (ticket) {
-    return { workspaceSlug: ticket.workspace_slug, agent: ticket.next_agent };
+    return { workspaceSlug: ticket.workspace_slug, agent: ticket.current_stage_agent };
   }
 
   // The chat screen names a workspace of its own — the one answering the turns,

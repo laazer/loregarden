@@ -64,7 +64,7 @@ describe("stageDisplay", () => {
     });
     expect(isClassifyStage(stage)).toBe(true);
     expect(isHumanGateStage(stage)).toBe(false);
-    expect(stageKindLabel(stage)).toBe("routes via ticket next_agent");
+    expect(stageKindLabel(stage)).toBe("routes by ticket content · a set agent breaks ties");
   });
 
   it("keeps optional human gates distinct from parallel review", () => {

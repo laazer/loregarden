@@ -967,6 +967,21 @@ class OrchestrationService:
             clear_budget=budget_reset_pending,
         )
 
+        # Resolved here rather than after the commit block for two reasons.
+        # The attribution below needs the agent that will actually run, and
+        # `ticket.next_agent` is not it — the pin is empty for most of a
+        # ticket's life, so an audit row that named it recorded "" for the
+        # agent whose forced dispatch it exists to attribute. And
+        # `_resolve_run_agent` raises on a stage that resolves no agent: doing
+        # that after the commit charged the stage a dispatch it never spent.
+        #
+        # Safe to move because `_prepare_stage_start` above does not touch
+        # `next_agent`, so nothing between the old and new position changes what
+        # this resolves to.
+        chosen_agent, chosen_skill = _resolve_run_agent(
+            ticket, target.stage_def, agent_id=agent_id, skill_name=skill_name
+        )
+
         # After the reset, so a cleared counter is refilled by this dispatch.
         if decision is not None:
             commit_standalone_stage_dispatch(
@@ -976,7 +991,7 @@ class OrchestrationService:
                 decision,
                 origin=DispatchOrigin(
                     surface=dispatch_surface,
-                    agent_id=agent_id or ticket.next_agent,
+                    agent_id=chosen_agent,
                 ),
             )
 
@@ -984,10 +999,6 @@ class OrchestrationService:
             self.start_ticket(ticket)
             self.session.refresh(ticket)
             instance = self.get_workflow_instance(ticket.id) or instance
-
-        chosen_agent, chosen_skill = _resolve_run_agent(
-            ticket, target.stage_def, agent_id=agent_id, skill_name=skill_name
-        )
 
         _consume_scope_reroute_pin(ticket, chosen_agent)
 

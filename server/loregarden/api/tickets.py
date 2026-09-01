@@ -66,6 +66,7 @@ from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.run_ledger import ledger_payload
 from loregarden.services.run_service import RunService, schedule_agent_run, schedule_orchestration
 from loregarden.services.stage_retry_budget import StageRetryBudgetExceeded
+from loregarden.services.studio_routing import ticket_stage_agent
 from loregarden.services.ticket_activity import (
     activity_for,
     classify_ticket_activity,
@@ -131,7 +132,7 @@ def _ticket_summary(
         branch=ticket.branch,
         tags=load_tags(ticket.tags_json),
         child_count=child_count(session, ticket.id),
-        next_agent=ticket.next_agent,
+        current_stage_agent=ticket_stage_agent(session, ticket),
         activity=activity if activity is not None else activity_for(session, ticket.id),
         stages=stages,
     )

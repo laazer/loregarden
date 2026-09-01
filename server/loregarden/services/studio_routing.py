@@ -12,6 +12,8 @@ from loregarden.core.workflow_terminal import (  # noqa: F401 — re-exported fo
     is_terminal_stage,
 )
 from loregarden.models.domain import ClassifyRoute, Ticket, WorkflowStageDef
+from loregarden.services.workflow_service import resolve_ticket_stages
+from sqlmodel import Session
 
 _SPECIALTY_SYNONYMS: dict[str, list[str]] = {
     # Deliberately narrow. Generic structural verbs — move, split, simplify,
@@ -359,6 +361,47 @@ def resolve_scope_reroute_pin(ticket: Ticket, stage: WorkflowStageDef) -> tuple[
     return None
 
 
+def resolve_display_agent(ticket: Ticket, stage: WorkflowStageDef) -> str:
+    """The agent this ticket's `stage` would dispatch, for a reader to show.
+
+    `ticket.next_agent` used to answer this, and nine readers asked it. It is a
+    pin — written once, honoured where the stage offers it, cleared at dispatch
+    (lg-workflow-integrity-441) — so it is empty for most of a ticket's life and
+    reading it as a standing fact produces a plausible answer computed from
+    nothing. Derive instead.
+
+    Falls back to `stage.agent_id` where `resolve_stage_execution` answers an
+    empty pair. That is not a guess: the three seed writes that populate
+    `next_agent` (ticket_service, workflow_service, orchestration) all assign
+    `stage.agent_id`, so this is the value the stored field has always carried.
+    It matters for parallel stages, where the resolver deliberately returns ""
+    because the members live in `parallel_agents` and only a driver can fan them
+    out — a reader still wants the stage's declared agent to show.
+
+    An agentless stage answers "" because its `agent_id` is empty, which is the
+    honest answer. Callers that need "this stage runs no agent" as a decision
+    rather than a display string want `is_agentless_stage`.
+
+    This is for READERS. Dispatch resolves through `_resolve_run_agent`, which
+    must keep raising on a stage that resolves no agent rather than showing one.
+    """
+    agent_id, _ = resolve_stage_execution(ticket, stage)
+    if agent_id:
+        return agent_id
+    if is_parallel_stage(stage):
+        # A parallel stage's agents live in `parallel_agents`; `stage.agent_id`
+        # is whatever the stage carried before it was fanned out, and is not
+        # kept in step. Three of the five parallel stages in the live templates
+        # have it EMPTY, so falling through to it showed nothing for a stage
+        # with two or three real lanes; a stage converted from single-agent
+        # could equally leave behind an agent no lane will ever dispatch.
+        # Answer with a member, so a displayed agent is always one that can run.
+        members = [member.agent_id for member in stage.parallel_agents if member.agent_id]
+        if members:
+            return members[0]
+    return stage.agent_id
+
+
 def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
     pinned = resolve_scope_reroute_pin(ticket, stage)
     if pinned:
@@ -377,3 +420,35 @@ def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[st
     if routed:
         return routed
     return stage.agent_id, stage.skill_name
+
+
+def ticket_stage_definition(
+    session: Session, ticket: Ticket, stage_key: str = ""
+) -> WorkflowStageDef | None:
+    """`ticket`'s definition of `stage_key`, defaulting to its current stage.
+
+    `stage_key` is explicit for the callers that must not use the cursor: a
+    queue entry is priced against the stage IT will run, which is not
+    necessarily the stage the ticket is parked on now.
+    """
+    key = stage_key or ticket.workflow_stage_key
+    if not key:
+        return None
+    _, stages = resolve_ticket_stages(session, ticket)
+    if not stages:
+        return None
+    return next((stage for stage in stages if stage.key == key), None)
+
+
+def ticket_stage_agent(session: Session, ticket: Ticket, stage_key: str = "") -> str:
+    """The agent `ticket` would dispatch for `stage_key`, or "" if none resolves.
+
+    The seam every reader calls. An empty answer means "nothing to show" and
+    callers must render it as a gap, not as an agent named "". A ticket with no
+    workflow, no stage map, or a stage key its template does not define all
+    answer "" — those are the cases the stored field used to paper over.
+    """
+    stage = ticket_stage_definition(session, ticket, stage_key)
+    if stage is None:
+        return ""
+    return resolve_display_agent(ticket, stage)

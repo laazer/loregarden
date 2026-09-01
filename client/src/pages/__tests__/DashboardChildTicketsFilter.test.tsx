@@ -102,7 +102,7 @@ const mkDetail = (): apiClient.TicketDetail => ({
   child_count: CHILDREN.length,
   revision: 1,
   last_updated_by: 'test',
-  next_agent: '',
+  current_stage_agent: '',
   next_status: '',
   blocking_issues: '',
   state_locked: false,

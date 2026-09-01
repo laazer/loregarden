@@ -102,7 +102,7 @@ export function stageKindLabel(stage: WorkflowStageView): string | null {
   if (isDoneStage(stage)) return "terminal stage · marks ticket complete";
   if (isHumanGateStage(stage)) return "human approval gate";
   if (isParallelStage(stage)) return "parallel review";
-  if (isClassifyStage(stage)) return "routes via ticket next_agent";
+  if (isClassifyStage(stage)) return "routes by ticket content · a set agent breaks ties";
   if (isGateStage(stage)) return "acceptance criteria gate · can route upstream on reject";
   return null;
 }

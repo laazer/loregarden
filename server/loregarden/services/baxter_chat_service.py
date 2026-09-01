@@ -65,6 +65,7 @@ from loregarden.services.cli_settings import (
     validated_effort_pins,
 )
 from loregarden.services.run_concurrency import find_active_workspace_chat_run
+from loregarden.services.studio_routing import ticket_stage_agent
 from loregarden.services.studio_service import build_studio_prompt_sections
 from loregarden.services.triage_service import (
     TRIAGE_AGENT_ID,
@@ -207,6 +208,13 @@ class ResolvedReferences:
     agent_runs: list[AgentRun]
     orchestration_runs: list[OrchestrationRun]
     workspace_slugs: dict[str, str]
+    #: ticket id -> the agent its current stage would dispatch, derived when
+    #: the references were resolved. Precomputed here for the same reason as
+    #: `workspace_slugs`: the prompt builders have no session, and the
+    #: alternative was reading `ticket.next_agent`, a pin that is empty for
+    #: most of a ticket's life — so the status line said "next agent: —" for
+    #: tickets that had one.
+    stage_agents: dict[str, str]
 
     def __bool__(self) -> bool:
         return bool(self.tickets or self.agent_runs or self.orchestration_runs)
@@ -235,7 +243,7 @@ def resolve_references(session: Session, text: str) -> ResolvedReferences:
     """
     tokens = _reference_tokens(text)
     if not tokens:
-        return ResolvedReferences([], [], [], {})
+        return ResolvedReferences([], [], [], {}, {})
 
     tickets = list(
         session.exec(
@@ -273,7 +281,8 @@ def resolve_references(session: Session, text: str) -> ResolvedReferences:
             select(Workspace).where(col(Workspace.id).in_(workspace_ids))
         ).all()
     }
-    return ResolvedReferences(tickets, agent_runs, orchestration_runs, slugs)
+    stage_agents = {ticket.id: ticket_stage_agent(session, ticket) for ticket in tickets}
+    return ResolvedReferences(tickets, agent_runs, orchestration_runs, slugs, stage_agents)
 
 
 def derive_session_title(text: str) -> str:
@@ -538,13 +547,16 @@ def _stamp(moment: datetime | None) -> str:
     return moment.isoformat(sep=" ", timespec="seconds") if moment else "—"
 
 
-def _ticket_reference_lines(ticket: Ticket, workspace_slugs: dict[str, str]) -> list[str]:
+def _ticket_reference_lines(
+    ticket: Ticket, workspace_slugs: dict[str, str], stage_agents: dict[str, str]
+) -> list[str]:
     lines = [
         f"- ticket {ticket.id} ({ticket.external_id or 'no external id'}) "
         f"in workspace {workspace_slugs.get(ticket.workspace_id, ticket.workspace_id)}",
         f"  title: {ticket.title}",
         f"  state: {ticket.state.value} | stage: {ticket.workflow_stage_key or '—'}"
-        f"/{ticket.workflow_stage_status.value} | next agent: {ticket.next_agent or '—'}",
+        f"/{ticket.workflow_stage_status.value} | next agent: "
+        f"{stage_agents.get(ticket.id) or '—'}",
         f"  locked: {'yes' if ticket.state_locked else 'no'} | updated: {_stamp(ticket.updated_at)}",
     ]
     if ticket.blocking_issues:
@@ -557,7 +569,9 @@ def _reference_section(references: ResolvedReferences | None) -> list[str]:
         return []
     lines = ["", "## Resolved references", "Looked up from the ids in the operator's message."]
     for ticket in references.tickets:
-        lines.extend(_ticket_reference_lines(ticket, references.workspace_slugs))
+        lines.extend(
+            _ticket_reference_lines(ticket, references.workspace_slugs, references.stage_agents)
+        )
     for run in references.agent_runs:
         lines.append(
             f"- agent run {run.run_code} (id {run.id}) agent={run.agent_id} "

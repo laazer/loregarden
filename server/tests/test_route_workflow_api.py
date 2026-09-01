@@ -60,7 +60,9 @@ def test_route_workflow_api_moves_cursor_upstream(client: TestClient, db_session
     assert res.status_code == 200
     body = res.json()
     assert body["workflow_stage_key"] == "implementation"
-    assert body["next_agent"] == "core_simulation"
+    # Response field renamed: the pin is still what the request WROTE (above),
+    # and the derived reader honours it for a plain agent stage.
+    assert body["current_stage_agent"] == "core_simulation"
     assert "Needs more tests" in body["blocking_issues"]
 
     db_session.refresh(instance)

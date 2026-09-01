@@ -1151,7 +1151,7 @@ function createMockTicket(overrides?: Partial<apiClient.TicketDetail>): apiClien
     child_count: 0,
     revision: 1,
     last_updated_by: 'test@example.com',
-    next_agent: 'implementation_agent',
+    current_stage_agent: 'implementation_agent',
     next_status: 'ready',
     blocking_issues: '',
     state_locked: false,

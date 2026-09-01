@@ -1259,9 +1259,9 @@ export function Dashboard() {
                     <div style={{ fontSize: 11, color: "var(--txm)", marginTop: 4 }}>
                       {sel.workflow_stage_status.replace("_", " ")}
                     </div>
-                    {sel.next_agent?.trim() && (
+                    {sel.current_stage_agent?.trim() && (
                       <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--txm)", marginTop: 6 }}>
-                        next agent · {sel.next_agent}
+                        next agent · {sel.current_stage_agent}
                       </div>
                     )}
                   </div>
