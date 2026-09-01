@@ -157,11 +157,29 @@ def _select_classify_route(ticket: Ticket, stage: WorkflowStageDef) -> ClassifyR
     if best_route is not None and best_score > 0:
         return best_route
 
+    # The pin steers only when it names exactly ONE route. It carries an agent,
+    # and an agent does not identify a route: `studio-loregarden-tdd-v3`'s triage
+    # stage names `ticket_scoper` on both of its routes, one jumping to
+    # `test-design` for typo/docs work and one running the full pipeline. Matching
+    # on the agent returned whichever came first, so a pin meaning "the scoper
+    # handles this" was read as "skip plan, plan-synthesis, ui-design and spec".
+    #
+    # Measured over 488 non-terminal tickets sitting on a classify stage: this
+    # branch decided 471 of them (96%) and overrode the route the template marked
+    # `default` in every single one. It was not breaking ties, it was the router.
+    #
+    # A pin that matches several routes expresses an opinion about the agent and
+    # none about the branch, so it is not a routing decision and the fallback
+    # below — content, then the declared default — answers instead. Where the
+    # routes name distinct agents, which is every other classify stage in the
+    # live templates, the pin is unambiguous and still steers: that is the rework
+    # reroute (`apply_stage_route` on reject) sending work back to the specialist
+    # who should redo it.
     next_agent = (ticket.next_agent or "").strip()
     if next_agent and get_agent(next_agent):
-        for route in stage.classify_routes:
-            if route.agent_id == next_agent:
-                return route
+        matches = [route for route in stage.classify_routes if route.agent_id == next_agent]
+        if len(matches) == 1:
+            return matches[0]
 
     return best_route or default_route or stage.classify_routes[0]
 

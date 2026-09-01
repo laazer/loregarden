@@ -713,6 +713,45 @@ def _validate_stage_route_targets(stages: list[StudioWorkflowStage]) -> None:
         raise ValueError(f"Workflow routes branch to unknown stage(s): {', '.join(unknown)}")
 
 
+def _validate_classify_routes_are_selectable(stages: list[StudioWorkflowStage]) -> None:
+    """Reject a classify route nothing can choose on purpose.
+
+    `_select_classify_route` picks a route one of three ways: content scoring on
+    `specialties`/`languages`, the pin when it names exactly one route, or the
+    route marked `default`. A route with no specialties, no languages and no
+    default flag is reachable by none of them — it can only be reached by being
+    first in the list, which is position, not intent. The author almost
+    certainly meant it to be the default.
+
+    This is a forward guard, not a fix for anything shipped: every classify route
+    in every live template is currently selectable. It is here because the defect
+    it prevents is the neighbour of one that did ship — a pin matching on agent
+    picked `classify_routes[0]` for 471 tickets, and "whichever is first" is the
+    same failure wearing different clothes.
+
+    Deliberately NOT rejected: two routes naming the same agent with different
+    branches. `studio-loregarden-tdd-v3`'s triage stage does exactly that — the
+    scoper triages everything, and typo/docs work skips ahead to `test-design` —
+    and it is a reasonable thing to express. The pin cannot disambiguate it, so
+    `_select_classify_route` declines to let the pin steer there at all; the
+    template is fine, and forbidding it would remove a working shortcut.
+    """
+    unreachable = sorted(
+        {
+            f"{stage.key}[{index}] -> {route.agent_id or '(no agent)'}"
+            for stage in stages
+            for index, route in enumerate(stage.classify_routes or [])
+            if not (route.specialties or route.languages or route.default)
+        }
+    )
+    if unreachable:
+        raise ValueError(
+            "Classify route(s) can only be chosen by list position, which is not a "
+            f"routing rule: {', '.join(unreachable)}. Give each one specialties or "
+            "languages to match on, or mark one `default`."
+        )
+
+
 def _validate_has_terminal_stage(stages: list[StudioWorkflowStage]) -> None:
     """Reject a workflow with no terminal stage. Without one the orchestrator has
     nowhere to finalize on: a passing final stage re-loops instead of completing
@@ -1095,6 +1134,7 @@ class StudioService:
         stages = sorted(body.stages, key=lambda stage: stage.order)
         _validate_stage_agent_ids(self.session, stages)
         _validate_stage_route_targets(stages)
+        _validate_classify_routes_are_selectable(stages)
         _validate_has_terminal_stage(stages)
         _validate_stage_skill_names(stages)
         transitions = body.transitions or _auto_transitions(stages)
@@ -1127,6 +1167,7 @@ class StudioService:
             stages = sorted(body.stages, key=lambda stage: stage.order)
             _validate_stage_agent_ids(self.session, stages)
             _validate_stage_route_targets(stages)
+            _validate_classify_routes_are_selectable(stages)
             _validate_has_terminal_stage(stages)
             _validate_stage_skill_names(stages)
             workflow.stages_json = json.dumps([stage.model_dump() for stage in stages])
@@ -1172,6 +1213,7 @@ class StudioService:
             raise ValueError("Workflow must have at least one stage")
         _validate_stage_agent_ids(self.session, stages)
         _validate_stage_route_targets(stages)
+        _validate_classify_routes_are_selectable(stages)
         _validate_has_terminal_stage(stages)
         _validate_stage_skill_names(stages)
 

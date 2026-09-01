@@ -23,7 +23,10 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     WorkItemType,
 )
-from loregarden.services.studio_routing import resolve_display_agent
+from loregarden.services.studio_routing import (
+    resolve_classify_branch,
+    resolve_display_agent,
+)
 
 BUILD = {
     "workspace_id": "ws",
@@ -211,3 +214,84 @@ def test_the_derived_answer_matches_what_the_seed_writes_stored():
         )
         seeded = stage.agent_id
         assert resolve_display_agent(_ticket(), stage) == seeded
+
+
+# -- the pin steers only when it names one route (D) ---------------------------
+
+
+def test_a_pin_matching_several_routes_does_not_choose_the_branch(db_session):
+    """The 471-ticket misroute, in miniature.
+
+    Triage names `ticket_scoper` on both routes: one jumps to `test-design` for
+    typo/docs work, one runs the full pipeline and is the declared default. The
+    pin says which AGENT, and an agent does not identify a route — so matching on
+    it returned whichever came first and every pinned ticket took the docs
+    shortcut, whatever it actually was.
+
+    Measured over 488 live non-terminal tickets on a classify stage, this branch
+    decided 471 of them and overrode the declared default in all 471.
+    """
+    stage = WorkflowStageDef(
+        key="triage",
+        name="Triage",
+        agent_id="ticket_scoper",
+        stage_type="classify",
+        order=1,
+        classify_routes=[
+            ClassifyRoute(agent_id="ticket_scoper", specialties=["docs"], to_stage="test-design"),
+            ClassifyRoute(agent_id="ticket_scoper", default=True, to_stage=""),
+        ],
+    )
+    pinned = Ticket(
+        external_id="pinned",
+        workspace_id="ws",
+        title="Bootstrap vertical slice",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+        next_agent="ticket_scoper",
+    )
+
+    # No content signal and an ambiguous pin: the declared default answers.
+    assert resolve_classify_branch(pinned, stage) == ""
+
+    # A real docs ticket still takes the shortcut, because content wins outright.
+    docs = Ticket(
+        external_id="docs",
+        workspace_id="ws",
+        title="Fix the docs typo",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+        next_agent="ticket_scoper",
+    )
+    assert resolve_classify_branch(docs, stage) == "test-design"
+
+
+def test_a_pin_naming_one_route_still_steers_the_rework(db_session):
+    """What dropping the tie-breaker would have broken.
+
+    A reject writes the agent it wants back on the work. At a stage whose routes
+    name distinct agents the pin is unambiguous, and it must still decide —
+    otherwise rework returns to whichever specialist the content happens to pick,
+    which is the one that just failed.
+    """
+    stage = WorkflowStageDef(
+        key="implement",
+        name="Implement",
+        agent_id="backend_implementer",
+        stage_type="classify",
+        order=8,
+        classify_routes=[
+            ClassifyRoute(agent_id="frontend_implementer", specialties=["ui"], to_stage=""),
+            ClassifyRoute(agent_id="backend_implementer", default=True, to_stage=""),
+        ],
+    )
+    ticket = Ticket(
+        external_id="rework",
+        workspace_id="ws",
+        title="Tidy the panel spacing",
+        state=TicketState.IN_PROGRESS,
+        work_item_type=WorkItemType.TASK,
+        next_agent="frontend_implementer",
+    )
+
+    assert resolve_display_agent(ticket, stage) == "frontend_implementer"
