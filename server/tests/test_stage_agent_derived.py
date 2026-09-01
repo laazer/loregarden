@@ -65,6 +65,53 @@ def test_a_parallel_stage_answers_its_declared_agent_not_an_empty_string():
     assert resolve_display_agent(_ticket(), stage) == "architecture_reviewer"
 
 
+def test_a_parallel_stage_with_no_declared_agent_answers_a_lane_member():
+    """The live shape, and the one the `stage.agent_id` fallback got wrong.
+
+    Three of the five parallel stages in the live templates carry an EMPTY
+    `agent_id` — extended-tdd/review, blobert-tdd/script_review and
+    studio-blobert-ddd/script_review — because a stage's agents move into
+    `parallel_agents` when it is fanned out and the old field is not kept in
+    step. Falling through to `stage.agent_id` therefore showed nothing at all
+    for a stage with two or three real reviewers.
+
+    The same fallback fails the other way for a stage converted from
+    single-agent whose old `agent_id` is left behind: it would name an agent no
+    lane will ever dispatch. Answering with a member is right in both
+    directions — whatever is displayed is an agent that can actually run.
+    """
+    stage = WorkflowStageDef(
+        key="script_review",
+        name="Script Review",
+        agent_id="",
+        stage_type="parallel",
+        parallel_agents=[
+            ParallelAgentSpec(agent_id="gdscript_reviewer"),
+            ParallelAgentSpec(agent_id="static_qa"),
+        ],
+        order=1,
+    )
+    assert resolve_display_agent(_ticket(), stage) == "gdscript_reviewer"
+
+
+def test_a_parallel_stage_never_reports_an_agent_that_is_not_a_lane():
+    """A stale `agent_id` left behind by a single-agent-to-parallel conversion."""
+    stage = WorkflowStageDef(
+        key="review",
+        name="Review",
+        agent_id="backend_implementer",  # predates the fan-out, runs nothing here
+        stage_type="parallel",
+        parallel_agents=[
+            ParallelAgentSpec(agent_id="architecture_reviewer"),
+            ParallelAgentSpec(agent_id="static_qa"),
+        ],
+        order=1,
+    )
+    reported = resolve_display_agent(_ticket(), stage)
+    assert reported == "architecture_reviewer"
+    assert reported in {member.agent_id for member in stage.parallel_agents}
+
+
 def test_an_agentless_stage_answers_nothing_rather_than_inventing_one():
     stage = WorkflowStageDef(key="done", name="Done", agent_id="", order=1)
     assert resolve_display_agent(_ticket(), stage) == ""

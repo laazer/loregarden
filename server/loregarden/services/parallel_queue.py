@@ -26,7 +26,7 @@ from loregarden.models.domain import (
     Ticket,
 )
 from loregarden.services.run_concurrency import orchestration_lease_expired
-from loregarden.services.stage_agent_view import ticket_stage_agent
+from loregarden.services.studio_routing import ticket_stage_agent
 from loregarden.websocket_events import (
     QUEUE_TOPIC,
     emit_error,

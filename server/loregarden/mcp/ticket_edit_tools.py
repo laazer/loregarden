@@ -22,7 +22,7 @@ from loregarden.services.acceptance_criteria import (
 )
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
-from loregarden.services.stage_agent_view import ticket_stage_agent
+from loregarden.services.studio_routing import ticket_stage_agent
 from loregarden.services.ticket_dependencies import (
     DependencyCycleError,
     TicketDependencyService,

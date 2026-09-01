@@ -12,6 +12,8 @@ from loregarden.core.workflow_terminal import (  # noqa: F401 — re-exported fo
     is_terminal_stage,
 )
 from loregarden.models.domain import ClassifyRoute, Ticket, WorkflowStageDef
+from loregarden.services.workflow_service import resolve_ticket_stages
+from sqlmodel import Session
 
 _SPECIALTY_SYNONYMS: dict[str, list[str]] = {
     # Deliberately narrow. Generic structural verbs — move, split, simplify,
@@ -384,7 +386,20 @@ def resolve_display_agent(ticket: Ticket, stage: WorkflowStageDef) -> str:
     must keep raising on a stage that resolves no agent rather than showing one.
     """
     agent_id, _ = resolve_stage_execution(ticket, stage)
-    return agent_id or stage.agent_id
+    if agent_id:
+        return agent_id
+    if is_parallel_stage(stage):
+        # A parallel stage's agents live in `parallel_agents`; `stage.agent_id`
+        # is whatever the stage carried before it was fanned out, and is not
+        # kept in step. Three of the five parallel stages in the live templates
+        # have it EMPTY, so falling through to it showed nothing for a stage
+        # with two or three real lanes; a stage converted from single-agent
+        # could equally leave behind an agent no lane will ever dispatch.
+        # Answer with a member, so a displayed agent is always one that can run.
+        members = [member.agent_id for member in stage.parallel_agents if member.agent_id]
+        if members:
+            return members[0]
+    return stage.agent_id
 
 
 def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
@@ -405,3 +420,35 @@ def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[st
     if routed:
         return routed
     return stage.agent_id, stage.skill_name
+
+
+def ticket_stage_definition(
+    session: Session, ticket: Ticket, stage_key: str = ""
+) -> WorkflowStageDef | None:
+    """`ticket`'s definition of `stage_key`, defaulting to its current stage.
+
+    `stage_key` is explicit for the callers that must not use the cursor: a
+    queue entry is priced against the stage IT will run, which is not
+    necessarily the stage the ticket is parked on now.
+    """
+    key = stage_key or ticket.workflow_stage_key
+    if not key:
+        return None
+    _, stages = resolve_ticket_stages(session, ticket)
+    if not stages:
+        return None
+    return next((stage for stage in stages if stage.key == key), None)
+
+
+def ticket_stage_agent(session: Session, ticket: Ticket, stage_key: str = "") -> str:
+    """The agent `ticket` would dispatch for `stage_key`, or "" if none resolves.
+
+    The seam every reader calls. An empty answer means "nothing to show" and
+    callers must render it as a gap, not as an agent named "". A ticket with no
+    workflow, no stage map, or a stage key its template does not define all
+    answer "" — those are the cases the stored field used to paper over.
+    """
+    stage = ticket_stage_definition(session, ticket, stage_key)
+    if stage is None:
+        return ""
+    return resolve_display_agent(ticket, stage)

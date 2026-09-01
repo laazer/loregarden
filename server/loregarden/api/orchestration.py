@@ -32,7 +32,7 @@ from loregarden.services.orchestration_profile import (
     update_git_config,
 )
 from loregarden.services.queue_admission import QueueAdmissionService
-from loregarden.services.stage_agent_view import ticket_stage_agent
+from loregarden.services.studio_routing import ticket_stage_agent
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/orchestration", tags=["orchestration"])

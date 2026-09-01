@@ -65,8 +65,8 @@ from loregarden.services.run_cancellation import request_cancel, request_orchest
 from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.run_ledger import ledger_payload
 from loregarden.services.run_service import RunService, schedule_agent_run, schedule_orchestration
-from loregarden.services.stage_agent_view import ticket_stage_agent
 from loregarden.services.stage_retry_budget import StageRetryBudgetExceeded
+from loregarden.services.studio_routing import ticket_stage_agent
 from loregarden.services.ticket_activity import (
     activity_for,
     classify_ticket_activity,

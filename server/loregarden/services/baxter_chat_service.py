@@ -65,7 +65,7 @@ from loregarden.services.cli_settings import (
     validated_effort_pins,
 )
 from loregarden.services.run_concurrency import find_active_workspace_chat_run
-from loregarden.services.stage_agent_view import ticket_stage_agent
+from loregarden.services.studio_routing import ticket_stage_agent
 from loregarden.services.studio_service import build_studio_prompt_sections
 from loregarden.services.triage_service import (
     TRIAGE_AGENT_ID,
