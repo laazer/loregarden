@@ -147,9 +147,15 @@ task cli -- mcp call loregarden_get_ticket ticket_id=42     # key=value, typed b
 | `isinstance(payload, dict)` | A schema check by hand. Model it with Pydantic at the boundary; `isinstance` on a class wants polymorphism | 220 of 238 target builtins; `py_organization_check.py` → `isinstance_errors` |
 | `err instanceof Error ? err.message : "…"` | Copy-pasted 46× and drops the `ApiError` status; use `describeError(error, fallback)` | `.lefthook/scripts/ts_organization_check.cjs` |
 | Assuming `alwaysApply: true` in prompt frontmatter does anything | It is a Cursor convention loregarden does not honor. A common asset reaches an agent only if its `role_file` says to read it, or the executor embeds it | `agents/executors/cli.py` |
+| Backgrounding a synthetic CPU-load generator (`for i in 1..N; do (while :; do :; done) & done`) without `trap ... EXIT` + `timeout` guarding the whole thing | If the guarded command hangs or the session/terminal is torn down before the manual `kill $LOADPIDS` line runs, the loops reparent to `launchd` and pin every core indefinitely — nothing else is watching them | orphaned load-test in worktree `chat-triage-prompts-accessibility-0d5aea` ran 3 days, ~90 processes, load avg ~200, until found and killed manually (2026-09-01) |
 
 ## NOTES
 
+- **A synthetic CPU-load harness must clean up on its own, not at the end of the script.** Wrap it
+  as `timeout 300 bash -c 'trap "kill $(jobs -p) 2>/dev/null" EXIT; for i in $(seq 1 12); do
+  (while :; do :; done) & done; <the actual command under load>'` — `trap ... EXIT` fires on a hang,
+  a signal, or the shell being torn down, not just the happy path; `timeout` is the backstop if
+  even that doesn't fire. See the anti-pattern above for what skipping this costs.
 - **`agent_context/` is per-workspace.** `resolve_agent_context_dir` reads it from the ticket's
   workspace `repo_path`, so a run against another workspace loads that workspace's prompts, not
   these. Do not "fix" a loregarden prompt to satisfy another workspace's ticket.
