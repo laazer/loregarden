@@ -148,8 +148,9 @@ export function ConfirmRunStageModal({
               )
             ) : classifyStage ? (
               <>
-                Run <strong style={{ color: "var(--tx)" }}>{stage.name}</strong> using the ticket&apos;s{" "}
-                <code>next_agent</code> when set, otherwise keyword routing applies.
+                Run <strong style={{ color: "var(--tx)" }}>{stage.name}</strong>. Its routes are
+                scored against the ticket&apos;s title and acceptance criteria; only when that is
+                ambiguous does the ticket&apos;s <code>next_agent</code> break the tie.
               </>
             ) : isRerun ? (
               <>

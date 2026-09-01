@@ -439,6 +439,15 @@ def _restore_pre_fanout_state(session: Session, group: StageFanoutGroup, ticket:
     """
     ticket.workflow_stage_key = group.pre_fanout_workflow_stage_key
     ticket.workflow_stage_status = StageStatus(group.pre_fanout_workflow_stage_status)
+    # Restoring the pin is right while the pin survives dispatch, which it does
+    # today: the snapshot is taken at launch, and declining puts back what
+    # launch found. It stops being right the moment dispatch CLEARS the pin
+    # (lg-workflow-integrity-441). Then a decline resurrects a pin that was
+    # already consumed, and the next dispatch honours a hand-off that has
+    # already happened. The readers no longer depend on this value — they derive
+    # (`services.stage_agent_view`) — so when 441 lands, the choice here is to
+    # restore only a pin that was still unconsumed at decline, or to stop
+    # restoring it at all. Recorded on 441 rather than guessed at here.
     ticket.next_agent = group.pre_fanout_next_agent
     session.add(ticket)
 

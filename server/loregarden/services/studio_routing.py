@@ -359,6 +359,34 @@ def resolve_scope_reroute_pin(ticket: Ticket, stage: WorkflowStageDef) -> tuple[
     return None
 
 
+def resolve_display_agent(ticket: Ticket, stage: WorkflowStageDef) -> str:
+    """The agent this ticket's `stage` would dispatch, for a reader to show.
+
+    `ticket.next_agent` used to answer this, and nine readers asked it. It is a
+    pin — written once, honoured where the stage offers it, cleared at dispatch
+    (lg-workflow-integrity-441) — so it is empty for most of a ticket's life and
+    reading it as a standing fact produces a plausible answer computed from
+    nothing. Derive instead.
+
+    Falls back to `stage.agent_id` where `resolve_stage_execution` answers an
+    empty pair. That is not a guess: the three seed writes that populate
+    `next_agent` (ticket_service, workflow_service, orchestration) all assign
+    `stage.agent_id`, so this is the value the stored field has always carried.
+    It matters for parallel stages, where the resolver deliberately returns ""
+    because the members live in `parallel_agents` and only a driver can fan them
+    out — a reader still wants the stage's declared agent to show.
+
+    An agentless stage answers "" because its `agent_id` is empty, which is the
+    honest answer. Callers that need "this stage runs no agent" as a decision
+    rather than a display string want `is_agentless_stage`.
+
+    This is for READERS. Dispatch resolves through `_resolve_run_agent`, which
+    must keep raising on a stage that resolves no agent rather than showing one.
+    """
+    agent_id, _ = resolve_stage_execution(ticket, stage)
+    return agent_id or stage.agent_id
+
+
 def resolve_stage_execution(ticket: Ticket, stage: WorkflowStageDef) -> tuple[str, str]:
     pinned = resolve_scope_reroute_pin(ticket, stage)
     if pinned:

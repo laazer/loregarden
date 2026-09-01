@@ -144,7 +144,13 @@ class TicketSummary(SQLModel):
     branch: str = ""
     tags: list[str] = []
     child_count: int = 0
-    next_agent: str = ""
+    #: The agent this ticket's current stage would dispatch, DERIVED at read
+    #: time (`services.stage_agent_view`). Not `next_agent`: that is a pin,
+    #: empty for most of a ticket's life, and reading it as a standing fact
+    #: showed a stale or blank agent. `next_agent` keeps its meaning on the
+    #: input side (CompleteStageRequest, RouteWorkflowRequest), where it is
+    #: the pin write.
+    current_stage_agent: str = ""
     #: Whether anything is executing on this ticket — orthogonal to ``state``.
     activity: TicketActivity = TicketActivity.IDLE
     stages: list[WorkflowStageView] = []

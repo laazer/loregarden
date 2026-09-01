@@ -18,7 +18,7 @@ function ticket(overrides: Partial<TicketDetail> = {}): TicketDetail {
     milestone: "",
     branch: "",
     child_count: 0,
-    next_agent: "ac_gatekeeper",
+    current_stage_agent: "ac_gatekeeper",
     description: "",
     acceptance_criteria: [],
     revision: 1,

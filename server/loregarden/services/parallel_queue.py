@@ -26,6 +26,7 @@ from loregarden.models.domain import (
     Ticket,
 )
 from loregarden.services.run_concurrency import orchestration_lease_expired
+from loregarden.services.stage_agent_view import ticket_stage_agent
 from loregarden.websocket_events import (
     QUEUE_TOPIC,
     emit_error,
@@ -689,15 +690,29 @@ class ParallelQueueService:
                     created_at = created_at.replace(tzinfo=timezone.utc)
                 wait = (now - created_at).total_seconds() if created_at else 0
 
-                # An entry that has not started has no agent of its own. The
-                # ticket's next agent is the one it will dispatch, which is
-                # what an estimate for this entry has to be priced against.
-                agent_id = run.agent_id if run else (ticket.next_agent if ticket else "")
+                # An entry that has not started has no agent of its own, so the
+                # agent is derived from the stage this entry will actually run.
+                # Derived from THAT stage, not from the ticket's cursor and not
+                # from `ticket.next_agent`: the pin is empty for most of a
+                # ticket's life, so pricing against it returned a real number
+                # for an agent of "" — an estimate computed from nothing, which
+                # reads exactly like an estimate computed from something.
+                #
+                # `stage_key` is resolved first and the agent is resolved from
+                # it, so the two fields in this dict always describe the same
+                # stage. They could disagree before, because one came from the
+                # entry and the other from the ticket.
                 stage_key = (
                     run.stage_key
                     if run
                     else (qr.stage_key or (ticket.workflow_stage_key if ticket else ""))
                 )
+                if run:
+                    agent_id = run.agent_id
+                elif ticket:
+                    agent_id = ticket_stage_agent(self.session, ticket, stage_key)
+                else:
+                    agent_id = ""
 
                 queued_runs.append(
                     {

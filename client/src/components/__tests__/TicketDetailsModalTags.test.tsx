@@ -27,7 +27,7 @@ function mockTicket(over: Partial<apiClient.TicketDetail> = {}): apiClient.Ticke
     child_count: 0,
     revision: 1,
     last_updated_by: '',
-    next_agent: '',
+    current_stage_agent: '',
     next_status: '',
     blocking_issues: '',
     state_locked: false,

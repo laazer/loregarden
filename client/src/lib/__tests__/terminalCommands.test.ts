@@ -38,7 +38,7 @@ function baseTicket(overrides: Partial<TicketDetail> = {}): TicketDetail {
     acceptance_criteria: [],
     revision: 1,
     last_updated_by: "",
-    next_agent: "",
+    current_stage_agent: "",
     next_status: "",
     blocking_issues: "",
     state_locked: false,

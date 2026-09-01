@@ -304,7 +304,7 @@ function gateTicket(overrides?: Partial<TicketDetail>): TicketDetail {
     acceptance_criteria: ["Diff reviewed", "CI green"],
     revision: 1,
     last_updated_by: "baxter",
-    next_agent: "",
+    current_stage_agent: "",
     next_status: "",
     blocking_issues: "",
     state_locked: false,

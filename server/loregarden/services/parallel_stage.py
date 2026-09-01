@@ -320,7 +320,16 @@ def _route_parallel_stage_failures(
                 from_key=stage_key,
                 outcome=_REJECT_OUTCOME,
                 next_stage_key=to_key,
-                next_agent=transition_agent or ticket.next_agent,
+                # `transition_agent` alone, with no `or ticket.next_agent`
+                # fallback. This argument is a pin WRITE, not a read: an empty
+                # hint makes `apply_stage_route` derive the agent from the
+                # TARGET stage (workflow_routing.py:323-327), which is the right
+                # answer. Feeding it the ticket's existing pin re-pinned a value
+                # dispatch may already have cleared, and on this path — a
+                # parallel stage with N reviewers — it could pin a single
+                # reviewer as the rework target, which is exactly what the
+                # derivation above exists to prevent.
+                next_agent=transition_agent,
                 blocking_issues=(agent_context or message)[:2000],
             )
             session.add(ticket)

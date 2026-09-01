@@ -32,6 +32,7 @@ from loregarden.services.orchestration_profile import (
     update_git_config,
 )
 from loregarden.services.queue_admission import QueueAdmissionService
+from loregarden.services.stage_agent_view import ticket_stage_agent
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/orchestration", tags=["orchestration"])
@@ -214,7 +215,7 @@ def get_ticket_orchestration_state(
         "state": ticket.state.value,
         "workflow_stage_key": ticket.workflow_stage_key,
         "workflow_stage_status": ticket.workflow_stage_status.value,
-        "next_agent": ticket.next_agent,
+        "current_stage_agent": ticket_stage_agent(session, ticket),
         "blocking_issues": ticket.blocking_issues,
         "active_orchestration": _run_view(active).model_dump() if active else None,
         "stages": [s.model_dump() for s in orch.build_stage_views(ticket)],

@@ -44,7 +44,7 @@ it("opens the shell in the ticket's workspace, not the filter's", () => {
   mockTicket.mockResolvedValue({
     workspace_slug: "blobert",
     branch: "feat/x",
-    next_agent: "implementer",
+    current_stage_agent: "implementer",
   } as never);
 
   const { result } = renderHook(() => useTerminalTarget(), {
