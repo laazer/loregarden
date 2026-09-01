@@ -2,15 +2,7 @@
 
 Loregarden is an Agent SDLC IDE: a local control plane for orchestrating multi-agent software development. It tracks work as tickets in SQLite, runs agents through configurable pipelines, isolates concurrent work in Git worktrees, surfaces approval prompts in an inbox, and exposes the same workflow tools over MCP.
 
-## Screenshots
-
-| Home board | Parallel execution queue |
-|---|---|
-| ![Home board](docs/screenshots/home.png) | ![Parallel execution queue](docs/screenshots/queue.png) |
-
-| Agent Studio | Ticket console (diff, workspace tree) |
-|---|---|
-| ![Agent Studio](docs/screenshots/agent-studio.png) | ![Ticket console](docs/screenshots/console.png) |
+![Home board](docs/screenshots/home.png)
 
 ## Architecture
 
@@ -27,10 +19,19 @@ The database is the source of truth for tickets, workflow templates, agent defin
 ## Current capabilities
 
 - Ticket planning and execution through configurable, versioned multi-agent workflows
+
+  ![Ticket console showing a diff and workspace tree](docs/screenshots/console.png)
+
 - Concurrent runs isolated in Git worktrees, with optional commit, push, pull-request, merge, and conflict-resolution automation
+
+  ![Parallel execution queue with three worktree lanes](docs/screenshots/queue.png)
+
 - Human approval gates and permission bridging for supervised CLI agents
 - Baxter workspace, ticket, and branch chat backed by the live control plane
 - Agent and workflow editing in Studio with version history and restore
+
+  ![Agent Studio editing a built-in agent's role and runtime config](docs/screenshots/agent-studio.png)
+
 - Flex-grid and canvas views composed from reusable IDE panels
 - MCP access over HTTP, stdio, or the in-process `loregarden` CLI
 - Local run accounting plus Claude, Cursor, and Codex usage visibility
