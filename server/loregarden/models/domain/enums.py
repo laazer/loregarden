@@ -237,6 +237,18 @@ class DoctorCheck(str, Enum):
     GIT_PORTABILITY = "git_portability"
     #: A repository with no commit at all, which several git helpers assume away.
     REPO_HAS_COMMIT = "repo_has_commit"
+    #: The stage-report contract reaches the agent's prompt empty, so every
+    #: stage in the workspace fails on a report it was never told how to write.
+    STAGE_REPORT_CONTRACT = "stage_report_contract"
+    #: A toolchain the execution tree declares it needs but has not installed —
+    #: a `package.json` with no `node_modules`, and the like.
+    TOOLCHAIN_INSTALLED = "toolchain_installed"
+    #: The git directory the run must write to is not writable, so the agent
+    #: produces work it can never stage.
+    GIT_WRITABLE = "git_writable"
+    #: A configured transition-gate command that does not resolve from the
+    #: directory the agent will run it in.
+    GATE_COMMANDS_RESOLVE = "gate_commands_resolve"
 
 
 class PortabilityState(str, Enum):

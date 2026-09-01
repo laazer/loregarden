@@ -19,6 +19,7 @@ from loregarden.services.studio_routing import (
     resolve_stage_execution,
 )
 from sqlmodel import Session, select
+from tests.worktree_helpers import seed_stage_report_contract
 
 
 def _impl_classify_stage() -> WorkflowStageDef:
@@ -272,6 +273,7 @@ def test_parallel_stage_runs_all_agents(
     import subprocess
 
     subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    seed_stage_report_contract(tmp_path)
 
     # Orchestration profiles resolve from settings.repo_root, not from this
     # workspace's repo_path — redirect it to an empty tmp dir so profile lookup
@@ -369,6 +371,7 @@ def test_orchestration_reroutes_when_gate_fails(
     import subprocess
 
     subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    seed_stage_report_contract(tmp_path)
 
     gate_dir = tmp_path / "ci" / "scripts"
     gate_dir.mkdir(parents=True)

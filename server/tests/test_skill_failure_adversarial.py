@@ -6,11 +6,13 @@ from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.config import settings
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, WorkflowTemplate, Workspace
 from loregarden.skills.registry import SkillNotFoundError
+from tests.worktree_helpers import seed_stage_report_contract
 
 
 def _repo(root: Path) -> Path:
     root.mkdir()
     (root / ".git").mkdir()
+    seed_stage_report_contract(root)
     return root
 
 

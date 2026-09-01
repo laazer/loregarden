@@ -41,6 +41,7 @@ from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.ticket_dependencies import TicketDependencyService
 from loregarden.services.workflow_state import parse_stage_map
 from sqlmodel import Session, select
+from tests.worktree_helpers import seed_stage_report_contract
 
 # Stage shapes the ticket names explicitly:
 #   work    - ordinary agent stage, nothing special
@@ -103,6 +104,9 @@ def _git_repo(tmp_path: Path) -> Path:
         ["git", "config", "user.name", "Test"], cwd=root, check=True, capture_output=True
     )
     (root / "README.md").write_text("seed\n", encoding="utf-8")
+    # A workspace with no stage-report contract cannot dispatch: the preflight
+    # refuses it, because agents there would be given no report format at all.
+    seed_stage_report_contract(root)
     subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=root, check=True, capture_output=True)
     return root

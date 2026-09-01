@@ -9,6 +9,7 @@ from loregarden.models.domain import Workspace
 from loregarden.services.git_subprocess import GIT_LOCATION_ENV_VARS
 from loregarden.services.seed import seed_database
 from sqlmodel import Session, SQLModel, create_engine, select
+from tests.worktree_helpers import seed_stage_report_contract
 
 # Every module that binds the DB engine at import time via
 # `from loregarden.db.session import engine`. The isolated_db fixture redirects
@@ -135,6 +136,10 @@ def _isolate_seeded_workspace_repo(session: Session, tmp_path) -> None:
         ["git", "config", "user.name", "Test"], cwd=repo, check=True, capture_output=True
     )
     (repo / "README.md").write_text("# test\n", encoding="utf-8")
+    # The dispatch preflight refuses a workspace with no stage-report contract,
+    # so a repo standing in for a real workspace has to carry one. Before the
+    # commit, so the tree it hands to orchestration is clean.
+    seed_stage_report_contract(repo)
     subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
 
